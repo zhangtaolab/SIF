@@ -99,30 +99,30 @@
 | CLI-03 | Phase 2 | Pending |
 | CLI-04 | Phase 2 | Pending |
 | CLI-05 | Phase 2 | Pending |
-| CLI-06 | Phase 2 | Pending |
-| CLI-07 | Phase 2 | Pending |
 | CLI-08 | Phase 2 | Pending |
-| CTX-01 | Phase 3 | Pending |
-| CTX-02 | Phase 3 | Pending |
-| CTX-03 | Phase 3 | Pending |
-| VEC-01 | Phase 4 | Pending |
-| VEC-02 | Phase 4 | Pending |
-| VEC-03 | Phase 4 | Pending |
-| VEC-04 | Phase 4 | Pending |
-| SRCH-01 | Phase 5 | Pending |
-| SRCH-02 | Phase 5 | Pending |
-| SRCH-03 | Phase 5 | Pending |
-| SRCH-04 | Phase 5 | Pending |
-| SRCH-05 | Phase 5 | Pending |
-| SRCH-06 | Phase 5 | Pending |
-| SRCH-07 | Phase 5 | Pending |
-| SRCH-08 | Phase 5 | Pending |
+| VEC-01 | Phase 3 | Pending |
+| VEC-02 | Phase 3 | Pending |
+| VEC-03 | Phase 3 | Pending |
+| VEC-04 | Phase 3 | Pending |
+| SRCH-01 | Phase 4 | Pending |
+| SRCH-02 | Phase 4 | Pending |
+| SRCH-03 | Phase 4 | Pending |
+| SRCH-04 | Phase 4 | Pending |
+| SRCH-05 | Phase 4 | Pending |
+| SRCH-06 | Phase 4 | Pending |
+| SRCH-07 | Phase 4 | Pending |
+| SRCH-08 | Phase 4 | Pending |
+| CLI-06 | Phase 4 | Pending |
+| CLI-07 | Phase 4 | Pending |
+| CTX-01 | Phase 5 | Pending |
+| CTX-02 | Phase 5 | Pending |
+| CTX-03 | Phase 5 | Pending |
 
 **Coverage:**
-- v1 requirements: 35 total
-- Mapped to phases: 35
+- v1 requirements: 31 total
+- Mapped to phases: 31
 - Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-04-14*
-*Last updated: 2026-04-14 after initial definition*
+*Last updated: 2026-04-14 after roadmap creation*
