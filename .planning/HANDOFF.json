@@ -1,0 +1,30 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-04-14T15:08:39.216Z",
+  "phase": "01",
+  "phase_name": "foundation-fix",
+  "phase_dir": ".planning/phases/01-foundation-fix",
+  "plan": 1,
+  "task": 1,
+  "total_tasks": 6,
+  "status": "paused",
+  "completed_tasks": [
+    {"id": 1, "name": "Phase 1 planning complete", "status": "done", "commit": "N/A"}
+  ],
+  "remaining_tasks": [
+    {"id": 1, "name": "Plan 01: Fix missing runtime dependencies in pyproject.toml", "status": "not_started"},
+    {"id": 2, "name": "Plan 02: Fix FTS5 synchronization and consolidate repository files", "status": "not_started"},
+    {"id": 3, "name": "Plan 03: Fix inverted checksum comparison and remove hardcoded model path", "status": "not_started"},
+    {"id": 4, "name": "Plan 04: Replace placeholder embeddings with real ST and GGUF implementations", "status": "not_started"},
+    {"id": 5, "name": "Plan 05: Remove vector search fallback and make vsearch fail fast", "status": "not_started"},
+    {"id": 6, "name": "Plan 06: Improve SQLite connection safety for async/multi-threaded contexts", "status": "not_started"}
+  ],
+  "blockers": [],
+  "human_actions_pending": [],
+  "decisions": [
+    {"decision": "Phase 1 planning completed with 6 executable plans", "rationale": "All 8 requirements (FND-01 through FND-08) are covered across 6 waves", "phase": "01"}
+  ],
+  "uncommitted_files": [],
+  "next_action": "Run /gsd-execute-phase 1 to begin executing the 6 plans in Phase 1: Foundation Fix",
+  "context_notes": "Planning is complete. STATE.md is slightly stale (still says 'awaiting roadmap approval') but the phase directory .planning/phases/01-foundation-fix/ contains 6 verified plans and is the ground truth. No execution has started — no SUMMARY.md files exist yet. The user updated GSD to v1.36.0 just before pausing."
+}
