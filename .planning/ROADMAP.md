@@ -26,8 +26,16 @@
   5. FTS5 search results stay synchronized with the main document table
   6. Vector search CLI does not silently fall back to BM25 when the embedder is unavailable
   7. SQLite connections are safe across async and multi-threaded operations
-**Plans**: TBD
+**Plans:** 6 plans
 
+
+Plans:
+- [ ] 01-01-PLAN.md — Fix missing runtime dependencies in pyproject.toml
+- [ ] 01-02-PLAN.md — Fix FTS5 synchronization and consolidate repository files
+- [ ] 01-03-PLAN.md — Fix inverted checksum comparison and remove hardcoded model path
+- [ ] 01-04-PLAN.md — Replace placeholder embeddings with real ST and GGUF implementations
+- [ ] 01-05-PLAN.md — Remove vector search fallback and make vsearch fail fast
+- [ ] 01-06-PLAN.md — Improve SQLite connection safety for async/multi-threaded contexts
 ### Phase 2: CLI Core Completion
 **Goal**: Users can manage collections and retrieve documents through a complete, functional CLI.
 **Depends on**: Phase 1
