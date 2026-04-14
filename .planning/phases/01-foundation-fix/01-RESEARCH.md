@@ -1,13 +1,19 @@
-# Phase 1: Foundation Fix - Research
+# Phase 01: Foundation Fix - Research
 
 **Researched:** 2026-04-14
-**Domain:** Python CLI/SQLite local search - bugfix, stub removal, dependency cleanup
+**Domain:** Python CLI/SQLite local search engine - dependency management, FTS5 synchronization, embedding factories, SQLite threading
 **Confidence:** HIGH
 
-<user_constraints>
+## Summary
+
+Phase 01 addresses critical bugs, missing runtime dependencies, stub implementations, and SQLite safety issues in DocSift's foundation. The codebase has two parallel schema definition systems (SchemaManager vs MigrationManager), an inverted checksum condition that skips changed documents, placeholder embedding factories that return random vectors, hardcoded model paths bypassing Settings, and unsafe SQLite connection sharing in the MCP server. All eight requirements (FND-01 through FND-08) are well-understood and have clear implementation paths.
+
+**Primary recommendation:** Fix `pyproject.toml` dependencies first (unblocks tests), then consolidate schema/triggers in `SchemaManager`, replace factory stubs with real `sentence-transformers`/`llama-cpp-python` loaders wired to `Settings`, remove the Python vector-search fallback, and switch the MCP server to connection-per-request.
+
 ## User Constraints (from CONTEXT.md)
 
 ### Locked Decisions
+
 - **D-01:** Use SQLite triggers to automatically synchronize FTS5 external content tables with the main `documents` and `document_chunks` tables. Triggers are created in `SchemaManager` alongside the tables they protect.
 - **D-02:** Consolidate all database access into `src/docsift/database/repositories.py`. Migrate any unique functionality from `src/docsift/database/sqlite_repository.py`, then delete the duplicate file.
 - **D-03:** `SchemaManager` (in `schema.py`) remains the single source of truth for table and trigger definitions.
@@ -19,372 +25,396 @@
 - **D-09:** Keep `llama-cpp-python` and `sentence-transformers` as optional extras (`[embed]` or `[llm]`) because they pull in heavy native libraries.
 
 ### Claude's Discretion
+
 - Exact trigger SQL syntax and naming convention
 - Migration path for users with existing databases that lack triggers
 - Specific error message wording for sqlite-vec failures
 
 ### Deferred Ideas (OUT OF SCOPE)
-None — discussion stayed within phase scope.
-</user_constraints>
 
-<phase_requirements>
+- None — discussion stayed within phase scope.
+
 ## Phase Requirements
 
 | ID | Description | Research Support |
 |----|-------------|------------------|
-| FND-01 | Fix missing runtime dependencies in `pyproject.toml` (sqlite-vec, structlog, platformdirs, pydantic, fastapi/uvicorn, watchdog, python-frontmatter, etc.) | Verified current versions via `pip index versions`; core deps should be in `[project] dependencies`, heavy ML deps in `[project.optional-dependencies]` |
-| FND-02 | Fix checksum comparison bug in indexing update logic (should skip unchanged docs, not skip changed docs) | Code audit shows inverted condition at `src/docsift/cli/commands/index.py:108` and `src/docsift/indexing/indexer.py:163` |
-| FND-03 | Replace random/placeholder embedding implementations with real sentence-transformers and llama-cpp-python loading paths | `factory.py` contains `random.random()` stubs and `NotImplementedError` for OpenAI/HF; real backends verified via PyPI |
-| FND-04 | Remove hardcoded model path `BAAI/bge-small-zh-v1.5`, read from Settings and allow CLI override | Hardcoded path found in `src/docsift/cli/commands/index.py:185`; Settings already has `model_name` and `model_path` fields |
-| FND-05 | Unify or clean up duplicate database repository implementations (`repositories.py` vs `sqlite_repository.py`) | `sqlite_repository.py` uses old schema (`paths` instead of `path`, `contexts` table, etc.) and should be merged/deleted per D-02 |
-| FND-06 | Fix FTS5 external content table synchronization so BM25 results stay consistent with main tables | Current schema creates FTS5 tables without `content=` / `content_rowid=` and no triggers; triggers are the standard SQLite solution |
-| FND-07 | Fix vector search CLI fallback: `vsearch` should not unconditionally fall back to BM25 when embedder is unavailable | `vsearch_cmd` in `search.py:190-200` always prints warning and falls back; per D-06/D-07 it must fail fast or use real embeddings |
-| FND-08 | Improve SQLite connection management to avoid race conditions in async/multi-threaded contexts | `Database` caches a single connection with `check_same_thread=False`; per D-05 HTTP contexts need connection-per-request |
-</phase_requirements>
-
-## Summary
-
-Phase 1 is a foundational bugfix and stub-removal phase. The codebase has eight well-defined issues that all stem from early scaffolding: missing dependency declarations, inverted checksum logic, placeholder embedding implementations, hardcoded model paths, duplicate repository files, unsynchronized FTS5 tables, an unconditional BM25 fallback in vector search CLI, and unsafe SQLite connection sharing.
-
-All eight requirements have clear, bounded fixes. The primary technical decisions (triggers for FTS5, repository consolidation, sqlite-vec as a hard requirement, connection-per-request for async) are already locked from the discuss phase. Research confirms these decisions align with SQLite best practices and the existing architecture.
-
-**Primary recommendation:** Implement the locked decisions in dependency order: (1) fix `pyproject.toml` so the package installs cleanly, (2) consolidate repositories and schema, (3) fix indexing/search logic, (4) replace embedding stubs, (5) fix CLI commands to use Settings and fail fast, and (6) add connection safety for async contexts.
+| FND-01 | Fix missing runtime deps in `pyproject.toml` | Verified missing packages by AST import audit; structlog is **not** actually imported and should be excluded |
+| FND-02 | Fix checksum comparison bug (skip unchanged, update changed) | Bug found in `cli/commands/index.py` line ~108 (`!=` instead of `==`); `indexer.py` appears correct |
+| FND-03 | Replace stub/random embeddings with real `sentence-transformers` and `llama-cpp-python` loaders | Real implementations exist in `embedding/embedder.py`; factory should delegate to them after unifying `ModelType` |
+| FND-04 | Remove hardcoded model path `BAAI/bge-small-zh-v1.5`, read from Settings, allow CLI override | Hardcoded in `cli/commands/index.py` and `embedding/embedder.py`; Settings already has `model_name` |
+| FND-05 | Consolidate duplicate repository implementations (`repositories.py` vs `sqlite_repository.py`) | `sqlite_repository.py` is completely unused; `repositories.py` is the canonical concrete layer |
+| FND-06 | Fix FTS5 external content synchronization | Verified FTS5 triggers work with integer `rowid`; `BM25Searcher` join is wrong (`d.id` -> `d.rowid`); `chunks_fts` also needs triggers |
+| FND-07 | Fix vector search CLI fallback: `vsearch` must not silently fall back to BM25 | `VectorSearcher` has `_search_fallback` to remove; `vsearch_cmd` unconditionally falls back; `HybridSearcher` catches and ignores vector errors |
+| FND-08 | Improve SQLite connection safety across async/multi-threaded ops | Verified `check_same_thread=False` still races; `DatabaseConnection.connect()` per-request is safe; MCP server reuses cached `Database` |
 
 ## Standard Stack
 
 ### Core
+
 | Library | Version | Purpose | Why Standard |
 |---------|---------|---------|--------------|
-| `click` | >=8.0.0 | CLI framework | Already integrated; stable, well-documented [VERIFIED: codebase] |
-| `pydantic` | >=2.0 | Config models | Used by `Settings` class [VERIFIED: codebase] |
-| `pydantic-settings` | >=2.0 | Env-var / `.env` loading | Required by `config/settings.py` [VERIFIED: codebase] |
-| `rich` | >=13.0.0 | Terminal formatting | Powers tables and progress bars [VERIFIED: codebase] |
-| `python-frontmatter` | >=1.0.0 | Markdown YAML frontmatter parsing | Used in parser [VERIFIED: codebase] |
-| `platformdirs` | >=4.0.0 | Cross-platform data/cache directories | Used for DB/cache paths [VERIFIED: codebase] |
-| `sqlite-vec` | >=0.1.9 | Vector similarity in SQLite | Verified latest on PyPI; required for vector search [VERIFIED: pip index versions] |
-| `structlog` | >=25.0.0 | Structured logging | Referenced in `utils/logging.py` patterns [VERIFIED: pip index versions] |
-| `watchdog` | >=6.0.0 | File system events | Referenced in project scope [VERIFIED: pip index versions] |
-| `fastapi` | >=0.131.0 | MCP HTTP transport | Runtime import in `mcp_server/transport.py` [VERIFIED: pip index versions] |
-| `uvicorn` | >=0.41.0 | ASGI server | Runtime import for HTTP mode [VERIFIED: pip index versions] |
-| `numpy` | >=1.24.0 | Vector math | Required by sentence-transformers and sqlite-vec [VERIFIED: codebase] |
+| Python | 3.12 (dev env) / 3.9+ (target) | Runtime | Project already targets 3.9+ syntax |
+| `click` | >=8.0.0 | CLI framework | Already integrated; stable |
+| `rich` | >=13.0.0 | Terminal output | Already integrated |
+| `pydantic` | >=2.0.0 | Config validation | `Settings` already uses Pydantic v2 |
+| `pydantic-settings` | >=2.0.0 | Env-var loading | Already used in `config/settings.py` |
+| `sqlite-vec` | >=0.1.9 | Vector search in SQLite | Verified installable; requires `conn.enable_load_extension(True)` before `sqlite_vec.load(conn)` |
+| `numpy` | >=1.24.0 | Vector math | Required by embedding code directly and transitively |
+| `platformdirs` | >=3.0.0 | Cross-platform paths | Already used for default DB/cache dirs |
+| `fastapi` | >=0.100.0 | MCP HTTP transport | Already used in `mcp/server_http.py` |
+| `uvicorn` | >=0.20.0 | ASGI server | Already used in `mcp/server_http.py` |
+| `watchdog` | >=3.0.0 | File watching | Imported in `indexing/watcher.py` |
+| `python-frontmatter` | >=1.0.0 | Markdown YAML parsing | Already declared; provides `frontmatter` module |
 
 ### Optional / Heavy
+
 | Library | Version | Purpose | When to Use |
 |---------|---------|---------|-------------|
-| `sentence-transformers` | >=2.2.0 (recommend >=5.4.0) | Default embedding backend | Optional extra `[embed]` [VERIFIED: pip index versions] |
-| `llama-cpp-python` | >=0.3.20 | GGUF local embedding + reranking | Optional extra `[llm]` [VERIFIED: pip index versions] |
+| `sentence-transformers` | >=2.2.0 | Default embedding backend | User installs `[embed]` extra |
+| `llama-cpp-python` | >=0.3.20 | GGUF local embeddings | User installs `[llm]` extra |
+| `modelscope` | >=1.0.0 | China HF mirror downloads | User installs `[modelscope]` extra |
 
-### Installation
+**Installation:**
 ```bash
-# Core runtime
-pip install -e .
-
-# With optional embedding backends
-pip install -e ".[embed,llm]"
+pip install -e ".[dev]"
 ```
+
+**Version verification performed:**
+- `sqlite-vec` 0.1.9 installed and verified KNN search works [VERIFIED: local install]
+- `sentence-transformers` 5.2.3 available in environment [VERIFIED: local import]
+- `pydantic` 2.12.5 available [VERIFIED: local import]
+- `fastapi` 0.131.0, `uvicorn` 0.41.0 available [VERIFIED: local import]
+- `numpy` 2.4.4 available [VERIFIED: local import]
 
 ## Architecture Patterns
 
-### Recommended Change Sequence
+### System Architecture Diagram
+
 ```
-1. pyproject.toml dependencies
-2. database/schema.py (triggers + FTS5 external content)
-3. database/repositories.py (consolidation)
-4. delete sqlite_repository.py
-5. embedding/factory.py (real implementations)
-6. cli/commands/index.py (checksum fix + Settings-driven model)
-7. cli/commands/search.py (vsearch fail-fast)
-8. database/database.py (async connection safety)
+User CLI / MCP HTTP Request
+        |
+        v
++-------------------+     +-------------------+
+|  CLI Commands     |     |  MCP Server       |
+|  (index, search)  |     |  (per-request conn)|
++---------+---------+     +---------+---------+
+          |                         |
+          v                         v
++---------+-------------------------+---------+
+|           Database Layer                    |
+|  Database (CLI, cached conn)                |
+|  DatabaseConnection (async/thread-safe)     |
++---------+-----------------------------------+
+          |
+          v
++---------+-------------------------+---------+
+|           SchemaManager                     |
+|  - tables, indexes, FTS5 triggers           |
+|  - vec0 virtual tables (configurable dim)   |
++---------+-----------------------------------+
+          |
+          +----------------+----------------+
+          |                                 |
+          v                                 v
++-------------------+             +-------------------+
+|  BM25Searcher     |             |  VectorSearcher   |
+|  (FTS5 + triggers)|             |  (sqlite-vec KNN) |
++---------+---------+             +---------+---------+
+          |                                 |
+          +----------------+----------------+
+                             |
+                             v
+                    +-------------------+
+                    |  HybridSearcher   |
+                    |  (BM25 + Vector   |
+                    |   + RRF fusion)   |
+                    +-------------------+
 ```
 
-### Pattern 1: FTS5 External Content Tables with Triggers
-**What:** Create FTS5 virtual tables using `content='documents', content_rowid='id'`, then maintain them with `AFTER INSERT/UPDATE/DELETE` triggers on the source tables.
-**When to use:** Any time FTS5 must stay synchronized with a main table without application-level bookkeeping.
-**Example:**
-```sql
--- Source: SQLite FTS5 documentation best practice
-CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(
-    content,
-    tokenize='porter',
-    content='documents',
-    content_rowid='id'
-);
+### Recommended Project Structure
 
-CREATE TRIGGER IF NOT EXISTS documents_fts_insert
-AFTER INSERT ON documents
-BEGIN
-    INSERT INTO documents_fts(rowid, content)
-    VALUES (NEW.id, NEW.content);
-END;
+No reorganization needed. The existing structure is sound:
 
-CREATE TRIGGER IF NOT EXISTS documents_fts_update
-AFTER UPDATE ON documents
-BEGIN
-    INSERT INTO documents_fts(documents_fts, rowid, content)
-    VALUES ('delete', OLD.id, OLD.content);
-    INSERT INTO documents_fts(rowid, content)
-    VALUES (NEW.id, NEW.content);
-END;
-
-CREATE TRIGGER IF NOT EXISTS documents_fts_delete
-AFTER DELETE ON documents
-BEGIN
-    INSERT INTO documents_fts(documents_fts, rowid, content)
-    VALUES ('delete', OLD.id, OLD.content);
-END;
 ```
-**Important:** When using `content=` and `content_rowid=`, the `rowid` in the FTS table corresponds to the source table's `id` column. You must explicitly include `rowid` in `INSERT` statements to avoid mismatches [CITED: .planning/research/PITFALLS.md Pitfall 5].
+src/docsift/
+├── cli/commands/       # Click command implementations
+├── database/           # SchemaManager, repositories, connection managers
+├── embedding/          # Factory, embedder implementations, manager
+├── indexing/           # Parser, chunker, indexer
+├── search/             # BM25, vector, hybrid, RRF
+└── config/             # Pydantic Settings
+```
 
-### Pattern 2: Repository Consolidation
-**What:** Migrate any unique behavior from `sqlite_repository.py` into `repositories.py`, update all imports, then delete the legacy file.
-**When to use:** When two files implement overlapping responsibilities and one is canonical.
-**Key insight:** `sqlite_repository.py` uses an older schema (`paths` JSON list instead of `path` + `pattern`, `contexts` table instead of `path_contexts`). The canonical schema lives in `SchemaManager`, so `repositories.py` is the correct target. No meaningful logic needs to be preserved from `sqlite_repository.py`.
+### Pattern 1: Connection-Per-Request for Async Contexts
 
-### Pattern 3: Connection-Per-Request for Async/Multi-Threaded SQLite
-**What:** Instead of caching a single `sqlite3.Connection`, create a fresh connection for each request in async contexts.
-**When to use:** FastAPI/uvicorn HTTP handlers, thread pools, or any concurrent environment.
+**What:** Each async request or thread gets its own `sqlite3.Connection` via `DatabaseConnection.connect()`.
+**When to use:** MCP HTTP server, any threaded background workers.
 **Example:**
 ```python
-# In async HTTP handler
-with DatabaseConnection(db_path).connect() as conn:
-    repo = DocumentRepository(conn)
-    ...
+# Source: docsift/database/connection.py (verified behavior)
+from docsift.database.connection import DatabaseConnection
+
+def handle_request(db_path: str) -> None:
+    conn = DatabaseConnection(db_path)
+    with conn.connect() as db:
+        db.execute("SELECT ...")
 ```
-**For CLI:** Continue using `Database.transaction()` — single-threaded, context-manager is safe.
+
+### Pattern 2: Factory Delegation to Real Implementations
+
+**What:** `EmbeddingModelFactory` should instantiate the real embedder classes in `embedding/embedder.py` instead of inline stub classes.
+**When to use:** FND-03 implementation.
+**Example:**
+```python
+# Source: verified from codebase
+from docsift.embedding.embedder import SentenceTransformerEmbedder, LlamaCppEmbedder
+
+if model_type == ModelType.SENTENCE_TRANSFORMERS:
+    return SentenceTransformerEmbedder(model_name=model_name, ...)
+elif model_type == ModelType.GGUF:
+    return LlamaCppEmbedder(model_path=model_path, ...)
+```
 
 ### Anti-Patterns to Avoid
-- **FTS5 without `content=`:** Creates a second copy of all text and no automatic synchronization.
-- **`check_same_thread=False` as a concurrency fix:** It bypasses Python's guard but does not make SQLite connections thread-safe.
-- **Brute-force Python vector search:** Loading every embedding into memory scales linearly and will collapse on personal knowledge bases with tens of thousands of chunks.
-- **Random embeddings in production:** Makes vector search meaningless and hides the problem until users notice bad results.
+
+- **Caching `sqlite3.Connection` across async tasks:** `Database.connection` property caches one connection with `check_same_thread=False`. Verified under threaded load it produces `bad parameter or other API misuse` errors.
+- **FTS5 `rowid` = TEXT column:** `documents_fts` and `chunks_fts` must use the auto-generated integer `rowid`, not `id`.
+- **Random embeddings in production:** The current factory returns `random.random()` vectors. This must be removed entirely.
+- **Two schema systems:** `SchemaManager` and `MigrationManager` define different schemas. Consolidate on `SchemaManager` per D-03.
 
 ## Don't Hand-Roll
 
 | Problem | Don't Build | Use Instead | Why |
 |---------|-------------|-------------|-----|
-| FTS5 synchronization | Application-level bookkeeping | SQLite triggers + `content=` / `content_rowid=` | Triggers are atomic, zero maintenance, and officially supported |
-| Vector similarity search | Brute-force Python cosine loops | `sqlite-vec` extension | SQLite-native, same DB file, handles serialization and memory |
-| Dependency management | Manual `requirements.txt` only | `pyproject.toml` `[project] dependencies` + `[project.optional-dependencies]` | Standard Python packaging, installable via `pip install -e .` |
-| Settings loading | Custom `os.environ` parsing | `pydantic-settings` | Already used, validates types, loads `.env` automatically |
+| Vector similarity search | Brute-force Python cosine loop over all rows | `sqlite-vec` KNN inside SQLite | O(N) memory/CPU scaling; sqlite-vec is tested and supports `MATCH` + `ORDER BY distance` |
+| FTS5 synchronization | Application-level manual INSERT/UPDATE/DELETE mirroring | SQLite `AFTER INSERT/UPDATE/DELETE` triggers | Triggers are atomic with the parent transaction and cannot be forgotten |
+| Embedding model loading | Custom download/cache logic for HF models | `sentence_transformers.SentenceTransformer` | Handles caching, device selection, batching, normalization automatically |
+| GGUF embedding | Raw `llama.cpp` C bindings | `llama-cpp-python` | Canonical Python binding; provides `Llama.embed()` with numpy output |
+| SQLite connection pooling for reads | Complex custom pool | `DatabaseConnection.connect()` context manager + one write connection | SQLite write serialization makes fancy pools unnecessary; simple per-request connections are sufficient |
 
-**Key insight:** The current codebase already has stubs and fallbacks that were reasonable during scaffolding but are now technical debt. The fixes are all "use the real thing that was already planned."
+**Key insight:** The existing codebase already contains correct implementations for `SentenceTransformerEmbedder` and `LlamaCppEmbedder` in `embedding/embedder.py`. The factory's job is to route to them, not reimplement them.
+
+## Runtime State Inventory
+
+| Category | Items Found | Action Required |
+|----------|-------------|-----------------|
+| Stored data | Existing SQLite DBs may lack FTS5 triggers and have `documents_fts` without `content=` / `content_rowid=` | Schema migration: drop/recreate FTS5 virtual tables, add triggers, rebuild index |
+| Live service config | None — MCP server is not running | None |
+| OS-registered state | None | None |
+| Secrets/env vars | None affected | None |
+| Build artifacts | `sqlite_repository.py` stale module; `__pycache__` will regenerate | Delete `sqlite_repository.py` |
+
+**Nothing found in category:** Live service config, OS-registered state, Secrets/env vars.
 
 ## Common Pitfalls
 
-### Pitfall 1: Inverted Checksum Condition
-**What goes wrong:** `if existing.checksum != parsed.checksum and not force: skip` skips changed documents unless `--force` is passed.
-**Why it happens:** A logic inversion during initial implementation.
+### Pitfall 1: Inverted Checksum Condition Skips Changed Documents
+**What goes wrong:** `cli/commands/index.py` uses `if existing.checksum != parsed.checksum and not force: skip`. This skips files that changed unless `--force` is passed.
+**Why it happens:** The boolean logic was inverted during development.
 **How to avoid:** Change to `if existing.checksum == parsed.checksum and not force: skip`.
-**Warning signs:** Running `docsift index update` without `--force` never updates existing documents.
-**Locations found:** `src/docsift/cli/commands/index.py:108` and `src/docsift/indexing/indexer.py:163` [VERIFIED: codebase audit].
+**Warning signs:** `update` command reports "Unchanged" for files that were just edited.
 
-### Pitfall 2: FTS5 `rowid` Mismatch
-**What goes wrong:** Inserting into an external-content FTS5 table without specifying `rowid` causes SQLite to auto-generate a rowid that does not match the source table's primary key.
-**Why it happens:** Developers treat FTS5 inserts like regular table inserts.
-**How to avoid:** Always include `rowid` explicitly: `INSERT INTO documents_fts(rowid, content) VALUES (NEW.id, NEW.content)`.
-**Warning signs:** BM25 queries return empty results even though documents exist.
+### Pitfall 2: TEXT `id` Used as FTS5 `rowid`
+**What goes wrong:** `chunks_fts` inserts use `chunk.id` (TEXT) as `rowid`, causing `sqlite3.IntegrityError: datatype mismatch`. `BM25Searcher` joins `fts.rowid = d.id` instead of `fts.rowid = d.rowid`.
+**Why it happens:** SQLite auto-generates an integer `rowid` even when the primary key is TEXT, but the code assumed `rowid == id`.
+**How to avoid:** Always use `rowid` for FTS5 external content tables and triggers. Join on `fts.rowid = documents.rowid`.
+**Warning signs:** FTS5 searches return empty results or raise `datatype mismatch`.
 
-### Pitfall 3: sqlite-vec Extension Loading Failures
-**What goes wrong:** `load_extension("vec0")` fails on some systems because the library path differs or the extension is not installed.
-**Why it happens:** `sqlite-vec` is a C extension; the Python package installs the shared library but SQLite's load path may not find it.
-**How to avoid:** Use `sqlite_vec.load(conn)` (provided by the `sqlite-vec` Python package) instead of manual `enable_load_extension` + `load_extension` paths. This handles platform-specific paths automatically [ASSUMED: based on sqlite-vec Python package conventions].
-**Warning signs:** `sqlite3.OperationalError: no such module: vec0` even after `pip install sqlite-vec`.
+### Pitfall 3: `sqlite-vec` Import at Top Level Breaks All Imports
+**What goes wrong:** `database/connection.py` imports `sqlite_vec` unconditionally. `database/__init__.py` re-exports `DatabaseConnection`, so any import from `docsift.database` fails when `sqlite-vec` is not installed.
+**Why it happens:** Heavy dependency was treated as optional but wired into the package init path.
+**How to avoid:** Add `sqlite-vec` to `[project.dependencies]` so it is always present, or make the import lazy inside `_create_connection()`.
+**Warning signs:** `pip install -e .` followed by `python -m docsift --help` raises `ModuleNotFoundError`.
 
-### Pitfall 4: Placeholder Embeddings Silently Returning Garbage
-**What goes wrong:** `factory.py` returns `random.random()` embeddings for sentence-transformers and GGUF paths.
-**Why it happens:** Heavy dependencies were stubbed during early development.
-**How to avoid:** Implement real `SentenceTransformer(model_id).encode(...)` and `llama_cpp.Llama(...)` embedding calls. Gate unimplemented backends behind a clear `NotImplementedError` or `ValueError`.
-**Warning signs:** Vector search returns results but semantic similarity is nonsensical.
+### Pitfall 4: Vector Search Python Fallback Collapses at Scale
+**What goes wrong:** `VectorSearcher._search_fallback()` `SELECT`s every embedding, deserializes all vectors into Python lists, and computes cosine similarity in a loop.
+**Why it happens:** Developer wanted the system to work without `sqlite-vec`.
+**How to avoid:** Remove the fallback entirely. If `sqlite-vec` is unavailable, raise `RuntimeError` with a clear message.
+**Warning signs:** `vsearch` latency grows linearly with document count; RSS spikes proportionally.
 
-### Pitfall 5: `vsearch` CLI Always Falling Back to BM25
-**What goes wrong:** `vsearch_cmd` unconditionally prints a warning and calls `search_cmd` (BM25), even if embeddings exist.
-**Why it happens:** The command was scaffolded before the embedder integration was complete.
-**How to avoid:** Load the embedder via `EmbeddingManager`, generate a query embedding, and call `VectorSearcher.search()`. If `sqlite-vec` is unavailable, raise `click.ClickException` with a clear message instead of falling back.
-
-### Pitfall 6: Duplicate Repository Files Causing Schema Drift
-**What goes wrong:** `sqlite_repository.py` and `repositories.py` use different schemas and different model imports. Fixes in one do not apply to the other.
-**Why it happens:** A refactoring started a new repository layer but the old one was never deleted.
-**How to avoid:** Delete `sqlite_repository.py` as soon as `repositories.py` covers all needed operations. Update any remaining imports.
+### Pitfall 5: MCP Server Shares Cached SQLite Connection Across Async Requests
+**What goes wrong:** `mcp/server.py` creates one `Database(index_path)` at startup and holds it. `mcp/server_http.py` creates one `MCPServer` and reuses it for all FastAPI requests.
+**Why it happens:** `Database` was designed for single-threaded CLI usage.
+**How to avoid:** Refactor MCP tool handlers to create a new `DatabaseConnection.connect()` inside each handler, or pass a connection factory.
+**Warning signs:** Intermittent `sqlite3.ProgrammingError` under concurrent HTTP load.
 
 ## Code Examples
 
-### FTS5 Trigger Setup in SchemaManager
-```python
-# Source: SQLite FTS5 documentation + codebase patterns
-class SchemaManager:
-    ...
-    def _create_fts_tables(self) -> None:
-        self.db.execute("""
-            CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(
-                content,
-                tokenize='porter',
-                content='documents',
-                content_rowid='id'
-            )
-        """)
-        self.db.execute("""
-            CREATE TRIGGER IF NOT EXISTS documents_fts_insert
-            AFTER INSERT ON documents
-            BEGIN
-                INSERT INTO documents_fts(rowid, content)
-                VALUES (NEW.id, NEW.content);
-            END
-        """)
-        self.db.execute("""
-            CREATE TRIGGER IF NOT EXISTS documents_fts_update
-            AFTER UPDATE ON documents
-            BEGIN
-                INSERT INTO documents_fts(documents_fts, rowid, content)
-                VALUES ('delete', OLD.id, OLD.content);
-                INSERT INTO documents_fts(rowid, content)
-                VALUES (NEW.id, NEW.content);
-            END
-        """)
-        self.db.execute("""
-            CREATE TRIGGER IF NOT EXISTS documents_fts_delete
-            AFTER DELETE ON documents
-            BEGIN
-                INSERT INTO documents_fts(documents_fts, rowid, content)
-                VALUES ('delete', OLD.id, OLD.content);
-            END
-        """)
-        # Same pattern for chunks_fts -> document_chunks
+### FTS5 External Content Table with Triggers
+
+```sql
+-- Source: verified with SQLite 3.47.2 local test
+CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(
+    content,
+    content='documents',
+    content_rowid='rowid',
+    tokenize='porter'
+);
+
+CREATE TRIGGER IF NOT EXISTS documents_fts_insert
+AFTER INSERT ON documents
+BEGIN
+    INSERT INTO documents_fts(rowid, content) VALUES (new.rowid, new.content);
+END;
+
+CREATE TRIGGER IF NOT EXISTS documents_fts_update
+AFTER UPDATE ON documents
+BEGIN
+    UPDATE documents_fts SET content = new.content WHERE rowid = old.rowid;
+END;
+
+CREATE TRIGGER IF NOT EXISTS documents_fts_delete
+AFTER DELETE ON documents
+BEGIN
+    DELETE FROM documents_fts WHERE rowid = old.rowid;
+END;
 ```
 
-### Real Sentence-Transformers Factory Implementation
+### sqlite-vec Insert and KNN Query
+
 ```python
-# Source: sentence-transformers docs + codebase model.py protocol
-class STModel(EmbeddingModel):
-    def __init__(self, name: str, **kwargs):
-        super().__init__(
-            model_id=name,
-            embedding_dim=kwargs.get("embedding_dim", 384),
-            max_tokens=kwargs.get("max_tokens", 512),
-        )
-        self._model: Any | None = None
-        self._batch_size = kwargs.get("batch_size", 32)
+# Source: verified local test with sqlite-vec 0.1.9
+import sqlite3
+import sqlite_vec
 
-    def load(self) -> None:
-        from sentence_transformers import SentenceTransformer
-        self._model = SentenceTransformer(self._model_id)
-        self._loaded = True
+conn = sqlite3.connect(path)
+conn.enable_load_extension(True)
+sqlite_vec.load(conn)
+conn.enable_load_extension(False)
 
-    def embed(self, texts: list[str], normalize: bool = True) -> list[list[float]]:
-        if self._model is None:
-            raise RuntimeError("Model not loaded")
-        embeddings = self._model.encode(
-            texts,
-            normalize_embeddings=normalize,
-            batch_size=self._batch_size,
-            show_progress_bar=False,
-        )
-        return [e.tolist() for e in embeddings]
+conn.execute("""
+    CREATE VIRTUAL TABLE IF NOT EXISTS embeddings USING vec0(
+        embedding_id TEXT PRIMARY KEY,
+        document_id TEXT NOT NULL,
+        chunk_id TEXT,
+        embedding FLOAT[384]
+    )
+""")
+
+conn.execute(
+    "INSERT INTO embeddings(embedding_id, document_id, chunk_id, embedding) VALUES (?, ?, ?, vec_f32(?))",
+    ("e1", "d1", "c1", "[0.1, 0.2, 0.3, 0.4]")
+)
+
+rows = conn.execute(
+    "SELECT embedding_id, distance FROM embeddings WHERE embedding MATCH ? ORDER BY distance LIMIT ?",
+    ("[0.1, 0.2, 0.3, 0.4]", 5)
+).fetchall()
 ```
 
-### Connection-Per-Request for Async Contexts
-```python
-# Source: Python sqlite3 best practices + project decisions
-from docsift.database.database import DatabaseConnection
+### Sentence-Transformers Encode with Explicit Batch Size
 
-def handle_request(db_path: Path):
-    with DatabaseConnection(db_path).connect() as conn:
-        repo = DocumentRepository(conn)
-        ...
-```
-
-### Correct Checksum Logic
 ```python
-# Source: codebase audit + PITFALLS.md
-if existing.checksum == checksum and not force:
-    logger.debug(f"File unchanged, skipping: {file_path}")
-    return IndexStatus.SKIPPED
+# Source: sentence-transformers source inspection (5.2.3)
+from sentence_transformers import SentenceTransformer
+
+model = SentenceTransformer(model_name)
+embeddings = model.encode(
+    texts,
+    batch_size=16,
+    normalize_embeddings=True,
+    show_progress_bar=False,
+)
 ```
 
 ## State of the Art
 
 | Old Approach | Current Approach | When Changed | Impact |
 |--------------|------------------|--------------|--------|
-| Brute-force Python vector fallback | `sqlite-vec` hard requirement | Phase 1 (now) | Eliminates O(N) memory scaling; requires extension install |
+| Brute-force Python vector search | `sqlite-vec` hard requirement | Phase 1 (now) | Eliminates O(N) memory scaling; requires extension install |
 | Random embedding stubs | Real `sentence-transformers` / `llama-cpp-python` | Phase 1 (now) | Vector search becomes semantically meaningful |
-| FTS5 without triggers | External content tables + triggers | Phase 1 (now) | BM25 stays synchronized automatically |
+| FTS5 standalone tables | External content tables + triggers | Phase 1 (now) | BM25 stays synchronized automatically |
 | `sqlite_repository.py` | Unified `repositories.py` | Phase 1 (now) | Single source of truth for DB access |
 
 **Deprecated/outdated:**
-- `sqlite_repository.py`: Old schema, redundant with `repositories.py` — delete it.
-- `VectorSearcher._search_fallback()`: Brute-force Python loop — remove it.
+- `sqlite_repository.py`: Completely unused; schema is stale and incompatible with current `SchemaManager`. Delete per D-02.
+- `VectorSearcher._search_fallback()`: Loads all embeddings into memory. Remove per D-06/D-07.
 - Hardcoded `BAAI/bge-small-zh-v1.5` in `embed_cmd`: Use `Settings.model_name` instead.
 
 ## Assumptions Log
 
 | # | Claim | Section | Risk if Wrong |
 |---|-------|---------|---------------|
-| A1 | `sqlite_vec.load(conn)` is the recommended cross-platform way to load the extension | Standard Stack / Pitfalls | If wrong, manual path probing in `database.py` can be kept, but it is brittle |
-| A2 | No production code outside the repo imports `sqlite_repository.py` | Architecture Patterns | If wrong, deleting it will break external consumers; a grep should be run before deletion |
+| A1 | `structlog` is not imported anywhere in `src/docsift/` and should not be added to `pyproject.toml` | Standard Stack / FND-01 | If the user intended structlog to be added, it would be an unused dependency; low risk |
+| A2 | `llama-cpp-python` batch embedding regression (post-v0.3.14) means we should process one text at a time for GGUF | Don't Hand-Roll | If fixed in newer versions, single-text loop is slightly slower but still correct; low risk |
+| A3 | Existing databases with `documents_fts` created without `content=` can be safely dropped and recreated because no other tables reference the FTS5 virtual table | Runtime State Inventory | FTS5 data will be lost but can be rebuilt from triggers + reindex; acceptable for local-first tool |
 
 ## Open Questions
 
-1. **Migration path for existing databases without triggers**
-   - What we know: D-01 says triggers must be created in `SchemaManager`. Existing user databases will lack them.
-   - What's unclear: Should `init_schema()` detect missing triggers and add them, or should there be an explicit migration command?
-   - Recommendation: Add trigger creation defensively in `SchemaManager.create_all()` using `CREATE TRIGGER IF NOT EXISTS`. Existing databases will get triggers on the next schema init or explicit `docsift cleanup` / re-index.
+1. **Migration path for existing DBs with wrong `documents_fts` configuration**
+   - What we know: `DROP TABLE documents_fts` is safe; triggers will repopulate on subsequent document operations, but existing documents won't be indexed until reindexed.
+   - What's unclear: Should the plan include an explicit `REINDEX` or full reindex command?
+   - Recommendation: Add a one-time migration step in `SchemaManager` that drops/recreates FTS5 tables and runs `INSERT INTO documents_fts(rowid, content) SELECT rowid, content FROM documents` for seeding.
 
-2. **Exact `sqlite-vec` error message wording**
-   - What we know: D-07 leaves wording to discretion.
-   - What's unclear: None — implement a concise, actionable message.
-   - Recommendation: `click.ClickException("sqlite-vec is required for vector search but could not be loaded. Install it with: pip install sqlite-vec")`
+2. **`ModelType` unification strategy**
+   - What we know: `embedding/model.py` uses `Enum(auto())`; `models/embedding.py` uses `str, Enum`.
+   - What's unclear: Which one should be the canonical type?
+   - Recommendation: Use the `str, Enum` from `models/embedding.py` because it serializes cleanly to JSON/Pydantic, and update `embedding/model.py` and `embedding/factory.py` to match.
 
 ## Environment Availability
 
 | Dependency | Required By | Available | Version | Fallback |
 |------------|------------|-----------|---------|----------|
 | Python | Runtime | ✓ | 3.12.8 | — |
-| SQLite | Database + FTS5 | ✓ | 3.47.2 | — |
-| pytest | Testing | ✓ | 9.0.2 | — |
-| ruff | Linting/formatting | ✓ | 0.15.9 | — |
-| mypy | Type checking | ✓ | 1.20.0 | — |
-| sqlite-vec | Vector search | ✓ | 0.1.9 | None (hard requirement) |
-| sentence-transformers | Embeddings | ✓ | 5.2.3 installed, 5.4.0 latest | Optional extra |
+| SQLite | FTS5 + sqlite-vec | ✓ | 3.47.2 | — |
+| pytest | Tests | ✓ | 9.0.2 | — |
+| ruff | Lint/format | ✓ | 0.15.9 | — |
+| mypy | Type check | ✓ | 1.20.0 | — |
+| sentence-transformers | FND-03 real embeddings | ✓ | 5.2.3 | — |
+| sqlite-vec | FND-06/FND-07 vector search | ✗ (not in venv deps) | — | Must add to `pyproject.toml` and install |
+| llama-cpp-python | FND-03 GGUF path | ✗ | — | Optional extra; plan can skip runtime verification |
+| pydantic | Settings | ✓ | 2.12.5 | — |
+| pydantic-settings | Settings | ✓ | (bundled) | — |
+| fastapi | MCP HTTP | ✓ | 0.131.0 | — |
+| uvicorn | MCP HTTP | ✓ | 0.41.0 | — |
+| platformdirs | Default paths | ✓ | 4.9.4 | — |
+| watchdog | File watcher | ✗ | — | Must add to `pyproject.toml` and install |
+| python-frontmatter | Parser | ✗ | — | Already declared; install issue is local env only |
 
 **Missing dependencies with no fallback:**
-- None — all core tools are present.
+- `sqlite-vec` — blocks all imports from `docsift.database` because `connection.py` imports it at top level
+- `watchdog` — imported by `indexing/watcher.py`
 
 **Missing dependencies with fallback:**
-- None.
+- `llama-cpp-python` — optional extra per D-09; GGUF path can raise clear error if not installed
 
 ## Validation Architecture
 
 ### Test Framework
+
 | Property | Value |
 |----------|-------|
 | Framework | pytest 9.0.2 |
 | Config file | `pyproject.toml` `[tool.pytest.ini_options]` |
-| Quick run command | `pytest tests/unit -x` |
+| Quick run command | `pytest tests/unit/test_X.py -x` |
 | Full suite command | `pytest` |
 
 ### Phase Requirements → Test Map
+
 | Req ID | Behavior | Test Type | Automated Command | File Exists? |
 |--------|----------|-----------|-------------------|-------------|
-| FND-01 | Package installs without `ModuleNotFoundError` | smoke | `python -m docsift --help` in fresh venv | ❌ Wave 0 |
-| FND-02 | Changed documents are updated, unchanged are skipped | unit | `pytest tests/unit/cli/test_index_commands.py -x` | ✅ |
-| FND-03 | Factory loads real models and returns non-random embeddings | unit | `pytest tests/unit/inference/test_embedder.py -x` | ✅ |
-| FND-04 | CLI `embed` uses Settings model name, not hardcoded path | unit/integration | `pytest tests/unit/cli/test_index_commands.py -x` | ✅ |
-| FND-05 | Only one repository file exists; `sqlite_repository.py` deleted | smoke | `test -f src/docsift/database/sqlite_repository.py` (should fail) | ❌ Wave 0 |
-| FND-06 | Inserting a document makes it findable via BM25 | integration | `pytest tests/integration/test_index_and_search.py -x` | ✅ |
-| FND-07 | `vsearch` without sqlite-vec raises error instead of falling back | unit/e2e | `pytest tests/unit/cli/test_search_commands.py -x` | ✅ |
-| FND-08 | Concurrent HTTP requests do not trigger SQLite thread errors | integration | New async stress test | ❌ Wave 0 |
+| FND-01 | `pip install -e .` succeeds and `docsift --help` runs | smoke | `python -m docsift --help` | ❌ Wave 0 |
+| FND-02 | Changed documents are updated, unchanged are skipped | unit | `pytest tests/unit/cli/test_index_commands.py -x` | ⚠️ exists but tests old API |
+| FND-03 | Factory returns real embeddings (not random) | unit | `pytest tests/unit/inference/test_embedder.py -x` | ⚠️ tests abstract interface only |
+| FND-04 | CLI `--model` overrides Settings model name | unit | `pytest tests/unit/cli/test_index_commands.py -x` | ❌ no such test exists |
+| FND-05 | `sqlite_repository.py` deleted, imports still work | smoke | `python -c "import docsift.database.repositories"` | ❌ Wave 0 |
+| FND-06 | BM25 returns results for newly inserted documents | integration | `pytest tests/integration/test_index_and_search.py -x` | ✅ exists |
+| FND-07 | `vsearch` raises error when embedder unavailable | unit | `pytest tests/unit/cli/test_search_commands.py -x` | ❌ no such test exists |
+| FND-08 | Concurrent MCP requests do not crash | integration | custom threaded test | ❌ Wave 0 |
 
 ### Sampling Rate
-- **Per task commit:** `pytest tests/unit -x`
+
+- **Per task commit:** `pytest tests/unit/test_relevant.py -x`
 - **Per wave merge:** `pytest`
 - **Phase gate:** Full suite green before `/gsd-verify-work`
 
 ### Wave 0 Gaps
-- [ ] Fresh-venv smoke test for `FND-01` — can be a simple shell assertion in CI or a temporary venv test
-- [ ] File-deletion smoke test for `FND-05`
-- [ ] Async SQLite stress test for `FND-08`
-- [ ] Update `tests/unit/db/test_repositories.py` if schema changes affect fixtures
 
-*(If no gaps: "None — existing test infrastructure covers all phase requirements")*
+- [ ] `tests/unit/cli/test_index_commands.py` — needs update for current `DocumentIndexer` API
+- [ ] `tests/unit/cli/test_search_commands.py` — needs tests for `vsearch` fail-fast behavior
+- [ ] `tests/unit/search/test_vector.py` — imports `VectorSearchStrategy` (does not exist; should be `VectorSearcher`)
+- [ ] `tests/conftest.py` — blocked by `sqlite_vec` import until FND-01 fixes dependencies
+- [ ] `tests/unit/db/test_database.py` — verify if it covers `DatabaseConnection` per-request safety
 
 ## Security Domain
 
@@ -392,40 +422,39 @@ if existing.checksum == checksum and not force:
 
 | ASVS Category | Applies | Standard Control |
 |---------------|---------|-----------------|
-| V2 Authentication | No | Not in scope for this phase |
-| V3 Session Management | No | Not in scope for this phase |
-| V4 Access Control | No | Local single-user tool |
-| V5 Input Validation | Yes | Parameterized queries already used; verify no f-string interpolation for user values |
-| V6 Cryptography | No | Checksum uses SHA-256 (standard) |
+| V2 Authentication | no | — |
+| V3 Session Management | no | — |
+| V4 Access Control | no | — |
+| V5 Input Validation | yes | Sanitize FTS5 `MATCH` terms; use parameterized queries (`?` placeholders) for all SQL values |
+| V6 Cryptography | no | — |
 
-### Known Threat Patterns for This Stack
+### Known Threat Patterns for Stack
 
 | Pattern | STRIDE | Standard Mitigation |
 |---------|--------|---------------------|
-| SQL injection via f-string query building | Tampering | Use `?` placeholders for all values; sanitize FTS5 `MATCH` terms [CITED: PITFALLS.md] |
-| SQLite connection sharing across threads | Denial of Service | Connection-per-request in async contexts [CITED: PITFALLS.md] |
+| SQL injection via f-string query building | Tampering | Use `?` placeholders for values; validate identifiers against whitelist if dynamically interpolated |
+| FTS5 `MATCH` term injection | Tampering | Escape/sanitize user query terms before passing to SQLite FTS5; reject unmatched quotes |
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- Codebase audit of `src/docsift/cli/commands/index.py`, `search.py`, `embedding/factory.py`, `database/schema.py`, `database/repositories.py`, `database/sqlite_repository.py`, `database/database.py`, `indexing/indexer.py` [VERIFIED: direct file reads]
-- `.planning/research/PITFALLS.md` — known pitfalls for FTS5, SQLite threading, placeholder embeddings [CITED: project research doc]
-- `.planning/research/STACK.md` — recommended library versions [CITED: project research doc]
-- `pip index versions` output for `sqlite-vec`, `sentence-transformers`, `llama-cpp-python`, `pydantic-settings`, `structlog`, `platformdirs`, `fastapi`, `uvicorn`, `watchdog` [VERIFIED: tool execution]
+- Codebase audit of `src/docsift/` — direct file reads of schema, search, embedding, CLI, and database modules
+- Local verification — SQLite 3.47.2 FTS5 trigger behavior, `sqlite-vec` 0.1.9 KNN queries, threaded SQLite connection safety
+- `sentence-transformers` 5.2.3 source inspection — `encode()` signature and batch size parameter
 
 ### Secondary (MEDIUM confidence)
-- SQLite FTS5 external content table documentation patterns [ASSUMED: standard SQLite behavior, consistent with PITFALLS.md]
-- `sqlite-vec` Python package providing `sqlite_vec.load()` helper [ASSUMED: common pattern for loadable SQLite extensions in Python]
+- `.planning/research/PITFALLS.md` — documented pitfalls for placeholder embeddings, FTS5 desync, and SQLite threading
+- `.planning/research/STACK.md` — recommended library versions including `sqlite-vec>=0.1.9`
 
 ### Tertiary (LOW confidence)
-- None.
+- `llama-cpp-python` batch embedding regression notes from PITFALLS.md — not verified locally because package is not installed
 
 ## Metadata
 
 **Confidence breakdown:**
-- Standard stack: **HIGH** — versions verified via PyPI index
-- Architecture: **HIGH** — codebase audited directly; decisions locked in CONTEXT.md
-- Pitfalls: **HIGH** — issues are explicitly documented in PITFALLS.md and confirmed by code review
+- Standard stack: HIGH — verified via local imports and installs
+- Architecture: HIGH — direct codebase audit and SQLite behavior tests
+- Pitfalls: HIGH — reproduced threading errors and FTS5 datatype mismatch locally
 
 **Research date:** 2026-04-14
-**Valid until:** 2026-05-14 (stable stack, low churn expected)
+**Valid until:** 2026-05-14 (stable stack)
