@@ -28,7 +28,7 @@ Core indexing and search infrastructure is trustworthy and free of critical bugs
 - **D-07:** If `sqlite-vec` is unavailable, `VectorSearcher` must raise a clear runtime error rather than silently falling back to BM25 or loading all embeddings into memory.
 
 ### Dependency Strategy
-- **D-08:** Add all missing runtime dependencies to `pyproject.toml` under `dependencies` (not just dev/test). This includes `sqlite-vec`, `structlog`, `platformdirs`, `pydantic`, `pydantic-settings`, `python-frontmatter`, `watchdog`, `fastapi`, and `uvicorn`.
+- **D-08:** Add all missing runtime dependencies to `pyproject.toml` under `dependencies` (not just dev/test). This includes `sqlite-vec`, `platformdirs`, `pydantic`, `pydantic-settings`, `python-frontmatter`, `watchdog`, `fastapi`, and `uvicorn`. Exclude `structlog` because it is not imported anywhere in the codebase.
 - **D-09:** Keep `llama-cpp-python` and `sentence-transformers` as optional extras (`[embed]` or `[llm]`) because they pull in heavy native libraries.
 
 ### Claude's Discretion

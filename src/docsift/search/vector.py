@@ -10,7 +10,7 @@ from docsift.core.models import SearchOptions, SearchResult
 
 class VectorSearcher:
     """Vector similarity search using sqlite-vec or fallback."""
-    
+
     def __init__(self, db: sqlite3.Connection, embedding_dim: int = 768) -> None:
         self.db = db
         self.embedding_dim = embedding_dim
@@ -20,7 +20,7 @@ class VectorSearcher:
                 "sqlite-vec extension is not available. "
                 "Install sqlite-vec to use vector search."
             )
-    
+
     def _check_vec_extension(self) -> bool:
         """Check if sqlite-vec extension is available."""
         try:
@@ -28,7 +28,7 @@ class VectorSearcher:
             return True
         except sqlite3.OperationalError:
             return False
-    
+
     def search(
         self,
         query_embedding: List[float],
@@ -38,7 +38,7 @@ class VectorSearcher:
         if options is None:
             options = SearchOptions()
         return self._search_with_vec(query_embedding, options)
-    
+
     def _search_with_vec(
         self,
         query_embedding: List[float],
@@ -47,16 +47,16 @@ class VectorSearcher:
         """Search using sqlite-vec."""
         # Convert embedding to vec format
         embedding_str = self._embedding_to_vec(query_embedding)
-        
+
         # Build collection filter
         collection_filter = ""
         params = [embedding_str]
-        
+
         if options.collection_ids:
             placeholders = ", ".join(["?"] * len(options.collection_ids))
             collection_filter = f"AND d.collection_id IN ({placeholders})"
             params.extend(options.collection_ids)
-        
+
         sql = f"""
             SELECT 
                 d.id as document_id,
@@ -72,18 +72,18 @@ class VectorSearcher:
             LIMIT ? OFFSET ?
         """
         params.extend([options.limit, options.offset])
-        
+
         cursor = self.db.execute(sql, params)
         results = []
-        
+
         for rank, row in enumerate(cursor.fetchall(), 1):
             # Convert distance to score (lower distance = higher score)
             # Cosine distance is 0-2, convert to 0-1 score
             score = 1.0 - (row["score"] / 2.0)
-            
+
             if score < options.min_score:
                 continue
-            
+
             result = SearchResult(
                 document_id=row["document_id"],
                 title=row["title"] or "",
@@ -92,19 +92,19 @@ class VectorSearcher:
                 score=score,
                 rank=rank,
             )
-            
+
             if options.include_content:
                 result.content = self._get_document_content(row["document_id"])
-            
+
             results.append(result)
-        
+
         return results
-    
+
     def _embedding_to_vec(self, embedding: List[float]) -> str:
         """Convert embedding to sqlite-vec format."""
         # sqlite-vec expects JSON array format
         return str(embedding).replace("'", '"')
-    
+
     def _get_document_content(self, document_id: str) -> Optional[str]:
         """Get document content."""
         cursor = self.db.execute(
@@ -113,7 +113,7 @@ class VectorSearcher:
         )
         row = cursor.fetchone()
         return row[0] if row else None
-    
+
     def add_embedding(
         self,
         embedding_id: str,

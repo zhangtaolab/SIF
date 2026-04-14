@@ -21,7 +21,7 @@ Phase 01 addresses critical bugs, missing runtime dependencies, stub implementat
 - **D-05:** Async/multi-threaded contexts (e.g., MCP HTTP server) create a new `sqlite3.Connection` per request. No shared cached connections across threads or async tasks.
 - **D-06:** Make `sqlite-vec` a hard runtime requirement for vector search. Remove the brute-force Python fallback in `VectorSearcher`.
 - **D-07:** If `sqlite-vec` is unavailable, `VectorSearcher` must raise a clear runtime error rather than silently falling back to BM25 or loading all embeddings into memory.
-- **D-08:** Add all missing runtime dependencies to `pyproject.toml` under `dependencies` (not just dev/test). This includes `sqlite-vec`, `structlog`, `platformdirs`, `pydantic`, `pydantic-settings`, `python-frontmatter`, `watchdog`, `fastapi`, and `uvicorn`.
+- **D-08:** Add all missing runtime dependencies to `pyproject.toml` under `dependencies` (not just dev/test). This includes `sqlite-vec`, `platformdirs`, `pydantic`, `pydantic-settings`, `python-frontmatter`, `watchdog`, `fastapi`, and `uvicorn`. `structlog` is excluded because it is not imported anywhere.
 - **D-09:** Keep `llama-cpp-python` and `sentence-transformers` as optional extras (`[embed]` or `[llm]`) because they pull in heavy native libraries.
 
 ### Claude's Discretion
@@ -339,7 +339,7 @@ embeddings = model.encode(
 | A2 | `llama-cpp-python` batch embedding regression (post-v0.3.14) means we should process one text at a time for GGUF | Don't Hand-Roll | If fixed in newer versions, single-text loop is slightly slower but still correct; low risk |
 | A3 | Existing databases with `documents_fts` created without `content=` can be safely dropped and recreated because no other tables reference the FTS5 virtual table | Runtime State Inventory | FTS5 data will be lost but can be rebuilt from triggers + reindex; acceptable for local-first tool |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Migration path for existing DBs with wrong `documents_fts` configuration**
    - What we know: `DROP TABLE documents_fts` is safe; triggers will repopulate on subsequent document operations, but existing documents won't be indexed until reindexed.

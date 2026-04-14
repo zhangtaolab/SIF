@@ -3,17 +3,16 @@
 from __future__ import annotations
 
 import json
-from typing import Optional
 
 import click
 from rich.console import Console
-from rich.markdown import Markdown
 from rich.table import Table
 
 from docsift.core.models import SearchOptions
 from docsift.database.database import Database
 from docsift.search.bm25 import BM25Searcher
-from docsift.search.hybrid import HybridSearcher, SearchPipeline
+from docsift.search.hybrid import HybridSearcher
+
 
 console = Console()
 
@@ -96,14 +95,14 @@ def search_cmd(
 ) -> None:
     """Search documents using BM25."""
     index_path = ctx.obj["index_path"]
-    
+
     if not index_path.exists():
         console.print("[yellow]No index found. Run 'docsift update' first.[/yellow]")
         return
-    
+
     db = Database(index_path)
     db.init_schema()
-    
+
     # Build options
     options = SearchOptions(
         limit=limit,
@@ -111,7 +110,7 @@ def search_cmd(
         include_content=full,
         include_highlights=True,
     )
-    
+
     # Get collection IDs if specified
     if collection:
         with db.connection:
@@ -122,12 +121,12 @@ def search_cmd(
                 coll = repo.get_by_name(name)
                 if coll:
                     options.collection_ids.append(coll.id)
-    
+
     # Search
     with db.connection:
         searcher = BM25Searcher(db.connection)
         results = searcher.search(query, options)
-    
+
     # Output results
     if output_files:
         for r in results:
@@ -145,13 +144,13 @@ def search_cmd(
         if not results:
             console.print("[yellow]No results found.[/yellow]")
             return
-        
+
         table = Table(title=f'Search Results: "{query}"')
         table.add_column("#", style="cyan", justify="right")
         table.add_column("Score", style="green", justify="right")
         table.add_column("Title", style="yellow")
         table.add_column("Collection", style="blue")
-        
+
         for r in results:
             table.add_row(
                 str(r.rank),
@@ -159,9 +158,9 @@ def search_cmd(
                 r.title[:50] + "..." if len(r.title) > 50 else r.title,
                 r.collection_name,
             )
-        
+
         console.print(table)
-        
+
         if explain:
             console.print(f"\n[dim]Query: {query}[/dim]")
             console.print(f"[dim]Results: {len(results)}[/dim]")
@@ -188,10 +187,10 @@ def vsearch_cmd(
         return
 
     from docsift.config.settings import get_settings
-    from docsift.embedding.embedder import SentenceTransformerEmbedder
     from docsift.database.database import Database
-    from docsift.search.vector import VectorSearcher
     from docsift.database.repositories import CollectionRepository
+    from docsift.embedding.embedder import SentenceTransformerEmbedder
+    from docsift.search.vector import VectorSearcher
 
     settings = get_settings()
 
@@ -277,14 +276,14 @@ def query_cmd(
     This is the recommended search command for best results.
     """
     index_path = ctx.obj["index_path"]
-    
+
     if not index_path.exists():
         console.print("[yellow]No index found. Run 'docsift update' first.[/yellow]")
         return
-    
+
     db = Database(index_path)
     db.init_schema()
-    
+
     # Build options
     options = SearchOptions(
         limit=limit,
@@ -292,7 +291,7 @@ def query_cmd(
         include_content=full,
         include_highlights=True,
     )
-    
+
     # Get collection IDs if specified
     if collection:
         with db.connection:
@@ -303,12 +302,12 @@ def query_cmd(
                 coll = repo.get_by_name(name)
                 if coll:
                     options.collection_ids.append(coll.id)
-    
+
     # Search using hybrid approach
     with db.connection:
         searcher = HybridSearcher(db.connection)
         results = searcher.search(query, options)
-    
+
     # Output results
     if output_files:
         for r in results:
@@ -326,13 +325,13 @@ def query_cmd(
         if not results:
             console.print("[yellow]No results found.[/yellow]")
             return
-        
+
         table = Table(title=f'Hybrid Search Results: "{query}"')
         table.add_column("#", style="cyan", justify="right")
         table.add_column("Score", style="green", justify="right")
         table.add_column("Title", style="yellow")
         table.add_column("Collection", style="blue")
-        
+
         for r in results:
             table.add_row(
                 str(r.rank),
@@ -340,5 +339,5 @@ def query_cmd(
                 r.title[:50] + "..." if len(r.title) > 50 else r.title,
                 r.collection_name,
             )
-        
+
         console.print(table)

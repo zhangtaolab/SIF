@@ -1,0 +1,122 @@
+# MkDocs configuration for DocSift documentation
+site_name: DocSift Documentation
+site_description: Local AI-powered document search engine
+site_author: DocSift Team
+site_url: https://docsift.readthedocs.io
+
+docs_dir: docs
+site_dir: site
+
+# Theme configuration
+theme:
+  name: material
+  palette:
+    # Palette toggle for light mode
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    # Palette toggle for dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.tabs.link
+    - content.code.annotation
+    - content.code.copy
+  language: en
+
+# Plugins
+plugins:
+  - search
+  - minify:
+      minify_html: true
+
+# Extensions
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.details
+  - pymdownx.mark
+  - pymdownx.critic
+  - pymdownx.caret
+  - pymdownx.keys
+  - pymdownx.tilde
+  - admonition
+  - footnotes
+  - toc:
+      permalink: true
+      toc_depth: 3
+  - tables
+  - attr_list
+  - md_in_html
+  - def_list
+
+# Extra CSS
+extra_css:
+  - stylesheets/extra.css
+
+# Extra JavaScript
+extra_javascript:
+  - https://unpkg.com/tablesort@5.3.0/dist/tablesort.min.js
+  - javascripts/tablesort.js
+
+# Navigation
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Installation: installation.md
+    - Configuration: configuration.md
+    - Quick Start: quickstart.md
+  - User Guide:
+    - CLI Reference: cli-reference.md
+    - Search Algorithms: search-algorithms.md
+  - Developer Guide:
+    - Architecture: architecture.md
+    - API Reference: api-reference.md
+    - Data Models: models.md
+    - MCP Server: mcp-server.md
+    - Development: development.md
+    - Contributing: contributing.md
+  - About:
+    - Changelog: changelog.md
+
+# Extra social links
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/docsift/docsift
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/docsift/
+  version:
+    provider: mike
+
+# Copyright
+copyright: Copyright &copy; 2024 DocSift Team
+
+# Repository
+repo_name: docsift/docsift
+repo_url: https://github.com/docsift/docsift
+edit_uri: edit/main/docs/
