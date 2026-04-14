@@ -89,7 +89,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation Fix | 0/TBD | Not started | - |
+| 1. Foundation Fix | 0/6 | Planned | - |
 | 2. CLI Core Completion | 0/TBD | Not started | - |
 | 3. Embedding & Vector Search | 0/TBD | Not started | - |
 | 4. Advanced Search Pipeline | 0/TBD | Not started | - |
