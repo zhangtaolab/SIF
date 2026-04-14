@@ -31,8 +31,8 @@
 
 Plans:
 - [x] 01-01-PLAN.md — Fix missing runtime dependencies in pyproject.toml
-- [ ] 01-02-PLAN.md — Fix FTS5 synchronization and consolidate repository files
-- [ ] 01-03-PLAN.md — Fix inverted checksum comparison and remove hardcoded model path
+- [x] 01-02-PLAN.md — Fix FTS5 synchronization and consolidate repository files
+- [x] 01-03-PLAN.md — Fix inverted checksum comparison and remove hardcoded model path
 - [ ] 01-04-PLAN.md — Replace placeholder embeddings with real ST and GGUF implementations
 - [ ] 01-05-PLAN.md — Remove vector search fallback and make vsearch fail fast
 - [ ] 01-06-PLAN.md — Improve SQLite connection safety for async/multi-threaded contexts
