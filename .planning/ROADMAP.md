@@ -30,7 +30,7 @@
 
 
 Plans:
-- [ ] 01-01-PLAN.md — Fix missing runtime dependencies in pyproject.toml
+- [x] 01-01-PLAN.md — Fix missing runtime dependencies in pyproject.toml
 - [ ] 01-02-PLAN.md — Fix FTS5 synchronization and consolidate repository files
 - [ ] 01-03-PLAN.md — Fix inverted checksum comparison and remove hardcoded model path
 - [ ] 01-04-PLAN.md — Replace placeholder embeddings with real ST and GGUF implementations
