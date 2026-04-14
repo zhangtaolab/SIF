@@ -1,30 +1,44 @@
 {
   "version": "1.0",
-  "timestamp": "2026-04-14T15:08:39.216Z",
+  "timestamp": "2026-04-14T23:37:38.703Z",
   "phase": "01",
   "phase_name": "foundation-fix",
   "phase_dir": ".planning/phases/01-foundation-fix",
-  "plan": 1,
-  "task": 1,
+  "plan": 6,
+  "task": 0,
   "total_tasks": 6,
-  "status": "paused",
+  "status": "complete",
   "completed_tasks": [
-    {"id": 1, "name": "Phase 1 planning complete", "status": "done", "commit": "N/A"}
+    {"id": 1, "name": "Fix missing runtime dependencies in pyproject.toml", "status": "done", "commit": "319762e"},
+    {"id": 2, "name": "Fix FTS5 synchronization and consolidate repository files", "status": "done", "commit": "1289936"},
+    {"id": 3, "name": "Fix inverted checksum comparison and remove hardcoded model path", "status": "done", "commit": "dd8defc"},
+    {"id": 4, "name": "Replace placeholder embeddings with real ST and GGUF implementations", "status": "done", "commit": "b32ad39"},
+    {"id": 5, "name": "Remove vector search fallback and make vsearch fail fast", "status": "done", "commit": "32a6c4d"},
+    {"id": 6, "name": "Improve SQLite connection safety for async/multi-threaded contexts", "status": "done", "commit": "cc4c7d1"}
   ],
   "remaining_tasks": [
-    {"id": 1, "name": "Plan 01: Fix missing runtime dependencies in pyproject.toml", "status": "not_started"},
-    {"id": 2, "name": "Plan 02: Fix FTS5 synchronization and consolidate repository files", "status": "not_started"},
-    {"id": 3, "name": "Plan 03: Fix inverted checksum comparison and remove hardcoded model path", "status": "not_started"},
-    {"id": 4, "name": "Plan 04: Replace placeholder embeddings with real ST and GGUF implementations", "status": "not_started"},
-    {"id": 5, "name": "Plan 05: Remove vector search fallback and make vsearch fail fast", "status": "not_started"},
-    {"id": 6, "name": "Plan 06: Improve SQLite connection safety for async/multi-threaded contexts", "status": "not_started"}
+    {"id": 1, "name": "Plan Phase 2: CLI Core Completion", "status": "not_started"}
   ],
   "blockers": [],
   "human_actions_pending": [],
   "decisions": [
-    {"decision": "Phase 1 planning completed with 6 executable plans", "rationale": "All 8 requirements (FND-01 through FND-08) are covered across 6 waves", "phase": "01"}
+    {"decision": "FTS5 synchronization uses SQLite triggers on external content tables", "rationale": "Eliminates manual FTS sync and keeps virtual tables automatically consistent", "phase": "01"},
+    {"decision": "sqlite_repository.py deleted, all access consolidated into repositories.py", "rationale": "Removes stale duplicate code and unifies repository pattern", "phase": "01"},
+    {"decision": "Vector search fails fast with RuntimeError when sqlite-vec is unavailable", "rationale": "Silent BM25 fallback masked configuration problems", "phase": "01"},
+    {"decision": "MCP server uses connection-per-request via DatabaseConnection", "rationale": "Prevents ProgrammingError from shared connection reuse across threads/async tasks", "phase": "01"},
+    {"decision": "Heavy ML libraries remain optional extras in pyproject.toml", "rationale": "Keeps core install lightweight while supporting full functionality when extras are installed", "phase": "01"}
   ],
-  "uncommitted_files": [],
-  "next_action": "Run /gsd-execute-phase 1 to begin executing the 6 plans in Phase 1: Foundation Fix",
-  "context_notes": "Planning is complete. STATE.md is slightly stale (still says 'awaiting roadmap approval') but the phase directory .planning/phases/01-foundation-fix/ contains 6 verified plans and is the ground truth. No execution has started — no SUMMARY.md files exist yet. The user updated GSD to v1.36.0 just before pausing."
+  "uncommitted_files": [
+    "Modified: .planning/config.json",
+    "Modified: .planning/phases/01-foundation-fix/01-02-PLAN.md",
+    "Modified: .planning/phases/01-foundation-fix/01-CONTEXT.md",
+    "Modified: .planning/phases/01-foundation-fix/01-RESEARCH.md",
+    "Modified: CLAUDE.md",
+    "Modified: src/docsift/cli/commands/search.py",
+    "Modified: src/docsift/search/hybrid.py",
+    "Modified: src/docsift/search/vector.py",
+    "Untracked: numerous source files, tests, docs, and reports (see git status)"
+  ],
+  "next_action": "Run `/gsd-plan-phase 2` to begin planning Phase 2: CLI Core Completion",
+  "context_notes": "Phase 01 execution finished successfully with all 6 plans verified and passed. There are uncommitted modifications and many untracked files in the working tree that predate or are unrelated to Phase 01. The next logical step is Phase 02 planning."
 }
