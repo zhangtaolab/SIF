@@ -28,8 +28,8 @@ class CollectionRepository:
             """
             INSERT INTO collections (
                 id, name, path, pattern, ignore_patterns, include_by_default,
-                description, created_at, updated_at, document_count, chunk_count
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                description, pre_update_cmd, created_at, updated_at, document_count, chunk_count
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 collection.id,
@@ -39,6 +39,7 @@ class CollectionRepository:
                 json.dumps(collection.ignore_patterns),
                 int(collection.include_by_default),
                 collection.description,
+                collection.pre_update_cmd,
                 collection.created_at.isoformat(),
                 collection.updated_at.isoformat(),
                 collection.document_count,
@@ -77,7 +78,7 @@ class CollectionRepository:
             """
             UPDATE collections SET
                 name = ?, path = ?, pattern = ?, ignore_patterns = ?,
-                include_by_default = ?, description = ?, updated_at = ?,
+                include_by_default = ?, description = ?, pre_update_cmd = ?, updated_at = ?,
                 document_count = ?, chunk_count = ?, last_indexed_at = ?
             WHERE id = ?
             """,
@@ -88,6 +89,7 @@ class CollectionRepository:
                 json.dumps(collection.ignore_patterns),
                 int(collection.include_by_default),
                 collection.description,
+                collection.pre_update_cmd,
                 collection.updated_at.isoformat(),
                 collection.document_count,
                 collection.chunk_count,
@@ -113,6 +115,13 @@ class CollectionRepository:
         )
         return cursor.fetchone() is not None
     
+    def list_enabled(self) -> List[Collection]:
+        """List all collections enabled for default searches."""
+        cursor = self.db.execute(
+            "SELECT * FROM collections WHERE include_by_default = 1 ORDER BY name"
+        )
+        return [self._row_to_collection(row) for row in cursor.fetchall()]
+
     def _row_to_collection(self, row: sqlite3.Row) -> Collection:
         """Convert database row to Collection."""
         return Collection(
@@ -123,6 +132,7 @@ class CollectionRepository:
             ignore_patterns=json.loads(row["ignore_patterns"]),
             include_by_default=bool(row["include_by_default"]),
             description=row["description"],
+            pre_update_cmd=row["pre_update_cmd"],
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
             last_indexed_at=datetime.fromisoformat(row["last_indexed_at"]) if row["last_indexed_at"] else None,

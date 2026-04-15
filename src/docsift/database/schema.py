@@ -23,6 +23,13 @@ class SchemaManager:
         self._create_vector_tables()
         self._create_indexes()
     
+    def _add_column_if_missing(self, table: str, column: str, dtype: str) -> None:
+        """Add a column to a table if it does not already exist."""
+        cursor = self.db.execute(f"PRAGMA table_info({table})")
+        columns = {row["name"] for row in cursor.fetchall()}
+        if column not in columns:
+            self.db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {dtype}")
+
     def _create_collections_table(self) -> None:
         """Create collections table."""
         self.db.execute("""
@@ -41,6 +48,7 @@ class SchemaManager:
                 chunk_count INTEGER DEFAULT 0
             )
         """)
+        self._add_column_if_missing("collections", "pre_update_cmd", "TEXT")
     
     def _create_documents_table(self) -> None:
         """Create documents table."""

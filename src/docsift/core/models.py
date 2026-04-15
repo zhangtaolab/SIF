@@ -35,6 +35,7 @@ class Collection:
     ignore_patterns: List[str] = field(default_factory=list)
     include_by_default: bool = True
     description: Optional[str] = None
+    pre_update_cmd: Optional[str] = None
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     created_at: datetime = field(default_factory=datetime.utcnow)
     updated_at: datetime = field(default_factory=datetime.utcnow)
@@ -52,6 +53,7 @@ class Collection:
             "ignore_patterns": self.ignore_patterns,
             "include_by_default": self.include_by_default,
             "description": self.description,
+            "pre_update_cmd": self.pre_update_cmd,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
             "document_count": self.document_count,
@@ -70,6 +72,7 @@ class Collection:
             ignore_patterns=data.get("ignore_patterns", []),
             include_by_default=data.get("include_by_default", True),
             description=data.get("description"),
+            pre_update_cmd=data.get("pre_update_cmd"),
             created_at=datetime.fromisoformat(data["created_at"]) if "created_at" in data else datetime.utcnow(),
             updated_at=datetime.fromisoformat(data["updated_at"]) if "updated_at" in data else datetime.utcnow(),
             document_count=data.get("document_count", 0),
