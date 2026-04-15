@@ -72,6 +72,7 @@ from docsift.cli.commands.context import context_group
 from docsift.cli.commands.index import index_group
 from docsift.cli.commands.search import search_group
 from docsift.cli.commands.get import get_group
+from docsift.cli.commands.ls import ls_cmd
 from docsift.cli.commands.mcp import mcp_group
 
 cli.add_command(collection_group)
@@ -80,6 +81,7 @@ cli.add_command(index_group)
 cli.add_command(search_group)
 cli.add_command(get_group)
 cli.add_command(mcp_group)
+cli.add_command(ls_cmd)
 
 
 @cli.command("status")
