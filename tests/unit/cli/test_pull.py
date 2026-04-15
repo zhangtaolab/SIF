@@ -45,18 +45,20 @@ class TestPullCommand:
         ms_dir.mkdir(parents=True, exist_ok=True)
         (ms_dir / "model.gguf").write_text("gguf")
 
-        with patch(
-            "docsift.cli.commands.pull.hf_hub_download",
-            side_effect=Exception("HF down"),
-        ):
-            with patch(
+        with (
+            patch(
+                "docsift.cli.commands.pull.hf_hub_download",
+                side_effect=Exception("HF down"),
+            ),
+            patch(
                 "docsift.cli.commands.pull.snapshot_download",
                 return_value=str(ms_dir),
-            ) as mock_ms:
-                result = runner.invoke(
-                    pull_cmd,
-                    ["--cache-dir", cache_dir, "owner/repo/model.gguf"],
-                )
+            ) as mock_ms,
+        ):
+            result = runner.invoke(
+                pull_cmd,
+                ["--cache-dir", cache_dir, "owner/repo/model.gguf"],
+            )
 
         assert result.exit_code == 0
         assert "HuggingFace failed" in result.output
@@ -68,9 +70,8 @@ class TestPullCommand:
         """Direct URL download path."""
         runner = CliRunner()
         cache_dir = str(tmp_path / "models")
-        dest = tmp_path / "models" / "model.gguf"
 
-        def fake_urlretrieve(url: str, filename: Path) -> None:
+        def fake_urlretrieve(_url: str, filename: Path) -> None:
             Path(filename).parent.mkdir(parents=True, exist_ok=True)
             Path(filename).write_text("gguf")
 
@@ -124,18 +125,20 @@ class TestPullCommand:
         runner = CliRunner()
         cache_dir = str(tmp_path / "models")
 
-        with patch(
-            "docsift.cli.commands.pull.hf_hub_download",
-            side_effect=Exception("HF down"),
-        ):
-            with patch(
+        with (
+            patch(
+                "docsift.cli.commands.pull.hf_hub_download",
+                side_effect=Exception("HF down"),
+            ),
+            patch(
                 "docsift.cli.commands.pull.snapshot_download",
                 side_effect=ImportError("No modelscope"),
-            ):
-                result = runner.invoke(
-                    pull_cmd,
-                    ["--cache-dir", cache_dir, "owner/repo/model.gguf"],
-                )
+            ),
+        ):
+            result = runner.invoke(
+                pull_cmd,
+                ["--cache-dir", cache_dir, "owner/repo/model.gguf"],
+            )
 
         assert result.exit_code != 0
         assert "ModelScope not installed" in result.output
