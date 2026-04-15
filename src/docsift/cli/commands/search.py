@@ -10,6 +10,7 @@ from rich.table import Table
 
 from docsift.core.models import SearchOptions
 from docsift.database.database import Database
+from docsift.database.repositories import CollectionRepository
 from docsift.search.bm25 import BM25Searcher
 from docsift.search.hybrid import HybridSearcher
 
@@ -114,13 +115,17 @@ def search_cmd(
     # Get collection IDs if specified
     if collection:
         with db.connection:
-            from docsift.database.repositories import CollectionRepository
             repo = CollectionRepository(db.connection)
             options.collection_ids = []
             for name in collection:
                 coll = repo.get_by_name(name)
                 if coll:
                     options.collection_ids.append(coll.id)
+    elif not search_all:
+        with db.connection:
+            repo = CollectionRepository(db.connection)
+            enabled = repo.list_enabled()
+            options.collection_ids = [c.id for c in enabled]
 
     # Search
     with db.connection:
@@ -170,6 +175,7 @@ def search_cmd(
 @click.argument("query")
 @click.option("-n", "--limit", default=10, help="Number of results")
 @click.option("-c", "--collection", multiple=True, help="Collection to search")
+@click.option("--all", "search_all", is_flag=True, help="Search all collections")
 @click.option("--json", "output_json", is_flag=True, help="Output as JSON")
 @click.pass_context
 def vsearch_cmd(
@@ -177,6 +183,7 @@ def vsearch_cmd(
     query: str,
     limit: int,
     collection: tuple,
+    search_all: bool,
     output_json: bool,
 ) -> None:
     """Search documents using vector similarity."""
@@ -214,6 +221,11 @@ def vsearch_cmd(
                 coll = repo.get_by_name(name)
                 if coll:
                     options.collection_ids.append(coll.id)
+    elif not search_all:
+        with db.connection:
+            repo = CollectionRepository(db.connection)
+            enabled = repo.list_enabled()
+            options.collection_ids = [c.id for c in enabled]
 
     with db.connection:
         query_embedding = embedder.embed(query)
@@ -295,13 +307,17 @@ def query_cmd(
     # Get collection IDs if specified
     if collection:
         with db.connection:
-            from docsift.database.repositories import CollectionRepository
             repo = CollectionRepository(db.connection)
             options.collection_ids = []
             for name in collection:
                 coll = repo.get_by_name(name)
                 if coll:
                     options.collection_ids.append(coll.id)
+    elif not search_all:
+        with db.connection:
+            repo = CollectionRepository(db.connection)
+            enabled = repo.list_enabled()
+            options.collection_ids = [c.id for c in enabled]
 
     # Search using hybrid approach
     with db.connection:
