@@ -203,6 +203,31 @@ def print_tree(data: Dict[str, Any], title: str = "Tree",
     cons.print(tree)
 
 
+def prepend_line_numbers(content: str) -> str:
+    """Prepend line numbers to each line of content."""
+    return "\n".join(
+        f"{i + 1:4d}: {line}" for i, line in enumerate(content.split("\n"))
+    )
+
+
+def add_line_numbers_to_results(
+    results: List[Dict[str, Any]], content_key: str = "content"
+) -> List[Dict[str, Any]]:
+    """Add a 'line_numbers' field to each result dict based on content."""
+    formatted = []
+    for item in results:
+        row = dict(item)
+        content = row.get(content_key, "")
+        if content:
+            row["line_numbers"] = "\n".join(
+                f"{i + 1}" for i in range(len(content.split("\n")))
+            )
+        else:
+            row["line_numbers"] = ""
+        formatted.append(row)
+    return formatted
+
+
 class OutputFormatter:
     """Handles output formatting based on format option."""
     
