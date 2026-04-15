@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-04-15T10:03:15.271Z"
+last_updated: "2026-04-15T10:10:06.993Z"
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 12
-  completed_plans: 8
-  percent: 67
+  completed_plans: 9
+  percent: 75
 ---
 
 # DocSift — Project State
@@ -24,10 +24,10 @@ progress:
 ## Current Position
 
 Phase: 01 (foundation-fix) — COMPLETE
-Plan: 3 of 6 — Done
+Plan: 4 of 6 — Done
 
 - **Phase:** 2
-- **Plan:** 3 of 6 — Done
+- **Plan:** 4 of 6 — Done
 - **Status:** Ready to execute
 - **Progress Bar:** `[██████░░░░] 58%`
 
@@ -55,6 +55,8 @@ Plan: 3 of 6 — Done
 - ✓ D-05: Heavy ML libraries remain optional extras in `pyproject.toml`
 - [Phase 02]: Mock index_path.exists on the mock object rather than patching Path.exists in ls.py, since ls.py does not import Path directly
 - [Phase 02-cli-core-completion]: D-01 priority preserved: comma-separated detection takes precedence over glob detection in multi-get
+- [Phase 02-cli-core-completion]: Refactored pull_cmd into helper functions to keep mccabe complexity under 10
+- [Phase 02-cli-core-completion]: Used module-level optional imports with None fallback so patch targets exist for tests
 
 ### TODOs
 

@@ -22,7 +22,7 @@
 - [x] **CLI-02**: 实现 `ls` 命令：列出索引中的虚拟文件树（按集合查看已索引文档）
 - [ ] **CLI-03**: 实现 `collection update-cmd`：为集合设置/清除索引前执行的 shell 命令（如 `git pull`）
 - [ ] **CLI-04**: 实现 `collection include/exclude`：控制集合是否参与默认查询
-- [ ] **CLI-05**: 实现 `pull` 命令：下载/检查本地 GGUF 模型文件
+- [x] **CLI-05**: 实现 `pull` 命令：下载/检查本地 GGUF 模型文件
 - [ ] **CLI-06**: 支持 `--min-score` 参数过滤低置信度结果
 - [ ] **CLI-07**: 支持 `--full` 参数返回完整文档内容而非片段
 - [ ] **CLI-08**: 支持 `--line-numbers` 参数在输出中附加行号
@@ -98,7 +98,7 @@
 | CLI-02 | Phase 2 | Complete |
 | CLI-03 | Phase 2 | Pending |
 | CLI-04 | Phase 2 | Pending |
-| CLI-05 | Phase 2 | Pending |
+| CLI-05 | Phase 2 | Complete |
 | CLI-08 | Phase 2 | Pending |
 | VEC-01 | Phase 3 | Pending |
 | VEC-02 | Phase 3 | Pending |

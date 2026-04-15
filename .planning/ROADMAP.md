@@ -48,13 +48,13 @@ Plans:
   4. User can include or exclude collections from default queries with `collection include/exclude`
   5. User can download and verify local GGUF model files with `pull`
   6. Search and retrieval output can display line numbers via `--line-numbers`
-**Plans:** 2/6 plans executed
+**Plans:** 3/6 plans executed
 
 Plans:
 - [x] 02-01-PLAN.md — Implement multi-get batch document retrieval (CLI-01)
 - [x] 02-02-PLAN.md — Implement ls virtual file tree for indexed documents (CLI-02)
 - [ ] 02-03-PLAN.md — Add collection update-cmd, include/exclude, and wire --all in search (CLI-03, CLI-04)
-- [ ] 02-04-PLAN.md — Implement pull for downloading GGUF model files (CLI-05)
+- [x] 02-04-PLAN.md — Implement pull for downloading GGUF model files (CLI-05)
 - [ ] 02-05-PLAN.md — Add --line-numbers to get, multi-get, search, query, and vsearch (CLI-08)
 
 ### Phase 3: Embedding & Vector Search
@@ -98,7 +98,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation Fix | 6/6 | Complete | - |
-| 2. CLI Core Completion | 2/6 | In Progress|  |
+| 2. CLI Core Completion | 3/6 | In Progress|  |
 | 3. Embedding & Vector Search | 0/TBD | Not started | - |
 | 4. Advanced Search Pipeline | 0/TBD | Not started | - |
 | 5. Agent Context Experience | 0/TBD | Not started | - |
