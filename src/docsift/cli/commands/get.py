@@ -115,43 +115,68 @@ def multi_get_cmd(
 ) -> None:
     """Get multiple documents matching a pattern."""
     index_path = ctx.obj["index_path"]
-    
+
     if not index_path.exists():
         console.print("[yellow]No index found.[/yellow]")
         return
-    
+
     import fnmatch
-    
+
     db = Database(index_path)
     db.init_schema()
-    
+
     with db.connection:
         doc_repo = DocumentRepository(db.connection)
-        
-        # Get all documents
         from docsift.database.repositories import CollectionRepository
         coll_repo = CollectionRepository(db.connection)
-        
-        matched_docs = []
-        errors = []
-        
-        for coll in coll_repo.list_all():
-            for doc in doc_repo.list_by_collection(coll.id):
-                if fnmatch.fnmatch(doc.path, pattern) or fnmatch.fnmatch(doc.filename, pattern):
+
+        matched_docs: list[Document] = []
+
+        if "," in pattern:
+            # Comma-separated IDs/paths
+            items = [item.strip() for item in pattern.split(",") if item.strip()]
+            seen_ids: set[str] = set()
+            for item in items:
+                doc = doc_repo.get_by_id(item)
+                if not doc:
+                    for coll in coll_repo.list_all():
+                        doc = doc_repo.get_by_path(item, coll.id)
+                        if doc:
+                            break
+                if doc and doc.id not in seen_ids:
                     matched_docs.append(doc)
-        
+                    seen_ids.add(doc.id)
+        elif "*" in pattern or "?" in pattern:
+            # Glob pattern
+            for coll in coll_repo.list_all():
+                for doc in doc_repo.list_by_collection(coll.id):
+                    if fnmatch.fnmatch(doc.path, pattern) or fnmatch.fnmatch(
+                        doc.filename, pattern
+                    ):
+                        matched_docs.append(doc)
+        else:
+            # Single item
+            doc = doc_repo.get_by_id(pattern)
+            if not doc:
+                for coll in coll_repo.list_all():
+                    doc = doc_repo.get_by_path(pattern, coll.id)
+                    if doc:
+                        break
+            if doc:
+                matched_docs.append(doc)
+
         if not matched_docs:
             console.print(f"[yellow]No documents matching pattern: {pattern}[/yellow]")
             return
-        
-        console.print(f"[green]Found {len(matched_docs)} matching documents[/green]")
+
+        console.print(f"[green]Found {len(matched_docs)} matching document(s)[/green]")
         console.print("")
-        
+
         for doc in matched_docs:
             content = doc.content
             if len(content.encode()) > max_bytes:
                 content = content[:max_bytes] + "\n... [truncated]"
-            
+
             console.print(f"[bold cyan]=== {doc.path} ===[/bold cyan]")
             console.print(content)
             console.print("")
