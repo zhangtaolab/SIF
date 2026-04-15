@@ -64,7 +64,21 @@ def update_cmd(ctx: click.Context, collection: str | None, force: bool) -> None:
                 continue
             
             console.print(f"\n[bold]Updating collection: {coll.name}[/bold]")
-            
+
+            if coll.pre_update_cmd:
+                console.print(f"  Running pre-update command: {coll.pre_update_cmd}")
+                import subprocess
+                result = subprocess.run(
+                    coll.pre_update_cmd,
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                )
+                if result.returncode != 0:
+                    raise click.ClickException(
+                        f"Pre-update command failed for '{coll.name}' (exit {result.returncode}): {result.stderr.strip() or result.stdout.strip()}"
+                    )
+
             # Scan files
             scanner = FileScanner()
             scan_result = scanner.scan(
