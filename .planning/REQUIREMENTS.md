@@ -18,8 +18,8 @@
 
 ### CLI Completion
 
-- [ ] **CLI-01**: 实现 `multi-get` 命令：支持 glob 模式、逗号分隔列表或 docid 批量获取文档
-- [ ] **CLI-02**: 实现 `ls` 命令：列出索引中的虚拟文件树（按集合查看已索引文档）
+- [x] **CLI-01**: 实现 `multi-get` 命令：支持 glob 模式、逗号分隔列表或 docid 批量获取文档
+- [x] **CLI-02**: 实现 `ls` 命令：列出索引中的虚拟文件树（按集合查看已索引文档）
 - [ ] **CLI-03**: 实现 `collection update-cmd`：为集合设置/清除索引前执行的 shell 命令（如 `git pull`）
 - [ ] **CLI-04**: 实现 `collection include/exclude`：控制集合是否参与默认查询
 - [ ] **CLI-05**: 实现 `pull` 命令：下载/检查本地 GGUF 模型文件
@@ -94,8 +94,8 @@
 | FND-06 | Phase 1 | Pending |
 | FND-07 | Phase 1 | Pending |
 | FND-08 | Phase 1 | Pending |
-| CLI-01 | Phase 2 | Pending |
-| CLI-02 | Phase 2 | Pending |
+| CLI-01 | Phase 2 | Complete |
+| CLI-02 | Phase 2 | Complete |
 | CLI-03 | Phase 2 | Pending |
 | CLI-04 | Phase 2 | Pending |
 | CLI-05 | Phase 2 | Pending |
