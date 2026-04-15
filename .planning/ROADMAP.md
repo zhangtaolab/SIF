@@ -6,7 +6,7 @@
 
 ## Phases
 
-- [ ] **Phase 1: Foundation Fix** - Fix bugs, remove stubs, and make the core infrastructure trustworthy
+- [x] **Phase 1: Foundation Fix** - Fix bugs, remove stubs, and make the core infrastructure trustworthy
 - [ ] **Phase 2: CLI Core Completion** - Complete missing CLI commands for document retrieval and collection management
 - [ ] **Phase 3: Embedding & Vector Search** - Enable configurable embedding backends and working semantic search
 - [ ] **Phase 4: Advanced Search Pipeline** - Add reranking, query expansion, explainability, and search quality controls
@@ -36,6 +36,7 @@ Plans:
 - [x] 01-04-PLAN.md — Replace placeholder embeddings with real ST and GGUF implementations
 - [x] 01-05-PLAN.md — Remove vector search fallback and make vsearch fail fast
 - [x] 01-06-PLAN.md — Improve SQLite connection safety for async/multi-threaded contexts
+
 ### Phase 2: CLI Core Completion
 **Goal**: Users can manage collections and retrieve documents through a complete, functional CLI.
 **Depends on**: Phase 1
@@ -47,7 +48,14 @@ Plans:
   4. User can include or exclude collections from default queries with `collection include/exclude`
   5. User can download and verify local GGUF model files with `pull`
   6. Search and retrieval output can display line numbers via `--line-numbers`
-**Plans**: TBD
+**Plans:** 5 plans
+
+Plans:
+- [ ] 02-01-PLAN.md — Implement multi-get batch document retrieval (CLI-01)
+- [ ] 02-02-PLAN.md — Implement ls virtual file tree for indexed documents (CLI-02)
+- [ ] 02-03-PLAN.md — Add collection update-cmd, include/exclude, and wire --all in search (CLI-03, CLI-04)
+- [ ] 02-04-PLAN.md — Implement pull for downloading GGUF model files (CLI-05)
+- [ ] 02-05-PLAN.md — Add --line-numbers to get, multi-get, search, query, and vsearch (CLI-08)
 
 ### Phase 3: Embedding & Vector Search
 **Goal**: Users can perform semantic vector search with configurable embedding backends.
@@ -58,7 +66,7 @@ Plans:
   2. Vector search uses `sqlite-vec` and refuses brute-force Python fallback on large indexes
   3. Document indexing benefits from batch embedding insertion for better performance
   4. User can download embedding models from ModelScope as an alternative to HuggingFace
-**Plans**: TBD
+**Plans:** TBD
 
 ### Phase 4: Advanced Search Pipeline
 **Goal**: Users can perform high-quality hybrid searches with reranking, query expansion, and diagnostic visibility.
@@ -73,7 +81,7 @@ Plans:
   6. User can pass intent hints through `--intent` to guide search behavior
   7. Search results show the most relevant snippet extracted from each chunk
   8. User can run benchmark fixtures to measure precision@k, recall, and MRR
-**Plans**: TBD
+**Plans:** TBD
 
 ### Phase 5: Agent Context Experience
 **Goal**: Users can augment document collections with contextual descriptions to improve retrieval quality for agent workflows.
@@ -83,14 +91,14 @@ Plans:
   1. User can add contextual descriptions to paths or collections via `context add`
   2. User can list and remove contextual descriptions via `context list` and `context rm`
   3. Search results include relevant contextual descriptions alongside document content
-**Plans**: TBD
+**Plans:** TBD
 
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation Fix | 0/6 | Planned | - |
-| 2. CLI Core Completion | 0/TBD | Not started | - |
+| 1. Foundation Fix | 6/6 | Complete | - |
+| 2. CLI Core Completion | 0/5 | Planned | - |
 | 3. Embedding & Vector Search | 0/TBD | Not started | - |
 | 4. Advanced Search Pipeline | 0/TBD | Not started | - |
 | 5. Agent Context Experience | 0/TBD | Not started | - |
