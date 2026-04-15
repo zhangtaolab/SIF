@@ -8,6 +8,7 @@ import click
 from rich.console import Console
 from rich.table import Table
 
+from docsift.cli.formatters import add_line_numbers_to_results, prepend_line_numbers
 from docsift.core.models import SearchOptions
 from docsift.database.database import Database
 from docsift.database.repositories import CollectionRepository
@@ -39,7 +40,11 @@ def format_results_md(results: list, query: str) -> str:
         lines.append(f"- **Score:** {r.score:.4f}")
         lines.append(f"- **Path:** `{r.path}`")
         lines.append(f"- **Collection:** {r.collection_name}")
-        if r.highlights:
+        if hasattr(r, "get") and r.get("line_numbers"):
+            lines.append(f"- **Line Numbers:** `{r.get('line_numbers')}`")
+        elif hasattr(r, "line_numbers") and r.line_numbers:
+            lines.append(f"- **Line Numbers:** `{r.line_numbers}`")
+        if hasattr(r, "highlights") and r.highlights:
             lines.append("")
             lines.append("> " + "\n> ".join(r.highlights[:3]))
         lines.append("")
@@ -54,6 +59,10 @@ def format_results_xml(results: list, query: str) -> str:
         lines.append(f"    <title>{r.title}</title>")
         lines.append(f"    <path>{r.path}</path>")
         lines.append(f"    <collection>{r.collection_name}</collection>")
+        if hasattr(r, "get") and r.get("line_numbers"):
+            lines.append(f"    <line_numbers>{r.get('line_numbers')}</line_numbers>")
+        elif hasattr(r, "line_numbers") and r.line_numbers:
+            lines.append(f"    <line_numbers>{r.line_numbers}</line_numbers>")
         lines.append("  </result>")
     lines.append("</search>")
     return "\n".join(lines)
@@ -73,6 +82,7 @@ def search_group() -> None:
 @click.option("--min-score", default=0.0, help="Minimum score threshold")
 @click.option("--full", is_flag=True, help="Include full content")
 @click.option("--explain", is_flag=True, help="Show search explanation")
+@click.option("--line-numbers", is_flag=True, help="Show line numbers in content")
 @click.option("--json", "output_json", is_flag=True, help="Output as JSON")
 @click.option("--csv", "output_csv", is_flag=True, help="Output as CSV")
 @click.option("--md", "output_md", is_flag=True, help="Output as Markdown")
@@ -88,6 +98,7 @@ def search_cmd(
     min_score: float,
     full: bool,
     explain: bool,
+    line_numbers: bool,
     output_json: bool,
     output_csv: bool,
     output_md: bool,
@@ -137,13 +148,39 @@ def search_cmd(
         for r in results:
             console.print(r.path)
     elif output_json:
-        console.print(format_results_json(results))
+        console.print(
+            format_results_json(
+                add_line_numbers_to_results([r.to_dict() for r in results])
+                if line_numbers
+                else results
+            )
+        )
     elif output_csv:
-        console.print(format_results_csv(results))
+        console.print(
+            format_results_csv(
+                add_line_numbers_to_results([r.to_dict() for r in results])
+                if line_numbers
+                else results
+            )
+        )
     elif output_md:
-        console.print(format_results_md(results, query))
+        console.print(
+            format_results_md(
+                add_line_numbers_to_results([r.to_dict() for r in results])
+                if line_numbers
+                else results,
+                query,
+            )
+        )
     elif output_xml:
-        console.print(format_results_xml(results, query))
+        console.print(
+            format_results_xml(
+                add_line_numbers_to_results([r.to_dict() for r in results])
+                if line_numbers
+                else results,
+                query,
+            )
+        )
     else:
         # Rich table output
         if not results:
@@ -155,14 +192,21 @@ def search_cmd(
         table.add_column("Score", style="green", justify="right")
         table.add_column("Title", style="yellow")
         table.add_column("Collection", style="blue")
+        if line_numbers and any(getattr(r, "content", None) for r in results):
+            table.add_column("Content", style="white")
 
         for r in results:
-            table.add_row(
+            row = [
                 str(r.rank),
                 f"{r.score:.4f}",
                 r.title[:50] + "..." if len(r.title) > 50 else r.title,
                 r.collection_name,
-            )
+            ]
+            if line_numbers and getattr(r, "content", None):
+                content = prepend_line_numbers(r.content)
+                content = content[:200] + "..." if len(content) > 200 else content
+                row.append(content)
+            table.add_row(*row)
 
         console.print(table)
 
@@ -176,6 +220,7 @@ def search_cmd(
 @click.option("-n", "--limit", default=10, help="Number of results")
 @click.option("-c", "--collection", multiple=True, help="Collection to search")
 @click.option("--all", "search_all", is_flag=True, help="Search all collections")
+@click.option("--line-numbers", is_flag=True, help="Show line numbers in content")
 @click.option("--json", "output_json", is_flag=True, help="Output as JSON")
 @click.pass_context
 def vsearch_cmd(
@@ -184,6 +229,7 @@ def vsearch_cmd(
     limit: int,
     collection: tuple,
     search_all: bool,
+    line_numbers: bool,
     output_json: bool,
 ) -> None:
     """Search documents using vector similarity."""
@@ -233,7 +279,13 @@ def vsearch_cmd(
         results = searcher.search(query_embedding, options)
 
     if output_json:
-        console.print(format_results_json(results))
+        console.print(
+            format_results_json(
+                add_line_numbers_to_results([r.to_dict() for r in results])
+                if line_numbers
+                else results
+            )
+        )
     else:
         if not results:
             console.print("[yellow]No results found.[/yellow]")
@@ -244,14 +296,21 @@ def vsearch_cmd(
         table.add_column("Score", style="green", justify="right")
         table.add_column("Title", style="yellow")
         table.add_column("Collection", style="blue")
+        if line_numbers and any(getattr(r, "content", None) for r in results):
+            table.add_column("Content", style="white")
 
         for r in results:
-            table.add_row(
+            row = [
                 str(r.rank),
                 f"{r.score:.4f}",
                 r.title[:50] + "..." if len(r.title) > 50 else r.title,
                 r.collection_name,
-            )
+            ]
+            if line_numbers and getattr(r, "content", None):
+                content = prepend_line_numbers(r.content)
+                content = content[:200] + "..." if len(content) > 200 else content
+                row.append(content)
+            table.add_row(*row)
 
         console.print(table)
 
@@ -263,6 +322,7 @@ def vsearch_cmd(
 @click.option("--all", "search_all", is_flag=True, help="Search all collections")
 @click.option("--min-score", default=0.0, help="Minimum score threshold")
 @click.option("--full", is_flag=True, help="Include full content")
+@click.option("--line-numbers", is_flag=True, help="Show line numbers in content")
 @click.option("--json", "output_json", is_flag=True, help="Output as JSON")
 @click.option("--csv", "output_csv", is_flag=True, help="Output as CSV")
 @click.option("--md", "output_md", is_flag=True, help="Output as Markdown")
@@ -277,6 +337,7 @@ def query_cmd(
     search_all: bool,
     min_score: float,
     full: bool,
+    line_numbers: bool,
     output_json: bool,
     output_csv: bool,
     output_md: bool,
@@ -284,7 +345,7 @@ def query_cmd(
     output_files: bool,
 ) -> None:
     """Search documents using hybrid approach (BM25 + Vector + RRF).
-    
+
     This is the recommended search command for best results.
     """
     index_path = ctx.obj["index_path"]
@@ -329,13 +390,39 @@ def query_cmd(
         for r in results:
             console.print(r.path)
     elif output_json:
-        console.print(format_results_json(results))
+        console.print(
+            format_results_json(
+                add_line_numbers_to_results([r.to_dict() for r in results])
+                if line_numbers
+                else results
+            )
+        )
     elif output_csv:
-        console.print(format_results_csv(results))
+        console.print(
+            format_results_csv(
+                add_line_numbers_to_results([r.to_dict() for r in results])
+                if line_numbers
+                else results
+            )
+        )
     elif output_md:
-        console.print(format_results_md(results, query))
+        console.print(
+            format_results_md(
+                add_line_numbers_to_results([r.to_dict() for r in results])
+                if line_numbers
+                else results,
+                query,
+            )
+        )
     elif output_xml:
-        console.print(format_results_xml(results, query))
+        console.print(
+            format_results_xml(
+                add_line_numbers_to_results([r.to_dict() for r in results])
+                if line_numbers
+                else results,
+                query,
+            )
+        )
     else:
         # Rich table output
         if not results:
@@ -347,13 +434,20 @@ def query_cmd(
         table.add_column("Score", style="green", justify="right")
         table.add_column("Title", style="yellow")
         table.add_column("Collection", style="blue")
+        if line_numbers and any(getattr(r, "content", None) for r in results):
+            table.add_column("Content", style="white")
 
         for r in results:
-            table.add_row(
+            row = [
                 str(r.rank),
                 f"{r.score:.4f}",
                 r.title[:50] + "..." if len(r.title) > 50 else r.title,
                 r.collection_name,
-            )
+            ]
+            if line_numbers and getattr(r, "content", None):
+                content = prepend_line_numbers(r.content)
+                content = content[:200] + "..." if len(content) > 200 else content
+                row.append(content)
+            table.add_row(*row)
 
         console.print(table)
