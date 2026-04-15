@@ -3,10 +3,7 @@
 
 from __future__ import annotations
 
-import os
-import sys
 from pathlib import Path
-from typing import Optional
 
 import click
 from rich.console import Console
@@ -15,6 +12,7 @@ from rich.table import Table
 from docsift import __version__
 from docsift.database.database import Database
 from docsift.utils.logging import get_logger, setup_logging
+
 
 logger = get_logger(__name__)
 console = Console()
@@ -45,23 +43,23 @@ DEFAULT_CONFIG_PATH = Path.home() / ".docsift" / "config.yaml"
 @click.pass_context
 def cli(ctx: click.Context, index: str, config: str, verbose: bool, quiet: bool) -> None:
     """DocSift - Local AI-powered document search engine.
-    
+
     DocSift indexes your documents and enables fast, intelligent search
     using BM25, vector similarity, and hybrid approaches.
     """
     # Setup logging
     log_level = "DEBUG" if verbose else ("WARNING" if quiet else "INFO")
     setup_logging(log_level)
-    
+
     # Ensure context object exists
     ctx.ensure_object(dict)
-    
+
     # Store options in context
     ctx.obj["index_path"] = Path(index).expanduser()
     ctx.obj["config_path"] = Path(config).expanduser()
     ctx.obj["verbose"] = verbose
     ctx.obj["quiet"] = quiet
-    
+
     # Create index directory if needed
     ctx.obj["index_path"].parent.mkdir(parents=True, exist_ok=True)
 
@@ -69,11 +67,12 @@ def cli(ctx: click.Context, index: str, config: str, verbose: bool, quiet: bool)
 # Import and register subcommands
 from docsift.cli.commands.collection import collection_group
 from docsift.cli.commands.context import context_group
-from docsift.cli.commands.index import index_group
-from docsift.cli.commands.search import search_group
 from docsift.cli.commands.get import get_group
+from docsift.cli.commands.index import index_group
 from docsift.cli.commands.ls import ls_cmd
 from docsift.cli.commands.mcp import mcp_group
+from docsift.cli.commands.search import search_group
+
 
 cli.add_command(collection_group)
 cli.add_command(context_group)
@@ -89,33 +88,33 @@ cli.add_command(ls_cmd)
 def status_cmd(ctx: click.Context) -> None:
     """Show index status."""
     index_path = ctx.obj["index_path"]
-    
+
     if not index_path.exists():
         console.print("[yellow]No index found. Run 'docsift update' to create one.[/yellow]")
         return
-    
+
     try:
         db = Database(index_path)
         db.init_schema()
         stats = db.get_stats()
-        
+
         table = Table(title="Index Status")
         table.add_column("Metric", style="cyan")
         table.add_column("Value", style="green")
-        
+
         table.add_row("Index Path", str(index_path))
         table.add_row("Collections", str(stats.get("collections", 0)))
         table.add_row("Documents", str(stats.get("documents", 0)))
         table.add_row("Chunks", str(stats.get("chunks", 0)))
         table.add_row("Path Contexts", str(stats.get("path_contexts", 0)))
-        
+
         total_size = stats.get("total_size_bytes", 0)
         if total_size > 0:
             size_mb = total_size / (1024 * 1024)
             table.add_row("Total Size", f"{size_mb:.2f} MB")
-        
+
         console.print(table)
-        
+
     except Exception as e:
         console.print(f"[red]Error reading index: {e}[/red]")
         raise click.ClickException(str(e))
@@ -127,15 +126,15 @@ def status_cmd(ctx: click.Context) -> None:
 def cleanup_cmd(ctx: click.Context) -> None:
     """Clean up the index (remove orphaned entries)."""
     index_path = ctx.obj["index_path"]
-    
+
     if not index_path.exists():
         console.print("[yellow]No index found.[/yellow]")
         return
-    
+
     try:
         db = Database(index_path)
         db.init_schema()
-        
+
         with db.transaction() as conn:
             # Clean up orphaned chunks
             cursor = conn.execute("""
@@ -143,7 +142,7 @@ def cleanup_cmd(ctx: click.Context) -> None:
                 WHERE document_id NOT IN (SELECT id FROM documents)
             """)
             chunks_removed = cursor.rowcount
-            
+
             # Clean up orphaned embeddings
             try:
                 cursor = conn.execute("""
@@ -153,20 +152,24 @@ def cleanup_cmd(ctx: click.Context) -> None:
                 embeddings_removed = cursor.rowcount
             except sqlite3.OperationalError:
                 embeddings_removed = 0
-            
+
             # Clean up expired LLM cache
             from datetime import datetime
-            cursor = conn.execute("""
+
+            cursor = conn.execute(
+                """
                 DELETE FROM llm_cache 
                 WHERE expires_at IS NOT NULL AND expires_at <= ?
-            """, (datetime.utcnow().isoformat(),))
+            """,
+                (datetime.utcnow().isoformat(),),
+            )
             cache_removed = cursor.rowcount
-        
+
         console.print("[green]Cleanup complete:[/green]")
         console.print(f"  - Removed {chunks_removed} orphaned chunks")
         console.print(f"  - Removed {embeddings_removed} orphaned embeddings")
         console.print(f"  - Removed {cache_removed} expired cache entries")
-        
+
     except Exception as e:
         console.print(f"[red]Error during cleanup: {e}[/red]")
         raise click.ClickException(str(e))

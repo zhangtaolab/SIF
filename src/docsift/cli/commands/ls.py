@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 import click
 from rich.console import Console
 from rich.tree import Tree
 
 from docsift.database.database import Database
 from docsift.database.repositories import CollectionRepository, DocumentRepository
+
 
 console = Console()
 
@@ -20,8 +19,8 @@ console = Console()
 @click.pass_context
 def ls_cmd(
     ctx: click.Context,
-    collection: Optional[str],
-    subpath: Optional[str],
+    collection: str | None,
+    subpath: str | None,
 ) -> None:
     """List indexed documents as a virtual file tree."""
     index_path = ctx.obj["index_path"]
@@ -61,9 +60,7 @@ def ls_cmd(
                 parts = doc.path.strip("/").split("/")
                 node = tree
                 for part in parts[:-1]:
-                    found = next(
-                        (c for c in node.children if str(c.label) == part), None
-                    )
+                    found = next((c for c in node.children if str(c.label) == part), None)
                     node = found if found else node.add(part)
                 node.add(parts[-1])
 
