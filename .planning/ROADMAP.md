@@ -55,7 +55,7 @@ Plans:
 - [x] 02-02-PLAN.md — Implement ls virtual file tree for indexed documents (CLI-02)
 - [ ] 02-03-PLAN.md — Add collection update-cmd, include/exclude, and wire --all in search (CLI-03, CLI-04)
 - [x] 02-04-PLAN.md — Implement pull for downloading GGUF model files (CLI-05)
-- [ ] 02-05-PLAN.md — Add --line-numbers to get, multi-get, search, query, and vsearch (CLI-08)
+- [x] 02-05-PLAN.md — Add --line-numbers to get, multi-get, search, query, and vsearch (CLI-08)
 
 ### Phase 3: Embedding & Vector Search
 **Goal**: Users can perform semantic vector search with configurable embedding backends.
