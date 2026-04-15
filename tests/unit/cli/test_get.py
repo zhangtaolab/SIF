@@ -155,3 +155,78 @@ class TestMultiGet:
 
         assert result.exit_code == 0
         assert "No documents matching pattern" in result.output
+
+
+class TestGetLineNumbers:
+    """Tests for --line-numbers flag on get commands."""
+
+    def test_get_with_line_numbers(self):
+        """Test get command with --line-numbers flag."""
+        runner = CliRunner()
+
+        doc = Document(
+            id="doc1",
+            path="/notes/a.md",
+            collection_id="coll1",
+            content="line1\nline2",
+        )
+
+        mock_db = MagicMock()
+        mock_doc_repo = MagicMock()
+        mock_doc_repo.get_by_id.return_value = doc
+
+        with (
+            patch("docsift.cli.commands.get.Database", return_value=mock_db),
+            patch(
+                "docsift.cli.commands.get.DocumentRepository",
+                return_value=mock_doc_repo,
+            ),
+        ):
+            result = runner.invoke(
+                get_group,
+                ["get", "doc1", "--line-numbers"],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code == 0
+        assert "   1: line1" in result.output
+        assert "   2: line2" in result.output
+
+    def test_multi_get_with_line_numbers(self):
+        """Test multi-get command with --line-numbers flag."""
+        runner = CliRunner()
+
+        doc = Document(
+            id="doc1",
+            path="/notes/a.md",
+            collection_id="coll1",
+            content="line1\nline2",
+        )
+
+        mock_db = MagicMock()
+        mock_doc_repo = MagicMock()
+        mock_coll_repo = MagicMock()
+
+        mock_doc_repo.get_by_id.return_value = doc
+        mock_coll_repo.list_all.return_value = []
+
+        with (
+            patch("docsift.cli.commands.get.Database", return_value=mock_db),
+            patch(
+                "docsift.cli.commands.get.DocumentRepository",
+                return_value=mock_doc_repo,
+            ),
+            patch(
+                "docsift.database.repositories.CollectionRepository",
+                return_value=mock_coll_repo,
+            ),
+        ):
+            result = runner.invoke(
+                get_group,
+                ["multi-get", "doc1", "--line-numbers"],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code == 0
+        assert "   1: line1" in result.output
+        assert "   2: line2" in result.output

@@ -170,3 +170,165 @@ class TestSearchFiltering:
         call_args = mock_searcher.search.call_args
         options = call_args[0][1]
         assert options.collection_ids == ["coll1"]
+
+
+class TestSearchLineNumbers:
+    """Tests for --line-numbers flag on search commands."""
+
+    def _make_search_result(self, content="foo\nbar"):
+        """Create a mock SearchResult with content."""
+        from docsift.core.models import SearchResult
+
+        return SearchResult(
+            document_id="doc1",
+            rank=1,
+            score=0.95,
+            title="Test Doc",
+            path="/notes/test.md",
+            collection_name="notes",
+            content=content,
+            highlights=["foo", "bar"],
+        )
+
+    def test_search_line_numbers_table(self):
+        """Test search_cmd --line-numbers in table output."""
+        runner = CliRunner()
+
+        mock_repo = MagicMock()
+        mock_repo.list_enabled.return_value = []
+
+        mock_searcher = MagicMock()
+        mock_searcher.search.return_value = [self._make_search_result()]
+
+        mock_db = MagicMock()
+
+        with (
+            patch("docsift.cli.commands.search.Database", return_value=mock_db),
+            patch(
+                "docsift.cli.commands.search.CollectionRepository",
+                return_value=mock_repo,
+            ),
+            patch(
+                "docsift.cli.commands.search.BM25Searcher",
+                return_value=mock_searcher,
+            ),
+        ):
+            result = runner.invoke(
+                search_cmd,
+                ["query", "--line-numbers"],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code == 0
+        assert "Content" in result.output
+        assert "   1: foo" in result.output
+        assert "   2: bar" in result.output
+
+    def test_search_line_numbers_json(self):
+        """Test search_cmd --line-numbers with JSON output."""
+        runner = CliRunner()
+
+        mock_repo = MagicMock()
+        mock_repo.list_enabled.return_value = []
+
+        mock_searcher = MagicMock()
+        mock_searcher.search.return_value = [self._make_search_result()]
+
+        mock_db = MagicMock()
+
+        with (
+            patch("docsift.cli.commands.search.Database", return_value=mock_db),
+            patch(
+                "docsift.cli.commands.search.CollectionRepository",
+                return_value=mock_repo,
+            ),
+            patch(
+                "docsift.cli.commands.search.BM25Searcher",
+                return_value=mock_searcher,
+            ),
+        ):
+            result = runner.invoke(
+                search_cmd,
+                ["query", "--line-numbers", "--json"],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code == 0
+        assert '"line_numbers": "1\\n2"' in result.output
+
+    def test_query_line_numbers_flag(self):
+        """Test query_cmd --line-numbers in table output."""
+        runner = CliRunner()
+
+        mock_repo = MagicMock()
+        mock_repo.list_enabled.return_value = []
+
+        mock_searcher = MagicMock()
+        mock_searcher.search.return_value = [self._make_search_result()]
+
+        mock_db = MagicMock()
+
+        with (
+            patch("docsift.cli.commands.search.Database", return_value=mock_db),
+            patch(
+                "docsift.cli.commands.search.CollectionRepository",
+                return_value=mock_repo,
+            ),
+            patch(
+                "docsift.cli.commands.search.HybridSearcher",
+                return_value=mock_searcher,
+            ),
+        ):
+            result = runner.invoke(
+                query_cmd,
+                ["query", "--line-numbers"],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code == 0
+        assert "Content" in result.output
+        assert "   1: foo" in result.output
+
+    def test_vsearch_line_numbers_flag(self):
+        """Test vsearch_cmd --line-numbers with JSON output."""
+        runner = CliRunner()
+
+        mock_repo = MagicMock()
+        mock_repo.list_enabled.return_value = []
+
+        mock_searcher = MagicMock()
+        mock_searcher.search.return_value = [self._make_search_result()]
+
+        mock_embedder = MagicMock()
+        mock_embedder.dimension = 384
+        mock_embedder.embed.return_value = [0.0] * 384
+
+        mock_db = MagicMock()
+
+        with (
+            patch("docsift.database.database.Database", return_value=mock_db),
+            patch(
+                "docsift.database.repositories.CollectionRepository",
+                return_value=mock_repo,
+            ),
+            patch(
+                "docsift.embedding.embedder.SentenceTransformerEmbedder",
+                return_value=mock_embedder,
+            ),
+            patch(
+                "docsift.search.vector.VectorSearcher",
+                return_value=mock_searcher,
+            ),
+            patch(
+                "docsift.config.settings.get_settings",
+                return_value=MagicMock(model_name="all-MiniLM-L6-v2"),
+            ),
+        ):
+            result = runner.invoke(
+                vsearch_cmd,
+                ["query", "--line-numbers", "--json"],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code == 0
+        assert '"line_numbers": "1\\n2"' in result.output
