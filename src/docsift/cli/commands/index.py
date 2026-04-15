@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import click
@@ -67,7 +68,6 @@ def update_cmd(ctx: click.Context, collection: str | None, force: bool) -> None:
 
             if coll.pre_update_cmd:
                 console.print(f"  Running pre-update command: {coll.pre_update_cmd}")
-                import subprocess
                 result = subprocess.run(
                     coll.pre_update_cmd,
                     shell=True,
