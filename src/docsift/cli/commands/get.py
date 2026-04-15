@@ -9,6 +9,8 @@ import click
 from rich.console import Console
 from rich.syntax import Syntax
 
+from docsift.cli.formatters import prepend_line_numbers
+from docsift.core.models import Document
 from docsift.database.database import Database
 from docsift.database.repositories import DocumentRepository
 
@@ -25,12 +27,14 @@ def get_group() -> None:
 @click.argument("path_or_docid")
 @click.option("--from-line", "-f", type=int, help="Start from line number")
 @click.option("--lines", "-l", type=int, help="Number of lines to show")
+@click.option("--line-numbers", is_flag=True, help="Show line numbers")
 @click.pass_context
 def get_cmd(
     ctx: click.Context,
     path_or_docid: str,
     from_line: Optional[int],
     lines: Optional[int],
+    line_numbers: bool,
 ) -> None:
     """Get a document by path or document ID."""
     index_path = ctx.obj["index_path"]
@@ -97,6 +101,9 @@ def get_cmd(
             
             content = "\n".join(content_lines)
         
+        if line_numbers:
+            content = prepend_line_numbers(content)
+
         # Display with syntax highlighting if markdown
         if doc.path.endswith(".md"):
             console.print(content)
@@ -107,11 +114,13 @@ def get_cmd(
 @get_group.command("multi-get")
 @click.argument("pattern")
 @click.option("--max-bytes", "-b", type=int, default=100000, help="Max bytes per file")
+@click.option("--line-numbers", is_flag=True, help="Show line numbers")
 @click.pass_context
 def multi_get_cmd(
     ctx: click.Context,
     pattern: str,
     max_bytes: int,
+    line_numbers: bool,
 ) -> None:
     """Get multiple documents matching a pattern."""
     index_path = ctx.obj["index_path"]
@@ -176,6 +185,9 @@ def multi_get_cmd(
             content = doc.content
             if len(content.encode()) > max_bytes:
                 content = content[:max_bytes] + "\n... [truncated]"
+
+            if line_numbers:
+                content = prepend_line_numbers(content)
 
             console.print(f"[bold cyan]=== {doc.path} ===[/bold cyan]")
             console.print(content)
