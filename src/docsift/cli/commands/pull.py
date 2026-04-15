@@ -8,6 +8,16 @@ from urllib import request
 import click
 from rich.console import Console
 
+try:
+    from huggingface_hub import hf_hub_download
+except ImportError:
+    hf_hub_download = None  # type: ignore[misc,assignment]
+
+try:
+    from modelscope import snapshot_download
+except ImportError:
+    snapshot_download = None  # type: ignore[misc,assignment]
+
 console = Console()
 
 
@@ -53,7 +63,8 @@ def pull_cmd(
         filename = parts[-1]
 
         try:
-            from huggingface_hub import hf_hub_download
+            if hf_hub_download is None:
+                raise ImportError("huggingface_hub not installed")
 
             console.print(f"[dim]Downloading from HuggingFace: {repo_id}/{filename}[/dim]")
             path = hf_hub_download(
@@ -66,7 +77,8 @@ def pull_cmd(
         except Exception as hf_err:
             console.print(f"[yellow]HuggingFace failed: {hf_err}[/yellow]")
             try:
-                from modelscope import snapshot_download
+                if snapshot_download is None:
+                    raise ImportError("modelscope not installed")
 
                 console.print(f"[dim]Trying ModelScope fallback...[/dim]")
                 model_path = snapshot_download(repo_id, cache_dir=str(target_cache))
