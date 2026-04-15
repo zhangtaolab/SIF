@@ -237,21 +237,85 @@ def collection_enable(ctx: click.Context, name: str) -> None:
 def collection_disable(ctx: click.Context, name: str) -> None:
     """Disable a collection from default searches."""
     index_path = ctx.obj["index_path"]
-    
+
     db = Database(index_path)
     db.init_schema()
-    
+
     with db.transaction() as conn:
         repo = CollectionRepository(conn)
         collection = repo.get_by_name(name)
-        
+
         if not collection:
             raise click.ClickException(f"Collection '{name}' not found")
-        
+
         collection.include_by_default = False
         repo.update(collection)
-    
+
     console.print(f"[green]Collection '{name}' disabled[/green]")
+
+
+@collection_group.command("update-cmd")
+@click.argument("name")
+@click.option("--cmd", "-c", help="Shell command to run before indexing")
+@click.option("--clear", is_flag=True, help="Clear the pre-update command")
+@click.pass_context
+def collection_update_cmd(ctx: click.Context, name: str, cmd: str | None, clear: bool) -> None:
+    """Set or clear a pre-index shell command for a collection."""
+    index_path = ctx.obj["index_path"]
+    db = Database(index_path)
+    db.init_schema()
+    with db.transaction() as conn:
+        repo = CollectionRepository(conn)
+        collection = repo.get_by_name(name)
+        if not collection:
+            raise click.ClickException(f"Collection '{name}' not found")
+        if clear:
+            collection.pre_update_cmd = None
+        elif cmd is not None:
+            collection.pre_update_cmd = cmd
+        else:
+            raise click.ClickException("Provide --cmd or --clear")
+        repo.update(collection)
+    if clear:
+        console.print(f"[green]Cleared pre-update command for '{name}'[/green]")
+    else:
+        console.print(f"[green]Set pre-update command for '{name}': {cmd}[/green]")
+
+
+@collection_group.command("include")
+@click.argument("name")
+@click.pass_context
+def collection_include(ctx: click.Context, name: str) -> None:
+    """Include a collection in default searches."""
+    index_path = ctx.obj["index_path"]
+    db = Database(index_path)
+    db.init_schema()
+    with db.transaction() as conn:
+        repo = CollectionRepository(conn)
+        collection = repo.get_by_name(name)
+        if not collection:
+            raise click.ClickException(f"Collection '{name}' not found")
+        collection.include_by_default = True
+        repo.update(collection)
+    console.print(f"[green]Collection '{name}' included in default searches[/green]")
+
+
+@collection_group.command("exclude")
+@click.argument("name")
+@click.pass_context
+def collection_exclude(ctx: click.Context, name: str) -> None:
+    """Exclude a collection from default searches."""
+    index_path = ctx.obj["index_path"]
+    db = Database(index_path)
+    db.init_schema()
+    with db.transaction() as conn:
+        repo = CollectionRepository(conn)
+        collection = repo.get_by_name(name)
+        if not collection:
+            raise click.ClickException(f"Collection '{name}' not found")
+        collection.include_by_default = False
+        repo.update(collection)
+    console.print(f"[green]Collection '{name}' excluded from default searches[/green]")
 
 
 @collection_group.command("ls")
@@ -261,17 +325,17 @@ def collection_disable(ctx: click.Context, name: str) -> None:
 def collection_ls(ctx: click.Context, name: str, subpath: Optional[str]) -> None:
     """List files in a collection."""
     index_path = ctx.obj["index_path"]
-    
+
     db = Database(index_path)
     db.init_schema()
-    
+
     with db.connection:
         repo = CollectionRepository(db.connection)
         collection = repo.get_by_name(name)
-        
+
         if not collection:
             raise click.ClickException(f"Collection '{name}' not found")
-        
+
         # Scan files
         from docsift.indexing.scanner import FileScanner
         scanner = FileScanner()
@@ -280,16 +344,16 @@ def collection_ls(ctx: click.Context, name: str, subpath: Optional[str]) -> None
             pattern=collection.pattern,
             ignore_patterns=collection.ignore_patterns,
         )
-        
+
         if not scan_result.files:
             console.print("[yellow]No files found in collection.[/yellow]")
             return
-        
+
         # Build tree
         tree = Tree(f"[bold cyan]{collection.name}[/bold cyan]")
-        
+
         for file_path in sorted(scan_result.files):
             rel_path = file_path.relative_to(collection.path)
             tree.add(str(rel_path))
-        
+
         console.print(tree)
