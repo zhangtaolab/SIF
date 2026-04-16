@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from typing import List, Optional
 
@@ -102,8 +103,7 @@ class VectorSearcher:
 
     def _embedding_to_vec(self, embedding: List[float]) -> str:
         """Convert embedding to sqlite-vec format."""
-        # sqlite-vec expects JSON array format
-        return str(embedding).replace("'", '"')
+        return json.dumps(embedding)
 
     def _get_document_content(self, document_id: str) -> Optional[str]:
         """Get document content."""
@@ -141,4 +141,27 @@ class VectorSearcher:
             VALUES (?, ?, ?, vec_f32(?))
             """,
             (embedding_id, document_id, chunk_id, embedding_str)
+        )
+
+    def add_embeddings_batch(
+        self,
+        items: List[tuple[str, str, Optional[str], List[float]]],
+    ) -> None:
+        """Add multiple embeddings in a single batch operation.
+
+        Each item is a tuple of (embedding_id, document_id, chunk_id, embedding_vector).
+        """
+        if not items:
+            return
+        rows = [
+            (eid, doc_id, chunk_id, json.dumps(vec))
+            for eid, doc_id, chunk_id, vec in items
+        ]
+        self.db.executemany(
+            """
+            INSERT OR REPLACE INTO document_embeddings
+            (embedding_id, document_id, chunk_id, embedding)
+            VALUES (?, ?, ?, vec_f32(?))
+            """,
+            rows,
         )
