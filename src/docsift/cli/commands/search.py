@@ -21,7 +21,11 @@ console = Console()
 
 def format_results_json(results: list) -> str:
     """Format results as JSON."""
-    return json.dumps([r.to_dict() for r in results], indent=2, ensure_ascii=False)
+    return json.dumps(
+        [r.to_dict() if hasattr(r, "to_dict") else r for r in results],
+        indent=2,
+        ensure_ascii=False,
+    )
 
 
 def format_results_csv(results: list) -> str:
@@ -222,6 +226,11 @@ def search_cmd(
 @click.option("--all", "search_all", is_flag=True, help="Search all collections")
 @click.option("--line-numbers", is_flag=True, help="Show line numbers in content")
 @click.option("--json", "output_json", is_flag=True, help="Output as JSON")
+@click.option(
+    "--model-type",
+    type=click.Choice(["sentence_transformers", "gguf", "openai", "modelscope"]),
+    help="Embedding model type override",
+)
 @click.pass_context
 def vsearch_cmd(
     ctx: click.Context,
@@ -231,6 +240,7 @@ def vsearch_cmd(
     search_all: bool,
     line_numbers: bool,
     output_json: bool,
+    model_type: str | None = None,
 ) -> None:
     """Search documents using vector similarity."""
     index_path = ctx.obj["index_path"]
@@ -239,18 +249,21 @@ def vsearch_cmd(
         console.print("[yellow]No index found. Run 'docsift update' and 'docsift embed' first.[/yellow]")
         return
 
-    from docsift.config.settings import get_settings
+    from docsift.config.settings import Settings, get_settings
     from docsift.database.database import Database
     from docsift.database.repositories import CollectionRepository
-    from docsift.embedding.embedder import SentenceTransformerEmbedder
+    from docsift.embedding.manager import EmbeddingManager
     from docsift.search.vector import VectorSearcher
 
     settings = get_settings()
+    if model_type:
+        settings = Settings(**settings.model_dump(), model_type=model_type)
 
     try:
-        embedder = SentenceTransformerEmbedder(model_name=settings.model_name)
+        manager = EmbeddingManager.from_settings(settings)
+        query_embedding = manager.embed_single(query)
     except ImportError as e:
-        raise click.ClickException(f"sentence-transformers not installed: {e}")
+        raise click.ClickException(f"Embedding backend not installed: {e}")
     except Exception as e:
         raise click.ClickException(f"Failed to load embedding model: {e}")
 
@@ -274,8 +287,7 @@ def vsearch_cmd(
             options.collection_ids = [c.id for c in enabled]
 
     with db.connection:
-        query_embedding = embedder.embed(query)
-        searcher = VectorSearcher(db.connection, embedder.dimension)
+        searcher = VectorSearcher(db.connection, len(query_embedding))
         results = searcher.search(query_embedding, options)
 
     if output_json:
@@ -328,6 +340,11 @@ def vsearch_cmd(
 @click.option("--md", "output_md", is_flag=True, help="Output as Markdown")
 @click.option("--xml", "output_xml", is_flag=True, help="Output as XML")
 @click.option("--files", "output_files", is_flag=True, help="Output file paths only")
+@click.option(
+    "--model-type",
+    type=click.Choice(["sentence_transformers", "gguf", "openai", "modelscope"]),
+    help="Embedding model type override",
+)
 @click.pass_context
 def query_cmd(
     ctx: click.Context,
@@ -343,6 +360,7 @@ def query_cmd(
     output_md: bool,
     output_xml: bool,
     output_files: bool,
+    model_type: str | None = None,
 ) -> None:
     """Search documents using hybrid approach (BM25 + Vector + RRF).
 
@@ -380,9 +398,28 @@ def query_cmd(
             enabled = repo.list_enabled()
             options.collection_ids = [c.id for c in enabled]
 
+    # Load embedder for hybrid search
+    from docsift.config.settings import Settings, get_settings
+    from docsift.embedding.manager import EmbeddingManager
+
+    settings = get_settings()
+    if model_type:
+        settings = Settings(**settings.model_dump(), model_type=model_type)
+
+    try:
+        manager = EmbeddingManager.from_settings(settings)
+        manager.load_model()
+        embedding_dim = len(manager.embed_single("probe"))
+    except ImportError as e:
+        raise click.ClickException(f"Embedding backend not installed: {e}")
+    except Exception as e:
+        raise click.ClickException(f"Failed to load embedding model: {e}")
+
     # Search using hybrid approach
     with db.connection:
-        searcher = HybridSearcher(db.connection)
+        searcher = HybridSearcher(
+            db.connection, embedder=manager._model, embedding_dim=embedding_dim
+        )
         results = searcher.search(query, options)
 
     # Output results

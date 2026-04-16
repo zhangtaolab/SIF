@@ -97,6 +97,10 @@ class TestSearchFiltering:
         mock_searcher = MagicMock()
         mock_searcher.search.return_value = []
 
+        mock_manager = MagicMock()
+        mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager._model = MagicMock()
+
         mock_db = MagicMock()
 
         with (
@@ -108,6 +112,14 @@ class TestSearchFiltering:
             patch(
                 "docsift.cli.commands.search.HybridSearcher",
                 return_value=mock_searcher,
+            ),
+            patch(
+                "docsift.embedding.manager.EmbeddingManager.from_settings",
+                return_value=mock_manager,
+            ),
+            patch(
+                "docsift.config.settings.get_settings",
+                return_value=MagicMock(model_name="all-MiniLM-L6-v2", model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"}),
             ),
         ):
             result = runner.invoke(
@@ -135,9 +147,9 @@ class TestSearchFiltering:
         mock_searcher = MagicMock()
         mock_searcher.search.return_value = []
 
-        mock_embedder = MagicMock()
-        mock_embedder.dimension = 384
-        mock_embedder.embed.return_value = [0.0] * 384
+        mock_manager = MagicMock()
+        mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager._model = MagicMock()
 
         mock_db = MagicMock()
 
@@ -148,8 +160,8 @@ class TestSearchFiltering:
                 return_value=mock_repo,
             ),
             patch(
-                "docsift.embedding.embedder.SentenceTransformerEmbedder",
-                return_value=mock_embedder,
+                "docsift.embedding.manager.EmbeddingManager.from_settings",
+                return_value=mock_manager,
             ),
             patch(
                 "docsift.search.vector.VectorSearcher",
@@ -157,7 +169,7 @@ class TestSearchFiltering:
             ),
             patch(
                 "docsift.config.settings.get_settings",
-                return_value=MagicMock(model_name="all-MiniLM-L6-v2"),
+                return_value=MagicMock(model_name="all-MiniLM-L6-v2", model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"}),
             ),
         ):
             result = runner.invoke(
@@ -266,6 +278,10 @@ class TestSearchLineNumbers:
         mock_searcher = MagicMock()
         mock_searcher.search.return_value = [self._make_search_result()]
 
+        mock_manager = MagicMock()
+        mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager._model = MagicMock()
+
         mock_db = MagicMock()
 
         with (
@@ -277,6 +293,14 @@ class TestSearchLineNumbers:
             patch(
                 "docsift.cli.commands.search.HybridSearcher",
                 return_value=mock_searcher,
+            ),
+            patch(
+                "docsift.embedding.manager.EmbeddingManager.from_settings",
+                return_value=mock_manager,
+            ),
+            patch(
+                "docsift.config.settings.get_settings",
+                return_value=MagicMock(model_name="all-MiniLM-L6-v2", model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"}),
             ),
         ):
             result = runner.invoke(
@@ -299,9 +323,9 @@ class TestSearchLineNumbers:
         mock_searcher = MagicMock()
         mock_searcher.search.return_value = [self._make_search_result()]
 
-        mock_embedder = MagicMock()
-        mock_embedder.dimension = 384
-        mock_embedder.embed.return_value = [0.0] * 384
+        mock_manager = MagicMock()
+        mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager._model = MagicMock()
 
         mock_db = MagicMock()
 
@@ -312,8 +336,8 @@ class TestSearchLineNumbers:
                 return_value=mock_repo,
             ),
             patch(
-                "docsift.embedding.embedder.SentenceTransformerEmbedder",
-                return_value=mock_embedder,
+                "docsift.embedding.manager.EmbeddingManager.from_settings",
+                return_value=mock_manager,
             ),
             patch(
                 "docsift.search.vector.VectorSearcher",
@@ -321,7 +345,7 @@ class TestSearchLineNumbers:
             ),
             patch(
                 "docsift.config.settings.get_settings",
-                return_value=MagicMock(model_name="all-MiniLM-L6-v2"),
+                return_value=MagicMock(model_name="all-MiniLM-L6-v2", model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"}),
             ),
         ):
             result = runner.invoke(
