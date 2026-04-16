@@ -66,7 +66,15 @@ Plans:
   2. Vector search uses `sqlite-vec` and refuses brute-force Python fallback on large indexes
   3. Document indexing benefits from batch embedding insertion for better performance
   4. User can download embedding models from ModelScope as an alternative to HuggingFace
-**Plans:** TBD
+**Plans:** 6 plans
+
+Plans:
+- [ ] 03-01-PLAN.md — Add Settings fields for embedding backends and create unit tests (VEC-01)
+- [ ] 03-02-PLAN.md — Implement OpenAIEmbedder, wire ModelScope, refactor factory to Embedder protocol (VEC-01, VEC-04)
+- [ ] 03-03-PLAN.md — Make SchemaManager dimension-aware with fail-fast mismatch detection (VEC-02)
+- [ ] 03-04-PLAN.md — Add batch embedding insertion to VectorSearcher and create tests (VEC-02, VEC-03)
+- [ ] 03-05-PLAN.md — Refactor EmbeddingManager to use Embedder protocol and create tests (VEC-01, VEC-03)
+- [ ] 03-06-PLAN.md — Integrate EmbeddingManager into CLI search/index commands and fix indexer (VEC-01, VEC-02, VEC-03)
 
 ### Phase 4: Advanced Search Pipeline
 **Goal**: Users can perform high-quality hybrid searches with reranking, query expansion, and diagnostic visibility.
