@@ -169,6 +169,11 @@ def update_cmd(ctx: click.Context, collection: str | None, force: bool) -> None:
 @click.option("--force", "-f", is_flag=True, help="Force re-embed all documents")
 @click.option("--chunk-strategy", default="auto", help="Chunking strategy")
 @click.option("--model", "-m", help="Embedding model name")
+@click.option(
+    "--model-type",
+    type=click.Choice(["sentence_transformers", "gguf", "openai", "modelscope"]),
+    help="Embedding model type override",
+)
 @click.pass_context
 def embed_cmd(
     ctx: click.Context,
@@ -176,42 +181,39 @@ def embed_cmd(
     force: bool,
     chunk_strategy: str,
     model: str | None,
+    model_type: str | None = None,
 ) -> None:
     """Generate embeddings for documents."""
     index_path = ctx.obj["index_path"]
-    
-    console.print("[yellow]Embedding generation requires an embedding model.[/yellow]")
-    console.print("[dim]Install with: pip install sentence-transformers[/dim]")
-    console.print("")
-    
-    # Check if sentence-transformers is available
-    try:
-        from sentence_transformers import SentenceTransformer
-    except ImportError:
-        console.print("[red]sentence-transformers not installed.[/red]")
-        console.print("Run: pip install sentence-transformers")
-        return
-    
+
     db = Database(index_path)
     db.init_schema()
-    
-    # Initialize embedder
-    from docsift.config.settings import get_settings
-    settings = get_settings()
-    model_name = model or settings.model_name
 
-    console.print("Loading embedding model...")
+    # Initialize embedder
+    from docsift.config.settings import Settings, get_settings
+    from docsift.embedding.manager import EmbeddingManager
+    from docsift.search.vector import VectorSearcher
+
+    settings = get_settings()
+    if model:
+        settings = settings.model_copy(update={"model_name": model})
+    if model_type:
+        settings = settings.model_copy(update={"model_type": model_type})
+
     try:
-        embedder = SentenceTransformer(model_name)
+        manager = EmbeddingManager.from_settings(settings)
+    except ImportError as e:
+        console.print(f"[red]Embedding backend not installed: {e}[/red]")
+        return
     except Exception as e:
         console.print(f"[red]Failed to load embedding model: {e}[/red]")
         return
-    
+
     with db.connection:
         coll_repo = CollectionRepository(db.connection)
         doc_repo = DocumentRepository(db.connection)
         chunk_repo = DocumentChunkRepository(db.connection)
-        
+
         # Get collections
         if collection:
             collections = [coll_repo.get_by_name(collection)]
@@ -219,73 +221,61 @@ def embed_cmd(
                 raise click.ClickException(f"Collection '{collection}' not found")
         else:
             collections = coll_repo.list_all()
-        
+
         total_chunks = 0
-        
+
         for coll in collections:
             if not coll:
                 continue
-            
+
             console.print(f"\n[bold]Embedding collection: {coll.name}[/bold]")
-            
             documents = doc_repo.list_by_collection(coll.id)
-            
-            # Create chunker
             chunker = create_chunker(chunk_strategy)
-            
-            with Progress(
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                console=console,
-            ) as progress:
-                task = progress.add_task(f"Embedding {coll.name}...", total=len(documents))
-                
-                for doc in documents:
-                    # Remove old chunks
-                    chunk_repo.delete_by_document(doc.id)
-                    
-                    # Chunk document
-                    chunks = chunker.chunk(doc.content)
-                    
-                    # Embed chunks
-                    chunk_texts = [c.content for c in chunks]
-                    if chunk_texts:
-                        try:
-                            embeddings = embedder.encode(
-                                chunk_texts,
-                                normalize_embeddings=True,
-                                show_progress_bar=False,
-                            )
-                            
-                            # Save chunks with embeddings
-                            for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
-                                chunk.document_id = doc.id
-                                chunk.sequence = i
-                                chunk_repo.create(chunk)
-                                
-                                # Save embedding to vector table
-                                from docsift.search.vector import VectorSearcher
-                                vector_searcher = VectorSearcher(db.connection)
-                                vector_searcher.add_embedding(
-                                    embedding_id=chunk.id,
-                                    document_id=doc.id,
-                                    chunk_id=chunk.id,
-                                    embedding=embedding.tolist(),
-                                )
-                            
-                            total_chunks += len(chunks)
-                        except Exception as e:
-                            console.print(f"  [red]Error embedding {doc.filename}: {e}[/red]")
-                    
-                    progress.advance(task)
-            
+
+            # Collect all chunks across documents
+            all_chunks = []  # (chunk, document_id)
+            doc_chunks_map: dict[str, list] = {}
+
+            for doc in documents:
+                chunk_repo.delete_by_document(doc.id)
+                chunks = chunker.chunk(doc.content)
+                doc_chunks_map[doc.id] = chunks
+                for i, chunk in enumerate(chunks):
+                    chunk.document_id = doc.id
+                    chunk.sequence = i
+                    all_chunks.append((chunk, doc.id))
+
+            # Batch embed all chunks
+            if all_chunks:
+                try:
+                    chunk_texts = [c.content for c, _ in all_chunks]
+                    embedding_response = manager.embed(chunk_texts)
+                    embeddings = embedding_response.embeddings
+
+                    # Persist chunks and embeddings
+                    batch_items: list[tuple[str, str, str | None, list[float]]] = []
+                    for (chunk, doc_id), embedding in zip(all_chunks, embeddings):
+                        chunk_repo.create(chunk)
+                        batch_items.append((chunk.id, doc_id, chunk.id, embedding))
+
+                    if batch_items:
+                        vector_searcher = VectorSearcher(
+                            db.connection, len(manager.embed_single("probe"))
+                        )
+                        vector_searcher.add_embeddings_batch(batch_items)
+
+                    total_chunks += len(all_chunks)
+                except Exception as e:
+                    console.print(f"  [red]Error embedding collection {coll.name}: {e}[/red]")
+
             # Update collection stats
+            documents = doc_repo.list_by_collection(coll.id)
             coll.chunk_count = sum(
                 len(chunk_repo.get_by_document(d.id))
                 for d in documents
             )
             coll_repo.update(coll)
-        
+
         console.print(f"\n[green]Embedding complete: {total_chunks} chunks embedded[/green]")
 
 
