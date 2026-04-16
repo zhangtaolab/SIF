@@ -1,44 +1,30 @@
 {
   "version": "1.0",
-  "timestamp": "2026-04-14T23:37:38.703Z",
-  "phase": "01",
-  "phase_name": "foundation-fix",
-  "phase_dir": ".planning/phases/01-foundation-fix",
-  "plan": 6,
-  "task": 0,
-  "total_tasks": 6,
-  "status": "complete",
+  "timestamp": "2026-04-16T12:34:06.611Z",
+  "phase": "03",
+  "phase_name": "embedding-vector-search",
+  "phase_dir": ".planning/phases/03-embedding-vector-search",
+  "plan": 5,
+  "task": 1,
+  "total_tasks": 2,
+  "status": "paused",
   "completed_tasks": [
-    {"id": 1, "name": "Fix missing runtime dependencies in pyproject.toml", "status": "done", "commit": "319762e"},
-    {"id": 2, "name": "Fix FTS5 synchronization and consolidate repository files", "status": "done", "commit": "1289936"},
-    {"id": 3, "name": "Fix inverted checksum comparison and remove hardcoded model path", "status": "done", "commit": "dd8defc"},
-    {"id": 4, "name": "Replace placeholder embeddings with real ST and GGUF implementations", "status": "done", "commit": "b32ad39"},
-    {"id": 5, "name": "Remove vector search fallback and make vsearch fail fast", "status": "done", "commit": "32a6c4d"},
-    {"id": 6, "name": "Improve SQLite connection safety for async/multi-threaded contexts", "status": "done", "commit": "cc4c7d1"}
+    {"id": 1, "name": "Add embedding backend fields to Settings", "status": "done", "commit": "f4185bd"},
+    {"id": 2, "name": "Implement OpenAIEmbedder and wire factory", "status": "done", "commit": "8b622b9"},
+    {"id": 3, "name": "Make SchemaManager dimension-aware", "status": "done", "commit": "38ee4e3"},
+    {"id": 4, "name": "Add batch embedding insertion to VectorSearcher", "status": "done", "commit": "dd3e86d"}
   ],
   "remaining_tasks": [
-    {"id": 1, "name": "Plan Phase 2: CLI Core Completion", "status": "not_started"}
+    {"id": 5, "name": "Refactor EmbeddingManager to work with Embedder protocol", "status": "not_started"},
+    {"id": 6, "name": "Integrate EmbeddingManager into CLI search/index commands", "status": "not_started"}
   ],
   "blockers": [],
   "human_actions_pending": [],
   "decisions": [
-    {"decision": "FTS5 synchronization uses SQLite triggers on external content tables", "rationale": "Eliminates manual FTS sync and keeps virtual tables automatically consistent", "phase": "01"},
-    {"decision": "sqlite_repository.py deleted, all access consolidated into repositories.py", "rationale": "Removes stale duplicate code and unifies repository pattern", "phase": "01"},
-    {"decision": "Vector search fails fast with RuntimeError when sqlite-vec is unavailable", "rationale": "Silent BM25 fallback masked configuration problems", "phase": "01"},
-    {"decision": "MCP server uses connection-per-request via DatabaseConnection", "rationale": "Prevents ProgrammingError from shared connection reuse across threads/async tasks", "phase": "01"},
-    {"decision": "Heavy ML libraries remain optional extras in pyproject.toml", "rationale": "Keeps core install lightweight while supporting full functionality when extras are installed", "phase": "01"}
+    {"decision": "SchemaManager uses sqlite_master SQL introspection for dimension mismatch detection", "rationale": "Prevents runtime insertion errors by failing fast at startup", "phase": "03"},
+    {"decision": "VectorSearcher uses json.dumps for sqlite-vec serialization", "rationale": "Robust JSON format instead of fragile str.replace", "phase": "03"}
   ],
-  "uncommitted_files": [
-    "Modified: .planning/config.json",
-    "Modified: .planning/phases/01-foundation-fix/01-02-PLAN.md",
-    "Modified: .planning/phases/01-foundation-fix/01-CONTEXT.md",
-    "Modified: .planning/phases/01-foundation-fix/01-RESEARCH.md",
-    "Modified: CLAUDE.md",
-    "Modified: src/docsift/cli/commands/search.py",
-    "Modified: src/docsift/search/hybrid.py",
-    "Modified: src/docsift/search/vector.py",
-    "Untracked: numerous source files, tests, docs, and reports (see git status)"
-  ],
-  "next_action": "Run `/gsd-plan-phase 2` to begin planning Phase 2: CLI Core Completion",
-  "context_notes": "Phase 01 execution finished successfully with all 6 plans verified and passed. There are uncommitted modifications and many untracked files in the working tree that predate or are unrelated to Phase 01. The next logical step is Phase 02 planning."
+  "uncommitted_files": [],
+  "next_action": "Execute plan 03-05: refactor EmbeddingManager to work with Embedder protocol instances",
+  "context_notes": "Waves 1 and 2 of Phase 03 are complete. Wave 3 (03-05) and Wave 4 (03-06) remain. All prior work is committed and SUMMARY.md files are in place. No blockers."
 }
