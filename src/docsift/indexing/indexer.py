@@ -4,9 +4,8 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from pathlib import Path
 
-from docsift.core.collection import Collection
-from docsift.core.document import Document, DocumentChunk
-from docsift.database.repository import DocumentRepository
+from docsift.core.models import Collection, Document, DocumentChunk
+from docsift.database.repositories import DocumentRepository
 from docsift.embedding.manager import EmbeddingManager
 from docsift.indexing.chunker import Chunker
 from docsift.indexing.parser import MarkdownParser
@@ -85,8 +84,10 @@ class DocumentIndexer:
         logger.info(f"Indexing collection: {collection.name}")
         
         # Scan for files
-        scan_result = self._scanner.scan_multiple(
-            [Path(p) for p in collection.paths]
+        scan_result = self._scanner.scan(
+            Path(collection.path),
+            pattern=collection.pattern,
+            ignore_patterns=collection.ignore_patterns,
         )
         
         logger.info(f"Found {scan_result.file_count} files to index")
@@ -173,8 +174,10 @@ class DocumentIndexer:
             collection_id=collection_id,
             path=str(file_path),
             content=parse_result.content,
+            title=parse_result.title or file_path.name,
             checksum=checksum,
             file_size=file_path.stat().st_size,
+            mtime=file_path.stat().st_mtime,
             metadata=parse_result.metadata,
         )
         
@@ -192,8 +195,8 @@ class DocumentIndexer:
                     id=str(uuid.uuid4()),
                     document_id=document.id,
                     content=chunk.content,
-                    start_line=chunk.start_line,
-                    end_line=chunk.end_line,
+                    start_pos=chunk.start_pos,
+                    end_pos=chunk.end_pos,
                     token_count=chunk.token_count,
                     embedding=embedding,
                 )
