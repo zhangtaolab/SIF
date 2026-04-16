@@ -2,7 +2,6 @@
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -16,25 +15,25 @@ class Settings(BaseSettings):
     Settings are loaded from environment variables and .env files.
     Environment variables should be prefixed with DOCSIFT_.
     """
-    
+
     model_config = SettingsConfigDict(
         env_prefix="DOCSIFT_",
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
     )
-    
+
     # Application settings
     app_name: str = Field(default=APP_NAME, description="Application name")
     debug: bool = Field(default=False, description="Debug mode")
     log_level: str = Field(default="INFO", description="Logging level")
-    
+
     # Database settings
     db_path: Path | None = Field(
         default=None,
         description="Path to SQLite database file",
     )
-    
+
     # Model settings
     model_path: Path | None = Field(
         default=None,
@@ -59,12 +58,24 @@ class Settings(BaseSettings):
         ge=1,
         description="Batch size for inference",
     )
+    model_type: str = Field(
+        default="sentence_transformers",
+        description="Embedding model type (gguf, sentence_transformers, openai, huggingface)",
+    )
     n_gpu_layers: int = Field(
         default=0,
         ge=0,
         description="Number of GPU layers for GGUF models",
     )
-    
+    api_key: str | None = Field(
+        default=None,
+        description="API key for remote embedding models",
+    )
+    api_base: str | None = Field(
+        default=None,
+        description="Base URL for remote embedding API",
+    )
+
     # Chunking settings
     chunk_size: int = Field(
         default=DEFAULT_CHUNK_SIZE,
@@ -76,7 +87,7 @@ class Settings(BaseSettings):
         ge=0,
         description="Default chunk overlap in tokens",
     )
-    
+
     # Search settings
     default_search_type: str = Field(
         default="hybrid",
@@ -88,7 +99,7 @@ class Settings(BaseSettings):
         le=100,
         description="Default search result limit",
     )
-    
+
     # MCP server settings
     mcp_host: str = Field(
         default="127.0.0.1",
@@ -104,7 +115,7 @@ class Settings(BaseSettings):
         default="stdio",
         description="MCP transport type (stdio, http)",
     )
-    
+
     # Cache settings
     cache_dir: Path | None = Field(
         default=None,
@@ -114,7 +125,7 @@ class Settings(BaseSettings):
         default=True,
         description="Whether to cache embeddings",
     )
-    
+
     @field_validator("db_path", "cache_dir", mode="before")
     @classmethod
     def expand_path(cls, v: str | Path | None) -> Path | None:
@@ -123,7 +134,7 @@ class Settings(BaseSettings):
             return None
         path = Path(v).expanduser()
         return path
-    
+
     @field_validator("log_level")
     @classmethod
     def validate_log_level(cls, v: str) -> str:
@@ -133,29 +144,29 @@ class Settings(BaseSettings):
         if v_upper not in valid_levels:
             raise ValueError(f"Invalid log level: {v}. Must be one of {valid_levels}")
         return v_upper
-    
+
     def get_db_path(self) -> Path:
         """Get the database path, creating default if not set."""
         if self.db_path:
             return self.db_path
-        
+
         from platformdirs import user_data_dir
         data_dir = Path(user_data_dir(self.app_name))
         data_dir.mkdir(parents=True, exist_ok=True)
         return data_dir / "docsift.db"
-    
+
     def get_cache_dir(self) -> Path:
         """Get the cache directory, creating default if not set."""
         if self.cache_dir:
             return self.cache_dir
-        
+
         from platformdirs import user_cache_dir
         cache_dir = Path(user_cache_dir(self.app_name))
         cache_dir.mkdir(parents=True, exist_ok=True)
         return cache_dir
 
 
-@lru_cache()
+@lru_cache
 def get_settings() -> Settings:
     """Get cached settings instance.
     
