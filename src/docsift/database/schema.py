@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import re
 import sqlite3
 from typing import Optional
 
 
 class SchemaManager:
     """Manages database schema creation and migrations."""
-    
-    def __init__(self, db: sqlite3.Connection) -> None:
+
+    def __init__(self, db: sqlite3.Connection, embedding_dim: int = 384) -> None:
         self.db = db
+        self.embedding_dim = embedding_dim
     
     def create_all(self) -> None:
         """Create all database tables and indexes."""
@@ -219,34 +221,38 @@ class SchemaManager:
     
     def _create_vector_tables(self) -> None:
         """Create vector tables using sqlite-vec."""
-        # Check if sqlite-vec is available
         try:
             self.db.execute("SELECT vec_version()")
             vec_available = True
         except sqlite3.OperationalError:
             vec_available = False
-        
-        if vec_available:
-            # Document embeddings table
-            self.db.execute("""
-                CREATE VIRTUAL TABLE IF NOT EXISTS document_embeddings USING vec0(
-                    embedding_id TEXT PRIMARY KEY,
-                    document_id TEXT NOT NULL,
-                    chunk_id TEXT,
-                    embedding FLOAT[768]
-                )
-            """)
-        else:
-            # Fallback: create regular table for embeddings
-            self.db.execute("""
-                CREATE TABLE IF NOT EXISTS document_embeddings (
-                    embedding_id TEXT PRIMARY KEY,
-                    document_id TEXT NOT NULL,
-                    chunk_id TEXT,
-                    embedding BLOB NOT NULL,
-                    created_at TEXT NOT NULL
-                )
-            """)
+
+        if not vec_available:
+            return
+
+        cursor = self.db.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='document_embeddings'"
+        )
+        row = cursor.fetchone()
+        if row and row[0]:
+            match = re.search(r"FLOAT\[(\d+)\]", row[0])
+            if match:
+                existing_dim = int(match.group(1))
+                if existing_dim != self.embedding_dim:
+                    raise RuntimeError(
+                        f"Embedding dimension mismatch: database has FLOAT[{existing_dim}], "
+                        f"but settings require FLOAT[{self.embedding_dim}]. "
+                        f"Rebuild the index with 'docsift cleanup' or delete the database file."
+                    )
+
+        self.db.execute(f"""
+            CREATE VIRTUAL TABLE IF NOT EXISTS document_embeddings USING vec0(
+                embedding_id TEXT PRIMARY KEY,
+                document_id TEXT NOT NULL,
+                chunk_id TEXT,
+                embedding FLOAT[{self.embedding_dim}]
+            )
+        """)
     
     def _create_indexes(self) -> None:
         """Create database indexes."""

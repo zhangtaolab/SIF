@@ -59,7 +59,9 @@ class Database:
     
     def init_schema(self) -> None:
         """Initialize database schema."""
-        self._schema = SchemaManager(self.connection)
+        from docsift.config.settings import get_settings
+        settings = get_settings()
+        self._schema = SchemaManager(self.connection, embedding_dim=settings.embedding_dim)
         self._schema.create_all()
     
     @contextmanager
@@ -90,13 +92,17 @@ class Database:
     def get_stats(self) -> dict:
         """Get database statistics."""
         if self._schema is None:
-            self._schema = SchemaManager(self.connection)
+            from docsift.config.settings import get_settings
+            settings = get_settings()
+            self._schema = SchemaManager(self.connection, embedding_dim=settings.embedding_dim)
         return self._schema.get_stats()
-    
+
     def reset(self) -> None:
         """Reset database (drop all tables)."""
         if self._schema is None:
-            self._schema = SchemaManager(self.connection)
+            from docsift.config.settings import get_settings
+            settings = get_settings()
+            self._schema = SchemaManager(self.connection, embedding_dim=settings.embedding_dim)
         self._schema.drop_all()
         self._schema.create_all()
 
