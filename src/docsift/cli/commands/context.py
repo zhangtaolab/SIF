@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Optional
 
 import click
@@ -11,127 +10,148 @@ from rich.table import Table
 
 from docsift.core.models import PathContext
 from docsift.database.database import Database
-from docsift.database.repositories import PathContextRepository
+from docsift.database.repositories import CollectionRepository, ContextRepository
 
 console = Console()
 
 
 @click.group("context")
 def context_group() -> None:
-    """Manage path contexts."""
+    """Manage contextual descriptions for paths, collections, and global scope."""
     pass
 
 
 @context_group.command("add")
-@click.argument("path")
-@click.argument("context_text")
-@click.option("--collection", "-c", help="Associate with a collection")
+@click.argument("type", type=click.Choice(["path", "collection", "global"]))
+@click.argument("target")
+@click.argument("content")
 @click.pass_context
 def context_add(
     ctx: click.Context,
-    path: str,
-    context_text: str,
-    collection: Optional[str],
+    type: str,
+    target: str,
+    content: str,
 ) -> None:
-    """Add context for a path."""
+    """Add context for a path, collection, or global scope."""
     index_path = ctx.obj["index_path"]
-    
     db = Database(index_path)
     db.init_schema()
-    
+
     with db.transaction() as conn:
-        repo = PathContextRepository(conn)
-        
-        # Get collection ID if specified
-        collection_id = None
-        if collection:
-            from docsift.database.repositories import CollectionRepository
+        repo = ContextRepository(conn)
+
+        # Resolve target based on type
+        actual_target = target
+        if type == "collection":
             coll_repo = CollectionRepository(conn)
-            coll = coll_repo.get_by_name(collection)
+            coll = coll_repo.get_by_name(target)
             if not coll:
-                raise click.ClickException(f"Collection '{collection}' not found")
-            collection_id = coll.id
-        
-        # Check if context already exists
-        existing = repo.get_by_path(path)
+                # Fallback: treat target as collection ID
+                coll = coll_repo.get_by_id(target)
+            if not coll:
+                raise click.ClickException(f"Collection '{target}' not found")
+            actual_target = coll.id
+        elif type == "global":
+            actual_target = "global"
+        # For path type, actual_target = target (the path string)
+
+        # Upsert: update if exists for this target+type, else create
+        existing = repo.get_by_target(actual_target, type)
         if existing:
-            # Update existing
-            existing.context = context_text
+            existing.context = content
             repo.update(existing)
-            console.print(f"[green]Context updated for '{path}'[/green]")
+            console.print(f"[green]Context updated for {type} '{target}'[/green]")
         else:
-            # Create new
             path_context = PathContext(
-                path=path,
-                context=context_text,
-                collection_id=collection_id,
+                path=actual_target,
+                context=content,
             )
             repo.create(path_context)
-            console.print(f"[green]Context added for '{path}'[/green]")
+            console.print(f"[green]Context added for {type} '{target}'[/green]")
 
 
 @context_group.command("remove")
-@click.argument("path")
+@click.argument("context_id")
 @click.pass_context
-def context_remove(ctx: click.Context, path: str) -> None:
-    """Remove context for a path."""
+def context_remove(ctx: click.Context, context_id: str) -> None:
+    """Remove a context by its ID."""
     index_path = ctx.obj["index_path"]
-    
     db = Database(index_path)
     db.init_schema()
-    
+
     with db.transaction() as conn:
-        repo = PathContextRepository(conn)
-        
-        existing = repo.get_by_path(path)
-        if not existing:
-            raise click.ClickException(f"No context found for '{path}'")
-        
-        repo.delete(existing.id)
-    
-    console.print(f"[green]Context removed for '{path}'[/green]")
+        repo = ContextRepository(conn)
+        deleted = repo.delete(context_id)
+        if not deleted:
+            raise click.ClickException(f"No context found with ID '{context_id}'")
+
+    console.print(f"[green]Context '{context_id}' removed[/green]")
 
 
 @context_group.command("list")
-@click.option("--collection", "-c", help="Filter by collection")
+@click.option(
+    "--type",
+    "context_type",
+    type=click.Choice(["path", "collection", "global"]),
+    help="Filter by context type",
+)
 @click.pass_context
-def context_list(ctx: click.Context, collection: Optional[str]) -> None:
-    """List all path contexts."""
+def context_list(ctx: click.Context, context_type: Optional[str]) -> None:
+    """List all contexts."""
     index_path = ctx.obj["index_path"]
-    
+
     if not index_path.exists():
         console.print("[yellow]No index found.[/yellow]")
         return
-    
+
     db = Database(index_path)
     db.init_schema()
-    
+
     with db.connection:
-        repo = PathContextRepository(db.connection)
-        
-        if collection:
-            from docsift.database.repositories import CollectionRepository
-            coll_repo = CollectionRepository(db.connection)
-            coll = coll_repo.get_by_name(collection)
-            if not coll:
-                raise click.ClickException(f"Collection '{collection}' not found")
-            contexts = repo.list_by_collection(coll.id)
+        repo = ContextRepository(db.connection)
+        if context_type:
+            contexts = repo.list_by_type(context_type)
         else:
             contexts = repo.list_all()
-    
+
     if not contexts:
         console.print("[yellow]No contexts found.[/yellow]")
         return
-    
-    table = Table(title="Path Contexts")
-    table.add_column("Path", style="cyan")
-    table.add_column("Context", style="green")
-    
+
+    table = Table(title="Contexts")
+    table.add_column("Type", style="magenta")
+    table.add_column("Target", style="cyan")
+    table.add_column("Content", style="green")
+
     for ctx_item in contexts:
-        # Truncate long contexts
-        context_text = ctx_item.context
-        if len(context_text) > 50:
-            context_text = context_text[:47] + "..."
-        table.add_row(ctx_item.path, context_text)
-    
+        # Truncate long contexts for display
+        content_text = ctx_item.context
+        if len(content_text) > 50:
+            content_text = content_text[:47] + "..."
+        table.add_row("path", ctx_item.path, content_text)
+
     console.print(table)
+
+
+@context_group.command("prune")
+@click.pass_context
+def context_prune(ctx: click.Context) -> None:
+    """Remove orphaned path contexts (whose target paths no longer exist in the index)."""
+    index_path = ctx.obj["index_path"]
+
+    if not index_path.exists():
+        console.print("[yellow]No index found.[/yellow]")
+        return
+
+    db = Database(index_path)
+    db.init_schema()
+
+    with db.transaction() as conn:
+        repo = ContextRepository(conn)
+        count = repo.delete_orphaned_paths()
+
+    console.print(f"[green]Pruned {count} orphaned path context(s).[/green]")
+
+
+# Register 'rm' as an alias for 'remove'
+context_group.add_command(context_remove, name="rm")

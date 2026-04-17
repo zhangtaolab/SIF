@@ -110,7 +110,7 @@ def status_cmd(ctx: click.Context) -> None:
         table.add_row("Collections", str(stats.get("collections", 0)))
         table.add_row("Documents", str(stats.get("documents", 0)))
         table.add_row("Chunks", str(stats.get("chunks", 0)))
-        table.add_row("Path Contexts", str(stats.get("path_contexts", 0)))
+        table.add_row("Contexts", str(stats.get("contexts", 0)))
 
         total_size = stats.get("total_size_bytes", 0)
         if total_size > 0:
