@@ -17,6 +17,7 @@ from docsift.search.benchmark import SearchEvaluator
 from docsift.search.hybrid import SearchPipeline
 from docsift.utils.logging import get_logger
 
+
 logger = get_logger(__name__)
 console = Console()
 

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Callable, Sequence
+from collections.abc import Sequence
+from typing import Callable
 
 from docsift.core.models import SearchResult
 from docsift.utils.logging import get_logger
+
 
 logger = get_logger(__name__)
 
@@ -93,9 +95,7 @@ class SearchEvaluator:
 
             # Compute metrics for each k
             for k in k_values:
-                metrics.setdefault(f"precision@{k}", []).append(
-                    precision_at_k(relevance, k)
-                )
+                metrics.setdefault(f"precision@{k}", []).append(precision_at_k(relevance, k))
                 metrics.setdefault(f"recall@{k}", []).append(
                     recall_at_k(relevance, len(relevant_ids), k)
                 )

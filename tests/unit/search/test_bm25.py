@@ -2,210 +2,237 @@
 
 from unittest.mock import MagicMock
 
-import pytest
-
-from docsift.models.search import SearchOptions, SearchResult
-from docsift.search.bm25 import BM25SearchStrategy
-from docsift.search.strategy import SearchContext
+from docsift.core.models import SearchOptions, SearchResult
+from docsift.search.bm25 import BM25Searcher
 
 
-class TestBM25SearchStrategy:
-    """Tests for BM25SearchStrategy class."""
-    
-    def test_init_stores_repository(self, mock_search_repository: MagicMock):
-        """Test that init stores the repository."""
-        # Act
-        strategy = BM25SearchStrategy(mock_search_repository)
-        
-        # Assert
-        assert strategy._repository is mock_search_repository
-    
-    def test_search_calls_repository_search_fts(self, mock_search_repository: MagicMock):
-        """Test that search calls repository search_fts method."""
-        # Arrange
-        strategy = BM25SearchStrategy(mock_search_repository)
-        context = SearchContext(query="test query")
-        options = SearchOptions(limit=10)
-        
-        # Act
-        results = strategy.search(context, options)
-        
-        # Assert
-        mock_search_repository.search_fts.assert_called_once_with(
-            query="test query",
-            collection_ids=None,
-            limit=10,
-            offset=0,
+class TestBM25Searcher:
+    """Tests for BM25Searcher class."""
+
+    def _make_mock_db(self, rows=None):
+        mock_db = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = rows or []
+        mock_db.execute.return_value = mock_cursor
+        return mock_db
+
+    def test_init_stores_db(self) -> None:
+        """Test that init stores the db connection."""
+        mock_db = MagicMock()
+        searcher = BM25Searcher(mock_db)
+        assert searcher.db is mock_db
+
+    def test_search_executes_fts_query(self) -> None:
+        """Test that search executes FTS query."""
+        mock_db = self._make_mock_db(
+            [
+                {
+                    "document_id": "doc-1",
+                    "title": "T1",
+                    "path": "/1.md",
+                    "collection_name": "c",
+                    "score": -1.0,
+                },
+            ]
         )
-    
-    def test_search_returns_search_results(self, mock_search_repository: MagicMock):
+
+        searcher = BM25Searcher(mock_db)
+        options = SearchOptions(include_highlights=False)
+        results = searcher.search("test query", options)
+
+        assert len(results) == 1
+        assert results[0].document_id == "doc-1"
+        sql = mock_db.execute.call_args[0][0]
+        assert "MATCH" in sql
+
+    def test_search_returns_search_results(self) -> None:
         """Test that search returns list of SearchResult objects."""
-        # Arrange
-        strategy = BM25SearchStrategy(mock_search_repository)
-        context = SearchContext(query="test query")
-        options = SearchOptions(limit=10)
-        
-        # Act
-        results = strategy.search(context, options)
-        
-        # Assert
+        mock_db = self._make_mock_db(
+            [
+                {
+                    "document_id": "doc-1",
+                    "title": "T1",
+                    "path": "/1.md",
+                    "collection_name": "c",
+                    "score": -1.0,
+                },
+                {
+                    "document_id": "doc-2",
+                    "title": "T2",
+                    "path": "/2.md",
+                    "collection_name": "c",
+                    "score": -2.0,
+                },
+            ]
+        )
+
+        searcher = BM25Searcher(mock_db)
+        options = SearchOptions(include_highlights=False)
+        results = searcher.search("test query", options)
+
         assert isinstance(results, list)
-        assert len(results) == 3
-        assert all(isinstance(r, SearchResult) for r in results)
-    
-    def test_search_applies_threshold(self, mock_search_repository: MagicMock):
-        """Test that search applies score threshold."""
-        # Arrange
-        mock_search_repository.search_fts.return_value = [
-            ("doc-1", 0.95),
-            ("doc-2", 0.50),
-            ("doc-3", 0.30),
-        ]
-        strategy = BM25SearchStrategy(mock_search_repository)
-        context = SearchContext(query="test query")
-        options = SearchOptions(limit=10, threshold=0.40)
-        
-        # Act
-        results = strategy.search(context, options)
-        
-        # Assert
-        assert len(results) == 2  # Only doc-1 and doc-2 above threshold
-        assert all(r.score >= 0.40 for r in results)
-    
-    def test_search_includes_bm25_score(self, mock_search_repository: MagicMock):
-        """Test that search results include BM25 score."""
-        # Arrange
-        strategy = BM25SearchStrategy(mock_search_repository)
-        context = SearchContext(query="test query")
-        options = SearchOptions()
-        
-        # Act
-        results = strategy.search(context, options)
-        
-        # Assert
-        assert results[0].bm25_score == 0.95
-        assert results[0].score == 0.95
-    
-    def test_search_with_collection_ids(self, mock_search_repository: MagicMock):
-        """Test search with specific collection IDs."""
-        # Arrange
-        strategy = BM25SearchStrategy(mock_search_repository)
-        context = SearchContext(
-            query="test query",
-            collection_ids=["col-1", "col-2"],
-        )
-        options = SearchOptions()
-        
-        # Act
-        strategy.search(context, options)
-        
-        # Assert
-        mock_search_repository.search_fts.assert_called_once_with(
-            query="test query",
-            collection_ids=["col-1", "col-2"],
-            limit=10,
-            offset=0,
-        )
-    
-    def test_search_with_pagination(self, mock_search_repository: MagicMock):
-        """Test search with offset for pagination."""
-        # Arrange
-        strategy = BM25SearchStrategy(mock_search_repository)
-        context = SearchContext(query="test query")
-        options = SearchOptions(limit=5, offset=10)
-        
-        # Act
-        strategy.search(context, options)
-        
-        # Assert
-        mock_search_repository.search_fts.assert_called_once_with(
-            query="test query",
-            collection_ids=None,
-            limit=5,
-            offset=10,
-        )
-    
-    def test_search_empty_results(self, mock_search_repository: MagicMock):
-        """Test search returns empty list when no results."""
-        # Arrange
-        mock_search_repository.search_fts.return_value = []
-        strategy = BM25SearchStrategy(mock_search_repository)
-        context = SearchContext(query="test query")
-        options = SearchOptions()
-        
-        # Act
-        results = strategy.search(context, options)
-        
-        # Assert
-        assert results == []
-    
-    def test_search_skips_missing_documents(self, mock_search_repository: MagicMock):
-        """Test search skips documents that can't be retrieved."""
-        # Arrange
-        mock_search_repository.get_document_for_result.return_value = None
-        strategy = BM25SearchStrategy(mock_search_repository)
-        context = SearchContext(query="test query")
-        options = SearchOptions()
-        
-        # Act
-        results = strategy.search(context, options)
-        
-        # Assert
-        assert results == []
-    
-    def test_search_batch_executes_multiple_searches(self, mock_search_repository: MagicMock):
-        """Test search_batch executes multiple searches."""
-        # Arrange
-        strategy = BM25SearchStrategy(mock_search_repository)
-        contexts = [
-            SearchContext(query="query 1"),
-            SearchContext(query="query 2"),
-        ]
-        options = SearchOptions()
-        
-        # Act
-        results = strategy.search_batch(contexts, options)
-        
-        # Assert
         assert len(results) == 2
-        assert all(isinstance(r, list) for r in results)
-        assert mock_search_repository.search_fts.call_count == 2
-    
-    def test_search_batch_empty_contexts(self, mock_search_repository: MagicMock):
-        """Test search_batch with empty contexts list."""
-        # Arrange
-        strategy = BM25SearchStrategy(mock_search_repository)
-        contexts: list[SearchContext] = []
-        options = SearchOptions()
-        
-        # Act
-        results = strategy.search_batch(contexts, options)
-        
-        # Assert
+        assert all(isinstance(r, SearchResult) for r in results)
+
+    def test_search_applies_min_score(self) -> None:
+        """Test that search applies min_score filtering."""
+        # row["score"] is the FTS rank (lower = better), converted to score = 1/(1+|rank|)
+        # rank=-1.0 => score=0.5, rank=-5.0 => score=0.167
+        mock_db = self._make_mock_db(
+            [
+                {
+                    "document_id": "doc-1",
+                    "title": "T1",
+                    "path": "/1.md",
+                    "collection_name": "c",
+                    "score": -1.0,
+                },
+                {
+                    "document_id": "doc-2",
+                    "title": "T2",
+                    "path": "/2.md",
+                    "collection_name": "c",
+                    "score": -5.0,
+                },
+            ]
+        )
+
+        searcher = BM25Searcher(mock_db)
+        options = SearchOptions(min_score=0.3, include_highlights=False)
+        results = searcher.search("test query", options)
+
+        # Only doc-1 has score >= 0.3 (0.5 >= 0.3, 0.167 < 0.3)
+        assert len(results) == 1
+        assert results[0].document_id == "doc-1"
+
+    def test_search_with_collection_ids(self) -> None:
+        """Test search with specific collection IDs."""
+        mock_db = self._make_mock_db([])
+
+        searcher = BM25Searcher(mock_db)
+        options = SearchOptions(collection_ids=["col-1", "col-2"], include_highlights=False)
+        searcher.search("test query", options)
+
+        sql = mock_db.execute.call_args[0][0]
+        assert "collection_id IN" in sql
+        params = mock_db.execute.call_args[0][1]
+        assert "col-1" in params
+        assert "col-2" in params
+
+    def test_search_with_pagination(self) -> None:
+        """Test search with offset for pagination."""
+        mock_db = self._make_mock_db([])
+
+        searcher = BM25Searcher(mock_db)
+        options = SearchOptions(limit=5, offset=10, include_highlights=False)
+        searcher.search("test query", options)
+
+        sql = mock_db.execute.call_args[0][1]
+        assert sql[-2] == 5  # LIMIT
+        assert sql[-1] == 10  # OFFSET
+
+    def test_search_empty_results(self) -> None:
+        """Test search returns empty list when no results."""
+        mock_db = self._make_mock_db([])
+
+        searcher = BM25Searcher(mock_db)
+        options = SearchOptions(include_highlights=False)
+        results = searcher.search("test query", options)
+
         assert results == []
 
+    def test_search_with_content(self) -> None:
+        """Test search includes content when requested."""
+        mock_db = self._make_mock_db(
+            [
+                {
+                    "document_id": "doc-1",
+                    "title": "T1",
+                    "path": "/1.md",
+                    "collection_name": "c",
+                    "score": -1.0,
+                },
+            ]
+        )
+        content_cursor = MagicMock()
+        content_cursor.fetchone.return_value = ["document content"]
+        mock_db.execute.side_effect = [
+            mock_db.execute.return_value,
+            content_cursor,
+        ]
 
-class TestBM25Formula:
-    """Tests for BM25 formula understanding."""
-    
-    def test_bm25_formula_components(self):
-        """Test understanding of BM25 formula components."""
-        # BM25 formula components:
-        # - IDF: Inverse document frequency
-        # - TF: Term frequency
-        # - k1: Term frequency saturation parameter
-        # - b: Length normalization parameter
-        
-        # These are configuration parameters in SearchOptions
-        options = SearchOptions(bm25_k1=1.5, bm25_b=0.75)
-        
-        assert options.bm25_k1 == 1.5
-        assert options.bm25_b == 0.75
-    
-    def test_bm25_default_parameters(self):
-        """Test default BM25 parameters."""
-        options = SearchOptions()
-        
-        # Default values from constants
-        assert options.bm25_k1 == 1.5
-        assert options.bm25_b == 0.75
+        searcher = BM25Searcher(mock_db)
+        options = SearchOptions(include_content=True, include_highlights=False)
+        results = searcher.search("test query", options)
+
+        assert len(results) == 1
+        assert results[0].content == "document content"
+
+    def test_search_with_highlights(self) -> None:
+        """Test search includes highlights when requested."""
+        mock_db = self._make_mock_db(
+            [
+                {
+                    "document_id": "doc-1",
+                    "title": "T1",
+                    "path": "/1.md",
+                    "collection_name": "c",
+                    "score": -1.0,
+                },
+            ]
+        )
+        chunk_cursor = MagicMock()
+        chunk_cursor.fetchall.return_value = []
+        content_cursor = MagicMock()
+        content_cursor.fetchone.return_value = ["test query content"]
+        mock_db.execute.side_effect = [
+            mock_db.execute.return_value,
+            chunk_cursor,
+            content_cursor,
+        ]
+
+        searcher = BM25Searcher(mock_db)
+        options = SearchOptions(include_highlights=True)
+        results = searcher.search("test query", options)
+
+        assert len(results) == 1
+        # Highlights are extracted from content matching query terms
+        assert isinstance(results[0].highlights, list)
+
+    def test_search_chunks_returns_tuples(self) -> None:
+        """Test search_chunks returns (doc_id, content, score) tuples."""
+        mock_db = self._make_mock_db(
+            [
+                {
+                    "document_id": "doc-1",
+                    "content": "chunk content",
+                    "score": -1.0,
+                },
+            ]
+        )
+
+        searcher = BM25Searcher(mock_db)
+        results = searcher.search_chunks("test query")
+
+        assert len(results) == 1
+        assert results[0][0] == "doc-1"
+        assert results[0][1] == "chunk content"
+        assert isinstance(results[0][2], float)
+
+    def test_build_fts_query_single_term(self) -> None:
+        """Test FTS query building for single term."""
+        searcher = BM25Searcher(MagicMock())
+        query = searcher._build_fts_query("hello")
+        assert query == "hello*"
+
+    def test_build_fts_query_multiple_terms(self) -> None:
+        """Test FTS query building for multiple terms."""
+        searcher = BM25Searcher(MagicMock())
+        query = searcher._build_fts_query("hello world")
+        assert query == "hello* AND world*"
+
+    def test_build_fts_query_empty(self) -> None:
+        """Test FTS query building for empty query."""
+        searcher = BM25Searcher(MagicMock())
+        query = searcher._build_fts_query("")
+        assert query == "*"

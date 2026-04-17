@@ -87,16 +87,25 @@ class TestSearchEvaluator:
         def mock_search(query: str) -> list[SearchResult]:
             return [
                 SearchResult(
-                    document_id="doc-1", title="T1", path="/1",
-                    collection_name="c", score=0.9,
+                    document_id="doc-1",
+                    title="T1",
+                    path="/1",
+                    collection_name="c",
+                    score=0.9,
                 ),
                 SearchResult(
-                    document_id="doc-3", title="T3", path="/3",
-                    collection_name="c", score=0.8,
+                    document_id="doc-3",
+                    title="T3",
+                    path="/3",
+                    collection_name="c",
+                    score=0.8,
                 ),
                 SearchResult(
-                    document_id="doc-2", title="T2", path="/2",
-                    collection_name="c", score=0.7,
+                    document_id="doc-2",
+                    title="T2",
+                    path="/2",
+                    collection_name="c",
+                    score=0.7,
                 ),
             ]
 
@@ -118,14 +127,20 @@ class TestSearchEvaluator:
             if query == "q1":
                 return [
                     SearchResult(
-                        document_id="doc-a", title="A", path="/a",
-                        collection_name="c", score=0.9,
+                        document_id="doc-a",
+                        title="A",
+                        path="/a",
+                        collection_name="c",
+                        score=0.9,
                     ),
                 ]
             return [
                 SearchResult(
-                    document_id="doc-x", title="X", path="/x",
-                    collection_name="c", score=0.9,
+                    document_id="doc-x",
+                    title="X",
+                    path="/x",
+                    collection_name="c",
+                    score=0.9,
                 ),
             ]
 

@@ -1,8 +1,16 @@
 """Tests for result reranker."""
 
+import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+
+# Mock optional dependencies before importing modules that use them
+if "llama_cpp" not in sys.modules:
+    sys.modules["llama_cpp"] = MagicMock()
+if "sentence_transformers" not in sys.modules:
+    sys.modules["sentence_transformers"] = MagicMock()
 
 from docsift.core.models import SearchResult
 from docsift.search.rerank import (
@@ -75,7 +83,7 @@ class TestLlamaCppRerankerLoad:
         """Test that load sets the model."""
         reranker = LlamaCppReranker(model_path="/path/to/model.gguf")
 
-        with patch("docsift.search.rerank.Llama") as mock_llama:
+        with patch("llama_cpp.Llama") as mock_llama:
             mock_llama.return_value = MagicMock()
             reranker.load()
 
@@ -104,7 +112,7 @@ class TestLlamaCppRerankerRerank:
         """Test that rerank returns results."""
         reranker = LlamaCppReranker(model_path="/path/to/model.gguf")
 
-        with patch("docsift.search.rerank.Llama") as mock_llama:
+        with patch("llama_cpp.Llama") as mock_llama:
             mock_model = MagicMock()
             mock_model.embed.return_value = [0.1, 0.2, 0.3]
             mock_llama.return_value = mock_model
@@ -118,7 +126,7 @@ class TestLlamaCppRerankerRerank:
         """Test that rerank respects top_k limit."""
         reranker = LlamaCppReranker(model_path="/path/to/model.gguf")
 
-        with patch("docsift.search.rerank.Llama") as mock_llama:
+        with patch("llama_cpp.Llama") as mock_llama:
             mock_model = MagicMock()
             mock_model.embed.return_value = [0.1, 0.2, 0.3]
             mock_llama.return_value = mock_model
@@ -131,7 +139,7 @@ class TestLlamaCppRerankerRerank:
         """Test that rerank returns SearchResult objects."""
         reranker = LlamaCppReranker(model_path="/path/to/model.gguf")
 
-        with patch("docsift.search.rerank.Llama") as mock_llama:
+        with patch("llama_cpp.Llama") as mock_llama:
             mock_model = MagicMock()
             mock_model.embed.return_value = [0.1, 0.2, 0.3]
             mock_llama.return_value = mock_model
@@ -144,10 +152,13 @@ class TestLlamaCppRerankerRerank:
         """Test that rerank sorts results by score."""
         reranker = LlamaCppReranker(model_path="/path/to/model.gguf")
 
-        with patch("docsift.search.rerank.Llama") as mock_llama:
+        with patch("llama_cpp.Llama") as mock_llama:
             mock_model = MagicMock()
             # Return different embeddings to create different scores
-            embeddings = [[i * 0.1, i * 0.2, i * 0.3] for i in range(len(sample_search_results))]
+            # Need len(results) + 1 embeddings (query + each document)
+            embeddings = [
+                [i * 0.1, i * 0.2, i * 0.3] for i in range(len(sample_search_results) + 1)
+            ]
             mock_model.embed.side_effect = embeddings
             mock_llama.return_value = mock_model
 
@@ -160,7 +171,7 @@ class TestLlamaCppRerankerRerank:
         """Test that rerank adds reranker_score to scores dict."""
         reranker = LlamaCppReranker(model_path="/path/to/model.gguf")
 
-        with patch("docsift.search.rerank.Llama") as mock_llama:
+        with patch("llama_cpp.Llama") as mock_llama:
             mock_model = MagicMock()
             mock_model.embed.return_value = [0.1, 0.2, 0.3]
             mock_llama.return_value = mock_model
@@ -366,7 +377,7 @@ class TestRerankerEdgeCases:
             ),
         ]
 
-        with patch("docsift.search.rerank.Llama") as mock_llama:
+        with patch("llama_cpp.Llama") as mock_llama:
             mock_model = MagicMock()
             mock_model.embed.return_value = [0.1, 0.2, 0.3]
             mock_llama.return_value = mock_model
@@ -390,7 +401,7 @@ class TestRerankerEdgeCases:
             ),
         ]
 
-        with patch("docsift.search.rerank.Llama") as mock_llama:
+        with patch("llama_cpp.Llama") as mock_llama:
             mock_model = MagicMock()
             mock_model.embed.return_value = [0.1, 0.2, 0.3]
             mock_llama.return_value = mock_model
@@ -414,7 +425,7 @@ class TestRerankerEdgeCases:
             for i in range(100)
         ]
 
-        with patch("docsift.search.rerank.Llama") as mock_llama:
+        with patch("llama_cpp.Llama") as mock_llama:
             mock_model = MagicMock()
             mock_model.embed.return_value = [0.1, 0.2, 0.3]
             mock_llama.return_value = mock_model
