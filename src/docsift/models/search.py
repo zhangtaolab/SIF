@@ -73,6 +73,7 @@ class SearchResult(BaseModel):
     matched_chunks: list[dict[str, Any]] = Field(default_factory=list)
     highlights: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
+    context_description: str | None = None
 
 
 class SearchResponse(BaseModel):

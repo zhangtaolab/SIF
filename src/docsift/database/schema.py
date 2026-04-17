@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import sqlite3
+from typing import Optional
 
 
 class SchemaManager:
@@ -12,18 +13,19 @@ class SchemaManager:
     def __init__(self, db: sqlite3.Connection, embedding_dim: int = 384) -> None:
         self.db = db
         self.embedding_dim = embedding_dim
-
+    
     def create_all(self) -> None:
         """Create all database tables and indexes."""
         self._create_collections_table()
         self._create_documents_table()
         self._create_document_chunks_table()
-        self._create_path_contexts_table()
+        self._migrate_path_contexts()
+        self._create_contexts_table()
         self._create_llm_cache_table()
         self._create_fts_tables()
         self._create_vector_tables()
         self._create_indexes()
-
+    
     def _add_column_if_missing(self, table: str, column: str, dtype: str) -> None:
         """Add a column to a table if it does not already exist."""
         cursor = self.db.execute(f"PRAGMA table_info({table})")
@@ -50,7 +52,7 @@ class SchemaManager:
             )
         """)
         self._add_column_if_missing("collections", "pre_update_cmd", "TEXT")
-
+    
     def _create_documents_table(self) -> None:
         """Create documents table."""
         self.db.execute("""
@@ -70,7 +72,7 @@ class SchemaManager:
                 FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE
             )
         """)
-
+    
     def _create_document_chunks_table(self) -> None:
         """Create document chunks table."""
         self.db.execute("""
@@ -87,20 +89,47 @@ class SchemaManager:
                 FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
             )
         """)
-
-    def _create_path_contexts_table(self) -> None:
-        """Create path contexts table."""
+    
+    def _create_contexts_table(self) -> None:
+        """Create unified contexts table."""
         self.db.execute("""
-            CREATE TABLE IF NOT EXISTS path_contexts (
+            CREATE TABLE IF NOT EXISTS contexts (
                 id TEXT PRIMARY KEY,
-                collection_id TEXT,
-                path TEXT NOT NULL,
-                context TEXT NOT NULL,
+                target_id TEXT NOT NULL,
+                context_type TEXT NOT NULL CHECK(context_type IN ('path', 'collection', 'global')),
+                content TEXT NOT NULL,
                 created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
-                FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE SET NULL
+                updated_at TEXT NOT NULL
             )
         """)
+    
+    def _migrate_path_contexts(self) -> None:
+        """Migrate path_contexts -> contexts atomically using SAVEPOINT."""
+        cursor = self.db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='path_contexts'"
+        )
+        if not cursor.fetchone():
+            return
+
+        self.db.execute("SAVEPOINT sp_migration")
+        try:
+            self._create_contexts_table()
+            self.db.execute("""
+                INSERT INTO contexts (id, target_id, context_type, content, created_at, updated_at)
+                SELECT id, path, 'path', context, created_at, updated_at
+                FROM path_contexts
+            """)
+            self.db.execute("DROP TABLE path_contexts")
+            self.db.execute("""
+                CREATE INDEX IF NOT EXISTS idx_contexts_target
+                ON contexts(target_id, context_type)
+            """)
+            self.db.execute("RELEASE SAVEPOINT sp_migration")
+        except Exception as e:
+            self.db.execute("ROLLBACK TO SAVEPOINT sp_migration")
+            import sys
+            print(f"Migration failed: {e}", file=sys.stderr)
+            raise
 
     def _create_llm_cache_table(self) -> None:
         """Create LLM cache table."""
@@ -116,14 +145,15 @@ class SchemaManager:
                 UNIQUE(model_name, prompt_hash)
             )
         """)
-
+    
     def _create_fts_tables(self) -> None:
         """Create FTS5 virtual tables for full-text search with triggers."""
 
         def _fts_is_misconfigured(table_name: str, expected_content: str) -> bool:
             """Check if an existing FTS5 table lacks the correct content= setting."""
             cursor = self.db.execute(
-                "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table_name,)
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name=?",
+                (table_name,)
             )
             row = cursor.fetchone()
             if not row:
@@ -216,7 +246,7 @@ class SchemaManager:
                 INSERT INTO chunks_fts(rowid, content)
                 SELECT rowid, content FROM document_chunks
             """)
-
+    
     def _create_vector_tables(self) -> None:
         """Create vector tables using sqlite-vec."""
         try:
@@ -251,7 +281,7 @@ class SchemaManager:
                 embedding FLOAT[{self.embedding_dim}]
             )
         """)
-
+    
     def _create_indexes(self) -> None:
         """Create database indexes."""
         # Documents indexes
@@ -267,29 +297,25 @@ class SchemaManager:
             CREATE INDEX IF NOT EXISTS idx_documents_checksum 
             ON documents(checksum)
         """)
-
+        
         # Chunks indexes
         self.db.execute("""
             CREATE INDEX IF NOT EXISTS idx_chunks_document 
             ON document_chunks(document_id)
         """)
-
-        # Path contexts indexes
+        
+        # Contexts indexes
         self.db.execute("""
-            CREATE INDEX IF NOT EXISTS idx_contexts_path 
-            ON path_contexts(path)
+            CREATE INDEX IF NOT EXISTS idx_contexts_target
+            ON contexts(target_id, context_type)
         """)
-        self.db.execute("""
-            CREATE INDEX IF NOT EXISTS idx_contexts_collection 
-            ON path_contexts(collection_id)
-        """)
-
+        
         # LLM cache index
         self.db.execute("""
             CREATE INDEX IF NOT EXISTS idx_llm_cache_lookup 
             ON llm_cache(model_name, prompt_hash)
         """)
-
+    
     def drop_all(self) -> None:
         """Drop all tables (for testing/reset)."""
         tables = [
@@ -298,7 +324,7 @@ class SchemaManager:
             "documents_fts",
             "document_chunks",
             "documents",
-            "path_contexts",
+            "contexts",
             "llm_cache",
             "collections",
         ]
@@ -308,30 +334,30 @@ class SchemaManager:
             except sqlite3.OperationalError:
                 pass
         self.db.commit()
-
+    
     def get_stats(self) -> dict:
         """Get database statistics."""
         stats = {}
-
+        
         # Collection count
         cursor = self.db.execute("SELECT COUNT(*) FROM collections")
         stats["collections"] = cursor.fetchone()[0]
-
+        
         # Document count
         cursor = self.db.execute("SELECT COUNT(*) FROM documents")
         stats["documents"] = cursor.fetchone()[0]
-
+        
         # Chunk count
         cursor = self.db.execute("SELECT COUNT(*) FROM document_chunks")
         stats["chunks"] = cursor.fetchone()[0]
-
-        # Path context count
-        cursor = self.db.execute("SELECT COUNT(*) FROM path_contexts")
-        stats["path_contexts"] = cursor.fetchone()[0]
-
+        
+        # Context count
+        cursor = self.db.execute("SELECT COUNT(*) FROM contexts")
+        stats["contexts"] = cursor.fetchone()[0]
+        
         # Total size
         cursor = self.db.execute("SELECT SUM(file_size) FROM documents")
         result = cursor.fetchone()[0]
         stats["total_size_bytes"] = result or 0
-
+        
         return stats

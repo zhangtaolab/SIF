@@ -18,7 +18,8 @@ class VectorSearcher:
         self._vec_available = self._check_vec_extension()
         if not self._vec_available:
             raise RuntimeError(
-                "sqlite-vec extension is not available. Install sqlite-vec to use vector search."
+                "sqlite-vec extension is not available. "
+                "Install sqlite-vec to use vector search."
             )
 
     def _check_vec_extension(self) -> bool:
@@ -111,28 +112,9 @@ class VectorSearcher:
             WHERE context_type = 'path' AND target_id IN ({placeholders})
         """
         cursor = self.db.execute(sql, paths)
-        rows = cursor.fetchall()
-        # Handle both sqlite3.Row (dict-like) and plain tuple rows
-        context_map: dict[str, str] = {}
-        for row in rows:
-            if hasattr(row, "keys") and callable(getattr(row, "keys", None)):
-                try:
-                    context_map[row["target_id"]] = row["content"]
-                    continue
-                except (KeyError, TypeError):
-                    pass
-            # Fallback: assume tuple-like access (skip MagicMock rows in tests)
-            try:
-                key = row[0]
-                val = row[1]
-                if not isinstance(key, str):
-                    continue
-                context_map[key] = val
-            except (KeyError, IndexError, TypeError):
-                continue
+        context_map = {row["target_id"]: row["content"] for row in cursor.fetchall()}
         for result in results:
-            if result.path in context_map:
-                result.context_description = context_map[result.path]
+            result.context_description = context_map.get(result.path)
         return results
 
     def _embedding_to_vec(self, embedding: List[float]) -> str:
@@ -141,7 +123,10 @@ class VectorSearcher:
 
     def _get_document_content(self, document_id: str) -> Optional[str]:
         """Get document content."""
-        cursor = self.db.execute("SELECT content FROM documents WHERE id = ?", (document_id,))
+        cursor = self.db.execute(
+            "SELECT content FROM documents WHERE id = ?",
+            (document_id,)
+        )
         row = cursor.fetchone()
         return row[0] if row else None
 
@@ -171,7 +156,7 @@ class VectorSearcher:
             (embedding_id, document_id, chunk_id, embedding)
             VALUES (?, ?, ?, vec_f32(?))
             """,
-            (embedding_id, document_id, chunk_id, embedding_str),
+            (embedding_id, document_id, chunk_id, embedding_str)
         )
 
     def add_embeddings_batch(
@@ -184,7 +169,10 @@ class VectorSearcher:
         """
         if not items:
             return
-        rows = [(eid, doc_id, chunk_id, json.dumps(vec)) for eid, doc_id, chunk_id, vec in items]
+        rows = [
+            (eid, doc_id, chunk_id, json.dumps(vec))
+            for eid, doc_id, chunk_id, vec in items
+        ]
         self.db.executemany(
             """
             INSERT OR REPLACE INTO document_embeddings
