@@ -106,7 +106,13 @@ Plans:
   1. User can add contextual descriptions to paths or collections via `context add`
   2. User can list and remove contextual descriptions via `context list` and `context rm`
   3. Search results include relevant contextual descriptions alongside document content
-**Plans:** TBD
+**Plans:** 4 plans
+
+Plans:
+- [ ] 05-01-PLAN.md — Migrate path_contexts to unified contexts table, rename repository, add SearchResult field (CTX-01)
+- [ ] 05-02-PLAN.md — Implement context CLI: add (all types), list --type, remove/rm alias, prune (CTX-01, CTX-02)
+- [ ] 05-03-PLAN.md — Attach path context descriptions to BM25, vector, and hybrid search results (CTX-03)
+- [ ] 05-04-PLAN.md — Write unit tests for migration, repository, CLI, and search integration
 
 ## Progress
 
@@ -116,4 +122,4 @@ Plans:
 | 2. CLI Core Completion | 3/6 | In Progress|  |
 | 3. Embedding & Vector Search | 0/TBD | Not started | - |
 | 4. Advanced Search Pipeline | 0/5 | Planned | - |
-| 5. Agent Context Experience | 0/TBD | Not started | - |
+| 5. Agent Context Experience | 0/4 | Planned | - |
