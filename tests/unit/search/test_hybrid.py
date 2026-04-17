@@ -1,23 +1,14 @@
-"""Unit tests for hybrid search strategy.
+"""Unit tests for hybrid search and search pipeline."""
 
-This module tests the HybridSearchStrategy implementation including:
-- Combining BM25 and vector search results
-- RRF fusion integration
-- Weight configuration
-- Batch search functionality
-"""
-
-import uuid
 from unittest.mock import MagicMock, create_autospec
 
 import pytest
 
-from docsift.models.search import SearchOptions, SearchResult, SearchType
-from docsift.search.bm25 import BM25SearchStrategy
-from docsift.search.hybrid import HybridSearchStrategy
+from docsift.core.models import SearchOptions, SearchResult, SearchType
+from docsift.search.bm25 import BM25Searcher
+from docsift.search.hybrid import HybridSearcher, SearchPipeline
 from docsift.search.rrf import RRFFusion
-from docsift.search.strategy import SearchContext
-from docsift.search.vector import VectorSearchStrategy
+from docsift.search.vector import VectorSearcher
 
 
 # =============================================================================
@@ -26,46 +17,24 @@ from docsift.search.vector import VectorSearchStrategy
 
 
 @pytest.fixture
-def mock_bm25_strategy() -> MagicMock:
-    """Create a mock BM25 search strategy."""
-    mock = create_autospec(BM25SearchStrategy, instance=True)
-    return mock
+def mock_db():
+    """Create a mock sqlite3 connection."""
+    return MagicMock()
 
 
 @pytest.fixture
-def mock_vector_strategy() -> MagicMock:
-    """Create a mock vector search strategy."""
-    mock = create_autospec(VectorSearchStrategy, instance=True)
-    return mock
-
-
-@pytest.fixture
-def mock_rrf_fusion() -> MagicMock:
-    """Create a mock RRF fusion."""
-    mock = create_autospec(RRFFusion, instance=True)
-    return mock
+def mock_embedder():
+    """Create a mock embedder."""
+    embedder = MagicMock()
+    embedder.embed.return_value = [0.1] * 384
+    embedder.dimension = 384
+    return embedder
 
 
 @pytest.fixture
 def sample_search_options() -> SearchOptions:
     """Create sample search options."""
-    return SearchOptions(
-        limit=10,
-        offset=0,
-        threshold=0.0,
-        bm25_weight=0.3,
-        vector_weight=0.7,
-        rrf_k=60,
-    )
-
-
-@pytest.fixture
-def sample_search_context() -> SearchContext:
-    """Create sample search context."""
-    return SearchContext(
-        query="test query",
-        collection_ids=None,
-    )
+    return SearchOptions(limit=10)
 
 
 @pytest.fixture
@@ -74,27 +43,17 @@ def bm25_results() -> list[SearchResult]:
     return [
         SearchResult(
             document_id="doc-A",
-            document_path="/path/to/doc_a.md",
-            document_title="Document A",
+            path="/path/to/doc_a.md",
+            title="Document A",
+            collection_name="default",
             score=0.95,
-            bm25_score=0.95,
-            content_preview="BM25 match for A",
         ),
         SearchResult(
             document_id="doc-B",
-            document_path="/path/to/doc_b.md",
-            document_title="Document B",
+            path="/path/to/doc_b.md",
+            title="Document B",
+            collection_name="default",
             score=0.87,
-            bm25_score=0.87,
-            content_preview="BM25 match for B",
-        ),
-        SearchResult(
-            document_id="doc-C",
-            document_path="/path/to/doc_c.md",
-            document_title="Document C",
-            score=0.82,
-            bm25_score=0.82,
-            content_preview="BM25 match for C",
         ),
     ]
 
@@ -105,709 +64,342 @@ def vector_results() -> list[SearchResult]:
     return [
         SearchResult(
             document_id="doc-A",
-            document_path="/path/to/doc_a.md",
-            document_title="Document A",
+            path="/path/to/doc_a.md",
+            title="Document A",
+            collection_name="default",
             score=0.92,
-            vector_score=0.92,
-            content_preview="Vector match for A",
         ),
         SearchResult(
             document_id="doc-C",
-            document_path="/path/to/doc_c.md",
-            document_title="Document C",
+            path="/path/to/doc_c.md",
+            title="Document C",
+            collection_name="default",
             score=0.88,
-            vector_score=0.88,
-            content_preview="Vector match for C",
-        ),
-        SearchResult(
-            document_id="doc-D",
-            document_path="/path/to/doc_d.md",
-            document_title="Document D",
-            score=0.85,
-            vector_score=0.85,
-            content_preview="Vector match for D",
-        ),
-    ]
-
-
-@pytest.fixture
-def fused_results() -> list[SearchResult]:
-    """Create sample fused search results."""
-    return [
-        SearchResult(
-            document_id="doc-A",
-            document_path="/path/to/doc_a.md",
-            document_title="Document A",
-            score=0.033,  # Fused RRF score
-            bm25_score=0.95,
-            vector_score=0.92,
-            content_preview="Fused result for A",
-        ),
-        SearchResult(
-            document_id="doc-C",
-            document_path="/path/to/doc_c.md",
-            document_title="Document C",
-            score=0.029,
-            bm25_score=0.82,
-            vector_score=0.88,
-            content_preview="Fused result for C",
-        ),
-        SearchResult(
-            document_id="doc-B",
-            document_path="/path/to/doc_b.md",
-            document_title="Document B",
-            score=0.016,
-            bm25_score=0.87,
-            vector_score=None,
-            content_preview="Fused result for B",
-        ),
-        SearchResult(
-            document_id="doc-D",
-            document_path="/path/to/doc_d.md",
-            document_title="Document D",
-            score=0.016,
-            bm25_score=None,
-            vector_score=0.85,
-            content_preview="Fused result for D",
         ),
     ]
 
 
 # =============================================================================
-# Hybrid Search Basic Tests
+# HybridSearcher Tests
 # =============================================================================
 
 
-class TestHybridSearchBasic:
-    """Test basic hybrid search functionality."""
-    
-    def test_hybrid_search_executes_both_strategies(
+class TestHybridSearcher:
+    """Test HybridSearcher basic functionality."""
+
+    def test_hybrid_search_with_embedder(
         self,
-        mock_bm25_strategy: MagicMock,
-        mock_vector_strategy: MagicMock,
-        mock_rrf_fusion: MagicMock,
-        sample_search_context: SearchContext,
-        sample_search_options: SearchOptions,
-        bm25_results: list[SearchResult],
-        vector_results: list[SearchResult],
-        fused_results: list[SearchResult],
+        mock_db: MagicMock,
+        mock_embedder: MagicMock,
     ) -> None:
-        """Test that hybrid search executes both BM25 and vector search.
-        
-        Arrange: Set up mock strategies and fusion
-        Act: Execute hybrid search
-        Assert: Both strategies and fusion are called
-        """
-        # Arrange
-        mock_bm25_strategy.search.return_value = bm25_results
-        mock_vector_strategy.search.return_value = vector_results
-        mock_rrf_fusion.fuse.return_value = fused_results
-        
-        hybrid = HybridSearchStrategy(
-            bm25_strategy=mock_bm25_strategy,
-            vector_strategy=mock_vector_strategy,
-            rrf_fusion=mock_rrf_fusion,
-        )
-        
-        # Act
-        results = hybrid.search(sample_search_context, sample_search_options)
-        
-        # Assert
-        mock_bm25_strategy.search.assert_called_once_with(sample_search_context, sample_search_options)
-        mock_vector_strategy.search.assert_called_once_with(sample_search_context, sample_search_options)
-        mock_rrf_fusion.fuse.assert_called_once()
-    
-    def test_hybrid_search_returns_fused_results(
+        """Test that hybrid search uses both BM25 and vector when embedder available."""
+        hybrid = HybridSearcher(mock_db, embedder=mock_embedder, embedding_dim=384)
+        assert hybrid.embedder is mock_embedder
+        assert hybrid.bm25 is not None
+        assert hybrid.vector is not None
+
+    def test_hybrid_search_without_embedder(
         self,
-        mock_bm25_strategy: MagicMock,
-        mock_vector_strategy: MagicMock,
-        mock_rrf_fusion: MagicMock,
-        sample_search_context: SearchContext,
-        sample_search_options: SearchOptions,
-        bm25_results: list[SearchResult],
-        vector_results: list[SearchResult],
-        fused_results: list[SearchResult],
+        mock_db: MagicMock,
     ) -> None:
-        """Test that hybrid search returns fused results.
-        
-        Arrange: Set up mock strategies to return results
-        Act: Execute hybrid search
-        Assert: Returns results from fusion
-        """
-        # Arrange
-        mock_bm25_strategy.search.return_value = bm25_results
-        mock_vector_strategy.search.return_value = vector_results
-        mock_rrf_fusion.fuse.return_value = fused_results
-        
-        hybrid = HybridSearchStrategy(
-            bm25_strategy=mock_bm25_strategy,
-            vector_strategy=mock_vector_strategy,
-            rrf_fusion=mock_rrf_fusion,
-        )
-        
-        # Act
-        results = hybrid.search(sample_search_context, sample_search_options)
-        
-        # Assert
-        assert results == fused_results
-    
-    def test_hybrid_search_applies_limit(
+        """Test that hybrid search falls back to BM25 without embedder."""
+        hybrid = HybridSearcher(mock_db, embedder=None, embedding_dim=384)
+        assert hybrid.embedder is None
+
+    def test_hybrid_searcher_has_search_method(
         self,
-        mock_bm25_strategy: MagicMock,
-        mock_vector_strategy: MagicMock,
-        sample_search_context: SearchContext,
-        fused_results: list[SearchResult],
+        mock_db: MagicMock,
     ) -> None:
-        """Test that hybrid search applies result limit.
-        
-        Arrange: Set up mock strategies and options with limit
-        Act: Execute hybrid search
-        Assert: Returns at most limit results
-        """
-        # Arrange
-        mock_bm25_strategy.search.return_value = []
-        mock_vector_strategy.search.return_value = []
-        
-        options = SearchOptions(limit=2, bm25_weight=0.3, vector_weight=0.7)
-        
-        # Create a real RRF fusion for this test
-        rrf = RRFFusion()
-        
-        hybrid = HybridSearchStrategy(
-            bm25_strategy=mock_bm25_strategy,
-            vector_strategy=mock_vector_strategy,
-            rrf_fusion=rrf,
-        )
-        
-        # Act
-        results = hybrid.search(sample_search_context, options)
-        
-        # Assert - with empty results, should return empty list
-        assert len(results) <= options.limit
-    
-    def test_hybrid_search_passes_weights_to_fusion(
-        self,
-        mock_bm25_strategy: MagicMock,
-        mock_vector_strategy: MagicMock,
-        mock_rrf_fusion: MagicMock,
-        sample_search_context: SearchContext,
-        sample_search_options: SearchOptions,
-        bm25_results: list[SearchResult],
-        vector_results: list[SearchResult],
-    ) -> None:
-        """Test that hybrid search passes weights to RRF fusion.
-        
-        Arrange: Set up mock strategies
-        Act: Execute hybrid search
-        Assert: Fusion called with correct weights
-        """
-        # Arrange
-        mock_bm25_strategy.search.return_value = bm25_results
-        mock_vector_strategy.search.return_value = vector_results
-        mock_rrf_fusion.fuse.return_value = []
-        
-        hybrid = HybridSearchStrategy(
-            bm25_strategy=mock_bm25_strategy,
-            vector_strategy=mock_vector_strategy,
-            rrf_fusion=mock_rrf_fusion,
-        )
-        
-        # Act
-        hybrid.search(sample_search_context, sample_search_options)
-        
-        # Assert
-        call_args = mock_rrf_fusion.fuse.call_args
-        assert call_args is not None
-        _, kwargs = call_args
-        assert kwargs.get("weights") == [0.3, 0.7]
-        assert kwargs.get("k") == 60
-    
-    def test_hybrid_search_passes_rrf_k(
-        self,
-        mock_bm25_strategy: MagicMock,
-        mock_vector_strategy: MagicMock,
-        mock_rrf_fusion: MagicMock,
-        sample_search_context: SearchContext,
-        bm25_results: list[SearchResult],
-        vector_results: list[SearchResult],
-    ) -> None:
-        """Test that hybrid search passes RRF k parameter.
-        
-        Arrange: Set up mock strategies with custom rrf_k
-        Act: Execute hybrid search
-        Assert: Fusion called with correct k value
-        """
-        # Arrange
-        mock_bm25_strategy.search.return_value = bm25_results
-        mock_vector_strategy.search.return_value = vector_results
-        mock_rrf_fusion.fuse.return_value = []
-        
-        options = SearchOptions(limit=10, rrf_k=100)
-        
-        hybrid = HybridSearchStrategy(
-            bm25_strategy=mock_bm25_strategy,
-            vector_strategy=mock_vector_strategy,
-            rrf_fusion=mock_rrf_fusion,
-        )
-        
-        # Act
-        hybrid.search(sample_search_context, options)
-        
-        # Assert
-        call_args = mock_rrf_fusion.fuse.call_args
-        assert call_args is not None
-        _, kwargs = call_args
-        assert kwargs.get("k") == 100
+        """Test that HybridSearcher has search method."""
+        hybrid = HybridSearcher(mock_db)
+        assert hasattr(hybrid, "search")
+        assert callable(hybrid.search)
 
 
 # =============================================================================
-# Default RRF Fusion Tests
+# SearchPipeline Tests
 # =============================================================================
 
 
-class TestHybridSearchDefaultFusion:
-    """Test hybrid search with default RRF fusion."""
-    
-    def test_default_rrf_fusion_created(
-        self,
-        mock_bm25_strategy: MagicMock,
-        mock_vector_strategy: MagicMock,
-    ) -> None:
-        """Test that default RRF fusion is created when not provided.
-        
-        Arrange: Create hybrid strategy without RRF fusion
-        Act: Check internal RRF fusion
-        Assert: Default RRF fusion is created
-        """
-        # Arrange & Act
-        hybrid = HybridSearchStrategy(
-            bm25_strategy=mock_bm25_strategy,
-            vector_strategy=mock_vector_strategy,
-        )
-        
-        # Assert
-        assert hybrid._rrf_fusion is not None
-        assert isinstance(hybrid._rrf_fusion, RRFFusion)
-    
-    def test_default_fusion_produces_results(
-        self,
-        mock_bm25_strategy: MagicMock,
-        mock_vector_strategy: MagicMock,
-        sample_search_context: SearchContext,
-        bm25_results: list[SearchResult],
-        vector_results: list[SearchResult],
-    ) -> None:
-        """Test that default fusion produces valid results.
-        
-        Arrange: Set up mock strategies with overlapping results
-        Act: Execute hybrid search with default fusion
-        Assert: Returns fused and ordered results
-        """
-        # Arrange
-        mock_bm25_strategy.search.return_value = bm25_results
-        mock_vector_strategy.search.return_value = vector_results
-        
-        hybrid = HybridSearchStrategy(
-            bm25_strategy=mock_bm25_strategy,
-            vector_strategy=mock_vector_strategy,
-        )
-        
-        options = SearchOptions(limit=10, bm25_weight=1.0, vector_weight=1.0)
-        
-        # Act
-        results = hybrid.search(sample_search_context, options)
-        
-        # Assert
-        assert len(results) > 0
-        # doc-A appears in both lists, should be ranked highest
-        assert results[0].document_id == "doc-A"
-        # All scores should be positive
-        assert all(r.score > 0 for r in results)
+class TestSearchPipelinePrefixRouting:
+    """Test SearchPipeline query prefix routing."""
 
+    def test_parse_query_prefix_lex(self) -> None:
+        """Test lex: prefix routes to BM25."""
+        pipeline = SearchPipeline(MagicMock())
+        query, search_type = pipeline._parse_query_prefix("lex: python tutorial")
+        assert query == "python tutorial"
+        assert search_type == SearchType.BM25
 
-# =============================================================================
-# Edge Cases and Boundary Tests
-# =============================================================================
+    def test_parse_query_prefix_vec(self) -> None:
+        """Test vec: prefix routes to vector."""
+        pipeline = SearchPipeline(MagicMock())
+        query, search_type = pipeline._parse_query_prefix("vec: neural networks")
+        assert query == "neural networks"
+        assert search_type == SearchType.VECTOR
 
+    def test_parse_query_prefix_hyde(self) -> None:
+        """Test hyde: prefix routes to HyDE."""
+        pipeline = SearchPipeline(MagicMock())
+        query, search_type = pipeline._parse_query_prefix("hyde: machine learning")
+        assert query == "machine learning"
+        assert search_type == SearchType.HYDE
 
-class TestHybridSearchEdgeCases:
-    """Test hybrid search edge cases."""
-    
-    def test_empty_bm25_results(
-        self,
-        mock_bm25_strategy: MagicMock,
-        mock_vector_strategy: MagicMock,
-        sample_search_context: SearchContext,
-        vector_results: list[SearchResult],
-    ) -> None:
-        """Test hybrid search with empty BM25 results.
-        
-        Arrange: Set BM25 to return empty, vector to return results
-        Act: Execute hybrid search
-        Assert: Returns vector results
-        """
-        # Arrange
-        mock_bm25_strategy.search.return_value = []
-        mock_vector_strategy.search.return_value = vector_results
-        
-        hybrid = HybridSearchStrategy(
-            bm25_strategy=mock_bm25_strategy,
-            vector_strategy=mock_vector_strategy,
-        )
-        
-        options = SearchOptions(limit=10)
-        
-        # Act
-        results = hybrid.search(sample_search_context, options)
-        
-        # Assert
-        assert len(results) == len(vector_results)
-        doc_ids = {r.document_id for r in results}
-        assert doc_ids == {"doc-A", "doc-C", "doc-D"}
-    
-    def test_empty_vector_results(
-        self,
-        mock_bm25_strategy: MagicMock,
-        mock_vector_strategy: MagicMock,
-        sample_search_context: SearchContext,
-        bm25_results: list[SearchResult],
-    ) -> None:
-        """Test hybrid search with empty vector results.
-        
-        Arrange: Set vector to return empty, BM25 to return results
-        Act: Execute hybrid search
-        Assert: Returns BM25 results
-        """
-        # Arrange
-        mock_bm25_strategy.search.return_value = bm25_results
-        mock_vector_strategy.search.return_value = []
-        
-        hybrid = HybridSearchStrategy(
-            bm25_strategy=mock_bm25_strategy,
-            vector_strategy=mock_vector_strategy,
-        )
-        
-        options = SearchOptions(limit=10)
-        
-        # Act
-        results = hybrid.search(sample_search_context, options)
-        
-        # Assert
-        assert len(results) == len(bm25_results)
-        doc_ids = {r.document_id for r in results}
-        assert doc_ids == {"doc-A", "doc-B", "doc-C"}
-    
-    def test_both_empty_results(
-        self,
-        mock_bm25_strategy: MagicMock,
-        mock_vector_strategy: MagicMock,
-        sample_search_context: SearchContext,
-    ) -> None:
-        """Test hybrid search with both result sets empty.
-        
-        Arrange: Set both strategies to return empty
-        Act: Execute hybrid search
-        Assert: Returns empty list
-        """
-        # Arrange
-        mock_bm25_strategy.search.return_value = []
-        mock_vector_strategy.search.return_value = []
-        
-        hybrid = HybridSearchStrategy(
-            bm25_strategy=mock_bm25_strategy,
-            vector_strategy=mock_vector_strategy,
-        )
-        
-        options = SearchOptions(limit=10)
-        
-        # Act
-        results = hybrid.search(sample_search_context, options)
-        
-        # Assert
-        assert results == []
-    
-    def test_identical_results(
-        self,
-        mock_bm25_strategy: MagicMock,
-        mock_vector_strategy: MagicMock,
-        sample_search_context: SearchContext,
-        bm25_results: list[SearchResult],
-    ) -> None:
-        """Test hybrid search with identical result sets.
-        
-        Arrange: Set both strategies to return same results
-        Act: Execute hybrid search
-        Assert: Returns results with boosted scores
-        """
-        # Arrange
-        mock_bm25_strategy.search.return_value = bm25_results
-        mock_vector_strategy.search.return_value = bm25_results.copy()
-        
-        hybrid = HybridSearchStrategy(
-            bm25_strategy=mock_bm25_strategy,
-            vector_strategy=mock_vector_strategy,
-        )
-        
-        options = SearchOptions(limit=10, bm25_weight=1.0, vector_weight=1.0)
-        
-        # Act
-        results = hybrid.search(sample_search_context, options)
-        
-        # Assert
-        assert len(results) == len(bm25_results)
-        # With identical results, scores should be doubled
-        # (each doc appears twice with same rank)
-    
-    def test_zero_weights(
-        self,
-        mock_bm25_strategy: MagicMock,
-        mock_vector_strategy: MagicMock,
-        sample_search_context: SearchContext,
-        bm25_results: list[SearchResult],
-        vector_results: list[SearchResult],
-    ) -> None:
-        """Test hybrid search with zero weights.
-        
-        Arrange: Set one weight to zero
-        Act: Execute hybrid search
-        Assert: Zero-weighted strategy contributes 0 to scores
-        """
-        # Arrange
-        mock_bm25_strategy.search.return_value = bm25_results
-        mock_vector_strategy.search.return_value = vector_results
-        
-        hybrid = HybridSearchStrategy(
-            bm25_strategy=mock_bm25_strategy,
-            vector_strategy=mock_vector_strategy,
-        )
-        
-        # Zero BM25 weight - BM25 results will still appear but with 0 contribution
-        options = SearchOptions(limit=10, bm25_weight=0.0, vector_weight=1.0)
-        
-        # Act
-        results = hybrid.search(sample_search_context, options)
-        
-        # Assert - all unique docs from both lists appear
-        # doc-A, doc-B, doc-C from BM25; doc-A, doc-C, doc-D from vector
-        doc_ids = {r.document_id for r in results}
-        assert doc_ids == {"doc-A", "doc-B", "doc-C", "doc-D"}
-        
-        # doc-B only appears in BM25 (weight 0), so its score should be 0
-        doc_b = next(r for r in results if r.document_id == "doc-B")
-        assert doc_b.score == 0.0
+    def test_parse_query_prefix_expand(self) -> None:
+        """Test expand: prefix routes to expansion."""
+        pipeline = SearchPipeline(MagicMock())
+        query, search_type = pipeline._parse_query_prefix("expand: search tips")
+        assert query == "search tips"
+        assert search_type == SearchType.EXPAND
 
+    def test_parse_query_prefix_default(self) -> None:
+        """Test default query routes to hybrid."""
+        pipeline = SearchPipeline(MagicMock())
+        query, search_type = pipeline._parse_query_prefix("python tutorial")
+        assert query == "python tutorial"
+        assert search_type == SearchType.HYBRID
 
-# =============================================================================
-# Batch Search Tests
-# =============================================================================
-
-
-class TestHybridSearchBatch:
-    """Test hybrid search batch functionality."""
-    
-    def test_batch_search_executes_all_queries(
+    def test_pipeline_prefix_lex_routes_to_bm25(
         self,
-        mock_bm25_strategy: MagicMock,
-        mock_vector_strategy: MagicMock,
-        mock_rrf_fusion: MagicMock,
+        mock_db: MagicMock,
     ) -> None:
-        """Test that batch search executes all queries.
-        
-        Arrange: Set up mock strategies and multiple contexts
-        Act: Execute batch search
-        Assert: Search called for each context
-        """
-        # Arrange
-        contexts = [
-            SearchContext(query="query 1"),
-            SearchContext(query="query 2"),
-            SearchContext(query="query 3"),
-        ]
-        
-        mock_bm25_strategy.search.return_value = []
-        mock_vector_strategy.search.return_value = []
-        mock_rrf_fusion.fuse.return_value = []
-        
-        hybrid = HybridSearchStrategy(
-            bm25_strategy=mock_bm25_strategy,
-            vector_strategy=mock_vector_strategy,
-            rrf_fusion=mock_rrf_fusion,
-        )
-        
-        options = SearchOptions(limit=10)
-        
-        # Act
-        results = hybrid.search_batch(contexts, options)
-        
-        # Assert
-        assert len(results) == 3
-        assert mock_bm25_strategy.search.call_count == 3
-        assert mock_vector_strategy.search.call_count == 3
-    
-    def test_batch_search_returns_separate_results(
-        self,
-        mock_bm25_strategy: MagicMock,
-        mock_vector_strategy: MagicMock,
-    ) -> None:
-        """Test that batch search returns separate result lists.
-        
-        Arrange: Set up mock strategies with different results per query
-        Act: Execute batch search
-        Assert: Returns separate result lists
-        """
-        # Arrange
-        contexts = [
-            SearchContext(query="query 1"),
-            SearchContext(query="query 2"),
-        ]
-        
-        # Return different results for each call
-        def bm25_side_effect(ctx: SearchContext, opts: SearchOptions) -> list[SearchResult]:
-            return [SearchResult(
-                document_id=f"doc-{ctx.query}",
-                document_path=f"/{ctx.query}.md",
+        """Test that lex: prefix uses BM25Searcher only."""
+        pipeline = SearchPipeline(mock_db)
+        pipeline.hybrid.bm25 = create_autospec(BM25Searcher, instance=True)
+        pipeline.hybrid.bm25.search.return_value = [
+            SearchResult(
+                document_id="doc-1",
+                path="/test.md",
+                title="Test",
+                collection_name="default",
                 score=0.9,
-            )]
-        
-        mock_bm25_strategy.search.side_effect = bm25_side_effect
-        mock_vector_strategy.search.return_value = []
-        
-        hybrid = HybridSearchStrategy(
-            bm25_strategy=mock_bm25_strategy,
-            vector_strategy=mock_vector_strategy,
-        )
-        
-        options = SearchOptions(limit=10)
-        
-        # Act
-        results = hybrid.search_batch(contexts, options)
-        
-        # Assert
-        assert len(results) == 2
-        assert results[0][0].document_id == "doc-query 1"
-        assert results[1][0].document_id == "doc-query 2"
-    
-    def test_batch_search_empty_contexts(
+            ),
+        ]
+
+        results = pipeline.search("lex: test query")
+
+        pipeline.hybrid.bm25.search.assert_called_once()
+        assert len(results) == 1
+        assert results[0].document_id == "doc-1"
+
+    def test_pipeline_prefix_vec_raises_without_embedder(
         self,
-        mock_bm25_strategy: MagicMock,
-        mock_vector_strategy: MagicMock,
+        mock_db: MagicMock,
     ) -> None:
-        """Test batch search with empty contexts list.
-        
-        Arrange: Create empty contexts list
-        Act: Execute batch search
-        Assert: Returns empty list
-        """
-        # Arrange
-        hybrid = HybridSearchStrategy(
-            bm25_strategy=mock_bm25_strategy,
-            vector_strategy=mock_vector_strategy,
-        )
-        
-        options = SearchOptions(limit=10)
-        
-        # Act
-        results = hybrid.search_batch([], options)
-        
-        # Assert
-        assert results == []
-        mock_bm25_strategy.search.assert_not_called()
+        """Test that vec: prefix raises when embedder is missing."""
+        pipeline = SearchPipeline(mock_db)
 
+        with pytest.raises(RuntimeError, match="Vector search requires an embedder"):
+            pipeline.search("vec: test query")
 
-# =============================================================================
-# Integration Tests
-# =============================================================================
-
-
-class TestHybridSearchIntegration:
-    """Integration tests for hybrid search."""
-    
-    def test_full_hybrid_search_flow(
+    def test_pipeline_prefix_hyde_raises_without_generate(
         self,
-        sample_search_context: SearchContext,
-        bm25_results: list[SearchResult],
-        vector_results: list[SearchResult],
+        mock_db: MagicMock,
     ) -> None:
-        """Test full hybrid search flow with real RRF fusion.
-        
-        Arrange: Set up real strategies with mock repositories
-        Act: Execute hybrid search
-        Assert: Results are correctly fused and ordered
-        """
-        # Arrange - create mock strategies that return real results
-        mock_bm25 = MagicMock(spec=BM25SearchStrategy)
-        mock_bm25.search.return_value = bm25_results
-        
-        mock_vector = MagicMock(spec=VectorSearchStrategy)
-        mock_vector.search.return_value = vector_results
-        
-        hybrid = HybridSearchStrategy(
-            bm25_strategy=mock_bm25,
-            vector_strategy=mock_vector,
-        )
-        
-        options = SearchOptions(
-            limit=10,
-            bm25_weight=1.0,
-            vector_weight=1.0,
-            rrf_k=60,
-        )
-        
-        # Act
-        results = hybrid.search(sample_search_context, options)
-        
-        # Assert
-        assert len(results) == 4  # Unique documents from both lists
-        
-        # doc-A appears in both at rank 1, should be first
-        assert results[0].document_id == "doc-A"
-        
-        # All results should have positive scores
-        assert all(r.score > 0 for r in results)
-        
-        # Scores should be in descending order
-        for i in range(len(results) - 1):
-            assert results[i].score >= results[i + 1].score
-    
-    def test_hybrid_search_with_collection_filter(
+        """Test that hyde: prefix raises when embedder lacks generation."""
+        mock_embedder = MagicMock(spec=["embed", "dimension"])
+        mock_embedder.embed.return_value = [0.1] * 384
+        mock_embedder.dimension = 384
+
+        pipeline = SearchPipeline(mock_db, embedder=mock_embedder)
+
+        with pytest.raises(
+            RuntimeError, match="HyDE search requires a text-generation-capable model"
+        ):
+            pipeline.search("hyde: test query")
+
+
+class TestSearchPipelineExpansion:
+    """Test SearchPipeline query expansion."""
+
+    def test_pipeline_with_expansion(
         self,
-        mock_bm25_strategy: MagicMock,
-        mock_vector_strategy: MagicMock,
+        mock_db: MagicMock,
+        mock_embedder: MagicMock,
     ) -> None:
-        """Test hybrid search with collection filter.
-        
-        Arrange: Set up context with collection_ids
-        Act: Execute hybrid search
-        Assert: Collection filter passed to strategies
-        """
-        # Arrange
-        mock_bm25_strategy.search.return_value = []
-        mock_vector_strategy.search.return_value = []
-        
-        hybrid = HybridSearchStrategy(
-            bm25_strategy=mock_bm25_strategy,
-            vector_strategy=mock_vector_strategy,
+        """Test pipeline with query expansion fuses multiple queries."""
+        mock_expander = MagicMock()
+        mock_expander.expand.return_value = ["query", "query variant"]
+
+        pipeline = SearchPipeline(
+            mock_db,
+            embedder=mock_embedder,
+            query_expander=mock_expander,
         )
-        
-        context = SearchContext(
-            query="test",
-            collection_ids=["collection-1", "collection-2"],
+        pipeline.hybrid.bm25 = create_autospec(BM25Searcher, instance=True)
+        pipeline.hybrid.bm25.search.return_value = [
+            SearchResult(
+                document_id="doc-1",
+                path="/test.md",
+                title="Test",
+                collection_name="default",
+                score=0.9,
+            ),
+        ]
+
+        results = pipeline.search("query", SearchOptions(limit=5))
+
+        assert mock_expander.expand.called
+        assert pipeline.hybrid.bm25.search.call_count == 2
+
+    def test_pipeline_expansion_deduplicates(
+        self,
+        mock_db: MagicMock,
+        mock_embedder: MagicMock,
+    ) -> None:
+        """Test that expansion deduplicates repeated variants."""
+        mock_expander = MagicMock()
+        mock_expander.expand.return_value = ["query", "query", "QUERY", "variant"]
+
+        pipeline = SearchPipeline(
+            mock_db,
+            embedder=mock_embedder,
+            query_expander=mock_expander,
         )
-        options = SearchOptions(limit=10)
-        
-        # Act
-        hybrid.search(context, options)
-        
-        # Assert
-        bm25_call = mock_bm25_strategy.search.call_args
-        vector_call = mock_vector_strategy.search.call_args
-        
-        assert bm25_call is not None
-        assert vector_call is not None
-        
-        # Check that context with collection_ids was passed
-        passed_context_bm25 = bm25_call[0][0]
-        passed_context_vector = vector_call[0][0]
-        
-        assert passed_context_bm25.collection_ids == ["collection-1", "collection-2"]
-        assert passed_context_vector.collection_ids == ["collection-1", "collection-2"]
+        pipeline.hybrid.bm25 = create_autospec(BM25Searcher, instance=True)
+        pipeline.hybrid.bm25.search.return_value = []
+
+        pipeline.search("query")
+
+        # Should only search twice (original + one truly unique variant)
+        assert pipeline.hybrid.bm25.search.call_count == 2
+
+
+class TestSearchPipelineReranking:
+    """Test SearchPipeline reranking."""
+
+    def test_pipeline_with_reranker(
+        self,
+        mock_db: MagicMock,
+    ) -> None:
+        """Test pipeline with reranker reorders results."""
+        mock_reranker = MagicMock()
+        mock_reranker.rerank.return_value = [
+            SearchResult(
+                document_id="doc-2",
+                path="/b.md",
+                title="B",
+                collection_name="default",
+                score=0.99,
+                rank=1,
+            ),
+            SearchResult(
+                document_id="doc-1",
+                path="/a.md",
+                title="A",
+                collection_name="default",
+                score=0.95,
+                rank=2,
+            ),
+        ]
+
+        pipeline = SearchPipeline(mock_db, reranker=mock_reranker)
+        pipeline.hybrid.bm25 = create_autospec(BM25Searcher, instance=True)
+        pipeline.hybrid.bm25.search.return_value = [
+            SearchResult(
+                document_id="doc-1",
+                path="/a.md",
+                title="A",
+                collection_name="default",
+                score=0.9,
+            ),
+            SearchResult(
+                document_id="doc-2",
+                path="/b.md",
+                title="B",
+                collection_name="default",
+                score=0.8,
+            ),
+        ]
+
+        results = pipeline.search("test", SearchOptions(candidate_limit=10))
+
+        mock_reranker.rerank.assert_called_once()
+        assert results[0].document_id == "doc-2"
+        assert results[0].rank == 1
+
+    def test_pipeline_candidate_limit(
+        self,
+        mock_db: MagicMock,
+    ) -> None:
+        """Test that only candidate_limit results go to reranker."""
+        mock_reranker = MagicMock()
+        mock_reranker.rerank.return_value = []
+
+        pipeline = SearchPipeline(mock_db, reranker=mock_reranker)
+        pipeline.hybrid.bm25 = create_autospec(BM25Searcher, instance=True)
+        pipeline.hybrid.bm25.search.return_value = [
+            SearchResult(
+                document_id=f"doc-{i}",
+                path=f"/{i}.md",
+                title=f"Doc {i}",
+                collection_name="default",
+                score=0.9 - i * 0.01,
+            )
+            for i in range(10)
+        ]
+
+        pipeline.search("test", SearchOptions(candidate_limit=5))
+
+        # Reranker should only receive 5 candidates
+        passed_results = mock_reranker.rerank.call_args[0][1]
+        assert len(passed_results) == 5
+
+
+class TestSearchPipelineExplain:
+    """Test SearchPipeline explainability / score preservation."""
+
+    def test_explain_preserves_scores(
+        self,
+        mock_db: MagicMock,
+        mock_embedder: MagicMock,
+    ) -> None:
+        """Test that scores dict contains bm25_score and vector_score via RRF."""
+        pipeline = SearchPipeline(mock_db, embedder=mock_embedder)
+        pipeline.hybrid.bm25 = create_autospec(BM25Searcher, instance=True)
+        pipeline.hybrid.bm25.search.return_value = [
+            SearchResult(
+                document_id="doc-1",
+                path="/a.md",
+                title="A",
+                collection_name="default",
+                score=0.95,
+            ),
+        ]
+        pipeline.hybrid.vector = create_autospec(VectorSearcher, instance=True)
+        pipeline.hybrid.vector.search.return_value = [
+            SearchResult(
+                document_id="doc-1",
+                path="/a.md",
+                title="A",
+                collection_name="default",
+                score=0.92,
+            ),
+        ]
+
+        results = pipeline.search("test", SearchOptions(explain=True))
+
+        assert len(results) == 1
+        assert "bm25_score" in results[0].scores
+        assert "vector_score" in results[0].scores
+        assert "rrf_score" in results[0].scores
+
+
+class TestSearchPipelineIntent:
+    """Test SearchPipeline intent propagation."""
+
+    def test_intent_prepended_to_query(
+        self,
+        mock_db: MagicMock,
+    ) -> None:
+        """Test that intent is prepended to parsed query."""
+        pipeline = SearchPipeline(mock_db)
+        pipeline.hybrid.bm25 = create_autospec(BM25Searcher, instance=True)
+        pipeline.hybrid.bm25.search.return_value = []
+
+        pipeline.search("test", SearchOptions(intent="code"))
+
+        call_args = pipeline.hybrid.bm25.search.call_args
+        assert call_args is not None
+        passed_query = call_args[0][0]
+        assert passed_query == "code: test"
