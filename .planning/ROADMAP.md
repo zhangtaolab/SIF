@@ -89,7 +89,14 @@ Plans:
   6. User can pass intent hints through `--intent` to guide search behavior
   7. Search results show the most relevant snippet extracted from each chunk
   8. User can run benchmark fixtures to measure precision@k, recall, and MRR
-**Plans:** TBD
+**Plans:** 5 plans
+
+Plans:
+- [ ] 04-01-PLAN.md — Extend core models, add reranker settings, implement CrossEncoderReranker, fix RRF score preservation (SRCH-01, SRCH-04, SRCH-05)
+- [ ] 04-02-PLAN.md — Implement QueryExpansion with embedding-based PRF and SmartSnippetExtractor (SRCH-02, SRCH-07)
+- [ ] 04-03-PLAN.md — Wire SearchPipeline with prefix routing, explainability, candidate capping; update CLI commands (SRCH-03, SRCH-04, SRCH-05, SRCH-06, CLI-06, CLI-07)
+- [ ] 04-04-PLAN.md — Implement bench command with SearchEvaluator and benchmark metrics (SRCH-08)
+- [ ] 04-05-PLAN.md — Fix broken tests and run full quality suite
 
 ### Phase 5: Agent Context Experience
 **Goal**: Users can augment document collections with contextual descriptions to improve retrieval quality for agent workflows.
@@ -108,5 +115,5 @@ Plans:
 | 1. Foundation Fix | 6/6 | Complete | - |
 | 2. CLI Core Completion | 3/6 | In Progress|  |
 | 3. Embedding & Vector Search | 0/TBD | Not started | - |
-| 4. Advanced Search Pipeline | 0/TBD | Not started | - |
+| 4. Advanced Search Pipeline | 0/5 | Planned | - |
 | 5. Agent Context Experience | 0/TBD | Not started | - |
