@@ -13,7 +13,7 @@ from docsift.core.models import SearchOptions
 from docsift.database.database import Database
 from docsift.database.repositories import CollectionRepository
 from docsift.search.bm25 import BM25Searcher
-from docsift.search.hybrid import HybridSearcher
+from docsift.search.hybrid import HybridSearcher, SearchPipeline
 
 
 console = Console()
@@ -224,6 +224,8 @@ def search_cmd(
 @click.option("-n", "--limit", default=10, help="Number of results")
 @click.option("-c", "--collection", multiple=True, help="Collection to search")
 @click.option("--all", "search_all", is_flag=True, help="Search all collections")
+@click.option("--min-score", default=0.0, help="Minimum score threshold")
+@click.option("--full", is_flag=True, help="Include full content")
 @click.option("--line-numbers", is_flag=True, help="Show line numbers in content")
 @click.option("--json", "output_json", is_flag=True, help="Output as JSON")
 @click.option(
@@ -238,6 +240,8 @@ def vsearch_cmd(
     limit: int,
     collection: tuple,
     search_all: bool,
+    min_score: float,
+    full: bool,
     line_numbers: bool,
     output_json: bool,
     model_type: str | None = None,
@@ -249,7 +253,7 @@ def vsearch_cmd(
         console.print("[yellow]No index found. Run 'docsift update' and 'docsift embed' first.[/yellow]")
         return
 
-    from docsift.config.settings import Settings, get_settings
+    from docsift.config.settings import get_settings
     from docsift.database.database import Database
     from docsift.database.repositories import CollectionRepository
     from docsift.embedding.manager import EmbeddingManager
@@ -257,7 +261,7 @@ def vsearch_cmd(
 
     settings = get_settings()
     if model_type:
-        settings = Settings(**settings.model_dump(), model_type=model_type)
+        settings = settings.model_copy(update={"model_type": model_type})
 
     try:
         manager = EmbeddingManager.from_settings(settings)
@@ -270,7 +274,12 @@ def vsearch_cmd(
     db = Database(index_path)
     db.init_schema()
 
-    options = SearchOptions(limit=limit)
+    options = SearchOptions(
+        limit=limit,
+        min_score=min_score,
+        include_content=full,
+        include_highlights=True,
+    )
 
     if collection:
         with db.connection:
@@ -334,6 +343,15 @@ def vsearch_cmd(
 @click.option("--all", "search_all", is_flag=True, help="Search all collections")
 @click.option("--min-score", default=0.0, help="Minimum score threshold")
 @click.option("--full", is_flag=True, help="Include full content")
+@click.option("--explain", is_flag=True, help="Show score breakdowns across pipeline stages")
+@click.option(
+    "-C",
+    "--candidate-limit",
+    default=20,
+    type=click.IntRange(1, 200),
+    help="Reranker candidate pool size",
+)
+@click.option("--intent", help="Search intent hint for query expansion")
 @click.option("--line-numbers", is_flag=True, help="Show line numbers in content")
 @click.option("--json", "output_json", is_flag=True, help="Output as JSON")
 @click.option("--csv", "output_csv", is_flag=True, help="Output as CSV")
@@ -354,6 +372,9 @@ def query_cmd(
     search_all: bool,
     min_score: float,
     full: bool,
+    explain: bool,
+    candidate_limit: int,
+    intent: str | None,
     line_numbers: bool,
     output_json: bool,
     output_csv: bool,
@@ -381,6 +402,9 @@ def query_cmd(
         min_score=min_score,
         include_content=full,
         include_highlights=True,
+        explain=explain,
+        candidate_limit=candidate_limit,
+        intent=intent,
     )
 
     # Get collection IDs if specified
@@ -399,12 +423,15 @@ def query_cmd(
             options.collection_ids = [c.id for c in enabled]
 
     # Load embedder for hybrid search
-    from docsift.config.settings import Settings, get_settings
+    from docsift.config.settings import get_settings
     from docsift.embedding.manager import EmbeddingManager
+    from docsift.search.expansion import QueryExpansion
+    from docsift.search.rerank import create_reranker
+    from docsift.search.snippets import SmartSnippetExtractor
 
     settings = get_settings()
     if model_type:
-        settings = Settings(**settings.model_dump(), model_type=model_type)
+        settings = settings.model_copy(update={"model_type": model_type})
 
     try:
         manager = EmbeddingManager.from_settings(settings)
@@ -415,12 +442,31 @@ def query_cmd(
     except Exception as e:
         raise click.ClickException(f"Failed to load embedding model: {e}")
 
-    # Search using hybrid approach
+    # Create optional components
+    query_expander = QueryExpansion(embedding_manager=manager)
+
+    reranker = None
+    if settings.reranker_model_name or settings.reranker_model_path:
+        try:
+            reranker = create_reranker(settings)
+        except ImportError:
+            console.print(
+                "[yellow]Reranker not available. Install with: pip install -e '.[embed]'[/yellow]"
+            )
+
+    snippet_extractor = SmartSnippetExtractor(max_length=options.snippet_max_length)
+
+    # Search using pipeline
     with db.connection:
-        searcher = HybridSearcher(
-            db.connection, embedder=manager._model, embedding_dim=embedding_dim
+        pipeline = SearchPipeline(
+            db.connection,
+            embedder=manager._model,
+            query_expander=query_expander,
+            reranker=reranker,
+            snippet_extractor=snippet_extractor,
+            embedding_dim=embedding_dim,
         )
-        results = searcher.search(query, options)
+        results = pipeline.search(query, options)
 
     # Output results
     if output_files:
@@ -488,3 +534,11 @@ def query_cmd(
             table.add_row(*row)
 
         console.print(table)
+
+        if explain:
+            for r in results:
+                scores_str = ", ".join(
+                    f"{k}={v:.4f}" for k, v in r.scores.items() if v is not None
+                )
+                if scores_str:
+                    console.print(f"[dim]{r.title}: {scores_str}[/dim]")
