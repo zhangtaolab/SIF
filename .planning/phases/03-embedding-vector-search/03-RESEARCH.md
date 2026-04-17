@@ -330,7 +330,7 @@ class VectorSearcher:
 | A2 | OpenAI `dimensions` parameter works with all OpenAI-compatible endpoints | Standard Stack | Some local endpoints (e.g., llama.cpp server) may ignore `dimensions`; fallback to full-dim response |
 | A3 | ModelScope `snapshot_download` cache directory behavior is compatible with `SentenceTransformer` local path loading | Standard Stack | May need explicit cache dir management or symlink handling |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Exact OpenAI dimension cache file location and TTL**
    - What we know: 03-CONTEXT.md leaves this to Claude's discretion.

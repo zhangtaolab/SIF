@@ -150,11 +150,11 @@ class SearchResult:
     path: str
     collection_name: str
     score: float
-    content: Optional[str] = None
-    highlights: List[str] = field(default_factory=list)
+    content: str | None = None
+    highlights: list[str] = field(default_factory=list)
     rank: int = 0
-    scores: Dict[str, Optional[float]] = field(default_factory=dict)  # NEW
-    snippet: Optional[str] = None  # NEW for SRCH-07
+    scores: dict[str, float | None] = field(default_factory=dict)  # NEW
+    snippet: str | None = None  # NEW for SRCH-07
 ```
 
 ### Pattern 3: Query Prefix Router
@@ -248,7 +248,6 @@ This phase is a greenfield feature addition (filling placeholders), not a rename
 ### Cross-Encoder Reranker Implementation
 ```python
 # Source: [CITED: sentence-transformers docs / WebSearch verified]
-from typing import List, Optional
 from docsift.core.models import SearchResult
 from docsift.utils.logging import get_logger
 
@@ -260,8 +259,8 @@ class CrossEncoderReranker:
     def __init__(
         self,
         model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2",
-        model_path: Optional[str] = None,
-        device: Optional[str] = None,
+        model_path: str | None = None,
+        device: str | None = None,
         batch_size: int = 32,
     ) -> None:
         try:
@@ -282,9 +281,9 @@ class CrossEncoderReranker:
     def rerank(
         self,
         query: str,
-        results: List[SearchResult],
+        results: list[SearchResult],
         top_k: int = 10,
-    ) -> List[SearchResult]:
+    ) -> list[SearchResult]:
         if not results:
             return []
         
@@ -318,7 +317,6 @@ class CrossEncoderReranker:
 ### Query Expansion with Embedding-Based PRF
 ```python
 # Source: [ASSUMED: standard IR technique, verified against codebase capabilities]
-from typing import List, Optional
 from docsift.embedding.manager import EmbeddingManager
 from docsift.utils.logging import get_logger
 
@@ -335,7 +333,7 @@ class EmbeddingQueryExpansion:
         self._embedding_manager = embedding_manager
         self._expansion_factor = expansion_factor
     
-    def expand(self, query: str) -> List[str]:
+    def expand(self, query: str) -> list[str]:
         """Return list of expanded query variants."""
         # Embed the query
         query_embedding = self._embedding_manager.embed_single(query)
@@ -354,8 +352,8 @@ class EmbeddingQueryExpansion:
     def _find_similar_terms(
         self,
         query: str,
-        query_embedding: List[float],
-    ) -> List[str]:
+        query_embedding: list[float],
+    ) -> list[str]:
         # Placeholder: would query indexed chunks for nearest neighbors
         # and extract distinctive terms
         return []
@@ -364,31 +362,34 @@ class EmbeddingQueryExpansion:
 ### Benchmark Metrics Implementation
 ```python
 # Source: [CITED: plurch/ir_evaluation + WebSearch verified]
-from typing import List, Dict, Sequence
 
-def precision_at_k(relevance: Sequence[int], k: int) -> float:
+def precision_at_k(relevance: list[int], k: int) -> float:
     """Precision@K: relevant items in top-K / K."""
     if k == 0:
         return 0.0
     return sum(relevance[:k]) / k
 
-def recall_at_k(relevance: Sequence[int], total_relevant: int, k: int) -> float:
+
+def recall_at_k(relevance: list[int], total_relevant: int, k: int) -> float:
     """Recall@K: relevant items retrieved / total relevant."""
     if total_relevant == 0:
         return 0.0
     return sum(relevance[:k]) / total_relevant
 
-def reciprocal_rank(relevance: Sequence[int]) -> float:
+
+def reciprocal_rank(relevance: list[int]) -> float:
     """Reciprocal rank: 1 / rank of first relevant item."""
     for i, rel in enumerate(relevance, start=1):
         if rel:
             return 1.0 / i
     return 0.0
 
-def mean_reciprocal_rank(all_relevance: List[Sequence[int]]) -> float:
+
+def mean_reciprocal_rank(all_relevance: list[list[int]]) -> float:
     """Mean Reciprocal Rank across queries."""
     rr_scores = [reciprocal_rank(r) for r in all_relevance]
     return sum(rr_scores) / len(rr_scores) if rr_scores else 0.0
+
 
 class SearchEvaluator:
     """Evaluate search quality against a benchmark fixture."""
@@ -399,10 +400,10 @@ class SearchEvaluator:
     def evaluate(
         self,
         search_fn,
-        k_values: List[int] = None,
-    ) -> Dict[str, float]:
+        k_values: list[int] | None = None,
+    ) -> dict[str, float]:
         k_values = k_values or [1, 5, 10]
-        metrics = {}
+        metrics: dict[str, list[float]] = {}
         
         all_relevance = []
         for query_item in self.fixture["queries"]:
@@ -483,22 +484,22 @@ class SearchEvaluator:
 | A3 | Hypothetical document generation for `hyde:` can use the same embedding model with a simple prompt template (no separate LLM required) | Phase Requirements SRCH-03 | If embedding model cannot generate text, `hyde:` requires a separate text-generation model; need to document this dependency |
 | A4 | Benchmark fixtures will be user-provided JSON files, not built into the codebase | Phase Requirements SRCH-08 | If built-in fixtures are expected, need to create sample benchmark data |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **sqlite-vec distance metric verification**
+1. **sqlite-vec distance metric verification** [RESOLVED: documented assumption — verify during implementation if vector scores appear incorrect]
    - What we know: `VectorSearcher` assumes cosine distance with `score = 1.0 - (distance / 2.0)`
    - What's unclear: Whether `document_embeddings` vec0 table was created with default metric or explicit cosine
-   - Recommendation: Check `schema.py` for vec0 creation SQL; if no metric specified, verify with `sqlite-vec` docs or test query
+   - Resolution: Accepted as documented assumption (A1). If vector scores are incorrect during testing, executor should check `schema.py` for vec0 creation SQL and verify with `sqlite-vec` docs.
 
-2. **Unified SearchResult model**
+2. **Unified SearchResult model** [RESOLVED by 04-01: extend dataclass SearchResult with scores dict and snippet field]
    - What we know: Two incompatible `SearchResult` types exist (dataclass vs Pydantic)
    - What's unclear: Whether Pydantic models are used by MCP/API layer and must be preserved
-   - Recommendation: Extend dataclass `SearchResult` with new fields; create converter function for API boundaries if needed
+   - Resolution: Plan 04-01 Task 1 extends the dataclass `SearchResult` in `core/models.py` with `scores: dict[str, float | None]` and `snippet: str | None`. Pydantic models in `docsift.models.search` are kept for API/MCP boundaries. All search pipeline code (reranker, RRF, tests) unified on dataclass.
 
-3. **Test file compatibility**
+3. **Test file compatibility** [RESOLVED by 04-01, 04-03, 04-05: update tests to match actual class names]
    - What we know: Multiple test files import non-existent classes (`BM25SearchStrategy`, `ParseResult`) and fail collection
    - What's unclear: Whether these tests represent desired future API or stale code
-   - Recommendation: Update tests to match actual class names, or rename source classes to match tests
+   - Resolution: Tests are stale code. Plan 04-01 Task 2 fixes test_rrf.py. Plan 04-03 Task 3 fixes test_hybrid.py and test_search_pipeline.py. Plan 04-05 fixes test_bm25.py, test_reranker.py, and test_query_expander.py. All updated to use actual class names: `BM25Searcher`, `VectorSearcher`, `HybridSearcher`, `SearchPipeline`, dataclass `SearchResult`.
 
 ## Environment Availability
 

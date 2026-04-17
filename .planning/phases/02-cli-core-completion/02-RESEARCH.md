@@ -326,22 +326,16 @@ class CollectionRepository:
 | A2 | `search_all=False` (no `--all` flag) should restrict default queries to `include_by_default=True` collections | Architecture Patterns | If user expects all collections to be searched by default, this changes behavior; D-07/D-08 imply this is the intended semantics |
 | A3 | `pre_update_cmd` should be executed with `shell=True` so users can use pipes, redirects, and shell builtins | Code Examples | If security is a concern, `shell=False` with `shlex.split` is safer but breaks complex commands like `rsync -a remote:notes/ local/notes/` |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Should `pull` accept full URLs or only `owner/repo/filename.gguf` identifiers?**
-   - What we know: D-09/D-10 specify HuggingFace primary + ModelScope fallback. The "specifics" section in CONTEXT.md suggests accepting `owner/repo/model.gguf` or a direct URL.
-   - What's unclear: Whether URL parsing logic should be built into `pull` or kept simple.
-   - Recommendation: Support `owner/repo/filename.gguf` as the primary interface. If the argument starts with `http://` or `https://`, fall back to `urllib` direct download.
+1. **RESOLVED: Should `pull` accept full URLs or only `owner/repo/filename.gguf` identifiers?**
+   - Decision: Support `owner/repo/filename.gguf` as the primary interface. If the argument starts with `http://` or `https://`, fall back to `urllib` direct download.
 
-2. **What should happen to `search_all` in `vsearch`?**
-   - What we know: `search` and `query` have `--all` flags; `vsearch` does not.
-   - What's unclear: Whether `vsearch` should also gain `--all` and respect `include_by_default`.
-   - Recommendation: For consistency, `vsearch` should also respect `include_by_default` when no `--collection` is given. Adding `--all` to `vsearch` is a small, low-risk change.
+2. **RESOLVED: What should happen to `search_all` in `vsearch`?**
+   - Decision: For consistency, `vsearch` gains `--all` and respects `include_by_default` when no `--collection` is given.
 
-3. **How should line numbers be formatted in table output?**
-   - What we know: D-13 says "prepended to content snippets" in rich table output.
-   - What's unclear: Exact prefix format (`1: `, ` 1 | `, etc.).
-   - Recommendation: Use `f"{i+1:4d}: {line}"` for readability. This is within Claude's discretion per CONTEXT.md.
+3. **RESOLVED: How should line numbers be formatted in table output?**
+   - Decision: Use `f"{i+1:4d}: {line}"` for readability. This is within Claude's discretion per CONTEXT.md.
 
 ## Environment Availability
 

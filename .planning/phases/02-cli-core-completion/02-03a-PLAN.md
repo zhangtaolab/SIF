@@ -1,6 +1,6 @@
 ---
 phase: 02-cli-core-completion
-plan: 03
+plan: 03a
 type: execute
 wave: 2
 depends_on:
@@ -11,7 +11,6 @@ files_modified:
   - src/docsift/database/repositories.py
   - src/docsift/cli/commands/collection.py
   - src/docsift/cli/commands/index.py
-  - src/docsift/cli/commands/search.py
   - tests/unit/cli/test_collection.py
 autonomous: true
 requirements:
@@ -22,8 +21,6 @@ must_haves:
     - User can set a pre-index shell command per collection with `collection update-cmd`
     - User can clear a pre-index shell command with `collection update-cmd <name> --clear`
     - The pre-index command runs before `index update` and fails fast on non-zero exit
-    - User can include or exclude collections from default queries with `collection include/exclude`
-    - Default search respects include_by_default unless `--all` is passed
   artifacts:
     - path: src/docsift/core/models.py
       provides: Collection.pre_update_cmd field
@@ -32,30 +29,27 @@ must_haves:
       provides: Safe migration for pre_update_cmd column
       contains: "_add_column_if_missing"
     - path: src/docsift/database/repositories.py
-      provides: list_enabled and pre_update_cmd persistence
+      provides: pre_update_cmd persistence
       contains: "def list_enabled"
     - path: src/docsift/cli/commands/collection.py
-      provides: update-cmd, include, exclude commands
+      provides: update-cmd command
       contains: "collection_update_cmd"
     - path: src/docsift/cli/commands/index.py
       provides: pre_update_cmd hook in index update
       contains: "subprocess.run"
-    - path: src/docsift/cli/commands/search.py
-      provides: --all wired to bypass include_by_default filter
-      contains: "search_all"
+    - path: tests/unit/cli/test_collection.py
+      provides: Unit tests for update-cmd and index hook
+      contains: "test_collection_update_cmd_set"
   key_links:
     - from: index.py update_cmd
       to: Collection.pre_update_cmd
       via: subprocess.run with shell=True, fail fast on non-zero exit
-    - from: search.py search_cmd
-      to: CollectionRepository.list_enabled
-      via: search_all flag controls collection resolution
 ---
 
 <objective>
-Implement `collection update-cmd` for pre-index shell commands, `collection include/exclude` aliases, and wire `--all` into search commands.
+Implement `collection update-cmd` for pre-index shell commands and inject the hook into `index update`.
 
-Purpose: CLI-03 and CLI-04 require collection management for indexing workflows and default-search participation.
+Purpose: CLI-03 requires collection management for indexing workflows with pre-update shell commands.
 Output: Updated models, schema migration, repository methods, CLI commands, and tests.
 </objective>
 
@@ -123,58 +117,40 @@ def collection_enable(ctx: click.Context, name: str) -> None:
 ```
 
 Per D-04/D-05/D-06: pre_update_cmd is stored on Collection, runs before index update, fails fast on error.
-Per D-07/D-08: include/exclude are aliases for enable/disable, toggling include_by_default.
-Per RESEARCH.md: `--all` is currently a no-op in search.py and must be wired.
 </interfaces>
 </context>
 
 <tasks>
 
 <task type="auto">
-  <name>Task 1: Add pre_update_cmd to Collection model and schema</name>
-  <files>src/docsift/core/models.py, src/docsift/database/schema.py</files>
+  <name>Task 1: Set up Collection model, schema, and repository for pre_update_cmd</name>
+  <files>src/docsift/core/models.py, src/docsift/database/schema.py, src/docsift/database/repositories.py</files>
   <read_first>
     - src/docsift/core/models.py
     - src/docsift/database/schema.py
+    - src/docsift/database/repositories.py
   </read_first>
   <action>
     1. In `src/docsift/core/models.py`, add `pre_update_cmd: Optional[str] = None` immediately after the `description: Optional[str] = None` field in the `Collection` dataclass. Include it in `to_dict()` as `"pre_update_cmd": self.pre_update_cmd` and in `from_dict()` as `pre_update_cmd=data.get("pre_update_cmd")`.
 
     2. In `src/docsift/database/schema.py`, add a private method `_add_column_if_missing(self, table: str, column: str, dtype: str) -> None` to `SchemaManager` that runs `PRAGMA table_info({table})`, checks if `column` is in the result, and if not executes `ALTER TABLE {table} ADD COLUMN {column} {dtype}`. Then call `self._add_column_if_missing("collections", "pre_update_cmd", "TEXT")` at the end of `_create_collections_table()`.
+
+    3. In `src/docsift/database/repositories.py`:
+       - In `CollectionRepository.create()`, add `pre_update_cmd` to the INSERT column list and bind values. The parameter tuple should include `collection.pre_update_cmd` as the 12th value (after `chunk_count`).
+       - In `CollectionRepository.update()`, add `pre_update_cmd = ?` to the UPDATE SET list and include `collection.pre_update_cmd` in the parameter tuple (before `WHERE id = ?`).
+       - In `CollectionRepository._row_to_collection()`, pass `pre_update_cmd=row["pre_update_cmd"]` to the `Collection(...)` constructor.
+       - Add a new method `list_enabled(self) -> List[Collection]` that executes `SELECT * FROM collections WHERE include_by_default = 1 ORDER BY name` and returns `[self._row_to_collection(row) for row in cursor.fetchall()]`.
   </action>
   <verify>
     <automated>python -c "from docsift.core.models import Collection; c = Collection(name='x', path='/tmp', pre_update_cmd='echo hi'); print(c.pre_update_cmd)"</automated>
   </verify>
-  <done>Collection accepts pre_update_cmd, schema manager can add the column idempotently.</done>
+  <done>Collection accepts pre_update_cmd, schema manager can add the column idempotently, and repository supports pre_update_cmd persistence and list_enabled.</done>
   <acceptance_criteria>
     - `src/docsift/core/models.py` contains `pre_update_cmd: Optional[str] = None`
     - `src/docsift/core/models.py` `to_dict()` contains `"pre_update_cmd": self.pre_update_cmd`
     - `src/docsift/core/models.py` `from_dict()` contains `pre_update_cmd=data.get("pre_update_cmd")`
     - `src/docsift/database/schema.py` contains `def _add_column_if_missing`
     - `src/docsift/database/schema.py` `_create_collections_table` ends with `_add_column_if_missing("collections", "pre_update_cmd", "TEXT")`
-  </acceptance_criteria>
-</task>
-
-<task type="auto">
-  <name>Task 2: Update CollectionRepository for pre_update_cmd and list_enabled</name>
-  <files>src/docsift/database/repositories.py</files>
-  <read_first>
-    - src/docsift/database/repositories.py
-    - src/docsift/core/models.py
-  </read_first>
-  <action>
-    Modify `src/docsift/database/repositories.py`:
-
-    1. In `CollectionRepository.create()`, add `pre_update_cmd` to the INSERT column list and bind values. The parameter tuple should include `collection.pre_update_cmd` as the 12th value (after `chunk_count`).
-    2. In `CollectionRepository.update()`, add `pre_update_cmd = ?` to the UPDATE SET list and include `collection.pre_update_cmd` in the parameter tuple (before `WHERE id = ?`).
-    3. In `CollectionRepository._row_to_collection()`, pass `pre_update_cmd=row["pre_update_cmd"]` to the `Collection(...)` constructor.
-    4. Add a new method `list_enabled(self) -> List[Collection]` that executes `SELECT * FROM collections WHERE include_by_default = 1 ORDER BY name` and returns `[self._row_to_collection(row) for row in cursor.fetchall()]`.
-  </action>
-  <verify>
-    <automated>python -c "from docsift.database.repositories import CollectionRepository; print('ok')"</automated>
-  </verify>
-  <done>Repository methods include pre_update_cmd and list_enabled exists.</done>
-  <acceptance_criteria>
     - `CollectionRepository.create` SQL contains `pre_update_cmd`
     - `CollectionRepository.update` SQL contains `pre_update_cmd = ?`
     - `CollectionRepository._row_to_collection` passes `pre_update_cmd=row["pre_update_cmd"]`
@@ -183,7 +159,7 @@ Per RESEARCH.md: `--all` is currently a no-op in search.py and must be wired.
 </task>
 
 <task type="auto">
-  <name>Task 3: Add collection update-cmd, include, exclude commands</name>
+  <name>Task 2: Add collection update-cmd, include, exclude commands</name>
   <files>src/docsift/cli/commands/collection.py</files>
   <read_first>
     - src/docsift/cli/commands/collection.py
@@ -277,7 +253,7 @@ Per RESEARCH.md: `--all` is currently a no-op in search.py and must be wired.
 </task>
 
 <task type="auto">
-  <name>Task 4: Inject pre_update_cmd hook into index update</name>
+  <name>Task 3: Inject pre_update_cmd hook into index update</name>
   <files>src/docsift/cli/commands/index.py</files>
   <read_first>
     - src/docsift/cli/commands/index.py
@@ -316,70 +292,16 @@ Per RESEARCH.md: `--all` is currently a no-op in search.py and must be wired.
 </task>
 
 <task type="auto">
-  <name>Task 5: Wire --all flag into search, query, and vsearch</name>
-  <files>src/docsift/cli/commands/search.py</files>
-  <read_first>
-    - src/docsift/cli/commands/search.py
-    - src/docsift/database/repositories.py
-  </read_first>
-  <action>
-    Modify `src/docsift/cli/commands/search.py`:
-
-    1. In `search_cmd`, after the existing collection resolution block (the `if collection:` block), add:
-       ```python
-       elif not search_all:
-           with db.connection:
-               repo = CollectionRepository(db.connection)
-               enabled = repo.list_enabled()
-               options.collection_ids = [c.id for c in enabled]
-       ```
-
-    2. In `query_cmd`, after the existing collection resolution block, add the identical snippet:
-       ```python
-       elif not search_all:
-           with db.connection:
-               repo = CollectionRepository(db.connection)
-               enabled = repo.list_enabled()
-               options.collection_ids = [c.id for c in enabled]
-       ```
-
-    3. In `vsearch_cmd`, add a new option after the `--collection` option:
-       ```python
-       @click.option("--all", "search_all", is_flag=True, help="Search all collections")
-       ```
-       Add `search_all: bool` to the function signature. After the existing `if collection:` block, add:
-       ```python
-       elif not search_all:
-           with db.connection:
-               repo = CollectionRepository(db.connection)
-               enabled = repo.list_enabled()
-               options.collection_ids = [c.id for c in enabled]
-       ```
-  </action>
-  <verify>
-    <automated>python -c "from docsift.cli.commands.search import search_cmd, query_cmd, vsearch_cmd; print('import ok')"</automated>
-  </verify>
-  <done>search, query, and vsearch all respect include_by_default unless --all is passed.</done>
-  <acceptance_criteria>
-    - `search_cmd` contains `elif not search_all:` followed by `repo.list_enabled()`
-    - `query_cmd` contains `elif not search_all:` followed by `repo.list_enabled()`
-    - `vsearch_cmd` has `--all` option and contains `elif not search_all:` followed by `repo.list_enabled()`
-  </acceptance_criteria>
-</task>
-
-<task type="auto">
-  <name>Task 6: Add unit tests for collection and search changes</name>
-  <files>tests/unit/cli/test_collection.py, tests/unit/cli/test_search.py</files>
+  <name>Task 4: Add unit tests for collection and index changes</name>
+  <files>tests/unit/cli/test_collection.py</files>
   <read_first>
     - src/docsift/cli/commands/collection.py
     - src/docsift/cli/commands/index.py
-    - src/docsift/cli/commands/search.py
     - tests/unit/cli/test_collection_commands.py
   </read_first>
   <action>
-    Create two test files:
+    Create `tests/unit/cli/test_collection.py` with the following tests using `click.testing.CliRunner` and `unittest.mock`:
 
-    `tests/unit/cli/test_collection.py`:
     1. `test_collection_update_cmd_set` — Mocks `Database` and `CollectionRepository`. Invokes `collection_update_cmd` with `["notes", "--cmd", "git pull"]`. Asserts exit code 0, output contains "Set pre-update command", and `collection.pre_update_cmd == "git pull"`.
     2. `test_collection_update_cmd_clear` — Same mocks. Sets `collection.pre_update_cmd = "git pull"` initially. Invokes with `["notes", "--clear"]`. Asserts exit code 0 and `collection.pre_update_cmd is None` after update.
     3. `test_collection_update_cmd_missing_collection` — Mocks `repo.get_by_name` to return None. Invokes with `["missing", "--cmd", "git pull"]`. Asserts exit code != 0 and output contains "not found".
@@ -387,24 +309,16 @@ Per RESEARCH.md: `--all` is currently a no-op in search.py and must be wired.
     5. `test_collection_exclude` — Mocks repos. Sets `include_by_default = True`. Invokes `collection_exclude` with `["notes"]`. Asserts it becomes False and output contains "excluded".
     6. `test_index_update_runs_pre_update_cmd` — Mocks `Database`, `CollectionRepository`, `DocumentRepository`, `FileScanner`, `MarkdownParser`, and `subprocess.run`. Creates a collection with `pre_update_cmd = "echo hello"`. Invokes `update_cmd`. Asserts `subprocess.run` was called with `"echo hello"` and output contains "Running pre-update command".
     7. `test_index_update_fails_fast_on_pre_update_cmd_error` — Same mocks but `subprocess.run` returns `MagicMock(returncode=1, stderr="failed")`. Invokes `update_cmd`. Asserts exit code != 0 and output contains "Pre-update command failed".
-
-    `tests/unit/cli/test_search.py`:
-    1. `test_search_respects_include_by_default` — Mocks `Database`, `CollectionRepository`, `BM25Searcher`. Creates two collections: one enabled, one disabled. Invokes `search_cmd` with `["foo"]` (no `--all`). Asserts `BM25Searcher.search` was called with `options.collection_ids` containing only the enabled collection ID.
-    2. `test_search_all_bypasses_include_by_default` — Same setup. Invokes with `["foo", "--all"]`. Asserts `options.collection_ids` is None (or contains both IDs).
-    3. `test_query_respects_include_by_default` — Same pattern for `query_cmd`.
-    4. `test_vsearch_respects_include_by_default` — Same pattern for `vsearch_cmd`.
   </action>
   <verify>
-    <automated>pytest tests/unit/cli/test_collection.py tests/unit/cli/test_search.py -x</automated>
+    <automated>pytest tests/unit/cli/test_collection.py -x</automated>
   </verify>
-  <done>All collection, index hook, and search filtering tests pass.</done>
+  <done>All collection and index hook tests pass.</done>
   <acceptance_criteria>
     - `tests/unit/cli/test_collection.py` exists and contains `test_collection_update_cmd_set`
     - `tests/unit/cli/test_collection.py` contains `test_index_update_runs_pre_update_cmd`
     - `tests/unit/cli/test_collection.py` contains `test_index_update_fails_fast_on_pre_update_cmd_error`
-    - `tests/unit/cli/test_search.py` exists and contains `test_search_respects_include_by_default`
-    - `tests/unit/cli/test_search.py` contains `test_search_all_bypasses_include_by_default`
-    - `pytest tests/unit/cli/test_collection.py tests/unit/cli/test_search.py -x` exits with code 0
+    - `pytest tests/unit/cli/test_collection.py -x` exits with code 0
   </acceptance_criteria>
 </task>
 
@@ -431,7 +345,7 @@ Per RESEARCH.md: `--all` is currently a no-op in search.py and must be wired.
 - `python -m docsift.cli.main collection update-cmd --help` shows the command
 - `python -m docsift.cli.main collection include --help` shows the command
 - `python -m docsift.cli.main collection exclude --help` shows the command
-- `pytest tests/unit/cli/test_collection.py tests/unit/cli/test_search.py -x` passes
+- `pytest tests/unit/cli/test_collection.py -x` passes
 </verification>
 
 <success_criteria>
@@ -439,10 +353,8 @@ Per RESEARCH.md: `--all` is currently a no-op in search.py and must be wired.
 - `docsift collection update-cmd notes --clear` removes the command
 - `docsift index update notes` runs the pre-update command and stops on failure
 - `docsift collection include notes` and `docsift collection exclude notes` toggle default search participation
-- `docsift search foo` only searches enabled collections; `docsift search foo --all` searches all
-- Same `--all` behavior works for `query` and `vsearch`
 </success_criteria>
 
 <output>
-After completion, create `.planning/phases/02-cli-core-completion/02-03-SUMMARY.md`
+After completion, create `.planning/phases/02-cli-core-completion/02-03a-SUMMARY.md`
 </output>

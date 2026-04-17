@@ -109,8 +109,8 @@ Plans:
 **Plans:** 4 plans
 
 Plans:
-- [ ] 05-01-PLAN.md — Migrate path_contexts to unified contexts table, rename repository, add SearchResult field (CTX-01)
-- [ ] 05-02-PLAN.md — Implement context CLI: add (all types), list --type, remove/rm alias, prune (CTX-01, CTX-02)
+- [x] 05-01-PLAN.md — Migrate path_contexts to unified contexts table, rename repository, add SearchResult field (CTX-01)
+- [x] 05-02-PLAN.md — Implement context CLI: add (all types), list --type, remove/rm alias, prune (CTX-01, CTX-02)
 - [ ] 05-03-PLAN.md — Attach path context descriptions to BM25, vector, and hybrid search results (CTX-03)
 - [ ] 05-04-PLAN.md — Write unit tests for migration, repository, CLI, and search integration
 

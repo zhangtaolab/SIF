@@ -385,22 +385,16 @@ r3 = SearchResult("id", "title", "/path", "col", 0.5, context_description="desc"
 | A4 | All search strategies construct `SearchResult` objects with keyword arguments only | Architecture Patterns | Adding a field in the middle would break positional construction in src/ |
 | A5 | The `database/repository.py` (singular) abstract `ContextRepository` does not need updating for this phase — only the concrete `repositories.py` (plural) implementation changes | Standard Stack | Abstract interface mismatch if repository.py is also used |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Should `context list` display the full context content or truncate it?**
-   - What we know: D-08 says CLI formatters may truncate for display; current `context list` truncates to 50 chars
-   - What's unclear: Whether to keep 50-char truncation or adjust for the new table format (which includes type and target columns)
-   - Recommendation: Keep truncation at ~50 chars but add type/target columns to the rich table
+1. **[RESOLVED]** **Should `context list` display the full context content or truncate it?**
+   - Decision: Keep truncation at ~50 chars but add type/target columns to the rich table. D-08 confirms CLI formatters may truncate for display.
 
-2. **Should the migration record a timestamp or version number?**
-   - What we know: D-10 mentions atomic migration with rollback; deferred ideas mention "migration timestamp tracking"
-   - What's unclear: Whether to add a `schema_migrations` table or similar
-   - Recommendation: Skip for this phase. The absence of `path_contexts` table is sufficient evidence of successful migration.
+2. **[RESOLVED]** **Should the migration record a timestamp or version number?**
+   - Decision: Skip for this phase. The absence of `path_contexts` table is sufficient evidence of successful migration.
 
-3. **How should `context add` handle updating an existing context for the same target?**
-   - What we know: The existing `context_add` in `context.py` updates if path already exists. `ContextManager.add_context()` in `core/context.py` also does upsert.
-   - What's unclear: Whether collection and global contexts should also upsert
-   - Recommendation: Yes, upsert for all types. A target should have at most one context of each type. This matches the existing behavior and the `UNIQUE(context_type, target_id)` constraint in `migrations.py`.
+3. **[RESOLVED]** **How should `context add` handle updating an existing context for the same target?**
+   - Decision: Upsert for all types. A target should have at most one context of each type. This matches existing behavior and the `UNIQUE(context_type, target_id)` constraint.
 
 ## Environment Availability
 
