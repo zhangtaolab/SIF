@@ -110,7 +110,7 @@ class TestSearchFiltering:
                 return_value=mock_repo,
             ),
             patch(
-                "docsift.cli.commands.search.HybridSearcher",
+                "docsift.cli.commands.search.SearchPipeline",
                 return_value=mock_searcher,
             ),
             patch(
@@ -119,7 +119,12 @@ class TestSearchFiltering:
             ),
             patch(
                 "docsift.config.settings.get_settings",
-                return_value=MagicMock(model_name="all-MiniLM-L6-v2", model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"}),
+                return_value=MagicMock(
+                    model_name="all-MiniLM-L6-v2",
+                    reranker_model_name=None,
+                    reranker_model_path=None,
+                    model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"},
+                ),
             ),
         ):
             result = runner.invoke(
@@ -291,7 +296,7 @@ class TestSearchLineNumbers:
                 return_value=mock_repo,
             ),
             patch(
-                "docsift.cli.commands.search.HybridSearcher",
+                "docsift.cli.commands.search.SearchPipeline",
                 return_value=mock_searcher,
             ),
             patch(
@@ -300,7 +305,12 @@ class TestSearchLineNumbers:
             ),
             patch(
                 "docsift.config.settings.get_settings",
-                return_value=MagicMock(model_name="all-MiniLM-L6-v2", model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"}),
+                return_value=MagicMock(
+                    model_name="all-MiniLM-L6-v2",
+                    reranker_model_name=None,
+                    reranker_model_path=None,
+                    model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"},
+                ),
             ),
         ):
             result = runner.invoke(
@@ -356,3 +366,281 @@ class TestSearchLineNumbers:
 
         assert result.exit_code == 0
         assert '"line_numbers": "1\\n2"' in result.output
+
+
+class TestQueryNewFlags:
+    """Tests for new query_cmd flags: --explain, --candidate-limit, --intent."""
+
+    def _make_pipeline_mock(self):
+        """Create a mock SearchPipeline with a scored result."""
+        from docsift.core.models import SearchResult
+
+        result = SearchResult(
+            document_id="doc1",
+            rank=1,
+            score=0.95,
+            title="Test Doc",
+            path="/notes/test.md",
+            collection_name="notes",
+            content="test content",
+            scores={"bm25_score": 0.95, "vector_score": 0.92, "rrf_score": 0.033},
+        )
+
+        mock_pipeline = MagicMock()
+        mock_pipeline.search.return_value = [result]
+        return mock_pipeline
+
+    def test_query_with_explain(self):
+        """Test query_cmd --explain shows score breakdowns."""
+        runner = CliRunner()
+
+        mock_repo = MagicMock()
+        mock_repo.list_enabled.return_value = []
+
+        mock_manager = MagicMock()
+        mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager._model = MagicMock()
+
+        mock_db = MagicMock()
+
+        with (
+            patch("docsift.cli.commands.search.Database", return_value=mock_db),
+            patch(
+                "docsift.cli.commands.search.CollectionRepository",
+                return_value=mock_repo,
+            ),
+            patch(
+                "docsift.cli.commands.search.SearchPipeline",
+                return_value=self._make_pipeline_mock(),
+            ),
+            patch(
+                "docsift.embedding.manager.EmbeddingManager.from_settings",
+                return_value=mock_manager,
+            ),
+            patch(
+                "docsift.config.settings.get_settings",
+                return_value=MagicMock(
+                    model_name="all-MiniLM-L6-v2",
+                    reranker_model_name=None,
+                    reranker_model_path=None,
+                    model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"},
+                ),
+            ),
+        ):
+            result = runner.invoke(
+                query_cmd,
+                ["query", "--explain"],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code == 0
+        assert "bm25_score=" in result.output
+
+    def test_query_with_candidate_limit(self):
+        """Test query_cmd -C is passed to SearchOptions."""
+        runner = CliRunner()
+
+        mock_repo = MagicMock()
+        mock_repo.list_enabled.return_value = []
+
+        mock_manager = MagicMock()
+        mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager._model = MagicMock()
+
+        mock_db = MagicMock()
+
+        mock_pipeline = self._make_pipeline_mock()
+
+        with (
+            patch("docsift.cli.commands.search.Database", return_value=mock_db),
+            patch(
+                "docsift.cli.commands.search.CollectionRepository",
+                return_value=mock_repo,
+            ),
+            patch(
+                "docsift.cli.commands.search.SearchPipeline",
+                return_value=mock_pipeline,
+            ),
+            patch(
+                "docsift.embedding.manager.EmbeddingManager.from_settings",
+                return_value=mock_manager,
+            ),
+            patch(
+                "docsift.config.settings.get_settings",
+                return_value=MagicMock(
+                    model_name="all-MiniLM-L6-v2",
+                    reranker_model_name=None,
+                    reranker_model_path=None,
+                    model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"},
+                ),
+            ),
+        ):
+            result = runner.invoke(
+                query_cmd,
+                ["query", "-C", "50"],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code == 0
+        call_args = mock_pipeline.search.call_args
+        options = call_args[0][1]
+        assert options.candidate_limit == 50
+
+    def test_query_with_intent(self):
+        """Test query_cmd --intent is passed to SearchOptions."""
+        runner = CliRunner()
+
+        mock_repo = MagicMock()
+        mock_repo.list_enabled.return_value = []
+
+        mock_manager = MagicMock()
+        mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager._model = MagicMock()
+
+        mock_db = MagicMock()
+
+        mock_pipeline = self._make_pipeline_mock()
+
+        with (
+            patch("docsift.cli.commands.search.Database", return_value=mock_db),
+            patch(
+                "docsift.cli.commands.search.CollectionRepository",
+                return_value=mock_repo,
+            ),
+            patch(
+                "docsift.cli.commands.search.SearchPipeline",
+                return_value=mock_pipeline,
+            ),
+            patch(
+                "docsift.embedding.manager.EmbeddingManager.from_settings",
+                return_value=mock_manager,
+            ),
+            patch(
+                "docsift.config.settings.get_settings",
+                return_value=MagicMock(
+                    model_name="all-MiniLM-L6-v2",
+                    reranker_model_name=None,
+                    reranker_model_path=None,
+                    model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"},
+                ),
+            ),
+        ):
+            result = runner.invoke(
+                query_cmd,
+                ["query", "--intent", "code"],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code == 0
+        call_args = mock_pipeline.search.call_args
+        options = call_args[0][1]
+        assert options.intent == "code"
+
+    def test_query_candidate_limit_out_of_range(self):
+        """Test query_cmd -C outside 1-200 is rejected."""
+        runner = CliRunner()
+
+        result = runner.invoke(
+            query_cmd,
+            ["query", "-C", "0"],
+            obj={"index_path": MagicMock(exists=lambda: True)},
+        )
+
+        assert result.exit_code != 0
+        assert "Invalid value" in result.output or "range" in result.output.lower()
+
+
+class TestVsearchNewFlags:
+    """Tests for new vsearch_cmd flags: --min-score, --full."""
+
+    def test_vsearch_with_min_score(self):
+        """Test vsearch_cmd --min-score filters results."""
+        runner = CliRunner()
+
+        mock_repo = MagicMock()
+        mock_repo.list_enabled.return_value = []
+
+        mock_searcher = MagicMock()
+        mock_searcher.search.return_value = []
+
+        mock_manager = MagicMock()
+        mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager._model = MagicMock()
+
+        mock_db = MagicMock()
+
+        with (
+            patch("docsift.database.database.Database", return_value=mock_db),
+            patch(
+                "docsift.database.repositories.CollectionRepository",
+                return_value=mock_repo,
+            ),
+            patch(
+                "docsift.embedding.manager.EmbeddingManager.from_settings",
+                return_value=mock_manager,
+            ),
+            patch(
+                "docsift.search.vector.VectorSearcher",
+                return_value=mock_searcher,
+            ),
+            patch(
+                "docsift.config.settings.get_settings",
+                return_value=MagicMock(model_name="all-MiniLM-L6-v2", model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"}),
+            ),
+        ):
+            result = runner.invoke(
+                vsearch_cmd,
+                ["query", "--min-score", "0.5"],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code == 0
+        call_args = mock_searcher.search.call_args
+        options = call_args[0][1]
+        assert options.min_score == 0.5
+
+    def test_vsearch_with_full(self):
+        """Test vsearch_cmd --full includes content."""
+        runner = CliRunner()
+
+        mock_repo = MagicMock()
+        mock_repo.list_enabled.return_value = []
+
+        mock_searcher = MagicMock()
+        mock_searcher.search.return_value = []
+
+        mock_manager = MagicMock()
+        mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager._model = MagicMock()
+
+        mock_db = MagicMock()
+
+        with (
+            patch("docsift.database.database.Database", return_value=mock_db),
+            patch(
+                "docsift.database.repositories.CollectionRepository",
+                return_value=mock_repo,
+            ),
+            patch(
+                "docsift.embedding.manager.EmbeddingManager.from_settings",
+                return_value=mock_manager,
+            ),
+            patch(
+                "docsift.search.vector.VectorSearcher",
+                return_value=mock_searcher,
+            ),
+            patch(
+                "docsift.config.settings.get_settings",
+                return_value=MagicMock(model_name="all-MiniLM-L6-v2", model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"}),
+            ),
+        ):
+            result = runner.invoke(
+                vsearch_cmd,
+                ["query", "--full"],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code == 0
+        call_args = mock_searcher.search.call_args
+        options = call_args[0][1]
+        assert options.include_content is True
