@@ -76,6 +76,25 @@ class Settings(BaseSettings):
         description="Base URL for remote embedding API",
     )
 
+    # Reranker settings
+    reranker_model_name: str = Field(
+        default="cross-encoder/ms-marco-MiniLM-L-6-v2",
+        description="Reranker model name",
+    )
+    reranker_model_path: Path | None = Field(
+        default=None,
+        description="Path to local reranker model file",
+    )
+    reranker_model_type: str = Field(
+        default="gguf",
+        description="Reranker model type (gguf, sentence_transformers)",
+    )
+    reranker_batch_size: int = Field(
+        default=32,
+        ge=1,
+        description="Batch size for reranker inference",
+    )
+
     # Chunking settings
     chunk_size: int = Field(
         default=DEFAULT_CHUNK_SIZE,
