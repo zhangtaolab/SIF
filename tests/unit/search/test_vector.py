@@ -87,9 +87,12 @@ class TestVectorSearcher:
     def test_search_with_collection_ids(self):
         """Test search includes collection filter."""
         mock_db = MagicMock()
-        mock_cursor = MagicMock()
-        mock_cursor.fetchall.return_value = []
-        mock_db.execute.return_value = mock_cursor
+        vec_cursor = MagicMock()
+        doc_cursor = MagicMock()
+        doc_cursor.fetchall.return_value = []
+        ctx_cursor = MagicMock()
+        ctx_cursor.fetchall.return_value = []
+        mock_db.execute.side_effect = [vec_cursor, doc_cursor, ctx_cursor]
 
         searcher = VectorSearcher(mock_db)
         searcher._vec_available = True
@@ -107,8 +110,9 @@ class TestVectorSearcher:
     def test_search_converts_distance_to_score(self):
         """Test search converts sqlite-vec distance to 0-1 score."""
         mock_db = MagicMock()
-        mock_cursor = MagicMock()
-        mock_cursor.fetchall.return_value = [
+        vec_cursor = MagicMock()
+        doc_cursor = MagicMock()
+        doc_cursor.fetchall.return_value = [
             {
                 "score": 0.0,
                 "document_id": "doc-1",
@@ -117,7 +121,9 @@ class TestVectorSearcher:
                 "collection_name": "col",
             },
         ]
-        mock_db.execute.return_value = mock_cursor
+        ctx_cursor = MagicMock()
+        ctx_cursor.fetchall.return_value = []
+        mock_db.execute.side_effect = [vec_cursor, doc_cursor, ctx_cursor]
 
         searcher = VectorSearcher(mock_db)
         searcher._vec_available = True
@@ -131,8 +137,9 @@ class TestVectorSearcher:
     def test_search_applies_min_score(self):
         """Test search filters by min_score."""
         mock_db = MagicMock()
-        mock_cursor = MagicMock()
-        mock_cursor.fetchall.return_value = [
+        vec_cursor = MagicMock()
+        doc_cursor = MagicMock()
+        doc_cursor.fetchall.return_value = [
             {
                 "score": 0.0,
                 "document_id": "doc-1",
@@ -148,7 +155,9 @@ class TestVectorSearcher:
                 "collection_name": "col",
             },
         ]
-        mock_db.execute.return_value = mock_cursor
+        ctx_cursor = MagicMock()
+        ctx_cursor.fetchall.return_value = []
+        mock_db.execute.side_effect = [vec_cursor, doc_cursor, ctx_cursor]
 
         searcher = VectorSearcher(mock_db)
         searcher._vec_available = True
