@@ -3,12 +3,20 @@
 from __future__ import annotations
 
 import sqlite3
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Optional
 
-from docsift.core.models import Embedder, SearchOptions, SearchResult
+from docsift.core.models import Embedder, SearchOptions, SearchResult, SearchType
 from docsift.search.bm25 import BM25Searcher
 from docsift.search.rrf import RRFFusion
 from docsift.search.vector import VectorSearcher
+from docsift.utils.logging import get_logger
+
+if TYPE_CHECKING:
+    from docsift.search.expansion import QueryExpansion
+    from docsift.search.rerank import CrossEncoderReranker, LlamaCppReranker
+    from docsift.search.snippets import SmartSnippetExtractor
+
+logger = get_logger(__name__)
 
 
 class HybridSearcher:
@@ -32,11 +40,11 @@ class HybridSearcher:
         options: Optional[SearchOptions] = None,
     ) -> List[SearchResult]:
         """Search using hybrid approach (BM25 + Vector + RRF).
-        
+
         Args:
             query: Search query
             options: Search options
-            
+
         Returns:
             Ranked list of search results
         """
@@ -73,54 +81,6 @@ class HybridSearcher:
 
         return fused_results
 
-    def search_with_reranking(
-        self,
-        query: str,
-        options: Optional[SearchOptions] = None,
-        reranker=None,
-    ) -> List[SearchResult]:
-        """Search with optional reranking.
-        
-        Args:
-            query: Search query
-            options: Search options
-            reranker: Optional reranker for final ranking
-            
-        Returns:
-            Ranked list of search results
-        """
-        # Get hybrid results
-        results = self.search(query, options)
-
-        # Apply reranking if available
-        if reranker is not None and len(results) > 0:
-            try:
-                # Get document contents for reranking
-                documents = []
-                for result in results:
-                    content = result.content or self._get_document_content(result.document_id)
-                    documents.append(content or "")
-
-                # Rerank
-                reranked = reranker.rerank(query, documents)
-
-                # Reorder results based on reranking
-                reordered = []
-                for idx, score in reranked:
-                    result = results[idx]
-                    result.score = score
-                    reordered.append(result)
-
-                # Update ranks
-                for rank, result in enumerate(reordered, 1):
-                    result.rank = rank
-
-                return reordered
-            except Exception as e:
-                print(f"Warning: Reranking failed: {e}")
-
-        return results
-
     def _get_document_content(self, document_id: str) -> Optional[str]:
         """Get document content."""
         cursor = self.db.execute(
@@ -141,44 +101,81 @@ class HybridSearcher:
 
 
 class SearchPipeline:
-    """Complete search pipeline with expansion, search, and reranking."""
+    """Complete search pipeline with prefix routing, expansion, and reranking."""
 
     def __init__(
         self,
         db: sqlite3.Connection,
         embedder: Optional[Embedder] = None,
-        query_expander=None,
-        reranker=None,
+        query_expander: "QueryExpansion | None" = None,
+        reranker: "LlamaCppReranker | CrossEncoderReranker | None" = None,
+        snippet_extractor: "SmartSnippetExtractor | None" = None,
         embedding_dim: int = 768,
     ) -> None:
         self.db = db
         self.hybrid = HybridSearcher(db, embedder, embedding_dim)
         self.query_expander = query_expander
         self.reranker = reranker
+        self.snippet_extractor = snippet_extractor
 
     def search(
         self,
         query: str,
         options: Optional[SearchOptions] = None,
     ) -> List[SearchResult]:
-        """Execute full search pipeline.
-        
-        1. Expand query (optional)
-        2. Search with each query variant
-        3. Fuse results with RRF
-        4. Rerank final results (optional)
+        """Execute full search pipeline with prefix routing.
+
+        1. Parse query prefix to determine search mode
+        2. Route to appropriate search mode (BM25, vector, HyDE, hybrid)
+        3. Expand query (optional, for expand: prefix or default hybrid)
+        4. Search with each query variant
+        5. Fuse results with RRF
+        6. Apply reranking with candidate capping
+        7. Extract smart snippets
         """
         if options is None:
             options = SearchOptions()
 
-        # Expand query if expander is available
-        queries = [query]
-        if self.query_expander is not None:
+        # Parse query prefix
+        parsed_query, search_type = self._parse_query_prefix(query)
+
+        # Apply intent if provided
+        if options.intent:
+            parsed_query = f"{options.intent}: {parsed_query}"
+
+        # Route to appropriate search mode
+        if search_type == SearchType.BM25:
+            return self.hybrid.bm25.search(parsed_query, options)
+        elif search_type == SearchType.VECTOR:
+            if self.hybrid.embedder is None:
+                raise RuntimeError("Vector search requires an embedder")
+            query_embedding = self.hybrid.embedder.embed(parsed_query)
+            return self.hybrid.vector.search(query_embedding, options)
+        elif search_type == SearchType.HYDE:
+            hyde_doc = self._generate_hypothetical_document(parsed_query)
+            if self.hybrid.embedder is None:
+                raise RuntimeError("HyDE search requires an embedder")
+            hyde_embedding = self.hybrid.embedder.embed(hyde_doc)
+            return self.hybrid.vector.search(hyde_embedding, options)
+
+        # Default: hybrid search with optional expansion
+        queries = [parsed_query]
+
+        # Expand query if expander is available and prefix is expand: or default
+        if self.query_expander is not None and search_type in (
+            SearchType.HYBRID,
+            SearchType.EXPAND,
+        ):
             try:
-                expanded = self.query_expander.expand(query)
-                queries.extend(expanded)
+                expanded = self.query_expander.expand(parsed_query)
+                # Deduplicate: keep original first, then unique expanded variants
+                seen = {parsed_query.lower()}
+                for variant in expanded[1:]:
+                    if variant.lower() not in seen:
+                        seen.add(variant.lower())
+                        queries.append(variant)
             except Exception as e:
-                print(f"Warning: Query expansion failed: {e}")
+                logger.warning(f"Query expansion failed: {e}")
 
         # Search with each query
         all_results = []
@@ -194,36 +191,79 @@ class SearchPipeline:
             # Fuse results from multiple queries
             results = self.hybrid.rrf.fuse(all_results, options.limit)
 
-        # Apply final reranking
+        # Apply candidate limit before reranking
         if self.reranker is not None and len(results) > 0:
+            candidates = results[: options.candidate_limit]
             try:
-                documents = []
-                for result in results:
-                    content = result.content or self._get_document_content(result.document_id)
-                    documents.append(content or "")
-
-                reranked = self.reranker.rerank(query, documents)
-
-                reordered = []
-                for idx, score in reranked:
-                    result = results[idx]
-                    result.score = score
-                    reordered.append(result)
-
-                for rank, result in enumerate(reordered, 1):
-                    result.rank = rank
-
-                return reordered
+                reranked = self.reranker.rerank(
+                    parsed_query, candidates, top_k=options.limit
+                )
+                results = reranked
             except Exception as e:
-                print(f"Warning: Final reranking failed: {e}")
+                raise RuntimeError(f"Reranking failed: {e}")
+
+        # Extract smart snippets if not already present
+        if self.snippet_extractor is not None:
+            for result in results:
+                if result.snippet is None and result.content:
+                    query_terms = parsed_query.lower().split()
+                    result.snippet = self.snippet_extractor.extract(
+                        result.content, query_terms
+                    )
 
         return results
 
-    def _get_document_content(self, document_id: str) -> Optional[str]:
-        """Get document content."""
-        cursor = self.db.execute(
-            "SELECT content FROM documents WHERE id = ?",
-            (document_id,)
+    def _parse_query_prefix(self, query: str) -> tuple[str, SearchType]:
+        """Parse query prefix to determine search mode."""
+        PREFIX_MAP = {
+            "lex:": SearchType.BM25,
+            "vec:": SearchType.VECTOR,
+            "hyde:": SearchType.HYDE,
+            "expand:": SearchType.EXPAND,
+        }
+        for prefix, search_type in PREFIX_MAP.items():
+            if query.startswith(prefix):
+                return query[len(prefix) :].strip(), search_type
+        return query, SearchType.HYBRID
+
+    def _generate_hypothetical_document(self, query: str) -> str:
+        """Generate a hypothetical ideal answer document for HyDE search.
+
+        Uses a lightweight prompt template approach. If the embedder supports text
+        generation (e.g., GGUF models with .generate() or .create_completion()),
+        it generates a short answer. Otherwise raises RuntimeError since HyDE
+        requires text generation capability.
+        """
+        if self.hybrid.embedder is None:
+            raise RuntimeError("HyDE search requires an embedder")
+
+        # Check if embedder has generate capability
+        if hasattr(self.hybrid.embedder, "generate"):
+            prompt = (
+                f"Answer the following question concisely and directly. "
+                f"Provide only the answer, no preamble.\n\n"
+                f"Question: {query}\n\nAnswer:"
+            )
+            return self.hybrid.embedder.generate(prompt)
+
+        # Check for llama-cpp style completion API
+        if hasattr(self.hybrid.embedder, "create_completion"):
+            prompt = (
+                f"Answer the following question concisely and directly. "
+                f"Provide only the answer, no preamble.\n\n"
+                f"Question: {query}\n\nAnswer:"
+            )
+            result = self.hybrid.embedder.create_completion(
+                prompt,
+                max_tokens=256,
+                temperature=0.3,
+                stop=["\n\n"],
+            )
+            return result["choices"][0]["text"].strip()
+
+        # No text generation capability available
+        raise RuntimeError(
+            "HyDE search requires a text-generation-capable model (e.g., GGUF). "
+            "The current embedder does not support .generate() or .create_completion(). "
+            "Use vec: prefix for vector-only search instead."
         )
-        row = cursor.fetchone()
-        return row[0] if row else None
