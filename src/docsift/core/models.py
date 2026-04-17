@@ -188,6 +188,7 @@ class SearchResult:
     rank: int = 0
     scores: Dict[str, Optional[float]] = field(default_factory=dict)
     snippet: Optional[str] = None
+    context_description: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
@@ -202,6 +203,7 @@ class SearchResult:
             "rank": self.rank,
             "scores": self.scores,
             "snippet": self.snippet,
+            "context_description": self.context_description,
         }
 
 
