@@ -362,76 +362,101 @@ class DocumentChunkRepository:
         )
 
 
-class PathContextRepository:
-    """Repository for path context operations."""
-    
+class ContextRepository:
+    """Repository for context operations."""
+
     def __init__(self, db: sqlite3.Connection) -> None:
         self.db = db
-    
+
     def create(self, context: PathContext) -> PathContext:
-        """Create a new path context."""
+        """Create a new context."""
         now = datetime.utcnow().isoformat()
         self.db.execute(
             """
-            INSERT INTO path_contexts (id, collection_id, path, context, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO contexts (id, target_id, context_type, content, created_at, updated_at)
+            VALUES (?, ?, 'path', ?, ?, ?)
             """,
-            (context.id, context.collection_id, context.path, context.context, now, now)
+            (context.id, context.path, context.context, now, now)
         )
         return context
-    
-    def get_by_path(self, path: str) -> Optional[PathContext]:
-        """Get context by path."""
+
+    def get_by_target(self, target_id: str, context_type: str = "path") -> Optional[PathContext]:
+        """Get context by target_id and context_type."""
         cursor = self.db.execute(
-            "SELECT * FROM path_contexts WHERE path = ?",
-            (path,)
+            "SELECT * FROM contexts WHERE target_id = ? AND context_type = ?",
+            (target_id, context_type)
         )
         row = cursor.fetchone()
         return self._row_to_context(row) if row else None
-    
+
+    def get_by_path(self, path: str) -> Optional[PathContext]:
+        """Get context by path (backward-compatible alias)."""
+        return self.get_by_target(path, "path")
+
     def list_all(self) -> List[PathContext]:
-        """List all path contexts."""
-        cursor = self.db.execute("SELECT * FROM path_contexts ORDER BY path")
+        """List all contexts."""
+        cursor = self.db.execute("SELECT * FROM contexts ORDER BY context_type, target_id")
         return [self._row_to_context(row) for row in cursor.fetchall()]
-    
+
+    def list_by_type(self, context_type: str) -> List[PathContext]:
+        """List contexts by type."""
+        cursor = self.db.execute(
+            "SELECT * FROM contexts WHERE context_type = ? ORDER BY target_id",
+            (context_type,)
+        )
+        return [self._row_to_context(row) for row in cursor.fetchall()]
+
     def list_by_collection(self, collection_id: str) -> List[PathContext]:
         """List contexts for a collection."""
         cursor = self.db.execute(
-            "SELECT * FROM path_contexts WHERE collection_id = ? ORDER BY path",
+            "SELECT * FROM contexts WHERE context_type = 'collection' AND target_id = ? ORDER BY target_id",
             (collection_id,)
         )
         return [self._row_to_context(row) for row in cursor.fetchall()]
-    
+
     def update(self, context: PathContext) -> PathContext:
-        """Update a path context."""
+        """Update a context."""
         self.db.execute(
             """
-            UPDATE path_contexts 
-            SET context = ?, updated_at = ?
+            UPDATE contexts
+            SET content = ?, updated_at = ?
             WHERE id = ?
             """,
             (context.context, datetime.utcnow().isoformat(), context.id)
         )
         return context
-    
+
     def delete(self, context_id: str) -> bool:
-        """Delete a path context."""
+        """Delete a context."""
         cursor = self.db.execute(
-            "DELETE FROM path_contexts WHERE id = ?",
+            "DELETE FROM contexts WHERE id = ?",
             (context_id,)
         )
         return cursor.rowcount > 0
-    
+
+    def delete_orphaned_paths(self) -> int:
+        """Delete path contexts whose target_id no longer exists in documents table."""
+        cursor = self.db.execute("""
+            DELETE FROM contexts
+            WHERE context_type = 'path'
+            AND target_id NOT IN (SELECT path FROM documents)
+        """)
+        return cursor.rowcount
+
     def _row_to_context(self, row: sqlite3.Row) -> PathContext:
         """Convert database row to PathContext."""
         return PathContext(
             id=row["id"],
-            path=row["path"],
-            collection_id=row["collection_id"],
-            context=row["context"],
+            path=row["target_id"],
+            collection_id=None,  # No longer stored; acceptable for transition
+            context=row["content"],
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
         )
+
+
+# Backward-compatible alias
+PathContextRepository = ContextRepository
 
 
 class LLMCacheRepository:
