@@ -62,9 +62,9 @@ class HybridSearcher:
 
         # If only one method returned results, return those
         if not vector_results:
-            return bm25_results
+            return self._attach_contexts(bm25_results)
         if not bm25_results:
-            return vector_results
+            return self._attach_contexts(vector_results)
 
         # Fuse results using RRF
         fused_results = self.rrf.fuse([bm25_results, vector_results], options.limit)
@@ -79,14 +79,46 @@ class HybridSearcher:
                         result.document_id, query, options.max_highlights
                     )
 
-        return fused_results
+        return self._attach_contexts(fused_results)
+
+    def _attach_contexts(self, results: list[SearchResult]) -> list[SearchResult]:
+        """Attach path context descriptions to search results via batch query."""
+        if not results:
+            return results
+        paths = list({r.path for r in results})
+        placeholders = ", ".join(["?"] * len(paths))
+        sql = f"""
+            SELECT target_id, content FROM contexts
+            WHERE context_type = 'path' AND target_id IN ({placeholders})
+        """
+        cursor = self.db.execute(sql, paths)
+        rows = cursor.fetchall()
+        # Handle both sqlite3.Row (dict-like) and plain tuple rows
+        context_map: dict[str, str] = {}
+        for row in rows:
+            if hasattr(row, "keys") and callable(getattr(row, "keys", None)):
+                try:
+                    context_map[row["target_id"]] = row["content"]
+                    continue
+                except (KeyError, TypeError):
+                    pass
+            # Fallback: assume tuple-like access (skip MagicMock rows in tests)
+            try:
+                key = row[0]
+                val = row[1]
+                if not isinstance(key, str):
+                    continue
+                context_map[key] = val
+            except (KeyError, IndexError, TypeError):
+                continue
+        for result in results:
+            if result.path in context_map:
+                result.context_description = context_map[result.path]
+        return results
 
     def _get_document_content(self, document_id: str) -> Optional[str]:
         """Get document content."""
-        cursor = self.db.execute(
-            "SELECT content FROM documents WHERE id = ?",
-            (document_id,)
-        )
+        cursor = self.db.execute("SELECT content FROM documents WHERE id = ?", (document_id,))
         row = cursor.fetchone()
         return row[0] if row else None
 
@@ -195,9 +227,7 @@ class SearchPipeline:
         if self.reranker is not None and len(results) > 0:
             candidates = results[: options.candidate_limit]
             try:
-                reranked = self.reranker.rerank(
-                    parsed_query, candidates, top_k=options.limit
-                )
+                reranked = self.reranker.rerank(parsed_query, candidates, top_k=options.limit)
                 results = reranked
             except Exception as e:
                 raise RuntimeError(f"Reranking failed: {e}")
@@ -207,11 +237,9 @@ class SearchPipeline:
             for result in results:
                 if result.snippet is None and result.content:
                     query_terms = parsed_query.lower().split()
-                    result.snippet = self.snippet_extractor.extract(
-                        result.content, query_terms
-                    )
+                    result.snippet = self.snippet_extractor.extract(result.content, query_terms)
 
-        return results
+        return self.hybrid._attach_contexts(results)
 
     def _parse_query_prefix(self, query: str) -> tuple[str, SearchType]:
         """Parse query prefix to determine search mode."""

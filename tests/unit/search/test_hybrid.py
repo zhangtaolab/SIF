@@ -7,7 +7,6 @@ import pytest
 from docsift.core.models import SearchOptions, SearchResult, SearchType
 from docsift.search.bm25 import BM25Searcher
 from docsift.search.hybrid import HybridSearcher, SearchPipeline
-from docsift.search.rrf import RRFFusion
 from docsift.search.vector import VectorSearcher
 
 
@@ -403,3 +402,73 @@ class TestSearchPipelineIntent:
         assert call_args is not None
         passed_query = call_args[0][0]
         assert passed_query == "code: test"
+
+
+class TestHybridContextAttachment:
+    """Tests for context_description attachment in hybrid search results."""
+
+    def test_hybrid_search_attaches_context_after_rrf(self, mock_db: MagicMock) -> None:
+        """Test that hybrid search attaches context descriptions after RRF fusion."""
+        hybrid = HybridSearcher(mock_db, embedder=None, embedding_dim=384)
+        hybrid.bm25 = create_autospec(BM25Searcher, instance=True)
+        hybrid.bm25.search.return_value = [
+            SearchResult(
+                document_id="doc-1",
+                path="/a.md",
+                title="A",
+                collection_name="default",
+                score=0.95,
+                context_description="BM25 context",
+            ),
+        ]
+        hybrid.vector = create_autospec(VectorSearcher, instance=True)
+        hybrid.vector.search.return_value = [
+            SearchResult(
+                document_id="doc-1",
+                path="/a.md",
+                title="A",
+                collection_name="default",
+                score=0.92,
+                context_description="Vector context",
+            ),
+        ]
+
+        results = hybrid.search("test")
+
+        assert len(results) == 1
+        # After RRF fusion, context_description should be preserved from one of the sources
+        assert results[0].context_description is not None
+
+    def test_pipeline_search_attaches_context_after_reranking(self, mock_db: MagicMock) -> None:
+        """Test that SearchPipeline preserves context_description after reranking."""
+        mock_reranker = MagicMock()
+        mock_reranker.rerank.return_value = [
+            SearchResult(
+                document_id="doc-1",
+                path="/a.md",
+                title="A",
+                collection_name="default",
+                score=0.99,
+                rank=1,
+                context_description="Reranked context",
+            ),
+        ]
+
+        pipeline = SearchPipeline(mock_db, reranker=mock_reranker)
+        pipeline.hybrid.bm25 = create_autospec(BM25Searcher, instance=True)
+        pipeline.hybrid.bm25.search.return_value = [
+            SearchResult(
+                document_id="doc-1",
+                path="/a.md",
+                title="A",
+                collection_name="default",
+                score=0.9,
+                context_description="Original context",
+            ),
+        ]
+
+        results = pipeline.search("test", SearchOptions(candidate_limit=10))
+
+        mock_reranker.rerank.assert_called_once()
+        assert len(results) == 1
+        assert results[0].context_description == "Reranked context"

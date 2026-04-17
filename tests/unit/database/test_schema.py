@@ -34,9 +34,7 @@ class TestSchemaManagerVectorTables:
     def test_creates_vector_table_with_default_dimension(self, vec_db):
         manager = SchemaManager(vec_db, embedding_dim=384)
         manager._create_vector_tables()
-        cursor = vec_db.execute(
-            "SELECT sql FROM sqlite_master WHERE name='document_embeddings'"
-        )
+        cursor = vec_db.execute("SELECT sql FROM sqlite_master WHERE name='document_embeddings'")
         row = cursor.fetchone()
         assert row is not None
         assert "FLOAT[384]" in row[0]
@@ -44,9 +42,7 @@ class TestSchemaManagerVectorTables:
     def test_creates_vector_table_with_custom_dimension(self, vec_db):
         manager = SchemaManager(vec_db, embedding_dim=768)
         manager._create_vector_tables()
-        cursor = vec_db.execute(
-            "SELECT sql FROM sqlite_master WHERE name='document_embeddings'"
-        )
+        cursor = vec_db.execute("SELECT sql FROM sqlite_master WHERE name='document_embeddings'")
         row = cursor.fetchone()
         assert "FLOAT[768]" in row[0]
 

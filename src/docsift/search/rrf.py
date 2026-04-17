@@ -74,6 +74,8 @@ class RRFFusion:
                         highlights=result.highlights,
                         rank=rank,
                         scores=doc_scores,
+                        snippet=result.snippet,
+                        context_description=result.context_description,
                     )
                     scores[doc_id] = (rrf_score, new_result)
 
@@ -93,7 +95,7 @@ class RRFFusion:
             fused_results.append(result)
 
         return fused_results
-    
+
     def fuse_with_weights(
         self,
         results_lists: List[List[SearchResult]],
@@ -158,6 +160,8 @@ class RRFFusion:
                         highlights=result.highlights,
                         rank=rank,
                         scores=doc_scores,
+                        snippet=result.snippet,
+                        context_description=result.context_description,
                     )
                     scores[doc_id] = (rrf_score, new_result)
 

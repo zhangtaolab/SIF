@@ -105,6 +105,7 @@ class LlamaCppReranker:
                 rank=rank,
                 scores=new_scores,
                 snippet=result.snippet,
+                context_description=result.context_description,
             )
             reranked.append(new_result)
 
@@ -186,6 +187,7 @@ class CrossEncoderReranker:
                 rank=rank,
                 scores=new_scores,
                 snippet=result.snippet,
+                context_description=result.context_description,
             )
             reranked.append(new_result)
 
