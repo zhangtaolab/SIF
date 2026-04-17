@@ -12,6 +12,7 @@ from docsift.core.models import PathContext
 from docsift.database.database import Database
 from docsift.database.repositories import CollectionRepository, ContextRepository
 
+
 console = Console()
 
 

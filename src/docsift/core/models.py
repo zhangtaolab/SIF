@@ -6,13 +6,14 @@ import hashlib
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum, auto
+from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Protocol
 
 
 class ChunkStrategy(Enum):
     """Document chunking strategies."""
+
     FIXED = "fixed"
     MARKDOWN = "markdown"
     CODE = "code"
@@ -21,6 +22,7 @@ class ChunkStrategy(Enum):
 
 class SearchType(Enum):
     """Search types."""
+
     BM25 = "bm25"
     VECTOR = "vector"
     HYBRID = "hybrid"
@@ -31,6 +33,7 @@ class SearchType(Enum):
 @dataclass
 class Collection:
     """A document collection."""
+
     name: str
     path: str
     pattern: str = "**/*.md"
@@ -44,7 +47,7 @@ class Collection:
     document_count: int = 0
     chunk_count: int = 0
     last_indexed_at: Optional[datetime] = None
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return {
@@ -62,7 +65,7 @@ class Collection:
             "chunk_count": self.chunk_count,
             "last_indexed_at": self.last_indexed_at.isoformat() if self.last_indexed_at else None,
         }
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> Collection:
         """Create from dictionary."""
@@ -75,17 +78,24 @@ class Collection:
             include_by_default=data.get("include_by_default", True),
             description=data.get("description"),
             pre_update_cmd=data.get("pre_update_cmd"),
-            created_at=datetime.fromisoformat(data["created_at"]) if "created_at" in data else datetime.utcnow(),
-            updated_at=datetime.fromisoformat(data["updated_at"]) if "updated_at" in data else datetime.utcnow(),
+            created_at=datetime.fromisoformat(data["created_at"])
+            if "created_at" in data
+            else datetime.utcnow(),
+            updated_at=datetime.fromisoformat(data["updated_at"])
+            if "updated_at" in data
+            else datetime.utcnow(),
             document_count=data.get("document_count", 0),
             chunk_count=data.get("chunk_count", 0),
-            last_indexed_at=datetime.fromisoformat(data["last_indexed_at"]) if data.get("last_indexed_at") else None,
+            last_indexed_at=datetime.fromisoformat(data["last_indexed_at"])
+            if data.get("last_indexed_at")
+            else None,
         )
 
 
 @dataclass
 class DocumentChunk:
     """A chunk of a document."""
+
     content: str
     sequence: int
     start_pos: int
@@ -95,7 +105,7 @@ class DocumentChunk:
     token_count: int = 0
     embedding: Optional[List[float]] = None
     embedding_id: Optional[str] = None
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return {
@@ -113,6 +123,7 @@ class DocumentChunk:
 @dataclass
 class Document:
     """A document in the index."""
+
     path: str
     collection_id: str
     content: str
@@ -126,7 +137,7 @@ class Document:
     updated_at: datetime = field(default_factory=datetime.utcnow)
     chunks: List[DocumentChunk] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
-    
+
     def __post_init__(self):
         """Initialize computed fields."""
         self.filename = Path(self.path).name
@@ -134,7 +145,7 @@ class Document:
         self.file_size = len(self.content.encode())
         if self.title is None:
             self.title = self.filename
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return {
@@ -156,13 +167,14 @@ class Document:
 @dataclass
 class PathContext:
     """Context information for a path."""
+
     path: str
     context: str
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     collection_id: Optional[str] = None
     created_at: datetime = field(default_factory=datetime.utcnow)
     updated_at: datetime = field(default_factory=datetime.utcnow)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return {
@@ -178,6 +190,7 @@ class PathContext:
 @dataclass
 class SearchResult:
     """A search result."""
+
     document_id: str
     title: str
     path: str
@@ -210,6 +223,7 @@ class SearchResult:
 @dataclass
 class SearchOptions:
     """Options for search."""
+
     limit: int = 10
     offset: int = 0
     collection_ids: Optional[List[str]] = None
@@ -226,12 +240,13 @@ class SearchOptions:
 @dataclass
 class IndexStats:
     """Statistics about the index."""
+
     collection_count: int = 0
     document_count: int = 0
     chunk_count: int = 0
     total_size_bytes: int = 0
     last_indexed_at: Optional[datetime] = None
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return {
@@ -245,15 +260,15 @@ class IndexStats:
 
 class Embedder(Protocol):
     """Protocol for embedding models."""
-    
+
     def embed(self, text: str) -> List[float]:
         """Embed a single text."""
         ...
-    
+
     def embed_batch(self, texts: List[str]) -> List[List[float]]:
         """Embed multiple texts."""
         ...
-    
+
     @property
     def dimension(self) -> int:
         """Get embedding dimension."""
@@ -262,7 +277,7 @@ class Embedder(Protocol):
 
 class Reranker(Protocol):
     """Protocol for reranking models."""
-    
+
     def rerank(self, query: str, documents: List[str]) -> List[tuple[int, float]]:
         """Rerank documents for a query."""
         ...
@@ -270,7 +285,7 @@ class Reranker(Protocol):
 
 class QueryExpander(Protocol):
     """Protocol for query expansion."""
-    
+
     def expand(self, query: str) -> List[str]:
         """Expand a query into multiple variants."""
         ...
