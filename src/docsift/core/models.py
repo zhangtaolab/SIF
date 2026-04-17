@@ -24,6 +24,8 @@ class SearchType(Enum):
     BM25 = "bm25"
     VECTOR = "vector"
     HYBRID = "hybrid"
+    HYDE = "hyde"
+    EXPAND = "expand"
 
 
 @dataclass
@@ -184,7 +186,9 @@ class SearchResult:
     content: Optional[str] = None
     highlights: List[str] = field(default_factory=list)
     rank: int = 0
-    
+    scores: Dict[str, Optional[float]] = field(default_factory=dict)
+    snippet: Optional[str] = None
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return {
@@ -196,6 +200,8 @@ class SearchResult:
             "content": self.content,
             "highlights": self.highlights,
             "rank": self.rank,
+            "scores": self.scores,
+            "snippet": self.snippet,
         }
 
 
@@ -209,6 +215,10 @@ class SearchOptions:
     include_content: bool = False
     include_highlights: bool = True
     max_highlights: int = 3
+    explain: bool = False
+    candidate_limit: int = 20
+    intent: Optional[str] = None
+    snippet_max_length: int = 300
 
 
 @dataclass
