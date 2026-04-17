@@ -109,7 +109,13 @@ class TestVectorSearcher:
         mock_db = MagicMock()
         mock_cursor = MagicMock()
         mock_cursor.fetchall.return_value = [
-            {"score": 0.0, "document_id": "doc-1", "title": "Title", "path": "/path", "collection_name": "col"},
+            {
+                "score": 0.0,
+                "document_id": "doc-1",
+                "title": "Title",
+                "path": "/path",
+                "collection_name": "col",
+            },
         ]
         mock_db.execute.return_value = mock_cursor
 
@@ -127,8 +133,20 @@ class TestVectorSearcher:
         mock_db = MagicMock()
         mock_cursor = MagicMock()
         mock_cursor.fetchall.return_value = [
-            {"score": 0.0, "document_id": "doc-1", "title": "Title", "path": "/path", "collection_name": "col"},
-            {"score": 1.8, "document_id": "doc-2", "title": "Title2", "path": "/path2", "collection_name": "col"},
+            {
+                "score": 0.0,
+                "document_id": "doc-1",
+                "title": "Title",
+                "path": "/path",
+                "collection_name": "col",
+            },
+            {
+                "score": 1.8,
+                "document_id": "doc-2",
+                "title": "Title2",
+                "path": "/path2",
+                "collection_name": "col",
+            },
         ]
         mock_db.execute.return_value = mock_cursor
 
@@ -146,12 +164,20 @@ class TestVectorSearcher:
         mock_db = MagicMock()
         mock_cursor = MagicMock()
         mock_cursor.fetchall.return_value = [
-            {"score": 0.0, "document_id": "doc-1", "title": "Title", "path": "/path", "collection_name": "col"},
+            {
+                "score": 0.0,
+                "document_id": "doc-1",
+                "title": "Title",
+                "path": "/path",
+                "collection_name": "col",
+            },
         ]
         content_cursor = MagicMock()
         content_cursor.fetchone.return_value = ("document content",)
-        # First execute is vec_version() in __init__, second is search query, third is content lookup
-        mock_db.execute.side_effect = [MagicMock(), mock_cursor, content_cursor]
+        context_cursor = MagicMock()
+        context_cursor.fetchall.return_value = []
+        # First execute is vec_version() in __init__, second is search query, third is content lookup, fourth is context lookup
+        mock_db.execute.side_effect = [MagicMock(), mock_cursor, content_cursor, context_cursor]
 
         searcher = VectorSearcher(mock_db)
         searcher._vec_available = True

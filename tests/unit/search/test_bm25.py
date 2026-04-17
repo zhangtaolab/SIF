@@ -35,6 +35,13 @@ class TestBM25Searcher:
                 },
             ]
         )
+        # Add a context cursor for the _attach_contexts call
+        context_cursor = MagicMock()
+        context_cursor.fetchall.return_value = []
+        mock_db.execute.side_effect = [
+            mock_db.execute.return_value,
+            context_cursor,
+        ]
 
         searcher = BM25Searcher(mock_db)
         options = SearchOptions(include_highlights=False)
@@ -42,8 +49,10 @@ class TestBM25Searcher:
 
         assert len(results) == 1
         assert results[0].document_id == "doc-1"
-        sql = mock_db.execute.call_args[0][0]
-        assert "MATCH" in sql
+        # The last call is the context query; verify the FTS query was also made
+        calls = mock_db.execute.call_args_list
+        sqls = [call[0][0] for call in calls]
+        assert any("MATCH" in sql for sql in sqls)
 
     def test_search_returns_search_results(self) -> None:
         """Test that search returns list of SearchResult objects."""
@@ -65,6 +74,13 @@ class TestBM25Searcher:
                 },
             ]
         )
+        # Add a context cursor for the _attach_contexts call
+        context_cursor = MagicMock()
+        context_cursor.fetchall.return_value = []
+        mock_db.execute.side_effect = [
+            mock_db.execute.return_value,
+            context_cursor,
+        ]
 
         searcher = BM25Searcher(mock_db)
         options = SearchOptions(include_highlights=False)
@@ -96,6 +112,13 @@ class TestBM25Searcher:
                 },
             ]
         )
+        # Add a context cursor for the _attach_contexts call
+        context_cursor = MagicMock()
+        context_cursor.fetchall.return_value = []
+        mock_db.execute.side_effect = [
+            mock_db.execute.return_value,
+            context_cursor,
+        ]
 
         searcher = BM25Searcher(mock_db)
         options = SearchOptions(min_score=0.3, include_highlights=False)
@@ -156,9 +179,12 @@ class TestBM25Searcher:
         )
         content_cursor = MagicMock()
         content_cursor.fetchone.return_value = ["document content"]
+        context_cursor = MagicMock()
+        context_cursor.fetchall.return_value = []
         mock_db.execute.side_effect = [
             mock_db.execute.return_value,
             content_cursor,
+            context_cursor,
         ]
 
         searcher = BM25Searcher(mock_db)
@@ -185,10 +211,13 @@ class TestBM25Searcher:
         chunk_cursor.fetchall.return_value = []
         content_cursor = MagicMock()
         content_cursor.fetchone.return_value = ["test query content"]
+        context_cursor = MagicMock()
+        context_cursor.fetchall.return_value = []
         mock_db.execute.side_effect = [
             mock_db.execute.return_value,
             chunk_cursor,
             content_cursor,
+            context_cursor,
         ]
 
         searcher = BM25Searcher(mock_db)
@@ -236,3 +265,47 @@ class TestBM25Searcher:
         searcher = BM25Searcher(MagicMock())
         query = searcher._build_fts_query("")
         assert query == "*"
+
+
+class TestBM25ContextAttachment:
+    """Tests for context_description attachment in BM25 search results."""
+
+    def test_search_attaches_context_description(self) -> None:
+        """Test that BM25 search attaches path context descriptions."""
+        context_rows = [
+            {"target_id": "/1.md", "content": "Important project notes"}
+        ]
+        search_rows = [
+            {"document_id": "doc-1", "title": "T1", "path": "/1.md", "collection_name": "c", "score": -1.0},
+        ]
+        mock_db = MagicMock()
+        search_cursor = MagicMock()
+        search_cursor.fetchall.return_value = search_rows
+        context_cursor = MagicMock()
+        context_cursor.fetchall.return_value = context_rows
+        mock_db.execute.side_effect = [search_cursor, context_cursor]
+
+        searcher = BM25Searcher(mock_db)
+        options = SearchOptions(include_highlights=False)
+        results = searcher.search("test", options)
+
+        assert len(results) == 1
+        assert results[0].context_description == "Important project notes"
+
+    def test_search_no_context_returns_none(self) -> None:
+        """Test that search returns None context_description when no context exists."""
+        search_rows = [
+            {"document_id": "doc-1", "title": "T1", "path": "/1.md", "collection_name": "c", "score": -1.0},
+        ]
+        mock_db = MagicMock()
+        search_cursor = MagicMock()
+        search_cursor.fetchall.return_value = search_rows
+        context_cursor = MagicMock()
+        context_cursor.fetchall.return_value = []
+        mock_db.execute.side_effect = [search_cursor, context_cursor]
+
+        searcher = BM25Searcher(mock_db)
+        options = SearchOptions(include_highlights=False)
+        results = searcher.search("test", options)
+
+        assert results[0].context_description is None
