@@ -1,30 +1,35 @@
 {
   "version": "1.0",
-  "timestamp": "2026-04-16T12:34:06.611Z",
-  "phase": "03",
-  "phase_name": "embedding-vector-search",
-  "phase_dir": ".planning/phases/03-embedding-vector-search",
-  "plan": 5,
-  "task": 1,
-  "total_tasks": 2,
+  "timestamp": "2026-04-17T15:09:38.611Z",
+  "phase": "04",
+  "phase_name": "Advanced Search Pipeline",
+  "phase_dir": ".planning/phases/04-advanced-search-pipeline",
+  "plan": 3,
+  "task": 0,
+  "total_tasks": 9,
   "status": "paused",
   "completed_tasks": [
-    {"id": 1, "name": "Add embedding backend fields to Settings", "status": "done", "commit": "f4185bd"},
-    {"id": 2, "name": "Implement OpenAIEmbedder and wire factory", "status": "done", "commit": "8b622b9"},
-    {"id": 3, "name": "Make SchemaManager dimension-aware", "status": "done", "commit": "38ee4e3"},
-    {"id": 4, "name": "Add batch embedding insertion to VectorSearcher", "status": "done", "commit": "dd3e86d"}
+    {"id": 1, "name": "Extend SearchResult and SearchOptions", "status": "done", "commit": "32bdfc1"},
+    {"id": 2, "name": "Add reranker settings and fix RRF scores", "status": "done", "commit": "e474c53"},
+    {"id": 3, "name": "Implement LlamaCppReranker and CrossEncoderReranker", "status": "done", "commit": "6a782d8"},
+    {"id": 4, "name": "Implement QueryExpansion with embedding PRF", "status": "done", "commit": "4acf4d3"},
+    {"id": 5, "name": "Implement SmartSnippetExtractor", "status": "done", "commit": "6473394"}
   ],
   "remaining_tasks": [
-    {"id": 5, "name": "Refactor EmbeddingManager to work with Embedder protocol", "status": "not_started"},
-    {"id": 6, "name": "Integrate EmbeddingManager into CLI search/index commands", "status": "not_started"}
+    {"id": 6, "name": "Wire SearchPipeline with prefix routing/explain/candidate-limit/intent", "status": "not_started"},
+    {"id": 7, "name": "Update CLI commands with new flags", "status": "not_started"},
+    {"id": 8, "name": "Implement bench command and SearchEvaluator", "status": "not_started"},
+    {"id": 9, "name": "Fix remaining broken tests and run quality suite", "status": "not_started"}
   ],
-  "blockers": [],
+  "blockers": [
+    {"description": "Subagent worktree mode fails when Bash tool requires explicit user approval — executor agents cannot commit or run tests", "type": "technical", "workaround": "Execute plans inline (sequential, no subagents) when worktree mode is blocked"}
+  ],
   "human_actions_pending": [],
   "decisions": [
-    {"decision": "SchemaManager uses sqlite_master SQL introspection for dimension mismatch detection", "rationale": "Prevents runtime insertion errors by failing fast at startup", "phase": "03"},
-    {"decision": "VectorSearcher uses json.dumps for sqlite-vec serialization", "rationale": "Robust JSON format instead of fragile str.replace", "phase": "03"}
+    {"decision": "Subagent worktrees are blocked by Bash permission checks", "rationale": "Agent cannot run git commit or pytest without user approving each Bash call", "phase": "04"},
+    {"decision": "04-01 test_rrf.py fixes deferred to 04-05", "rationale": "File was not modified in the actual commit; handled as remaining test cleanup", "phase": "04"}
   ],
   "uncommitted_files": [],
-  "next_action": "Execute plan 03-05: refactor EmbeddingManager to work with Embedder protocol instances",
-  "context_notes": "Waves 1 and 2 of Phase 03 are complete. Wave 3 (03-05) and Wave 4 (03-06) remain. All prior work is committed and SUMMARY.md files are in place. No blockers."
+  "next_action": "Execute Wave 2 (plan 04-03): wire SearchPipeline with prefix routing, explainability, candidate capping, and intent propagation",
+  "context_notes": "Wave 1 complete (04-01, 04-02). Wave 1 code is committed and merged to main. test_rrf.py still has broken imports that need fixing in 04-05. Subagent worktree approach failed twice due to Bash permission — switch to inline execution for remaining plans."
 }
