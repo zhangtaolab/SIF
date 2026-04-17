@@ -194,9 +194,7 @@ class TestVectorContextAttachment:
 
     def test_search_attaches_context_description(self) -> None:
         """Test that vector search attaches path context descriptions."""
-        context_rows = [
-            {"target_id": "/1.md", "content": "Important project notes"}
-        ]
+        context_rows = [{"target_id": "/1.md", "content": "Important project notes"}]
         search_rows = [
             {
                 "score": 0.0,

@@ -272,11 +272,15 @@ class TestBM25ContextAttachment:
 
     def test_search_attaches_context_description(self) -> None:
         """Test that BM25 search attaches path context descriptions."""
-        context_rows = [
-            {"target_id": "/1.md", "content": "Important project notes"}
-        ]
+        context_rows = [{"target_id": "/1.md", "content": "Important project notes"}]
         search_rows = [
-            {"document_id": "doc-1", "title": "T1", "path": "/1.md", "collection_name": "c", "score": -1.0},
+            {
+                "document_id": "doc-1",
+                "title": "T1",
+                "path": "/1.md",
+                "collection_name": "c",
+                "score": -1.0,
+            },
         ]
         mock_db = MagicMock()
         search_cursor = MagicMock()
@@ -295,7 +299,13 @@ class TestBM25ContextAttachment:
     def test_search_no_context_returns_none(self) -> None:
         """Test that search returns None context_description when no context exists."""
         search_rows = [
-            {"document_id": "doc-1", "title": "T1", "path": "/1.md", "collection_name": "c", "score": -1.0},
+            {
+                "document_id": "doc-1",
+                "title": "T1",
+                "path": "/1.md",
+                "collection_name": "c",
+                "score": -1.0,
+            },
         ]
         mock_db = MagicMock()
         search_cursor = MagicMock()

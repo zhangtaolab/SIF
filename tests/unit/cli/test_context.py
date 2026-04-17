@@ -5,9 +5,8 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
-from click.testing import CliRunner
-
 import pytest
+from click.testing import CliRunner
 
 from docsift.cli.commands.context import (
     context_add,
@@ -75,19 +74,21 @@ class TestContextAdd:
             mock_coll_repo.get_by_name.return_value = coll
             mock_ctx_repo = MagicMock()
             mock_ctx_repo.get_by_target.return_value = None
-            with patch(
-                "docsift.cli.commands.context.CollectionRepository",
-                return_value=mock_coll_repo,
-            ):
-                with patch(
+            with (
+                patch(
+                    "docsift.cli.commands.context.CollectionRepository",
+                    return_value=mock_coll_repo,
+                ),
+                patch(
                     "docsift.cli.commands.context.ContextRepository",
                     return_value=mock_ctx_repo,
-                ):
-                    result = runner.invoke(
-                        context_add,
-                        ["collection", "my-coll", "description"],
-                        obj=ctx_obj,
-                    )
+                ),
+            ):
+                result = runner.invoke(
+                    context_add,
+                    ["collection", "my-coll", "description"],
+                    obj=ctx_obj,
+                )
 
         assert result.exit_code == 0
         mock_coll_repo.get_by_name.assert_called_once_with("my-coll")
@@ -109,19 +110,21 @@ class TestContextAdd:
             mock_coll_repo.get_by_id.return_value = coll
             mock_ctx_repo = MagicMock()
             mock_ctx_repo.get_by_target.return_value = None
-            with patch(
-                "docsift.cli.commands.context.CollectionRepository",
-                return_value=mock_coll_repo,
-            ):
-                with patch(
+            with (
+                patch(
+                    "docsift.cli.commands.context.CollectionRepository",
+                    return_value=mock_coll_repo,
+                ),
+                patch(
                     "docsift.cli.commands.context.ContextRepository",
                     return_value=mock_ctx_repo,
-                ):
-                    result = runner.invoke(
-                        context_add,
-                        ["collection", coll_id, "description"],
-                        obj=ctx_obj,
-                    )
+                ),
+            ):
+                result = runner.invoke(
+                    context_add,
+                    ["collection", coll_id, "description"],
+                    obj=ctx_obj,
+                )
 
         assert result.exit_code == 0
         mock_coll_repo.get_by_name.assert_called_once_with(coll_id)

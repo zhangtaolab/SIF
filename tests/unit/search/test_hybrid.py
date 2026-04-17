@@ -7,7 +7,6 @@ import pytest
 from docsift.core.models import SearchOptions, SearchResult, SearchType
 from docsift.search.bm25 import BM25Searcher
 from docsift.search.hybrid import HybridSearcher, SearchPipeline
-from docsift.search.rrf import RRFFusion
 from docsift.search.vector import VectorSearcher
 
 
