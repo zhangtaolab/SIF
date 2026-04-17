@@ -187,3 +187,65 @@ class TestVectorSearcher:
 
         assert len(results) == 1
         assert results[0].content == "document content"
+
+
+class TestVectorContextAttachment:
+    """Tests for context_description attachment in vector search results."""
+
+    def test_search_attaches_context_description(self) -> None:
+        """Test that vector search attaches path context descriptions."""
+        context_rows = [
+            {"target_id": "/1.md", "content": "Important project notes"}
+        ]
+        search_rows = [
+            {
+                "score": 0.0,
+                "document_id": "doc-1",
+                "title": "T1",
+                "path": "/1.md",
+                "collection_name": "c",
+            },
+        ]
+        mock_db = MagicMock()
+        search_cursor = MagicMock()
+        search_cursor.fetchall.return_value = search_rows
+        context_cursor = MagicMock()
+        context_cursor.fetchall.return_value = context_rows
+        # vec_version in __init__, search query, context query
+        mock_db.execute.side_effect = [MagicMock(), search_cursor, context_cursor]
+
+        searcher = VectorSearcher(mock_db)
+        searcher._vec_available = True
+
+        options = SearchOptions(include_highlights=False)
+        results = searcher.search([0.1, 0.2], options)
+
+        assert len(results) == 1
+        assert results[0].context_description == "Important project notes"
+
+    def test_search_no_context_returns_none(self) -> None:
+        """Test that vector search returns None context_description when no context exists."""
+        search_rows = [
+            {
+                "score": 0.0,
+                "document_id": "doc-1",
+                "title": "T1",
+                "path": "/1.md",
+                "collection_name": "c",
+            },
+        ]
+        mock_db = MagicMock()
+        search_cursor = MagicMock()
+        search_cursor.fetchall.return_value = search_rows
+        context_cursor = MagicMock()
+        context_cursor.fetchall.return_value = []
+        # vec_version in __init__, search query, context query
+        mock_db.execute.side_effect = [MagicMock(), search_cursor, context_cursor]
+
+        searcher = VectorSearcher(mock_db)
+        searcher._vec_available = True
+
+        options = SearchOptions(include_highlights=False)
+        results = searcher.search([0.1, 0.2], options)
+
+        assert results[0].context_description is None

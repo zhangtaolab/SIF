@@ -131,7 +131,8 @@ class VectorSearcher:
             except (KeyError, IndexError, TypeError):
                 continue
         for result in results:
-            result.context_description = context_map.get(result.path)
+            if result.path in context_map:
+                result.context_description = context_map[result.path]
         return results
 
     def _embedding_to_vec(self, embedding: List[float]) -> str:

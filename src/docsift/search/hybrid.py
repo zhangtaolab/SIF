@@ -112,7 +112,8 @@ class HybridSearcher:
             except (KeyError, IndexError, TypeError):
                 continue
         for result in results:
-            result.context_description = context_map.get(result.path)
+            if result.path in context_map:
+                result.context_description = context_map[result.path]
         return results
 
     def _get_document_content(self, document_id: str) -> Optional[str]:
