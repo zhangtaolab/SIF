@@ -1,35 +1,30 @@
 {
   "version": "1.0",
-  "timestamp": "2026-04-17T15:09:38.611Z",
+  "timestamp": "2026-04-17T15:39:48.043Z",
   "phase": "04",
-  "phase_name": "Advanced Search Pipeline",
+  "phase_name": "advanced-search-pipeline",
   "phase_dir": ".planning/phases/04-advanced-search-pipeline",
-  "plan": 3,
-  "task": 0,
-  "total_tasks": 9,
+  "plan": 4,
+  "task": 1,
+  "total_tasks": 2,
   "status": "paused",
   "completed_tasks": [
-    {"id": 1, "name": "Extend SearchResult and SearchOptions", "status": "done", "commit": "32bdfc1"},
-    {"id": 2, "name": "Add reranker settings and fix RRF scores", "status": "done", "commit": "e474c53"},
-    {"id": 3, "name": "Implement LlamaCppReranker and CrossEncoderReranker", "status": "done", "commit": "6a782d8"},
-    {"id": 4, "name": "Implement QueryExpansion with embedding PRF", "status": "done", "commit": "4acf4d3"},
-    {"id": 5, "name": "Implement SmartSnippetExtractor", "status": "done", "commit": "6473394"}
+    {"id": 1, "name": "Rewrite SearchPipeline with prefix routing", "status": "done", "commit": "56cb05b"},
+    {"id": 2, "name": "Update CLI search commands with new flags", "status": "done", "commit": "9d4874d"},
+    {"id": 3, "name": "Fix tests and add pipeline tests", "status": "done", "commit": "aaa29ae"}
   ],
   "remaining_tasks": [
-    {"id": 6, "name": "Wire SearchPipeline with prefix routing/explain/candidate-limit/intent", "status": "not_started"},
-    {"id": 7, "name": "Update CLI commands with new flags", "status": "not_started"},
-    {"id": 8, "name": "Implement bench command and SearchEvaluator", "status": "not_started"},
-    {"id": 9, "name": "Fix remaining broken tests and run quality suite", "status": "not_started"}
+    {"id": 1, "name": "Implement SearchEvaluator with metrics", "status": "not_started"},
+    {"id": 2, "name": "Implement bench CLI command", "status": "not_started"},
+    {"id": 3, "name": "Fix remaining broken tests", "status": "not_started"},
+    {"id": 4, "name": "Run quality suite", "status": "not_started"}
   ],
-  "blockers": [
-    {"description": "Subagent worktree mode fails when Bash tool requires explicit user approval — executor agents cannot commit or run tests", "type": "technical", "workaround": "Execute plans inline (sequential, no subagents) when worktree mode is blocked"}
-  ],
+  "blockers": [],
   "human_actions_pending": [],
   "decisions": [
-    {"decision": "Subagent worktrees are blocked by Bash permission checks", "rationale": "Agent cannot run git commit or pytest without user approving each Bash call", "phase": "04"},
-    {"decision": "04-01 test_rrf.py fixes deferred to 04-05", "rationale": "File was not modified in the actual commit; handled as remaining test cleanup", "phase": "04"}
+    {"decision": "Subagent worktrees are BLOCKED", "rationale": "Prior session attempts with worktree isolation silently failed when agents tried to run git commit or pytest \u2014 Bash tool requires per-invocation approval that never arrives", "phase": "04"}
   ],
   "uncommitted_files": [],
-  "next_action": "Execute Wave 2 (plan 04-03): wire SearchPipeline with prefix routing, explainability, candidate capping, and intent propagation",
-  "context_notes": "Wave 1 complete (04-01, 04-02). Wave 1 code is committed and merged to main. test_rrf.py still has broken imports that need fixing in 04-05. Subagent worktree approach failed twice due to Bash permission — switch to inline execution for remaining plans."
+  "next_action": "Read 04-04-PLAN.md and execute Task 1 (implement SearchEvaluator with precision@k, recall, MRR)",
+  "context_notes": "Wave 2 complete. All 04-03 tasks committed to main. Phase 04 is 3/5 plans complete (60%). Wave 3 contains 04-04 (SearchEvaluator+bench) and 04-05 (test fixes+quality suite). Execute inline only \u2014 no subagents, no worktrees."
 }
