@@ -4,7 +4,7 @@ This document describes all data models used in DocSift.
 
 ## Overview
 
-DocSift uses Pydantic models for data validation and serialization. Models are organized by domain:
+DocSift uses a mix of dataclasses for domain entities and Pydantic models for data validation and serialization. Models are organized by domain:
 
 - **Collection Models**: Collection management
 - **Document Models**: Document and chunk entities
@@ -19,22 +19,25 @@ DocSift uses Pydantic models for data validation and serialization. Models are o
 Core domain entity representing a document collection.
 
 ```python
-from docsift import Collection
+from docsift.core.models import Collection
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
 @dataclass
 class Collection:
-    id: str                          # Unique identifier (UUID)
     name: str                        # Collection name (unique)
+    path: str                        # Indexed path (single directory)
+    pattern: str = "**/*.md"         # File glob pattern
+    ignore_patterns: list[str] = field(default_factory=list)  # Patterns to ignore
+    include_by_default: bool = True  # Include in default searches
     description: str | None = None   # Optional description
-    paths: list[str] = field(default_factory=list)  # Indexed paths
-    document_count: int = 0          # Number of documents
-    chunk_count: int = 0             # Number of chunks
-    metadata: dict[str, Any] = field(default_factory=dict)  # Custom metadata
+    pre_update_cmd: str | None = None  # Command to run before indexing
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
     created_at: datetime = field(default_factory=datetime.utcnow)
     updated_at: datetime = field(default_factory=datetime.utcnow)
+    document_count: int = 0          # Number of documents
+    chunk_count: int = 0             # Number of chunks
     last_indexed_at: datetime | None = None
 ```
 
@@ -44,99 +47,12 @@ collection = Collection(
     id="550e8400-e29b-41d4-a716-446655440000",
     name="my-notes",
     description="Personal programming notes",
-    paths=["~/Documents/notes", "~/Documents/ideas"],
+    path="~/Documents/notes",
     document_count=42,
-    metadata={"category": "personal", "priority": "high"}
 )
 ```
 
-### CollectionCreate (Pydantic Model)
-
-Model for creating a new collection.
-
-```python
-from docsift.models.collection import CollectionCreate
-
-class CollectionCreate(BaseModel):
-    name: str = Field(..., min_length=1, max_length=100)
-    description: str | None = Field(None, max_length=500)
-    paths: list[str] = Field(default_factory=list)
-    metadata: dict[str, Any] = Field(default_factory=dict)
-```
-
-**Validation:**
-- `name`: Required, 1-100 characters
-- `description`: Optional, max 500 characters
-- `paths`: List of valid directory paths
-- `metadata`: Any JSON-serializable data
-
-**Example:**
-```python
-create_data = CollectionCreate(
-    name="work-docs",
-    description="Work documentation",
-    paths=["~/Work/docs"],
-    metadata={"team": "engineering"}
-)
-```
-
-### CollectionUpdate (Pydantic Model)
-
-Model for updating an existing collection.
-
-```python
-from docsift.models.collection import CollectionUpdate
-
-class CollectionUpdate(BaseModel):
-    name: str | None = Field(None, min_length=1, max_length=100)
-    description: str | None = Field(None, max_length=500)
-    paths: list[str] | None = None
-    metadata: dict[str, Any] | None = None
-```
-
-**Example:**
-```python
-update_data = CollectionUpdate(
-    description="Updated description",
-    metadata={"status": "active"}
-)
-```
-
-### CollectionResponse (Pydantic Model)
-
-Model for collection API responses.
-
-```python
-from docsift.models.collection import CollectionResponse
-
-class CollectionResponse(BaseModel):
-    id: str
-    name: str
-    description: str | None
-    paths: list[str]
-    document_count: int
-    chunk_count: int
-    metadata: dict[str, Any]
-    created_at: datetime
-    updated_at: datetime
-    last_indexed_at: datetime | None
-```
-
-**Example:**
-```python
-response = CollectionResponse(
-    id="550e8400-e29b-41d4-a716-446655440000",
-    name="my-notes",
-    description="Personal notes",
-    paths=["~/Documents/notes"],
-    document_count=42,
-    chunk_count=156,
-    metadata={},
-    created_at=datetime(2024, 1, 15, 10, 30, 0),
-    updated_at=datetime(2024, 1, 20, 14, 22, 0),
-    last_indexed_at=datetime(2024, 1, 20, 14, 22, 0)
-)
-```
+**Note:** `path` is a single string, not a list. Each collection maps to one directory.
 
 ## Document Models
 
@@ -145,23 +61,26 @@ response = CollectionResponse(
 Core domain entity representing an indexed document.
 
 ```python
-from docsift import Document
+from docsift.core.models import Document
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
 @dataclass
 class Document:
-    id: str                    # Unique identifier (UUID)
-    collection_id: str         # Parent collection ID
     path: str                  # File system path
+    collection_id: str         # Parent collection ID
     content: str               # Document content
-    checksum: str              # Content checksum (SHA-256)
-    file_size: int             # File size in bytes
-    metadata: dict[str, Any] = field(default_factory=dict)
+    title: str | None = None   # Document title (defaults to filename)
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    filename: str = field(init=False)   # Computed from path
+    checksum: str = field(init=False)   # SHA-256 of content
+    file_size: int = field(init=False)  # Content size in bytes
+    mtime: float = field(default_factory=lambda: datetime.utcnow().timestamp())
     created_at: datetime = field(default_factory=datetime.utcnow)
     updated_at: datetime = field(default_factory=datetime.utcnow)
-    indexed_at: datetime | None = None
+    chunks: list[DocumentChunk] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
 ```
 
 **Example:**
@@ -171,12 +90,8 @@ document = Document(
     collection_id="550e8400-e29b-41d4-a716-446655440000",
     path="~/Documents/notes/python/decorators.md",
     content="# Python Decorators\n\nDecorators are...",
-    checksum="a1b2c3d4e5f6...",
-    file_size=2048,
     metadata={
-        "title": "Python Decorators",
         "tags": ["python", "advanced"],
-        "author": "John Doe"
     }
 )
 ```
@@ -186,18 +101,21 @@ document = Document(
 Represents a chunk of a document for embedding and search.
 
 ```python
-from docsift import DocumentChunk
-from dataclasses import dataclass
+from docsift.core.models import DocumentChunk
+from dataclasses import dataclass, field
+from typing import Any
 
 @dataclass
 class DocumentChunk:
-    id: str                    # Unique identifier
-    document_id: str           # Parent document ID
     content: str               # Chunk content
-    start_line: int            # Start line in document
-    end_line: int              # End line in document
-    token_count: int           # Number of tokens
-    embedding_id: str | None = None  # Reference to embedding
+    sequence: int              # Sequence number in document
+    start_pos: int             # Start position in document
+    end_pos: int               # End position in document
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    document_id: str | None = None
+    token_count: int = 0
+    embedding: list[float] | None = None
+    embedding_id: str | None = None
 ```
 
 **Example:**
@@ -206,116 +124,50 @@ chunk = DocumentChunk(
     id="chunk_xyz789",
     document_id="doc_abc123",
     content="Decorators are a powerful feature...",
-    start_line=10,
-    end_line=25,
+    sequence=0,
+    start_pos=0,
+    end_pos=256,
     token_count=128,
     embedding_id="emb_def456"
 )
 ```
 
-### DocumentCreate (Pydantic Model)
-
-Model for creating a document.
-
-```python
-from docsift.models.document import DocumentCreate
-
-class DocumentCreate(BaseModel):
-    collection_id: str
-    path: str
-    content: str
-    metadata: dict[str, Any] = Field(default_factory=dict)
-```
-
-### DocumentResponse (Pydantic Model)
-
-Model for document API responses.
-
-```python
-from docsift.models.document import DocumentResponse
-
-class DocumentResponse(BaseModel):
-    id: str
-    collection_id: str
-    path: str
-    content: str
-    file_size: int
-    metadata: dict[str, Any]
-    created_at: datetime
-    updated_at: datetime
-    indexed_at: datetime | None
-    chunks: list[DocumentChunkResponse] | None = None
-```
-
 ## Context Models
 
-### Context (Domain Entity)
+### PathContext (Domain Entity)
 
-Domain entity representing search context.
+Domain entity representing search context for a path.
 
 ```python
-from docsift import Context
+from docsift.core.models import PathContext
 from dataclasses import dataclass, field
 from datetime import datetime
 
 @dataclass
-class Context:
-    id: str                    # Unique identifier
-    content: str               # Context text
-    context_type: str          # 'collection', 'path', 'document', 'global'
-    target_id: str             # ID of target entity
+class PathContext:
+    path: str                  # File or directory path
+    context: str               # Context text
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    collection_id: str | None = None
+    context_type: str = "path"
     created_at: datetime = field(default_factory=datetime.utcnow)
     updated_at: datetime = field(default_factory=datetime.utcnow)
 ```
 
 **Context Types:**
-- `global`: Applies to all searches
+- `global`: Applies to all searches (target_id="*")
 - `collection`: Applies to searches in a specific collection
 - `path`: Applies to searches in a specific path
-- `document`: Applies to searches for a specific document
 
 **Example:**
 ```python
-# Global context
-global_ctx = Context(
-    id="ctx_global",
-    content="I am a software engineer interested in Python.",
-    context_type="global",
-    target_id="*"
+# Path context
+path_ctx = PathContext(
+    id="ctx_path",
+    path="~/Documents/notes/python",
+    context="These are my Python programming notes.",
+    context_type="path"
 )
-
-# Collection context
-collection_ctx = Context(
-    id="ctx_col",
-    content="These are my personal programming notes.",
-    context_type="collection",
-    target_id="550e8400-e29b-41d4-a716-446655440000"
-)
-```
-
-### ContextCreate (Pydantic Model)
-
-```python
-from docsift.models.context import ContextCreate
-
-class ContextCreate(BaseModel):
-    content: str = Field(..., min_length=1, max_length=5000)
-    context_type: str = Field(..., pattern="^(global|collection|path|document)$")
-    target_id: str
-```
-
-### ContextResponse (Pydantic Model)
-
-```python
-from docsift.models.context import ContextResponse
-
-class ContextResponse(BaseModel):
-    id: str
-    content: str
-    context_type: str
-    target_id: str
-    created_at: datetime
-    updated_at: datetime
 ```
 
 ## Search Models
@@ -323,149 +175,85 @@ class ContextResponse(BaseModel):
 ### SearchType (Enum)
 
 ```python
-from docsift.models.search import SearchType
+from docsift.core.models import SearchType
 from enum import Enum
 
 class SearchType(str, Enum):
     BM25 = "bm25"       # Full-text search
     VECTOR = "vector"   # Semantic search
     HYBRID = "hybrid"   # Combined search
+    HYDE = "hyde"       # Hypothetical document embedding
+    EXPAND = "expand"   # Query expansion
 ```
 
-### SearchOptions (Pydantic Model)
+### SearchOptions (Dataclass)
 
-Comprehensive search options model.
+Options for controlling search behavior.
 
 ```python
-from docsift.models.search import SearchOptions
+from docsift.core.models import SearchOptions
+from dataclasses import dataclass, field
+from typing import Optional
 
-class SearchOptions(BaseModel):
-    # General options
-    limit: int = Field(10, ge=1, le=100, description="Maximum results")
-    offset: int = Field(0, ge=0, description="Result offset")
-    threshold: float = Field(0.0, ge=0, le=1, description="Minimum score")
-    include_chunks: bool = True
-    include_metadata: bool = True
-    highlight_matches: bool = True
-    
-    # BM25 parameters
-    bm25_k1: float = Field(1.5, ge=0.1, le=3.0)
-    bm25_b: float = Field(0.75, ge=0.1, le=1.0)
-    
-    # Vector parameters
-    vector_weight: float = Field(0.7, ge=0, le=1)
-    
-    # Hybrid parameters
-    bm25_weight: float = Field(0.3, ge=0, le=1)
-    rrf_k: int = Field(60, ge=1, description="RRF fusion constant")
-    
-    # Query expansion
-    expand_query: bool = False
-    expansion_factor: int = Field(3, ge=1, le=10)
-    
-    # Reranking
-    rerank: bool = False
-    rerank_top_k: int = Field(20, ge=1, le=100)
+@dataclass
+class SearchOptions:
+    limit: int = 10
+    offset: int = 0
+    collection_ids: list[str] | None = None
+    min_score: float = 0.0
+    include_content: bool = False
+    include_highlights: bool = True
+    max_highlights: int = 3
+    explain: bool = False
+    candidate_limit: int = 20
+    intent: str | None = None
+    snippet_max_length: int = 300
 ```
 
 **Example:**
 ```python
 options = SearchOptions(
     limit=20,
-    threshold=0.5,
-    expand_query=True,
-    rerank=True,
-    bm25_k1=2.0,
-    rrf_k=40
+    min_score=0.5,
+    include_content=True,
+    candidate_limit=50
 )
 ```
 
-### SearchQuery (Pydantic Model)
+### SearchResult (Dataclass)
+
+A single search result.
 
 ```python
-from docsift.models.search import SearchQuery
+from docsift.core.models import SearchResult
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
 
-class SearchQuery(BaseModel):
-    query: str = Field(..., min_length=1, description="Search query")
-    collection_ids: list[str] | None = None
-    search_type: SearchType = SearchType.HYBRID
-    options: SearchOptions = Field(default_factory=SearchOptions)
-    filters: dict[str, Any] = Field(default_factory=dict)
-```
-
-**Example:**
-```python
-query = SearchQuery(
-    query="python decorators",
-    collection_ids=["550e8400-e29b-41d4-a716-446655440000"],
-    search_type=SearchType.HYBRID,
-    options=SearchOptions(limit=15, expand_query=True),
-    filters={"tags": ["python"]}
-)
-```
-
-### SearchResult (Pydantic Model)
-
-```python
-from docsift.models.search import SearchResult
-
-class SearchResult(BaseModel):
+@dataclass
+class SearchResult:
     document_id: str
-    document_path: str
-    document_title: str | None = None
-    score: float = Field(..., ge=0, le=1)
-    
-    # Component scores (for hybrid search)
-    bm25_score: float | None = None
-    vector_score: float | None = None
-    
-    # Result data
-    content_preview: str | None = None
-    matched_chunks: list[dict[str, Any]] = Field(default_factory=list)
-    highlights: list[str] = Field(default_factory=list)
-    metadata: dict[str, Any] = Field(default_factory=dict)
+    title: str
+    path: str
+    collection_name: str
+    score: float
+    content: str | None = None
+    highlights: list[str] = field(default_factory=list)
+    rank: int = 0
+    scores: dict[str, float | None] = field(default_factory=dict)
+    snippet: str | None = None
+    context_description: str | None = None
 ```
 
 **Example:**
 ```python
 result = SearchResult(
     document_id="doc_abc123",
-    document_path="~/notes/python/decorators.md",
-    document_title="Python Decorators",
+    title="Python Decorators",
+    path="~/notes/python/decorators.md",
+    collection_name="my-notes",
     score=0.89,
-    bm25_score=0.85,
-    vector_score=0.92,
-    content_preview="Python decorators are a powerful feature...",
     highlights=["decorators are a powerful"],
-    metadata={"tags": ["python", "advanced"]}
-)
-```
-
-### SearchResponse (Pydantic Model)
-
-```python
-from docsift.models.search import SearchResponse
-
-class SearchResponse(BaseModel):
-    query: str
-    search_type: SearchType
-    total: int = Field(..., ge=0)
-    results: list[SearchResult] = Field(default_factory=list)
-    search_time_ms: float = Field(..., ge=0)
-    expanded_query: str | None = None
-    expansion_terms: list[str] = Field(default_factory=list)
-```
-
-**Example:**
-```python
-response = SearchResponse(
-    query="python decorators",
-    search_type=SearchType.HYBRID,
-    total=23,
-    results=[result1, result2, result3],
-    search_time_ms=45.2,
-    expanded_query="python decorators wrapper function",
-    expansion_terms=["wrapper", "function"]
+    snippet="Python decorators are a powerful feature..."
 )
 ```
 
@@ -482,48 +270,96 @@ class ModelType(str, Enum):
     GGUF = "gguf"
     OPENAI = "openai"
     HUGGINGFACE = "huggingface"
+    MODELSCOPE = "modelscope"
 ```
 
-### ModelConfig (Pydantic Model)
+### EmbeddingConfig (Pydantic Model)
 
 ```python
-from docsift.models.embedding import ModelConfig
+from docsift.models.embedding import EmbeddingConfig
+from pydantic import BaseModel, Field
 
-class ModelConfig(BaseModel):
-    model_type: ModelType
-    model_name: str | None = None
-    model_path: str | None = None
-    dimension: int = Field(384, ge=1)
-    device: str = "cpu"
-    batch_size: int = Field(32, ge=1)
+class EmbeddingConfig(BaseModel):
+    model_type: ModelType = Field(ModelType.GGUF, description="Model type")
+    model_path: str | None = Field(None, description="Path to model file")
+    model_name: str = Field("all-MiniLM-L6-v2", description="Model name or identifier")
+
+    # Model parameters
+    embedding_dim: int = Field(1024, ge=1, description="Embedding dimension")
+    max_tokens: int = Field(512, ge=1, description="Maximum tokens per input")
+    batch_size: int = Field(32, ge=1, description="Batch size for inference")
+
+    # GGUF specific
+    n_gpu_layers: int = Field(0, ge=0, description="Number of GPU layers")
+    n_ctx: int = Field(2048, ge=512, description="Context size")
+
+    # API keys (for remote models)
+    api_key: str | None = Field(None, exclude=True)
+    api_base: str | None = None
+
+    # Caching
+    cache_embeddings: bool = Field(True, description="Cache embeddings")
+    cache_dir: str | None = None
 ```
 
 **Example:**
 ```python
 # Sentence Transformer config
-st_config = ModelConfig(
+st_config = EmbeddingConfig(
     model_type=ModelType.SENTENCE_TRANSFORMERS,
     model_name="all-MiniLM-L6-v2",
-    dimension=384
+    embedding_dim=384
 )
 
 # GGUF config
-gguf_config = ModelConfig(
+gguf_config = EmbeddingConfig(
     model_type=ModelType.GGUF,
     model_path="~/models/embedding.gguf",
-    dimension=768
+    embedding_dim=1024
+)
+
+# ModelScope config
+modelscope_config = EmbeddingConfig(
+    model_type=ModelType.MODELSCOPE,
+    model_name="Qwen/Qwen3-Embedding-0.6B",
+    embedding_dim=1024
 )
 ```
 
-### EmbeddingCacheEntry (Pydantic Model)
+### EmbeddingModelInfo (Pydantic Model)
 
 ```python
-from docsift.models.embedding import EmbeddingCacheEntry
+from docsift.models.embedding import EmbeddingModelInfo
+from pydantic import BaseModel, Field, ConfigDict
 
-class EmbeddingCacheEntry(BaseModel):
-    text_hash: str
-    embedding: list[float]
-    created_at: datetime
+class EmbeddingModelInfo(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str = Field(..., description="Model ID")
+    name: str = Field(..., description="Model name")
+    model_type: ModelType = Field(...)
+    embedding_dim: int = Field(..., ge=1)
+    max_tokens: int = Field(..., ge=1)
+    loaded: bool = Field(False, description="Whether model is loaded")
+    device: str | None = None
+```
+
+### EmbeddingRequest / EmbeddingResponse (Pydantic Models)
+
+```python
+from docsift.models.embedding import EmbeddingRequest, EmbeddingResponse
+from pydantic import BaseModel, Field
+
+class EmbeddingRequest(BaseModel):
+    texts: list[str] = Field(..., min_length=1, description="Texts to embed")
+    normalize: bool = Field(True, description="Normalize embeddings")
+
+class EmbeddingResponse(BaseModel):
+    embeddings: list[list[float]] = Field(..., description="Generated embeddings")
+    model_id: str = Field(..., description="Model used")
+    dimensions: int = Field(..., ge=1)
+    total_tokens: int = Field(..., ge=0)
+    processing_time_ms: float = Field(..., ge=0)
 ```
 
 ## Database Schema
@@ -534,14 +370,17 @@ class EmbeddingCacheEntry(BaseModel):
 CREATE TABLE collections (
     id TEXT PRIMARY KEY,
     name TEXT UNIQUE NOT NULL,
+    path TEXT NOT NULL,
+    pattern TEXT DEFAULT '**/*.md',
+    ignore_patterns TEXT DEFAULT '[]',
+    include_by_default INTEGER DEFAULT 1,
     description TEXT,
-    paths TEXT,  -- JSON array
+    pre_update_cmd TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    last_indexed_at TEXT,
     document_count INTEGER DEFAULT 0,
-    chunk_count INTEGER DEFAULT 0,
-    metadata TEXT,  -- JSON
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    last_indexed_at DATETIME
+    chunk_count INTEGER DEFAULT 0
 );
 ```
 
@@ -552,29 +391,32 @@ CREATE TABLE documents (
     id TEXT PRIMARY KEY,
     collection_id TEXT NOT NULL,
     path TEXT NOT NULL,
+    filename TEXT NOT NULL,
+    title TEXT,
     content TEXT NOT NULL,
     checksum TEXT NOT NULL,
-    file_size INTEGER NOT NULL,
-    metadata TEXT,  -- JSON
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    indexed_at DATETIME,
-    FOREIGN KEY (collection_id) REFERENCES collections(id),
-    UNIQUE(collection_id, path)
+    file_size INTEGER DEFAULT 0,
+    mtime REAL NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    metadata TEXT DEFAULT '{}',
+    FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE
 );
 ```
 
-### Chunks Table
+### Document Chunks Table
 
 ```sql
-CREATE TABLE chunks (
+CREATE TABLE document_chunks (
     id TEXT PRIMARY KEY,
     document_id TEXT NOT NULL,
+    sequence INTEGER NOT NULL,
     content TEXT NOT NULL,
-    start_line INTEGER NOT NULL,
-    end_line INTEGER NOT NULL,
-    token_count INTEGER NOT NULL,
+    start_pos INTEGER DEFAULT 0,
+    end_pos INTEGER DEFAULT 0,
+    token_count INTEGER DEFAULT 0,
     embedding_id TEXT,
+    created_at TEXT NOT NULL,
     FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
 );
 ```
@@ -584,12 +426,11 @@ CREATE TABLE chunks (
 ```sql
 CREATE TABLE contexts (
     id TEXT PRIMARY KEY,
-    content TEXT NOT NULL,
-    context_type TEXT NOT NULL,
     target_id TEXT NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(context_type, target_id)
+    context_type TEXT NOT NULL CHECK(context_type IN ('path', 'collection', 'global')),
+    content TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
 );
 ```
 
@@ -613,17 +454,17 @@ CREATE TABLE contexts (
 ### Collection
 - `name`: Unique, 1-100 characters
 - `description`: Max 500 characters
-- `paths`: Must be valid directory paths
+- `path`: Must be a valid directory path
 
 ### Document
 - `path`: Must be valid file path
 - `content`: Non-empty string
-- `checksum`: Valid SHA-256 hash
+- `checksum`: Valid SHA-256 hash (computed automatically)
 
 ### Search
 - `query`: 1-1000 characters
 - `limit`: 1-100
-- `threshold`: 0.0-1.0
+- `min_score`: 0.0-1.0
 
 ### Context
 - `content`: 1-5000 characters
@@ -631,21 +472,35 @@ CREATE TABLE contexts (
 
 ## Serialization
 
-All models support JSON serialization:
+All domain models support JSON serialization via `to_dict()` and `from_dict()`:
 
 ```python
-from docsift.models.search import SearchResponse
+from docsift.core.models import Collection, SearchResult
 import json
 
 # Serialize
-response = SearchResponse(...)
-json_str = response.model_dump_json(indent=2)
+collection = Collection(name="my-notes", path="~/notes")
+data = collection.to_dict()
+json_str = json.dumps(data, indent=2)
 
 # Deserialize
-response = SearchResponse.model_validate_json(json_str)
+restored = Collection.from_dict(data)
+```
+
+Pydantic models support standard Pydantic serialization:
+
+```python
+from docsift.models.embedding import EmbeddingConfig
+
+# Serialize
+config = EmbeddingConfig(model_type=ModelType.GGUF)
+json_str = config.model_dump_json(indent=2)
+
+# Deserialize
+restored = EmbeddingConfig.model_validate_json(json_str)
 
 # To dict
-data = response.model_dump()
+data = config.model_dump()
 ```
 
 ## Related Documentation
