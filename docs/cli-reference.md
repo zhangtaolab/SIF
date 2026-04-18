@@ -6,37 +6,156 @@ Complete reference for all DocSift CLI commands.
 
 These options can be used with any command:
 
-| Option | Description |
-|--------|-------------|
-| `--version` | Show version and exit |
-| `--index PATH` | Path to custom index database |
-| `-v, --verbose` | Enable verbose output |
-| `-q, --quiet` | Suppress non-error output |
-| `--format FORMAT` | Output format: table, json, csv, md, xml, files |
-| `--help` | Show help message |
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--version` | `` | flag | `false` | Show the version and exit. |
+| `--index` | `-i` | path | — | Path to the index database |
+| `--config` | `-c` | path | `/Users/forrest/.docsift/config.yaml` | Path to the configuration file |
+| `--verbose` | `-v` | flag | `false` | Enable verbose output |
+| `--quiet` | `-q` | flag | `false` | Suppress non-error output |
 
 ## Command Overview
 
 ```
 docsift
-├── collection    Manage document collections
-├── context       Manage search context
-├── search        Search indexed documents
-├── vsearch       Vector search
-├── query         Query with natural language
-├── update        Update index
-├── embed         Generate embeddings
-├── status        Show index status
-├── cleanup       Clean up index
-├── get           Get document by ID
-├── multi-get     Get multiple documents
-├── mcp           MCP server commands
-└── ls            List documents
+├── collection      Manage document collections.
+│   ├── add             Add a new collection.
+│   ├── remove          Remove a collection.
+│   ├── rename          Rename a collection.
+│   ├── list            List all collections.
+│   ├── show            Show collection details.
+│   ├── enable          Enable a collection for default searches.
+│   ├── disable         Disable a collection from default searches.
+│   ├── update-cmd      Set or clear a pre-index shell command for a collection.
+│   ├── include         Include a collection in default searches.
+│   ├── exclude         Exclude a collection from default searches.
+│   └── ls              List files in a collection.
+├── context         Manage contextual descriptions for paths, collections, and global scope.
+│   ├── add             Add context for a path, collection, or global scope.
+│   ├── remove          Remove a context by its ID.
+│   ├── list            List all contexts.
+│   ├── prune           Remove orphaned path contexts (whose target paths no longer exist in the index).
+│   └── rm              Remove a context by its ID.
+├── index           Index management commands.
+│   ├── update          Update the index by scanning collections.
+│   ├── embed           Generate embeddings for documents.
+│   └── status          Show index status.
+├── search          Search commands.
+│   ├── search          Search documents using BM25.
+│   ├── vsearch         Search documents using vector similarity.
+│   └── query           Search documents using hybrid approach (BM25 + Vector + RRF).
+
+This is the recommended search command for best results.
+
+├── get             Retrieve documents.
+│   ├── get             Get a document by path or document ID.
+│   └── multi-get       Get multiple documents matching a pattern.
+├── mcp             MCP server commands.
+│   ├── stdio           Run MCP server in stdio mode.
+│   ├── http            Run MCP server in HTTP mode.
+│   └── daemon          Run MCP server as a daemon.
+├── ls              List indexed documents as a virtual file tree.
+├── pull            Download a GGUF model file.
+├── bench           Run benchmark evaluation against a fixture file.
+
+Fixture format (JSON):
+    {
+        "queries": [
+            {
+                "query": "search terms",
+                "relevant_docids": ["doc-id-1", "doc-id-2"],
+                "collections": ["optional-collection-filter"]
+            }
+        ]
+    }
+
+├── status          Show index status.
+└── cleanup         Clean up the index (remove orphaned entries).
 ```
 
 ## Collection Commands
 
-### `docsift collection list`
+### `collection add`
+
+Add a new collection.
+
+```bash
+docsift collection add [OPTIONS]
+```
+
+**Arguments:**
+
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `path` | directory | Yes |  |
+
+**Options:**
+
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--name` | `-n` | text | — | Collection name |
+| `--pattern` | `-p` | text | `**/*.md` | File pattern to match |
+| `--ignore` | `-i` | text[] | — | Patterns to ignore |
+| `--description` | `-d` | text | — | Collection description |
+| `--no-default` | `—` | flag | `false` | Don't include in default searches |
+
+### `collection disable`
+
+Disable a collection from default searches.
+
+```bash
+docsift collection disable [OPTIONS]
+```
+
+**Arguments:**
+
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `name` | text | Yes |  |
+
+### `collection enable`
+
+Enable a collection for default searches.
+
+```bash
+docsift collection enable [OPTIONS]
+```
+
+**Arguments:**
+
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `name` | text | Yes |  |
+
+### `collection exclude`
+
+Exclude a collection from default searches.
+
+```bash
+docsift collection exclude [OPTIONS]
+```
+
+**Arguments:**
+
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `name` | text | Yes |  |
+
+### `collection include`
+
+Include a collection in default searches.
+
+```bash
+docsift collection include [OPTIONS]
+```
+
+**Arguments:**
+
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `name` | text | Yes |  |
+
+### `collection list`
 
 List all collections.
 
@@ -45,679 +164,501 @@ docsift collection list [OPTIONS]
 ```
 
 **Options:**
-| Option | Description |
-|--------|-------------|
-| `--format FORMAT` | Output format: table, json, plain |
 
-**Example:**
-```bash
-# List all collections
-docsift collection list
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--verbose` | `-v` | flag | `false` | Show detailed information |
 
-# Output as JSON
-docsift collection list --format json
-```
+### `collection ls`
 
-**Output:**
-```
-┌─────────────┬───────────┬─────────────────────┐
-│ Name        │ Documents │ Paths               │
-├─────────────┼───────────┼─────────────────────┤
-│ my-notes    │ 42        │ ~/Documents/notes   │
-│ work-docs   │ 156       │ ~/Work/docs         │
-└─────────────┴───────────┴─────────────────────┘
-```
-
-### `docsift collection create`
-
-Create a new collection.
+List files in a collection.
 
 ```bash
-docsift collection create NAME [OPTIONS]
+docsift collection ls [OPTIONS]
 ```
 
 **Arguments:**
-| Argument | Description |
-|----------|-------------|
-| `NAME` | Unique name for the collection |
 
-**Options:**
-| Option | Description |
-|--------|-------------|
-| `-d, --description TEXT` | Collection description |
-| `-p, --path PATH` | Path to include (can be used multiple times) |
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `name` | text | Yes |  |
+| `subpath` | text | No |  |
 
-**Example:**
-```bash
-# Create simple collection
-docsift collection create my-notes
+### `collection remove`
 
-# Create with description and paths
-docsift collection create work-docs \
-  --description "Work documentation" \
-  --path ~/Work/docs \
-  --path ~/Work/projects
-```
-
-### `docsift collection delete`
-
-Delete a collection.
+Remove a collection.
 
 ```bash
-docsift collection delete NAME [OPTIONS]
+docsift collection remove [OPTIONS]
 ```
 
 **Arguments:**
-| Argument | Description |
-|----------|-------------|
-| `NAME` | Collection name to delete |
+
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `name` | text | Yes |  |
 
 **Options:**
-| Option | Description |
-|--------|-------------|
-| `-f, --force` | Force deletion without confirmation |
 
-**Example:**
-```bash
-# Delete with confirmation
-docsift collection delete old-collection
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--yes` | `—` | flag | `false` | Confirm the action without prompting. |
 
-# Force delete
-docsift collection delete old-collection --force
-```
-
-### `docsift collection rename`
+### `collection rename`
 
 Rename a collection.
 
 ```bash
-docsift collection rename OLD_NAME NEW_NAME
+docsift collection rename [OPTIONS]
 ```
 
 **Arguments:**
-| Argument | Description |
-|----------|-------------|
-| `OLD_NAME` | Current collection name |
-| `NEW_NAME` | New collection name |
 
-**Example:**
-```bash
-docsift collection rename my-notes personal-notes
-```
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `old_name` | text | Yes |  |
+| `new_name` | text | Yes |  |
 
-### `docsift collection add-path`
-
-Add a path to a collection.
-
-```bash
-docsift collection add-path NAME PATH
-```
-
-**Arguments:**
-| Argument | Description |
-|----------|-------------|
-| `NAME` | Collection name |
-| `PATH` | Directory path to add |
-
-**Example:**
-```bash
-docsift collection add-path my-notes ~/Documents/more-notes
-```
-
-### `docsift collection remove-path`
-
-Remove a path from a collection.
-
-```bash
-docsift collection remove-path NAME PATH
-```
-
-**Arguments:**
-| Argument | Description |
-|----------|-------------|
-| `NAME` | Collection name |
-| `PATH` | Directory path to remove |
-
-**Example:**
-```bash
-docsift collection remove-path my-notes ~/Documents/old-notes
-```
-
-### `docsift collection show`
+### `collection show`
 
 Show collection details.
 
 ```bash
-docsift collection show NAME
+docsift collection show [OPTIONS]
 ```
 
 **Arguments:**
-| Argument | Description |
-|----------|-------------|
-| `NAME` | Collection name |
 
-**Example:**
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `name` | text | Yes |  |
+
+### `collection update-cmd`
+
+Set or clear a pre-index shell command for a collection.
+
 ```bash
-docsift collection show my-notes
+docsift collection update-cmd [OPTIONS]
 ```
 
-**Output:**
-```
-Collection: my-notes
-Description: Personal notes and documents
-Paths: ~/Documents/notes
-Documents: 42
-Chunks: 156
-Created: 2024-01-15 10:30:00
-Last Indexed: 2024-01-20 14:22:00
-```
+**Arguments:**
+
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `name` | text | Yes |  |
+
+**Options:**
+
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--cmd` | `-c` | text | — | Shell command to run before indexing |
+| `--clear` | `—` | flag | `false` | Clear the pre-update command |
 
 ## Context Commands
 
-### `docsift context add`
+### `context add`
 
-Add context to improve search relevance.
+Add context for a path, collection, or global scope.
 
 ```bash
-docsift context add [OPTIONS] TEXT
+docsift context add [OPTIONS]
 ```
 
 **Arguments:**
-| Argument | Description |
-|----------|-------------|
-| `TEXT` | Context text to add |
 
-**Options:**
-| Option | Description |
-|--------|-------------|
-| `--collection NAME` | Add to specific collection |
-| `--global` | Add as global context |
-| `--path PATH` | Add to specific path |
-| `--document ID` | Add to specific document |
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `type` | choice | Yes |  |
+| `target` | text | Yes |  |
+| `content` | text | Yes |  |
 
-**Example:**
-```bash
-# Add global context
-docsift context add --global "I am a software engineer interested in Python."
+### `context list`
 
-# Add collection context
-docsift context add --collection my-notes "These are my personal programming notes."
-```
-
-### `docsift context list`
-
-List all context entries.
+List all contexts.
 
 ```bash
 docsift context list [OPTIONS]
 ```
 
 **Options:**
-| Option | Description |
-|--------|-------------|
-| `--collection NAME` | Filter by collection |
-| `--format FORMAT` | Output format |
 
-**Example:**
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--type` | `—` | choice | — | Filter by context type |
+
+### `context prune`
+
+Remove orphaned path contexts (whose target paths no longer exist in the index).
+
 ```bash
-docsift context list
+docsift context prune [OPTIONS]
 ```
 
-### `docsift context remove`
+### `context remove`
 
-Remove context.
+Remove a context by its ID.
 
 ```bash
 docsift context remove [OPTIONS]
 ```
 
-**Options:**
-| Option | Description |
-|--------|-------------|
-| `--collection NAME` | Remove collection context |
-| `--global` | Remove global context |
-| `--all` | Remove all context |
+**Arguments:**
 
-**Example:**
-```bash
-# Remove global context
-docsift context remove --global
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `context_id` | text | Yes |  |
 
-# Remove collection context
-docsift context remove --collection my-notes
-```
+### `context rm`
 
-## Search Commands
-
-### `docsift search`
-
-Search indexed documents.
+Remove a context by its ID.
 
 ```bash
-docsift search QUERY [OPTIONS]
+docsift context rm [OPTIONS]
 ```
 
 **Arguments:**
-| Argument | Description |
-|----------|-------------|
-| `QUERY` | Search query string |
 
-**Options:**
-| Option | Description |
-|--------|-------------|
-| `-c, --collection NAME` | Search in specific collection |
-| `-t, --type TYPE` | Search type: bm25, vector, hybrid |
-| `-l, --limit N` | Maximum results (default: 10) |
-| `-o, --offset N` | Result offset for pagination |
-| `--threshold FLOAT` | Minimum score threshold |
-| `--expand` | Enable query expansion |
-| `--rerank` | Enable result reranking |
-| `--no-chunks` | Don't include matched chunks |
-| `--no-metadata` | Don't include metadata |
-| `--no-highlight` | Don't highlight matches |
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `context_id` | text | Yes |  |
 
-**Example:**
-```bash
-# Basic search
-docsift search "python decorators"
+## Get Commands
 
-# Search in specific collection
-docsift search "python decorators" --collection my-notes
+### `get get`
 
-# Hybrid search with more results
-docsift search "machine learning" --type hybrid --limit 20
-
-# Vector search with reranking
-docsift search "neural networks" --type vector --rerank
-
-# Search with query expansion
-docsift search "AI" --expand --limit 15
-```
-
-**Output:**
-```
-Search Results: "python decorators"
-Type: hybrid | Time: 45ms | Total: 23
-
-1. [0.89] ~/notes/python/decorators.md
-   Python decorators are a powerful feature that allow you to...
-   
-2. [0.85] ~/notes/python/advanced.md
-   Understanding decorators requires knowledge of closures...
-```
-
-### `docsift vsearch`
-
-Vector search (semantic similarity).
+Get a document by path or document ID.
 
 ```bash
-docsift vsearch QUERY [OPTIONS]
-```
-
-**Options:**
-| Option | Description |
-|--------|-------------|
-| `-c, --collection NAME` | Search in specific collection |
-| `-l, --limit N` | Maximum results |
-| `--threshold FLOAT` | Minimum similarity threshold |
-
-**Example:**
-```bash
-docsift vsearch "functions that wrap other functions" --limit 5
-```
-
-### `docsift query`
-
-Natural language query with context.
-
-```bash
-docsift query TEXT [OPTIONS]
-```
-
-**Options:**
-| Option | Description |
-|--------|-------------|
-| `-c, --collection NAME` | Search in specific collection |
-| `-l, --limit N` | Maximum results |
-
-**Example:**
-```bash
-docsift query "What are decorators and how do I use them?"
-```
-
-### `docsift search similar`
-
-Find similar documents.
-
-```bash
-docsift search similar PATH [OPTIONS]
+docsift get get [OPTIONS]
 ```
 
 **Arguments:**
-| Argument | Description |
-|----------|-------------|
-| `PATH` | Path to document |
+
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `path_or_docid` | text | Yes |  |
 
 **Options:**
-| Option | Description |
-|--------|-------------|
-| `-l, --limit N` | Maximum results |
-| `-c, --collection NAME` | Search in specific collection |
 
-**Example:**
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--from-line` | `-f` | integer | — | Start from line number |
+| `--lines` | `-l` | integer | — | Number of lines to show |
+| `--line-numbers` | `—` | flag | `false` | Show line numbers |
+
+### `get multi-get`
+
+Get multiple documents matching a pattern.
+
 ```bash
-docsift search similar ~/notes/python/decorators.md --limit 5
+docsift get multi-get [OPTIONS]
 ```
+
+**Arguments:**
+
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `pattern` | text | Yes |  |
+
+**Options:**
+
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--max-bytes` | `-b` | integer | `100000` | Max bytes per file |
+| `--line-numbers` | `—` | flag | `false` | Show line numbers |
 
 ## Index Commands
 
-### `docsift update`
-
-Update the index for a collection.
-
-```bash
-docsift update [COLLECTION] [OPTIONS]
-```
-
-**Arguments:**
-| Argument | Description |
-|----------|-------------|
-| `COLLECTION` | Collection name (optional, updates all if omitted) |
-
-**Options:**
-| Option | Description |
-|--------|-------------|
-| `--force` | Force full reindex |
-| `--dry-run` | Show what would be indexed |
-
-**Example:**
-```bash
-# Update all collections
-docsift update
-
-# Update specific collection
-docsift update my-notes
-
-# Force reindex
-docsift update my-notes --force
-```
-
-### `docsift embed`
+### `index embed`
 
 Generate embeddings for documents.
 
 ```bash
-docsift embed [COLLECTION] [OPTIONS]
+docsift index embed [OPTIONS]
 ```
-
-**Arguments:**
-| Argument | Description |
-|----------|-------------|
-| `COLLECTION` | Collection name |
 
 **Options:**
-| Option | Description |
-|--------|-------------|
-| `--force` | Regenerate all embeddings |
-| `--batch-size N` | Batch size for embedding generation |
 
-**Example:**
-```bash
-# Generate embeddings for collection
-docsift embed my-notes
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--collection` | `-c` | text | — | Embed specific collection only |
+| `--force` | `-f` | flag | `false` | Force re-embed all documents |
+| `--chunk-strategy` | `—` | text | `auto` | Chunking strategy |
+| `--model` | `-m` | text | — | Embedding model name |
+| `--model-type` | `—` | choice | — | Embedding model type override |
 
-# Force regenerate
-docsift embed my-notes --force
-```
-
-### `docsift status`
+### `index status`
 
 Show index status.
 
 ```bash
-docsift status [COLLECTION]
+docsift index status [OPTIONS]
+```
+
+### `index update`
+
+Update the index by scanning collections.
+
+```bash
+docsift index update [OPTIONS]
+```
+
+**Options:**
+
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--collection` | `-c` | text | — | Update specific collection only |
+| `--force` | `-f` | flag | `false` | Force re-index all documents |
+
+## Search Commands
+
+### `search query`
+
+Search documents using hybrid approach (BM25 + Vector + RRF).
+
+This is the recommended search command for best results.
+
+
+```bash
+docsift search query [OPTIONS]
 ```
 
 **Arguments:**
-| Argument | Description |
-|----------|-------------|
-| `COLLECTION` | Collection name (optional) |
 
-**Example:**
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `query` | text | Yes |  |
+
+**Options:**
+
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--limit` | `-n` | integer | `10` | Number of results |
+| `--collection` | `-c` | text[] | — | Collection to search |
+| `--all` | `—` | flag | `false` | Search all collections |
+| `--min-score` | `—` | float | `0.0` | Minimum score threshold |
+| `--full` | `—` | flag | `false` | Include full content |
+| `--explain` | `—` | flag | `false` | Show score breakdowns across pipeline stages |
+| `--candidate-limit` | `-C` | integer range | `20` | Reranker candidate pool size |
+| `--intent` | `—` | text | — | Search intent hint for query expansion |
+| `--line-numbers` | `—` | flag | `false` | Show line numbers in content |
+| `--json` | `—` | flag | `false` | Output as JSON |
+| `--csv` | `—` | flag | `false` | Output as CSV |
+| `--md` | `—` | flag | `false` | Output as Markdown |
+| `--xml` | `—` | flag | `false` | Output as XML |
+| `--files` | `—` | flag | `false` | Output file paths only |
+| `--model-type` | `—` | choice | — | Embedding model type override |
+
+### `search search`
+
+Search documents using BM25.
+
 ```bash
-# Show overall status
-docsift status
-
-# Show collection status
-docsift status my-notes
+docsift search search [OPTIONS]
 ```
 
-**Output:**
+**Arguments:**
+
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `query` | text | Yes |  |
+
+**Options:**
+
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--limit` | `-n` | integer | `10` | Number of results |
+| `--collection` | `-c` | text[] | — | Collection to search |
+| `--all` | `—` | flag | `false` | Search all collections |
+| `--min-score` | `—` | float | `0.0` | Minimum score threshold |
+| `--full` | `—` | flag | `false` | Include full content |
+| `--explain` | `—` | flag | `false` | Show search explanation |
+| `--line-numbers` | `—` | flag | `false` | Show line numbers in content |
+| `--json` | `—` | flag | `false` | Output as JSON |
+| `--csv` | `—` | flag | `false` | Output as CSV |
+| `--md` | `—` | flag | `false` | Output as Markdown |
+| `--xml` | `—` | flag | `false` | Output as XML |
+| `--files` | `—` | flag | `false` | Output file paths only |
+
+### `search vsearch`
+
+Search documents using vector similarity.
+
+```bash
+docsift search vsearch [OPTIONS]
 ```
-Index Status
-============
 
-Collections: 3
-Total Documents: 523
-Total Chunks: 2,456
-Total Embeddings: 2,456
+**Arguments:**
 
-Collection: my-notes
-  Documents: 42
-  Chunks: 156
-  Last Indexed: 2024-01-20 14:22:00
-  Status: ✓ Up to date
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `query` | text | Yes |  |
+
+**Options:**
+
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--limit` | `-n` | integer | `10` | Number of results |
+| `--collection` | `-c` | text[] | — | Collection to search |
+| `--all` | `—` | flag | `false` | Search all collections |
+| `--min-score` | `—` | float | `0.0` | Minimum score threshold |
+| `--full` | `—` | flag | `false` | Include full content |
+| `--line-numbers` | `—` | flag | `false` | Show line numbers in content |
+| `--json` | `—` | flag | `false` | Output as JSON |
+| `--model-type` | `—` | choice | — | Embedding model type override |
+
+## MCP Commands
+
+### `mcp daemon`
+
+Run MCP server as a daemon.
+
+```bash
+docsift mcp daemon [OPTIONS]
 ```
 
-### `docsift cleanup`
+**Options:**
 
-Clean up the index.
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--host` | `-h` | text | `127.0.0.1` | Host to bind to |
+| `--port` | `-p` | integer | `3000` | Port to listen on |
+| `--pid-file` | `—` | text | — | PID file path |
+| `--log-file` | `—` | text | — | Log file path |
+| `--stop` | `—` | flag | `false` | Stop the daemon |
+
+### `mcp http`
+
+Run MCP server in HTTP mode.
+
+```bash
+docsift mcp http [OPTIONS]
+```
+
+**Options:**
+
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--host` | `-h` | text | `127.0.0.1` | Host to bind to |
+| `--port` | `-p` | integer | `3000` | Port to listen on |
+| `--reload` | `—` | flag | `false` | Enable auto-reload |
+
+### `mcp stdio`
+
+Run MCP server in stdio mode.
+
+```bash
+docsift mcp stdio [OPTIONS]
+```
+
+## Other Commands
+
+### `bench`
+
+Run benchmark evaluation against a fixture file.
+
+Fixture format (JSON):
+    {
+        "queries": [
+            {
+                "query": "search terms",
+                "relevant_docids": ["doc-id-1", "doc-id-2"],
+                "collections": ["optional-collection-filter"]
+            }
+        ]
+    }
+
+
+```bash
+docsift bench [OPTIONS]
+```
+
+**Arguments:**
+
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `fixture` | path | Yes |  |
+
+**Options:**
+
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--limit` | `-n` | integer | `10` | Number of results per query |
+| `--candidate-limit` | `-C` | integer | `20` | Reranker candidate pool size |
+| `--collection` | `-c` | text[] | — | Collection to search |
+| `--all` | `—` | flag | `false` | Search all collections |
+| `--model-type` | `—` | choice | — | Embedding model type override |
+| `--json` | `—` | flag | `false` | Output as JSON |
+
+### `cleanup`
+
+Clean up the index (remove orphaned entries).
 
 ```bash
 docsift cleanup [OPTIONS]
 ```
 
 **Options:**
-| Option | Description |
-|--------|-------------|
-| `--orphaned` | Remove orphaned documents |
-| `--expired` | Remove expired entries |
-| `--vacuum` | Vacuum database |
-| `--force` | Skip confirmation |
 
-**Example:**
-```bash
-# Clean up orphaned documents
-docsift cleanup --orphaned
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--yes` | `—` | flag | `false` | Confirm the action without prompting. |
 
-# Full cleanup
-docsift cleanup --orphaned --expired --vacuum
-```
+### `ls`
 
-## Document Commands
-
-### `docsift get`
-
-Get a document by ID.
+List indexed documents as a virtual file tree.
 
 ```bash
-docsift get DOCUMENT_ID [OPTIONS]
+docsift ls [OPTIONS]
 ```
 
 **Arguments:**
-| Argument | Description |
-|----------|-------------|
-| `DOCUMENT_ID` | Document ID |
 
-**Options:**
-| Option | Description |
-|--------|-------------|
-| `--format FORMAT` | Output format |
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `collection` | text | No |  |
+| `subpath` | text | No |  |
 
-**Example:**
-```bash
-docsift get doc_abc123
-```
+### `pull`
 
-### `docsift multi-get`
-
-Get multiple documents by ID.
+Download a GGUF model file.
 
 ```bash
-docsift multi-get DOCUMENT_IDS... [OPTIONS]
+docsift pull [OPTIONS]
 ```
 
 **Arguments:**
-| Argument | Description |
-|----------|-------------|
-| `DOCUMENT_IDS` | One or more document IDs |
 
-**Example:**
-```bash
-docsift multi-get doc_abc123 doc_def456 doc_ghi789
-```
-
-### `docsift ls`
-
-List documents in a collection.
-
-```bash
-docsift ls COLLECTION [SUBPATH] [OPTIONS]
-```
-
-**Arguments:**
-| Argument | Description |
-|----------|-------------|
-| `COLLECTION` | Collection name |
-| `SUBPATH` | Optional subdirectory |
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `model_spec` | text | Yes |  |
 
 **Options:**
-| Option | Description |
-|--------|-------------|
-| `-r, --recursive` | List recursively |
-| `--format FORMAT` | Output format |
 
-**Example:**
-```bash
-# List all documents
-docsift ls my-notes
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--cache-dir` | `—` | path | — | Custom cache directory |
 
-# List subdirectory
-docsift ls my-notes python/
+### `status`
 
-# Recursive list
-docsift ls my-notes --recursive
-```
-
-## MCP Commands
-
-### `docsift mcp start`
-
-Start the MCP server.
+Show index status.
 
 ```bash
-docsift mcp start [OPTIONS]
-```
-
-**Options:**
-| Option | Description |
-|--------|-------------|
-| `--transport TYPE` | Transport type: stdio, http |
-| `--host HOST` | HTTP server host |
-| `--port PORT` | HTTP server port |
-
-**Example:**
-```bash
-# Start with stdio transport (default)
-docsift mcp start
-
-# Start with HTTP transport
-docsift mcp start --transport http --port 8080
-```
-
-### `docsift mcp config`
-
-Show MCP configuration.
-
-```bash
-docsift mcp config
-```
-
-**Example:**
-```bash
-docsift mcp config
-```
-
-**Output:**
-```json
-{
-  "transport": "stdio",
-  "tools": [
-    "search",
-    "get_document",
-    "list_collections"
-  ]
-}
+docsift status [OPTIONS]
 ```
 
 ## Output Formats
 
-### Table (default)
+Several commands support multiple output formats via flags:
 
-Human-readable table format.
-
-### JSON
-
-Machine-readable JSON format.
-
-```bash
-docsift collection list --format json
-```
-
-Output:
-```json
-{
-  "collections": [
-    {
-      "name": "my-notes",
-      "document_count": 42,
-      "paths": ["~/Documents/notes"]
-    }
-  ]
-}
-```
-
-### CSV
-
-Comma-separated values.
-
-```bash
-docsift collection list --format csv
-```
-
-### Markdown
-
-Markdown table format.
-
-```bash
-docsift collection list --format md
-```
-
-### XML
-
-XML format.
-
-```bash
-docsift collection list --format xml
-```
-
-### Files
-
-Plain file paths, one per line.
-
-```bash
-docsift search "python" --format files
-```
+| Format | Flag | Description |
+|--------|------|-------------|
+| Table (default) | — | Rich formatted table |
+| JSON | `--json` | Machine-readable JSON |
+| CSV | `--csv` | Comma-separated values |
+| Markdown | `--md` | Markdown table format |
+| XML | `--xml` | XML format |
+| Files | `--files` | Plain file paths, one per line |
 
 ## Exit Codes
 
@@ -726,58 +667,49 @@ docsift search "python" --format files
 | 0 | Success |
 | 1 | General error |
 | 2 | Invalid arguments |
-| 3 | Collection not found |
-| 4 | Document not found |
-| 5 | Index error |
-| 6 | Configuration error |
 
-## Environment Variables
-
-See [Configuration](configuration.md) for all environment variables.
-
-## Examples
-
-### Common Workflows
+## Common Workflows
 
 **Setting up a new collection:**
 ```bash
-# Create collection
-docsift collection create my-notes --description "Personal notes"
-
-# Add paths
-docsift collection add-path my-notes ~/Documents/notes
-docsift collection add-path my-notes ~/Documents/ideas
-
-# Add context
-docsift context add --collection my-notes "These are my personal notes about programming."
-
-# Index documents
-docsift update my-notes
-
-# Search
-docsift search "python tips" --collection my-notes
-```
-
-**Daily usage:**
-```bash
-# Quick search
-docsift search "meeting notes"
-
-# Search with more results
-docsift search "project ideas" --limit 20
-
-# Check status
-docsift status
+# Add a collection
+docsift collection add ~/Documents/notes --name my-notes --description "Personal notes"
 
 # Update index
-docsift update
+docsift index update my-notes
+
+# Search
+docsift search "python tips"
 ```
 
-**Batch operations:**
+**Managing collection visibility:**
 ```bash
-# Export search results
-docsift search "python" --format json > results.json
+# Exclude from default searches
+docsift collection exclude my-notes
 
-# Get multiple documents
-docsift multi-get $(docsift search "important" --format files)
+# Include again
+docsift collection include my-notes
+
+# Set pre-update command
+docsift collection update-cmd my-notes --cmd "git pull"
+```
+
+**Adding context:**
+```bash
+# Add global context
+docsift context add global global "I am a software engineer."
+
+# Add collection context
+docsift context add collection my-notes "These are my programming notes."
+
+# List contexts
+docsift context list
+
+# Prune orphaned contexts
+docsift context prune
+```
+
+**Hybrid search with options:**
+```bash
+docsift search query "python decorators" --explain --candidate-limit 30 --limit 10
 ```
