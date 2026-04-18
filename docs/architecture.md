@@ -75,19 +75,19 @@ The infrastructure layer provides technical capabilities:
 
 **Purpose**: Abstract data access layer, decouple domain logic from storage
 
-**Location**: `docsift/database/repository.py`
+**Location**: `docsift/database/repositories.py`
 
 ```python
 class Repository(ABC, Generic[T]):
     @abstractmethod
     def get_by_id(self, entity_id: str) -> T | None: ...
-    
+
     @abstractmethod
     def create(self, entity: T) -> T: ...
-    
+
     @abstractmethod
     def update(self, entity: T) -> T: ...
-    
+
     @abstractmethod
     def delete(self, entity_id: str) -> bool: ...
 ```
@@ -101,22 +101,13 @@ class Repository(ABC, Generic[T]):
 
 **Purpose**: Pluggable search algorithms that can be used interchangeably
 
-**Location**: `docsift/search/strategy.py`
-
-```python
-class SearchStrategy(ABC):
-    @abstractmethod
-    def search(
-        self,
-        context: SearchContext,
-        options: SearchOptions,
-    ) -> list[SearchResult]: ...
-```
+**Location**: `docsift/search/bm25.py`, `docsift/search/vector.py`, `docsift/search/hybrid.py`
 
 **Implementations**:
-- `BM25SearchStrategy`: Full-text search via SQLite FTS5
-- `VectorSearchStrategy`: Semantic search via embeddings
-- `HybridSearchStrategy`: Combined BM25 + Vector with RRF fusion
+- `BM25Searcher`: Full-text search via SQLite FTS5
+- `VectorSearcher`: Semantic search via sqlite-vec
+- `HybridSearcher`: Combined BM25 + Vector with RRF fusion
+- `SearchPipeline`: Adds query expansion, reranking, snippet extraction
 
 **Benefits**:
 - Easy to add new search algorithms
@@ -141,8 +132,9 @@ class EmbeddingModelFactory:
 **Supported Models**:
 - GGUF models via llama-cpp-python
 - Sentence Transformers
-- OpenAI API (planned)
-- HuggingFace models (planned)
+- OpenAI-compatible API
+- HuggingFace models
+- ModelScope models
 
 ### Dependency Injection
 
@@ -166,7 +158,7 @@ class CollectionManager:
 ### Indexing Flow
 
 ```
-1. User: docsift index add my-collection ~/notes
+1. User: docsift collection add my-collection ~/notes
    │
    ▼
 2. CLI: Parse command, validate inputs
@@ -205,28 +197,31 @@ class CollectionManager:
 2. CLI: Parse query, build SearchQuery
    │
    ▼
-3. SearchService: Select search strategy
+3. SearchPipeline: Select search strategy via prefix routing
    │
    ▼
 4. QueryExpansion (optional): Expand query
    │
    ▼
-5. BM25SearchStrategy: Search FTS index
+5. BM25Searcher: Search FTS index
    │
    ▼
-6. VectorSearchStrategy: Search vector index
+6. VectorSearcher: Search vector index
    │
    ▼
-7. HybridSearchStrategy: Combine results (RRF)
+7. HybridSearcher: Combine results (RRF)
    │
    ▼
 8. Reranker (optional): Rerank results
    │
    ▼
-9. Repository: Fetch document details
+9. SmartSnippetExtractor: Extract relevant snippets
    │
    ▼
-10. CLI: Format and display results
+10. Repository: Fetch document details
+   │
+   ▼
+11. CLI: Format and display results
 ```
 
 ## Module Structure
@@ -237,9 +232,10 @@ docsift/
 ├── _version.py              # Version information
 ├── core/                    # Domain entities and business logic
 │   ├── __init__.py
-│   ├── collection.py        # Collection entity and manager
+│   ├── models.py            # Domain entities (Collection, Document, PathContext, SearchResult, etc.)
+│   ├── collection.py        # Collection entity
 │   ├── document.py          # Document and DocumentChunk entities
-│   └── context.py           # Context entity and manager
+│   └── context.py           # Context entity
 ├── models/                  # Pydantic models for validation
 │   ├── __init__.py
 │   ├── collection.py        # Collection request/response models
@@ -249,56 +245,107 @@ docsift/
 │   └── embedding.py         # Embedding configuration models
 ├── database/                # Data access layer
 │   ├── __init__.py
-│   ├── connection.py        # Database connection management
-│   ├── repository.py        # Repository interfaces
+│   ├── database.py          # Database class with schema init
+│   ├── schema.py            # SchemaManager
+│   ├── repositories.py      # Repository implementations
+│   ├── repository.py        # Legacy repository (deprecated)
+│   ├── connection.py        # DatabaseConnection
 │   └── migrations.py        # Database migrations
 ├── search/                  # Search functionality
 │   ├── __init__.py
 │   ├── strategy.py          # Search strategy interface
-│   ├── bm25.py              # BM25 search implementation
-│   ├── vector.py            # Vector search implementation
-│   ├── hybrid.py            # Hybrid search implementation
-│   ├── rrf.py               # Reciprocal Rank Fusion
-│   ├── expansion.py         # Query expansion
-│   └── rerank.py            # Result reranking
+│   ├── bm25.py              # BM25Searcher
+│   ├── vector.py            # VectorSearcher
+│   ├── hybrid.py            # HybridSearcher, SearchPipeline
+│   ├── rrf.py               # RRFFusion
+│   ├── expansion.py         # QueryExpansion
+│   ├── rerank.py            # Reranker implementations
+│   ├── snippets.py          # SmartSnippetExtractor
+│   └── benchmark.py         # SearchEvaluator
 ├── indexing/                # Document indexing
 │   ├── __init__.py
 │   ├── scanner.py           # File system scanning
 │   ├── parser.py            # Markdown parsing
 │   ├── chunker.py           # Document chunking
-│   ├── indexer.py           # Index orchestration
-│   └── watcher.py           # File system watching
+│   └── indexer.py           # Index orchestration
 ├── embedding/               # Embedding generation
 │   ├── __init__.py
-│   ├── manager.py           # Embedding model management
-│   ├── model.py             # Model interface
-│   ├── factory.py           # Model factory
-│   └── cache.py             # Embedding cache
-├── mcp_server/              # MCP server implementation
+│   ├── manager.py           # EmbeddingManager
+│   ├── factory.py           # EmbeddingModelFactory
+│   └── models.py            # Download helpers
+├── mcp_server/              # Refactored OOP MCP server
 │   ├── __init__.py
-│   ├── server.py            # MCP server
-│   ├── transport.py         # Transport implementations
-│   ├── handlers.py          # Request handlers
+│   ├── server.py            # MCPServer
+│   ├── transport.py         # Transport ABC (StdioTransport, HTTPTransport)
+│   ├── handlers.py          # ToolHandler, ResourceHandler ABCs
 │   └── tools.py             # MCP tool definitions
+├── mcp/                     # Legacy functional MCP server
+│   ├── __init__.py
+│   ├── server.py            # Legacy stdio server
+│   ├── server_http.py       # Legacy HTTP server
+│   ├── transport_stdio.py   # Legacy stdio transport
+│   ├── transport_http.py    # Legacy HTTP transport
+│   ├── cli.py               # Legacy CLI helpers
+│   ├── protocol.py          # MCP protocol implementation
+│   └── tools.py             # Legacy tool definitions
 ├── cli/                     # Command-line interface
 │   ├── __init__.py
 │   ├── main.py              # CLI entry point
-│   ├── config.py            # CLI configuration
 │   ├── formatters.py        # Output formatters
 │   └── commands/            # CLI command implementations
 │       ├── __init__.py
 │       ├── collection.py    # Collection commands
 │       ├── context.py       # Context commands
+│       ├── get.py           # Multi-get command
 │       ├── index.py         # Index commands
 │       ├── search.py        # Search commands
-│       └── mcp.py           # MCP commands
+│       ├── mcp.py           # MCP commands
+│       ├── ls.py            # List command
+│       ├── bench.py         # Benchmark command
+│       └── pull.py          # Pull command
 └── utils/                   # Utilities
     ├── __init__.py
     ├── logging.py           # Logging setup
-    ├── paths.py             # Path utilities
-    ├── text.py              # Text processing
-    └── progress.py          # Progress indicators
+    └── paths.py             # Path utilities
 ```
+
+## Module Dependency Graph
+
+```mermaid
+graph TD
+
+    cli[CLI<br/>(Click)]
+    core[Core<br/>(Domain Models)]
+    database[Database<br/>(SQLite)]
+    embedding[Embedding<br/>(Models)]
+    indexing[Indexing<br/>(Pipeline)]
+    mcp[MCP<br/>(Legacy)]
+    mcp_server[MCP Server<br/>(Refactored)]
+    models[Models<br/>(Pydantic)]
+    search[Search<br/>(Strategies)]
+    utils[Utils<br/>(Helpers)]
+    config[Config<br/>(Settings)]
+
+    cli --> core
+    cli --> database
+    cli --> search
+    cli --> mcp
+    mcp --> database
+    mcp_server --> utils
+    search --> core
+    search --> database
+    indexing --> core
+    indexing --> database
+    indexing --> embedding
+    embedding --> models
+    embedding --> utils
+    database --> core
+    database --> models
+    models --> core
+    config --> utils
+```
+
+_Generated by `scripts/generate_arch_diagram.py` from actual source imports._
 
 ## Database Schema
 
@@ -308,14 +355,17 @@ docsift/
 CREATE TABLE collections (
     id TEXT PRIMARY KEY,
     name TEXT UNIQUE NOT NULL,
+    path TEXT NOT NULL,
+    pattern TEXT DEFAULT '**/*.md',
+    ignore_patterns TEXT DEFAULT '[]',
+    include_by_default INTEGER DEFAULT 1,
     description TEXT,
-    paths TEXT,  -- JSON array
+    pre_update_cmd TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    last_indexed_at TEXT,
     document_count INTEGER DEFAULT 0,
-    chunk_count INTEGER DEFAULT 0,
-    metadata TEXT,  -- JSON
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    last_indexed_at DATETIME
+    chunk_count INTEGER DEFAULT 0
 );
 ```
 
@@ -326,29 +376,32 @@ CREATE TABLE documents (
     id TEXT PRIMARY KEY,
     collection_id TEXT NOT NULL,
     path TEXT NOT NULL,
+    filename TEXT NOT NULL,
+    title TEXT,
     content TEXT NOT NULL,
     checksum TEXT NOT NULL,
-    file_size INTEGER NOT NULL,
-    metadata TEXT,  -- JSON
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    indexed_at DATETIME,
-    FOREIGN KEY (collection_id) REFERENCES collections(id),
-    UNIQUE(collection_id, path)
+    file_size INTEGER DEFAULT 0,
+    mtime REAL NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    metadata TEXT DEFAULT '{}',
+    FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE
 );
 ```
 
-### Chunks Table
+### Document Chunks Table
 
 ```sql
-CREATE TABLE chunks (
+CREATE TABLE document_chunks (
     id TEXT PRIMARY KEY,
     document_id TEXT NOT NULL,
+    sequence INTEGER NOT NULL,
     content TEXT NOT NULL,
-    start_line INTEGER NOT NULL,
-    end_line INTEGER NOT NULL,
-    token_count INTEGER NOT NULL,
+    start_pos INTEGER DEFAULT 0,
+    end_pos INTEGER DEFAULT 0,
+    token_count INTEGER DEFAULT 0,
     embedding_id TEXT,
+    created_at TEXT NOT NULL,
     FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
 );
 ```
@@ -358,21 +411,28 @@ CREATE TABLE chunks (
 ```sql
 CREATE TABLE contexts (
     id TEXT PRIMARY KEY,
-    content TEXT NOT NULL,
-    context_type TEXT NOT NULL,  -- 'collection', 'path', 'document', 'global'
     target_id TEXT NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(context_type, target_id)
+    context_type TEXT NOT NULL CHECK(context_type IN ('path', 'collection', 'global')),
+    content TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
 );
 ```
 
-### FTS5 Virtual Table
+### FTS5 Virtual Tables
 
 ```sql
 CREATE VIRTUAL TABLE documents_fts USING fts5(
     content,
-    content_rowid=rowid,
+    content='documents',
+    content_rowid='rowid',
+    tokenize='porter'
+);
+
+CREATE VIRTUAL TABLE chunks_fts USING fts5(
+    content,
+    content='document_chunks',
+    content_rowid='rowid',
     tokenize='porter'
 );
 ```
@@ -380,9 +440,11 @@ CREATE VIRTUAL TABLE documents_fts USING fts5(
 ### sqlite-vec Vector Table
 
 ```sql
-CREATE VIRTUAL TABLE chunk_embeddings USING vec0(
+CREATE VIRTUAL TABLE document_embeddings USING vec0(
     embedding_id TEXT PRIMARY KEY,
-    embedding FLOAT[{dim}]  -- dimension from model
+    document_id TEXT NOT NULL,
+    chunk_id TEXT,
+    embedding FLOAT[{dim}]  -- dimension from model (default: 1024)
 );
 ```
 
@@ -398,7 +460,7 @@ class SearchStrategy(ABC):
         context: SearchContext,
         options: SearchOptions,
     ) -> list[SearchResult]: ...
-    
+
     @abstractmethod
     def search_batch(
         self,
@@ -410,19 +472,12 @@ class SearchStrategy(ABC):
 ### Embedding Model Interface
 
 ```python
-class EmbeddingModel(ABC):
-    @abstractmethod
-    def load(self) -> None: ...
-    
-    @abstractmethod
-    def embed(
-        self,
-        texts: list[str],
-        normalize: bool = True,
-    ) -> list[list[float]]: ...
-    
+class Embedder(Protocol):
+    def embed(self, text: str) -> list[float]: ...
+
+    def embed_batch(self, texts: list[str]) -> list[list[float]]: ...
+
     @property
-    @abstractmethod
     def dimension(self) -> int: ...
 ```
 
