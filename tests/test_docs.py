@@ -6,7 +6,7 @@ import ast
 import json
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import click
 import pytest
@@ -42,9 +42,6 @@ SKIP_COMMAND_PATTERNS = [
     "bench ",
 ]
 
-# Commands that don't need a database
-DOCSIFT_COMMANDS_NO_DB = ["--version", "--help"]
-
 # Expected keys for JSON output examples (per D-05)
 JSON_OUTPUT_SCHEMAS: dict[str, list[str]] = {
     "collection": ["id", "name", "path"],
@@ -61,11 +58,13 @@ def extract_code_blocks(md_path: Path) -> list[dict[str, Any]]:
     matches = re.findall(pattern, content, re.DOTALL)
     blocks = []
     for lang, block_content in matches:
-        blocks.append({
-            "language": lang or "text",
-            "content": block_content,
-            "file": md_path.name,
-        })
+        blocks.append(
+            {
+                "language": lang or "text",
+                "content": block_content,
+                "file": md_path.name,
+            }
+        )
     return blocks
 
 
@@ -79,17 +78,15 @@ def should_skip_command(cmd_line: str) -> bool:
         return True
     if cmd_line.startswith("#"):
         return True
-    if "> " in cmd_line and "/tmp" not in cmd_line and ">" in cmd_line.split()[0]:
-        return True
-    return False
+    return "> " in cmd_line and "/tmp" not in cmd_line and ">" in cmd_line.split(maxsplit=1)[0]
 
 
 def extract_shell_commands(block_content: str) -> list[str]:
     """Extract executable commands from a shell code block."""
     lines = block_content.strip().split("\n")
     commands = []
-    for line in lines:
-        line = line.strip()
+    for raw_line in lines:
+        line = raw_line.strip()
         if not line or line.startswith("#"):
             continue
         if line.startswith("$ "):
@@ -129,6 +126,51 @@ def classify_json_block(block_content: str) -> tuple[str, list[str]]:
         return ("config", ["command"])
 
     return ("unknown", [])
+
+
+def _is_stub_block(stripped: str) -> bool:
+    """Check if a Python code block is a stub/signature-only block."""
+    # Skip stub/signature-only blocks (class definitions with ...)
+    if (
+        stripped.startswith("class ")
+        and "..." in stripped
+        and "def " not in stripped.split("...", maxsplit=1)[0]
+    ):
+        return True
+    # Skip method signature stubs with ...
+    if all(
+        line.strip().endswith("...")
+        or line.strip().endswith(":")
+        or "->" in line
+        or "@" in line.strip()
+        for line in stripped.split("\n")
+        if line.strip()
+    ):
+        return True
+    # Skip class stubs with method signatures missing bodies
+    if stripped.startswith("class "):
+        lines = stripped.split("\n")
+        is_stub = True
+        for line in lines[1:]:
+            line_stripped = line.strip()
+            if not line_stripped:
+                continue
+            if (
+                line_stripped.endswith(":")
+                or line_stripped.endswith("...")
+                or "->" in line_stripped
+                or line_stripped.startswith("@")
+                or line_stripped.startswith("def ")
+                or line_stripped.startswith("class ")
+                or line_stripped == ")"
+                or line_stripped.endswith(",")
+            ):
+                continue
+            is_stub = False
+            break
+        if is_stub:
+            return True
+    return False
 
 
 class TestDocsCodeBlocks:
@@ -175,40 +217,8 @@ class TestDocsCodeBlocks:
                 if block["language"] == "python":
                     content = block["content"]
                     stripped = content.strip()
-                    # Skip stub/signature-only blocks (class definitions with ...)
-                    if stripped.startswith("class ") and "..." in stripped and "def " not in stripped.split("...")[0]:
+                    if _is_stub_block(stripped):
                         continue
-                    # Skip method signature stubs with ...
-                    if all(
-                        line.strip().endswith("...")
-                        or line.strip().endswith(":")
-                        or "->" in line
-                        or "@" in line.strip()
-                        for line in stripped.split("\n")
-                        if line.strip()
-                    ):
-                        continue
-                    # Skip class stubs with method signatures missing bodies
-                    if stripped.startswith("class "):
-                        lines = stripped.split("\n")
-                        is_stub = True
-                        for line in lines[1:]:
-                            line_stripped = line.strip()
-                            if not line_stripped:
-                                continue
-                            if (line_stripped.endswith(":")
-                                    or line_stripped.endswith("...")
-                                    or "->" in line_stripped
-                                    or line_stripped.startswith("@")
-                                    or line_stripped.startswith("def ")
-                                    or line_stripped.startswith("class ")
-                                    or line_stripped == ")"
-                                    or line_stripped.endswith(",")):
-                                continue
-                            is_stub = False
-                            break
-                        if is_stub:
-                            continue
                     try:
                         ast.parse(content)
                     except SyntaxError as e:
@@ -225,15 +235,22 @@ class TestDocsCodeBlocks:
                     commands = extract_shell_commands(block["content"])
                     for cmd in commands:
                         if cmd.startswith("docsift "):
-                            self._verify_docsift_command(
-                                cmd, block["file"], docs_runner
-                            )
+                            self._verify_docsift_command(cmd, block["file"], docs_runner)
 
     # Known CLI subcommands at each level
-    _SUBCOMMANDS: dict[str, list[str]] = {
+    _SUBCOMMANDS: ClassVar[dict[str, list[str]]] = {
         "collection": [
-            "add", "remove", "rename", "list", "show",
-            "enable", "disable", "exclude", "include", "update-cmd", "ls",
+            "add",
+            "remove",
+            "rename",
+            "list",
+            "show",
+            "enable",
+            "disable",
+            "exclude",
+            "include",
+            "update-cmd",
+            "ls",
         ],
         "context": ["add", "remove", "list", "prune", "rm"],
         "index": ["update", "embed", "status"],
@@ -243,9 +260,7 @@ class TestDocsCodeBlocks:
         "config": ["show"],
     }
 
-    def _verify_docsift_command(
-        self, cmd: str, file_name: str, runner: CliRunner
-    ) -> None:
+    def _verify_docsift_command(self, cmd: str, file_name: str, runner: CliRunner) -> None:
         """Verify a single docsift command exists in the CLI."""
         parts = cmd.split()
         if len(parts) < 2:
@@ -260,9 +275,9 @@ class TestDocsCodeBlocks:
                 # Skip flag and its value
                 if i + 1 < len(parts) and not parts[i + 1].startswith("-"):
                     i += 1
-            elif part in self._SUBCOMMANDS:
-                help_args.append(part)
-            elif any(part in subcmds for subcmds in self._SUBCOMMANDS.values()):
+            elif part in self._SUBCOMMANDS or any(
+                part in subcmds for subcmds in self._SUBCOMMANDS.values()
+            ):
                 help_args.append(part)
             # else: skip positional args
             i += 1
@@ -304,7 +319,10 @@ class TestDocsCodeBlocks:
 
     def test_no_bare_search_command(self) -> None:
         """Docs must not use 'docsift search <query>' without subcommand."""
-        search_pattern = re.compile(r"docsift\s+search\s+(?!search\s|query\s|vsearch\s)([^-\s\"']|['\"])")
+        search_pattern = re.compile(
+            r"docsift\s+search\s+(?!search\s|query\s|vsearch\s)"
+            r"([^-\s\"']|['\"])"
+        )
         for md_file in DOCS_FILES:
             if not md_file.exists():
                 continue
@@ -314,11 +332,12 @@ class TestDocsCodeBlocks:
                     # Skip if it's in a code block that is just showing output
                     if line.strip().startswith("$") or line.strip().startswith("#"):
                         continue
-                    # Skip shell alias definitions (they contain ' but are valid)
+                    # Skip shell alias definitions
                     if "alias " in line and "=" in line:
                         continue
                     pytest.fail(
-                        f"Bare 'docsift search <query>' found in {md_file.name} line {i}: {line.strip()}"
+                        f"Bare 'docsift search <query>' found in "
+                        f"{md_file.name} line {i}: {line.strip()}"
                     )
 
     def test_no_positional_args_for_option_only_commands(self) -> None:
@@ -338,7 +357,8 @@ class TestDocsCodeBlocks:
                     parts = stripped.split()
                     if len(parts) > 3 and not parts[3].startswith("-"):
                         pytest.fail(
-                            f"index update with positional arg in {md_file.name} line {i}: {stripped}"
+                            f"index update with positional arg in "
+                            f"{md_file.name} line {i}: {stripped}"
                         )
                 if stripped.startswith("docsift status ") and len(stripped.split()) > 2:
                     parts = stripped.split()
@@ -355,7 +375,8 @@ class TestDocsCodeBlocks:
             content = md_file.read_text()
             if "docsift collection delete" in content:
                 pytest.fail(
-                    f"Old 'collection delete' command found in {md_file.name} — use 'collection remove'"
+                    f"Old 'collection delete' command found in {md_file.name} "
+                    f"— use 'collection remove'"
                 )
 
     def test_configuration_no_phantom_fields(self) -> None:
@@ -385,10 +406,7 @@ class TestDocsCodeBlocks:
 
         # Build list of expected commands from Click
         expected_commands = self._collect_click_commands()
-        missing = []
-        for cmd in expected_commands:
-            if cmd not in content:
-                missing.append(cmd)
+        missing = [cmd for cmd in expected_commands if cmd not in content]
         if missing:
             pytest.fail(f"cli-reference.md missing commands: {missing}")
 
@@ -419,12 +437,23 @@ class TestDocsCodeBlocks:
                     first_line = content.split("\n")[0].strip()
                     if first_line.startswith("--"):
                         # Find first non-comment line
-                        for line in content.split("\n"):
-                            line = line.strip()
+                        for raw_line in content.split("\n"):
+                            line = raw_line.strip()
                             if line and not line.startswith("--"):
                                 first_line = line
                                 break
                     if not any(
-                        first_line.startswith(kw) for kw in ["CREATE", "SELECT", "INSERT", "UPDATE", "DELETE", "ALTER", "DROP"]
+                        first_line.startswith(kw)
+                        for kw in [
+                            "CREATE",
+                            "SELECT",
+                            "INSERT",
+                            "UPDATE",
+                            "DELETE",
+                            "ALTER",
+                            "DROP",
+                        ]
                     ):
-                        pytest.fail(f"Invalid SQL in {block['file']}: does not start with a valid keyword")
+                        pytest.fail(
+                            f"Invalid SQL in {block['file']}: does not start with a valid keyword"
+                        )
