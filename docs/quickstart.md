@@ -26,69 +26,94 @@ docsift --version
 
 A collection is a group of documents you want to search together.
 
-### 1. Create a Collection
+### 1. Add a Collection
 
 ```bash
-docsift collection create my-notes \
-  --description "My personal notes"
+docsift collection add ~/Documents/notes --name my-notes   --description "My personal notes"
 ```
 
-### 2. Add Paths
+The `PATH` argument is the directory to index. Use `--name` to give your
+collection a short identifier. You can also set `--pattern` (default `**/*.md`)
+and `--ignore` for fine-grained control over which files are included.
 
-Add directories to your collection:
-
-```bash
-docsift collection add-path my-notes ~/Documents/notes
-```
-
-### 3. Index Documents
+### 2. Index Documents
 
 Index all documents in the collection:
 
 ```bash
-docsift update my-notes
+docsift index update
 ```
 
-You'll see progress output as documents are indexed.
+You will see progress output as documents are scanned and indexed.
+
+To update only one collection:
+
+```bash
+docsift index update --collection my-notes
+```
+
+To force a full reindex:
+
+```bash
+docsift index update --collection my-notes --force
+```
 
 ## Searching
 
 ### Basic Search
 
+DocSift provides three search subcommands under `docsift search`:
+
 ```bash
-docsift search "python decorators"
+# BM25 keyword search
+docsift search search "python decorators"
+
+# Vector (semantic) search
+docsift search vsearch "functions that wrap other functions"
+
+# Hybrid search (BM25 + Vector + Rerank) -- recommended for best results
+docsift search query "python decorators"
 ```
 
 ### Search with Options
 
 ```bash
 # More results
-docsift search "python decorators" --limit 20
+docsift search query "python decorators" --limit 20
 
 # Specific collection
-docsift search "python decorators" --collection my-notes
+docsift search query "python decorators" -c my-notes
 
-# Hybrid search (default)
-docsift search "python decorators" --type hybrid
+# Search all collections (including disabled ones)
+docsift search query "python decorators" --all
 
-# Vector search (semantic)
-docsift search "functions that wrap other functions" --type vector
+# Show score breakdowns across pipeline stages
+docsift search query "python decorators" --explain
 
-# BM25 search (keyword)
-docsift search "python decorators" --type bm25
+# Increase candidate pool for reranking
+docsift search query "python decorators" --candidate-limit 30
+
+# Provide intent hint for query expansion
+docsift search query "python decorators" --intent "programming tutorial"
 ```
 
 ### Output Formats
 
 ```bash
 # JSON output
-docsift search "python" --format json
+docsift search query "python" --json
 
 # Markdown table
-docsift search "python" --format md
+docsift search query "python" --md
+
+# CSV output
+docsift search query "python" --csv
+
+# XML output
+docsift search query "python" --xml
 
 # Just file paths
-docsift search "python" --format files
+docsift search query "python" --files
 ```
 
 ## Managing Collections
@@ -98,6 +123,8 @@ docsift search "python" --format files
 ```bash
 docsift collection list
 ```
+
+Add `--verbose` for detailed information.
 
 ### Show Collection Details
 
@@ -117,6 +144,22 @@ docsift collection rename my-notes personal-notes
 docsift collection delete old-collection
 ```
 
+### Include / Exclude from Default Searches
+
+```bash
+# Exclude from default searches
+docsift collection exclude my-notes
+
+# Include again
+docsift collection include my-notes
+```
+
+### List Files in a Collection
+
+```bash
+docsift ls my-notes
+```
+
 ## Adding Context
 
 Context helps improve search relevance by providing background information.
@@ -126,8 +169,7 @@ Context helps improve search relevance by providing background information.
 Applies to all searches:
 
 ```bash
-docsift context add --global \
-  "I am a software engineer working with Python and machine learning."
+docsift context add global global   "I am a software engineer working with Python and machine learning."
 ```
 
 ### Collection Context
@@ -135,8 +177,22 @@ docsift context add --global \
 Applies to searches in a specific collection:
 
 ```bash
-docsift context add --collection my-notes \
-  "These are my personal notes about programming and technology."
+docsift context add collection my-notes   "These are my personal notes about programming and technology."
+```
+
+### Path Context
+
+Applies to a specific file or directory:
+
+```bash
+docsift context add path ~/Documents/notes/project-a   "Notes for the Project Alpha rewrite."
+```
+
+### List and Remove Context
+
+```bash
+docsift context list
+docsift context remove <context-id>
 ```
 
 ## Checking Status
@@ -147,48 +203,55 @@ docsift context add --collection my-notes \
 docsift status
 ```
 
-### Collection Status
-
-```bash
-docsift status my-notes
-```
+The status command shows index path, collection count, document count, chunk
+count, contexts, and total database size.
 
 ## Updating Index
 
 ### Update Changed Documents
 
 ```bash
-docsift update my-notes
+docsift index update
+```
+
+### Update a Specific Collection
+
+```bash
+docsift index update --collection my-notes
 ```
 
 ### Force Full Reindex
 
 ```bash
-docsift update my-notes --force
+docsift index update --collection my-notes --force
 ```
 
-## Advanced Search
+## Generating Embeddings
 
-### Query Expansion
-
-Automatically expand queries with related terms:
+After indexing text documents, generate embeddings for vector search:
 
 ```bash
-docsift search "AI" --expand
+docsift index embed
 ```
 
-### Result Reranking
-
-Rerank results for better relevance:
+Or for a specific collection:
 
 ```bash
-docsift search "python decorators" --rerank
+docsift index embed --collection my-notes
 ```
 
-### Find Similar Documents
+## Retrieving Documents
+
+### Get a Single Document
 
 ```bash
-docsift search similar ~/Documents/notes/python/decorators.md
+docsift get get <path-or-doc-id>
+```
+
+### Get Multiple Documents
+
+```bash
+docsift get multi-get "*.md"
 ```
 
 ## MCP Server
@@ -197,10 +260,10 @@ Start the MCP server for AI assistant integration:
 
 ```bash
 # Stdio transport (default)
-docsift mcp start
+docsift mcp stdio
 
 # HTTP transport
-docsift mcp start --transport http --port 8080
+docsift mcp http --port 8080
 ```
 
 ## Configuration
@@ -210,10 +273,13 @@ Create a `.env` file for persistent configuration:
 ```bash
 # ~/.env or ./.env
 DOCSIFT_DB_PATH=~/.local/share/docsift/docsift.db
-DOCSIFT_MODEL_NAME=all-MiniLM-L6-v2
+DOCSIFT_MODEL_NAME=Qwen/Qwen3-Embedding-0.6B
+DOCSIFT_EMBEDDING_DIM=1024
 DOCSIFT_CHUNK_SIZE=512
 DOCSIFT_LOG_LEVEL=INFO
 ```
+
+Environment variables are read automatically when DocSift starts.
 
 ## Common Workflows
 
@@ -224,49 +290,40 @@ DOCSIFT_LOG_LEVEL=INFO
 docsift status
 
 # Throughout day: Quick searches
-docsift search "meeting notes"
-docsift search "project ideas"
+docsift search query "meeting notes"
+docsift search query "project ideas"
 
 # Evening: Update index
-docsift update
+docsift index update
 ```
 
 ### Research Workflow
 
 ```bash
-# Create research collection
-docsift collection create research \
-  --description "Research papers and notes"
-docsift collection add-path research ~/Research
+# Add research collection
+docsift collection add ~/Research --name research   --description "Research papers and notes"
 
 # Index
-docsift update research
+docsift index update --collection research
 
-# Search with expansion and reranking
-docsift search "neural networks" \
-  --collection research \
-  --expand \
-  --rerank \
-  --limit 20
+# Search with hybrid pipeline
+docsift search query "neural networks"   -c research   --limit 20
 ```
 
 ### Documentation Workflow
 
 ```bash
-# Create docs collection
-docsift collection create docs \
-  --description "Project documentation"
-docsift collection add-path docs ~/Projects/docs
+# Add docs collection
+docsift collection add ~/Projects/docs --name docs   --description "Project documentation"
 
 # Add context
-docsift context add --collection docs \
-  "This is technical documentation for my projects."
+docsift context add collection docs   "This is technical documentation for my projects."
 
 # Index
-docsift update docs
+docsift index update --collection docs
 
 # Search
-docsift search "API reference" --collection docs
+docsift search query "API reference" -c docs
 ```
 
 ## Tips and Tricks
@@ -277,8 +334,8 @@ Add to your `.bashrc` or `.zshrc`:
 
 ```bash
 alias ds='docsift'
-alias ds-search='docsift search'
-alias ds-update='docsift update'
+alias ds-search='docsift search query'
+alias ds-update='docsift index update'
 alias ds-status='docsift status'
 ```
 
@@ -289,24 +346,24 @@ alias ds-status='docsift status'
 history | grep "docsift search"
 
 # Or create a search history file
-docsift search "$@" | tee -a ~/.docsift_searches
+docsift search query "" | tee -a ~/.docsift_searches
 ```
 
 ### Export Results
 
 ```bash
 # Save search results
-docsift search "python" --format json > results.json
+docsift search query "python" --json > results.json
 
 # Process with jq
-docsift search "python" --format json | jq '.results[].document_path'
+docsift search query "python" --json | jq '.results[].document_path'
 ```
 
-### Batch Operations
+### Batch Document Retrieval
 
 ```bash
-# Get multiple documents
-docsift multi-get $(docsift search "important" --format files)
+# Get multiple documents from search results
+docsift get multi-get "*.md"
 ```
 
 ## Troubleshooting
@@ -315,7 +372,7 @@ docsift multi-get $(docsift search "important" --format files)
 
 1. Check if collection is indexed:
    ```bash
-   docsift status my-notes
+   docsift status
    ```
 
 2. Try different search terms
@@ -325,21 +382,26 @@ docsift multi-get $(docsift search "important" --format files)
    docsift ls my-notes
    ```
 
+4. Verify embeddings are generated (for vector/hybrid search):
+   ```bash
+   docsift index embed --collection my-notes
+   ```
+
 ### Slow Search
 
-1. Enable caching:
+1. Use BM25 for faster results:
    ```bash
-   export DOCSIFT_CACHE_SIZE=5000
+   docsift search search "query"
    ```
 
-2. Use BM25 for faster results:
+2. Limit results:
    ```bash
-   docsift search "query" --type bm25
+   docsift search query "query" --limit 5
    ```
 
-3. Limit results:
+3. Search a specific collection instead of all:
    ```bash
-   docsift search "query" --limit 5
+   docsift search query "query" -c my-notes
    ```
 
 ### Indexing Issues
@@ -351,14 +413,22 @@ docsift multi-get $(docsift search "important" --format files)
 
 2. Force reindex:
    ```bash
-   docsift update my-notes --force
+   docsift index update --collection my-notes --force
    ```
 
 3. Check logs:
    ```bash
    export DOCSIFT_LOG_LEVEL=DEBUG
-   docsift update my-notes
+   docsift index update --collection my-notes
    ```
+
+### Cleaning Up
+
+Remove orphaned chunks, embeddings, and expired cache entries:
+
+```bash
+docsift cleanup
+```
 
 ## Next Steps
 
@@ -371,7 +441,7 @@ docsift multi-get $(docsift search "important" --format files)
 
 - Use `--help` for command help:
   ```bash
-  docsift search --help
+  docsift search query --help
   ```
 
 - Check the [FAQ](#) (coming soon)
