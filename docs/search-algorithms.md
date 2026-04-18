@@ -34,7 +34,7 @@ BM25 is a probabilistic ranking function used for full-text search.
 ### Formula
 
 ```
-score(D, Q) = Σ IDF(q_i) * (f(q_i, D) * (k1 + 1)) / 
+score(D, Q) = Σ IDF(q_i) * (f(q_i, D) * (k1 + 1)) /
               (f(q_i, D) + k1 * (1 - b + b * |D| / avgdl))
 
 Where:
@@ -85,20 +85,12 @@ Where:
 ### Implementation
 
 ```python
-from docsift.search.bm25 import BM25SearchStrategy
-from docsift.search.strategy import SearchContext
-from docsift.models.search import SearchOptions
+from docsift.search.bm25 import BM25Searcher
+from docsift.core.models import SearchOptions
 
-strategy = BM25SearchStrategy(repository)
-
-context = SearchContext(query="python decorators")
-options = SearchOptions(
-    limit=10,
-    bm25_k1=1.5,
-    bm25_b=0.75
-)
-
-results = strategy.search(context, options)
+searcher = BM25Searcher(db_connection)
+options = SearchOptions(limit=10)
+results = searcher.search("python decorators", options)
 ```
 
 ### SQLite FTS5 Integration
@@ -109,7 +101,8 @@ DocSift uses SQLite FTS5 for BM25 implementation:
 -- Create FTS5 virtual table
 CREATE VIRTUAL TABLE documents_fts USING fts5(
     content,
-    content_rowid=rowid,
+    content='documents',
+    content_rowid='rowid',
     tokenize='porter'
 );
 
@@ -138,27 +131,10 @@ Where:
 ### Implementation
 
 ```python
-from docsift.search.vector import VectorSearchStrategy
-from docsift.embedding.factory import EmbeddingModelFactory
+from docsift.search.vector import VectorSearcher
 
-# Create embedding model
-model = EmbeddingModelFactory.create_sentence_transformer("all-MiniLM-L6-v2")
-model.load()
-
-# Create strategy
-strategy = VectorSearchStrategy(repository, model)
-
-# Generate query embedding
-query = "python decorators"
-query_embedding = model.embed([query])[0]
-
-context = SearchContext(
-    query=query,
-    query_embedding=query_embedding
-)
-
-options = SearchOptions(limit=10)
-results = strategy.search(context, options)
+searcher = VectorSearcher(db_connection, embedding_dim=1024)
+results = searcher.search(query_embedding, options)
 ```
 
 ### Embedding Models
@@ -167,13 +143,19 @@ results = strategy.search(context, options)
 
 | Model | Dimensions | Best For |
 |-------|------------|----------|
-| all-MiniLM-L6-v2 | 384 | General purpose, fast |
-| all-mpnet-base-v2 | 768 | Higher quality, slower |
-| multi-qa-MiniLM-L6-cos-v1 | 384 | Question-answering |
+| Qwen/Qwen3-Embedding-0.6B | 1024 | Default, high quality |
+| sentence-transformers/all-MiniLM-L6-v2 | 384 | Fast, general purpose |
+| sentence-transformers/all-mpnet-base-v2 | 768 | Higher quality |
+
+**Model Sources:**
+- HuggingFace Hub
+- ModelScope (alternative for China region)
+- Local GGUF files
+- OpenAI-compatible API endpoints
 
 **Model Selection:**
-- Use `all-MiniLM-L6-v2` for balanced performance
-- Use `all-mpnet-base-v2` for better quality
+- Use `Qwen/Qwen3-Embedding-0.6B` for best quality (default)
+- Use `all-MiniLM-L6-v2` for faster inference
 - Consider domain-specific models for specialized content
 
 ### Vector Index
@@ -182,14 +164,16 @@ DocSift uses sqlite-vec for vector storage:
 
 ```sql
 -- Create vector table
-CREATE VIRTUAL TABLE chunk_embeddings USING vec0(
+CREATE VIRTUAL TABLE document_embeddings USING vec0(
     embedding_id TEXT PRIMARY KEY,
-    embedding FLOAT[384]
+    document_id TEXT NOT NULL,
+    chunk_id TEXT,
+    embedding FLOAT[{dim}]  -- dimension from model (default: 1024)
 );
 
 -- Search similar vectors
-SELECT embedding_id, distance
-FROM chunk_embeddings
+SELECT document_id, distance
+FROM document_embeddings
 WHERE embedding MATCH ?
 ORDER BY distance
 LIMIT 10;
@@ -219,34 +203,23 @@ Where:
 ### Implementation
 
 ```python
-from docsift.search.hybrid import HybridSearchStrategy
-from docsift.search.bm25 import BM25SearchStrategy
-from docsift.search.vector import VectorSearchStrategy
+from docsift.search.hybrid import HybridSearcher
+from docsift.search.bm25 import BM25Searcher
+from docsift.search.vector import VectorSearcher
 
-# Create component strategies
-bm25 = BM25SearchStrategy(repository)
-vector = VectorSearchStrategy(repository, model)
+# Create component searchers
+bm25 = BM25Searcher(db_connection)
+vector = VectorSearcher(db_connection, embedding_dim=1024)
 
-# Create hybrid strategy
-hybrid = HybridSearchStrategy(
-    bm25_strategy=bm25,
-    vector_strategy=vector,
-    rrf_k=60
+# Create hybrid searcher
+hybrid = HybridSearcher(
+    db_connection,
+    embedder=embedder,
+    embedding_dim=1024
 )
 
 # Search
-context = SearchContext(
-    query="python decorators",
-    query_embedding=model.embed(["python decorators"])[0]
-)
-
-options = SearchOptions(
-    limit=10,
-    bm25_weight=0.3,
-    vector_weight=0.7
-)
-
-results = hybrid.search(context, options)
+results = hybrid.search("python decorators", options)
 ```
 
 ### RRF Parameters
@@ -283,24 +256,12 @@ Query expansion improves recall by adding related terms.
 ### Implementation
 
 ```python
-from docsift.search.expansion import QueryExpander
+from docsift.search.expansion import QueryExpansion
 
-expander = QueryExpander(embedding_model)
+expander = QueryExpansion(embedding_manager=manager)
 
-expanded = expander.expand(
-    query="python decorators",
-    factor=3  # Add 3 related terms
-)
-# Result: "python decorators wrapper function"
-```
-
-### Configuration
-
-```python
-options = SearchOptions(
-    expand_query=True,
-    expansion_factor=3  # Number of terms to add
-)
+expanded = expander.expand("python decorators")
+# Result: ["python decorators", "python decorators wrapper function"]
 ```
 
 ## Result Reranking
@@ -321,33 +282,50 @@ Cross-encoders:
 ### Implementation
 
 ```python
-from docsift.search.rerank import CrossEncoderReranker
+from docsift.search.rerank import create_reranker
+from docsift.config.settings import get_settings
 
-reranker = CrossEncoderReranker(model_name="cross-encoder/ms-marco-MiniLM-L-6-v2")
+settings = get_settings()
+reranker = create_reranker(settings)
 
 # Rerank top-k results
 reranked = reranker.rerank(
     query="python decorators",
-    results=initial_results,
-    top_k=20
-)
-```
-
-### Configuration
-
-```python
-options = SearchOptions(
-    rerank=True,
-    rerank_top_k=20  # Rerank top 20 results
+    documents=[r.content for r in initial_results],
 )
 ```
 
 ## Search Pipeline
 
-Complete search flow:
+Complete search flow with expansion, reranking, and snippet extraction:
+
+```python
+from docsift.search.hybrid import SearchPipeline
+from docsift.search.expansion import QueryExpansion
+from docsift.search.rerank import create_reranker
+from docsift.search.snippets import SmartSnippetExtractor
+
+pipeline = SearchPipeline(
+    db_connection,
+    embedder=manager._model,
+    query_expander=QueryExpansion(embedding_manager=manager),
+    reranker=create_reranker(settings),
+    snippet_extractor=SmartSnippetExtractor(),
+    embedding_dim=1024,
+)
+
+results = pipeline.search("python decorators", options)
+```
+
+The pipeline supports query prefix routing:
+- `lex:` prefix for BM25-only search
+- `vec:` prefix for vector-only search
+- `hyde:` prefix for HyDE (hypothetical document embedding) search
+- `expand:` prefix for expanded query search
+- No prefix for hybrid search (default)
 
 ```
-1. Parse Query
+1. Parse Query (including prefix)
    │
    ▼
 2. Expand Query (optional)
@@ -368,7 +346,10 @@ Complete search flow:
 5. Rerank Results (optional)
    │
    ▼
-6. Return Results
+6. Extract Smart Snippets (optional)
+   │
+   ▼
+7. Return Results
 ```
 
 ## Performance Optimization
@@ -391,30 +372,24 @@ Complete search flow:
 # Fast search
 fast_options = SearchOptions(
     limit=10,
-    expand_query=False,
-    rerank=False
+    include_highlights=False,
 )
 
 # Accurate search
 accurate_options = SearchOptions(
     limit=20,
-    expand_query=True,
-    rerank=True,
-    rerank_top_k=50
+    include_highlights=True,
+    candidate_limit=50,
 )
 ```
 
 ## Benchmarks
 
-Typical performance on standard hardware:
+Performance varies by hardware and collection size. Run your own benchmarks with:
 
-| Collection Size | BM25 | Vector | Hybrid |
-|-----------------|------|--------|--------|
-| 1K documents | 10ms | 50ms | 60ms |
-| 10K documents | 20ms | 100ms | 120ms |
-| 100K documents | 50ms | 300ms | 350ms |
-
-*Times are for single queries on a modern laptop*
+```bash
+docsift bench fixture.json
+```
 
 ## Comparison
 
