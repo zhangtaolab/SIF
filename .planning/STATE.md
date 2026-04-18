@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-04-18T08:50:00Z"
+last_updated: "2026-04-18T12:00:00Z"
 progress:
-  total_phases: 5
+  total_phases: 6
   completed_phases: 5
-  total_plans: 30
-  completed_plans: 27
-  percent: 90
+  total_plans: 37
+  completed_plans: 30
+  percent: 81
 ---
 
 # DocSift — Project State
@@ -18,18 +18,18 @@ progress:
 
 - **Name:** DocSift
 - **Core Value:** 用户可以在自己的笔记和文档库中，用自然语言快速、准确地找到需要的信息——无论关键词是否匹配。
-- **Current Focus:** Phase 05 — agent-context-experience (Gap Closure)
+- **Current Focus:** Phase 06 — documentation-audit-refresh
 - **Tech Stack:** Python 3.10+, SQLite (FTS5 + sqlite-vec), Click, Pydantic, sentence-transformers, llama-cpp-python
 
 ## Current Position
 
-Phase: 05 (agent-context-experience) — GAP CLOSURE
-Plan: 3 gap closure plans created (05-05, 05-06, 05-07)
+Phase: 06 (documentation-audit-refresh)
+Plan: Not planned yet
 
-- **Phase:** 5
-- **Plan:** Gap closure in progress
-- **Status:** UAT revealed 6 issues; 3 gap closure plans created to fix them
-- **Progress Bar:** `[████████████████░░░░] 90%`
+- **Phase:** 6
+- **Plan:** Pending planning
+- **Status:** SPEC.md and CONTEXT.md completed. Ready for planning.
+- **Progress Bar:** `[███████░░░░░░░░░░░░░] 81%`
 
 ## Phase History
 
@@ -39,13 +39,13 @@ Plan: 3 gap closure plans created (05-05, 05-06, 05-07)
 | 02 — CLI Core Completion | 2026-04-15 | 2026-04-15 | All 6 plans passed. Full CLI surface for collection, search, index, and retrieval. |
 | 03 — Embedding & Vector Search | 2026-04-16 | 2026-04-16 | All 6 plans passed. Configurable backends, sqlite-vec integration, batch embedding. |
 | 04 — Advanced Search Pipeline | 2026-04-17 | 2026-04-17 | All 5 plans passed. BM25, vector, hybrid search, reranking, query expansion, and benchmarking all functional. |
-| 05 — Agent Context Experience | 2026-04-18 | 2026-04-18 | 4 original plans passed. UAT revealed 6 gaps; 3 gap closure plans created. |
+| 05 — Agent Context Experience | 2026-04-18 | 2026-04-18 | 7/7 plans passed. 3 gap closure fixes committed. Qwen3 models set as default. |
 
 ## Performance Metrics
 
-- **Requirements mapped:** 31/31 v1
-- **Phases defined:** 5
-- **Tests passing:** 360 passed, 11 skipped, 0 failed (pre-gap-closure)
+- **Requirements mapped:** 31/31 v1 + 7 DOC requirements
+- **Phases defined:** 6
+- **Tests passing:** 365 passed, 11 skipped, 0 failed
 - **Known blockers:** 0
 
 ## Accumulated Context
@@ -65,11 +65,24 @@ Plan: 3 gap closure plans created (05-05, 05-06, 05-07)
 - [Phase 04]: Patch `llama_cpp.Llama` and `sentence_transformers.CrossEncoder` at module level, not inside `docsift.search.rerank`
 - [Phase 04]: BM25Searcher tests use MagicMock sqlite3 connections with `fetchall.return_value` for row data
 - [Phase 04]: `include_highlights=False` required in basic BM25Searcher tests to avoid extra mock DB calls
+- [Phase 05-gap-closure]: Used callable default for `--index` option (Click supports callable defaults) to allow dynamic resolution via Settings
+- [Phase 05-gap-closure]: Normalized paths with `os.path.realpath()` in all three searchers due to macOS `/tmp` → `/private/tmp` resolution
+- [Phase 05-model-update]: Default embedding model switched from `all-MiniLM-L6-v2` (384 dim) to `Qwen/Qwen3-Embedding-0.6B` (1024 dim)
+- [Phase 05-model-update]: Default reranker switched from `cross-encoder/ms-marco-MiniLM-L-6-v2` to `Qwen/Qwen3-Reranker-0.6B` (transformers backend)
+- [Phase 05-model-update]: Added `modelscope` model_type to `EmbeddingConfig.ModelType` and `_create_modelscope_model` to factory
+- [Phase 05-model-update]: Added `Qwen3Reranker` class for transformers-based reranking with yes/no logits scoring
+- [Phase 06-discuss]: CLI reference auto-generated via Python script traversing Click command tree (`scripts/generate_cli_ref.py`)
+- [Phase 06-discuss]: Code block validation: fence-tag based classification (bash → execute, json/python → syntax check, text → skip)
+- [Phase 06-discuss]: Blacklist for long-running commands (mcp start, pip install, etc.) in docs tests
+- [Phase 06-discuss]: Docs tests use pytest fixture with temp DB + minimal test data, CliRunner primary + subprocess secondary
+- [Phase 06-discuss]: Technical docs validated via AST parsing: extract public API from code, verify against documented names
+- [Phase 06-discuss]: Architecture diagram strategy: keep ASCII in README (manual), generate Mermaid in architecture.md (scripted)
 
 ### TODOs
 
-- [ ] Execute gap closure plans 05-05, 05-06, 05-07
 - [ ] Create missing VERIFICATION.md files for phases 03-05
+- [x] Plan Phase 06 documentation audit and refresh — SPEC.md and CONTEXT.md completed
+- [ ] (Backlog) Phase 7: LLM-based query expansion — model tested (Qwen3.5-2B), awaiting v1.0 ship
 
 ### Blockers
 
@@ -77,20 +90,20 @@ Plan: 3 gap closure plans created (05-05, 05-06, 05-07)
 
 ## Session Continuity
 
-- **Last action:** Created 3 gap closure plans (05-05, 05-06, 05-07) to fix UAT failures.
-- **Next expected action:** Execute gap closure plans via `/gsd-execute-phase 05 --gaps-only`
+- **Last action:** Phase 5 gap closure complete (commits ba8a440, 32de054, e785ea3). Phase 6 created for documentation audit.
+- **Next expected action:** Plan Phase 06 via `/gsd-plan-phase 06`
 - **Open questions:**
-  - None
+  - (Resolved) DEFAULT_GENERATE_MODEL: Kept PRF-based query expansion for v1.0. LLM expansion (Qwen3.5-2B tested) recorded in ROADMAP backlog as Phase 7 candidate.
 
 ## Gap Closure Tracking
 
-### UAT Gaps (from 05-UAT.md)
+### UAT Gaps (from 05-UAT.md) — RESOLVED
 
 | Gap | Test | Severity | Plan | Status |
 |-----|------|----------|------|--------|
-| 1 | 3 | major | 05-05 | Planned |
-| 2 | 4 | major | 05-05 | Planned |
-| 3 | 5 | major | 05-05 | Planned |
-| 4 | 9 | medium | 05-06 | Planned |
-| 5 | 11 | medium | 05-07 | Planned |
-| 6 | N/A | major | 05-05 | Planned |
+| 1 | 3 | major | 05-05 | ✅ Fixed |
+| 2 | 4 | major | 05-05 | ✅ Fixed |
+| 3 | 5 | major | 05-05 | ✅ Fixed |
+| 4 | 9 | medium | 05-06 | ✅ Fixed |
+| 5 | 11 | medium | 05-07 | ✅ Fixed |
+| 6 | N/A | major | 05-05 | ✅ Fixed |
