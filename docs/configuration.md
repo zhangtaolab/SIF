@@ -20,7 +20,7 @@ Create a `.env` file in your working directory or home directory:
 ```bash
 # ~/.env or ./.env
 DOCSIFT_DB_PATH=~/.local/share/docsift/docsift.db
-DOCSIFT_MODEL_NAME=all-MiniLM-L6-v2
+DOCSIFT_MODEL_NAME=Qwen/Qwen3-Embedding-0.6B
 DOCSIFT_LOG_LEVEL=INFO
 ```
 
@@ -33,131 +33,111 @@ DOCSIFT_LOG_LEVEL=INFO
 
 ## Configuration Options
 
+### Application Settings
+
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `DOCSIFT_APP_NAME` | str | `docsift` | Application name |
+| `DOCSIFT_DEBUG` | bool | `False` | Debug mode |
+| `DOCSIFT_LOG_LEVEL` | str | `INFO` | Logging level (validated by `validate_log_level`) |
+
 ### Database Settings
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DOCSIFT_DB_PATH` | `~/.local/share/docsift/docsift.db` | Path to SQLite database file |
-
-**Example:**
-```bash
-export DOCSIFT_DB_PATH=/data/docsift/production.db
-```
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `DOCSIFT_DB_PATH` | pathlib._local.Path | None | `~/.local/share/docsift/docsift.db (computed)` | Path to SQLite database file (validated by `expand_path`) |
 
 ### Embedding Model Settings
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DOCSIFT_MODEL_NAME` | `all-MiniLM-L6-v2` | Name of the embedding model |
-| `DOCSIFT_MODEL_PATH` | `None` | Path to local model file (GGUF format) |
-| `DOCSIFT_EMBEDDING_DIM` | `384` | Embedding dimension |
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `DOCSIFT_MODEL_NAME` | str | `Qwen/Qwen3-Embedding-0.6B` | Embedding model name |
+| `DOCSIFT_MODEL_PATH` | pathlib._local.Path | None | `None` | Path to embedding model file |
+| `DOCSIFT_EMBEDDING_DIM` | int | `1024` | Embedding dimension |
+| `DOCSIFT_MAX_TOKENS` | int | `512` | Maximum tokens per input |
+| `DOCSIFT_BATCH_SIZE` | int | `32` | Batch size for inference |
+| `DOCSIFT_MODEL_TYPE` | str | `sentence_transformers` | Embedding model type (gguf, sentence_transformers, openai, huggingface) (validated by `validate_model_type`) |
+| `DOCSIFT_N_GPU_LAYERS` | int | `0` | Number of GPU layers for GGUF models |
 
-**Example - Using HuggingFace model:**
-```bash
-export DOCSIFT_MODEL_NAME=sentence-transformers/all-MiniLM-L6-v2
-```
+### API Settings
 
-**Example - Using local GGUF model:**
-```bash
-export DOCSIFT_MODEL_PATH=~/models/embedding-model.gguf
-export DOCSIFT_EMBEDDING_DIM=768
-```
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `DOCSIFT_API_KEY` | str | None | `None` | API key for remote embedding models |
+| `DOCSIFT_API_BASE` | str | None | `None` | Base URL for remote embedding API (validated by `validate_api_base`) |
+
+### Reranker Settings
+
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `DOCSIFT_RERANKER_MODEL_NAME` | str | `Qwen/Qwen3-Reranker-0.6B` | Reranker model name |
+| `DOCSIFT_RERANKER_MODEL_PATH` | pathlib._local.Path | None | `None` | Path to local reranker model file |
+| `DOCSIFT_RERANKER_MODEL_TYPE` | str | `transformers` | Reranker model type (gguf, sentence_transformers, transformers) |
+| `DOCSIFT_RERANKER_BATCH_SIZE` | int | `32` | Batch size for reranker inference |
 
 ### Chunking Settings
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DOCSIFT_CHUNK_SIZE` | `512` | Maximum chunk size in tokens |
-| `DOCSIFT_CHUNK_OVERLAP` | `128` | Overlap between chunks in tokens |
-
-**Example:**
-```bash
-export DOCSIFT_CHUNK_SIZE=1024
-export DOCSIFT_CHUNK_OVERLAP=256
-```
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `DOCSIFT_CHUNK_SIZE` | int | `512` | Default chunk size in tokens |
+| `DOCSIFT_CHUNK_OVERLAP` | int | `128` | Default chunk overlap in tokens |
 
 ### Search Settings
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DOCSIFT_DEFAULT_SEARCH_TYPE` | `hybrid` | Default search type (bm25, vector, hybrid) |
-| `DOCSIFT_DEFAULT_LIMIT` | `10` | Default number of results |
-| `DOCSIFT_RRF_K` | `60` | RRF fusion parameter |
-
-**Example:**
-```bash
-export DOCSIFT_DEFAULT_SEARCH_TYPE=vector
-export DOCSIFT_DEFAULT_LIMIT=20
-export DOCSIFT_RRF_K=40
-```
-
-### BM25 Settings
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DOCSIFT_BM25_K1` | `1.5` | BM25 term frequency saturation parameter |
-| `DOCSIFT_BM25_B` | `0.75` | BM25 length normalization parameter |
-
-**Example:**
-```bash
-export DOCSIFT_BM25_K1=2.0
-export DOCSIFT_BM25_B=0.5
-```
-
-### Logging Settings
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DOCSIFT_LOG_LEVEL` | `INFO` | Logging level (DEBUG, INFO, WARNING, ERROR) |
-| `DOCSIFT_LOG_FILE` | `~/.local/share/docsift/logs/docsift.log` | Log file path |
-
-**Example:**
-```bash
-export DOCSIFT_LOG_LEVEL=DEBUG
-export DOCSIFT_LOG_FILE=/var/log/docsift/app.log
-```
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `DOCSIFT_DEFAULT_SEARCH_TYPE` | str | `hybrid` | Default search type (bm25, vector, hybrid) |
+| `DOCSIFT_DEFAULT_LIMIT` | int | `10` | Default search result limit |
 
 ### MCP Server Settings
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DOCSIFT_MCP_HOST` | `127.0.0.1` | MCP HTTP server host |
-| `DOCSIFT_MCP_PORT` | `8080` | MCP HTTP server port |
-| `DOCSIFT_MCP_TRANSPORT` | `stdio` | Default transport (stdio, http) |
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `DOCSIFT_MCP_HOST` | str | `127.0.0.1` | MCP HTTP server host |
+| `DOCSIFT_MCP_PORT` | int | `8080` | MCP HTTP server port |
+| `DOCSIFT_MCP_TRANSPORT` | str | `stdio` | MCP transport type (stdio, http) |
 
-**Example:**
-```bash
-export DOCSIFT_MCP_HOST=0.0.0.0
-export DOCSIFT_MCP_PORT=3000
-export DOCSIFT_MCP_TRANSPORT=http
-```
+### Cache Settings
 
-### Performance Settings
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `DOCSIFT_CACHE_DIR` | pathlib._local.Path | None | `~/.cache/docsift (computed)` | Cache directory path |
+| `DOCSIFT_CACHE_EMBEDDINGS` | bool | `True` | Whether to cache embeddings |
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DOCSIFT_BATCH_SIZE` | `100` | Batch size for indexing operations |
-| `DOCSIFT_MAX_WORKERS` | `4` | Maximum number of worker threads |
-| `DOCSIFT_CACHE_SIZE` | `1000` | Embedding cache size |
+## Validation Rules
 
-**Example:**
-```bash
-export DOCSIFT_BATCH_SIZE=500
-export DOCSIFT_MAX_WORKERS=8
-export DOCSIFT_CACHE_SIZE=5000
-```
+DocSift validates configuration on startup. Invalid values will raise errors:
 
-## Complete Configuration Example
+| Field | Rule | Error Example |
+|-------|------|---------------|
+| `model_type` | Must be one of: `sentence_transformers`, `gguf`, `openai`, `modelscope`, `huggingface` | `Invalid model_type: xyz` |
+| `api_base` | Must start with `http://` or `https://` | `api_base must be an HTTP or HTTPS URL` |
+| `log_level` | Must be one of: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` | `Invalid log level: TRACE` |
+| `chunk_size` | Minimum 100 | `ensure this value is greater than or equal to 100` |
+| `chunk_overlap` | Minimum 0 | `ensure this value is greater than or equal to 0` |
+| `default_limit` | 1 to 100 | `ensure this value is less than or equal to 100` |
+| `mcp_port` | 1 to 65535 | `ensure this value is less than or equal to 65535` |
 
-Here's a complete `.env` file example:
+## Complete .env Example
 
 ```bash
 # Database
 DOCSIFT_DB_PATH=~/.local/share/docsift/docsift.db
 
 # Embedding Model
-DOCSIFT_MODEL_NAME=all-MiniLM-L6-v2
-DOCSIFT_EMBEDDING_DIM=384
+DOCSIFT_MODEL_NAME=Qwen/Qwen3-Embedding-0.6B
+DOCSIFT_EMBEDDING_DIM=1024
+DOCSIFT_MODEL_TYPE=sentence_transformers
+DOCSIFT_BATCH_SIZE=32
+
+# Reranker
+DOCSIFT_RERANKER_MODEL_NAME=Qwen/Qwen3-Reranker-0.6B
+DOCSIFT_RERANKER_MODEL_TYPE=transformers
+DOCSIFT_RERANKER_BATCH_SIZE=32
+
+# API (for OpenAI-compatible backends)
+# DOCSIFT_API_KEY=your-api-key
+# DOCSIFT_API_BASE=https://api.openai.com/v1
 
 # Chunking
 DOCSIFT_CHUNK_SIZE=512
@@ -166,56 +146,17 @@ DOCSIFT_CHUNK_OVERLAP=128
 # Search
 DOCSIFT_DEFAULT_SEARCH_TYPE=hybrid
 DOCSIFT_DEFAULT_LIMIT=10
-DOCSIFT_RRF_K=60
-
-# BM25
-DOCSIFT_BM25_K1=1.5
-DOCSIFT_BM25_B=0.75
-
-# Logging
-DOCSIFT_LOG_LEVEL=INFO
 
 # MCP Server
 DOCSIFT_MCP_HOST=127.0.0.1
 DOCSIFT_MCP_PORT=8080
+DOCSIFT_MCP_TRANSPORT=stdio
 
-# Performance
-DOCSIFT_BATCH_SIZE=100
-DOCSIFT_MAX_WORKERS=4
-DOCSIFT_CACHE_SIZE=1000
-```
+# Logging
+DOCSIFT_LOG_LEVEL=INFO
 
-## Configuration Profiles
-
-You can create different configuration profiles for different use cases:
-
-### Development Profile (`~/.docsift/dev.env`)
-
-```bash
-DOCSIFT_DB_PATH=~/.local/share/docsift/dev.db
-DOCSIFT_LOG_LEVEL=DEBUG
-DOCSIFT_CHUNK_SIZE=256
-```
-
-### Production Profile (`~/.docsift/prod.env`)
-
-```bash
-DOCSIFT_DB_PATH=/data/docsift/production.db
-DOCSIFT_LOG_LEVEL=WARNING
-DOCSIFT_BATCH_SIZE=500
-DOCSIFT_MAX_WORKERS=8
-```
-
-### Using Profiles
-
-```bash
-# Load development profile
-source ~/.docsift/dev.env
-docsift collection list
-
-# Load production profile
-source ~/.docsift/prod.env
-docsift collection list
+# Cache
+DOCSIFT_CACHE_EMBEDDINGS=true
 ```
 
 ## Configuration Validation
@@ -223,9 +164,9 @@ docsift collection list
 DocSift validates configuration on startup. Invalid configurations will produce errors:
 
 ```bash
-$ export DOCSIFT_CHUNK_SIZE=invalid
+$ export DOCSIFT_MODEL_TYPE=invalid
 docsift collection list
-Error: Invalid configuration: DOCSIFT_CHUNK_SIZE must be an integer
+Error: Invalid model_type: invalid. Must be one of ['gguf', 'huggingface', 'modelscope', 'openai', 'sentence_transformers']
 ```
 
 ## Viewing Current Configuration
@@ -246,7 +187,7 @@ docsift config show --with-defaults
 2. **Separate environments**: Use different databases for dev/staging/production
 3. **Monitor logs**: Set appropriate log levels for your environment
 4. **Tune chunk size**: Adjust based on your document characteristics
-5. **Cache embeddings**: Use appropriate cache sizes for your workload
+5. **Cache embeddings**: Enable `DOCSIFT_CACHE_EMBEDDINGS` for repeated indexing
 
 ## Troubleshooting Configuration
 
