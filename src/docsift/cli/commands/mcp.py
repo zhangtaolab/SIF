@@ -23,12 +23,15 @@ def mcp_group() -> None:
 def mcp_stdio_cmd(ctx: click.Context) -> None:
     """Run MCP server in stdio mode."""
     index_path = ctx.obj["index_path"]
-    
+
     if not Path(index_path).exists():
-        console.print("[yellow]Warning: No index found. Some features may not work.[/yellow]", file=sys.stderr)
-    
+        console.print(
+            "[yellow]Warning: No index found. Some features may not work.[/yellow]", file=sys.stderr
+        )
+
     try:
         from docsift.mcp.server import run_stdio_server
+
         run_stdio_server(str(index_path))
     except ImportError as e:
         console.print(f"[red]MCP server not available: {e}[/red]")
@@ -48,11 +51,12 @@ def mcp_http_cmd(
 ) -> None:
     """Run MCP server in HTTP mode."""
     index_path = ctx.obj["index_path"]
-    
+
     console.print(f"[green]Starting MCP HTTP server on {host}:{port}[/green]")
-    
+
     try:
         from docsift.mcp.server_http import run_http_server
+
         run_http_server(str(index_path), host=host, port=port, reload=reload)
     except ImportError as e:
         console.print(f"[red]HTTP server not available: {e}[/red]")
@@ -80,10 +84,10 @@ def mcp_daemon_cmd(
         # Implementation would read PID file and kill process
         console.print("[green]Daemon stopped[/green]")
         return
-    
+
     console.print("[green]Starting MCP daemon...[/green]")
     console.print(f"[dim]Host: {host}:{port}[/dim]")
-    
+
     # In a real implementation, this would daemonize the process
     # For now, just run the HTTP server
     ctx.invoke(mcp_http_cmd, host=host, port=port, reload=False)

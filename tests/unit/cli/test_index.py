@@ -72,7 +72,9 @@ class TestEmbedCommand:
             ),
             patch(
                 "docsift.config.settings.get_settings",
-                return_value=MagicMock(model_name="test", model_dump=lambda: {"model_name": "test"}),
+                return_value=MagicMock(
+                    model_name="test", model_dump=lambda: {"model_name": "test"}
+                ),
             ),
             patch(
                 "docsift.search.vector.VectorSearcher",
@@ -141,7 +143,9 @@ class TestEmbedCommand:
             ),
             patch(
                 "docsift.config.settings.get_settings",
-                return_value=MagicMock(model_name="test", model_dump=lambda: {"model_name": "test"}),
+                return_value=MagicMock(
+                    model_name="test", model_dump=lambda: {"model_name": "test"}
+                ),
             ),
             patch(
                 "docsift.search.vector.VectorSearcher",
@@ -180,7 +184,9 @@ class TestEmbedCommand:
         def capture_model_copy(**kwargs):
             if "update" in kwargs:
                 captured_updates.update(kwargs["update"])
-            return MagicMock(model_type=kwargs.get("update", {}).get("model_type", "sentence_transformers"))
+            return MagicMock(
+                model_type=kwargs.get("update", {}).get("model_type", "sentence_transformers")
+            )
 
         mock_settings = MagicMock()
         mock_settings.model_copy.side_effect = capture_model_copy

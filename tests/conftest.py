@@ -12,6 +12,7 @@ import pytest
 
 # Add src to path for imports
 import sys
+
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from docsift.core.collection import Collection
@@ -110,7 +111,7 @@ def db_connection(temp_db_path: Path) -> Generator[DatabaseConnection, None, Non
 def temp_db(temp_db_path: Path) -> Generator[DatabaseConnection, None, None]:
     """Provide a temporary database with schema initialized."""
     conn = DatabaseConnection(temp_db_path)
-    
+
     # Initialize schema
     with conn.connect() as db:
         # Collections table
@@ -128,7 +129,7 @@ def temp_db(temp_db_path: Path) -> Generator[DatabaseConnection, None, None]:
                 last_indexed_at TIMESTAMP
             )
         """)
-        
+
         # Documents table
         db.execute("""
             CREATE TABLE IF NOT EXISTS documents (
@@ -147,7 +148,7 @@ def temp_db(temp_db_path: Path) -> Generator[DatabaseConnection, None, None]:
                 UNIQUE(collection_id, path)
             )
         """)
-        
+
         # Chunks table
         db.execute("""
             CREATE TABLE IF NOT EXISTS chunks (
@@ -161,7 +162,7 @@ def temp_db(temp_db_path: Path) -> Generator[DatabaseConnection, None, None]:
                 FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
             )
         """)
-        
+
         # Contexts table
         db.execute("""
             CREATE TABLE IF NOT EXISTS contexts (
@@ -174,9 +175,9 @@ def temp_db(temp_db_path: Path) -> Generator[DatabaseConnection, None, None]:
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        
+
         db.commit()
-    
+
     yield conn
 
 
@@ -265,7 +266,7 @@ def sample_document(
     """Return a sample document."""
     content = "This is test document content.\n\nIt has multiple lines."
     checksum = hashlib.sha256(content.encode()).hexdigest()
-    
+
     return Document(
         id=sample_document_id,
         collection_id=sample_collection_id,
@@ -290,7 +291,7 @@ def sample_documents(
     for i in range(3):
         content = f"Content for document {i + 1}"
         checksum = hashlib.sha256(content.encode()).hexdigest()
-        
+
         doc = Document(
             id=str(uuid.uuid4()),
             collection_id=sample_collection_id,
@@ -305,7 +306,7 @@ def sample_documents(
             ),
         )
         documents.append(doc)
-    
+
     return documents
 
 
@@ -424,22 +425,20 @@ def mock_embedder() -> MagicMock:
     mock.embedding_dim = 384
     mock.max_tokens = 512
     mock.loaded = True
-    
+
     # Mock embed method to return deterministic embeddings
     def mock_embed(texts: list[str], normalize: bool = True) -> list[list[float]]:
         import random
-        random.seed(42)  # For reproducibility
-        return [[random.random() for _ in range(384)] for _ in texts]
-    
+
+        return [[random.Random(hash(t) & 0xFFFFFFFF).random() for _ in range(384)] for t in texts]
+
     def mock_embed_single(text: str, normalize: bool = True) -> list[float]:
-        import random
-        random.seed(42)
-        return [random.random() for _ in range(384)]
-    
+        return mock_embed([text])[0]
+
     mock.embed.side_effect = mock_embed
     mock.embed_single.side_effect = mock_embed_single
     mock.count_tokens.return_value = 10
-    
+
     return mock
 
 
@@ -482,17 +481,15 @@ def mock_search_repository() -> MagicMock:
 def mock_embedding_manager() -> MagicMock:
     """Return a mock embedding manager."""
     mock = MagicMock()
-    
+
     def mock_embed(texts: list[str]) -> list[list[float]]:
         import random
-        random.seed(42)
-        return [[random.random() for _ in range(384)] for _ in texts]
-    
+
+        return [[random.Random(hash(t) & 0xFFFFFFFF).random() for _ in range(384)] for t in texts]
+
     def mock_embed_single(text: str) -> list[float]:
-        import random
-        random.seed(42)
-        return [random.random() for _ in range(384)]
-    
+        return mock_embed([text])[0]
+
     mock.embed.side_effect = mock_embed
     mock.embed_single.side_effect = mock_embed_single
     return mock
@@ -507,6 +504,7 @@ def mock_embedding_manager() -> MagicMock:
 def event_loop():
     """Create an instance of the default event loop for async tests."""
     import asyncio
+
     loop = asyncio.get_event_loop_policy().new_event_loop()
     yield loop
     loop.close()

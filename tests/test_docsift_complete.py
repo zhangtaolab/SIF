@@ -28,11 +28,13 @@ def test_imports() -> bool:
         from docsift.indexing.scanner import FileScanner
         from docsift.cli.main import cli
         from docsift.mcp.server import MCPServer
+
         print("✅ All imports successful")
         return True
     except Exception as e:
         print(f"❌ Import failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -42,22 +44,23 @@ def test_database() -> bool:
     print("\nTesting database...")
     try:
         from docsift.database.database import Database
-        
+
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "test.db"
             db = Database(db_path)
             db.init_schema()
-            
+
             # Test connection
             stats = db.get_stats()
             assert isinstance(stats, dict)
             print(f"✅ Database created: {db_path}")
             print(f"   Stats: {stats}")
-            
+
         return True
     except Exception as e:
         print(f"❌ Database test failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -69,15 +72,15 @@ def test_collection_repository() -> bool:
         from docsift.core.models import Collection
         from docsift.database.database import Database
         from docsift.database.repositories import CollectionRepository
-        
+
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "test.db"
             db = Database(db_path)
             db.init_schema()
-            
+
             with db.transaction() as conn:
                 repo = CollectionRepository(conn)
-                
+
                 # Create collection
                 collection = Collection(
                     name="test_collection",
@@ -86,22 +89,23 @@ def test_collection_repository() -> bool:
                 )
                 repo.create(collection)
                 print(f"✅ Collection created: {collection.name}")
-                
+
                 # Get by name
                 retrieved = repo.get_by_name("test_collection")
                 assert retrieved is not None
                 assert retrieved.name == "test_collection"
                 print(f"✅ Collection retrieved: {retrieved.name}")
-                
+
                 # List all
                 collections = repo.list_all()
                 assert len(collections) == 1
                 print(f"✅ Listed {len(collections)} collection(s)")
-                
+
         return True
     except Exception as e:
         print(f"❌ Collection repository test failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -116,12 +120,12 @@ def test_document_repository() -> bool:
             CollectionRepository,
             DocumentRepository,
         )
-        
+
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "test.db"
             db = Database(db_path)
             db.init_schema()
-            
+
             with db.transaction() as conn:
                 # Create collection first
                 coll_repo = CollectionRepository(conn)
@@ -131,7 +135,7 @@ def test_document_repository() -> bool:
                     pattern="**/*.md",
                 )
                 coll_repo.create(collection)
-                
+
                 # Create document
                 doc_repo = DocumentRepository(conn)
                 document = Document(
@@ -142,22 +146,23 @@ def test_document_repository() -> bool:
                 )
                 doc_repo.create(document)
                 print(f"✅ Document created: {document.title}")
-                
+
                 # Get by ID
                 retrieved = doc_repo.get_by_id(document.id)
                 assert retrieved is not None
                 assert retrieved.title == "Test Document"
                 print(f"✅ Document retrieved: {retrieved.title}")
-                
+
                 # List by collection
                 docs = doc_repo.list_by_collection(collection.id)
                 assert len(docs) == 1
                 print(f"✅ Listed {len(docs)} document(s)")
-                
+
         return True
     except Exception as e:
         print(f"❌ Document repository test failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -167,25 +172,26 @@ def test_chunker() -> bool:
     print("\nTesting chunker...")
     try:
         from docsift.indexing import create_chunker
-        
+
         chunker = create_chunker("fixed", chunk_size=100, overlap=20)
         text = "# Heading\n\nThis is paragraph 1.\n\nThis is paragraph 2.\n\n## Subheading\n\nMore content here."
-        
+
         chunks = chunker.chunk(text)
         assert len(chunks) > 0
         print(f"✅ Created {len(chunks)} chunks")
-        
+
         # Test markdown chunker
         md_chunker = create_chunker("markdown")
         md_text = "# Title\n\nContent 1\n\n## Section 1\n\nContent 2\n\n## Section 2\n\nContent 3"
         md_chunks = md_chunker.chunk(md_text)
         assert len(md_chunks) > 0
         print(f"✅ Markdown chunker created {len(md_chunks)} chunks")
-        
+
         return True
     except Exception as e:
         print(f"❌ Chunker test failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -196,34 +202,35 @@ def test_rrf() -> bool:
     try:
         from docsift.core.models import SearchResult
         from docsift.search.rrf import RRFFusion
-        
+
         rrf = RRFFusion(k=60)
-        
+
         # Create test results
         list1 = [
             SearchResult("doc1", "Doc 1", "/path/1", "coll", 0.9, rank=1),
             SearchResult("doc2", "Doc 2", "/path/2", "coll", 0.8, rank=2),
             SearchResult("doc3", "Doc 3", "/path/3", "coll", 0.7, rank=3),
         ]
-        
+
         list2 = [
             SearchResult("doc2", "Doc 2", "/path/2", "coll", 0.85, rank=1),
             SearchResult("doc3", "Doc 3", "/path/3", "coll", 0.75, rank=2),
             SearchResult("doc4", "Doc 4", "/path/4", "coll", 0.65, rank=3),
         ]
-        
+
         fused = rrf.fuse([list1, list2])
         assert len(fused) > 0
         print(f"✅ RRF fused {len(fused)} results")
-        
+
         # doc2 should be ranked highest (appears in both lists)
         assert fused[0].document_id in ["doc1", "doc2"]
         print(f"✅ Top result: {fused[0].document_id}")
-        
+
         return True
     except Exception as e:
         print(f"❌ RRF test failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -234,24 +241,25 @@ def test_cli() -> bool:
     try:
         from click.testing import CliRunner
         from docsift.cli.main import cli
-        
+
         runner = CliRunner()
-        
+
         # Test --help
         result = runner.invoke(cli, ["--help"])
         assert result.exit_code == 0
         assert "DocSift" in result.output
         print("✅ CLI --help works")
-        
+
         # Test --version
         result = runner.invoke(cli, ["--version"])
         assert result.exit_code == 0
         print("✅ CLI --version works")
-        
+
         return True
     except Exception as e:
         print(f"❌ CLI test failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -261,7 +269,7 @@ def test_scanner() -> bool:
     print("\nTesting scanner...")
     try:
         from docsift.indexing.scanner import FileScanner
-        
+
         with tempfile.TemporaryDirectory() as tmpdir:
             # Create test files
             test_dir = Path(tmpdir)
@@ -270,17 +278,18 @@ def test_scanner() -> bool:
             (test_dir / "subdir").mkdir()
             (test_dir / "subdir" / "test3.md").write_text("# Test 3")
             (test_dir / "ignore.txt").write_text("ignored")
-            
+
             scanner = FileScanner()
             result = scanner.scan(test_dir, pattern="**/*.md")
-            
+
             assert result.file_count == 3
             print(f"✅ Scanned {result.file_count} files")
-            
+
         return True
     except Exception as e:
         print(f"❌ Scanner test failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -290,7 +299,7 @@ def test_parser() -> bool:
     print("\nTesting parser...")
     try:
         from docsift.indexing.parser import MarkdownParser
-        
+
         with tempfile.TemporaryDirectory() as tmpdir:
             # Create test markdown file
             test_file = Path(tmpdir) / "test.md"
@@ -303,18 +312,19 @@ author: Test Author
 
 This is the content.
 """)
-            
+
             parser = MarkdownParser()
             parsed = parser.parse(test_file)
-            
+
             assert parsed.title == "Test Document"
             assert "Test Title" in parsed.content
             print(f"✅ Parsed: {parsed.title}")
-            
+
         return True
     except Exception as e:
         print(f"❌ Parser test failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -324,7 +334,7 @@ def main() -> int:
     print("=" * 60)
     print("DocSift Complete Test Suite")
     print("=" * 60)
-    
+
     tests = [
         ("Imports", test_imports),
         ("Database", test_database),
@@ -336,7 +346,7 @@ def main() -> int:
         ("Scanner", test_scanner),
         ("Parser", test_parser),
     ]
-    
+
     results = []
     for name, test_func in tests:
         try:
@@ -345,24 +355,25 @@ def main() -> int:
         except Exception as e:
             print(f"\n❌ {name} test crashed: {e}")
             import traceback
+
             traceback.print_exc()
             results.append((name, False))
-    
+
     # Print summary
     print("\n" + "=" * 60)
     print("Test Summary")
     print("=" * 60)
-    
+
     passed = sum(1 for _, p in results if p)
     total = len(results)
-    
+
     for name, p in results:
         status = "✅ PASSED" if p else "❌ FAILED"
         print(f"{name:30} {status}")
-    
+
     print("-" * 60)
     print(f"Total: {passed}/{total} tests passed")
-    
+
     if passed == total:
         print("\n🎉 All tests passed!")
         return 0

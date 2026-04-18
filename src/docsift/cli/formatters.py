@@ -20,6 +20,7 @@ console = Console()
 
 def format_json(data: Any, indent: int = 2) -> str:
     """Format data as JSON string."""
+
     def serialize(obj: Any) -> Any:
         if is_dataclass(obj):
             return asdict(obj)
@@ -28,7 +29,7 @@ def format_json(data: Any, indent: int = 2) -> str:
         elif hasattr(obj, "__dict__"):
             return obj.__dict__
         return str(obj)
-    
+
     return json.dumps(data, indent=indent, default=serialize, ensure_ascii=False)
 
 
@@ -36,7 +37,7 @@ def format_csv(data: List[Dict[str, Any]]) -> str:
     """Format list of dictionaries as CSV string."""
     if not data:
         return ""
-    
+
     output = io.StringIO()
     writer = csv.DictWriter(output, fieldnames=data[0].keys())
     writer.writeheader()
@@ -48,40 +49,37 @@ def format_markdown_table(data: List[Dict[str, Any]], title: Optional[str] = Non
     """Format list of dictionaries as Markdown table."""
     if not data:
         return ""
-    
+
     lines = []
     if title:
         lines.append(f"## {title}\n")
-    
+
     # Header
     headers = list(data[0].keys())
     lines.append("| " + " | ".join(headers) + " |")
     lines.append("| " + " | ".join(["---"] * len(headers)) + " |")
-    
+
     # Rows
     for row in data:
         values = [str(row.get(h, "")) for h in headers]
         lines.append("| " + " | ".join(values) + " |")
-    
+
     return "\n".join(lines)
 
 
 def format_xml(data: Any, root_tag: str = "root") -> str:
     """Format data as XML string."""
+
     def to_xml(obj: Any, tag: str) -> str:
         if isinstance(obj, dict):
-            children = "\n".join(
-                to_xml(v, k) for k, v in obj.items()
-            )
+            children = "\n".join(to_xml(v, k) for k, v in obj.items())
             return f"<{tag}>\n{children}\n</{tag}>"
         elif isinstance(obj, list):
-            children = "\n".join(
-                to_xml(item, "item") for item in obj
-            )
+            children = "\n".join(to_xml(item, "item") for item in obj)
             return f"<{tag}>\n{children}\n</{tag}>"
         else:
             return f"<{tag}>{obj}</{tag}>"
-    
+
     return f'<?xml version="1.0" encoding="UTF-8"?>\n{to_xml(data, root_tag)}'
 
 
@@ -104,8 +102,9 @@ def print_csv(data: List[Dict[str, Any]], console: Optional[Console] = None) -> 
     cons.print(format_csv(data))
 
 
-def print_markdown(data: List[Dict[str, Any]], title: Optional[str] = None, 
-                   console: Optional[Console] = None) -> None:
+def print_markdown(
+    data: List[Dict[str, Any]], title: Optional[str] = None, console: Optional[Console] = None
+) -> None:
     """Print data as Markdown table."""
     cons = console or Console()
     cons.print(format_markdown_table(data, title))
@@ -126,26 +125,27 @@ def print_files(paths: List[str], console: Optional[Console] = None) -> None:
         cons.print(path)
 
 
-def print_table(data: List[Dict[str, Any]], title: Optional[str] = None,
-                console: Optional[Console] = None) -> None:
+def print_table(
+    data: List[Dict[str, Any]], title: Optional[str] = None, console: Optional[Console] = None
+) -> None:
     """Print data as a rich table."""
     cons = console or Console()
-    
+
     if not data:
         cons.print("[yellow]No data to display[/yellow]")
         return
-    
+
     table = Table(title=title, box=box.ROUNDED)
-    
+
     # Add columns
     for key in data[0].keys():
         table.add_column(str(key), overflow="fold")
-    
+
     # Add rows
     for row in data:
         values = [str(row.get(k, "")) for k in data[0].keys()]
         table.add_row(*values)
-    
+
     cons.print(table)
 
 
@@ -173,20 +173,25 @@ def print_info(message: str, console: Optional[Console] = None) -> None:
     cons.print(f"[blue]ℹ[/blue] {message}")
 
 
-def print_panel(content: str, title: Optional[str] = None, 
-                border_style: str = "blue", console: Optional[Console] = None) -> None:
+def print_panel(
+    content: str,
+    title: Optional[str] = None,
+    border_style: str = "blue",
+    console: Optional[Console] = None,
+) -> None:
     """Print content in a panel."""
     cons = console or Console()
     panel = Panel(content, title=title, border_style=border_style)
     cons.print(panel)
 
 
-def print_tree(data: Dict[str, Any], title: str = "Tree", 
-               console: Optional[Console] = None) -> None:
+def print_tree(
+    data: Dict[str, Any], title: str = "Tree", console: Optional[Console] = None
+) -> None:
     """Print data as a tree structure."""
     cons = console or Console()
     tree = Tree(f"[bold]{title}[/bold]")
-    
+
     def add_branch(node: Tree, obj: Any) -> None:
         if isinstance(obj, dict):
             for key, value in obj.items():
@@ -198,16 +203,14 @@ def print_tree(data: Dict[str, Any], title: str = "Tree",
                 add_branch(branch, item)
         else:
             node.add(str(obj))
-    
+
     add_branch(tree, data)
     cons.print(tree)
 
 
 def prepend_line_numbers(content: str) -> str:
     """Prepend line numbers to each line of content."""
-    return "\n".join(
-        f"{i + 1:4d}: {line}" for i, line in enumerate(content.split("\n"))
-    )
+    return "\n".join(f"{i + 1:4d}: {line}" for i, line in enumerate(content.split("\n")))
 
 
 def add_line_numbers_to_results(
@@ -219,9 +222,7 @@ def add_line_numbers_to_results(
         row = dict(item)
         content = row.get(content_key, "")
         if content:
-            row["line_numbers"] = "\n".join(
-                f"{i + 1}" for i in range(len(content.split("\n")))
-            )
+            row["line_numbers"] = "\n".join(f"{i + 1}" for i in range(len(content.split("\n"))))
         else:
             row["line_numbers"] = ""
         formatted.append(row)
@@ -230,13 +231,13 @@ def add_line_numbers_to_results(
 
 class OutputFormatter:
     """Handles output formatting based on format option."""
-    
+
     FORMATS = ["table", "json", "csv", "md", "xml", "files"]
-    
+
     def __init__(self, format_type: str = "table", console: Optional[Console] = None):
         self.format_type = format_type
         self.console = console or Console()
-    
+
     def print(self, data: Any, title: Optional[str] = None) -> None:
         """Print data in the specified format."""
         if self.format_type == "json":

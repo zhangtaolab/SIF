@@ -43,17 +43,17 @@ def collection_add(
 ) -> None:
     """Add a new collection."""
     index_path = ctx.obj["index_path"]
-    
+
     db = Database(index_path)
     db.init_schema()
-    
+
     with db.transaction() as conn:
         repo = CollectionRepository(conn)
-        
+
         # Check if collection already exists
         if repo.exists(name):
             raise click.ClickException(f"Collection '{name}' already exists")
-        
+
         # Create collection
         collection = Collection(
             name=name,
@@ -63,9 +63,9 @@ def collection_add(
             include_by_default=not no_default,
             description=description,
         )
-        
+
         repo.create(collection)
-    
+
     console.print(f"[green]Collection '{name}' added successfully[/green]")
 
 
@@ -76,25 +76,26 @@ def collection_add(
 def collection_remove(ctx: click.Context, name: str) -> None:
     """Remove a collection."""
     index_path = ctx.obj["index_path"]
-    
+
     db = Database(index_path)
     db.init_schema()
-    
+
     with db.transaction() as conn:
         repo = CollectionRepository(conn)
-        
+
         collection = repo.get_by_name(name)
         if not collection:
             raise click.ClickException(f"Collection '{name}' not found")
-        
+
         # Delete documents first (cascade will handle chunks)
         from docsift.database.repositories import DocumentRepository
+
         doc_repo = DocumentRepository(conn)
         doc_repo.delete_by_collection(collection.id)
-        
+
         # Delete collection
         repo.delete(collection.id)
-    
+
     console.print(f"[green]Collection '{name}' removed[/green]")
 
 
@@ -105,24 +106,24 @@ def collection_remove(ctx: click.Context, name: str) -> None:
 def collection_rename(ctx: click.Context, old_name: str, new_name: str) -> None:
     """Rename a collection."""
     index_path = ctx.obj["index_path"]
-    
+
     db = Database(index_path)
     db.init_schema()
-    
+
     with db.transaction() as conn:
         repo = CollectionRepository(conn)
-        
+
         collection = repo.get_by_name(old_name)
         if not collection:
             raise click.ClickException(f"Collection '{old_name}' not found")
-        
+
         # Check if new name already exists
         if repo.exists(new_name):
             raise click.ClickException(f"Collection '{new_name}' already exists")
-        
+
         collection.name = new_name
         repo.update(collection)
-    
+
     console.print(f"[green]Collection renamed from '{old_name}' to '{new_name}'[/green]")
 
 
@@ -132,22 +133,22 @@ def collection_rename(ctx: click.Context, old_name: str, new_name: str) -> None:
 def collection_list(ctx: click.Context, verbose: bool) -> None:
     """List all collections."""
     index_path = ctx.obj["index_path"]
-    
+
     if not index_path.exists():
         console.print("[yellow]No index found.[/yellow]")
         return
-    
+
     db = Database(index_path)
     db.init_schema()
-    
+
     with db.connection:
         repo = CollectionRepository(db.connection)
         collections = repo.list_all()
-    
+
     if not collections:
         console.print("[yellow]No collections found.[/yellow]")
         return
-    
+
     if verbose:
         for collection in collections:
             console.print(f"\n[bold cyan]{collection.name}[/bold cyan]")
@@ -163,7 +164,7 @@ def collection_list(ctx: click.Context, verbose: bool) -> None:
         table.add_column("Path", style="green")
         table.add_column("Documents", style="yellow", justify="right")
         table.add_column("Default", style="blue")
-        
+
         for collection in collections:
             table.add_row(
                 collection.name,
@@ -171,7 +172,7 @@ def collection_list(ctx: click.Context, verbose: bool) -> None:
                 str(collection.document_count),
                 "✓" if collection.include_by_default else "✗",
             )
-        
+
         console.print(table)
 
 
@@ -181,17 +182,17 @@ def collection_list(ctx: click.Context, verbose: bool) -> None:
 def collection_show(ctx: click.Context, name: str) -> None:
     """Show collection details."""
     index_path = ctx.obj["index_path"]
-    
+
     db = Database(index_path)
     db.init_schema()
-    
+
     with db.connection:
         repo = CollectionRepository(db.connection)
         collection = repo.get_by_name(name)
-        
+
         if not collection:
             raise click.ClickException(f"Collection '{name}' not found")
-        
+
         console.print(f"[bold cyan]{collection.name}[/bold cyan]")
         console.print(f"  ID: {collection.id}")
         console.print(f"  Path: {collection.path}")
@@ -214,20 +215,20 @@ def collection_show(ctx: click.Context, name: str) -> None:
 def collection_enable(ctx: click.Context, name: str) -> None:
     """Enable a collection for default searches."""
     index_path = ctx.obj["index_path"]
-    
+
     db = Database(index_path)
     db.init_schema()
-    
+
     with db.transaction() as conn:
         repo = CollectionRepository(conn)
         collection = repo.get_by_name(name)
-        
+
         if not collection:
             raise click.ClickException(f"Collection '{name}' not found")
-        
+
         collection.include_by_default = True
         repo.update(collection)
-    
+
     console.print(f"[green]Collection '{name}' enabled[/green]")
 
 
@@ -338,6 +339,7 @@ def collection_ls(ctx: click.Context, name: str, subpath: Optional[str]) -> None
 
         # Scan files
         from docsift.indexing.scanner import FileScanner
+
         scanner = FileScanner()
         scan_result = scanner.scan(
             Path(collection.path),

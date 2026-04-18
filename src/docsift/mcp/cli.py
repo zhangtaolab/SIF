@@ -17,8 +17,8 @@ def setup_logging(level: str = "info"):
     """Setup logging configuration."""
     logging.basicConfig(
         level=getattr(logging, level.upper()),
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        stream=sys.stderr
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        stream=sys.stderr,
     )
 
 
@@ -37,69 +37,55 @@ Examples:
   
   # Run with debug logging
   %(prog)s http --log-level debug
-        """
+        """,
     )
-    
+
     subparsers = parser.add_subparsers(dest="command", help="Transport mode")
-    
+
     # Stdio mode
-    stdio_parser = subparsers.add_parser(
-        "stdio",
-        help="Run in stdio mode (for Claude Desktop)"
-    )
+    stdio_parser = subparsers.add_parser("stdio", help="Run in stdio mode (for Claude Desktop)")
     stdio_parser.add_argument(
         "--log-level",
         default="info",
         choices=["debug", "info", "warning", "error"],
-        help="Log level (default: info)"
+        help="Log level (default: info)",
     )
-    
+
     # HTTP mode
-    http_parser = subparsers.add_parser(
-        "http",
-        help="Run in HTTP mode"
-    )
+    http_parser = subparsers.add_parser("http", help="Run in HTTP mode")
+    http_parser.add_argument("--host", default="0.0.0.0", help="Host to bind to (default: 0.0.0.0)")
     http_parser.add_argument(
-        "--host",
-        default="0.0.0.0",
-        help="Host to bind to (default: 0.0.0.0)"
-    )
-    http_parser.add_argument(
-        "--port",
-        type=int,
-        default=8080,
-        help="Port to bind to (default: 8080)"
+        "--port", type=int, default=8080, help="Port to bind to (default: 8080)"
     )
     http_parser.add_argument(
         "--log-level",
         default="info",
         choices=["debug", "info", "warning", "error"],
-        help="Log level (default: info)"
+        help="Log level (default: info)",
     )
     http_parser.add_argument(
-        "--cors-origins",
-        nargs="*",
-        default=["*"],
-        help="CORS allowed origins (default: *)"
+        "--cors-origins", nargs="*", default=["*"], help="CORS allowed origins (default: *)"
     )
-    
+
     args = parser.parse_args()
-    
+
     if not args.command:
         parser.print_help()
         sys.exit(1)
-    
+
     setup_logging(args.log_level)
-    
+
     if args.command == "stdio":
         run_stdio()
     elif args.command == "http":
-        asyncio.run(run_http_server(
-            host=args.host,
-            port=args.port,
-            cors_origins=args.cors_origins,
-            log_level=args.log_level
-        ))
+        asyncio.run(
+            run_http_server(
+                host=args.host,
+                port=args.port,
+                cors_origins=args.cors_origins,
+                log_level=args.log_level,
+            )
+        )
 
 
 if __name__ == "__main__":

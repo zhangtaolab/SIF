@@ -15,6 +15,7 @@ import frontmatter
 @dataclass
 class ParsedDocument:
     """Result of parsing a document."""
+
     path: str
     content: str
     title: str
@@ -25,26 +26,26 @@ class ParsedDocument:
 
 class MarkdownParser:
     """Parser for Markdown documents."""
-    
+
     def __init__(self) -> None:
         self.title_pattern = re.compile(r"^#\s+(.+)$", re.MULTILINE)
-    
+
     def parse(self, file_path: Path) -> ParsedDocument:
         """Parse a markdown file.
-        
+
         Args:
             file_path: Path to the markdown file
-            
+
         Returns:
             Parsed document
         """
         # Read file
         content = file_path.read_text(encoding="utf-8")
-        
+
         # Get file stats
         stat = file_path.stat()
         mtime = stat.st_mtime
-        
+
         # Parse frontmatter
         try:
             post = frontmatter.loads(content)
@@ -53,7 +54,7 @@ class MarkdownParser:
         except Exception:
             body = content
             metadata = {}
-        
+
         # Extract title
         title = metadata.get("title", "")
         if not title:
@@ -64,10 +65,10 @@ class MarkdownParser:
             else:
                 # Use filename as title
                 title = file_path.stem
-        
+
         # Calculate checksum
         checksum = hashlib.sha256(content.encode()).hexdigest()
-        
+
         return ParsedDocument(
             path=str(file_path.resolve()),
             content=body,
@@ -80,12 +81,12 @@ class MarkdownParser:
 
 class TextParser:
     """Parser for plain text documents."""
-    
+
     def parse(self, file_path: Path) -> ParsedDocument:
         """Parse a text file."""
         content = file_path.read_text(encoding="utf-8")
         stat = file_path.stat()
-        
+
         # Use first line as title if not too long
         lines = content.split("\n")
         title = ""
@@ -94,12 +95,12 @@ class TextParser:
             if stripped and len(stripped) < 100:
                 title = stripped
                 break
-        
+
         if not title:
             title = file_path.stem
-        
+
         checksum = hashlib.sha256(content.encode()).hexdigest()
-        
+
         return ParsedDocument(
             path=str(file_path.resolve()),
             content=content,
@@ -112,7 +113,7 @@ class TextParser:
 
 class CodeParser:
     """Parser for code files."""
-    
+
     # File extensions to language mapping
     LANGUAGE_MAP = {
         ".py": "python",
@@ -141,19 +142,19 @@ class CodeParser:
         ".xml": "xml",
         ".sql": "sql",
     }
-    
+
     def parse(self, file_path: Path) -> ParsedDocument:
         """Parse a code file."""
         content = file_path.read_text(encoding="utf-8")
         stat = file_path.stat()
-        
+
         # Detect language
         ext = file_path.suffix.lower()
         language = self.LANGUAGE_MAP.get(ext, "text")
-        
+
         # Try to extract title from comments
         title = file_path.stem
-        
+
         # For Python, look for module docstring
         if language == "python":
             match = re.search(r'^[\'"]{3}(.+?)[\'"]{3}', content, re.MULTILINE | re.DOTALL)
@@ -162,9 +163,9 @@ class CodeParser:
                 first_line = docstring.split("\n")[0].strip()
                 if first_line:
                     title = first_line[:100]
-        
+
         checksum = hashlib.sha256(content.encode()).hexdigest()
-        
+
         return ParsedDocument(
             path=str(file_path.resolve()),
             content=content,
@@ -177,20 +178,20 @@ class CodeParser:
 
 def create_parser(file_path: Path) -> Optional[MarkdownParser | TextParser | CodeParser]:
     """Create appropriate parser for a file.
-    
+
     Args:
         file_path: Path to the file
-        
+
     Returns:
         Parser instance or None
     """
     ext = file_path.suffix.lower()
-    
+
     if ext in [".md", ".markdown", ".mdx"]:
         return MarkdownParser()
     elif ext in CodeParser.LANGUAGE_MAP:
         return CodeParser()
     elif ext in [".txt", ".rst", ".adoc"]:
         return TextParser()
-    
+
     return None

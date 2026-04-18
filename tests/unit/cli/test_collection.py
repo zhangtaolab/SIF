@@ -23,20 +23,19 @@ class TestCollectionUpdateCmd:
 
         mock_db = MagicMock()
         mock_conn = MagicMock()
-        mock_db.return_value.transaction.return_value.__enter__ = MagicMock(
-            return_value=mock_conn
-        )
-        mock_db.return_value.transaction.return_value.__exit__ = MagicMock(
-            return_value=False
-        )
+        mock_db.return_value.transaction.return_value.__enter__ = MagicMock(return_value=mock_conn)
+        mock_db.return_value.transaction.return_value.__exit__ = MagicMock(return_value=False)
         mock_db.return_value.init_schema = MagicMock()
 
         mock_repo = MagicMock()
         mock_repo.get_by_name.return_value = collection
 
-        with patch("docsift.cli.commands.collection.Database", mock_db), patch(
-            "docsift.cli.commands.collection.CollectionRepository",
-            return_value=mock_repo,
+        with (
+            patch("docsift.cli.commands.collection.Database", mock_db),
+            patch(
+                "docsift.cli.commands.collection.CollectionRepository",
+                return_value=mock_repo,
+            ),
         ):
             result = runner.invoke(
                 collection_update_cmd,
@@ -56,20 +55,19 @@ class TestCollectionUpdateCmd:
 
         mock_db = MagicMock()
         mock_conn = MagicMock()
-        mock_db.return_value.transaction.return_value.__enter__ = MagicMock(
-            return_value=mock_conn
-        )
-        mock_db.return_value.transaction.return_value.__exit__ = MagicMock(
-            return_value=False
-        )
+        mock_db.return_value.transaction.return_value.__enter__ = MagicMock(return_value=mock_conn)
+        mock_db.return_value.transaction.return_value.__exit__ = MagicMock(return_value=False)
         mock_db.return_value.init_schema = MagicMock()
 
         mock_repo = MagicMock()
         mock_repo.get_by_name.return_value = collection
 
-        with patch("docsift.cli.commands.collection.Database", mock_db), patch(
-            "docsift.cli.commands.collection.CollectionRepository",
-            return_value=mock_repo,
+        with (
+            patch("docsift.cli.commands.collection.Database", mock_db),
+            patch(
+                "docsift.cli.commands.collection.CollectionRepository",
+                return_value=mock_repo,
+            ),
         ):
             result = runner.invoke(
                 collection_update_cmd,
@@ -88,20 +86,19 @@ class TestCollectionUpdateCmd:
 
         mock_db = MagicMock()
         mock_conn = MagicMock()
-        mock_db.return_value.transaction.return_value.__enter__ = MagicMock(
-            return_value=mock_conn
-        )
-        mock_db.return_value.transaction.return_value.__exit__ = MagicMock(
-            return_value=False
-        )
+        mock_db.return_value.transaction.return_value.__enter__ = MagicMock(return_value=mock_conn)
+        mock_db.return_value.transaction.return_value.__exit__ = MagicMock(return_value=False)
         mock_db.return_value.init_schema = MagicMock()
 
         mock_repo = MagicMock()
         mock_repo.get_by_name.return_value = None
 
-        with patch("docsift.cli.commands.collection.Database", mock_db), patch(
-            "docsift.cli.commands.collection.CollectionRepository",
-            return_value=mock_repo,
+        with (
+            patch("docsift.cli.commands.collection.Database", mock_db),
+            patch(
+                "docsift.cli.commands.collection.CollectionRepository",
+                return_value=mock_repo,
+            ),
         ):
             result = runner.invoke(
                 collection_update_cmd,
@@ -123,24 +120,21 @@ class TestCollectionIncludeExclude:
 
         mock_db = MagicMock()
         mock_conn = MagicMock()
-        mock_db.return_value.transaction.return_value.__enter__ = MagicMock(
-            return_value=mock_conn
-        )
-        mock_db.return_value.transaction.return_value.__exit__ = MagicMock(
-            return_value=False
-        )
+        mock_db.return_value.transaction.return_value.__enter__ = MagicMock(return_value=mock_conn)
+        mock_db.return_value.transaction.return_value.__exit__ = MagicMock(return_value=False)
         mock_db.return_value.init_schema = MagicMock()
 
         mock_repo = MagicMock()
         mock_repo.get_by_name.return_value = collection
 
-        with patch("docsift.cli.commands.collection.Database", mock_db), patch(
-            "docsift.cli.commands.collection.CollectionRepository",
-            return_value=mock_repo,
+        with (
+            patch("docsift.cli.commands.collection.Database", mock_db),
+            patch(
+                "docsift.cli.commands.collection.CollectionRepository",
+                return_value=mock_repo,
+            ),
         ):
-            result = runner.invoke(
-                collection_include, ["notes"], obj={"index_path": MagicMock()}
-            )
+            result = runner.invoke(collection_include, ["notes"], obj={"index_path": MagicMock()})
 
         assert result.exit_code == 0
         assert collection.include_by_default is True
@@ -154,24 +148,21 @@ class TestCollectionIncludeExclude:
 
         mock_db = MagicMock()
         mock_conn = MagicMock()
-        mock_db.return_value.transaction.return_value.__enter__ = MagicMock(
-            return_value=mock_conn
-        )
-        mock_db.return_value.transaction.return_value.__exit__ = MagicMock(
-            return_value=False
-        )
+        mock_db.return_value.transaction.return_value.__enter__ = MagicMock(return_value=mock_conn)
+        mock_db.return_value.transaction.return_value.__exit__ = MagicMock(return_value=False)
         mock_db.return_value.init_schema = MagicMock()
 
         mock_repo = MagicMock()
         mock_repo.get_by_name.return_value = collection
 
-        with patch("docsift.cli.commands.collection.Database", mock_db), patch(
-            "docsift.cli.commands.collection.CollectionRepository",
-            return_value=mock_repo,
+        with (
+            patch("docsift.cli.commands.collection.Database", mock_db),
+            patch(
+                "docsift.cli.commands.collection.CollectionRepository",
+                return_value=mock_repo,
+            ),
         ):
-            result = runner.invoke(
-                collection_exclude, ["notes"], obj={"index_path": MagicMock()}
-            )
+            result = runner.invoke(collection_exclude, ["notes"], obj={"index_path": MagicMock()})
 
         assert result.exit_code == 0
         assert collection.include_by_default is False
@@ -185,9 +176,7 @@ class TestIndexPreUpdateHook:
     def test_index_update_runs_pre_update_cmd(self):
         """Test that index update runs pre-update command."""
         runner = CliRunner()
-        collection = Collection(
-            name="notes", path="/tmp/notes", pre_update_cmd="echo hello"
-        )
+        collection = Collection(name="notes", path="/tmp/notes", pre_update_cmd="echo hello")
 
         mock_db = MagicMock()
         mock_db.return_value.connection.__enter__ = MagicMock(
@@ -203,24 +192,24 @@ class TestIndexPreUpdateHook:
         mock_doc_repo.list_by_collection.return_value = []
 
         mock_scanner = MagicMock()
-        mock_scanner.return_value.scan.return_value = MagicMock(
-            file_count=0, files=[]
-        )
+        mock_scanner.return_value.scan.return_value = MagicMock(file_count=0, files=[])
 
-        with patch("docsift.cli.commands.index.Database", mock_db), patch(
-            "docsift.cli.commands.index.CollectionRepository",
-            return_value=mock_coll_repo,
-        ), patch(
-            "docsift.cli.commands.index.DocumentRepository",
-            return_value=mock_doc_repo,
-        ), patch(
-            "docsift.cli.commands.index.FileScanner", mock_scanner
-        ), patch(
-            "subprocess.run",
-            return_value=MagicMock(
-                returncode=0, stderr="", stdout=""
+        with (
+            patch("docsift.cli.commands.index.Database", mock_db),
+            patch(
+                "docsift.cli.commands.index.CollectionRepository",
+                return_value=mock_coll_repo,
             ),
-        ) as mock_run:
+            patch(
+                "docsift.cli.commands.index.DocumentRepository",
+                return_value=mock_doc_repo,
+            ),
+            patch("docsift.cli.commands.index.FileScanner", mock_scanner),
+            patch(
+                "subprocess.run",
+                return_value=MagicMock(returncode=0, stderr="", stdout=""),
+            ) as mock_run,
+        ):
             result = runner.invoke(
                 update_cmd,
                 ["--collection", "notes"],
@@ -228,17 +217,13 @@ class TestIndexPreUpdateHook:
             )
 
         assert result.exit_code == 0
-        mock_run.assert_called_once_with(
-            "echo hello", shell=True, capture_output=True, text=True
-        )
+        mock_run.assert_called_once_with("echo hello", shell=True, capture_output=True, text=True)
         assert "Running pre-update command" in result.output
 
     def test_index_update_fails_fast_on_pre_update_cmd_error(self):
         """Test that index update fails fast on pre-update command error."""
         runner = CliRunner()
-        collection = Collection(
-            name="notes", path="/tmp/notes", pre_update_cmd="echo hello"
-        )
+        collection = Collection(name="notes", path="/tmp/notes", pre_update_cmd="echo hello")
 
         mock_db = MagicMock()
         mock_db.return_value.connection.__enter__ = MagicMock(
@@ -254,18 +239,20 @@ class TestIndexPreUpdateHook:
 
         mock_scanner = MagicMock()
 
-        with patch("docsift.cli.commands.index.Database", mock_db), patch(
-            "docsift.cli.commands.index.CollectionRepository",
-            return_value=mock_coll_repo,
-        ), patch(
-            "docsift.cli.commands.index.DocumentRepository",
-            return_value=mock_doc_repo,
-        ), patch(
-            "docsift.cli.commands.index.FileScanner", mock_scanner
-        ), patch(
-            "subprocess.run",
-            return_value=MagicMock(
-                returncode=1, stderr="failed", stdout=""
+        with (
+            patch("docsift.cli.commands.index.Database", mock_db),
+            patch(
+                "docsift.cli.commands.index.CollectionRepository",
+                return_value=mock_coll_repo,
+            ),
+            patch(
+                "docsift.cli.commands.index.DocumentRepository",
+                return_value=mock_doc_repo,
+            ),
+            patch("docsift.cli.commands.index.FileScanner", mock_scanner),
+            patch(
+                "subprocess.run",
+                return_value=MagicMock(returncode=1, stderr="failed", stdout=""),
             ),
         ):
             result = runner.invoke(

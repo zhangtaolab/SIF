@@ -36,14 +36,14 @@ def index_group() -> None:
 def update_cmd(ctx: click.Context, collection: str | None, force: bool) -> None:
     """Update the index by scanning collections."""
     index_path = ctx.obj["index_path"]
-    
+
     db = Database(index_path)
     db.init_schema()
-    
+
     with db.connection:
         coll_repo = CollectionRepository(db.connection)
         doc_repo = DocumentRepository(db.connection)
-        
+
         # Get collections to update
         if collection:
             collections = [coll_repo.get_by_name(collection)]
@@ -51,19 +51,21 @@ def update_cmd(ctx: click.Context, collection: str | None, force: bool) -> None:
                 raise click.ClickException(f"Collection '{collection}' not found")
         else:
             collections = coll_repo.list_all()
-        
+
         if not collections:
-            console.print("[yellow]No collections found. Add one with 'docsift collection add'.[/yellow]")
+            console.print(
+                "[yellow]No collections found. Add one with 'docsift collection add'.[/yellow]"
+            )
             return
-        
+
         total_added = 0
         total_updated = 0
         total_removed = 0
-        
+
         for coll in collections:
             if not coll:
                 continue
-            
+
             console.print(f"\n[bold]Updating collection: {coll.name}[/bold]")
 
             if coll.pre_update_cmd:
@@ -86,26 +88,26 @@ def update_cmd(ctx: click.Context, collection: str | None, force: bool) -> None:
                 pattern=coll.pattern,
                 ignore_patterns=coll.ignore_patterns,
             )
-            
+
             console.print(f"  Found {scan_result.file_count} files")
-            
+
             # Get existing documents
             existing_docs = {d.path: d for d in doc_repo.list_by_collection(coll.id)}
             scanned_paths = set()
-            
+
             # Process each file
             parser = MarkdownParser()
-            
+
             with Progress(
                 SpinnerColumn(),
                 TextColumn("[progress.description]{task.description}"),
                 console=console,
             ) as progress:
                 task = progress.add_task(f"Indexing {coll.name}...", total=scan_result.file_count)
-                
+
                 for file_path in scan_result.files:
                     scanned_paths.add(str(file_path))
-                    
+
                     # Parse document
                     try:
                         parsed = parser.parse(file_path)
@@ -113,17 +115,17 @@ def update_cmd(ctx: click.Context, collection: str | None, force: bool) -> None:
                         console.print(f"  [red]Error parsing {file_path}: {e}[/red]")
                         progress.advance(task)
                         continue
-                    
+
                     # Check if document exists
                     existing = existing_docs.get(str(file_path))
-                    
+
                     if existing:
                         # Check if changed
                         if existing.checksum == parsed.checksum and not force:
                             console.print(f"  [dim]Unchanged: {file_path.name}[/dim]")
                             progress.advance(task)
                             continue
-                        
+
                         # Update document
                         existing.content = parsed.content
                         existing.title = parsed.title
@@ -143,21 +145,22 @@ def update_cmd(ctx: click.Context, collection: str | None, force: bool) -> None:
                         )
                         doc_repo.create(doc)
                         total_added += 1
-                    
+
                     progress.advance(task)
-            
+
             # Remove documents that no longer exist
             for path, doc in existing_docs.items():
                 if path not in scanned_paths:
                     doc_repo.delete(doc.id)
                     total_removed += 1
-            
+
             # Update collection stats
             coll.document_count = len(doc_repo.list_by_collection(coll.id))
             from datetime import datetime
+
             coll.last_indexed_at = datetime.utcnow()
             coll_repo.update(coll)
-        
+
         console.print(f"\n[green]Index updated:[/green]")
         console.print(f"  Added: {total_added}")
         console.print(f"  Updated: {total_updated}")
@@ -270,10 +273,7 @@ def embed_cmd(
 
             # Update collection stats
             documents = doc_repo.list_by_collection(coll.id)
-            coll.chunk_count = sum(
-                len(chunk_repo.get_by_document(d.id))
-                for d in documents
-            )
+            coll.chunk_count = sum(len(chunk_repo.get_by_document(d.id)) for d in documents)
             coll_repo.update(coll)
 
         console.print(f"\n[green]Embedding complete: {total_chunks} chunks embedded[/green]")
@@ -285,4 +285,5 @@ def index_status_cmd(ctx: click.Context) -> None:
     """Show index status."""
     # Delegate to main status command
     from docsift.cli.main import status_cmd
+
     ctx.invoke(status_cmd)

@@ -13,9 +13,9 @@ from docsift.models.search import SearchOptions, SearchResult, SearchType
 
 class CollectionFactory:
     """Factory for creating test collections."""
-    
+
     _counter = 0
-    
+
     @classmethod
     def create(
         cls,
@@ -29,7 +29,7 @@ class CollectionFactory:
     ) -> Collection:
         """Create a test collection."""
         cls._counter += 1
-        
+
         return Collection(
             id=id or str(uuid.uuid4()),
             name=name or f"test-collection-{cls._counter}",
@@ -41,7 +41,7 @@ class CollectionFactory:
             created_at=datetime.utcnow(),
             updated_at=datetime.utcnow(),
         )
-    
+
     @classmethod
     def create_batch(cls, count: int, **kwargs) -> list[Collection]:
         """Create multiple test collections."""
@@ -50,9 +50,9 @@ class CollectionFactory:
 
 class DocumentMetadataFactory:
     """Factory for creating test document metadata."""
-    
+
     _counter = 0
-    
+
     @classmethod
     def create(
         cls,
@@ -65,7 +65,7 @@ class DocumentMetadataFactory:
     ) -> DocumentMetadata:
         """Create test document metadata."""
         cls._counter += 1
-        
+
         return DocumentMetadata(
             title=title or f"Test Document {cls._counter}",
             author=author or "Test Author",
@@ -78,9 +78,9 @@ class DocumentMetadataFactory:
 
 class DocumentFactory:
     """Factory for creating test documents."""
-    
+
     _counter = 0
-    
+
     @classmethod
     def create(
         cls,
@@ -94,10 +94,12 @@ class DocumentFactory:
     ) -> Document:
         """Create a test document."""
         cls._counter += 1
-        
-        actual_content = content or f"This is test document content {cls._counter}.\n\nIt has multiple lines."
+
+        actual_content = (
+            content or f"This is test document content {cls._counter}.\n\nIt has multiple lines."
+        )
         checksum = hashlib.sha256(actual_content.encode()).hexdigest()
-        
+
         doc = Document(
             id=id or str(uuid.uuid4()),
             collection_id=collection_id or str(uuid.uuid4()),
@@ -109,15 +111,15 @@ class DocumentFactory:
             created_at=datetime.utcnow(),
             updated_at=datetime.utcnow(),
         )
-        
+
         if with_chunks:
             doc.chunks = DocumentChunkFactory.create_batch(
                 chunk_count,
                 document_id=doc.id,
             )
-        
+
         return doc
-    
+
     @classmethod
     def create_batch(
         cls,
@@ -132,9 +134,9 @@ class DocumentFactory:
 
 class DocumentChunkFactory:
     """Factory for creating test document chunks."""
-    
+
     _counter = 0
-    
+
     @classmethod
     def create(
         cls,
@@ -148,10 +150,10 @@ class DocumentChunkFactory:
     ) -> DocumentChunk:
         """Create a test document chunk."""
         cls._counter += 1
-        
+
         actual_start = start_line if start_line is not None else (cls._counter - 1) * 5
         actual_end = end_line if end_line is not None else actual_start + 4
-        
+
         return DocumentChunk(
             id=id or str(uuid.uuid4()),
             document_id=document_id or str(uuid.uuid4()),
@@ -161,7 +163,7 @@ class DocumentChunkFactory:
             token_count=token_count or 10,
             embedding=embedding,
         )
-    
+
     @classmethod
     def create_batch(
         cls,
@@ -176,9 +178,9 @@ class DocumentChunkFactory:
 
 class ContextFactory:
     """Factory for creating test contexts."""
-    
+
     _counter = 0
-    
+
     @classmethod
     def create(
         cls,
@@ -190,7 +192,7 @@ class ContextFactory:
     ) -> Context:
         """Create a test context."""
         cls._counter += 1
-        
+
         return Context(
             id=id or str(uuid.uuid4()),
             target_id=target_id or str(uuid.uuid4()),
@@ -200,7 +202,7 @@ class ContextFactory:
             created_at=datetime.utcnow(),
             updated_at=datetime.utcnow(),
         )
-    
+
     @classmethod
     def create_batch(cls, count: int, **kwargs) -> list[Context]:
         """Create multiple test contexts."""
@@ -209,7 +211,7 @@ class ContextFactory:
 
 class SearchOptionsFactory:
     """Factory for creating test search options."""
-    
+
     @classmethod
     def create(
         cls,
@@ -233,17 +235,17 @@ class SearchOptionsFactory:
             **kwargs,
         )
         return options
-    
+
     @classmethod
     def bm25(cls, **kwargs) -> SearchOptions:
         """Create BM25 search options."""
         return cls.create(search_type=SearchType.BM25, **kwargs)
-    
+
     @classmethod
     def vector(cls, **kwargs) -> SearchOptions:
         """Create vector search options."""
         return cls.create(search_type=SearchType.VECTOR, **kwargs)
-    
+
     @classmethod
     def hybrid(cls, **kwargs) -> SearchOptions:
         """Create hybrid search options."""
@@ -252,9 +254,9 @@ class SearchOptionsFactory:
 
 class SearchResultFactory:
     """Factory for creating test search results."""
-    
+
     _counter = 0
-    
+
     @classmethod
     def create(
         cls,
@@ -270,7 +272,7 @@ class SearchResultFactory:
     ) -> SearchResult:
         """Create a test search result."""
         cls._counter += 1
-        
+
         return SearchResult(
             document_id=document_id or str(uuid.uuid4()),
             document_path=document_path or f"/test/result_{cls._counter}.md",
@@ -283,18 +285,18 @@ class SearchResultFactory:
             highlights=highlights or ["matched term"],
             metadata=metadata or {"author": "Test"},
         )
-    
+
     @classmethod
     def create_batch(cls, count: int, **kwargs) -> list[SearchResult]:
         """Create multiple test search results with decreasing scores."""
         results = []
         base_score = kwargs.get("score", 0.95)
-        
+
         for i in range(count):
             result_kwargs = kwargs.copy()
             result_kwargs["score"] = base_score - (i * 0.05)
             results.append(cls.create(**result_kwargs))
-        
+
         return results
 
 
@@ -374,6 +376,7 @@ SAMPLE_SEARCH_QUERIES = [
 def get_sample_embedding(dim: int = 384) -> list[float]:
     """Get a sample embedding vector."""
     import random
+
     random.seed(42)
     return [random.random() for _ in range(dim)]
 
@@ -381,5 +384,6 @@ def get_sample_embedding(dim: int = 384) -> list[float]:
 def get_sample_embeddings(count: int, dim: int = 384) -> list[list[float]]:
     """Get multiple sample embedding vectors."""
     import random
+
     random.seed(42)
     return [[random.random() for _ in range(dim)] for _ in range(count)]

@@ -11,7 +11,7 @@ from docsift.config.constants import APP_NAME, DEFAULT_CHUNK_OVERLAP, DEFAULT_CH
 
 class Settings(BaseSettings):
     """Application settings using Pydantic Settings.
-    
+
     Settings are loaded from environment variables and .env files.
     Environment variables should be prefixed with DOCSIFT_.
     """
@@ -70,6 +70,7 @@ class Settings(BaseSettings):
     api_key: str | None = Field(
         default=None,
         description="API key for remote embedding models",
+        repr=False,
     )
     api_base: str | None = Field(
         default=None,
@@ -145,6 +146,26 @@ class Settings(BaseSettings):
         description="Whether to cache embeddings",
     )
 
+    @field_validator("model_type")
+    @classmethod
+    def validate_model_type(cls, v: str) -> str:
+        """Validate model_type is one of the supported backends."""
+        valid_types = {"sentence_transformers", "gguf", "openai", "modelscope", "huggingface"}
+        if v not in valid_types:
+            raise ValueError(f"Invalid model_type: {v}. Must be one of {sorted(valid_types)}")
+        return v
+
+    @field_validator("api_base")
+    @classmethod
+    def validate_api_base(cls, v: str | None) -> str | None:
+        """Validate api_base is an HTTP or HTTPS URL."""
+        if v is None:
+            return None
+        v_lower = v.lower()
+        if not v_lower.startswith("http://") and not v_lower.startswith("https://"):
+            raise ValueError("api_base must be an HTTP or HTTPS URL")
+        return v
+
     @field_validator("db_path", "cache_dir", mode="before")
     @classmethod
     def expand_path(cls, v: str | Path | None) -> Path | None:
@@ -170,6 +191,7 @@ class Settings(BaseSettings):
             return self.db_path
 
         from platformdirs import user_data_dir
+
         data_dir = Path(user_data_dir(self.app_name))
         data_dir.mkdir(parents=True, exist_ok=True)
         return data_dir / "docsift.db"
@@ -180,6 +202,7 @@ class Settings(BaseSettings):
             return self.cache_dir
 
         from platformdirs import user_cache_dir
+
         cache_dir = Path(user_cache_dir(self.app_name))
         cache_dir.mkdir(parents=True, exist_ok=True)
         return cache_dir
@@ -188,7 +211,7 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     """Get cached settings instance.
-    
+
     Uses lru_cache to ensure settings are loaded only once.
     """
     return Settings()

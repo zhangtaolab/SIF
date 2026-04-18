@@ -61,6 +61,8 @@ class TestContextAdd:
 
         assert result.exit_code == 0
         mock_repo.create.assert_called_once()
+        call_args = mock_repo.create.call_args[0][0]
+        assert call_args.context_type == "path"
 
     def test_add_collection_context_by_name(self, mock_db) -> None:
         """Test adding a collection context resolved by name."""
@@ -95,6 +97,7 @@ class TestContextAdd:
         mock_ctx_repo.create.assert_called_once()
         call_args = mock_ctx_repo.create.call_args[0][0]
         assert call_args.path == coll.id
+        assert call_args.context_type == "collection"
 
     def test_add_collection_context_by_id_fallback(self, mock_db) -> None:
         """Test adding a collection context with ID fallback."""
@@ -177,6 +180,7 @@ class TestContextAdd:
         mock_repo.create.assert_called_once()
         call_args = mock_repo.create.call_args[0][0]
         assert call_args.path == "global"
+        assert call_args.context_type == "global"
 
     def test_add_updates_existing(self, mock_db) -> None:
         """Test that adding to an existing target updates instead of creating."""
@@ -219,8 +223,9 @@ class TestContextList:
         ctx_obj = {"index_path": MagicMock(exists=lambda: True)}
 
         contexts = [
-            PathContext(path="/a.md", context="desc A"),
-            PathContext(path="/b.md", context="desc B"),
+            PathContext(path="/a.md", context="desc A", context_type="path"),
+            PathContext(path="coll-1", context="desc B", context_type="collection"),
+            PathContext(path="global", context="desc C", context_type="global"),
         ]
         with patch("docsift.cli.commands.context.Database") as MockDB:
             MockDB.return_value = mock_db
@@ -234,6 +239,8 @@ class TestContextList:
 
         assert result.exit_code == 0
         assert "desc A" in result.output
+        assert "collection" in result.output
+        assert "global" in result.output
 
     def test_list_filter_by_type(self, mock_db) -> None:
         """Test listing contexts filtered by type."""

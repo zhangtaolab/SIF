@@ -18,8 +18,7 @@ class VectorSearcher:
         self._vec_available = self._check_vec_extension()
         if not self._vec_available:
             raise RuntimeError(
-                "sqlite-vec extension is not available. "
-                "Install sqlite-vec to use vector search."
+                "sqlite-vec extension is not available. Install sqlite-vec to use vector search."
             )
 
     def _check_vec_extension(self) -> bool:
@@ -123,10 +122,7 @@ class VectorSearcher:
 
     def _get_document_content(self, document_id: str) -> Optional[str]:
         """Get document content."""
-        cursor = self.db.execute(
-            "SELECT content FROM documents WHERE id = ?",
-            (document_id,)
-        )
+        cursor = self.db.execute("SELECT content FROM documents WHERE id = ?", (document_id,))
         row = cursor.fetchone()
         return row[0] if row else None
 
@@ -156,7 +152,7 @@ class VectorSearcher:
             (embedding_id, document_id, chunk_id, embedding)
             VALUES (?, ?, ?, vec_f32(?))
             """,
-            (embedding_id, document_id, chunk_id, embedding_str)
+            (embedding_id, document_id, chunk_id, embedding_str),
         )
 
     def add_embeddings_batch(
@@ -169,10 +165,7 @@ class VectorSearcher:
         """
         if not items:
             return
-        rows = [
-            (eid, doc_id, chunk_id, json.dumps(vec))
-            for eid, doc_id, chunk_id, vec in items
-        ]
+        rows = [(eid, doc_id, chunk_id, json.dumps(vec)) for eid, doc_id, chunk_id, vec in items]
         self.db.executemany(
             """
             INSERT OR REPLACE INTO document_embeddings

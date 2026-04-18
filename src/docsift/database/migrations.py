@@ -116,10 +116,10 @@ CREATE VIRTUAL TABLE IF NOT EXISTS chunk_embeddings USING vec0(
 
 class MigrationManager:
     """Manages database schema migrations."""
-    
+
     def __init__(self, connection: "DatabaseConnection") -> None:
         self._connection = connection
-    
+
     def get_current_version(self) -> int:
         """Get the current schema version."""
         try:
@@ -129,46 +129,46 @@ class MigrationManager:
             return row["version"] if row else 0
         except Exception:
             return 0
-    
+
     def migrate(self, embedding_dim: int = 384) -> None:
         """Run all pending migrations."""
         current_version = self.get_current_version()
-        
+
         if current_version >= CURRENT_SCHEMA_VERSION:
             logger.info("Database schema is up to date")
             return
-        
+
         logger.info(
             f"Migrating database from version {current_version} to {CURRENT_SCHEMA_VERSION}"
         )
-        
+
         # Apply schema
         self._apply_schema(embedding_dim)
-        
+
         # Update version
         self._connection.execute(
             "INSERT INTO schema_version (version) VALUES (?)",
             (CURRENT_SCHEMA_VERSION,),
         )
-        
+
         logger.info("Database migration completed successfully")
-    
+
     def _apply_schema(self, embedding_dim: int) -> None:
         """Apply the database schema."""
         # Apply main schema
         self._connection.execute(SCHEMA_SQL)
-        
+
         # Apply FTS schema
         self._connection.execute(FTS_SQL)
-        
+
         # Apply vector schema
         vector_sql = VECTOR_SQL_TEMPLATE.format(dim=embedding_dim)
         self._connection.execute(vector_sql)
-    
+
     def reset(self) -> None:
         """Reset the database (drop all tables)."""
         logger.warning("Resetting database - all data will be lost")
-        
+
         tables = [
             "documents_fts",
             "chunk_embeddings",
@@ -178,11 +178,11 @@ class MigrationManager:
             "collections",
             "schema_version",
         ]
-        
+
         for table in tables:
             try:
                 self._connection.execute(f"DROP TABLE IF EXISTS {table}")
             except Exception as e:
                 logger.warning(f"Error dropping table {table}: {e}")
-        
+
         logger.info("Database reset completed")

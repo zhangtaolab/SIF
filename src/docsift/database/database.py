@@ -13,13 +13,13 @@ from docsift.database.schema import SchemaManager
 
 class Database:
     """Main database class for DocSift."""
-    
+
     def __init__(self, db_path: str | Path) -> None:
         self.db_path = Path(db_path).expanduser().resolve()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._connection: Optional[sqlite3.Connection] = None
         self._schema: Optional[SchemaManager] = None
-    
+
     @property
     def connection(self) -> sqlite3.Connection:
         """Get or create database connection."""
@@ -32,12 +32,12 @@ class Database:
             self._connection.row_factory = sqlite3.Row
             self._enable_extensions()
         return self._connection
-    
+
     def _enable_extensions(self) -> None:
         """Enable SQLite extensions."""
         # Enable FTS5
         self._connection.execute("PRAGMA foreign_keys = ON")
-        
+
         # Try to load sqlite-vec extension
         try:
             self._connection.enable_load_extension(True)
@@ -56,14 +56,15 @@ class Database:
                     continue
         except Exception:
             pass  # sqlite-vec is optional
-    
+
     def init_schema(self) -> None:
         """Initialize database schema."""
         from docsift.config.settings import get_settings
+
         settings = get_settings()
         self._schema = SchemaManager(self.connection, embedding_dim=settings.embedding_dim)
         self._schema.create_all()
-    
+
     @contextmanager
     def transaction(self) -> Generator[sqlite3.Connection, None, None]:
         """Execute operations in a transaction."""
@@ -74,25 +75,26 @@ class Database:
         except Exception:
             conn.rollback()
             raise
-    
+
     def close(self) -> None:
         """Close database connection."""
         if self._connection:
             self._connection.close()
             self._connection = None
-    
+
     def __enter__(self) -> Database:
         """Context manager entry."""
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         """Context manager exit."""
         self.close()
-    
+
     def get_stats(self) -> dict:
         """Get database statistics."""
         if self._schema is None:
             from docsift.config.settings import get_settings
+
             settings = get_settings()
             self._schema = SchemaManager(self.connection, embedding_dim=settings.embedding_dim)
         return self._schema.get_stats()
@@ -101,6 +103,7 @@ class Database:
         """Reset database (drop all tables)."""
         if self._schema is None:
             from docsift.config.settings import get_settings
+
             settings = get_settings()
             self._schema = SchemaManager(self.connection, embedding_dim=settings.embedding_dim)
         self._schema.drop_all()
@@ -109,11 +112,11 @@ class Database:
 
 class DatabaseConnection:
     """Lightweight database connection wrapper."""
-    
+
     def __init__(self, db_path: str | Path) -> None:
         self.db_path = Path(db_path).expanduser().resolve()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-    
+
     @contextmanager
     def connect(self) -> Generator[sqlite3.Connection, None, None]:
         """Create a connection context."""
@@ -124,7 +127,7 @@ class DatabaseConnection:
         )
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
-        
+
         # Try to enable extensions
         try:
             conn.enable_load_extension(True)
@@ -134,7 +137,7 @@ class DatabaseConnection:
                 pass
         except Exception:
             pass
-        
+
         try:
             yield conn
             conn.commit()

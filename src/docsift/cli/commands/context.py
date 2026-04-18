@@ -66,6 +66,7 @@ def context_add(
             path_context = PathContext(
                 path=actual_target,
                 context=content,
+                context_type=type,
             )
             repo.create(path_context)
             console.print(f"[green]Context added for {type} '{target}'[/green]")
@@ -129,7 +130,7 @@ def context_list(ctx: click.Context, context_type: Optional[str]) -> None:
         content_text = ctx_item.context
         if len(content_text) > 50:
             content_text = content_text[:47] + "..."
-        table.add_row("path", ctx_item.path, content_text)
+        table.add_row(ctx_item.context_type, ctx_item.path, content_text)
 
     console.print(table)
 

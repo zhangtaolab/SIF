@@ -7,10 +7,10 @@
 ## Phases
 
 - [x] **Phase 1: Foundation Fix** - Fix bugs, remove stubs, and make the core infrastructure trustworthy
-- [ ] **Phase 2: CLI Core Completion** - Complete missing CLI commands for document retrieval and collection management
-- [ ] **Phase 3: Embedding & Vector Search** - Enable configurable embedding backends and working semantic search
-- [ ] **Phase 4: Advanced Search Pipeline** - Add reranking, query expansion, explainability, and search quality controls
-- [ ] **Phase 5: Agent Context Experience** - Allow users to augment collections with contextual descriptions for better retrieval
+- [x] **Phase 2: CLI Core Completion** - Complete missing CLI commands for document retrieval and collection management
+- [x] **Phase 3: Embedding & Vector Search** - Enable configurable embedding backends and working semantic search
+- [x] **Phase 4: Advanced Search Pipeline** - Add reranking, query expansion, explainability, and search quality controls
+- [x] **Phase 5: Agent Context Experience** - Allow users to augment collections with contextual descriptions for better retrieval
 
 ## Phase Details
 
@@ -48,14 +48,15 @@ Plans:
   4. User can include or exclude collections from default queries with `collection include/exclude`
   5. User can download and verify local GGUF model files with `pull`
   6. Search and retrieval output can display line numbers via `--line-numbers`
-**Plans:** 3/6 plans executed
+**Plans:** 6/6 plans executed
 
 Plans:
 - [x] 02-01-PLAN.md — Implement multi-get batch document retrieval (CLI-01)
 - [x] 02-02-PLAN.md — Implement ls virtual file tree for indexed documents (CLI-02)
-- [ ] 02-03-PLAN.md — Add collection update-cmd, include/exclude, and wire --all in search (CLI-03, CLI-04)
+- [x] 02-03-PLAN.md — Add collection update-cmd, include/exclude, and wire --all in search (CLI-03, CLI-04)
 - [x] 02-04-PLAN.md — Implement pull for downloading GGUF model files (CLI-05)
 - [x] 02-05-PLAN.md — Add --line-numbers to get, multi-get, search, query, and vsearch (CLI-08)
+- [x] 02-06-PLAN.md — Add collection enable/disable commands
 
 ### Phase 3: Embedding & Vector Search
 **Goal**: Users can perform semantic vector search with configurable embedding backends.
@@ -66,7 +67,7 @@ Plans:
   2. Vector search uses `sqlite-vec` and refuses brute-force Python fallback on large indexes
   3. Document indexing benefits from batch embedding insertion for better performance
   4. User can download embedding models from ModelScope as an alternative to HuggingFace
-**Plans:** 6 plans
+**Plans:** 6/6 plans executed
 
 Plans:
 - [x] 03-01-PLAN.md — Add Settings fields for embedding backends and create unit tests (VEC-01)
@@ -92,11 +93,11 @@ Plans:
 **Plans:** 5 plans
 
 Plans:
-- [ ] 04-01-PLAN.md — Extend core models, add reranker settings, implement CrossEncoderReranker, fix RRF score preservation (SRCH-01, SRCH-04, SRCH-05)
-- [ ] 04-02-PLAN.md — Implement QueryExpansion with embedding-based PRF and SmartSnippetExtractor (SRCH-02, SRCH-07)
-- [ ] 04-03-PLAN.md — Wire SearchPipeline with prefix routing, explainability, candidate capping; update CLI commands (SRCH-03, SRCH-04, SRCH-05, SRCH-06, CLI-06, CLI-07)
-- [ ] 04-04-PLAN.md — Implement bench command with SearchEvaluator and benchmark metrics (SRCH-08)
-- [ ] 04-05-PLAN.md — Fix broken tests and run full quality suite
+- [x] 04-01-PLAN.md — Extend core models, add reranker settings, implement CrossEncoderReranker, fix RRF score preservation (SRCH-01, SRCH-04, SRCH-05)
+- [x] 04-02-PLAN.md — Implement QueryExpansion with embedding-based PRF and SmartSnippetExtractor (SRCH-02, SRCH-07)
+- [x] 04-03-PLAN.md — Wire SearchPipeline with prefix routing, explainability, candidate capping; update CLI commands (SRCH-03, SRCH-04, SRCH-05, SRCH-06, CLI-06, CLI-07)
+- [x] 04-04-PLAN.md — Implement bench command with SearchEvaluator and benchmark metrics (SRCH-08)
+- [x] 04-05-PLAN.md — Fix broken tests and run full quality suite
 
 ### Phase 5: Agent Context Experience
 **Goal**: Users can augment document collections with contextual descriptions to improve retrieval quality for agent workflows.
@@ -106,20 +107,23 @@ Plans:
   1. User can add contextual descriptions to paths or collections via `context add`
   2. User can list and remove contextual descriptions via `context list` and `context rm`
   3. Search results include relevant contextual descriptions alongside document content
-**Plans:** 4 plans
+**Plans:** 7 plans (4 original + 3 gap closure)
 
 Plans:
 - [x] 05-01-PLAN.md — Migrate path_contexts to unified contexts table, rename repository, add SearchResult field (CTX-01)
 - [x] 05-02-PLAN.md — Implement context CLI: add (all types), list --type, remove/rm alias, prune (CTX-01, CTX-02)
 - [x] 05-03-PLAN.md — Attach path context descriptions to BM25, vector, and hybrid search results (CTX-03)
 - [x] 05-04-PLAN.md — Write unit tests for migration, repository, CLI, and search integration
+- [ ] 05-05-PLAN.md — Fix context_type storage and display (Gaps 1, 2, 3, 6)
+- [ ] 05-06-PLAN.md — Fix path normalization in search context attachment (Gap 4)
+- [ ] 05-07-PLAN.md — Fix status command DB path to respect DOCSIFT_DB_PATH (Gap 5)
 
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation Fix | 6/6 | Complete | - |
-| 2. CLI Core Completion | 3/6 | In Progress|  |
-| 3. Embedding & Vector Search | 0/TBD | Not started | - |
-| 4. Advanced Search Pipeline | 0/5 | Planned | - |
-| 5. Agent Context Experience | 0/4 | Planned | - |
+| 1. Foundation Fix | 6/6 | Complete | 2026-04-14 |
+| 2. CLI Core Completion | 6/6 | Complete | 2026-04-15 |
+| 3. Embedding & Vector Search | 6/6 | Complete | 2026-04-16 |
+| 4. Advanced Search Pipeline | 5/5 | Complete | 2026-04-17 |
+| 5. Agent Context Experience | 4/7 | Gap Closure | 2026-04-18 |

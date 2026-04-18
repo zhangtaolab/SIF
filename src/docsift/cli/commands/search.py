@@ -250,7 +250,9 @@ def vsearch_cmd(
     index_path = ctx.obj["index_path"]
 
     if not index_path.exists():
-        console.print("[yellow]No index found. Run 'docsift update' and 'docsift embed' first.[/yellow]")
+        console.print(
+            "[yellow]No index found. Run 'docsift update' and 'docsift embed' first.[/yellow]"
+        )
         return
 
     from docsift.config.settings import get_settings
@@ -537,8 +539,6 @@ def query_cmd(
 
         if explain:
             for r in results:
-                scores_str = ", ".join(
-                    f"{k}={v:.4f}" for k, v in r.scores.items() if v is not None
-                )
+                scores_str = ", ".join(f"{k}={v:.4f}" for k, v in r.scores.items() if v is not None)
                 if scores_str:
                     console.print(f"[dim]{r.title}: {scores_str}[/dim]")

@@ -172,6 +172,7 @@ class PathContext:
     context: str
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     collection_id: Optional[str] = None
+    context_type: str = "path"
     created_at: datetime = field(default_factory=datetime.utcnow)
     updated_at: datetime = field(default_factory=datetime.utcnow)
 
@@ -181,6 +182,7 @@ class PathContext:
             "id": self.id,
             "path": self.path,
             "collection_id": self.collection_id,
+            "context_type": self.context_type,
             "context": self.context,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),

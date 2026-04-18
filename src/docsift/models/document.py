@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, ConfigDict
 
 class DocumentMetadata(BaseModel):
     """Document metadata extracted from frontmatter."""
-    
+
     title: str | None = None
     author: str | None = None
     date: datetime | None = None
@@ -19,30 +19,30 @@ class DocumentMetadata(BaseModel):
 
 class DocumentBase(BaseModel):
     """Base model for Document data."""
-    
+
     path: str = Field(..., description="File system path")
     content: str = Field(..., description="Document content")
 
 
 class DocumentCreate(DocumentBase):
     """Model for creating a new document."""
-    
+
     collection_id: str = Field(..., description="Parent collection ID")
     metadata: DocumentMetadata = Field(default_factory=DocumentMetadata)
 
 
 class DocumentUpdate(BaseModel):
     """Model for updating a document."""
-    
+
     content: str | None = None
     metadata: DocumentMetadata | None = None
 
 
 class ChunkResponse(BaseModel):
     """Model for document chunk response."""
-    
+
     model_config = ConfigDict(from_attributes=True)
-    
+
     id: str = Field(..., description="Chunk ID")
     content: str = Field(..., description="Chunk content")
     start_line: int = Field(..., ge=0)
@@ -53,9 +53,9 @@ class ChunkResponse(BaseModel):
 
 class DocumentResponse(DocumentBase):
     """Model for document response data."""
-    
+
     model_config = ConfigDict(from_attributes=True)
-    
+
     id: str = Field(..., description="Unique document ID")
     collection_id: str = Field(..., description="Parent collection ID")
     metadata: DocumentMetadata = Field(default_factory=DocumentMetadata)
@@ -69,7 +69,7 @@ class DocumentResponse(DocumentBase):
 
 class DocumentSearchResult(BaseModel):
     """Model for document search result."""
-    
+
     document: DocumentResponse
     score: float = Field(..., ge=0, le=1)
     matched_chunks: list[ChunkResponse] = Field(default_factory=list)

@@ -10,23 +10,23 @@ logger = get_logger(__name__)
 
 class SearchTool(ToolHandler):
     """MCP tool for searching documents."""
-    
+
     def __init__(self, search_service: "SearchService") -> None:
         """Initialize search tool.
-        
+
         Args:
             search_service: Search service instance
         """
         self._search_service = search_service
-    
+
     @property
     def name(self) -> str:
         return "search"
-    
+
     @property
     def description(self) -> str:
         return "Search indexed documents using full-text and semantic search"
-    
+
     @property
     def input_schema(self) -> dict[str, Any]:
         return {
@@ -54,16 +54,16 @@ class SearchTool(ToolHandler):
             },
             "required": ["query"],
         }
-    
+
     def handle(self, params: dict[str, Any]) -> dict[str, Any]:
         """Handle search tool call."""
         query = params.get("query", "")
         collection = params.get("collection")
         limit = params.get("limit", 10)
         search_type = params.get("search_type", "hybrid")
-        
+
         logger.info(f"Search tool called: query='{query}', type='{search_type}'")
-        
+
         # Placeholder: actual implementation would call search service
         return {
             "content": [
@@ -77,23 +77,23 @@ class SearchTool(ToolHandler):
 
 class IndexTool(ToolHandler):
     """MCP tool for indexing documents."""
-    
+
     def __init__(self, indexer: "DocumentIndexer") -> None:
         """Initialize index tool.
-        
+
         Args:
             indexer: Document indexer instance
         """
         self._indexer = indexer
-    
+
     @property
     def name(self) -> str:
         return "index"
-    
+
     @property
     def description(self) -> str:
         return "Index documents in a collection"
-    
+
     @property
     def input_schema(self) -> dict[str, Any]:
         return {
@@ -110,14 +110,14 @@ class IndexTool(ToolHandler):
             },
             "required": ["collection"],
         }
-    
+
     def handle(self, params: dict[str, Any]) -> dict[str, Any]:
         """Handle index tool call."""
         collection = params.get("collection", "")
         path = params.get("path")
-        
+
         logger.info(f"Index tool called: collection='{collection}'")
-        
+
         return {
             "content": [
                 {
@@ -130,23 +130,23 @@ class IndexTool(ToolHandler):
 
 class CollectionTool(ToolHandler):
     """MCP tool for managing collections."""
-    
+
     def __init__(self, collection_manager: "CollectionManager") -> None:
         """Initialize collection tool.
-        
+
         Args:
             collection_manager: Collection manager instance
         """
         self._collection_manager = collection_manager
-    
+
     @property
     def name(self) -> str:
         return "collection"
-    
+
     @property
     def description(self) -> str:
         return "List, create, or manage document collections"
-    
+
     @property
     def input_schema(self) -> dict[str, Any]:
         return {
@@ -168,15 +168,15 @@ class CollectionTool(ToolHandler):
             },
             "required": ["action"],
         }
-    
+
     def handle(self, params: dict[str, Any]) -> dict[str, Any]:
         """Handle collection tool call."""
         action = params.get("action", "list")
         name = params.get("name")
         path = params.get("path")
-        
+
         logger.info(f"Collection tool called: action='{action}'")
-        
+
         if action == "list":
             return {
                 "content": [
@@ -204,7 +204,7 @@ class CollectionTool(ToolHandler):
                     },
                 ],
             }
-        
+
         return {
             "content": [
                 {

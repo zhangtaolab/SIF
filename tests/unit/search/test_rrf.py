@@ -113,7 +113,9 @@ def vector_results() -> list[SearchResult]:
 class TestRRFBasicFusion:
     """Test basic RRF fusion functionality."""
 
-    def test_fuse_single_list(self, rrf_fusion: RRFFusion, sample_search_results: list[SearchResult]) -> None:
+    def test_fuse_single_list(
+        self, rrf_fusion: RRFFusion, sample_search_results: list[SearchResult]
+    ) -> None:
         """Test fusing a single result list.
 
         Arrange: Create single result list
@@ -133,7 +135,12 @@ class TestRRFBasicFusion:
         assert fused[0].score > 0
         assert fused[0].document_id == sample_search_results[0].document_id
 
-    def test_fuse_multiple_lists(self, rrf_fusion: RRFFusion, bm25_results: list[SearchResult], vector_results: list[SearchResult]) -> None:
+    def test_fuse_multiple_lists(
+        self,
+        rrf_fusion: RRFFusion,
+        bm25_results: list[SearchResult],
+        vector_results: list[SearchResult],
+    ) -> None:
         """Test fusing multiple result lists.
 
         Arrange: Create two result lists with overlapping documents
@@ -159,7 +166,12 @@ class TestRRFBasicFusion:
         # All scores should be positive
         assert all(r.score > 0 for r in fused)
 
-    def test_fuse_preserves_document_info(self, rrf_fusion: RRFFusion, bm25_results: list[SearchResult], vector_results: list[SearchResult]) -> None:
+    def test_fuse_preserves_document_info(
+        self,
+        rrf_fusion: RRFFusion,
+        bm25_results: list[SearchResult],
+        vector_results: list[SearchResult],
+    ) -> None:
         """Test that fusion preserves document metadata.
 
         Arrange: Create result lists with full metadata
@@ -194,7 +206,9 @@ class TestRRFBasicFusion:
         # Assert
         assert fused == []
 
-    def test_fuse_single_empty_list(self, rrf_fusion: RRFFusion, sample_search_results: list[SearchResult]) -> None:
+    def test_fuse_single_empty_list(
+        self, rrf_fusion: RRFFusion, sample_search_results: list[SearchResult]
+    ) -> None:
         """Test fusing with one empty list.
 
         Arrange: Create one empty and one non-empty list
@@ -245,7 +259,9 @@ class TestRRFKValues:
         # Assert
         assert fusion.k == 100
 
-    def test_k_value_effect_on_scores(self, bm25_results: list[SearchResult], vector_results: list[SearchResult]) -> None:
+    def test_k_value_effect_on_scores(
+        self, bm25_results: list[SearchResult], vector_results: list[SearchResult]
+    ) -> None:
         """Test that k value affects score distribution.
 
         Arrange: Create two RRF instances with different k values
@@ -268,7 +284,9 @@ class TestRRFKValues:
         high_k_spread = fused_high_k[0].score - fused_high_k[-1].score
         assert low_k_spread > high_k_spread
 
-    def test_override_k_in_fuse(self, rrf_fusion: RRFFusion, bm25_results: list[SearchResult]) -> None:
+    def test_override_k_in_fuse(
+        self, rrf_fusion: RRFFusion, bm25_results: list[SearchResult]
+    ) -> None:
         """Test overriding k value in fuse method.
 
         Arrange: Create RRF with default k, override in fuse
@@ -317,7 +335,12 @@ class TestRRFKValues:
 class TestRRFWeightedFusion:
     """Test RRF with weighted result lists."""
 
-    def test_equal_weights(self, rrf_fusion: RRFFusion, bm25_results: list[SearchResult], vector_results: list[SearchResult]) -> None:
+    def test_equal_weights(
+        self,
+        rrf_fusion: RRFFusion,
+        bm25_results: list[SearchResult],
+        vector_results: list[SearchResult],
+    ) -> None:
         """Test fusion with equal weights.
 
         Arrange: Create result lists with equal weights
@@ -336,7 +359,12 @@ class TestRRFWeightedFusion:
         # doc-A appears in both at rank 1, should be first
         assert fused[0].document_id == "doc-A"
 
-    def test_unequal_weights(self, rrf_fusion: RRFFusion, bm25_results: list[SearchResult], vector_results: list[SearchResult]) -> None:
+    def test_unequal_weights(
+        self,
+        rrf_fusion: RRFFusion,
+        bm25_results: list[SearchResult],
+        vector_results: list[SearchResult],
+    ) -> None:
         """Test fusion with unequal weights.
 
         Arrange: Create result lists with different weights
@@ -363,7 +391,12 @@ class TestRRFWeightedFusion:
         doc_b = next(r for r in fused if r.document_id == "doc-B")
         assert doc_c.score > doc_b.score
 
-    def test_zero_weight(self, rrf_fusion: RRFFusion, bm25_results: list[SearchResult], vector_results: list[SearchResult]) -> None:
+    def test_zero_weight(
+        self,
+        rrf_fusion: RRFFusion,
+        bm25_results: list[SearchResult],
+        vector_results: list[SearchResult],
+    ) -> None:
         """Test fusion with zero weight for one list.
 
         Arrange: Create result lists, one with zero weight
@@ -393,7 +426,9 @@ class TestRRFWeightedFusion:
         if doc_d:
             assert doc_d.score == 0.0
 
-    def test_weights_length_mismatch(self, rrf_fusion: RRFFusion, bm25_results: list[SearchResult]) -> None:
+    def test_weights_length_mismatch(
+        self, rrf_fusion: RRFFusion, bm25_results: list[SearchResult]
+    ) -> None:
         """Test fusion with mismatched weights length.
 
         Arrange: Create result lists with fewer weights than lists
@@ -418,7 +453,9 @@ class TestRRFWeightedFusion:
 class TestRRFEdgeCases:
     """Test RRF edge cases and boundary conditions."""
 
-    def test_identical_result_lists(self, rrf_fusion: RRFFusion, sample_search_results: list[SearchResult]) -> None:
+    def test_identical_result_lists(
+        self, rrf_fusion: RRFFusion, sample_search_results: list[SearchResult]
+    ) -> None:
         """Test fusing identical result lists.
 
         Arrange: Create two identical result lists
@@ -447,12 +484,20 @@ class TestRRFEdgeCases:
         """
         # Arrange
         list1 = [
-            SearchResult(document_id="doc-1", path="/a/1.md", title="T1", collection_name="c", score=0.9),
-            SearchResult(document_id="doc-2", path="/a/2.md", title="T2", collection_name="c", score=0.8),
+            SearchResult(
+                document_id="doc-1", path="/a/1.md", title="T1", collection_name="c", score=0.9
+            ),
+            SearchResult(
+                document_id="doc-2", path="/a/2.md", title="T2", collection_name="c", score=0.8
+            ),
         ]
         list2 = [
-            SearchResult(document_id="doc-3", path="/b/3.md", title="T3", collection_name="c", score=0.85),
-            SearchResult(document_id="doc-4", path="/b/4.md", title="T4", collection_name="c", score=0.75),
+            SearchResult(
+                document_id="doc-3", path="/b/3.md", title="T3", collection_name="c", score=0.85
+            ),
+            SearchResult(
+                document_id="doc-4", path="/b/4.md", title="T4", collection_name="c", score=0.75
+            ),
         ]
         result_lists = [list1, list2]
 
@@ -472,8 +517,16 @@ class TestRRFEdgeCases:
         Assert: Correctly fuses single-item lists
         """
         # Arrange
-        list1 = [SearchResult(document_id="doc-A", path="/a.md", title="T", collection_name="c", score=1.0)]
-        list2 = [SearchResult(document_id="doc-B", path="/b.md", title="T", collection_name="c", score=1.0)]
+        list1 = [
+            SearchResult(
+                document_id="doc-A", path="/a.md", title="T", collection_name="c", score=1.0
+            )
+        ]
+        list2 = [
+            SearchResult(
+                document_id="doc-B", path="/b.md", title="T", collection_name="c", score=1.0
+            )
+        ]
         result_lists = [list1, list2]
 
         # Act
@@ -493,7 +546,9 @@ class TestRRFEdgeCases:
         """
         # Arrange
         base_list = [
-            SearchResult(document_id=f"doc-{i}", path=f"/{i}.md", title="T", collection_name="c", score=0.9)
+            SearchResult(
+                document_id=f"doc-{i}", path=f"/{i}.md", title="T", collection_name="c", score=0.9
+            )
             for i in range(5)
         ]
         result_lists = [base_list.copy() for _ in range(10)]
@@ -536,12 +591,20 @@ class TestRRFEdgeCases:
         """
         # Arrange
         list1 = [
-            SearchResult(document_id="doc-1", path="/1.md", title="T", collection_name="c", score=0.9),
-            SearchResult(document_id="doc-2", path="/2.md", title="T", collection_name="c", score=0.8),
+            SearchResult(
+                document_id="doc-1", path="/1.md", title="T", collection_name="c", score=0.9
+            ),
+            SearchResult(
+                document_id="doc-2", path="/2.md", title="T", collection_name="c", score=0.8
+            ),
         ]
         list2 = [
-            SearchResult(document_id="doc-2", path="/2.md", title="T", collection_name="c", score=0.85),
-            SearchResult(document_id="doc-1", path="/1.md", title="T", collection_name="c", score=0.75),
+            SearchResult(
+                document_id="doc-2", path="/2.md", title="T", collection_name="c", score=0.85
+            ),
+            SearchResult(
+                document_id="doc-1", path="/1.md", title="T", collection_name="c", score=0.75
+            ),
         ]
 
         # Act
@@ -575,10 +638,14 @@ class TestRRFScoreCalculation:
         """
         # Arrange
         list1 = [
-            SearchResult(document_id="doc-X", path="/x.md", title="T", collection_name="c", score=0.9),
+            SearchResult(
+                document_id="doc-X", path="/x.md", title="T", collection_name="c", score=0.9
+            ),
         ]
         list2 = [
-            SearchResult(document_id="doc-X", path="/x.md", title="T", collection_name="c", score=0.8),
+            SearchResult(
+                document_id="doc-X", path="/x.md", title="T", collection_name="c", score=0.8
+            ),
         ]
         k = 60
 
@@ -601,7 +668,13 @@ class TestRRFScoreCalculation:
         """
         # Arrange
         results = [
-            SearchResult(document_id=f"doc-{i}", path=f"/{i}.md", title="T", collection_name="c", score=0.9 - i * 0.1)
+            SearchResult(
+                document_id=f"doc-{i}",
+                path=f"/{i}.md",
+                title="T",
+                collection_name="c",
+                score=0.9 - i * 0.1,
+            )
             for i in range(5)
         ]
         k = 60
@@ -620,7 +693,9 @@ class TestRRFScoreCalculation:
             expected_score = 1 / (k + i + 1)
             assert abs(result.score - expected_score) < 0.0001
 
-    def test_rrf_score_bounds(self, rrf_fusion: RRFFusion, sample_search_results: list[SearchResult]) -> None:
+    def test_rrf_score_bounds(
+        self, rrf_fusion: RRFFusion, sample_search_results: list[SearchResult]
+    ) -> None:
         """Test that RRF scores are within expected bounds.
 
         Arrange: Create result lists
@@ -649,7 +724,9 @@ class TestRRFScoreCalculation:
 class TestRRFScorePreservation:
     """Test that RRF preserves original scores in SearchResult.scores dict."""
 
-    def test_fuse_preserves_bm25_and_vector_scores(self, bm25_results: list[SearchResult], vector_results: list[SearchResult]) -> None:
+    def test_fuse_preserves_bm25_and_vector_scores(
+        self, bm25_results: list[SearchResult], vector_results: list[SearchResult]
+    ) -> None:
         """Test that fuse() preserves bm25_score and vector_score in scores dict."""
         # Arrange
         fusion = RRFFusion(k=60)
@@ -666,7 +743,9 @@ class TestRRFScorePreservation:
         assert doc_a.scores["vector_score"] == 0.92
         assert "rrf_score" in doc_a.scores
 
-    def test_fuse_with_weights_preserves_scores(self, bm25_results: list[SearchResult], vector_results: list[SearchResult]) -> None:
+    def test_fuse_with_weights_preserves_scores(
+        self, bm25_results: list[SearchResult], vector_results: list[SearchResult]
+    ) -> None:
         """Test that fuse_with_weights() preserves scores in scores dict."""
         # Arrange
         fusion = RRFFusion(k=60)
@@ -682,7 +761,9 @@ class TestRRFScorePreservation:
         assert "vector_score" in doc_a.scores
         assert "rrf_score" in doc_a.scores
 
-    def test_fuse_single_list_preserves_original_score(self, sample_search_results: list[SearchResult]) -> None:
+    def test_fuse_single_list_preserves_original_score(
+        self, sample_search_results: list[SearchResult]
+    ) -> None:
         """Test that single list fusion preserves the original score."""
         # Arrange
         fusion = RRFFusion(k=60)

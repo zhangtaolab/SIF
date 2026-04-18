@@ -9,16 +9,16 @@ from docsift.core.models import SearchResult
 
 class RRFFusion:
     """Reciprocal Rank Fusion for combining search results."""
-    
+
     def __init__(self, k: int = 60) -> None:
         """Initialize RRF with k parameter.
-        
+
         Args:
             k: Constant to prevent division by zero and dampen
                the impact of low rankings. Default is 60.
         """
         self.k = k
-    
+
     def fuse(
         self,
         results_lists: List[List[SearchResult]],
@@ -80,11 +80,7 @@ class RRFFusion:
                     scores[doc_id] = (rrf_score, new_result)
 
         # Sort by RRF score (descending)
-        sorted_scores = sorted(
-            scores.items(),
-            key=lambda x: x[1][0],
-            reverse=True
-        )
+        sorted_scores = sorted(scores.items(), key=lambda x: x[1][0], reverse=True)
 
         # Build final results
         fused_results = []
@@ -166,11 +162,7 @@ class RRFFusion:
                     scores[doc_id] = (rrf_score, new_result)
 
         # Sort by weighted score (descending)
-        sorted_scores = sorted(
-            scores.items(),
-            key=lambda x: x[1][0],
-            reverse=True
-        )
+        sorted_scores = sorted(scores.items(), key=lambda x: x[1][0], reverse=True)
 
         # Build final results
         fused_results = []
@@ -185,11 +177,11 @@ class RRFFusion:
 
 def compute_rrf_score(rank: int, k: int = 60) -> float:
     """Compute RRF score for a single rank.
-    
+
     Args:
         rank: The rank position (1-indexed)
         k: RRF constant
-        
+
     Returns:
         RRF score
     """

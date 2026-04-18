@@ -348,9 +348,9 @@ class ContextRepository:
         self.db.execute(
             """
             INSERT INTO contexts (id, target_id, context_type, content, created_at, updated_at)
-            VALUES (?, ?, 'path', ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (context.id, context.path, context.context, now, now),
+            (context.id, context.path, context.context_type, context.context, now, now),
         )
         return context
 
@@ -419,6 +419,7 @@ class ContextRepository:
             id=row["id"],
             path=row["target_id"],
             collection_id=None,  # No longer stored; acceptable for transition
+            context_type=row["context_type"],
             context=row["content"],
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),

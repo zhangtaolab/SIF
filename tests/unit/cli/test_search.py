@@ -174,7 +174,10 @@ class TestSearchFiltering:
             ),
             patch(
                 "docsift.config.settings.get_settings",
-                return_value=MagicMock(model_name="all-MiniLM-L6-v2", model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"}),
+                return_value=MagicMock(
+                    model_name="all-MiniLM-L6-v2",
+                    model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"},
+                ),
             ),
         ):
             result = runner.invoke(
@@ -355,7 +358,10 @@ class TestSearchLineNumbers:
             ),
             patch(
                 "docsift.config.settings.get_settings",
-                return_value=MagicMock(model_name="all-MiniLM-L6-v2", model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"}),
+                return_value=MagicMock(
+                    model_name="all-MiniLM-L6-v2",
+                    model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"},
+                ),
             ),
         ):
             result = runner.invoke(
@@ -585,7 +591,10 @@ class TestVsearchNewFlags:
             ),
             patch(
                 "docsift.config.settings.get_settings",
-                return_value=MagicMock(model_name="all-MiniLM-L6-v2", model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"}),
+                return_value=MagicMock(
+                    model_name="all-MiniLM-L6-v2",
+                    model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"},
+                ),
             ),
         ):
             result = runner.invoke(
@@ -631,7 +640,10 @@ class TestVsearchNewFlags:
             ),
             patch(
                 "docsift.config.settings.get_settings",
-                return_value=MagicMock(model_name="all-MiniLM-L6-v2", model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"}),
+                return_value=MagicMock(
+                    model_name="all-MiniLM-L6-v2",
+                    model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"},
+                ),
             ),
         ):
             result = runner.invoke(

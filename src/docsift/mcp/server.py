@@ -71,7 +71,11 @@ class MCPServer:
                     "type": "object",
                     "properties": {
                         "query": {"type": "string", "description": "Search query"},
-                        "collections": {"type": "array", "items": {"type": "string"}, "description": "Collection names to search"},
+                        "collections": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Collection names to search",
+                        },
                         "limit": {"type": "integer", "description": "Maximum number of results"},
                         "min_score": {"type": "number", "description": "Minimum score threshold"},
                     },
@@ -85,7 +89,11 @@ class MCPServer:
                     "type": "object",
                     "properties": {
                         "query": {"type": "string", "description": "Search query"},
-                        "collections": {"type": "array", "items": {"type": "string"}, "description": "Collection names to search"},
+                        "collections": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Collection names to search",
+                        },
                         "limit": {"type": "integer", "description": "Maximum number of results"},
                     },
                     "required": ["query"],
@@ -98,7 +106,11 @@ class MCPServer:
                     "type": "object",
                     "properties": {
                         "query": {"type": "string", "description": "Search query"},
-                        "collections": {"type": "array", "items": {"type": "string"}, "description": "Collection names to search"},
+                        "collections": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Collection names to search",
+                        },
                         "limit": {"type": "integer", "description": "Maximum number of results"},
                     },
                     "required": ["query"],
@@ -316,11 +328,13 @@ class MCPServer:
                         if len(content.encode()) > max_bytes:
                             content = content[:max_bytes] + "\n... [truncated]"
 
-                        documents.append({
-                            "path": doc.path,
-                            "title": doc.title,
-                            "content": content,
-                        })
+                        documents.append(
+                            {
+                                "path": doc.path,
+                                "title": doc.title,
+                                "content": content,
+                            }
+                        )
 
         return {
             "jsonrpc": "2.0",
@@ -329,10 +343,13 @@ class MCPServer:
                 "content": [
                     {
                         "type": "text",
-                        "text": json.dumps({
-                            "documents": documents,
-                            "errors": errors,
-                        }, indent=2),
+                        "text": json.dumps(
+                            {
+                                "documents": documents,
+                                "errors": errors,
+                            },
+                            indent=2,
+                        ),
                     }
                 ],
             },
