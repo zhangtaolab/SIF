@@ -8,8 +8,8 @@ DocSift is a CLI tool for indexing and searching markdown documents. It combines
 
 ```bash
 # Index your documents
-docsift collection create my-notes --path ~/Documents/notes
-docsift update my-notes
+docsift collection add ~/Documents/notes --name my-notes
+docsift index update my-notes
 
 # Search with AI-powered relevance
 docsift search "python decorators"
@@ -80,14 +80,13 @@ pip install "docsift[all]"
 ### 1. Create a Collection
 
 ```bash
-docsift collection create my-notes --description "Personal notes"
-docsift collection add-path my-notes ~/Documents/notes
+docsift collection add ~/Documents/notes --name my-notes --description "Personal notes"
 ```
 
 ### 2. Index Your Documents
 
 ```bash
-docsift update my-notes
+docsift index update my-notes
 ```
 
 ### 3. Search
@@ -97,7 +96,7 @@ docsift update my-notes
 docsift search "python decorators"
 
 # Hybrid search with more results
-docsift search "machine learning" --type hybrid --limit 20
+docsift search query "machine learning" --limit 20
 
 # Search in specific collection
 docsift search "python decorators" --collection my-notes
@@ -159,7 +158,7 @@ Integrate DocSift with AI assistants like Claude:
 
 ```bash
 # Start MCP server
-docsift mcp start
+docsift mcp stdio
 ```
 
 Configure in Claude Desktop:
@@ -169,7 +168,7 @@ Configure in Claude Desktop:
   "mcpServers": {
     "docsift": {
       "command": "docsift",
-      "args": ["mcp", "start"]
+      "args": ["mcp", "stdio"]
     }
   }
 }
@@ -186,7 +185,7 @@ Configure DocSift via environment variables or `.env` file:
 DOCSIFT_DB_PATH=~/.local/share/docsift/docsift.db
 
 # Embedding model
-DOCSIFT_MODEL_NAME=all-MiniLM-L6-v2
+DOCSIFT_MODEL_NAME=Qwen/Qwen3-Embedding-0.6B
 
 # Chunking settings
 DOCSIFT_CHUNK_SIZE=512

@@ -9,12 +9,13 @@ DocSift is a local CLI search engine for indexing and searching markdown documen
 ## Features
 
 - **Full-Text Search**: BM25 ranking via SQLite FTS5
-- **Semantic Search**: Vector similarity using embeddings
+- **Semantic Search**: Vector similarity using configurable embeddings
 - **Hybrid Search**: Combines BM25 and vector search with RRF fusion
-- **Query Expansion**: Automatic query enhancement
-- **Result Reranking**: Cross-encoder reranking (optional)
-- **MCP Server**: Model Context Protocol support for AI assistants
+- **Query Expansion**: Automatic query enhancement via pseudo-relevance feedback
+- **Result Reranking**: Cross-encoder reranking with Qwen3-Reranker
+- **MCP Server**: Model Context Protocol support for AI assistants (stdio + HTTP)
 - **Local-First**: All data stays on your machine
+- **Multiple Backends**: sentence-transformers, llama-cpp-python, OpenAI-compatible API, ModelScope
 
 ## Quick Start
 
@@ -33,11 +34,11 @@ pip install "docsift[all]"
 ### Basic Usage
 
 ```bash
-# Create a collection
-docsift collection create my-notes --path ~/Documents/notes
+# Add a collection
+docsift collection add ~/Documents/notes --name my-notes
 
 # Index your documents
-docsift update my-notes
+docsift index update my-notes
 
 # Search
 docsift search "python decorators"
@@ -73,11 +74,8 @@ pipx install docsift
 # List all collections
 docsift collection list
 
-# Create a new collection
-docsift collection create work-docs --description "Work documentation"
-
-# Add paths to a collection
-docsift collection add-path work-docs ~/Work/docs
+# Add a new collection
+docsift collection add ~/Work/docs --name work-docs --description "Work documentation"
 
 # Show collection details
 docsift collection show my-notes
@@ -95,10 +93,10 @@ Add descriptive context to improve search relevance:
 
 ```bash
 # Add context to a collection
-docsift context add --collection my-notes "These are my personal notes about programming and technology."
+docsift context add collection my-notes "These are my personal notes about programming and technology."
 
 # Add global context
-docsift context add --global "I am a software engineer interested in Python and machine learning."
+docsift context add global global "I am a software engineer interested in Python and machine learning."
 
 # List all context
 docsift context list
@@ -108,16 +106,13 @@ docsift context list
 
 ```bash
 # Update the index
-docsift update my-notes
+docsift index update my-notes
 
 # Force full reindex
-docsift update my-notes --force
+docsift index update my-notes --force
 
 # Show indexing status
 docsift status my-notes
-
-# Clean up index
-docsift cleanup --orphaned --vacuum
 ```
 
 ### Search
@@ -127,22 +122,16 @@ docsift cleanup --orphaned --vacuum
 docsift search "python decorators"
 
 # Search in specific collection
-docsift search "python decorators" --collection my-notes
+docsift search "python decorators" -c my-notes
 
 # Search with type
-docsift search "python decorators" --type hybrid
+docsift search query "python decorators"
 
 # Limit results
 docsift search "python decorators" --limit 20
 
-# Search with query expansion
-docsift search "AI" --expand
-
-# Search with reranking
-docsift search "machine learning" --rerank
-
-# Find similar documents
-docsift search similar path/to/document.md
+# Search with explanation
+docsift search query "AI" --explain
 ```
 
 ### MCP Server
@@ -151,13 +140,10 @@ Start the MCP server for integration with AI assistants:
 
 ```bash
 # Start with stdio transport (default)
-docsift mcp start
+docsift mcp stdio
 
 # Start with HTTP transport
-docsift mcp start --transport http --port 8080
-
-# Show MCP configuration
-docsift mcp config
+docsift mcp http --port 8080
 ```
 
 Configure in Claude Desktop:
@@ -167,7 +153,7 @@ Configure in Claude Desktop:
   "mcpServers": {
     "docsift": {
       "command": "docsift",
-      "args": ["mcp", "start"]
+      "args": ["mcp", "stdio"]
     }
   }
 }
@@ -182,7 +168,7 @@ DocSift can be configured via environment variables or a `.env` file:
 DOCSIFT_DB_PATH=~/.local/share/docsift/docsift.db
 
 # Embedding model
-DOCSIFT_MODEL_NAME=all-MiniLM-L6-v2
+DOCSIFT_MODEL_NAME=Qwen/Qwen3-Embedding-0.6B
 DOCSIFT_MODEL_PATH=~/models/embedding.gguf
 
 # Chunking settings
@@ -260,7 +246,8 @@ Vector search uses embeddings to find semantically similar documents, even if th
 **Supported Models:**
 - Sentence Transformers
 - GGUF models via llama-cpp-python
-- OpenAI API (planned)
+- OpenAI-compatible API
+- ModelScope Hub
 
 ### Hybrid Search
 
@@ -321,14 +308,12 @@ mypy src/docsift
 
 ## Roadmap
 
-- [ ] Incremental indexing
-- [ ] File system watching for auto-indexing
-- [ ] Web UI
+- [ ] Web UI (browser-based search interface)
 - [ ] Plugin system for custom parsers
 - [ ] Multi-language support
-- [ ] Advanced reranking options
-- [ ] Query suggestions
 - [ ] REST API
+- [ ] Query suggestions
+- [ ] File system watching for auto-indexing
 
 ## Contributing
 
@@ -355,4 +340,4 @@ DocSift is a Python reimplementation of the original TypeScript QMD (Query Marku
 
 ---
 
-**Happy searching!** 🔍
+**Happy searching!**
