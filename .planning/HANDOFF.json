@@ -1,31 +1,42 @@
 {
   "version": "1.0",
-  "timestamp": "2026-04-18T01:31:58Z",
-  "phase": "05",
-  "phase_name": "agent-context-experience",
-  "phase_dir": ".planning/phases/05-agent-context-experience",
-  "plan": 7,
-  "task": 3,
-  "total_tasks": 3,
+  "timestamp": "2026-04-18T05:28:20Z",
+  "phase": "6",
+  "phase_name": "documentation-audit-refresh",
+  "phase_dir": ".planning/phases/06-documentation-audit-refresh",
+  "plan": 6,
+  "task": 1,
+  "total_tasks": 18,
   "status": "paused",
   "completed_tasks": [
-    {"id": 1, "name": "05-05: Fix context_type storage and display", "status": "done", "commit": "ba8a440"},
-    {"id": 2, "name": "05-06: Fix path normalization in _attach_contexts", "status": "done", "commit": "32de054"},
-    {"id": 3, "name": "05-07: Fix status command DB path resolution", "status": "done", "commit": "e785ea3"}
+    {"id": 1, "name": "06-01: Create CLI reference generator", "status": "done", "commit": "469abaf"},
+    {"id": 2, "name": "06-01: Regenerate docs/cli-reference.md", "status": "done", "commit": "0f1fb37"},
+    {"id": 3, "name": "06-02: Create Settings introspection script", "status": "done", "commit": "373f849"},
+    {"id": 4, "name": "06-02: Regenerate docs/configuration.md", "status": "done", "commit": "565cf01"},
+    {"id": 5, "name": "06-03: Rewrite quickstart.md", "status": "done", "commit": "a8f76d1"},
+    {"id": 6, "name": "06-04: Update README.md", "status": "done", "commit": "f3f784a"},
+    {"id": 7, "name": "06-04: Sync docs/index.md", "status": "done", "commit": "28734e5"},
+    {"id": 8, "name": "06-05: Update mcp-server.md", "status": "done", "commit": "a4848b5"},
+    {"id": 9, "name": "06-05: Update search-algorithms.md", "status": "done", "commit": "117ed7d"},
+    {"id": 10, "name": "06-05: Update architecture.md", "status": "done", "commit": "c664db9"},
+    {"id": 11, "name": "06-05: Update models.md", "status": "done", "commit": "973d024"}
   ],
   "remaining_tasks": [
-    {"id": 4, "name": "Code review gate (gsd-code-review)", "status": "not_started"},
-    {"id": 5, "name": "Phase verification (gsd-verifier)", "status": "not_started"},
-    {"id": 6, "name": "Update STATE.md and ROADMAP.md", "status": "not_started"},
-    {"id": 7, "name": "Mark phase 05 complete", "status": "not_started"}
+    {"id": 12, "name": "06-06 Task 1: Create docs test fixtures", "status": "in_progress"},
+    {"id": 13, "name": "06-06 Task 2: Create test_docs.py with code block validation", "status": "in_progress"},
+    {"id": 14, "name": "06-06 Task 3: Execute code examples and fix broken ones", "status": "in_progress"},
+    {"id": 15, "name": "06-07 Task 1: Add make docs-test target", "status": "not_started"},
+    {"id": 16, "name": "06-07 Task 2: Add GitHub Actions docs workflow", "status": "not_started"},
+    {"id": 17, "name": "06-07 Task 3: Run full quality suite", "status": "not_started"}
   ],
   "blockers": [],
   "human_actions_pending": [],
   "decisions": [
-    {"decision": "Used callable default for --index option (Click supports callable defaults)", "rationale": "Allows dynamic resolution via Settings at CLI load time without breaking explicit --index override", "phase": "05"},
-    {"decision": "Normalized paths with os.path.realpath() in all three searchers", "rationale": "macOS resolves /tmp to /private/tmp; context target_id stores user-provided path while documents store resolved path", "phase": "05"}
+    {"decision": "Use worktree isolation for parallel plan execution", "rationale": "Phase 6 has 7 plans across 4 waves; parallel execution speeds up independent doc updates", "phase": "6"},
+    {"decision": "Auto-generate CLI reference from Click introspection", "rationale": "Ensures CLI reference always matches live code", "phase": "6"},
+    {"decision": "Auto-generate config reference from Pydantic Settings", "rationale": "Ensures configuration docs always match Settings class", "phase": "6"}
   ],
   "uncommitted_files": [],
-  "next_action": "Run /gsd-code-review 05 to audit the gap closure changes, then run verification",
-  "context_notes": "All 3 gap closure plans from UAT are complete. 365 tests pass. The execute-phase workflow was run with --gaps-only flag. Phase-level gates (code review, verification, tracking updates) remain."
+  "next_action": "Wait for 06-06 agent to complete, merge its worktree, run post-merge tests, then execute Wave 4 (06-07)",
+  "context_notes": "Wave 3 agent (06-06) is currently running in a worktree. It will create tests/test_docs.py and tests/conftest.py with code block validation. After it completes, merge the worktree, run tests, then spawn Wave 4 (06-07) for Makefile target and GitHub Actions workflow."
 }
