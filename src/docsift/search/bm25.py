@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sqlite3
 from typing import List, Optional, Tuple
 
@@ -90,9 +91,13 @@ class BM25Searcher:
             WHERE context_type = 'path' AND target_id IN ({placeholders})
         """
         cursor = self.db.execute(sql, paths)
-        context_map = {row["target_id"]: row["content"] for row in cursor.fetchall()}
+        # Normalize keys for cross-platform matching (macOS /private/tmp, etc.)
+        context_map = {
+            os.path.realpath(row["target_id"]): row["content"]
+            for row in cursor.fetchall()
+        }
         for result in results:
-            result.context_description = context_map.get(result.path)
+            result.context_description = context_map.get(os.path.realpath(result.path))
         return results
 
     def search_chunks(

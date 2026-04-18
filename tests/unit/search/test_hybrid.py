@@ -472,3 +472,31 @@ class TestHybridContextAttachment:
         mock_reranker.rerank.assert_called_once()
         assert len(results) == 1
         assert results[0].context_description == "Reranked context"
+
+    def test_hybrid_search_attaches_context_with_normalized_path(self, mock_db: MagicMock) -> None:
+        """Test that hybrid context matches even with /private/tmp vs /tmp mismatch."""
+        hybrid = HybridSearcher(mock_db, embedder=None, embedding_dim=384)
+        hybrid.bm25 = create_autospec(BM25Searcher, instance=True)
+        hybrid.bm25.search.return_value = [
+            SearchResult(
+                document_id="doc-1",
+                path="/private/tmp/doc.md",
+                title="A",
+                collection_name="default",
+                score=0.95,
+            ),
+        ]
+        hybrid.vector = create_autospec(VectorSearcher, instance=True)
+        hybrid.vector.search.return_value = []
+
+        # Mock the context query in HybridSearcher's own _attach_contexts
+        context_cursor = MagicMock()
+        context_cursor.fetchall.return_value = [
+            ("/tmp/doc.md", "Project notes"),
+        ]
+        mock_db.execute.return_value = context_cursor
+
+        results = hybrid.search("test")
+
+        assert len(results) == 1
+        assert results[0].context_description == "Project notes"

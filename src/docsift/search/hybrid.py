@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sqlite3
 from typing import TYPE_CHECKING, List, Optional
 
@@ -98,7 +99,7 @@ class HybridSearcher:
         for row in rows:
             if hasattr(row, "keys") and callable(getattr(row, "keys", None)):
                 try:
-                    context_map[row["target_id"]] = row["content"]
+                    context_map[os.path.realpath(row["target_id"])] = row["content"]
                     continue
                 except (KeyError, TypeError):
                     pass
@@ -108,12 +109,13 @@ class HybridSearcher:
                 val = row[1]
                 if not isinstance(key, str):
                     continue
-                context_map[key] = val
+                context_map[os.path.realpath(key)] = val
             except (KeyError, IndexError, TypeError):
                 continue
         for result in results:
-            if result.path in context_map:
-                result.context_description = context_map[result.path]
+            normalized_path = os.path.realpath(result.path)
+            if normalized_path in context_map:
+                result.context_description = context_map[normalized_path]
         return results
 
     def _get_document_content(self, document_id: str) -> Optional[str]:

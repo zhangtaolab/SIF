@@ -319,3 +319,31 @@ class TestBM25ContextAttachment:
         results = searcher.search("test", options)
 
         assert results[0].context_description is None
+
+    def test_search_attaches_context_with_normalized_path(self) -> None:
+        """Test that context matches even with /private/tmp vs /tmp mismatch."""
+        # Context stored with user-provided /tmp path
+        context_rows = [{"target_id": "/tmp/doc.md", "content": "Project notes"}]
+        # Document stored with resolved /private/tmp path (macOS behavior)
+        search_rows = [
+            {
+                "document_id": "doc-1",
+                "title": "T1",
+                "path": "/private/tmp/doc.md",
+                "collection_name": "c",
+                "score": -1.0,
+            },
+        ]
+        mock_db = MagicMock()
+        search_cursor = MagicMock()
+        search_cursor.fetchall.return_value = search_rows
+        context_cursor = MagicMock()
+        context_cursor.fetchall.return_value = context_rows
+        mock_db.execute.side_effect = [search_cursor, context_cursor]
+
+        searcher = BM25Searcher(mock_db)
+        options = SearchOptions(include_highlights=False)
+        results = searcher.search("test", options)
+
+        assert len(results) == 1
+        assert results[0].context_description == "Project notes"
