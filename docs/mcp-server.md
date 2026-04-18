@@ -14,11 +14,19 @@ The Model Context Protocol (MCP) is an open protocol that enables seamless integ
 ## Architecture
 
 ```
-┌─────────────────┐      ┌──────────────────┐      ┌──────────────┐
-│   AI Assistant  │◄────►│   MCP Server     │◄────►│   DocSift    │
-│  (Claude, etc.) │      │  (stdio/http)    │      │   Backend    │
-└─────────────────┘      └──────────────────┘      └──────────────┘
++-----------------+      +------------------+      +--------------+
+|   AI Assistant  |<---->|   MCP Server     |<---->|   DocSift    |
+|  (Claude, etc.) |      |  (stdio/http)    |      |   Backend    |
++-----------------+      +------------------+      +--------------+
 ```
+
+## Implementation Note
+
+DocSift has two MCP implementations:
+- **Legacy**: `docsift/mcp/` — functional style (deprecated)
+- **Refactored**: `docsift/mcp_server/` — OOP with `Transport` ABC
+
+The CLI commands use the legacy implementation for backward compatibility.
 
 ## Transport Types
 
@@ -29,7 +37,7 @@ DocSift's MCP server supports two transport methods:
 Uses standard input/output for communication. Ideal for local AI assistants.
 
 ```bash
-docsift mcp start --transport stdio
+docsift mcp stdio
 ```
 
 **Use cases:**
@@ -42,13 +50,25 @@ docsift mcp start --transport stdio
 Uses HTTP for communication. Ideal for remote or distributed setups.
 
 ```bash
-docsift mcp start --transport http --host 127.0.0.1 --port 8080
+docsift mcp http --host 127.0.0.1 --port 8080
 ```
 
 **Use cases:**
 - Remote AI services
 - Web-based assistants
 - Distributed systems
+
+### Daemon Transport
+
+Runs the MCP server as a background daemon.
+
+```bash
+# Start daemon
+docsift mcp daemon --host 127.0.0.1 --port 3000
+
+# Stop daemon
+docsift mcp daemon --stop
+```
 
 ## Available Tools
 
@@ -258,7 +278,7 @@ DOCSIFT_MCP_TRANSPORT=stdio
 DOCSIFT_DB_PATH=~/.local/share/docsift/docsift.db
 
 # Model
-DOCSIFT_MODEL_NAME=all-MiniLM-L6-v2
+DOCSIFT_MODEL_NAME=Qwen/Qwen3-Embedding-0.6B
 ```
 
 ## Integration Examples
@@ -272,7 +292,7 @@ Add to Claude Desktop configuration:
   "mcpServers": {
     "docsift": {
       "command": "docsift",
-      "args": ["mcp", "start", "--transport", "stdio"]
+      "args": ["mcp", "stdio"]
     }
   }
 }
@@ -295,18 +315,18 @@ async def use_docsift_mcp():
     # Configure server parameters
     server_params = StdioServerParameters(
         command="docsift",
-        args=["mcp", "start", "--transport", "stdio"]
+        args=["mcp", "stdio"]
     )
-    
+
     async with stdio_client(server_params) as (read, write):
         async with ClientSession(read, write) as session:
             # Initialize
             await session.initialize()
-            
+
             # List available tools
             tools = await session.list_tools()
             print(f"Available tools: {[tool.name for tool in tools.tools]}")
-            
+
             # Search documents
             result = await session.call_tool(
                 "search",
@@ -325,7 +345,7 @@ asyncio.run(use_docsift_mcp())
 ```python
 import requests
 
-# Start server: docsift mcp start --transport http --port 8080
+# Start server: docsift mcp http --host 127.0.0.1 --port 8080
 
 response = requests.post(
     "http://127.0.0.1:8080/mcp/tools/search",
@@ -355,10 +375,10 @@ print(results)
 
 ```bash
 # Bind to localhost only (default)
-docsift mcp start --transport http --host 127.0.0.1
+docsift mcp http --host 127.0.0.1
 
 # Bind to all interfaces (use with caution)
-docsift mcp start --transport http --host 0.0.0.0
+docsift mcp http --host 0.0.0.0
 ```
 
 ## Troubleshooting
@@ -370,25 +390,25 @@ docsift mcp start --transport http --host 0.0.0.0
 lsof -i :8080
 
 # Use different port
-docsift mcp start --transport http --port 8081
+docsift mcp http --port 8081
 ```
 
 ### Connection Issues
 
 ```bash
 # Test stdio transport
-docsift mcp start --transport stdio
+docsift mcp stdio
 
 # Test HTTP transport
-docsift mcp start --transport http
+docsift mcp http
 curl http://127.0.0.1:8080/mcp/health
 ```
 
 ### Tool Not Found
 
 ```bash
-# List available tools
-docsift mcp config
+# List available MCP commands
+docsift mcp --help
 ```
 
 ## Advanced Usage
@@ -406,11 +426,11 @@ class CustomToolHandler(ToolHandler):
     @property
     def name(self) -> str:
         return "custom_search"
-    
+
     @property
     def description(self) -> str:
         return "Custom search with filters"
-    
+
     def handle(self, arguments: dict) -> dict:
         # Custom implementation
         return {"results": []}
@@ -427,21 +447,13 @@ Run multiple transport types simultaneously:
 
 ```bash
 # Terminal 1: stdio for Claude
-docsift mcp start --transport stdio
+docsift mcp stdio
 
 # Terminal 2: HTTP for web integration
-docsift mcp start --transport http --port 8080
+docsift mcp http --port 8080
 ```
 
 ## Performance Tuning
-
-### Caching
-
-Enable embedding caching for faster searches:
-
-```bash
-export DOCSIFT_CACHE_SIZE=5000
-```
 
 ### Batch Size
 
@@ -466,7 +478,7 @@ class MCPServer:
         transport: Transport,
         tool_handlers: list[ToolHandler] | None = None,
     ) -> None
-    
+
     def start(self) -> None
     def stop(self) -> None
     @property
@@ -479,13 +491,13 @@ class MCPServer:
 class Transport(ABC):
     @abstractmethod
     def start(self) -> None: ...
-    
+
     @abstractmethod
     def stop(self) -> None: ...
-    
+
     @abstractmethod
     def send(self, message: dict) -> None: ...
-    
+
     @abstractmethod
     def receive(self) -> dict: ...
 ```
@@ -512,9 +524,8 @@ class HttpTransport(Transport):
 
 1. **Use stdio for local AI assistants** - More secure, no network exposure
 2. **Use HTTP for distributed systems** - Better for remote access
-3. **Enable caching** - Improves search performance
-4. **Monitor logs** - Check for errors and performance issues
-5. **Regular indexing** - Keep index up to date for accurate results
+3. **Monitor logs** - Check for errors and performance issues
+4. **Regular indexing** - Keep index up to date for accurate results
 
 ## Related Documentation
 
