@@ -10,6 +10,7 @@ from rich.console import Console
 from rich.table import Table
 
 from docsift import __version__
+from docsift.config.settings import get_settings
 from docsift.database.database import Database
 from docsift.utils.logging import get_logger, setup_logging
 
@@ -22,13 +23,18 @@ DEFAULT_INDEX_PATH = Path.home() / ".docsift" / "index.sqlite"
 DEFAULT_CONFIG_PATH = Path.home() / ".docsift" / "config.yaml"
 
 
+def _get_default_db_path() -> str:
+    """Get default database path from Settings."""
+    return str(get_settings().get_db_path())
+
+
 @click.group()
 @click.version_option(version=__version__, prog_name="docsift")
 @click.option(
     "--index",
     "-i",
     type=click.Path(),
-    default=str(DEFAULT_INDEX_PATH),
+    default=_get_default_db_path,
     help="Path to the index database",
 )
 @click.option(
@@ -91,7 +97,10 @@ cli.add_command(bench_cmd)
 @click.pass_context
 def status_cmd(ctx: click.Context) -> None:
     """Show index status."""
-    index_path = ctx.obj["index_path"]
+    ctx.ensure_object(dict)
+    index_path = ctx.obj.get("index_path")
+    if index_path is None:
+        index_path = get_settings().get_db_path()
 
     if not index_path.exists():
         console.print("[yellow]No index found. Run 'docsift update' to create one.[/yellow]")
