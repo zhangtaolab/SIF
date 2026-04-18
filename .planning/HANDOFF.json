@@ -1,44 +1,31 @@
 {
   "version": "1.0",
-  "timestamp": "2026-04-18T00:22:06Z",
-  "phase": null,
-  "phase_name": "post-audit-verification",
-  "phase_dir": null,
-  "plan": null,
-  "task": null,
-  "total_tasks": null,
+  "timestamp": "2026-04-18T01:31:58Z",
+  "phase": "05",
+  "phase_name": "agent-context-experience",
+  "phase_dir": ".planning/phases/05-agent-context-experience",
+  "plan": 7,
+  "task": 3,
+  "total_tasks": 3,
   "status": "paused",
   "completed_tasks": [
-    {"id": 1, "name": "UAT audit across all 5 phases", "status": "done", "commit": "N/A"},
-    {"id": 2, "name": "Fix broken test imports (remove 7 stale files)", "status": "done", "commit": "N/A"},
-    {"id": 3, "name": "Fix Settings validators (model_type, api_base, api_key repr)", "status": "done", "commit": "N/A"},
-    {"id": 4, "name": "Fix DatabaseConnection commit behavior", "status": "done", "commit": "N/A"},
-    {"id": 5, "name": "Fix mock embedder fixtures for text-dependent embeddings", "status": "done", "commit": "N/A"},
-    {"id": 6, "name": "Fix transaction rollback test (DDL implicit commit)", "status": "done", "commit": "N/A"},
-    {"id": 7, "name": "Update ROADMAP.md and STATE.md to reflect actual progress", "status": "done", "commit": "N/A"},
-    {"id": 8, "name": "Run full test suite - 360 passed, 0 failed", "status": "done", "commit": "N/A"}
+    {"id": 1, "name": "05-05: Fix context_type storage and display", "status": "done", "commit": "ba8a440"},
+    {"id": 2, "name": "05-06: Fix path normalization in _attach_contexts", "status": "done", "commit": "32de054"},
+    {"id": 3, "name": "05-07: Fix status command DB path resolution", "status": "done", "commit": "e785ea3"}
   ],
   "remaining_tasks": [
-    {"id": 9, "name": "Run /gsd-verify-work on Phase 05 to generate VERIFICATION.md", "status": "not_started"},
-    {"id": 10, "name": "Run /gsd-verify-work on Phase 04 to generate VERIFICATION.md", "status": "not_started"},
-    {"id": 11, "name": "Run /gsd-verify-work on Phase 03 to generate VERIFICATION.md", "status": "not_started"},
-    {"id": 12, "name": "Address 956 ruff lint issues (pre-existing)", "status": "not_started"},
-    {"id": 13, "name": "Human UAT: OpenAI embedding end-to-end", "status": "not_started"},
-    {"id": 14, "name": "Human UAT: ModelScope download and inference", "status": "not_started"},
-    {"id": 15, "name": "Human UAT: Migration rollback on failure", "status": "not_started"}
+    {"id": 4, "name": "Code review gate (gsd-code-review)", "status": "not_started"},
+    {"id": 5, "name": "Phase verification (gsd-verifier)", "status": "not_started"},
+    {"id": 6, "name": "Update STATE.md and ROADMAP.md", "status": "not_started"},
+    {"id": 7, "name": "Mark phase 05 complete", "status": "not_started"}
   ],
   "blockers": [],
-  "human_actions_pending": [
-    {"action": "Run OpenAI embedding end-to-end test", "context": "Phase 03 manual verification - requires OpenAI API key", "blocking": false},
-    {"action": "Run ModelScope model download and inference test", "context": "Phase 03 manual verification - requires network + disk space", "blocking": false},
-    {"action": "Test migration rollback on failure", "context": "Phase 05 manual verification - requires corrupting SQLite state", "blocking": false}
-  ],
+  "human_actions_pending": [],
   "decisions": [
-    {"decision": "Removed 7 stale test files instead of fixing them", "rationale": "They referenced APIs from an earlier design that no longer exist. Newer tests already cover the same functionality.", "phase": "all"},
-    {"decision": "Added conn.commit() to DatabaseConnection.execute/executemany", "rationale": "SQLite default isolation level requires explicit commits. Tests were failing because writes were not persisted.", "phase": "all"},
-    {"decision": "Fixed DDL-in-transaction test by pre-creating table outside transaction", "rationale": "SQLite DDL triggers implicit commit, breaking the rollback test assumption.", "phase": "all"}
+    {"decision": "Used callable default for --index option (Click supports callable defaults)", "rationale": "Allows dynamic resolution via Settings at CLI load time without breaking explicit --index override", "phase": "05"},
+    {"decision": "Normalized paths with os.path.realpath() in all three searchers", "rationale": "macOS resolves /tmp to /private/tmp; context target_id stores user-provided path while documents store resolved path", "phase": "05"}
   ],
   "uncommitted_files": [],
-  "next_action": "Commit current changes, then run /gsd-verify-work for Phase 05 (agent-context-experience) to generate its VERIFICATION.md",
-  "context_notes": "All 5 phases are code-complete. The project has 360 passing tests. Main remaining work is generating VERIFICATION.md files for phases 03-05 and performing 3 manual UAT items. There are also 956 pre-existing ruff lint issues."
+  "next_action": "Run /gsd-code-review 05 to audit the gap closure changes, then run verification",
+  "context_notes": "All 3 gap closure plans from UAT are complete. 365 tests pass. The execute-phase workflow was run with --gaps-only flag. Phase-level gates (code review, verification, tracking updates) remain."
 }
