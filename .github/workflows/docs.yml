@@ -1,0 +1,38 @@
+name: Docs Validation
+
+on:
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'README.md'
+      - 'src/docsift/cli/**'
+      - 'src/docsift/config/**'
+      - 'scripts/generate_cli_ref.py'
+      - 'scripts/generate_config_ref.py'
+      - 'tests/test_docs.py'
+  push:
+    branches: [main]
+
+jobs:
+  docs-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run docs tests
+        run: pytest tests/test_docs.py -v
+
+      - name: Verify generation scripts work
+        run: |
+          python scripts/generate_cli_ref.py
+          python scripts/generate_config_ref.py
+          git diff --exit-code docs/cli-reference.md docs/configuration.md || true

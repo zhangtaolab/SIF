@@ -1,7 +1,7 @@
 # Makefile for DocSift project
 # Provides convenient commands for common development tasks
 
-.PHONY: help install install-dev install-all test test-verbose lint format typecheck coverage clean build docs pre-commit security all
+.PHONY: help install install-dev install-all test test-verbose test-fast docs-test docs-generate lint lint-fix format format-check typecheck coverage clean build docs pre-commit security all ci dev-setup dev-check update-deps info
 
 # Default target
 help:
@@ -16,6 +16,9 @@ help:
 	@echo "Testing:"
 	@echo "  make test         - Run tests with coverage"
 	@echo "  make test-verbose - Run tests with verbose output"
+	@echo "  make test-fast    - Run tests without coverage (faster)"
+	@echo "  make docs-test    - Run docs validation tests"
+	@echo "  make docs-generate - Regenerate CLI and config reference docs"
 	@echo ""
 	@echo "Code Quality:"
 	@echo "  make lint         - Run linting (ruff check)"
@@ -60,6 +63,15 @@ test-verbose:
 test-fast:
 	@echo "Running tests without coverage (faster)..."
 	pytest -x -q
+
+docs-test:
+	@echo "Running docs validation tests..."
+	pytest tests/test_docs.py -v
+
+docs-generate:
+	@echo "Regenerating CLI and configuration reference docs..."
+	python scripts/generate_cli_ref.py
+	python scripts/generate_config_ref.py
 
 # Linting and formatting targets
 lint:
