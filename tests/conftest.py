@@ -562,7 +562,9 @@ def docs_test_db(tmp_path: Path) -> Generator[Path, None, None]:
         coll_repo = CollectionRepository(conn)
         doc_repo = DocumentRepository(conn)
 
-        collection = Collection(
+        from docsift.core.models import Collection as DocsCollection
+
+        collection = DocsCollection(
             name="test-docs",
             path=str(tmp_path / "docs"),
             description="Test collection for docs validation",
@@ -581,13 +583,15 @@ def docs_test_db(tmp_path: Path) -> Generator[Path, None, None]:
         )
 
         # Insert documents
-        doc1 = Document(
+        from docsift.core.models import Document as DocsDocument
+
+        doc1 = DocsDocument(
             path=str(docs_dir / "python.md"),
             collection_id=collection.id,
             content="# Python Decorators\n\nDecorators are a powerful feature.",
             title="Python Decorators",
         )
-        doc2 = Document(
+        doc2 = DocsDocument(
             path=str(docs_dir / "machine-learning.md"),
             collection_id=collection.id,
             content="# Machine Learning\n\nNeural networks are...",

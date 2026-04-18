@@ -9,10 +9,10 @@ DocSift is a CLI tool for indexing and searching markdown documents. It combines
 ```bash
 # Index your documents
 docsift collection add ~/Documents/notes --name my-notes
-docsift index update my-notes
+docsift index update --collection my-notes
 
 # Search with AI-powered relevance
-docsift search "python decorators"
+docsift search query "python decorators"
 ```
 
 ## Key Features
@@ -86,20 +86,20 @@ docsift collection add ~/Documents/notes --name my-notes --description "Personal
 ### 2. Index Your Documents
 
 ```bash
-docsift index update my-notes
+docsift index update --collection my-notes
 ```
 
 ### 3. Search
 
 ```bash
 # Basic search
-docsift search "python decorators"
+docsift search query "python decorators"
 
 # Hybrid search with more results
 docsift search query "machine learning" --limit 20
 
 # Search in specific collection
-docsift search "python decorators" --collection my-notes
+docsift search query "python decorators" --collection my-notes
 ```
 
 ## Architecture
@@ -131,7 +131,7 @@ Learn more in the [Architecture](architecture.md) documentation.
 Best for exact keyword matching:
 
 ```bash
-docsift search "python decorators" --type bm25
+docsift search search "python decorators"
 ```
 
 ### Vector (Semantic)
@@ -139,7 +139,7 @@ docsift search "python decorators" --type bm25
 Best for conceptual similarity:
 
 ```bash
-docsift search "functions that wrap other functions" --type vector
+docsift search vsearch "functions that wrap other functions"
 ```
 
 ### Hybrid (Combined)
@@ -147,7 +147,7 @@ docsift search "functions that wrap other functions" --type vector
 Best overall results:
 
 ```bash
-docsift search "python decorators" --type hybrid
+docsift search query "python decorators"
 ```
 
 Learn more about [Search Algorithms](search-algorithms.md).

@@ -191,7 +191,7 @@ class CollectionManager:
 ### Search Flow
 
 ```
-1. User: docsift search "machine learning"
+1. User: docsift search query "machine learning"
    │
    ▼
 2. CLI: Parse query, build SearchQuery

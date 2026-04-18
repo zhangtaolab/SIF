@@ -676,10 +676,10 @@ Several commands support multiple output formats via flags:
 docsift collection add ~/Documents/notes --name my-notes --description "Personal notes"
 
 # Update index
-docsift index update my-notes
+docsift index update --collection my-notes
 
 # Search
-docsift search "python tips"
+docsift search query "python tips"
 ```
 
 **Managing collection visibility:**

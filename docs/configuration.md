@@ -175,10 +175,10 @@ To see your current configuration:
 
 ```bash
 # View effective configuration
-docsift config show
+docsift status
 
-# View with defaults
-docsift config show --with-defaults
+# View with verbose output
+docsift status --verbose
 ```
 
 ## Best Practices

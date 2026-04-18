@@ -141,7 +141,7 @@ docsift collection rename my-notes personal-notes
 ### Delete Collection
 
 ```bash
-docsift collection delete old-collection
+docsift collection remove old-collection
 ```
 
 ### Include / Exclude from Default Searches

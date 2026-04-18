@@ -38,10 +38,10 @@ pip install "docsift[all]"
 docsift collection add ~/Documents/notes --name my-notes
 
 # Index your documents
-docsift index update my-notes
+docsift index update --collection my-notes
 
 # Search
-docsift search "python decorators"
+docsift search query "python decorators"
 ```
 
 ## Installation
@@ -84,7 +84,7 @@ docsift collection show my-notes
 docsift collection rename my-notes personal-notes
 
 # Delete a collection
-docsift collection delete old-collection --force
+docsift collection remove old-collection --force
 ```
 
 ### Context Management
@@ -106,29 +106,29 @@ docsift context list
 
 ```bash
 # Update the index
-docsift index update my-notes
+docsift index update --collection my-notes
 
 # Force full reindex
-docsift index update my-notes --force
+docsift index update --collection my-notes --force
 
 # Show indexing status
-docsift status my-notes
+docsift status
 ```
 
 ### Search
 
 ```bash
 # Basic search
-docsift search "python decorators"
-
-# Search in specific collection
-docsift search "python decorators" -c my-notes
-
-# Search with type
 docsift search query "python decorators"
 
+# Search in specific collection
+docsift search query "python decorators" -c my-notes
+
+# BM25 keyword search
+docsift search search "python decorators"
+
 # Limit results
-docsift search "python decorators" --limit 20
+docsift search query "python decorators" --limit 20
 
 # Search with explanation
 docsift search query "AI" --explain
