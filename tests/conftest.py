@@ -540,3 +540,71 @@ def create_test_collection(name: str = "test-collection") -> Collection:
         description=f"Test collection: {name}",
         paths=["/test/path"],
     )
+
+
+# =============================================================================
+# Docs Test Fixtures
+# =============================================================================
+
+
+@pytest.fixture
+def docs_test_db(tmp_path: Path) -> Generator[Path, None, None]:
+    """Create a temporary database with minimal test data for docs tests."""
+    from docsift.database.database import Database
+
+    db_path = tmp_path / "docs_test.db"
+    db = Database(db_path)
+    db.init_schema()
+
+    from docsift.database.repositories import CollectionRepository, DocumentRepository
+
+    with db.transaction() as conn:
+        coll_repo = CollectionRepository(conn)
+        doc_repo = DocumentRepository(conn)
+
+        collection = Collection(
+            name="test-docs",
+            path=str(tmp_path / "docs"),
+            description="Test collection for docs validation",
+            include_by_default=True,
+        )
+        coll_repo.create(collection)
+
+        # Create test document files
+        docs_dir = tmp_path / "docs"
+        docs_dir.mkdir()
+        (docs_dir / "python.md").write_text(
+            "# Python Decorators\n\nDecorators are a powerful feature."
+        )
+        (docs_dir / "machine-learning.md").write_text(
+            "# Machine Learning\n\nNeural networks are..."
+        )
+
+        # Insert documents
+        doc1 = Document(
+            path=str(docs_dir / "python.md"),
+            collection_id=collection.id,
+            content="# Python Decorators\n\nDecorators are a powerful feature.",
+            title="Python Decorators",
+        )
+        doc2 = Document(
+            path=str(docs_dir / "machine-learning.md"),
+            collection_id=collection.id,
+            content="# Machine Learning\n\nNeural networks are...",
+            title="Machine Learning",
+        )
+        doc_repo.create(doc1)
+        doc_repo.create(doc2)
+
+    yield db_path
+
+    db.close()
+
+
+@pytest.fixture
+def docs_runner(docs_test_db: Path) -> Generator["CliRunner", None, None]:
+    """Provide a CliRunner with docs test database pre-configured."""
+    from click.testing import CliRunner
+
+    runner = CliRunner(env={"DOCSIFT_DB_PATH": str(docs_test_db)})
+    yield runner
