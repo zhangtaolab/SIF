@@ -59,8 +59,8 @@ class Settings(BaseSettings):
         description="Batch size for inference",
     )
     model_type: str = Field(
-        default="sentence_transformers",
-        description="Embedding model type (gguf, sentence_transformers, openai, huggingface)",
+        default="modelscope",
+        description="Embedding model type (gguf, sentence_transformers, openai, huggingface, modelscope)",
     )
     n_gpu_layers: int = Field(
         default=0,
