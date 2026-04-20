@@ -24,7 +24,7 @@ Requires docsift CLI to be installed and available in PATH.
    - Otherwise: use hybrid search (`docsift search query`)
 
 2. **Build the CLI command** with smart defaults:
-   - Always include: `-q --json` (quiet + JSON output)
+   - Always include: `-q` (before subcommand) + `--json` (quiet + JSON output)
    - Default: `--limit 10 --line-numbers`
    - LLM can override defaults via arguments
 
@@ -32,27 +32,27 @@ Requires docsift CLI to be installed and available in PATH.
 
    **Hybrid search (default):**
    ```bash
-   docsift search query -q --json --limit 10 --line-numbers "{query}"
+   docsift -q search query --json --limit 10 --line-numbers "{query}"
    ```
 
    **BM25 only:**
    ```bash
-   docsift search search -q --json --limit 10 --line-numbers "{query}"
+   docsift -q search search --json --limit 10 --line-numbers "{query}"
    ```
 
    **Vector only:**
    ```bash
-   docsift search vsearch -q --json --limit 10 --line-numbers "{query}"
+   docsift -q search vsearch --json --limit 10 --line-numbers "{query}"
    ```
 
    **With collection filter:**
    ```bash
-   docsift search query -q --json --limit 10 --line-numbers -c "{collection}" "{query}"
+   docsift -q search query --json --limit 10 --line-numbers -c "{collection}" "{query}"
    ```
 
    **Search all collections:**
    ```bash
-   docsift search query -q --json --limit 10 --line-numbers --all "{query}"
+   docsift -q search query --json --limit 10 --line-numbers --all "{query}"
    ```
 
 4. **Parse and return JSON output**
@@ -70,12 +70,12 @@ Requires docsift CLI to be installed and available in PATH.
 <example>
 
 User: "Find notes about Python asyncio"
-→ docsift search query -q --json --limit 10 --line-numbers "Python asyncio"
+→ docsift -q search query --json --limit 10 --line-numbers "Python asyncio"
 
 User: "Search for 'machine learning' using BM25 only"
-→ docsift search search -q --json --limit 10 --line-numbers "machine learning"
+→ docsift -q search search --json --limit 10 --line-numbers "machine learning"
 
 User: "Search my notes collection for 'docker' and return top 5"
-→ docsift search query -q --json --limit 5 --line-numbers -c notes "docker"
+→ docsift -q search query --json --limit 5 --line-numbers -c notes "docker"
 
 </example>

@@ -11,7 +11,7 @@ Retrieve document content from the user's DocSift index.
 
 Supports single document by path or document ID.
 Supports batch retrieval via glob patterns or comma-separated paths.
-Returns structured JSON with path and content for each document.
+Returns document content as plain text (first line is the path, followed by content).
 
 Requires docsift CLI to be installed and available in PATH.
 </objective>
@@ -24,7 +24,7 @@ Requires docsift CLI to be installed and available in PATH.
    - Otherwise: use single `get`
 
 2. **Build the CLI command** with smart defaults:
-   - Always include: `-q --json` (quiet + JSON output)
+   - Always include: `-q` (before subcommand, suppresses non-error output)
    - Default: `--line-numbers`
    - LLM can override defaults via arguments
 
@@ -32,37 +32,37 @@ Requires docsift CLI to be installed and available in PATH.
 
    **Single document by path:**
    ```bash
-   docsift get get -q --json --line-numbers "{path}"
+   docsift -q get get --line-numbers "{path}"
    ```
 
    **Single document by ID:**
    ```bash
-   docsift get get -q --json --line-numbers "{doc_id}"
+   docsift -q get get --line-numbers "{doc_id}"
    ```
 
    **Limited lines:**
    ```bash
-   docsift get get -q --json --line-numbers --lines 50 "{path}"
+   docsift -q get get --line-numbers --lines 50 "{path}"
    ```
 
    **From specific line:**
    ```bash
-   docsift get get -q --json --line-numbers --from-line 10 --lines 20 "{path}"
+   docsift -q get get --line-numbers --from-line 10 --lines 20 "{path}"
    ```
 
    **Batch retrieval (glob pattern):**
    ```bash
-   docsift get multi-get -q --json --line-numbers "{pattern}"
+   docsift -q get multi-get --line-numbers "{pattern}"
    ```
 
    **Batch retrieval (comma-separated):**
    ```bash
-   docsift get multi-get -q --json --line-numbers "{path1},{path2},{path3}"
+   docsift -q get multi-get --line-numbers "{path1},{path2},{path3}"
    ```
 
-4. **Parse and return JSON output**
-   - Single get: return JSON object with path and content
-   - Multi-get: return JSON array, each element has path and content
+4. **Return output to LLM**
+   - Single get: returns path (first line) + content (remaining lines)
+   - Multi-get: returns multiple documents separated by headers
    - LLM formats the results for the user
 
 5. **Error handling**
@@ -75,15 +75,15 @@ Requires docsift CLI to be installed and available in PATH.
 <example>
 
 User: "Read my notes/python.md file"
-→ docsift get get -q --json --line-numbers "notes/python.md"
+→ docsift -q get get --line-numbers "notes/python.md"
 
 User: "Show first 30 lines of README.md"
-→ docsift get get -q --json --line-numbers --lines 30 "README.md"
+→ docsift -q get get --line-numbers --lines 30 "README.md"
 
 User: "Get all markdown files in the notes folder"
-→ docsift get multi-get -q --json --line-numbers "notes/*.md"
+→ docsift -q get multi-get --line-numbers "notes/*.md"
 
 User: "Read README and CONTRIBUTING"
-→ docsift get multi-get -q --json --line-numbers "README.md,CONTRIBUTING.md"
+→ docsift -q get multi-get --line-numbers "README.md,CONTRIBUTING.md"
 
 </example>
