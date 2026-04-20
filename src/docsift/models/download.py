@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 from typing import Optional
 
-from docsift.utils.logging import get_logger
+from docsift.utils.logging import get_logger, is_quiet, suppress_output
 
 logger = get_logger(__name__)
 
@@ -86,7 +86,11 @@ class ModelDownloader:
             download_kwargs["revision"] = revision
 
         try:
-            model_path = snapshot_download(**download_kwargs)
+            if is_quiet():
+                with suppress_output():
+                    model_path = snapshot_download(**download_kwargs)
+            else:
+                model_path = snapshot_download(**download_kwargs)
             logger.info(f"Model downloaded to: {model_path}")
             return Path(model_path)
         except Exception as e:

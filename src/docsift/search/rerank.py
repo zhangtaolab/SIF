@@ -7,7 +7,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from docsift.core.models import SearchResult
-from docsift.utils.logging import get_logger
+from docsift.utils.logging import get_logger, is_quiet, suppress_output
+
 
 if TYPE_CHECKING:
     from sentence_transformers import CrossEncoder  # noqa: F401
@@ -168,7 +169,15 @@ class CrossEncoderReranker:
         else:
             logger.info(f"Loading ST reranker model: {model_id}")
 
-        self._model = CrossEncoder(local_path, device=self._device, max_length=512)
+        if is_quiet():
+            with suppress_output():
+                self._model = CrossEncoder(
+                    local_path, device=self._device, max_length=512
+                )
+        else:
+            self._model = CrossEncoder(
+                local_path, device=self._device, max_length=512
+            )
         logger.info("Reranker model loaded successfully")
 
     def rerank(
@@ -253,20 +262,45 @@ class Qwen3Reranker:
 
         logger.info(f"Loading Qwen3 reranker model: {model_id}")
 
-        self._tokenizer = AutoTokenizer.from_pretrained(local_path, padding_side="left")
-        self._model = AutoModelForCausalLM.from_pretrained(
-            local_path,
-            torch_dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
-        ).eval()
+        if is_quiet():
+            with suppress_output():
+                self._tokenizer = AutoTokenizer.from_pretrained(
+                    local_path, padding_side="left"
+                )
+                self._model = AutoModelForCausalLM.from_pretrained(
+                    local_path,
+                    torch_dtype=torch.bfloat16
+                    if torch.cuda.is_available()
+                    else torch.float32,
+                ).eval()
 
-        if self._device:
-            self._model = self._model.to(self._device)
+                if self._device:
+                    self._model = self._model.to(self._device)
+                else:
+                    device = "cuda" if torch.cuda.is_available() else "cpu"
+                    self._model = self._model.to(device)
+
+                self._token_true_id = self._tokenizer.convert_tokens_to_ids("yes")
+                self._token_false_id = self._tokenizer.convert_tokens_to_ids("no")
         else:
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-            self._model = self._model.to(device)
+            self._tokenizer = AutoTokenizer.from_pretrained(
+                local_path, padding_side="left"
+            )
+            self._model = AutoModelForCausalLM.from_pretrained(
+                local_path,
+                torch_dtype=torch.bfloat16
+                if torch.cuda.is_available()
+                else torch.float32,
+            ).eval()
 
-        self._token_true_id = self._tokenizer.convert_tokens_to_ids("yes")
-        self._token_false_id = self._tokenizer.convert_tokens_to_ids("no")
+            if self._device:
+                self._model = self._model.to(self._device)
+            else:
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+                self._model = self._model.to(device)
+
+            self._token_true_id = self._tokenizer.convert_tokens_to_ids("yes")
+            self._token_false_id = self._tokenizer.convert_tokens_to_ids("no")
         logger.info("Qwen3 reranker model loaded successfully")
 
     @staticmethod
@@ -354,15 +388,14 @@ def create_reranker(
             model_name=settings.reranker_model_name,
             batch_size=settings.reranker_batch_size,
         )
-    elif model_type == "sentence_transformers":
+    if model_type == "sentence_transformers":
         return CrossEncoderReranker(
             model_name=settings.reranker_model_name,
             model_path=str(settings.reranker_model_path) if settings.reranker_model_path else None,
             batch_size=settings.reranker_batch_size,
             cache_dir=cache_dir,
         )
-    else:
-        raise ValueError(f"Unknown reranker model_type: {model_type}")
+    raise ValueError(f"Unknown reranker model_type: {model_type}")
 
 
 # Backwards-compatible alias

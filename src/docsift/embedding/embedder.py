@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import List, Optional
 
 import numpy as np
 
 from docsift.core.models import Embedder
 from docsift.models.download import ModelDownloader
-from docsift.utils.logging import get_logger
+from docsift.utils.logging import get_logger, is_quiet, suppress_output
+
 
 logger = get_logger(__name__)
 
@@ -48,11 +49,19 @@ class SentenceTransformerEmbedder(Embedder):
 
         logger.info(f"Loading embedding model: {model_name} on {device}")
 
-        self.model = SentenceTransformer(
-            model_name,
-            device=device,
-            cache_folder=cache_dir,
-        )
+        if is_quiet():
+            with suppress_output():
+                self.model = SentenceTransformer(
+                    model_name,
+                    device=device,
+                    cache_folder=cache_dir,
+                )
+        else:
+            self.model = SentenceTransformer(
+                model_name,
+                device=device,
+                cache_folder=cache_dir,
+            )
 
         self._dimension = self.model.get_sentence_embedding_dimension()
         logger.info(f"Embedding dimension: {self._dimension}")
@@ -204,10 +213,17 @@ class ModelScopeEmbedder(Embedder):
 
         logger.info(f"Loading ModelScope model: {model_id} on {device}")
 
-        self.model = SentenceTransformer(
-            str(actual_model_path),
-            device=device,
-        )
+        if is_quiet():
+            with suppress_output():
+                self.model = SentenceTransformer(
+                    str(actual_model_path),
+                    device=device,
+                )
+        else:
+            self.model = SentenceTransformer(
+                str(actual_model_path),
+                device=device,
+            )
 
         self._dimension = self.model.get_sentence_embedding_dimension()
         self.model_id = model_id
@@ -249,7 +265,6 @@ class SimpleEmbedder(Embedder):
     def embed(self, text: str) -> List[float]:
         """Embed text using simple hashing."""
         # Simple hash-based embedding
-        import hashlib
 
         # Create a deterministic embedding based on text hash
         hash_bytes = hashlib.sha256(text.encode()).digest()
@@ -294,11 +309,10 @@ def create_embedder(
     """
     if embedder_type == "sentence_transformer":
         return SentenceTransformerEmbedder(**kwargs)
-    elif embedder_type == "llama_cpp":
+    if embedder_type == "llama_cpp":
         return LlamaCppEmbedder(**kwargs)
-    elif embedder_type == "modelscope":
+    if embedder_type == "modelscope":
         return ModelScopeEmbedder(**kwargs)
-    elif embedder_type == "simple":
+    if embedder_type == "simple":
         return SimpleEmbedder(**kwargs)
-    else:
-        raise ValueError(f"Unknown embedder type: {embedder_type}")
+    raise ValueError(f"Unknown embedder type: {embedder_type}")

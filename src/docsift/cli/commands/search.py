@@ -13,7 +13,8 @@ from docsift.core.models import SearchOptions
 from docsift.database.database import Database
 from docsift.database.repositories import CollectionRepository
 from docsift.search.bm25 import BM25Searcher
-from docsift.search.hybrid import HybridSearcher, SearchPipeline
+from docsift.search.hybrid import SearchPipeline
+from docsift.utils.logging import set_quiet
 
 
 console = Console()
@@ -92,6 +93,7 @@ def search_group() -> None:
 @click.option("--md", "output_md", is_flag=True, help="Output as Markdown")
 @click.option("--xml", "output_xml", is_flag=True, help="Output as XML")
 @click.option("--files", "output_files", is_flag=True, help="Output file paths only")
+@click.option("-q", "--quiet", is_flag=True, help="Suppress non-error output")
 @click.pass_context
 def search_cmd(
     ctx: click.Context,
@@ -108,12 +110,17 @@ def search_cmd(
     output_md: bool,
     output_xml: bool,
     output_files: bool,
+    quiet: bool,
 ) -> None:
     """Search documents using BM25."""
     index_path = ctx.obj["index_path"]
+    quiet = quiet or ctx.obj.get("quiet", False)
+    if quiet:
+        set_quiet(True)
 
     if not index_path.exists():
-        console.print("[yellow]No index found. Run 'docsift update' first.[/yellow]")
+        if not quiet:
+            console.print("[yellow]No index found. Run 'docsift update' first.[/yellow]")
         return
 
     db = Database(index_path)
@@ -148,7 +155,8 @@ def search_cmd(
         results = searcher.search(query, options)
 
     # Output results
-    if output_files:
+    quiet = quiet or ctx.obj.get("quiet", False)
+    if output_files or (quiet and not any([output_json, output_csv, output_md, output_xml])):
         for r in results:
             console.print(r.path)
     elif output_json:
@@ -188,7 +196,8 @@ def search_cmd(
     else:
         # Rich table output
         if not results:
-            console.print("[yellow]No results found.[/yellow]")
+            if not quiet:
+                console.print("[yellow]No results found.[/yellow]")
             return
 
         table = Table(title=f'Search Results: "{query}"')
@@ -233,6 +242,7 @@ def search_cmd(
     type=click.Choice(["sentence_transformers", "gguf", "openai", "modelscope"]),
     help="Embedding model type override",
 )
+@click.option("-q", "--quiet", is_flag=True, help="Suppress non-error output")
 @click.pass_context
 def vsearch_cmd(
     ctx: click.Context,
@@ -245,14 +255,19 @@ def vsearch_cmd(
     line_numbers: bool,
     output_json: bool,
     model_type: str | None = None,
+    quiet: bool = False,
 ) -> None:
     """Search documents using vector similarity."""
     index_path = ctx.obj["index_path"]
+    quiet = quiet or ctx.obj.get("quiet", False)
+    if quiet:
+        set_quiet(True)
 
     if not index_path.exists():
-        console.print(
-            "[yellow]No index found. Run 'docsift update' and 'docsift embed' first.[/yellow]"
-        )
+        if not quiet:
+            console.print(
+                "[yellow]No index found. Run 'docsift update' and 'docsift embed' first.[/yellow]"
+            )
         return
 
     from docsift.config.settings import get_settings
@@ -301,7 +316,11 @@ def vsearch_cmd(
         searcher = VectorSearcher(db.connection, len(query_embedding))
         results = searcher.search(query_embedding, options)
 
-    if output_json:
+    quiet = quiet or ctx.obj.get("quiet", False)
+    if quiet and not output_json:
+        for r in results:
+            console.print(r.path)
+    elif output_json:
         console.print(
             format_results_json(
                 add_line_numbers_to_results([r.to_dict() for r in results])
@@ -311,7 +330,8 @@ def vsearch_cmd(
         )
     else:
         if not results:
-            console.print("[yellow]No results found.[/yellow]")
+            if not quiet:
+                console.print("[yellow]No results found.[/yellow]")
             return
 
         table = Table(title=f'Vector Search Results: "{query}"')
@@ -365,6 +385,7 @@ def vsearch_cmd(
     type=click.Choice(["sentence_transformers", "gguf", "openai", "modelscope"]),
     help="Embedding model type override",
 )
+@click.option("-q", "--quiet", is_flag=True, help="Suppress non-error output")
 @click.pass_context
 def query_cmd(
     ctx: click.Context,
@@ -384,15 +405,20 @@ def query_cmd(
     output_xml: bool,
     output_files: bool,
     model_type: str | None = None,
+    quiet: bool = False,
 ) -> None:
     """Search documents using hybrid approach (BM25 + Vector + RRF).
 
     This is the recommended search command for best results.
     """
     index_path = ctx.obj["index_path"]
+    quiet = quiet or ctx.obj.get("quiet", False)
+    if quiet:
+        set_quiet(True)
 
     if not index_path.exists():
-        console.print("[yellow]No index found. Run 'docsift update' first.[/yellow]")
+        if not quiet:
+            console.print("[yellow]No index found. Run 'docsift update' first.[/yellow]")
         return
 
     db = Database(index_path)
@@ -452,9 +478,11 @@ def query_cmd(
         try:
             reranker = create_reranker(settings)
         except ImportError:
-            console.print(
-                "[yellow]Reranker not available. Install with: pip install -e '.[embed]'[/yellow]"
-            )
+            if not quiet:
+                console.print(
+                    "[yellow]Reranker not available. "
+                    "Install with: pip install -e '.[embed]'[/yellow]"
+                )
 
     snippet_extractor = SmartSnippetExtractor(max_length=options.snippet_max_length)
 
@@ -471,7 +499,8 @@ def query_cmd(
         results = pipeline.search(query, options)
 
     # Output results
-    if output_files:
+    quiet = quiet or ctx.obj.get("quiet", False)
+    if output_files or (quiet and not any([output_json, output_csv, output_md, output_xml])):
         for r in results:
             console.print(r.path)
     elif output_json:
@@ -511,7 +540,8 @@ def query_cmd(
     else:
         # Rich table output
         if not results:
-            console.print("[yellow]No results found.[/yellow]")
+            if not quiet:
+                console.print("[yellow]No results found.[/yellow]")
             return
 
         table = Table(title=f'Hybrid Search Results: "{query}"')
