@@ -40,11 +40,11 @@ class Settings(BaseSettings):
         description="Path to embedding model file",
     )
     model_name: str = Field(
-        default="all-MiniLM-L6-v2",
+        default="Qwen/Qwen3-Embedding-0.6B",
         description="Embedding model name",
     )
     embedding_dim: int = Field(
-        default=384,
+        default=1024,
         ge=1,
         description="Embedding dimension",
     )
@@ -79,7 +79,7 @@ class Settings(BaseSettings):
 
     # Reranker settings
     reranker_model_name: str = Field(
-        default="cross-encoder/ms-marco-MiniLM-L-6-v2",
+        default="Qwen/Qwen3-Reranker-0.6B",
         description="Reranker model name",
     )
     reranker_model_path: Path | None = Field(
