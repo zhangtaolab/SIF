@@ -6,10 +6,10 @@ status: active
 last_updated: "2026-04-20T20:35:00Z"
 progress:
   total_phases: 7
-  completed_phases: 6
-  total_plans: 37
-  completed_plans: 37
-  percent: 86
+  completed_phases: 7
+  total_plans: 39
+  completed_plans: 39
+  percent: 100
 ---
 
 # DocSift — Project State
@@ -24,12 +24,12 @@ progress:
 ## Current Position
 
 Phase: 07 (cli-claude-skill)
-Plan: Not planned yet
+Plan: 2/2 complete
 
 - **Phase:** 7
-- **Plan:** 0/TBD
-- **Status:** Not Planned
-- **Progress Bar:** `[████████████████░░░░] 86%`
+- **Plan:** 2/2 complete
+- **Status:** Complete
+- **Progress Bar:** `[████████████████████] 100%`
 
 ## Phase History
 
@@ -41,7 +41,7 @@ Plan: Not planned yet
 | 04 — Advanced Search Pipeline | 2026-04-17 | 2026-04-17 | All 5 plans passed. BM25, vector, hybrid search, reranking, query expansion, and benchmarking all functional. |
 | 05 — Agent Context Experience | 2026-04-18 | 2026-04-18 | 7/7 plans passed. 3 gap closure fixes committed. Qwen3 models set as default. |
 | 06 — Documentation Audit & Refresh | 2026-04-18 | 2026-04-18 | All 7 plans passed. Auto-generated CLI/config references, docs code block validator (12 tests), Makefile target, GitHub Actions CI workflow. |
-| 07 — CLI Claude Skill | — | — | New phase added. Goal: Generate Claude skills for all CLI commands in the project. |
+| 07 — CLI Claude Skill | 2026-04-20 | 2026-04-20 | 2/2 plans passed. docsift-search and docsift-get Claude skills created in .claude/skills/. |
 
 ## Performance Metrics
 
@@ -87,7 +87,7 @@ Plan: Not planned yet
 ### TODOs
 
 - [x] Plan Phase 06 documentation audit and refresh — 7 plans created and verified
-- [ ] Phase 7: CLI Claude Skill — Generate Claude skills for all CLI commands (search, vsearch, query, collection, context, index, etc.)
+- [x] Phase 7: CLI Claude Skill — docsift-search and docsift-get skills created and committed
 - [ ] (Backlog) Phase 8: LLM-based query expansion — model tested (Qwen3.5-2B), awaiting v1.0 ship
 
 ### Blockers
@@ -96,5 +96,5 @@ Plan: Not planned yet
 
 ## Session Continuity
 
-- **Last action:** Phase 7 context gathered — 4 gray areas discussed, 5 implementation decisions locked
-- **Next expected action:** Run `/gsd-plan-phase 7` to create executable plans
+- **Last action:** Phase 7 complete — 2/2 plans executed, docsift-search and docsift-get skills committed
+- **Next expected action:** Consider `/gsd-complete-milestone` to finalize v1.0
