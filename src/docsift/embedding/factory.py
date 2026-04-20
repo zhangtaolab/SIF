@@ -1,6 +1,10 @@
 """Embedding model factory."""
 
-from docsift.embedding.embedder import LlamaCppEmbedder, SentenceTransformerEmbedder
+from docsift.embedding.embedder import (
+    LlamaCppEmbedder,
+    ModelScopeEmbedder,
+    SentenceTransformerEmbedder,
+)
 from docsift.embedding.model import EmbeddingModel, ModelType
 from docsift.utils.logging import get_logger
 
@@ -27,6 +31,8 @@ class EmbeddingModelFactory:
             return self._create_openai_model(model_name, **kwargs)
         if model_type == ModelType.HUGGINGFACE:
             return self._create_huggingface_model(model_name, **kwargs)
+        if model_type == ModelType.MODELSCOPE:
+            return self._create_modelscope_model(model_name, **kwargs)
         raise ValueError(f"Unsupported model type: {model_type}")
 
     def _create_gguf_model(
@@ -72,3 +78,15 @@ class EmbeddingModelFactory:
     ) -> EmbeddingModel:
         """Create a HuggingFace Transformers model."""
         raise NotImplementedError("HuggingFace models not yet implemented")
+
+    def _create_modelscope_model(
+        self,
+        model_name: str,
+        **kwargs: dict[str, any],
+    ) -> EmbeddingModel:
+        """Create a ModelScope embedder."""
+        return ModelScopeEmbedder(
+            model_id=model_name,
+            device=kwargs.get("device"),
+            cache_dir=kwargs.get("cache_dir"),
+        )

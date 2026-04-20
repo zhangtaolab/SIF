@@ -13,17 +13,18 @@ class ModelType(str, Enum):
     SENTENCE_TRANSFORMERS = "sentence_transformers"
     OPENAI = "openai"
     HUGGINGFACE = "huggingface"
+    MODELSCOPE = "modelscope"
 
 
 class EmbeddingConfig(BaseModel):
     """Configuration for embedding models."""
 
-    model_type: ModelType = Field(ModelType.GGUF, description="Model type")
+    model_type: ModelType = Field(ModelType.MODELSCOPE, description="Model type")
     model_path: str | None = Field(None, description="Path to model file")
-    model_name: str = Field("all-MiniLM-L6-v2", description="Model name or identifier")
+    model_name: str = Field("Qwen/Qwen3-Embedding-0.6B", description="Model name or identifier")
 
     # Model parameters
-    embedding_dim: int = Field(384, ge=1, description="Embedding dimension")
+    embedding_dim: int = Field(1024, ge=1, description="Embedding dimension")
     max_tokens: int = Field(512, ge=1, description="Maximum tokens per input")
     batch_size: int = Field(32, ge=1, description="Batch size for inference")
 
