@@ -1,13 +1,13 @@
 {
   "version": "1.0",
-  "timestamp": "2026-04-18T05:28:20Z",
+  "timestamp": "2026-04-20T11:23:04Z",
   "phase": "6",
   "phase_name": "documentation-audit-refresh",
   "phase_dir": ".planning/phases/06-documentation-audit-refresh",
-  "plan": 6,
+  "plan": 7,
   "task": 1,
   "total_tasks": 18,
-  "status": "paused",
+  "status": "completed",
   "completed_tasks": [
     {"id": 1, "name": "06-01: Create CLI reference generator", "status": "done", "commit": "469abaf"},
     {"id": 2, "name": "06-01: Regenerate docs/cli-reference.md", "status": "done", "commit": "0f1fb37"},
@@ -19,24 +19,27 @@
     {"id": 8, "name": "06-05: Update mcp-server.md", "status": "done", "commit": "a4848b5"},
     {"id": 9, "name": "06-05: Update search-algorithms.md", "status": "done", "commit": "117ed7d"},
     {"id": 10, "name": "06-05: Update architecture.md", "status": "done", "commit": "c664db9"},
-    {"id": 11, "name": "06-05: Update models.md", "status": "done", "commit": "973d024"}
+    {"id": 11, "name": "06-05: Update models.md", "status": "done", "commit": "973d024"},
+    {"id": 12, "name": "06-06: Create docs test fixtures + test_docs.py", "status": "done", "commit": "TBD"},
+    {"id": 13, "name": "06-07: Add make docs-test target + GitHub Actions workflow", "status": "done", "commit": "TBD"},
+    {"id": 14, "name": "Post-phase: sqlite-vec extension loading fix", "status": "done", "commit": "2185a64"},
+    {"id": 15, "name": "Post-phase: Qwen3 default models + modelscope", "status": "done", "commit": "2185a64"},
+    {"id": 16, "name": "Post-phase: Hybrid search deduplication", "status": "done", "commit": "2185a64"},
+    {"id": 17, "name": "Post-phase: Qwen3Reranker + title in rerank input", "status": "done", "commit": "2185a64"}
   ],
   "remaining_tasks": [
-    {"id": 12, "name": "06-06 Task 1: Create docs test fixtures", "status": "in_progress"},
-    {"id": 13, "name": "06-06 Task 2: Create test_docs.py with code block validation", "status": "in_progress"},
-    {"id": 14, "name": "06-06 Task 3: Execute code examples and fix broken ones", "status": "in_progress"},
-    {"id": 15, "name": "06-07 Task 1: Add make docs-test target", "status": "not_started"},
-    {"id": 16, "name": "06-07 Task 2: Add GitHub Actions docs workflow", "status": "not_started"},
-    {"id": 17, "name": "06-07 Task 3: Run full quality suite", "status": "not_started"}
+    {"id": 18, "name": "Backlog: Phase 7 LLM-based query expansion", "status": "not_started"}
   ],
   "blockers": [],
   "human_actions_pending": [],
   "decisions": [
-    {"decision": "Use worktree isolation for parallel plan execution", "rationale": "Phase 6 has 7 plans across 4 waves; parallel execution speeds up independent doc updates", "phase": "6"},
-    {"decision": "Auto-generate CLI reference from Click introspection", "rationale": "Ensures CLI reference always matches live code", "phase": "6"},
-    {"decision": "Auto-generate config reference from Pydantic Settings", "rationale": "Ensures configuration docs always match Settings class", "phase": "6"}
+    {"decision": "Use sqlite_vec.load() for cross-platform sqlite-vec extension loading", "rationale": "macOS load_extension('vec0') fails; sqlite_vec Python package handles platform detection", "phase": "post"},
+    {"decision": "Default embedding model: Qwen3-Embedding-0.6B via ModelScope", "rationale": "Chinese-accessible hub, 1024-dim, supports both Chinese and English", "phase": "post"},
+    {"decision": "Default reranker: Qwen3-Reranker-0.6B with AutoModelForCausalLM", "rationale": "Standard CrossEncoder fails with tensor reshape error on this model; yes/no logits approach works", "phase": "post"},
+    {"decision": "Include document title in reranker input text", "rationale": "RRF discards original BM25 scores; reranker needs title signal to boost exact-match documents", "phase": "post"},
+    {"decision": "Dedup hybrid results by document_id keeping highest score", "rationale": "Vector search operates at chunk level, same document can appear multiple times in fused results", "phase": "post"}
   ],
   "uncommitted_files": [],
-  "next_action": "Wait for 06-06 agent to complete, merge its worktree, run post-merge tests, then execute Wave 4 (06-07)",
-  "context_notes": "Wave 3 agent (06-06) is currently running in a worktree. It will create tests/test_docs.py and tests/conftest.py with code block validation. After it completes, merge the worktree, run tests, then spawn Wave 4 (06-07) for Makefile target and GitHub Actions workflow."
+  "next_action": "Consider /gsd-complete-milestone for v1.0, or start Phase 7 (LLM query expansion)",
+  "context_notes": "All 6 GSD phases complete. Post-phase ad-hoc fixes committed and pushed. GSD updated to 1.38.1. Test suite passes (377 passed, 11 skipped)."
 }
