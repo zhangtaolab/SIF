@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: completed
-last_updated: "2026-04-18T14:05:00Z"
+status: active
+last_updated: "2026-04-20T20:35:00Z"
 progress:
-  total_phases: 6
-  completed_phases: 5
+  total_phases: 7
+  completed_phases: 6
   total_plans: 37
   completed_plans: 37
-  percent: 100
+  percent: 86
 ---
 
 # DocSift — Project State
@@ -18,18 +18,18 @@ progress:
 
 - **Name:** DocSift
 - **Core Value:** 用户可以在自己的笔记和文档库中，用自然语言快速、准确地找到需要的信息——无论关键词是否匹配。
-- **Current Focus:** Phase 06 — documentation-audit-refresh
+- **Current Focus:** Phase 07 — cli-claude-skill
 - **Tech Stack:** Python 3.10+, SQLite (FTS5 + sqlite-vec), Click, Pydantic, sentence-transformers, llama-cpp-python
 
 ## Current Position
 
-Phase: 06 (documentation-audit-refresh)
-Plan: All 7 plans complete
+Phase: 07 (cli-claude-skill)
+Plan: Not planned yet
 
-- **Phase:** 6
-- **Plan:** 7/7 complete
-- **Status:** Completed
-- **Progress Bar:** `[████████████████████] 100%`
+- **Phase:** 7
+- **Plan:** 0/TBD
+- **Status:** Not Planned
+- **Progress Bar:** `[████████████████░░░░] 86%`
 
 ## Phase History
 
@@ -41,6 +41,7 @@ Plan: All 7 plans complete
 | 04 — Advanced Search Pipeline | 2026-04-17 | 2026-04-17 | All 5 plans passed. BM25, vector, hybrid search, reranking, query expansion, and benchmarking all functional. |
 | 05 — Agent Context Experience | 2026-04-18 | 2026-04-18 | 7/7 plans passed. 3 gap closure fixes committed. Qwen3 models set as default. |
 | 06 — Documentation Audit & Refresh | 2026-04-18 | 2026-04-18 | All 7 plans passed. Auto-generated CLI/config references, docs code block validator (12 tests), Makefile target, GitHub Actions CI workflow. |
+| 07 — CLI Claude Skill | — | — | New phase added. Goal: Generate Claude skills for all CLI commands in the project. |
 
 ## Performance Metrics
 
@@ -79,10 +80,15 @@ Plan: All 7 plans complete
 - [Phase 06-discuss]: Technical docs validated via AST parsing: extract public API from code, verify against documented names
 - [Phase 06-discuss]: Architecture diagram strategy: keep ASCII in README (manual), generate Mermaid in architecture.md (scripted)
 
+### Roadmap Evolution
+
+- Phase 7 added (2026-04-20): Generate Claude skills for all CLI commands in the project
+
 ### TODOs
 
 - [x] Plan Phase 06 documentation audit and refresh — 7 plans created and verified
-- [ ] (Backlog) Phase 7: LLM-based query expansion — model tested (Qwen3.5-2B), awaiting v1.0 ship
+- [ ] Phase 7: CLI Claude Skill — Generate Claude skills for all CLI commands (search, vsearch, query, collection, context, index, etc.)
+- [ ] (Backlog) Phase 8: LLM-based query expansion — model tested (Qwen3.5-2B), awaiting v1.0 ship
 
 ### Blockers
 
@@ -90,5 +96,5 @@ Plan: All 7 plans complete
 
 ## Session Continuity
 
-- **Last action:** Phase 6 complete — all 7 plans done, 37/37 total plans complete
-- **Next expected action:** Milestone v1.0 complete — consider /gsd-complete-milestone
+- **Last action:** Phase 7 added to roadmap — CLI Claude skill generation
+- **Next expected action:** Run `/gsd-plan-phase 7` to break down the phase into executable plans

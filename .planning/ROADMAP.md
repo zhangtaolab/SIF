@@ -1,7 +1,7 @@
 # DocSift Roadmap
 
 **Granularity:** Standard
-**Phases:** 5
+**Phases:** 7
 **Coverage:** 31/31 v1 requirements mapped
 
 ## Phases
@@ -11,6 +11,7 @@
 - [x] **Phase 3: Embedding & Vector Search** - Enable configurable embedding backends and working semantic search
 - [x] **Phase 4: Advanced Search Pipeline** - Add reranking, query expansion, explainability, and search quality controls
 - [x] **Phase 5: Agent Context Experience** - Allow users to augment collections with contextual descriptions for better retrieval
+- [x] **Phase 6: Documentation Audit & Refresh** - Ensure all docs accurately reflect CLI, API, and config; establish docs testing infrastructure
 
 ## Phase Details
 
@@ -126,4 +127,40 @@ Plans:
 | 2. CLI Core Completion | 6/6 | Complete | 2026-04-15 |
 | 3. Embedding & Vector Search | 6/6 | Complete | 2026-04-16 |
 | 4. Advanced Search Pipeline | 5/5 | Complete | 2026-04-17 |
-| 5. Agent Context Experience | 4/7 | Gap Closure | 2026-04-18 |
+| 5. Agent Context Experience | 7/7 | Complete | 2026-04-18 |
+| 6. Documentation Audit & Refresh | 7/7 | Complete | 2026-04-18 |
+| 7. CLI Claude Skill | 0/TBD | Not Planned | — |
+
+### Phase 6: Documentation Audit & Refresh
+
+**Goal**: All project documentation accurately reflects the current CLI commands, API, and configuration. Every code example in docs is syntax-checked or executed and verified to work.
+**Depends on**: Phase 5
+**Requirements**: DOC-01, DOC-02, DOC-03, DOC-04, DOC-05, DOC-06, DOC-07
+**Success Criteria** (what must be TRUE):
+  1. `docs/cli-reference.md` accurately describes every current Click command, subcommand, argument, and option
+  2. `docs/configuration.md` documents every `Settings` field with correct default value
+  3. Every shell command example in `docs/quickstart.md` executes successfully
+  4. `README.md` reflects current features, default models, and realistic roadmap
+  5. Technical docs (`mcp-server.md`, `search-algorithms.md`, `architecture.md`, `models.md`) are up-to-date
+  6. All code examples in docs are executed or syntax-checked
+  7. Docs test infrastructure exists (`tests/test_docs.py`, `make docs-test`, GitHub Actions CI)
+**Plans:** 7 plans
+
+Plans:
+- [x] 06-01-PLAN.md — Auto-generate CLI reference from Click --help
+- [x] 06-02-PLAN.md — Introspect Settings class and validate configuration.md
+- [x] 06-03-PLAN.md — Execute and validate quickstart.md code examples
+- [x] 06-04-PLAN.md — Review and fix README.md accuracy
+- [x] 06-05-PLAN.md — Review technical docs for discrepancies
+- [x] 06-06-PLAN.md — Create docs code block validator with pytest
+- [x] 06-07-PLAN.md — Add Makefile target and GitHub Actions CI workflow
+
+### Phase 7: 为本项目的所有CLI生成 claude skill
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 6
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 7 to break down)
