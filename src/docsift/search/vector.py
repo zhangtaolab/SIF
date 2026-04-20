@@ -59,7 +59,7 @@ class VectorSearcher:
             params.extend(options.collection_ids)
 
         sql = f"""
-            SELECT 
+            SELECT
                 d.id as document_id,
                 d.title,
                 d.path,
@@ -68,11 +68,9 @@ class VectorSearcher:
             FROM document_embeddings de
             JOIN documents d ON de.document_id = d.id
             JOIN collections c ON d.collection_id = c.id
-            WHERE embedding MATCH ? {collection_filter}
+            WHERE embedding MATCH ? AND k = {options.limit} {collection_filter}
             ORDER BY distance
-            LIMIT ? OFFSET ?
         """
-        params.extend([options.limit, options.offset])
 
         cursor = self.db.execute(sql, params)
         results = []
@@ -114,8 +112,7 @@ class VectorSearcher:
         cursor = self.db.execute(sql, paths)
         # Normalize keys for cross-platform matching (macOS /private/tmp, etc.)
         context_map = {
-            os.path.realpath(row["target_id"]): row["content"]
-            for row in cursor.fetchall()
+            os.path.realpath(row["target_id"]): row["content"] for row in cursor.fetchall()
         }
         for result in results:
             result.context_description = context_map.get(os.path.realpath(result.path))

@@ -50,11 +50,13 @@ dev = [
 ]
 embed = [
     "sentence-transformers>=2.2.0",
+    "modelscope>=1.36.0",
     "numpy>=1.24.0",
 ]
 all = [
     "sentence-transformers>=2.2.0",
     "llama-cpp-python>=0.2.0",
+    "modelscope>=1.36.0",
     "numpy>=1.24.0",
 ]
 

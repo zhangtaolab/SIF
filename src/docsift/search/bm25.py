@@ -93,8 +93,7 @@ class BM25Searcher:
         cursor = self.db.execute(sql, paths)
         # Normalize keys for cross-platform matching (macOS /private/tmp, etc.)
         context_map = {
-            os.path.realpath(row["target_id"]): row["content"]
-            for row in cursor.fetchall()
+            os.path.realpath(row["target_id"]): row["content"] for row in cursor.fetchall()
         }
         for result in results:
             result.context_description = context_map.get(os.path.realpath(result.path))

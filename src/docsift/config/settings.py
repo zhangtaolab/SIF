@@ -87,7 +87,7 @@ class Settings(BaseSettings):
         description="Path to local reranker model file",
     )
     reranker_model_type: str = Field(
-        default="gguf",
+        default="sentence_transformers",
         description="Reranker model type (gguf, sentence_transformers)",
     )
     reranker_batch_size: int = Field(

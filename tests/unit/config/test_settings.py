@@ -5,10 +5,10 @@ import pytest
 from docsift.config.settings import Settings
 
 
-def test_default_model_type_is_sentence_transformers() -> None:
-    """Test that default model_type is sentence_transformers."""
+def test_default_model_type_is_modelscope() -> None:
+    """Test that default model_type is modelscope."""
     settings = Settings()
-    assert settings.model_type == "sentence_transformers"
+    assert settings.model_type == "modelscope"
 
 
 def test_model_type_validation_accepts_valid_values() -> None:

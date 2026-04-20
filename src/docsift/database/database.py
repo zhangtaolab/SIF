@@ -8,6 +8,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Generator, Optional
 
+import sqlite_vec
+
 from docsift.database.schema import SchemaManager
 
 
@@ -38,22 +40,11 @@ class Database:
         # Enable FTS5
         self._connection.execute("PRAGMA foreign_keys = ON")
 
-        # Try to load sqlite-vec extension
+        # Load sqlite-vec extension
         try:
             self._connection.enable_load_extension(True)
-            # Try common paths for sqlite-vec
-            vec_paths = [
-                "vec0",
-                "libvec0",
-                "/usr/lib/sqlite3/vec0",
-                "/usr/local/lib/sqlite3/vec0",
-            ]
-            for path in vec_paths:
-                try:
-                    self._connection.load_extension(path)
-                    break
-                except sqlite3.OperationalError:
-                    continue
+            sqlite_vec.load(self._connection)
+            self._connection.enable_load_extension(False)
         except Exception:
             pass  # sqlite-vec is optional
 
@@ -128,15 +119,13 @@ class DatabaseConnection:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
 
-        # Try to enable extensions
+        # Load sqlite-vec extension
         try:
             conn.enable_load_extension(True)
-            try:
-                conn.load_extension("vec0")
-            except sqlite3.OperationalError:
-                pass
+            sqlite_vec.load(conn)
+            conn.enable_load_extension(False)
         except Exception:
-            pass
+            pass  # sqlite-vec is optional
 
         try:
             yield conn

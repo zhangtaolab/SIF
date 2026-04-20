@@ -80,7 +80,30 @@ class HybridSearcher:
                         result.document_id, query, options.max_highlights
                     )
 
-        return self._attach_contexts(fused_results)
+        # Deduplicate by document_id, keeping highest score
+        deduped = self._deduplicate_results(fused_results)
+
+        return self._attach_contexts(deduped)
+
+    @staticmethod
+    def _deduplicate_results(results: list[SearchResult]) -> list[SearchResult]:
+        """Deduplicate results by document_id, keeping the highest score.
+
+        Vector search operates at chunk level, so the same document may appear
+        multiple times. We keep the best-scoring entry per document and
+        reassign sequential ranks.
+        """
+        best: dict[str, SearchResult] = {}
+        for result in results:
+            doc_id = result.document_id
+            if doc_id not in best or result.score > best[doc_id].score:
+                best[doc_id] = result
+
+        deduped = list(best.values())
+        deduped.sort(key=lambda r: r.score, reverse=True)
+        for rank, result in enumerate(deduped, 1):
+            result.rank = rank
+        return deduped
 
     def _attach_contexts(self, results: list[SearchResult]) -> list[SearchResult]:
         """Attach path context descriptions to search results via batch query."""
