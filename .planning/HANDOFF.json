@@ -1,45 +1,32 @@
 {
   "version": "1.0",
-  "timestamp": "2026-04-20T11:23:04Z",
-  "phase": "6",
-  "phase_name": "documentation-audit-refresh",
-  "phase_dir": ".planning/phases/06-documentation-audit-refresh",
-  "plan": 7,
-  "task": 1,
-  "total_tasks": 18,
-  "status": "completed",
+  "timestamp": "2026-04-27T08:59:19.927Z",
+  "phase": "08",
+  "phase_name": "project-rename-from-docsift-to-sif",
+  "phase_dir": ".planning/phases/08-project-rename-from-docsift-to-sif",
+  "plan": 8,
+  "task": 0,
+  "total_tasks": 0,
+  "status": "complete",
   "completed_tasks": [
-    {"id": 1, "name": "06-01: Create CLI reference generator", "status": "done", "commit": "469abaf"},
-    {"id": 2, "name": "06-01: Regenerate docs/cli-reference.md", "status": "done", "commit": "0f1fb37"},
-    {"id": 3, "name": "06-02: Create Settings introspection script", "status": "done", "commit": "373f849"},
-    {"id": 4, "name": "06-02: Regenerate docs/configuration.md", "status": "done", "commit": "565cf01"},
-    {"id": 5, "name": "06-03: Rewrite quickstart.md", "status": "done", "commit": "a8f76d1"},
-    {"id": 6, "name": "06-04: Update README.md", "status": "done", "commit": "f3f784a"},
-    {"id": 7, "name": "06-04: Sync docs/index.md", "status": "done", "commit": "28734e5"},
-    {"id": 8, "name": "06-05: Update mcp-server.md", "status": "done", "commit": "a4848b5"},
-    {"id": 9, "name": "06-05: Update search-algorithms.md", "status": "done", "commit": "117ed7d"},
-    {"id": 10, "name": "06-05: Update architecture.md", "status": "done", "commit": "c664db9"},
-    {"id": 11, "name": "06-05: Update models.md", "status": "done", "commit": "973d024"},
-    {"id": 12, "name": "06-06: Create docs test fixtures + test_docs.py", "status": "done", "commit": "TBD"},
-    {"id": 13, "name": "06-07: Add make docs-test target + GitHub Actions workflow", "status": "done", "commit": "TBD"},
-    {"id": 14, "name": "Post-phase: sqlite-vec extension loading fix", "status": "done", "commit": "2185a64"},
-    {"id": 15, "name": "Post-phase: Qwen3 default models + modelscope", "status": "done", "commit": "2185a64"},
-    {"id": 16, "name": "Post-phase: Hybrid search deduplication", "status": "done", "commit": "2185a64"},
-    {"id": 17, "name": "Post-phase: Qwen3Reranker + title in rerank input", "status": "done", "commit": "2185a64"}
+    {"id": 1, "name": "Rename src/docsift to src/sif and update pyproject.toml", "status": "done", "commit": "76e9538"},
+    {"id": 2, "name": "Update constants, metadata, and CLI migration logic", "status": "done", "commit": "7f01594"},
+    {"id": 3, "name": "Update all Python imports in src/sif/", "status": "done", "commit": "83acfb2"},
+    {"id": 4, "name": "Update Settings env_prefix to SIF_", "status": "done", "commit": "637afca"},
+    {"id": 5, "name": "Update test imports and patch targets", "status": "done", "commit": "f93637a"},
+    {"id": 6, "name": "Update documentation and config files", "status": "done", "commit": "d2d0346"},
+    {"id": 7, "name": "Rename Claude skills to sif-search and sif-get", "status": "done", "commit": "d0e16ac"},
+    {"id": 8, "name": "Run full quality suite and final verification", "status": "done", "commit": "1810c7d"},
+    {"id": 9, "name": "Fix verifier gaps: DOCSIFT_ env vars and GitHub URLs", "status": "done", "commit": "cb6a146"}
   ],
-  "remaining_tasks": [
-    {"id": 18, "name": "Backlog: Phase 7 LLM-based query expansion", "status": "not_started"}
-  ],
+  "remaining_tasks": [],
   "blockers": [],
   "human_actions_pending": [],
   "decisions": [
-    {"decision": "Use sqlite_vec.load() for cross-platform sqlite-vec extension loading", "rationale": "macOS load_extension('vec0') fails; sqlite_vec Python package handles platform detection", "phase": "post"},
-    {"decision": "Default embedding model: Qwen3-Embedding-0.6B via ModelScope", "rationale": "Chinese-accessible hub, 1024-dim, supports both Chinese and English", "phase": "post"},
-    {"decision": "Default reranker: Qwen3-Reranker-0.6B with AutoModelForCausalLM", "rationale": "Standard CrossEncoder fails with tensor reshape error on this model; yes/no logits approach works", "phase": "post"},
-    {"decision": "Include document title in reranker input text", "rationale": "RRF discards original BM25 scores; reranker needs title signal to boost exact-match documents", "phase": "post"},
-    {"decision": "Dedup hybrid results by document_id keeping highest score", "rationale": "Vector search operates at chunk level, same document can appear multiple times in fused results", "phase": "post"}
+    {"decision": "Bulk sed replacement for docsift→sif was too naive for GitHub URLs", "rationale": "github.com/docsift/docsift became github.com/sif/sif instead of github.com/zhangtaolab/sif", "phase": "08"},
+    {"decision": "README.md Configuration section env vars were missed by initial sed", "rationale": "DOCSIFT_* examples in code blocks were not caught by targeted replacements", "phase": "08"}
   ],
   "uncommitted_files": [],
-  "next_action": "Consider /gsd-complete-milestone for v1.0, or start Phase 7 (LLM query expansion)",
-  "context_notes": "All 6 GSD phases complete. Post-phase ad-hoc fixes committed and pushed. GSD updated to 1.38.1. Test suite passes (377 passed, 11 skipped)."
+  "next_action": "Phase 08 is complete. This was the final phase of the v1.0 milestone. Consider running /gsd-complete-milestone to archive.",
+  "context_notes": "All 8 phases of v1.0 milestone are complete. Phase 08 rename from DocSift to SIF is fully verified with 10/10 must-haves, 377 tests passing, zero failures."
 }
