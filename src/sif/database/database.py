@@ -1,12 +1,12 @@
-"""Database connection and management for DocSift."""
+"""Database connection and management for SIF."""
 
 from __future__ import annotations
 
-import json
 import sqlite3
+from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Generator, Optional
+from typing import Optional
 
 import sqlite_vec
 
@@ -14,7 +14,7 @@ from sif.database.schema import SchemaManager
 
 
 class Database:
-    """Main database class for DocSift."""
+    """Main database class for SIF."""
 
     def __init__(self, db_path: str | Path) -> None:
         self.db_path = Path(db_path).expanduser().resolve()

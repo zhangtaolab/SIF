@@ -1,8 +1,6 @@
 """Tests for embedding model."""
 
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import MagicMock
 
 from sif.embedding.model import EmbeddingModel, ModelType
 

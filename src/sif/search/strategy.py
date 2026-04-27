@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from sif.models.search import SearchQuery, SearchResult, SearchOptions
+from sif.models.search import SearchOptions, SearchResult
 
 
 @dataclass

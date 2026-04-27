@@ -13,6 +13,7 @@ from sif.core.models import (
     SearchResult,
 )
 
+
 __all__ = [
     "Collection",
     "Document",

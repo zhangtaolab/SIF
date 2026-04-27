@@ -1,4 +1,4 @@
-"""MCP (Model Context Protocol) server implementation for DocSift.
+"""MCP (Model Context Protocol) server implementation for SIF.
 
 This package provides MCP server functionality:
 - stdio transport for CLI integration
@@ -7,19 +7,20 @@ This package provides MCP server functionality:
 - Tool and resource definitions
 """
 
+from sif.mcp_server.handlers import ResourceHandler, ToolHandler
 from sif.mcp_server.server import MCPServer
-from sif.mcp_server.transport import Transport, StdioTransport, HTTPTransport
-from sif.mcp_server.handlers import ToolHandler, ResourceHandler
-from sif.mcp_server.tools import SearchTool, IndexTool, CollectionTool
+from sif.mcp_server.tools import CollectionTool, IndexTool, SearchTool
+from sif.mcp_server.transport import HTTPTransport, StdioTransport, Transport
+
 
 __all__ = [
-    "MCPServer",
-    "Transport",
-    "StdioTransport",
+    "CollectionTool",
     "HTTPTransport",
-    "ToolHandler",
+    "IndexTool",
+    "MCPServer",
     "ResourceHandler",
     "SearchTool",
-    "IndexTool",
-    "CollectionTool",
+    "StdioTransport",
+    "ToolHandler",
+    "Transport",
 ]

@@ -171,13 +171,9 @@ class CrossEncoderReranker:
 
         if is_quiet():
             with suppress_output():
-                self._model = CrossEncoder(
-                    local_path, device=self._device, max_length=512
-                )
+                self._model = CrossEncoder(local_path, device=self._device, max_length=512)
         else:
-            self._model = CrossEncoder(
-                local_path, device=self._device, max_length=512
-            )
+            self._model = CrossEncoder(local_path, device=self._device, max_length=512)
         logger.info("Reranker model loaded successfully")
 
     def rerank(
@@ -264,14 +260,10 @@ class Qwen3Reranker:
 
         if is_quiet():
             with suppress_output():
-                self._tokenizer = AutoTokenizer.from_pretrained(
-                    local_path, padding_side="left"
-                )
+                self._tokenizer = AutoTokenizer.from_pretrained(local_path, padding_side="left")
                 self._model = AutoModelForCausalLM.from_pretrained(
                     local_path,
-                    torch_dtype=torch.bfloat16
-                    if torch.cuda.is_available()
-                    else torch.float32,
+                    torch_dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
                 ).eval()
 
                 if self._device:
@@ -283,14 +275,10 @@ class Qwen3Reranker:
                 self._token_true_id = self._tokenizer.convert_tokens_to_ids("yes")
                 self._token_false_id = self._tokenizer.convert_tokens_to_ids("no")
         else:
-            self._tokenizer = AutoTokenizer.from_pretrained(
-                local_path, padding_side="left"
-            )
+            self._tokenizer = AutoTokenizer.from_pretrained(local_path, padding_side="left")
             self._model = AutoModelForCausalLM.from_pretrained(
                 local_path,
-                torch_dtype=torch.bfloat16
-                if torch.cuda.is_available()
-                else torch.float32,
+                torch_dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
             ).eval()
 
             if self._device:

@@ -3,7 +3,9 @@
 # Application info
 APP_NAME = "sif"
 APP_VERSION = "0.1.0"
-APP_DESCRIPTION = "A local CLI search engine for indexing and searching documents (SIF: Search / Index / Find)"
+APP_DESCRIPTION = (
+    "A local CLI search engine for indexing and searching documents (SIF: Search / Index / Find)"
+)
 
 # Default paths
 DEFAULT_DB_PATH = "~/.local/share/sif/sif.db"

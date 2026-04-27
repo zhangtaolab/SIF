@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any, Dict
 
 from sif.mcp.server import MCPServer
 from sif.utils.logging import get_logger
+
 
 logger = get_logger(__name__)
 
@@ -16,14 +16,14 @@ def run_http_server(
 ) -> None:
     """Run MCP server in HTTP mode using FastAPI."""
     try:
+        import uvicorn
         from fastapi import FastAPI, Request
         from fastapi.responses import JSONResponse
-        import uvicorn
     except ImportError:
         logger.error("FastAPI not installed. Install with: pip install fastapi uvicorn")
         raise
 
-    app = FastAPI(title="DocSift MCP Server")
+    app = FastAPI(title="SIF MCP Server")
     server = MCPServer(index_path)
 
     @app.post("/mcp/v1/messages")
@@ -42,7 +42,7 @@ def run_http_server(
     async def root() -> Dict[str, Any]:
         """Root endpoint."""
         return {
-            "name": "DocSift MCP Server",
+            "name": "SIF MCP Server",
             "version": "0.1.0",
             "endpoints": [
                 "/mcp/v1/messages",

@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import hashlib
-import os
 from pathlib import Path
 from typing import Optional
 
 from sif.utils.logging import get_logger, is_quiet, suppress_output
+
 
 logger = get_logger(__name__)
 

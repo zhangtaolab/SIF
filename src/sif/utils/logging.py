@@ -9,6 +9,7 @@ import sys
 import warnings
 from typing import Optional
 
+
 # Default logging format
 DEFAULT_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 SIMPLE_FORMAT = "%(levelname)s: %(message)s"

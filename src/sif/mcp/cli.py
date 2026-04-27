@@ -1,16 +1,16 @@
 """
 MCP Server CLI
 
-Command-line interface for running the DocSift MCP server.
+Command-line interface for running the SIF MCP server.
 """
 
-import sys
-import logging
 import argparse
 import asyncio
+import logging
+import sys
 
-from .transport_stdio import run_stdio
 from .transport_http import run_http_server
+from .transport_stdio import run_stdio
 
 
 def setup_logging(level: str = "info"):
@@ -25,7 +25,7 @@ def setup_logging(level: str = "info"):
 def main():
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
-        description="DocSift MCP Server",
+        description="SIF MCP Server",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:

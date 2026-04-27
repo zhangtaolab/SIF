@@ -6,6 +6,7 @@ import numpy as np
 
 from sif.utils.logging import get_logger
 
+
 logger = get_logger(__name__)
 
 
@@ -23,7 +24,7 @@ class QueryExpansion:
 
     def __init__(
         self,
-        embedding_manager: "EmbeddingManager | None" = None,
+        embedding_manager: EmbeddingManager | None = None,
         expansion_factor: int = 3,
     ) -> None:
         """Initialize query expansion.

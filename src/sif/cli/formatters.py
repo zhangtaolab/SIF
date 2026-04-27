@@ -1,17 +1,17 @@
-"""Output formatters for DocSift CLI."""
+"""Output formatters for SIF CLI."""
 
-import json
 import csv
 import io
-from typing import Any, Dict, List, Optional, Union
+import json
 from dataclasses import asdict, is_dataclass
+from typing import Any, Dict, List, Optional
 
+from rich import box
 from rich.console import Console
-from rich.table import Table
 from rich.panel import Panel
 from rich.syntax import Syntax
+from rich.table import Table
 from rich.tree import Tree
-from rich import box
 
 
 # Global console instance
@@ -24,9 +24,9 @@ def format_json(data: Any, indent: int = 2) -> str:
     def serialize(obj: Any) -> Any:
         if is_dataclass(obj):
             return asdict(obj)
-        elif hasattr(obj, "to_dict"):
+        if hasattr(obj, "to_dict"):
             return obj.to_dict()
-        elif hasattr(obj, "__dict__"):
+        if hasattr(obj, "__dict__"):
             return obj.__dict__
         return str(obj)
 
@@ -74,11 +74,10 @@ def format_xml(data: Any, root_tag: str = "root") -> str:
         if isinstance(obj, dict):
             children = "\n".join(to_xml(v, k) for k, v in obj.items())
             return f"<{tag}>\n{children}\n</{tag}>"
-        elif isinstance(obj, list):
+        if isinstance(obj, list):
             children = "\n".join(to_xml(item, "item") for item in obj)
             return f"<{tag}>\n{children}\n</{tag}>"
-        else:
-            return f"<{tag}>{obj}</{tag}>"
+        return f"<{tag}>{obj}</{tag}>"
 
     return f'<?xml version="1.0" encoding="UTF-8"?>\n{to_xml(data, root_tag)}'
 
@@ -259,11 +258,10 @@ class OutputFormatter:
                 print_files(data, self.console)
             else:
                 print_json(data, self.console)
-        else:  # table
-            if isinstance(data, list) and data and isinstance(data[0], dict):
-                print_table(data, title, self.console)
-            else:
-                print_json(data, self.console)
+        elif isinstance(data, list) and data and isinstance(data[0], dict):
+            print_table(data, title, self.console)
+        else:
+            print_json(data, self.console)
 
 
 def get_formatter(format_type: str = "table", console: Optional[Console] = None) -> OutputFormatter:

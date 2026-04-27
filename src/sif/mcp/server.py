@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import json
 import sys
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 from sif.database.connection import DatabaseConnection
 from sif.search.bm25 import BM25Searcher
 from sif.search.hybrid import HybridSearcher
 from sif.utils.logging import get_logger
+
 
 logger = get_logger(__name__)
 
@@ -29,16 +30,15 @@ class MCPServer:
         try:
             if method == "initialize":
                 return self._handle_initialize(request_id)
-            elif method == "tools/list":
+            if method == "tools/list":
                 return self._handle_tools_list(request_id)
-            elif method == "tools/call":
+            if method == "tools/call":
                 return self._handle_tools_call(request_id, params)
-            elif method == "resources/list":
+            if method == "resources/list":
                 return self._handle_resources_list(request_id)
-            elif method == "resources/read":
+            if method == "resources/read":
                 return self._handle_resources_read(request_id, params)
-            else:
-                return self._error_response(request_id, -32601, f"Method not found: {method}")
+            return self._error_response(request_id, -32601, f"Method not found: {method}")
         except Exception as e:
             logger.exception("Error handling request")
             return self._error_response(request_id, -32603, str(e))
@@ -164,18 +164,17 @@ class MCPServer:
 
         if tool_name == "query":
             return self._tool_query(request_id, arguments)
-        elif tool_name == "lex_search":
+        if tool_name == "lex_search":
             return self._tool_lex_search(request_id, arguments)
-        elif tool_name == "vec_search":
+        if tool_name == "vec_search":
             return self._tool_vec_search(request_id, arguments)
-        elif tool_name == "get":
+        if tool_name == "get":
             return self._tool_get(request_id, arguments)
-        elif tool_name == "multi_get":
+        if tool_name == "multi_get":
             return self._tool_multi_get(request_id, arguments)
-        elif tool_name == "status":
+        if tool_name == "status":
             return self._tool_status(request_id)
-        else:
-            return self._error_response(request_id, -32602, f"Unknown tool: {tool_name}")
+        return self._error_response(request_id, -32602, f"Unknown tool: {tool_name}")
 
     def _tool_query(self, request_id: Any, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Execute query tool."""
@@ -310,6 +309,7 @@ class MCPServer:
         max_bytes = arguments.get("max_bytes", 100000)
 
         import fnmatch
+
         from sif.database.repositories import CollectionRepository, DocumentRepository
         from sif.database.schema import SchemaManager
 

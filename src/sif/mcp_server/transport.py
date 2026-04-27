@@ -6,6 +6,7 @@ from typing import Any
 
 from sif.utils.logging import get_logger
 
+
 logger = get_logger(__name__)
 
 
@@ -186,7 +187,7 @@ class HTTPTransport(Transport):
         """
         self._host = host
         self._port = port
-        self._server: "Any | None" = None
+        self._server: Any | None = None
 
     def start(self) -> None:
         """Start HTTP transport."""
@@ -195,7 +196,7 @@ class HTTPTransport(Transport):
 
         logger.info(f"Starting HTTP transport on {self._host}:{self._port}")
 
-        app = FastAPI(title="DocSift MCP Server")
+        app = FastAPI(title="SIF MCP Server")
 
         @app.get("/mcp/v1/tools")
         async def list_tools() -> dict:

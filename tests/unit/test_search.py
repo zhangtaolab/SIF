@@ -3,11 +3,11 @@
 import pytest
 
 from sif.models.search import (
-    SearchQuery,
     SearchOptions,
-    SearchType,
-    SearchResult,
+    SearchQuery,
     SearchResponse,
+    SearchResult,
+    SearchType,
 )
 from sif.search.strategy import SearchContext
 

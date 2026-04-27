@@ -7,9 +7,6 @@ This module tests the RRF fusion implementation including:
 - Edge cases and boundary conditions
 """
 
-import uuid
-from typing import Any
-
 import pytest
 
 from sif.core.models import SearchResult

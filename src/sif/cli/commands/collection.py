@@ -13,7 +13,7 @@ from rich.tree import Tree
 from sif.core.models import Collection
 from sif.database.database import Database
 from sif.database.repositories import CollectionRepository
-from sif.indexing.scanner import FileScanner
+
 
 console = Console()
 

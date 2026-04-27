@@ -1,7 +1,8 @@
 """Unit tests for collection management."""
 
-import pytest
 from datetime import datetime
+
+import pytest
 
 from sif.core.collection import Collection, CollectionManager
 from sif.models.collection import CollectionCreate, CollectionResponse

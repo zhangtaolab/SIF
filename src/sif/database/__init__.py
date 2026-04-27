@@ -1,22 +1,23 @@
-"""Database access layer for DocSift."""
+"""Database access layer for SIF."""
 
-from sif.database.connection import DatabaseConnection, ConnectionPool
+from sif.database.connection import ConnectionPool, DatabaseConnection
+from sif.database.migrations import MigrationManager
 from sif.database.repositories import (
     CollectionRepository,
-    DocumentRepository,
     DocumentChunkRepository,
+    DocumentRepository,
     LLMCacheRepository,
     PathContextRepository,
 )
-from sif.database.migrations import MigrationManager
+
 
 __all__ = [
-    "DatabaseConnection",
-    "ConnectionPool",
     "CollectionRepository",
-    "DocumentRepository",
+    "ConnectionPool",
+    "DatabaseConnection",
     "DocumentChunkRepository",
+    "DocumentRepository",
     "LLMCacheRepository",
-    "PathContextRepository",
     "MigrationManager",
+    "PathContextRepository",
 ]

@@ -7,6 +7,7 @@ from watchdog.observers import Observer
 
 from sif.utils.logging import get_logger
 
+
 logger = get_logger(__name__)
 
 

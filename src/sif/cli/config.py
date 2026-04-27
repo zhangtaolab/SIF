@@ -1,10 +1,9 @@
-"""Configuration management for DocSift CLI."""
+"""Configuration management for SIF CLI."""
 
-import os
 import json
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from dataclasses import dataclass, asdict, field
-from typing import Optional, Dict, Any, List
+from typing import Any, Dict, Optional
 
 
 @dataclass
@@ -46,7 +45,7 @@ class SearchConfig:
 
 @dataclass
 class Config:
-    """Main configuration class for DocSift."""
+    """Main configuration class for SIF."""
 
     # Paths
     index_path: str = field(default_factory=lambda: str(Path.home() / ".sif" / "index.db"))
@@ -135,7 +134,7 @@ class Config:
             config.config_path = str(config_path)
             return config
 
-        with open(config_path, "r") as f:
+        with open(config_path) as f:
             data = json.load(f)
 
         config = cls.from_dict(data)

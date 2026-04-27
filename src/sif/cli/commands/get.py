@@ -7,12 +7,12 @@ from typing import Optional
 
 import click
 from rich.console import Console
-from rich.syntax import Syntax
 
 from sif.cli.formatters import prepend_line_numbers
 from sif.core.models import Document
 from sif.database.database import Database
 from sif.database.repositories import DocumentRepository
+
 
 console = Console()
 

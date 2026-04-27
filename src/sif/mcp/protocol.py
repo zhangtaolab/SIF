@@ -7,9 +7,10 @@ following the JSON-RPC 2.0 specification.
 Reference: https://modelcontextprotocol.io/
 """
 
-from typing import Any, Literal, Optional
-from pydantic import BaseModel, Field
 from enum import Enum
+from typing import Any, Literal, Optional
+
+from pydantic import BaseModel, Field
 
 
 # ============================================================================
@@ -184,7 +185,7 @@ class ProgressNotification(BaseModel):
 
 
 # ============================================================================
-# DocSift-specific Types
+# SIF-specific Types
 # ============================================================================
 
 

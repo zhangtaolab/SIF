@@ -1,16 +1,17 @@
 """
 MCP Server Test Script
 
-This script demonstrates how to use the DocSift MCP server programmatically.
+This script demonstrates how to use the SIF MCP server programmatically.
 """
 
 import asyncio
 import json
+
 from sif.mcp import (
-    create_server,
-    create_http_app,
-    JsonRpcRequest,
     JsonRpcNotification,
+    JsonRpcRequest,
+    create_http_app,
+    create_server,
 )
 
 

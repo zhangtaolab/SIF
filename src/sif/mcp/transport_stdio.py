@@ -8,15 +8,16 @@ via standard input/output.
 The transport uses line-delimited JSON-RPC messages.
 """
 
-import sys
+import asyncio
 import json
 import logging
-import asyncio
-from typing import Optional, TextIO
+import sys
 from contextlib import asynccontextmanager
+from typing import Optional, TextIO
 
-from .protocol import JsonRpcRequest, JsonRpcResponse, JsonRpcNotification
-from .server import MCPServer, create_server, ServerConfig
+from .protocol import JsonRpcNotification, JsonRpcRequest
+from .server import MCPServer, ServerConfig, create_server
+
 
 logger = logging.getLogger(__name__)
 
@@ -158,13 +159,12 @@ class StdioTransport:
             )
             await self.server.handle_notification(notification)
             return None
-        else:
-            # This is a request
-            request = JsonRpcRequest(
-                jsonrpc="2.0", id=msg_id, method=method, params=message.get("params")
-            )
-            response = await self.server.handle_request(request)
-            return response.model_dump(exclude_none=True)
+        # This is a request
+        request = JsonRpcRequest(
+            jsonrpc="2.0", id=msg_id, method=method, params=message.get("params")
+        )
+        response = await self.server.handle_request(request)
+        return response.model_dump(exclude_none=True)
 
     # -------------------------------------------------------------------------
     # Main Loop
@@ -205,7 +205,7 @@ class StdioTransport:
                         error_response = {
                             "jsonrpc": "2.0",
                             "id": msg_id,
-                            "error": {"code": -32603, "message": f"Internal error: {str(e)}"},
+                            "error": {"code": -32603, "message": f"Internal error: {e!s}"},
                         }
                         await self._write_message(error_response)
 
@@ -275,12 +275,12 @@ async def main():
         stream=sys.stderr,
     )
 
-    logger.info("Starting DocSift MCP Server (stdio mode)")
+    logger.info("Starting SIF MCP Server (stdio mode)")
 
     async with stdio_transport() as transport:
         await transport.run()
 
-    logger.info("DocSift MCP Server stopped")
+    logger.info("SIF MCP Server stopped")
 
 
 def run_stdio():

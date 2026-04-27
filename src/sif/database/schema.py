@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import re
 import sqlite3
-from typing import Optional
 
 
 class SchemaManager:

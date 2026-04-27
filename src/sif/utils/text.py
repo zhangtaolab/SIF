@@ -1,7 +1,8 @@
-"""Text processing utilities for DocSift."""
+"""Text processing utilities for SIF."""
 
 import re
-from typing import Any, Pattern
+from re import Pattern
+from typing import Any
 
 
 # Compile regex patterns once

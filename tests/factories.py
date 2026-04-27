@@ -6,8 +6,8 @@ from datetime import datetime
 from typing import Any
 
 from sif.core.collection import Collection
-from sif.core.document import Document, DocumentChunk, DocumentMetadata
 from sif.core.context import Context, ContextType
+from sif.core.document import Document, DocumentChunk, DocumentMetadata
 from sif.models.search import SearchOptions, SearchResult, SearchType
 
 

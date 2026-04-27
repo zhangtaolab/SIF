@@ -5,6 +5,7 @@ from typing import Any
 from sif.mcp_server.handlers import ToolHandler
 from sif.utils.logging import get_logger
 
+
 logger = get_logger(__name__)
 
 
@@ -186,7 +187,7 @@ class CollectionTool(ToolHandler):
                     },
                 ],
             }
-        elif action == "create":
+        if action == "create":
             return {
                 "content": [
                     {
@@ -195,7 +196,7 @@ class CollectionTool(ToolHandler):
                     },
                 ],
             }
-        elif action == "delete":
+        if action == "delete":
             return {
                 "content": [
                     {

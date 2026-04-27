@@ -9,28 +9,21 @@ This package contains all Pydantic models used for:
 
 from sif.models.collection import (
     CollectionCreate,
-    CollectionUpdate,
-    CollectionResponse,
     CollectionListResponse,
-)
-from sif.models.document import (
-    DocumentCreate,
-    DocumentUpdate,
-    DocumentResponse,
-    DocumentSearchResult,
-    ChunkResponse,
+    CollectionResponse,
+    CollectionUpdate,
 )
 from sif.models.context import (
     ContextCreate,
-    ContextUpdate,
     ContextResponse,
+    ContextUpdate,
 )
-from sif.models.search import (
-    SearchQuery,
-    SearchResult,
-    SearchResponse,
-    SearchOptions,
-    SearchType,
+from sif.models.document import (
+    ChunkResponse,
+    DocumentCreate,
+    DocumentResponse,
+    DocumentSearchResult,
+    DocumentUpdate,
 )
 from sif.models.embedding import (
     EmbeddingConfig,
@@ -38,6 +31,14 @@ from sif.models.embedding import (
     EmbeddingRequest,
     EmbeddingResponse,
 )
+from sif.models.search import (
+    SearchOptions,
+    SearchQuery,
+    SearchResponse,
+    SearchResult,
+    SearchType,
+)
+
 
 __all__ = [
     # Collection models

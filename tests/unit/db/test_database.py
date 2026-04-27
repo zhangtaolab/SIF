@@ -2,11 +2,10 @@
 
 import sqlite3
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 
-from sif.database.connection import DatabaseConnection, ConnectionPool
+from sif.database.connection import ConnectionPool, DatabaseConnection
 
 
 class TestDatabaseConnection:
@@ -94,10 +93,9 @@ class TestDatabaseConnection:
             db.commit()
 
         # Act & Assert
-        with pytest.raises(ValueError):
-            with conn.transaction() as db:
-                db.execute("INSERT INTO test (id) VALUES (1)")
-                raise ValueError("Test error")
+        with pytest.raises(ValueError), conn.transaction() as db:
+            db.execute("INSERT INTO test (id) VALUES (1)")
+            raise ValueError("Test error")
 
         # Verify insert was rolled back
         with conn.connect() as db:

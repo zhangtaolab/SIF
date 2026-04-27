@@ -1,4 +1,4 @@
-"""Path utilities for DocSift."""
+"""Path utilities for SIF."""
 
 from pathlib import Path
 

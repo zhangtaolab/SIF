@@ -3,11 +3,12 @@
 from sif.mcp_server.transport import Transport
 from sif.utils.logging import get_logger
 
+
 logger = get_logger(__name__)
 
 
 class MCPServer:
-    """Model Context Protocol server for DocSift.
+    """Model Context Protocol server for SIF.
 
     Provides MCP-compliant endpoints for integration with
     AI assistants and other MCP-compatible tools.

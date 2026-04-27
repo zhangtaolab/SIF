@@ -69,8 +69,7 @@ class FixedSizeChunker(Chunker):
 
             # Move start with overlap
             start = end - self.overlap
-            if start >= end:
-                start = end
+            start = min(end, start)
 
         return chunks
 
@@ -219,11 +218,10 @@ def create_chunker(strategy: str, **kwargs) -> Chunker:
     """
     if strategy == "fixed":
         return FixedSizeChunker(**kwargs)
-    elif strategy == "markdown":
+    if strategy == "markdown":
         return MarkdownChunker(**kwargs)
-    elif strategy == "code":
+    if strategy == "code":
         return CodeChunker(**kwargs)
-    elif strategy == "auto":
+    if strategy == "auto":
         return AutoChunker(**kwargs)
-    else:
-        raise ValueError(f"Unknown chunking strategy: {strategy}")
+    raise ValueError(f"Unknown chunking strategy: {strategy}")

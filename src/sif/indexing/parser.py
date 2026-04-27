@@ -5,9 +5,8 @@ from __future__ import annotations
 import hashlib
 import re
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 import frontmatter
 
@@ -189,9 +188,9 @@ def create_parser(file_path: Path) -> Optional[MarkdownParser | TextParser | Cod
 
     if ext in [".md", ".markdown", ".mdx"]:
         return MarkdownParser()
-    elif ext in CodeParser.LANGUAGE_MAP:
+    if ext in CodeParser.LANGUAGE_MAP:
         return CodeParser()
-    elif ext in [".txt", ".rst", ".adoc"]:
+    if ext in [".txt", ".rst", ".adoc"]:
         return TextParser()
 
     return None

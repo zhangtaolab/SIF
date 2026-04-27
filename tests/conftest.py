@@ -1,25 +1,26 @@
 """Shared pytest fixtures for SIF tests."""
 
 import hashlib
+
+# Add src to path for imports
+import sys
 import tempfile
 import uuid
+from collections.abc import Generator
 from datetime import datetime
 from pathlib import Path
-from typing import Generator
 from unittest.mock import MagicMock
 
 import pytest
 
-# Add src to path for imports
-import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from sif.core.collection import Collection
-from sif.core.document import Document, DocumentChunk, DocumentMetadata
 from sif.core.context import Context, ContextType
+from sif.core.document import Document, DocumentChunk, DocumentMetadata
 from sif.database.connection import DatabaseConnection
-from sif.models.search import SearchOptions, SearchResult, SearchType
+from sif.models.search import SearchOptions, SearchResult
 
 
 # =============================================================================
@@ -101,14 +102,14 @@ def temp_db_path(temp_dir: Path) -> Path:
 
 
 @pytest.fixture
-def db_connection(temp_db_path: Path) -> Generator[DatabaseConnection, None, None]:
+def db_connection(temp_db_path: Path) -> DatabaseConnection:
     """Provide a database connection."""
     conn = DatabaseConnection(temp_db_path)
-    yield conn
+    return conn
 
 
 @pytest.fixture
-def temp_db(temp_db_path: Path) -> Generator[DatabaseConnection, None, None]:
+def temp_db(temp_db_path: Path) -> DatabaseConnection:
     """Provide a temporary database with schema initialized."""
     conn = DatabaseConnection(temp_db_path)
 
@@ -178,7 +179,7 @@ def temp_db(temp_db_path: Path) -> Generator[DatabaseConnection, None, None]:
 
         db.commit()
 
-    yield conn
+    return conn
 
 
 # =============================================================================
@@ -606,9 +607,9 @@ def docs_test_db(tmp_path: Path) -> Generator[Path, None, None]:
 
 
 @pytest.fixture
-def docs_runner(docs_test_db: Path) -> Generator["CliRunner", None, None]:
+def docs_runner(docs_test_db: Path) -> "CliRunner":
     """Provide a CliRunner with docs test database pre-configured."""
     from click.testing import CliRunner
 
     runner = CliRunner(env={"SIF_DB_PATH": str(docs_test_db)})
-    yield runner
+    return runner

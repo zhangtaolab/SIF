@@ -1,4 +1,4 @@
-"""Embedding generation and management for DocSift.
+"""Embedding generation and management for SIF.
 
 This package provides embedding functionality using the Factory pattern:
 - Embedding model management
@@ -7,15 +7,16 @@ This package provides embedding functionality using the Factory pattern:
 - Support for GGUF models via llama-cpp-python
 """
 
+from sif.embedding.cache import EmbeddingCache
+from sif.embedding.factory import EmbeddingModelFactory
 from sif.embedding.manager import EmbeddingManager
 from sif.embedding.model import EmbeddingModel, ModelType
-from sif.embedding.factory import EmbeddingModelFactory
-from sif.embedding.cache import EmbeddingCache
+
 
 __all__ = [
+    "EmbeddingCache",
     "EmbeddingManager",
     "EmbeddingModel",
-    "ModelType",
     "EmbeddingModelFactory",
-    "EmbeddingCache",
+    "ModelType",
 ]

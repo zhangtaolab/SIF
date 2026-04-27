@@ -7,23 +7,24 @@ This package provides configuration handling:
 - Default values and validation
 """
 
-from sif.config.settings import Settings, get_settings
 from sif.config.constants import (
-    DEFAULT_DB_PATH,
-    DEFAULT_MODEL_PATH,
-    DEFAULT_CHUNK_SIZE,
-    DEFAULT_CHUNK_OVERLAP,
     APP_NAME,
     APP_VERSION,
+    DEFAULT_CHUNK_OVERLAP,
+    DEFAULT_CHUNK_SIZE,
+    DEFAULT_DB_PATH,
+    DEFAULT_MODEL_PATH,
 )
+from sif.config.settings import Settings, get_settings
+
 
 __all__ = [
-    "Settings",
-    "get_settings",
-    "DEFAULT_DB_PATH",
-    "DEFAULT_MODEL_PATH",
-    "DEFAULT_CHUNK_SIZE",
-    "DEFAULT_CHUNK_OVERLAP",
     "APP_NAME",
     "APP_VERSION",
+    "DEFAULT_CHUNK_OVERLAP",
+    "DEFAULT_CHUNK_SIZE",
+    "DEFAULT_DB_PATH",
+    "DEFAULT_MODEL_PATH",
+    "Settings",
+    "get_settings",
 ]

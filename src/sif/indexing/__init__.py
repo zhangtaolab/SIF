@@ -1,4 +1,4 @@
-"""Document indexing functionality for DocSift.
+"""Document indexing functionality for SIF.
 
 This package provides document indexing capabilities:
 - File system scanning
@@ -6,15 +6,16 @@ This package provides document indexing capabilities:
 - Document metadata extraction
 """
 
-from sif.indexing.scanner import FileScanner, ScanResult
-from sif.indexing.parser import MarkdownParser, ParsedDocument
 from sif.indexing.chunker import Chunker, create_chunker
+from sif.indexing.parser import MarkdownParser, ParsedDocument
+from sif.indexing.scanner import FileScanner, ScanResult
+
 
 __all__ = [
+    "Chunker",
     "FileScanner",
-    "ScanResult",
     "MarkdownParser",
     "ParsedDocument",
-    "Chunker",
+    "ScanResult",
     "create_chunker",
 ]

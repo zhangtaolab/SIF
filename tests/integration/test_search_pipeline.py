@@ -4,9 +4,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from sif.core.models import SearchOptions, SearchResult, SearchType
+from sif.core.models import SearchOptions, SearchResult
 from sif.search.bm25 import BM25Searcher
-from sif.search.hybrid import HybridSearcher, SearchPipeline
+from sif.search.hybrid import SearchPipeline
 from sif.search.rrf import RRFFusion
 from sif.search.vector import VectorSearcher
 

@@ -12,6 +12,7 @@ from sif.search.rrf import RRFFusion
 from sif.search.vector import VectorSearcher
 from sif.utils.logging import get_logger
 
+
 if TYPE_CHECKING:
     from sif.search.expansion import QueryExpansion
     from sif.search.rerank import CrossEncoderReranker, LlamaCppReranker
@@ -164,9 +165,9 @@ class SearchPipeline:
         self,
         db: sqlite3.Connection,
         embedder: Optional[Embedder] = None,
-        query_expander: "QueryExpansion | None" = None,
-        reranker: "LlamaCppReranker | CrossEncoderReranker | None" = None,
-        snippet_extractor: "SmartSnippetExtractor | None" = None,
+        query_expander: QueryExpansion | None = None,
+        reranker: LlamaCppReranker | CrossEncoderReranker | None = None,
+        snippet_extractor: SmartSnippetExtractor | None = None,
         embedding_dim: int = 768,
     ) -> None:
         self.db = db
@@ -203,12 +204,12 @@ class SearchPipeline:
         # Route to appropriate search mode
         if search_type == SearchType.BM25:
             return self.hybrid.bm25.search(parsed_query, options)
-        elif search_type == SearchType.VECTOR:
+        if search_type == SearchType.VECTOR:
             if self.hybrid.embedder is None:
                 raise RuntimeError("Vector search requires an embedder")
             query_embedding = self.hybrid.embedder.embed(parsed_query)
             return self.hybrid.vector.search(query_embedding, options)
-        elif search_type == SearchType.HYDE:
+        if search_type == SearchType.HYDE:
             hyde_doc = self._generate_hypothetical_document(parsed_query)
             if self.hybrid.embedder is None:
                 raise RuntimeError("HyDE search requires an embedder")

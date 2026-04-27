@@ -13,6 +13,7 @@ from sif.indexing.scanner import FileScanner
 from sif.utils.logging import get_logger
 from sif.utils.progress import ProgressTracker, RichProgressTracker
 
+
 logger = get_logger(__name__)
 
 
@@ -122,7 +123,7 @@ class DocumentIndexer:
             except Exception as e:
                 logger.error(f"Error indexing {file_path}: {e}")
                 result.files_failed += 1
-                result.errors.append(f"{file_path}: {str(e)}")
+                result.errors.append(f"{file_path}: {e!s}")
 
         self._progress.finish()
 
@@ -206,9 +207,8 @@ class DocumentIndexer:
         if existing:
             self._repository.update(document)
             return IndexStatus.COMPLETED
-        else:
-            self._repository.create(document)
-            return IndexStatus.ADDED
+        self._repository.create(document)
+        return IndexStatus.ADDED
 
     def reindex_collection(self, collection: Collection) -> IndexResult:
         """Reindex all documents in a collection.

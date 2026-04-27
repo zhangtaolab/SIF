@@ -4,8 +4,9 @@ from abc import ABC, abstractmethod
 from typing import Any, Generic, TypeVar
 
 from sif.core.collection import Collection
-from sif.core.document import Document, DocumentChunk
 from sif.core.context import Context, ContextType
+from sif.core.document import Document, DocumentChunk
+
 
 T = TypeVar("T")
 

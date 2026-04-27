@@ -1,4 +1,4 @@
-"""Core data models for DocSift."""
+"""Core data models for SIF."""
 
 from __future__ import annotations
 
