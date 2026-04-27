@@ -36,7 +36,8 @@ class SentenceTransformerEmbedder(Embedder):
             from sentence_transformers import SentenceTransformer
         except ImportError:
             logger.error(
-                "sentence-transformers not installed. Install with: pip install sentence-transformers"
+                "sentence-transformers not installed. "
+                "Install with: pip install sentence-transformers"
             )
             raise
 

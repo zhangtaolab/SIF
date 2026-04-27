@@ -52,7 +52,8 @@ class TestSchemaManagerMigration:
         _create_old_path_contexts_table(vec_db)
         vec_db.execute(
             "INSERT INTO path_contexts (id, path, context, created_at, updated_at) "
-            "VALUES ('ctx-1', '/notes/a.md', 'Important notes', '2024-01-01T00:00:00', '2024-01-02T00:00:00')"
+            "VALUES ('ctx-1', '/notes/a.md', 'Important notes', "
+            "'2024-01-01T00:00:00', '2024-01-02T00:00:00')"
         )
         vec_db.commit()
 

@@ -11,27 +11,26 @@ Endpoints:
 - GET /health - Health check endpoint
 """
 
+import asyncio
 import json
 import logging
-import asyncio
-from typing import Optional, AsyncGenerator, Any
-from contextlib import asynccontextmanager
+from collections.abc import AsyncGenerator
 from datetime import datetime
+from typing import Any, Optional
 
-from fastapi import FastAPI, Request, HTTPException, BackgroundTasks
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from .protocol import (
-    JsonRpcRequest,
-    JsonRpcResponse,
     JsonRpcNotification,
-    create_error_response,
+    JsonRpcRequest,
     MCPErrorCode,
+    create_error_response,
 )
-from .server import MCPServer, create_server, ServerConfig, ServerState
-from .tools import get_tool_registry
+from .server import MCPServer, ServerConfig, ServerState, create_server
+
 
 logger = logging.getLogger(__name__)
 
@@ -158,8 +157,8 @@ class HTTPTransport:
     def _create_app(self) -> FastAPI:
         """Create and configure FastAPI application."""
         app = FastAPI(
-            title="DocSift MCP Server",
-            description="Model Context Protocol server for DocSift",
+            title="SIF MCP Server",
+            description="Model Context Protocol server for SIF",
             version="1.0.0",
             docs_url="/docs",
             redoc_url="/redoc",
@@ -193,8 +192,7 @@ class HTTPTransport:
 
         @app.get("/mcp/v1/sse")
         async def sse_endpoint(request: Request):
-            """
-            Server-Sent Events endpoint.
+            """Server-Sent Events endpoint.
 
             Streams server-to-client messages in real-time.
             """
@@ -203,7 +201,8 @@ class HTTPTransport:
             async def event_generator() -> AsyncGenerator[str, None]:
                 try:
                     # Send initial connection message
-                    yield f"event: connected\ndata: {json.dumps({'message': 'Connected to MCP server'})}\n\n"
+                    msg = json.dumps({'message': 'Connected to MCP server'})
+                    yield f"event: connected\ndata: {msg}\n\n"
 
                     while True:
                         # Check if client disconnected
@@ -269,13 +268,12 @@ class HTTPTransport:
                 await self.server.handle_notification(notification)
                 return JSONResponse(status_code=202, content={})
 
-            else:
-                # Handle request
-                rpc_request = JsonRpcRequest(
-                    jsonrpc="2.0", id=request.id, method=request.method, params=request.params
-                )
-                response = await self.server.handle_request(rpc_request)
-                return JSONResponse(content=response.model_dump(exclude_none=True))
+            # Handle request
+            rpc_request = JsonRpcRequest(
+                jsonrpc="2.0", id=request.id, method=request.method, params=request.params
+            )
+            response = await self.server.handle_request(rpc_request)
+            return JSONResponse(content=response.model_dump(exclude_none=True))
 
         @app.post("/mcp/v1/batch")
         async def batch_endpoint(requests: list[MessageRequest]):
@@ -399,7 +397,7 @@ def main():
     """Main entry point for HTTP transport."""
     import argparse
 
-    parser = argparse.ArgumentParser(description="DocSift MCP HTTP Server")
+    parser = argparse.ArgumentParser(description="SIF MCP HTTP Server")
     parser.add_argument("--host", default="0.0.0.0", help="Host to bind to")
     parser.add_argument("--port", type=int, default=8080, help="Port to bind to")
     parser.add_argument("--log-level", default="info", help="Log level")
@@ -413,7 +411,7 @@ def main():
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
-    logger.info(f"Starting DocSift MCP HTTP Server on {args.host}:{args.port}")
+    logger.info(f"Starting SIF MCP HTTP Server on {args.host}:{args.port}")
 
     asyncio.run(
         run_http_server(

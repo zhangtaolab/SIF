@@ -71,13 +71,13 @@ def cli(ctx: click.Context, index: str, config: str, verbose: bool, quiet: bool)
 
 
 # Import and register subcommands
+from sif.cli.commands.bench import bench_cmd
 from sif.cli.commands.collection import collection_group
 from sif.cli.commands.context import context_group
 from sif.cli.commands.get import get_group
 from sif.cli.commands.index import index_group
 from sif.cli.commands.ls import ls_cmd
 from sif.cli.commands.mcp import mcp_group
-from sif.cli.commands.bench import bench_cmd
 from sif.cli.commands.pull import pull_cmd
 from sif.cli.commands.search import search_group
 
@@ -185,7 +185,7 @@ def cleanup_cmd(ctx: click.Context) -> None:
 
     except Exception as e:
         console.print(f"[red]Error during cleanup: {e}[/red]")
-        raise click.ClickException(str(e))
+        raise click.ClickException(str(e)) from e
 
 
 def main() -> None:

@@ -1,4 +1,4 @@
-"""Repository implementations for DocSift database."""
+"""Repository implementations for SIF database."""
 
 from __future__ import annotations
 
@@ -382,7 +382,8 @@ class ContextRepository:
     def list_by_collection(self, collection_id: str) -> List[PathContext]:
         """List contexts for a collection."""
         cursor = self.db.execute(
-            "SELECT * FROM contexts WHERE context_type = 'collection' AND target_id = ? ORDER BY target_id",
+            "SELECT * FROM contexts WHERE context_type = 'collection' "
+            "AND target_id = ? ORDER BY target_id",
             (collection_id,),
         )
         return [self._row_to_context(row) for row in cursor.fetchall()]

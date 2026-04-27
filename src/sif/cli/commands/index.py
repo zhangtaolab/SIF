@@ -20,6 +20,7 @@ from sif.indexing.chunker import create_chunker
 from sif.indexing.parser import MarkdownParser
 from sif.indexing.scanner import FileScanner
 
+
 console = Console()
 
 
@@ -77,9 +78,12 @@ def update_cmd(ctx: click.Context, collection: str | None, force: bool) -> None:
                     text=True,
                 )
                 if result.returncode != 0:
-                    raise click.ClickException(
-                        f"Pre-update command failed for '{coll.name}' (exit {result.returncode}): {result.stderr.strip() or result.stdout.strip()}"
+                    err_msg = (
+                        f"Pre-update command failed for '{coll.name}' "
+                        f"(exit {result.returncode}): "
+                        f"{result.stderr.strip() or result.stdout.strip()}"
                     )
+                    raise click.ClickException(err_msg)
 
             # Scan files
             scanner = FileScanner()
@@ -161,7 +165,7 @@ def update_cmd(ctx: click.Context, collection: str | None, force: bool) -> None:
             coll.last_indexed_at = datetime.utcnow()
             coll_repo.update(coll)
 
-        console.print(f"\n[green]Index updated:[/green]")
+        console.print("\n[green]Index updated:[/green]")
         console.print(f"  Added: {total_added}")
         console.print(f"  Updated: {total_updated}")
         console.print(f"  Removed: {total_removed}")
@@ -193,7 +197,7 @@ def embed_cmd(
     db.init_schema()
 
     # Initialize embedder
-    from sif.config.settings import Settings, get_settings
+    from sif.config.settings import get_settings
     from sif.embedding.manager import EmbeddingManager
     from sif.search.vector import VectorSearcher
 

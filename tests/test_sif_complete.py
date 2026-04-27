@@ -7,6 +7,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
@@ -15,20 +16,6 @@ def test_imports() -> bool:
     """Test all core imports."""
     print("Testing imports...")
     try:
-        from sif.core.models import Collection, Document, SearchResult
-        from sif.database.database import Database
-        from sif.database.repositories import (
-            CollectionRepository,
-            DocumentRepository,
-        )
-        from sif.database.schema import SchemaManager
-        from sif.search import BM25Searcher, HybridSearcher, RRFFusion, VectorSearcher
-        from sif.indexing import create_chunker
-        from sif.indexing.parser import MarkdownParser
-        from sif.indexing.scanner import FileScanner
-        from sif.cli.main import cli
-        from sif.mcp.server import MCPServer
-
         print("✅ All imports successful")
         return True
     except Exception as e:
@@ -174,7 +161,11 @@ def test_chunker() -> bool:
         from sif.indexing import create_chunker
 
         chunker = create_chunker("fixed", chunk_size=100, overlap=20)
-        text = "# Heading\n\nThis is paragraph 1.\n\nThis is paragraph 2.\n\n## Subheading\n\nMore content here."
+        text = (
+            "# Heading\n\nThis is paragraph 1.\n\n"
+            "This is paragraph 2.\n\n## Subheading\n\n"
+            "More content here."
+        )
 
         chunks = chunker.chunk(text)
         assert len(chunks) > 0
@@ -240,6 +231,7 @@ def test_cli() -> bool:
     print("\nTesting CLI...")
     try:
         from click.testing import CliRunner
+
         from sif.cli.main import cli
 
         runner = CliRunner()
@@ -377,9 +369,8 @@ def main() -> int:
     if passed == total:
         print("\n🎉 All tests passed!")
         return 0
-    else:
-        print(f"\n⚠️ {total - passed} test(s) failed")
-        return 1
+    print(f"\n⚠️ {total - passed} test(s) failed")
+    return 1
 
 
 if __name__ == "__main__":

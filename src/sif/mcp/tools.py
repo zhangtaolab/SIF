@@ -1,7 +1,7 @@
 """
 MCP Tool Implementations
 
-This module implements all MCP tools for DocSift:
+This module implements all MCP tools for SIF:
 - query: Hybrid search (FTS + Vector + Reranking)
 - lex_search: BM25 full-text search
 - vec_search: Vector semantic search
@@ -10,30 +10,30 @@ This module implements all MCP tools for DocSift:
 - status: Get index status
 """
 
-import logging
 import fnmatch
-from typing import Any, Optional, Protocol
+import logging
 from datetime import datetime
+from typing import Any, Optional, Protocol
 
 from .protocol import (
-    QueryInput,
-    QueryOutput,
-    LexSearchInput,
-    LexSearchOutput,
-    VecSearchInput,
-    VecSearchOutput,
+    CollectionInfo,
+    Document,
     GetInput,
     GetOutput,
+    LexSearchInput,
+    LexSearchOutput,
+    MCPTool,
     MultiGetInput,
     MultiGetOutput,
-    StatusInput,
-    StatusOutput,
+    QueryInput,
+    QueryOutput,
     SearchResult,
-    Document,
-    CollectionInfo,
-    MCPTool,
+    StatusOutput,
     ToolInputSchema,
+    VecSearchInput,
+    VecSearchOutput,
 )
+
 
 logger = logging.getLogger(__name__)
 
@@ -106,7 +106,10 @@ class MockSearchBackend:
                 doc_id=f"doc_{i}",
                 path=f"/docs/document_{i}.md",
                 title=f"Document {i}",
-                content=f"This is the content of document {i}. It contains information about various topics.",
+                content=(
+                f"This is the content of document {i}. "
+                f"It contains information about various topics."
+            ),
                 metadata={"category": "general", "index": i},
             )
             self._documents[doc.doc_id] = doc
@@ -260,7 +263,9 @@ class MockSearchBackend:
 class ToolRegistry:
     """Registry for MCP tools."""
 
-    def __init__(self, backend: Optional[SearchBackend] = None):
+    def __init__(
+        self, backend: Optional[SearchBackend] = None
+    ) -> None:
         self.backend = backend or MockSearchBackend()
         self._tools: dict[str, MCPTool] = {}
         self._handlers: dict[str, callable] = {}
@@ -271,7 +276,10 @@ class ToolRegistry:
         # query - Hybrid search
         self._tools["query"] = MCPTool(
             name="query",
-            description="Hybrid search combining full-text search (BM25), vector semantic search, and reranking for the most relevant results.",
+            description=(
+                "Hybrid search combining full-text search (BM25), "
+                "vector semantic search, and reranking for the most relevant results."
+            ),
             inputSchema=ToolInputSchema(
                 type="object",
                 properties={
