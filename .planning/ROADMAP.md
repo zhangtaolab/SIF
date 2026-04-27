@@ -1,7 +1,7 @@
 # DocSift Roadmap
 
 **Granularity:** Standard
-**Phases:** 7
+**Phases:** 8
 **Coverage:** 31/31 v1 requirements mapped
 
 ## Phases
@@ -12,6 +12,7 @@
 - [x] **Phase 4: Advanced Search Pipeline** - Add reranking, query expansion, explainability, and search quality controls
 - [x] **Phase 5: Agent Context Experience** - Allow users to augment collections with contextual descriptions for better retrieval
 - [x] **Phase 6: Documentation Audit & Refresh** - Ensure all docs accurately reflect CLI, API, and config; establish docs testing infrastructure
+- [x] **Phase 7: CLI Claude Skill** - Generate Claude skills for all CLI commands
 
 ## Phase Details
 
@@ -129,7 +130,7 @@ Plans:
 | 4. Advanced Search Pipeline | 5/5 | Complete | 2026-04-17 |
 | 5. Agent Context Experience | 7/7 | Complete | 2026-04-18 |
 | 6. Documentation Audit & Refresh | 7/7 | Complete | 2026-04-18 |
-| 7. CLI Claude Skill | 0/TBD | Not Planned | — |
+| 7. CLI Claude Skill | 2/2 | Complete | 2026-04-20 |
 
 ### Phase 6: Documentation Audit & Refresh
 
@@ -155,22 +156,44 @@ Plans:
 - [x] 06-06-PLAN.md — Create docs code block validator with pytest
 - [x] 06-07-PLAN.md — Add Makefile target and GitHub Actions CI workflow
 
-### Phase 7: 为本项目的所有CLI生成 claude skill
+### Phase 7: CLI Claude Skill
 
-**Goal:** [To be planned]
+**Goal**: Claude skills for all CLI commands are created and functional.
+**Depends on**: Phase 6
 **Requirements**: TBD
-**Depends on:** Phase 6
-**Plans:** 0 plans
+**Success Criteria** (what must be TRUE):
+  1. `docsift-search` skill allows Claude to search the user's document index
+  2. `docsift-get` skill allows Claude to retrieve document content by path or pattern
+**Plans:** 2 plans
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 7 to break down)
+- [x] 07-01-PLAN.md — Create docsift-search skill for search commands
+- [x] 07-02-PLAN.md — Create docsift-get skill for document retrieval
 
 ### Phase 8: Project rename from DocSift to SIF
 
-**Goal:** [To be planned]
+**Goal**: The entire Python project is renamed from `DocSift`/`docsift` to `SIF`/`sif`, including package name, CLI command, environment variables, config paths, documentation, tests, and Claude Skills. The rename is a complete break with no backward compatibility.
+**Depends on**: Phase 7
 **Requirements**: TBD
-**Depends on:** Phase 7
-**Plans:** 0 plans
+**Success Criteria** (what must be TRUE):
+  1. Python package directory is `src/sif/` (not `src/docsift/`)
+  2. CLI command is `sif` (not `docsift`)
+  3. Environment variable prefix is `SIF_` (not `DOCSIFT_`)
+  4. Data paths use `~/.local/share/sif/` (not `~/.local/share/docsift/`)
+  5. All documentation uses SIF branding and sif CLI examples
+  6. All tests import from `sif` and patch `sif.` module paths
+  7. Claude Skills are renamed to `sif-search` and `sif-get`
+  8. pyproject.toml uses `sif` for package name, scripts, and tool configs
+  9. Model cache auto-migrates from old docsift path on first CLI run
+  10. Full test suite passes after rename
+**Plans:** 8 plans
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 8 to break down)
+- [ ] 08-01-PLAN.md — Rename src/docsift/ to src/sif/ and update pyproject.toml
+- [ ] 08-02-PLAN.md — Update constants.py, metadata files, and add model cache migration to CLI
+- [ ] 08-03-PLAN.md — Update all Python imports in src/sif/ from docsift to sif
+- [ ] 08-04-PLAN.md — Update settings.py env_prefix to SIF_ and verify paths
+- [ ] 08-05-PLAN.md — Update all test imports, patch targets, and rename test_docsift_complete.py
+- [ ] 08-06-PLAN.md — Update README.md, CLAUDE.md, docs/, and mkdocs.yml
+- [ ] 08-07-PLAN.md — Rename Claude Skills and update skill files
+- [ ] 08-08-PLAN.md — Run full quality suite: pytest, ruff, mypy, CLI verification, grep audit
