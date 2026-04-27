@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""DocSift CLI - Main entry point."""
+"""SIF CLI - Main entry point."""
 
 from __future__ import annotations
 
@@ -9,18 +9,18 @@ import click
 from rich.console import Console
 from rich.table import Table
 
-from docsift import __version__
-from docsift.config.settings import get_settings
-from docsift.database.database import Database
-from docsift.utils.logging import get_logger, setup_logging
+from sif import __version__
+from sif.config.settings import get_settings
+from sif.database.database import Database
+from sif.utils.logging import get_logger, setup_logging
 
 
 logger = get_logger(__name__)
 console = Console()
 
 # Default paths
-DEFAULT_INDEX_PATH = Path.home() / ".docsift" / "index.sqlite"
-DEFAULT_CONFIG_PATH = Path.home() / ".docsift" / "config.yaml"
+DEFAULT_INDEX_PATH = Path.home() / ".local" / "share" / "sif" / "sif.db"
+DEFAULT_CONFIG_PATH = Path.home() / ".config" / "sif"
 
 
 def _get_default_db_path() -> str:
@@ -29,7 +29,7 @@ def _get_default_db_path() -> str:
 
 
 @click.group()
-@click.version_option(version=__version__, prog_name="docsift")
+@click.version_option(version=__version__, prog_name="sif")
 @click.option(
     "--index",
     "-i",
@@ -48,9 +48,9 @@ def _get_default_db_path() -> str:
 @click.option("--quiet", "-q", is_flag=True, help="Suppress non-error output")
 @click.pass_context
 def cli(ctx: click.Context, index: str, config: str, verbose: bool, quiet: bool) -> None:
-    """DocSift - Local AI-powered document search engine.
+    """SIF - Search / Index / Find - Local document search engine.
 
-    DocSift indexes your documents and enables fast, intelligent search
+    SIF indexes your documents and enables fast, intelligent search
     using BM25, vector similarity, and hybrid approaches.
     """
     # Setup logging
@@ -71,15 +71,15 @@ def cli(ctx: click.Context, index: str, config: str, verbose: bool, quiet: bool)
 
 
 # Import and register subcommands
-from docsift.cli.commands.collection import collection_group
-from docsift.cli.commands.context import context_group
-from docsift.cli.commands.get import get_group
-from docsift.cli.commands.index import index_group
-from docsift.cli.commands.ls import ls_cmd
-from docsift.cli.commands.mcp import mcp_group
-from docsift.cli.commands.bench import bench_cmd
-from docsift.cli.commands.pull import pull_cmd
-from docsift.cli.commands.search import search_group
+from sif.cli.commands.collection import collection_group
+from sif.cli.commands.context import context_group
+from sif.cli.commands.get import get_group
+from sif.cli.commands.index import index_group
+from sif.cli.commands.ls import ls_cmd
+from sif.cli.commands.mcp import mcp_group
+from sif.cli.commands.bench import bench_cmd
+from sif.cli.commands.pull import pull_cmd
+from sif.cli.commands.search import search_group
 
 
 cli.add_command(collection_group)
@@ -103,7 +103,7 @@ def status_cmd(ctx: click.Context) -> None:
         index_path = get_settings().get_db_path()
 
     if not index_path.exists():
-        console.print("[yellow]No index found. Run 'docsift update' to create one.[/yellow]")
+        console.print("[yellow]No index found. Run 'sif update' to create one.[/yellow]")
         return
 
     try:
@@ -190,6 +190,14 @@ def cleanup_cmd(ctx: click.Context) -> None:
 
 def main() -> None:
     """Main entry point."""
+    # Migrate old docsift model cache if present
+    old_model_dir = Path.home() / ".local" / "share" / "docsift" / "models"
+    new_model_dir = Path.home() / ".local" / "share" / "sif" / "models"
+    if old_model_dir.exists() and not new_model_dir.exists():
+        new_model_dir.parent.mkdir(parents=True, exist_ok=True)
+        old_model_dir.rename(new_model_dir)
+        console.print("[green]Migrated: ~/.local/share/docsift -> ~/.local/share/sif[/green]")
+
     cli()
 
 
