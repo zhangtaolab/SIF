@@ -203,7 +203,7 @@ We welcome contributions! See the [Contributing Guide](contributing.md) to get s
 
 ```bash
 # Clone repository
-git clone https://github.com/sif/sif.git
+git clone https://github.com/zhangtaolab/sif.git
 cd sif
 
 # Install in development mode
@@ -215,12 +215,12 @@ pytest
 
 ## License
 
-SIF is licensed under the MIT License. See [LICENSE](https://github.com/sif/sif/blob/main/LICENSE) for details.
+SIF is licensed under the MIT License. See [LICENSE](https://github.com/zhangtaolab/sif/blob/main/LICENSE) for details.
 
 ## Support
 
-- GitHub Issues: [github.com/sif/sif/issues](https://github.com/sif/sif/issues)
-- GitHub Discussions: [github.com/sif/sif/discussions](https://github.com/sif/sif/discussions)
+- GitHub Issues: [github.com/zhangtaolab/sif/issues](https://github.com/zhangtaolab/sif/issues)
+- GitHub Discussions: [github.com/zhangtaolab/sif/discussions](https://github.com/zhangtaolab/sif/discussions)
 
 ---
 

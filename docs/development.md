@@ -13,7 +13,7 @@ Guide for contributing to SIF development.
 ### Clone Repository
 
 ```bash
-git clone https://github.com/sif/sif.git
+git clone https://github.com/zhangtaolab/sif.git
 cd sif
 ```
 
@@ -586,8 +586,8 @@ mypy --clear-cache src/sif
 
 ## Getting Help
 
-- GitHub Issues: [github.com/sif/sif/issues](https://github.com/sif/sif/issues)
-- Discussions: [github.com/sif/sif/discussions](https://github.com/sif/sif/discussions)
+- GitHub Issues: [github.com/zhangtaolab/sif/issues](https://github.com/zhangtaolab/sif/issues)
+- Discussions: [github.com/zhangtaolab/sif/discussions](https://github.com/zhangtaolab/sif/discussions)
 
 ## Related Documentation
 

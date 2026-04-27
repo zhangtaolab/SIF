@@ -29,7 +29,7 @@ For development or to get the latest features:
 
 ```bash
 # Clone the repository
-git clone https://github.com/sif/sif.git
+git clone https://github.com/zhangtaolab/sif.git
 cd sif
 
 # Create a virtual environment (recommended)
@@ -224,7 +224,7 @@ export SIF_DB_PATH=/path/with/write/permission/sif.db
 
 If you encounter issues not covered here:
 
-1. Check the [GitHub Issues](https://github.com/sif/sif/issues)
+1. Check the [GitHub Issues](https://github.com/zhangtaolab/sif/issues)
 2. Run with verbose mode: `sif -v <command>`
 3. Check logs: `~/.local/share/sif/logs/sif.log`
 

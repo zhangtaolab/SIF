@@ -222,5 +222,5 @@ Thanks to all contributors who have helped shape SIF!
 
 ---
 
-[Unreleased]: https://github.com/sif/sif/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/sif/sif/releases/tag/v0.1.0
+[Unreleased]: https://github.com/zhangtaolab/sif/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/zhangtaolab/sif/releases/tag/v0.1.0

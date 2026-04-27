@@ -55,7 +55,7 @@ pip install sif
 ### From Source
 
 ```bash
-git clone https://github.com/sif/sif.git
+git clone https://github.com/zhangtaolab/sif.git
 cd sif
 pip install -e ".[dev]"
 ```
@@ -165,22 +165,22 @@ SIF can be configured via environment variables or a `.env` file:
 
 ```bash
 # Database location
-DOCSIFT_DB_PATH=~/.local/share/sif/sif.db
+SIF_DB_PATH=~/.local/share/sif/sif.db
 
 # Embedding model
-DOCSIFT_MODEL_NAME=Qwen/Qwen3-Embedding-0.6B
-DOCSIFT_MODEL_PATH=~/models/embedding.gguf
+SIF_MODEL_NAME=Qwen/Qwen3-Embedding-0.6B
+SIF_MODEL_PATH=~/models/embedding.gguf
 
 # Chunking settings
-DOCSIFT_CHUNK_SIZE=512
-DOCSIFT_CHUNK_OVERLAP=128
+SIF_CHUNK_SIZE=512
+SIF_CHUNK_OVERLAP=128
 
 # Logging
-DOCSIFT_LOG_LEVEL=INFO
+SIF_LOG_LEVEL=INFO
 
 # MCP server
-DOCSIFT_MCP_HOST=127.0.0.1
-DOCSIFT_MCP_PORT=8080
+SIF_MCP_HOST=127.0.0.1
+SIF_MCP_PORT=8080
 ```
 
 ## Architecture
@@ -265,7 +265,7 @@ Where `k` is a constant (default: 60) and `rank_i(d)` is the rank of document `d
 
 ```bash
 # Clone the repository
-git clone https://github.com/sif/sif.git
+git clone https://github.com/zhangtaolab/sif.git
 cd sif
 
 # Create virtual environment
@@ -335,8 +335,8 @@ SIF is a Python reimplementation of the original TypeScript QMD (Query Markup Do
 
 ## Support
 
-- GitHub Issues: [github.com/sif/sif/issues](https://github.com/sif/sif/issues)
-- GitHub Discussions: [github.com/sif/sif/discussions](https://github.com/sif/sif/discussions)
+- GitHub Issues: [github.com/zhangtaolab/sif/issues](https://github.com/zhangtaolab/sif/issues)
+- GitHub Discussions: [github.com/zhangtaolab/sif/discussions](https://github.com/zhangtaolab/sif/discussions)
 
 ---
 

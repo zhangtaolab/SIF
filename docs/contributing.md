@@ -108,7 +108,7 @@ See [Development Guide](development.md) for detailed setup instructions.
 Quick start:
 
 ```bash
-git clone https://github.com/sif/sif.git
+git clone https://github.com/zhangtaolab/sif.git
 cd sif
 python -m venv venv
 source venv/bin/activate
@@ -357,8 +357,8 @@ Look for issues labeled:
 
 ## Questions?
 
-- GitHub Discussions: [github.com/sif/sif/discussions](https://github.com/sif/sif/discussions)
-- Issues: [github.com/sif/sif/issues](https://github.com/sif/sif/issues)
+- GitHub Discussions: [github.com/zhangtaolab/sif/discussions](https://github.com/zhangtaolab/sif/discussions)
+- Issues: [github.com/zhangtaolab/sif/issues](https://github.com/zhangtaolab/sif/issues)
 
 ## Recognition
 

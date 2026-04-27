@@ -446,4 +446,4 @@ sif cleanup
 
 - Check the [FAQ](#) (coming soon)
 
-- Open an issue on [GitHub](https://github.com/sif/sif/issues)
+- Open an issue on [GitHub](https://github.com/zhangtaolab/sif/issues)
