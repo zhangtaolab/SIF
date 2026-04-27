@@ -1,10 +1,10 @@
-# DocSift
+# SIF
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 
-DocSift is a local CLI search engine for indexing and searching markdown documents. It provides powerful full-text and semantic search capabilities while keeping all data on your machine.
+SIF is a local CLI search engine for indexing and searching markdown documents. It provides powerful full-text and semantic search capabilities while keeping all data on your machine.
 
 ## Features
 
@@ -22,26 +22,26 @@ DocSift is a local CLI search engine for indexing and searching markdown documen
 ### Installation
 
 ```bash
-pip install docsift
+pip install sif
 ```
 
 For full functionality including embeddings:
 
 ```bash
-pip install "docsift[all]"
+pip install "sif[all]"
 ```
 
 ### Basic Usage
 
 ```bash
 # Add a collection
-docsift collection add ~/Documents/notes --name my-notes
+sif collection add ~/Documents/notes --name my-notes
 
 # Index your documents
-docsift index update --collection my-notes
+sif index update --collection my-notes
 
 # Search
-docsift search query "python decorators"
+sif search query "python decorators"
 ```
 
 ## Installation
@@ -49,21 +49,21 @@ docsift search query "python decorators"
 ### From PyPI (Recommended)
 
 ```bash
-pip install docsift
+pip install sif
 ```
 
 ### From Source
 
 ```bash
-git clone https://github.com/docsift/docsift.git
-cd docsift
+git clone https://github.com/sif/sif.git
+cd sif
 pip install -e ".[dev]"
 ```
 
 ### Using pipx
 
 ```bash
-pipx install docsift
+pipx install sif
 ```
 
 ## Usage
@@ -72,19 +72,19 @@ pipx install docsift
 
 ```bash
 # List all collections
-docsift collection list
+sif collection list
 
 # Add a new collection
-docsift collection add ~/Work/docs --name work-docs --description "Work documentation"
+sif collection add ~/Work/docs --name work-docs --description "Work documentation"
 
 # Show collection details
-docsift collection show my-notes
+sif collection show my-notes
 
 # Rename a collection
-docsift collection rename my-notes personal-notes
+sif collection rename my-notes personal-notes
 
 # Delete a collection
-docsift collection remove old-collection --force
+sif collection remove old-collection --force
 ```
 
 ### Context Management
@@ -93,45 +93,45 @@ Add descriptive context to improve search relevance:
 
 ```bash
 # Add context to a collection
-docsift context add collection my-notes "These are my personal notes about programming and technology."
+sif context add collection my-notes "These are my personal notes about programming and technology."
 
 # Add global context
-docsift context add global global "I am a software engineer interested in Python and machine learning."
+sif context add global global "I am a software engineer interested in Python and machine learning."
 
 # List all context
-docsift context list
+sif context list
 ```
 
 ### Indexing
 
 ```bash
 # Update the index
-docsift index update --collection my-notes
+sif index update --collection my-notes
 
 # Force full reindex
-docsift index update --collection my-notes --force
+sif index update --collection my-notes --force
 
 # Show indexing status
-docsift status
+sif status
 ```
 
 ### Search
 
 ```bash
 # Basic search
-docsift search query "python decorators"
+sif search query "python decorators"
 
 # Search in specific collection
-docsift search query "python decorators" -c my-notes
+sif search query "python decorators" -c my-notes
 
 # BM25 keyword search
-docsift search search "python decorators"
+sif search search "python decorators"
 
 # Limit results
-docsift search query "python decorators" --limit 20
+sif search query "python decorators" --limit 20
 
 # Search with explanation
-docsift search query "AI" --explain
+sif search query "AI" --explain
 ```
 
 ### MCP Server
@@ -140,10 +140,10 @@ Start the MCP server for integration with AI assistants:
 
 ```bash
 # Start with stdio transport (default)
-docsift mcp stdio
+sif mcp stdio
 
 # Start with HTTP transport
-docsift mcp http --port 8080
+sif mcp http --port 8080
 ```
 
 Configure in Claude Desktop:
@@ -151,8 +151,8 @@ Configure in Claude Desktop:
 ```json
 {
   "mcpServers": {
-    "docsift": {
-      "command": "docsift",
+    "sif": {
+      "command": "sif",
       "args": ["mcp", "stdio"]
     }
   }
@@ -161,11 +161,11 @@ Configure in Claude Desktop:
 
 ## Configuration
 
-DocSift can be configured via environment variables or a `.env` file:
+SIF can be configured via environment variables or a `.env` file:
 
 ```bash
 # Database location
-DOCSIFT_DB_PATH=~/.local/share/docsift/docsift.db
+DOCSIFT_DB_PATH=~/.local/share/sif/sif.db
 
 # Embedding model
 DOCSIFT_MODEL_NAME=Qwen/Qwen3-Embedding-0.6B
@@ -185,7 +185,7 @@ DOCSIFT_MCP_PORT=8080
 
 ## Architecture
 
-DocSift follows a layered architecture with clean separation of concerns:
+SIF follows a layered architecture with clean separation of concerns:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -265,8 +265,8 @@ Where `k` is a constant (default: 60) and `rank_i(d)` is the rank of document `d
 
 ```bash
 # Clone the repository
-git clone https://github.com/docsift/docsift.git
-cd docsift
+git clone https://github.com/sif/sif.git
+cd sif
 
 # Create virtual environment
 python -m venv venv
@@ -286,7 +286,7 @@ pre-commit install
 pytest
 
 # Run with coverage
-pytest --cov=docsift
+pytest --cov=sif
 
 # Run specific test category
 pytest -m unit
@@ -303,7 +303,7 @@ ruff format .
 ruff check .
 
 # Type checking
-mypy src/docsift
+mypy src/sif
 ```
 
 ## Roadmap
@@ -331,12 +331,12 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ## Acknowledgments
 
-DocSift is a Python reimplementation of the original TypeScript QMD (Query Markup Documents) project.
+SIF is a Python reimplementation of the original TypeScript QMD (Query Markup Documents) project.
 
 ## Support
 
-- GitHub Issues: [github.com/docsift/docsift/issues](https://github.com/docsift/docsift/issues)
-- GitHub Discussions: [github.com/docsift/docsift/discussions](https://github.com/docsift/docsift/discussions)
+- GitHub Issues: [github.com/sif/sif/issues](https://github.com/sif/sif/issues)
+- GitHub Discussions: [github.com/sif/sif/discussions](https://github.com/sif/sif/discussions)
 
 ---
 
