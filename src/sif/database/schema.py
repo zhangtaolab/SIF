@@ -1,4 +1,4 @@
-"""Database schema definitions for DocSift."""
+"""Database schema definitions for SIF."""
 
 from __future__ import annotations
 
@@ -270,7 +270,7 @@ class SchemaManager:
                     raise RuntimeError(
                         f"Embedding dimension mismatch: database has FLOAT[{existing_dim}], "
                         f"but settings require FLOAT[{self.embedding_dim}]. "
-                        f"Rebuild the index with 'docsift cleanup' or delete the database file."
+                        f"Rebuild the index with 'sif cleanup' or delete the database file."
                     )
 
         self.db.execute(f"""

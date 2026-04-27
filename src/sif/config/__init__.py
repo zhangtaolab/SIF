@@ -1,4 +1,4 @@
-"""Configuration management for DocSift.
+"""Configuration management for SIF.
 
 This package provides configuration handling:
 - Settings management via Pydantic Settings
@@ -7,8 +7,8 @@ This package provides configuration handling:
 - Default values and validation
 """
 
-from docsift.config.settings import Settings, get_settings
-from docsift.config.constants import (
+from sif.config.settings import Settings, get_settings
+from sif.config.constants import (
     DEFAULT_DB_PATH,
     DEFAULT_MODEL_PATH,
     DEFAULT_CHUNK_SIZE,
