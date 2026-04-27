@@ -1,32 +1,44 @@
 {
   "version": "1.0",
-  "timestamp": "2026-04-27T08:59:19.927Z",
-  "phase": "08",
-  "phase_name": "project-rename-from-docsift-to-sif",
-  "phase_dir": ".planning/phases/08-project-rename-from-docsift-to-sif",
-  "plan": 8,
-  "task": 0,
-  "total_tasks": 0,
-  "status": "complete",
+  "timestamp": "2026-04-27T12:53:33Z",
+  "phase": "E2E",
+  "phase_name": "end-to-end-verification",
+  "phase_dir": ".planning",
+  "plan": 0,
+  "task": 4,
+  "total_tasks": 5,
+  "status": "paused",
   "completed_tasks": [
-    {"id": 1, "name": "Rename src/docsift to src/sif and update pyproject.toml", "status": "done", "commit": "76e9538"},
-    {"id": 2, "name": "Update constants, metadata, and CLI migration logic", "status": "done", "commit": "7f01594"},
-    {"id": 3, "name": "Update all Python imports in src/sif/", "status": "done", "commit": "83acfb2"},
-    {"id": 4, "name": "Update Settings env_prefix to SIF_", "status": "done", "commit": "637afca"},
-    {"id": 5, "name": "Update test imports and patch targets", "status": "done", "commit": "f93637a"},
-    {"id": 6, "name": "Update documentation and config files", "status": "done", "commit": "d2d0346"},
-    {"id": 7, "name": "Rename Claude skills to sif-search and sif-get", "status": "done", "commit": "d0e16ac"},
-    {"id": 8, "name": "Run full quality suite and final verification", "status": "done", "commit": "1810c7d"},
-    {"id": 9, "name": "Fix verifier gaps: DOCSIFT_ env vars and GitHub URLs", "status": "done", "commit": "cb6a146"}
+    {"id": 1, "name": "Fix all ruff lint errors and warnings", "status": "done", "commit": "pending"},
+    {"id": 2, "name": "Fix all pytest warnings", "status": "done", "commit": "pending"},
+    {"id": 3, "name": "Fix 3 E2E bugs (get-by-filename, multi-get, collection stats)", "status": "done", "commit": "pending"},
+    {"id": 4, "name": "E2E verification (automated)", "status": "done", "progress": "13/13 tests passed against temp DB"}
   ],
-  "remaining_tasks": [],
+  "remaining_tasks": [
+    {"id": 5, "name": "Commit all changes and run manual E2E test plan", "status": "in_progress", "progress": "Manual test plan written at .planning/E2E-manual-test-plan.md, user about to run it against real Obsidian vault"}
+  ],
   "blockers": [],
-  "human_actions_pending": [],
-  "decisions": [
-    {"decision": "Bulk sed replacement for docsift→sif was too naive for GitHub URLs", "rationale": "github.com/docsift/docsift became github.com/sif/sif instead of github.com/zhangtaolab/sif", "phase": "08"},
-    {"decision": "README.md Configuration section env vars were missed by initial sed", "rationale": "DOCSIFT_* examples in code blocks were not caught by targeted replacements", "phase": "08"}
+  "human_actions_pending": [
+    {"action": "Run manual E2E test plan against /Users/forrest/SynologyDrive/Obsidian/ScholarCopilot-Dev/raw/markdown", "context": "Automated E2E passed but user wants to verify with real data (307 papers, 266MB)", "blocking": false},
+    {"action": "Re-run sif index embed with MPS (GPU) after fix", "context": "MPS device support added to embedder.py, current embed may be running on CPU", "blocking": false}
   ],
-  "uncommitted_files": [],
-  "next_action": "Phase 08 is complete. This was the final phase of the v1.0 milestone. Consider running /gsd-complete-milestone to archive.",
-  "context_notes": "All 8 phases of v1.0 milestone are complete. Phase 08 rename from DocSift to SIF is fully verified with 10/10 must-haves, 377 tests passing, zero failures."
+  "decisions": [
+    {"decision": "Added MPS (Apple GPU) device detection to SentenceTransformerEmbedder and ModelScopeEmbedder", "rationale": "Code only checked CUDA, Mac users with Apple Silicon get stuck on CPU. Device selection now: CUDA > MPS > CPU", "phase": "E2E"},
+    {"decision": "Added get_by_filename() to DocumentRepository with fallback in get_cmd/multi_get_cmd", "rationale": "Users expect `sif get readme.md` to work, not just full paths", "phase": "E2E"},
+    {"decision": "Fixed _row_to_collection to include document_count and chunk_count from DB rows", "rationale": "Collection stats always showed 0 because fields were silently dropped during row-to-object conversion", "phase": "E2E"},
+    {"decision": "Added mark_indexed() method to Collection dataclass", "rationale": "DocumentIndexer called nonexistent method — latent bug not caught by tests", "phase": "E2E"}
+  ],
+  "uncommitted_files": [
+    "src/sif/database/repositories.py",
+    "src/sif/cli/commands/get.py",
+    "src/sif/core/models.py",
+    "src/sif/embedding/embedder.py",
+    "tests/unit/cli/test_get.py",
+    "~50 other source/test files with ruff fixes",
+    ".planning/E2E-UAT.md",
+    ".planning/E2E-manual-test-plan.md",
+    ".planning/debug/e2e-get-and-stats-bugs.md"
+  ],
+  "next_action": "Commit all changes, then user runs manual E2E test plan against real Obsidian vault",
+  "context_notes": "Session covered: (1) ~300+ ruff lint fixes across all source and test files, (2) 3 bug fixes from E2E testing (get-by-filename, collection stats, mark_indexed), (3) MPS GPU support for Mac, (4) automated E2E verification passed 13/13 tests. User is about to run manual testing against their real Obsidian vault with 307 academic papers. They started sif index embed but it was running on CPU — MPS fix just applied, needs re-run."
 }
