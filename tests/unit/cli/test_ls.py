@@ -4,11 +4,11 @@ from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 
-from docsift.cli.commands.ls import ls_cmd
+from sif.cli.commands.ls import ls_cmd
 
 
 class TestLsCommand:
-    """Tests for docsift ls command."""
+    """Tests for sif ls command."""
 
     def test_ls_no_index(self):
         """Test ls when index does not exist."""
@@ -54,9 +54,9 @@ class TestLsCommand:
         mock_index_path.exists.return_value = True
 
         with (
-            patch("docsift.cli.commands.ls.Database") as mock_db_cls,
-            patch("docsift.cli.commands.ls.DocumentRepository") as mock_doc_repo_cls,
-            patch("docsift.cli.commands.ls.CollectionRepository") as mock_coll_repo_cls,
+            patch("sif.cli.commands.ls.Database") as mock_db_cls,
+            patch("sif.cli.commands.ls.DocumentRepository") as mock_doc_repo_cls,
+            patch("sif.cli.commands.ls.CollectionRepository") as mock_coll_repo_cls,
         ):
             mock_db = MagicMock()
             mock_db.connection.__enter__ = MagicMock(return_value=mock_db.connection)
@@ -95,9 +95,9 @@ class TestLsCommand:
         mock_index_path.exists.return_value = True
 
         with (
-            patch("docsift.cli.commands.ls.Database") as mock_db_cls,
-            patch("docsift.cli.commands.ls.DocumentRepository") as mock_doc_repo_cls,
-            patch("docsift.cli.commands.ls.CollectionRepository") as mock_coll_repo_cls,
+            patch("sif.cli.commands.ls.Database") as mock_db_cls,
+            patch("sif.cli.commands.ls.DocumentRepository") as mock_doc_repo_cls,
+            patch("sif.cli.commands.ls.CollectionRepository") as mock_coll_repo_cls,
         ):
             mock_db = MagicMock()
             mock_db.connection.__enter__ = MagicMock(return_value=mock_db.connection)
@@ -136,9 +136,9 @@ class TestLsCommand:
         mock_index_path.exists.return_value = True
 
         with (
-            patch("docsift.cli.commands.ls.Database") as mock_db_cls,
-            patch("docsift.cli.commands.ls.DocumentRepository") as mock_doc_repo_cls,
-            patch("docsift.cli.commands.ls.CollectionRepository") as mock_coll_repo_cls,
+            patch("sif.cli.commands.ls.Database") as mock_db_cls,
+            patch("sif.cli.commands.ls.DocumentRepository") as mock_doc_repo_cls,
+            patch("sif.cli.commands.ls.CollectionRepository") as mock_coll_repo_cls,
         ):
             mock_db = MagicMock()
             mock_db.connection.__enter__ = MagicMock(return_value=mock_db.connection)
@@ -167,8 +167,8 @@ class TestLsCommand:
         mock_index_path.exists.return_value = True
 
         with (
-            patch("docsift.cli.commands.ls.Database") as mock_db_cls,
-            patch("docsift.cli.commands.ls.CollectionRepository") as mock_coll_repo_cls,
+            patch("sif.cli.commands.ls.Database") as mock_db_cls,
+            patch("sif.cli.commands.ls.CollectionRepository") as mock_coll_repo_cls,
         ):
             mock_db = MagicMock()
             mock_db.connection.__enter__ = MagicMock(return_value=mock_db.connection)

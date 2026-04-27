@@ -1,1 +1,1 @@
-"""DocSift test suite."""
+"""SIF test suite."""

@@ -2,14 +2,14 @@
 
 import pytest
 
-from docsift.models.search import (
+from sif.models.search import (
     SearchQuery,
     SearchOptions,
     SearchType,
     SearchResult,
     SearchResponse,
 )
-from docsift.search.strategy import SearchContext
+from sif.search.strategy import SearchContext
 
 
 class TestSearchQuery:

@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from docsift.database.connection import DatabaseConnection, ConnectionPool
+from sif.database.connection import DatabaseConnection, ConnectionPool
 
 
 class TestDatabaseConnection:

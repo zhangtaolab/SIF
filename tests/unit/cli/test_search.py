@@ -4,8 +4,8 @@ from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 
-from docsift.cli.commands.search import query_cmd, search_cmd, vsearch_cmd
-from docsift.core.models import Collection
+from sif.cli.commands.search import query_cmd, search_cmd, vsearch_cmd
+from sif.core.models import Collection
 
 
 class TestSearchFiltering:
@@ -28,13 +28,13 @@ class TestSearchFiltering:
         mock_db = MagicMock()
 
         with (
-            patch("docsift.cli.commands.search.Database", return_value=mock_db),
+            patch("sif.cli.commands.search.Database", return_value=mock_db),
             patch(
-                "docsift.cli.commands.search.CollectionRepository",
+                "sif.cli.commands.search.CollectionRepository",
                 return_value=mock_repo,
             ),
             patch(
-                "docsift.cli.commands.search.BM25Searcher",
+                "sif.cli.commands.search.BM25Searcher",
                 return_value=mock_searcher,
             ),
         ):
@@ -61,13 +61,13 @@ class TestSearchFiltering:
         mock_db = MagicMock()
 
         with (
-            patch("docsift.cli.commands.search.Database", return_value=mock_db),
+            patch("sif.cli.commands.search.Database", return_value=mock_db),
             patch(
-                "docsift.cli.commands.search.CollectionRepository",
+                "sif.cli.commands.search.CollectionRepository",
                 return_value=mock_repo,
             ),
             patch(
-                "docsift.cli.commands.search.BM25Searcher",
+                "sif.cli.commands.search.BM25Searcher",
                 return_value=mock_searcher,
             ),
         ):
@@ -104,21 +104,21 @@ class TestSearchFiltering:
         mock_db = MagicMock()
 
         with (
-            patch("docsift.cli.commands.search.Database", return_value=mock_db),
+            patch("sif.cli.commands.search.Database", return_value=mock_db),
             patch(
-                "docsift.cli.commands.search.CollectionRepository",
+                "sif.cli.commands.search.CollectionRepository",
                 return_value=mock_repo,
             ),
             patch(
-                "docsift.cli.commands.search.SearchPipeline",
+                "sif.cli.commands.search.SearchPipeline",
                 return_value=mock_searcher,
             ),
             patch(
-                "docsift.embedding.manager.EmbeddingManager.from_settings",
+                "sif.embedding.manager.EmbeddingManager.from_settings",
                 return_value=mock_manager,
             ),
             patch(
-                "docsift.config.settings.get_settings",
+                "sif.config.settings.get_settings",
                 return_value=MagicMock(
                     model_name="all-MiniLM-L6-v2",
                     reranker_model_name=None,
@@ -159,21 +159,21 @@ class TestSearchFiltering:
         mock_db = MagicMock()
 
         with (
-            patch("docsift.database.database.Database", return_value=mock_db),
+            patch("sif.database.database.Database", return_value=mock_db),
             patch(
-                "docsift.database.repositories.CollectionRepository",
+                "sif.database.repositories.CollectionRepository",
                 return_value=mock_repo,
             ),
             patch(
-                "docsift.embedding.manager.EmbeddingManager.from_settings",
+                "sif.embedding.manager.EmbeddingManager.from_settings",
                 return_value=mock_manager,
             ),
             patch(
-                "docsift.search.vector.VectorSearcher",
+                "sif.search.vector.VectorSearcher",
                 return_value=mock_searcher,
             ),
             patch(
-                "docsift.config.settings.get_settings",
+                "sif.config.settings.get_settings",
                 return_value=MagicMock(
                     model_name="all-MiniLM-L6-v2",
                     model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"},
@@ -197,7 +197,7 @@ class TestSearchLineNumbers:
 
     def _make_search_result(self, content="foo\nbar"):
         """Create a mock SearchResult with content."""
-        from docsift.core.models import SearchResult
+        from sif.core.models import SearchResult
 
         return SearchResult(
             document_id="doc1",
@@ -223,13 +223,13 @@ class TestSearchLineNumbers:
         mock_db = MagicMock()
 
         with (
-            patch("docsift.cli.commands.search.Database", return_value=mock_db),
+            patch("sif.cli.commands.search.Database", return_value=mock_db),
             patch(
-                "docsift.cli.commands.search.CollectionRepository",
+                "sif.cli.commands.search.CollectionRepository",
                 return_value=mock_repo,
             ),
             patch(
-                "docsift.cli.commands.search.BM25Searcher",
+                "sif.cli.commands.search.BM25Searcher",
                 return_value=mock_searcher,
             ),
         ):
@@ -257,13 +257,13 @@ class TestSearchLineNumbers:
         mock_db = MagicMock()
 
         with (
-            patch("docsift.cli.commands.search.Database", return_value=mock_db),
+            patch("sif.cli.commands.search.Database", return_value=mock_db),
             patch(
-                "docsift.cli.commands.search.CollectionRepository",
+                "sif.cli.commands.search.CollectionRepository",
                 return_value=mock_repo,
             ),
             patch(
-                "docsift.cli.commands.search.BM25Searcher",
+                "sif.cli.commands.search.BM25Searcher",
                 return_value=mock_searcher,
             ),
         ):
@@ -293,21 +293,21 @@ class TestSearchLineNumbers:
         mock_db = MagicMock()
 
         with (
-            patch("docsift.cli.commands.search.Database", return_value=mock_db),
+            patch("sif.cli.commands.search.Database", return_value=mock_db),
             patch(
-                "docsift.cli.commands.search.CollectionRepository",
+                "sif.cli.commands.search.CollectionRepository",
                 return_value=mock_repo,
             ),
             patch(
-                "docsift.cli.commands.search.SearchPipeline",
+                "sif.cli.commands.search.SearchPipeline",
                 return_value=mock_searcher,
             ),
             patch(
-                "docsift.embedding.manager.EmbeddingManager.from_settings",
+                "sif.embedding.manager.EmbeddingManager.from_settings",
                 return_value=mock_manager,
             ),
             patch(
-                "docsift.config.settings.get_settings",
+                "sif.config.settings.get_settings",
                 return_value=MagicMock(
                     model_name="all-MiniLM-L6-v2",
                     reranker_model_name=None,
@@ -343,21 +343,21 @@ class TestSearchLineNumbers:
         mock_db = MagicMock()
 
         with (
-            patch("docsift.database.database.Database", return_value=mock_db),
+            patch("sif.database.database.Database", return_value=mock_db),
             patch(
-                "docsift.database.repositories.CollectionRepository",
+                "sif.database.repositories.CollectionRepository",
                 return_value=mock_repo,
             ),
             patch(
-                "docsift.embedding.manager.EmbeddingManager.from_settings",
+                "sif.embedding.manager.EmbeddingManager.from_settings",
                 return_value=mock_manager,
             ),
             patch(
-                "docsift.search.vector.VectorSearcher",
+                "sif.search.vector.VectorSearcher",
                 return_value=mock_searcher,
             ),
             patch(
-                "docsift.config.settings.get_settings",
+                "sif.config.settings.get_settings",
                 return_value=MagicMock(
                     model_name="all-MiniLM-L6-v2",
                     model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"},
@@ -379,7 +379,7 @@ class TestQueryNewFlags:
 
     def _make_pipeline_mock(self):
         """Create a mock SearchPipeline with a scored result."""
-        from docsift.core.models import SearchResult
+        from sif.core.models import SearchResult
 
         result = SearchResult(
             document_id="doc1",
@@ -410,21 +410,21 @@ class TestQueryNewFlags:
         mock_db = MagicMock()
 
         with (
-            patch("docsift.cli.commands.search.Database", return_value=mock_db),
+            patch("sif.cli.commands.search.Database", return_value=mock_db),
             patch(
-                "docsift.cli.commands.search.CollectionRepository",
+                "sif.cli.commands.search.CollectionRepository",
                 return_value=mock_repo,
             ),
             patch(
-                "docsift.cli.commands.search.SearchPipeline",
+                "sif.cli.commands.search.SearchPipeline",
                 return_value=self._make_pipeline_mock(),
             ),
             patch(
-                "docsift.embedding.manager.EmbeddingManager.from_settings",
+                "sif.embedding.manager.EmbeddingManager.from_settings",
                 return_value=mock_manager,
             ),
             patch(
-                "docsift.config.settings.get_settings",
+                "sif.config.settings.get_settings",
                 return_value=MagicMock(
                     model_name="all-MiniLM-L6-v2",
                     reranker_model_name=None,
@@ -458,21 +458,21 @@ class TestQueryNewFlags:
         mock_pipeline = self._make_pipeline_mock()
 
         with (
-            patch("docsift.cli.commands.search.Database", return_value=mock_db),
+            patch("sif.cli.commands.search.Database", return_value=mock_db),
             patch(
-                "docsift.cli.commands.search.CollectionRepository",
+                "sif.cli.commands.search.CollectionRepository",
                 return_value=mock_repo,
             ),
             patch(
-                "docsift.cli.commands.search.SearchPipeline",
+                "sif.cli.commands.search.SearchPipeline",
                 return_value=mock_pipeline,
             ),
             patch(
-                "docsift.embedding.manager.EmbeddingManager.from_settings",
+                "sif.embedding.manager.EmbeddingManager.from_settings",
                 return_value=mock_manager,
             ),
             patch(
-                "docsift.config.settings.get_settings",
+                "sif.config.settings.get_settings",
                 return_value=MagicMock(
                     model_name="all-MiniLM-L6-v2",
                     reranker_model_name=None,
@@ -508,21 +508,21 @@ class TestQueryNewFlags:
         mock_pipeline = self._make_pipeline_mock()
 
         with (
-            patch("docsift.cli.commands.search.Database", return_value=mock_db),
+            patch("sif.cli.commands.search.Database", return_value=mock_db),
             patch(
-                "docsift.cli.commands.search.CollectionRepository",
+                "sif.cli.commands.search.CollectionRepository",
                 return_value=mock_repo,
             ),
             patch(
-                "docsift.cli.commands.search.SearchPipeline",
+                "sif.cli.commands.search.SearchPipeline",
                 return_value=mock_pipeline,
             ),
             patch(
-                "docsift.embedding.manager.EmbeddingManager.from_settings",
+                "sif.embedding.manager.EmbeddingManager.from_settings",
                 return_value=mock_manager,
             ),
             patch(
-                "docsift.config.settings.get_settings",
+                "sif.config.settings.get_settings",
                 return_value=MagicMock(
                     model_name="all-MiniLM-L6-v2",
                     reranker_model_name=None,
@@ -576,21 +576,21 @@ class TestVsearchNewFlags:
         mock_db = MagicMock()
 
         with (
-            patch("docsift.database.database.Database", return_value=mock_db),
+            patch("sif.database.database.Database", return_value=mock_db),
             patch(
-                "docsift.database.repositories.CollectionRepository",
+                "sif.database.repositories.CollectionRepository",
                 return_value=mock_repo,
             ),
             patch(
-                "docsift.embedding.manager.EmbeddingManager.from_settings",
+                "sif.embedding.manager.EmbeddingManager.from_settings",
                 return_value=mock_manager,
             ),
             patch(
-                "docsift.search.vector.VectorSearcher",
+                "sif.search.vector.VectorSearcher",
                 return_value=mock_searcher,
             ),
             patch(
-                "docsift.config.settings.get_settings",
+                "sif.config.settings.get_settings",
                 return_value=MagicMock(
                     model_name="all-MiniLM-L6-v2",
                     model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"},
@@ -625,21 +625,21 @@ class TestVsearchNewFlags:
         mock_db = MagicMock()
 
         with (
-            patch("docsift.database.database.Database", return_value=mock_db),
+            patch("sif.database.database.Database", return_value=mock_db),
             patch(
-                "docsift.database.repositories.CollectionRepository",
+                "sif.database.repositories.CollectionRepository",
                 return_value=mock_repo,
             ),
             patch(
-                "docsift.embedding.manager.EmbeddingManager.from_settings",
+                "sif.embedding.manager.EmbeddingManager.from_settings",
                 return_value=mock_manager,
             ),
             patch(
-                "docsift.search.vector.VectorSearcher",
+                "sif.search.vector.VectorSearcher",
                 return_value=mock_searcher,
             ),
             patch(
-                "docsift.config.settings.get_settings",
+                "sif.config.settings.get_settings",
                 return_value=MagicMock(
                     model_name="all-MiniLM-L6-v2",
                     model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"},

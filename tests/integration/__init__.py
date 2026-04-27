@@ -1,1 +1,1 @@
-"""Integration tests for DocSift."""
+"""Integration tests for SIF."""

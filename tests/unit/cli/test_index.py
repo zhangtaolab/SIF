@@ -4,19 +4,19 @@ from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 
-from docsift.cli.commands.index import embed_cmd
+from sif.cli.commands.index import embed_cmd
 
 
 class TestEmbedCommand:
     """Tests for embed command."""
 
     def _make_collection(self, coll_id="coll1", name="notes", path="/notes"):
-        from docsift.core.models import Collection
+        from sif.core.models import Collection
 
         return Collection(id=coll_id, name=name, path=path)
 
     def _make_document(self, doc_id="doc1", path="/notes/a.md", content="hello world"):
-        from docsift.core.models import Document
+        from sif.core.models import Document
 
         return Document(
             id=doc_id,
@@ -49,35 +49,35 @@ class TestEmbedCommand:
         mock_db = MagicMock()
 
         with (
-            patch("docsift.cli.commands.index.Database", return_value=mock_db),
+            patch("sif.cli.commands.index.Database", return_value=mock_db),
             patch(
-                "docsift.cli.commands.index.CollectionRepository",
+                "sif.cli.commands.index.CollectionRepository",
                 return_value=mock_coll_repo,
             ),
             patch(
-                "docsift.cli.commands.index.DocumentRepository",
+                "sif.cli.commands.index.DocumentRepository",
                 return_value=mock_doc_repo,
             ),
             patch(
-                "docsift.cli.commands.index.DocumentChunkRepository",
+                "sif.cli.commands.index.DocumentChunkRepository",
                 return_value=mock_chunk_repo,
             ),
             patch(
-                "docsift.cli.commands.index.create_chunker",
+                "sif.cli.commands.index.create_chunker",
                 return_value=MagicMock(chunk=lambda text: [MagicMock(content=text, id="c1")]),
             ),
             patch(
-                "docsift.embedding.manager.EmbeddingManager.from_settings",
+                "sif.embedding.manager.EmbeddingManager.from_settings",
                 return_value=mock_manager,
             ),
             patch(
-                "docsift.config.settings.get_settings",
+                "sif.config.settings.get_settings",
                 return_value=MagicMock(
                     model_name="test", model_dump=lambda: {"model_name": "test"}
                 ),
             ),
             patch(
-                "docsift.search.vector.VectorSearcher",
+                "sif.search.vector.VectorSearcher",
                 return_value=MagicMock(),
             ),
         ):
@@ -118,37 +118,37 @@ class TestEmbedCommand:
         mock_db = MagicMock()
 
         with (
-            patch("docsift.cli.commands.index.Database", return_value=mock_db),
+            patch("sif.cli.commands.index.Database", return_value=mock_db),
             patch(
-                "docsift.cli.commands.index.CollectionRepository",
+                "sif.cli.commands.index.CollectionRepository",
                 return_value=mock_coll_repo,
             ),
             patch(
-                "docsift.cli.commands.index.DocumentRepository",
+                "sif.cli.commands.index.DocumentRepository",
                 return_value=mock_doc_repo,
             ),
             patch(
-                "docsift.cli.commands.index.DocumentChunkRepository",
+                "sif.cli.commands.index.DocumentChunkRepository",
                 return_value=mock_chunk_repo,
             ),
             patch(
-                "docsift.cli.commands.index.create_chunker",
+                "sif.cli.commands.index.create_chunker",
                 return_value=MagicMock(
                     chunk=lambda text: [MagicMock(content=text, id=f"chunk-{text}")]
                 ),
             ),
             patch(
-                "docsift.embedding.manager.EmbeddingManager.from_settings",
+                "sif.embedding.manager.EmbeddingManager.from_settings",
                 return_value=mock_manager,
             ),
             patch(
-                "docsift.config.settings.get_settings",
+                "sif.config.settings.get_settings",
                 return_value=MagicMock(
                     model_name="test", model_dump=lambda: {"model_name": "test"}
                 ),
             ),
             patch(
-                "docsift.search.vector.VectorSearcher",
+                "sif.search.vector.VectorSearcher",
                 return_value=mock_vector_searcher,
             ),
         ):
@@ -196,29 +196,29 @@ class TestEmbedCommand:
         mock_db = MagicMock()
 
         with (
-            patch("docsift.cli.commands.index.Database", return_value=mock_db),
+            patch("sif.cli.commands.index.Database", return_value=mock_db),
             patch(
-                "docsift.cli.commands.index.CollectionRepository",
+                "sif.cli.commands.index.CollectionRepository",
                 return_value=mock_coll_repo,
             ),
             patch(
-                "docsift.cli.commands.index.DocumentRepository",
+                "sif.cli.commands.index.DocumentRepository",
                 return_value=mock_doc_repo,
             ),
             patch(
-                "docsift.cli.commands.index.DocumentChunkRepository",
+                "sif.cli.commands.index.DocumentChunkRepository",
                 return_value=MagicMock(),
             ),
             patch(
-                "docsift.embedding.manager.EmbeddingManager.from_settings",
+                "sif.embedding.manager.EmbeddingManager.from_settings",
                 return_value=mock_manager,
             ),
             patch(
-                "docsift.config.settings.get_settings",
+                "sif.config.settings.get_settings",
                 return_value=mock_settings,
             ),
             patch(
-                "docsift.search.vector.VectorSearcher",
+                "sif.search.vector.VectorSearcher",
                 return_value=MagicMock(),
             ),
         ):

@@ -1,1 +1,1 @@
-"""End-to-end tests for DocSift."""
+"""End-to-end tests for SIF."""

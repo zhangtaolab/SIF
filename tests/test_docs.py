@@ -12,7 +12,7 @@ import click
 import pytest
 from click.testing import CliRunner
 
-from docsift.cli.main import cli
+from sif.cli.main import cli
 
 
 # Files to validate
@@ -225,7 +225,7 @@ class TestDocsCodeBlocks:
                         pytest.fail(f"Invalid Python in {block['file']}: {e}")
 
     def test_shell_commands_exist(self, docs_runner: CliRunner) -> None:
-        """Shell commands starting with 'docsift' must be valid CLI commands."""
+        """Shell commands starting with 'sif' must be valid CLI commands."""
         for md_file in DOCS_FILES:
             if not md_file.exists():
                 continue
@@ -234,8 +234,8 @@ class TestDocsCodeBlocks:
                 if block["language"] in ("bash", "shell", "sh", "zsh"):
                     commands = extract_shell_commands(block["content"])
                     for cmd in commands:
-                        if cmd.startswith("docsift "):
-                            self._verify_docsift_command(cmd, block["file"], docs_runner)
+                        if cmd.startswith("sif "):
+                            self._verify_sif_command(cmd, block["file"], docs_runner)
 
     # Known CLI subcommands at each level
     _SUBCOMMANDS: ClassVar[dict[str, list[str]]] = {
@@ -260,15 +260,15 @@ class TestDocsCodeBlocks:
         "config": ["show"],
     }
 
-    def _verify_docsift_command(self, cmd: str, file_name: str, runner: CliRunner) -> None:
-        """Verify a single docsift command exists in the CLI."""
+    def _verify_sif_command(self, cmd: str, file_name: str, runner: CliRunner) -> None:
+        """Verify a single sif command exists in the CLI."""
         parts = cmd.split()
         if len(parts) < 2:
             return
 
         # Build help args: keep only subcommands, drop flags and positional args
         help_args = []
-        i = 1  # Skip 'docsift'
+        i = 1  # Skip 'sif'
         while i < len(parts):
             part = parts[i]
             if part.startswith("-"):
@@ -290,14 +290,14 @@ class TestDocsCodeBlocks:
     def test_no_removed_commands_in_docs(self) -> None:
         """Docs must not contain removed commands."""
         removed_commands = [
-            "docsift collection create",
-            "docsift collection add-path",
-            "docsift search similar",
-            "docsift mcp start",
-            "docsift mcp config",
-            "docsift query ",
-            "docsift embed ",
-            "docsift vsearch ",
+            "sif collection create",
+            "sif collection add-path",
+            "sif search similar",
+            "sif mcp start",
+            "sif mcp config",
+            "sif query ",
+            "sif embed ",
+            "sif vsearch ",
         ]
         for md_file in DOCS_FILES:
             if not md_file.exists():
@@ -318,9 +318,9 @@ class TestDocsCodeBlocks:
                 pytest.fail(f"Old model name in {md_file.name}")
 
     def test_no_bare_search_command(self) -> None:
-        """Docs must not use 'docsift search <query>' without subcommand."""
+        """Docs must not use 'sif search <query>' without subcommand."""
         search_pattern = re.compile(
-            r"docsift\s+search\s+(?!search\s|query\s|vsearch\s)"
+            r"sif\s+search\s+(?!search\s|query\s|vsearch\s)"
             r"([^-\s\"']|['\"])"
         )
         for md_file in DOCS_FILES:
@@ -336,7 +336,7 @@ class TestDocsCodeBlocks:
                     if "alias " in line and "=" in line:
                         continue
                     pytest.fail(
-                        f"Bare 'docsift search <query>' found in "
+                        f"Bare 'sif search <query>' found in "
                         f"{md_file.name} line {i}: {line.strip()}"
                     )
 
@@ -350,17 +350,17 @@ class TestDocsCodeBlocks:
             content = md_file.read_text()
             for i, line in enumerate(content.split("\n"), 1):
                 stripped = line.strip()
-                # Skip CLI reference syntax lines like "docsift index update [OPTIONS]"
+                # Skip CLI reference syntax lines like "sif index update [OPTIONS]"
                 if "[OPTIONS]" in stripped:
                     continue
-                if stripped.startswith("docsift index update "):
+                if stripped.startswith("sif index update "):
                     parts = stripped.split()
                     if len(parts) > 3 and not parts[3].startswith("-"):
                         pytest.fail(
                             f"index update with positional arg in "
                             f"{md_file.name} line {i}: {stripped}"
                         )
-                if stripped.startswith("docsift status ") and len(stripped.split()) > 2:
+                if stripped.startswith("sif status ") and len(stripped.split()) > 2:
                     parts = stripped.split()
                     if len(parts) > 2 and not parts[2].startswith("-"):
                         pytest.fail(
@@ -373,7 +373,7 @@ class TestDocsCodeBlocks:
             if not md_file.exists():
                 continue
             content = md_file.read_text()
-            if "docsift collection delete" in content:
+            if "sif collection delete" in content:
                 pytest.fail(
                     f"Old 'collection delete' command found in {md_file.name} "
                     f"— use 'collection remove'"
@@ -386,12 +386,12 @@ class TestDocsCodeBlocks:
             pytest.skip("configuration.md not found")
         content = config_file.read_text()
         phantoms = [
-            "DOCSIFT_CACHE_SIZE",
-            "DOCSIFT_MAX_WORKERS",
-            "DOCSIFT_LOG_FILE",
-            "DOCSIFT_BM25_K1",
-            "DOCSIFT_BM25_B",
-            "DOCSIFT_RRF_K",
+            "SIF_CACHE_SIZE",
+            "SIF_MAX_WORKERS",
+            "SIF_LOG_FILE",
+            "SIF_BM25_K1",
+            "SIF_BM25_B",
+            "SIF_RRF_K",
         ]
         found = [p for p in phantoms if p in content]
         if found:

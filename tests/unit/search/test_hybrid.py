@@ -4,10 +4,10 @@ from unittest.mock import MagicMock, create_autospec
 
 import pytest
 
-from docsift.core.models import SearchOptions, SearchResult, SearchType
-from docsift.search.bm25 import BM25Searcher
-from docsift.search.hybrid import HybridSearcher, SearchPipeline
-from docsift.search.vector import VectorSearcher
+from sif.core.models import SearchOptions, SearchResult, SearchType
+from sif.search.bm25 import BM25Searcher
+from sif.search.hybrid import HybridSearcher, SearchPipeline
+from sif.search.vector import VectorSearcher
 
 
 # =============================================================================

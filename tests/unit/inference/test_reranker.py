@@ -12,8 +12,8 @@ if "llama_cpp" not in sys.modules:
 if "sentence_transformers" not in sys.modules:
     sys.modules["sentence_transformers"] = MagicMock()
 
-from docsift.core.models import SearchResult
-from docsift.search.rerank import (
+from sif.core.models import SearchResult
+from sif.search.rerank import (
     CrossEncoderReranker,
     LlamaCppReranker,
     Reranker,

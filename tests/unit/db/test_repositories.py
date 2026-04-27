@@ -12,10 +12,10 @@ from unittest.mock import MagicMock, create_autospec
 
 import pytest
 
-from docsift.core.collection import Collection, CollectionRepository
-from docsift.core.context import Context, ContextRepository, ContextType
-from docsift.core.document import Document, DocumentChunk, DocumentMetadata, DocumentRepository
-from docsift.database.repository import (
+from sif.core.collection import Collection, CollectionRepository
+from sif.core.context import Context, ContextRepository, ContextType
+from sif.core.document import Document, DocumentChunk, DocumentMetadata, DocumentRepository
+from sif.database.repository import (
     CollectionRepository as AbstractCollectionRepository,
     ContextRepository as AbstractContextRepository,
     DocumentRepository as AbstractDocumentRepository,

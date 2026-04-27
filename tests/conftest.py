@@ -1,4 +1,4 @@
-"""Shared pytest fixtures for DocSift tests."""
+"""Shared pytest fixtures for SIF tests."""
 
 import hashlib
 import tempfile
@@ -15,11 +15,11 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from docsift.core.collection import Collection
-from docsift.core.document import Document, DocumentChunk, DocumentMetadata
-from docsift.core.context import Context, ContextType
-from docsift.database.connection import DatabaseConnection
-from docsift.models.search import SearchOptions, SearchResult, SearchType
+from sif.core.collection import Collection
+from sif.core.document import Document, DocumentChunk, DocumentMetadata
+from sif.core.context import Context, ContextType
+from sif.database.connection import DatabaseConnection
+from sif.models.search import SearchOptions, SearchResult, SearchType
 
 
 # =============================================================================
@@ -48,7 +48,7 @@ categories: [documentation]
 
 # Introduction
 
-This is a test document for DocSift.
+This is a test document for SIF.
 
 ## Section 1
 
@@ -550,19 +550,19 @@ def create_test_collection(name: str = "test-collection") -> Collection:
 @pytest.fixture
 def docs_test_db(tmp_path: Path) -> Generator[Path, None, None]:
     """Create a temporary database with minimal test data for docs tests."""
-    from docsift.database.database import Database
+    from sif.database.database import Database
 
     db_path = tmp_path / "docs_test.db"
     db = Database(db_path)
     db.init_schema()
 
-    from docsift.database.repositories import CollectionRepository, DocumentRepository
+    from sif.database.repositories import CollectionRepository, DocumentRepository
 
     with db.transaction() as conn:
         coll_repo = CollectionRepository(conn)
         doc_repo = DocumentRepository(conn)
 
-        from docsift.core.models import Collection as DocsCollection
+        from sif.core.models import Collection as DocsCollection
 
         collection = DocsCollection(
             name="test-docs",
@@ -583,7 +583,7 @@ def docs_test_db(tmp_path: Path) -> Generator[Path, None, None]:
         )
 
         # Insert documents
-        from docsift.core.models import Document as DocsDocument
+        from sif.core.models import Document as DocsDocument
 
         doc1 = DocsDocument(
             path=str(docs_dir / "python.md"),
@@ -610,5 +610,5 @@ def docs_runner(docs_test_db: Path) -> Generator["CliRunner", None, None]:
     """Provide a CliRunner with docs test database pre-configured."""
     from click.testing import CliRunner
 
-    runner = CliRunner(env={"DOCSIFT_DB_PATH": str(docs_test_db)})
+    runner = CliRunner(env={"SIF_DB_PATH": str(docs_test_db)})
     yield runner

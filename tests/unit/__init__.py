@@ -1,1 +1,1 @@
-"""Unit tests for DocSift."""
+"""Unit tests for SIF."""

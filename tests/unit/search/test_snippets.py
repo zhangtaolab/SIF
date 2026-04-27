@@ -1,6 +1,6 @@
 """Tests for smart snippet extraction."""
 
-from docsift.search.snippets import SmartSnippetExtractor
+from sif.search.snippets import SmartSnippetExtractor
 
 
 class TestSmartSnippetExtractor:

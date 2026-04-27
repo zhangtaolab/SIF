@@ -2,9 +2,9 @@
 
 from unittest.mock import MagicMock
 
-from docsift.config.settings import Settings
-from docsift.embedding.manager import EmbeddingManager
-from docsift.models.embedding import EmbeddingConfig, ModelType
+from sif.config.settings import Settings
+from sif.embedding.manager import EmbeddingManager
+from sif.models.embedding import EmbeddingConfig, ModelType
 
 
 class TestEmbeddingManager:

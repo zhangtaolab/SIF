@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 
-from docsift.cli.commands.bench import bench_cmd
+from sif.cli.commands.bench import bench_cmd
 
 
 class TestBenchCommand:
@@ -42,13 +42,13 @@ class TestBenchCommand:
         mock_manager._model = MagicMock()
 
         with (
-            patch("docsift.cli.commands.bench.Database", return_value=mock_db),
+            patch("sif.cli.commands.bench.Database", return_value=mock_db),
             patch(
-                "docsift.cli.commands.bench.EmbeddingManager.from_settings",
+                "sif.cli.commands.bench.EmbeddingManager.from_settings",
                 return_value=mock_manager,
             ),
-            patch("docsift.cli.commands.bench.SearchPipeline", return_value=mock_pipeline),
-            patch("docsift.cli.commands.bench.get_settings", return_value=MagicMock()),
+            patch("sif.cli.commands.bench.SearchPipeline", return_value=mock_pipeline),
+            patch("sif.cli.commands.bench.get_settings", return_value=MagicMock()),
         ):
             result = runner.invoke(
                 bench_cmd,
@@ -79,13 +79,13 @@ class TestBenchCommand:
         mock_manager._model = MagicMock()
 
         with (
-            patch("docsift.cli.commands.bench.Database", return_value=mock_db),
+            patch("sif.cli.commands.bench.Database", return_value=mock_db),
             patch(
-                "docsift.cli.commands.bench.EmbeddingManager.from_settings",
+                "sif.cli.commands.bench.EmbeddingManager.from_settings",
                 return_value=mock_manager,
             ),
-            patch("docsift.cli.commands.bench.SearchPipeline", return_value=mock_pipeline),
-            patch("docsift.cli.commands.bench.get_settings", return_value=MagicMock()),
+            patch("sif.cli.commands.bench.SearchPipeline", return_value=mock_pipeline),
+            patch("sif.cli.commands.bench.get_settings", return_value=MagicMock()),
         ):
             result = runner.invoke(
                 bench_cmd,

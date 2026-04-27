@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 from click.testing import CliRunner
 
-from docsift.cli.commands.pull import pull_cmd
+from sif.cli.commands.pull import pull_cmd
 
 
 class TestPullCommand:
@@ -20,7 +20,7 @@ class TestPullCommand:
         Path(fake_path).write_text("gguf")
 
         with patch(
-            "docsift.cli.commands.pull.hf_hub_download",
+            "sif.cli.commands.pull.hf_hub_download",
             return_value=fake_path,
         ) as mock_hf:
             result = runner.invoke(
@@ -47,11 +47,11 @@ class TestPullCommand:
 
         with (
             patch(
-                "docsift.cli.commands.pull.hf_hub_download",
+                "sif.cli.commands.pull.hf_hub_download",
                 side_effect=Exception("HF down"),
             ),
             patch(
-                "docsift.cli.commands.pull.snapshot_download",
+                "sif.cli.commands.pull.snapshot_download",
                 return_value=str(ms_dir),
             ) as mock_ms,
         ):
@@ -76,7 +76,7 @@ class TestPullCommand:
             Path(filename).write_text("gguf")
 
         with patch(
-            "docsift.cli.commands.pull.request.urlretrieve",
+            "sif.cli.commands.pull.request.urlretrieve",
             side_effect=fake_urlretrieve,
         ) as mock_retrieve:
             result = runner.invoke(
@@ -109,7 +109,7 @@ class TestPullCommand:
         Path(fake_path).write_text("")
 
         with patch(
-            "docsift.cli.commands.pull.hf_hub_download",
+            "sif.cli.commands.pull.hf_hub_download",
             return_value=fake_path,
         ):
             result = runner.invoke(
@@ -127,11 +127,11 @@ class TestPullCommand:
 
         with (
             patch(
-                "docsift.cli.commands.pull.hf_hub_download",
+                "sif.cli.commands.pull.hf_hub_download",
                 side_effect=Exception("HF down"),
             ),
             patch(
-                "docsift.cli.commands.pull.snapshot_download",
+                "sif.cli.commands.pull.snapshot_download",
                 side_effect=ImportError("No modelscope"),
             ),
         ):

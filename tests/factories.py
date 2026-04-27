@@ -5,10 +5,10 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from docsift.core.collection import Collection
-from docsift.core.document import Document, DocumentChunk, DocumentMetadata
-from docsift.core.context import Context, ContextType
-from docsift.models.search import SearchOptions, SearchResult, SearchType
+from sif.core.collection import Collection
+from sif.core.document import Document, DocumentChunk, DocumentMetadata
+from sif.core.context import Context, ContextType
+from sif.models.search import SearchOptions, SearchResult, SearchType
 
 
 class CollectionFactory:

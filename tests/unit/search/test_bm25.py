@@ -2,8 +2,8 @@
 
 from unittest.mock import MagicMock
 
-from docsift.core.models import SearchOptions, SearchResult
-from docsift.search.bm25 import BM25Searcher
+from sif.core.models import SearchOptions, SearchResult
+from sif.search.bm25 import BM25Searcher
 
 
 class TestBM25Searcher:

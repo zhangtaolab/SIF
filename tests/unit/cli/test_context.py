@@ -8,14 +8,14 @@ from uuid import uuid4
 import pytest
 from click.testing import CliRunner
 
-from docsift.cli.commands.context import (
+from sif.cli.commands.context import (
     context_add,
     context_group,
     context_list,
     context_prune,
     context_remove,
 )
-from docsift.core.models import Collection, PathContext
+from sif.core.models import Collection, PathContext
 
 
 class TestContextGroup:
@@ -45,12 +45,12 @@ class TestContextAdd:
         runner = CliRunner()
         ctx_obj = {"index_path": MagicMock(exists=lambda: True)}
 
-        with patch("docsift.cli.commands.context.Database") as MockDB:
+        with patch("sif.cli.commands.context.Database") as MockDB:
             MockDB.return_value = mock_db
             mock_repo = MagicMock()
             mock_repo.get_by_target.return_value = None
             with patch(
-                "docsift.cli.commands.context.ContextRepository",
+                "sif.cli.commands.context.ContextRepository",
                 return_value=mock_repo,
             ):
                 result = runner.invoke(
@@ -70,7 +70,7 @@ class TestContextAdd:
         ctx_obj = {"index_path": MagicMock(exists=lambda: True)}
 
         coll = Collection(name="my-coll", path="/notes")
-        with patch("docsift.cli.commands.context.Database") as MockDB:
+        with patch("sif.cli.commands.context.Database") as MockDB:
             MockDB.return_value = mock_db
             mock_coll_repo = MagicMock()
             mock_coll_repo.get_by_name.return_value = coll
@@ -78,11 +78,11 @@ class TestContextAdd:
             mock_ctx_repo.get_by_target.return_value = None
             with (
                 patch(
-                    "docsift.cli.commands.context.CollectionRepository",
+                    "sif.cli.commands.context.CollectionRepository",
                     return_value=mock_coll_repo,
                 ),
                 patch(
-                    "docsift.cli.commands.context.ContextRepository",
+                    "sif.cli.commands.context.ContextRepository",
                     return_value=mock_ctx_repo,
                 ),
             ):
@@ -106,7 +106,7 @@ class TestContextAdd:
 
         coll_id = str(uuid4())
         coll = Collection(name="my-coll", path="/notes", id=coll_id)
-        with patch("docsift.cli.commands.context.Database") as MockDB:
+        with patch("sif.cli.commands.context.Database") as MockDB:
             MockDB.return_value = mock_db
             mock_coll_repo = MagicMock()
             mock_coll_repo.get_by_name.return_value = None
@@ -115,11 +115,11 @@ class TestContextAdd:
             mock_ctx_repo.get_by_target.return_value = None
             with (
                 patch(
-                    "docsift.cli.commands.context.CollectionRepository",
+                    "sif.cli.commands.context.CollectionRepository",
                     return_value=mock_coll_repo,
                 ),
                 patch(
-                    "docsift.cli.commands.context.ContextRepository",
+                    "sif.cli.commands.context.ContextRepository",
                     return_value=mock_ctx_repo,
                 ),
             ):
@@ -139,13 +139,13 @@ class TestContextAdd:
         runner = CliRunner()
         ctx_obj = {"index_path": MagicMock(exists=lambda: True)}
 
-        with patch("docsift.cli.commands.context.Database") as MockDB:
+        with patch("sif.cli.commands.context.Database") as MockDB:
             MockDB.return_value = mock_db
             mock_coll_repo = MagicMock()
             mock_coll_repo.get_by_name.return_value = None
             mock_coll_repo.get_by_id.return_value = None
             with patch(
-                "docsift.cli.commands.context.CollectionRepository",
+                "sif.cli.commands.context.CollectionRepository",
                 return_value=mock_coll_repo,
             ):
                 result = runner.invoke(
@@ -162,12 +162,12 @@ class TestContextAdd:
         runner = CliRunner()
         ctx_obj = {"index_path": MagicMock(exists=lambda: True)}
 
-        with patch("docsift.cli.commands.context.Database") as MockDB:
+        with patch("sif.cli.commands.context.Database") as MockDB:
             MockDB.return_value = mock_db
             mock_repo = MagicMock()
             mock_repo.get_by_target.return_value = None
             with patch(
-                "docsift.cli.commands.context.ContextRepository",
+                "sif.cli.commands.context.ContextRepository",
                 return_value=mock_repo,
             ):
                 result = runner.invoke(
@@ -188,12 +188,12 @@ class TestContextAdd:
         ctx_obj = {"index_path": MagicMock(exists=lambda: True)}
 
         existing = PathContext(path="/notes/a.md", context="old")
-        with patch("docsift.cli.commands.context.Database") as MockDB:
+        with patch("sif.cli.commands.context.Database") as MockDB:
             MockDB.return_value = mock_db
             mock_repo = MagicMock()
             mock_repo.get_by_target.return_value = existing
             with patch(
-                "docsift.cli.commands.context.ContextRepository",
+                "sif.cli.commands.context.ContextRepository",
                 return_value=mock_repo,
             ):
                 result = runner.invoke(
@@ -227,12 +227,12 @@ class TestContextList:
             PathContext(path="coll-1", context="desc B", context_type="collection"),
             PathContext(path="global", context="desc C", context_type="global"),
         ]
-        with patch("docsift.cli.commands.context.Database") as MockDB:
+        with patch("sif.cli.commands.context.Database") as MockDB:
             MockDB.return_value = mock_db
             mock_repo = MagicMock()
             mock_repo.list_all.return_value = contexts
             with patch(
-                "docsift.cli.commands.context.ContextRepository",
+                "sif.cli.commands.context.ContextRepository",
                 return_value=mock_repo,
             ):
                 result = runner.invoke(context_list, obj=ctx_obj)
@@ -248,12 +248,12 @@ class TestContextList:
         ctx_obj = {"index_path": MagicMock(exists=lambda: True)}
 
         contexts = [PathContext(path="/a.md", context="desc A")]
-        with patch("docsift.cli.commands.context.Database") as MockDB:
+        with patch("sif.cli.commands.context.Database") as MockDB:
             MockDB.return_value = mock_db
             mock_repo = MagicMock()
             mock_repo.list_by_type.return_value = contexts
             with patch(
-                "docsift.cli.commands.context.ContextRepository",
+                "sif.cli.commands.context.ContextRepository",
                 return_value=mock_repo,
             ):
                 result = runner.invoke(
@@ -270,12 +270,12 @@ class TestContextList:
         runner = CliRunner()
         ctx_obj = {"index_path": MagicMock(exists=lambda: True)}
 
-        with patch("docsift.cli.commands.context.Database") as MockDB:
+        with patch("sif.cli.commands.context.Database") as MockDB:
             MockDB.return_value = mock_db
             mock_repo = MagicMock()
             mock_repo.list_all.return_value = []
             with patch(
-                "docsift.cli.commands.context.ContextRepository",
+                "sif.cli.commands.context.ContextRepository",
                 return_value=mock_repo,
             ):
                 result = runner.invoke(context_list, obj=ctx_obj)
@@ -300,12 +300,12 @@ class TestContextRemove:
         ctx_obj = {"index_path": MagicMock(exists=lambda: True)}
         context_id = str(uuid4())
 
-        with patch("docsift.cli.commands.context.Database") as MockDB:
+        with patch("sif.cli.commands.context.Database") as MockDB:
             MockDB.return_value = mock_db
             mock_repo = MagicMock()
             mock_repo.delete.return_value = True
             with patch(
-                "docsift.cli.commands.context.ContextRepository",
+                "sif.cli.commands.context.ContextRepository",
                 return_value=mock_repo,
             ):
                 result = runner.invoke(
@@ -324,12 +324,12 @@ class TestContextRemove:
         ctx_obj = {"index_path": MagicMock(exists=lambda: True)}
         context_id = str(uuid4())
 
-        with patch("docsift.cli.commands.context.Database") as MockDB:
+        with patch("sif.cli.commands.context.Database") as MockDB:
             MockDB.return_value = mock_db
             mock_repo = MagicMock()
             mock_repo.delete.return_value = False
             with patch(
-                "docsift.cli.commands.context.ContextRepository",
+                "sif.cli.commands.context.ContextRepository",
                 return_value=mock_repo,
             ):
                 result = runner.invoke(
@@ -357,12 +357,12 @@ class TestContextRmAlias:
         ctx_obj = {"index_path": MagicMock(exists=lambda: True)}
         context_id = str(uuid4())
 
-        with patch("docsift.cli.commands.context.Database") as MockDB:
+        with patch("sif.cli.commands.context.Database") as MockDB:
             MockDB.return_value = mock_db
             mock_repo = MagicMock()
             mock_repo.delete.return_value = True
             with patch(
-                "docsift.cli.commands.context.ContextRepository",
+                "sif.cli.commands.context.ContextRepository",
                 return_value=mock_repo,
             ):
                 result = runner.invoke(
@@ -390,12 +390,12 @@ class TestContextPrune:
         runner = CliRunner()
         ctx_obj = {"index_path": MagicMock(exists=lambda: True)}
 
-        with patch("docsift.cli.commands.context.Database") as MockDB:
+        with patch("sif.cli.commands.context.Database") as MockDB:
             MockDB.return_value = mock_db
             mock_repo = MagicMock()
             mock_repo.delete_orphaned_paths.return_value = 3
             with patch(
-                "docsift.cli.commands.context.ContextRepository",
+                "sif.cli.commands.context.ContextRepository",
                 return_value=mock_repo,
             ):
                 result = runner.invoke(context_prune, obj=ctx_obj)
@@ -408,12 +408,12 @@ class TestContextPrune:
         runner = CliRunner()
         ctx_obj = {"index_path": MagicMock(exists=lambda: True)}
 
-        with patch("docsift.cli.commands.context.Database") as MockDB:
+        with patch("sif.cli.commands.context.Database") as MockDB:
             MockDB.return_value = mock_db
             mock_repo = MagicMock()
             mock_repo.delete_orphaned_paths.return_value = 0
             with patch(
-                "docsift.cli.commands.context.ContextRepository",
+                "sif.cli.commands.context.ContextRepository",
                 return_value=mock_repo,
             ):
                 result = runner.invoke(context_prune, obj=ctx_obj)

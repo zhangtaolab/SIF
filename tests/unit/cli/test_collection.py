@@ -4,13 +4,13 @@ from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 
-from docsift.cli.commands.collection import (
+from sif.cli.commands.collection import (
     collection_exclude,
     collection_include,
     collection_update_cmd,
 )
-from docsift.cli.commands.index import update_cmd
-from docsift.core.models import Collection
+from sif.cli.commands.index import update_cmd
+from sif.core.models import Collection
 
 
 class TestCollectionUpdateCmd:
@@ -31,9 +31,9 @@ class TestCollectionUpdateCmd:
         mock_repo.get_by_name.return_value = collection
 
         with (
-            patch("docsift.cli.commands.collection.Database", mock_db),
+            patch("sif.cli.commands.collection.Database", mock_db),
             patch(
-                "docsift.cli.commands.collection.CollectionRepository",
+                "sif.cli.commands.collection.CollectionRepository",
                 return_value=mock_repo,
             ),
         ):
@@ -63,9 +63,9 @@ class TestCollectionUpdateCmd:
         mock_repo.get_by_name.return_value = collection
 
         with (
-            patch("docsift.cli.commands.collection.Database", mock_db),
+            patch("sif.cli.commands.collection.Database", mock_db),
             patch(
-                "docsift.cli.commands.collection.CollectionRepository",
+                "sif.cli.commands.collection.CollectionRepository",
                 return_value=mock_repo,
             ),
         ):
@@ -94,9 +94,9 @@ class TestCollectionUpdateCmd:
         mock_repo.get_by_name.return_value = None
 
         with (
-            patch("docsift.cli.commands.collection.Database", mock_db),
+            patch("sif.cli.commands.collection.Database", mock_db),
             patch(
-                "docsift.cli.commands.collection.CollectionRepository",
+                "sif.cli.commands.collection.CollectionRepository",
                 return_value=mock_repo,
             ),
         ):
@@ -128,9 +128,9 @@ class TestCollectionIncludeExclude:
         mock_repo.get_by_name.return_value = collection
 
         with (
-            patch("docsift.cli.commands.collection.Database", mock_db),
+            patch("sif.cli.commands.collection.Database", mock_db),
             patch(
-                "docsift.cli.commands.collection.CollectionRepository",
+                "sif.cli.commands.collection.CollectionRepository",
                 return_value=mock_repo,
             ),
         ):
@@ -156,9 +156,9 @@ class TestCollectionIncludeExclude:
         mock_repo.get_by_name.return_value = collection
 
         with (
-            patch("docsift.cli.commands.collection.Database", mock_db),
+            patch("sif.cli.commands.collection.Database", mock_db),
             patch(
-                "docsift.cli.commands.collection.CollectionRepository",
+                "sif.cli.commands.collection.CollectionRepository",
                 return_value=mock_repo,
             ),
         ):
@@ -195,16 +195,16 @@ class TestIndexPreUpdateHook:
         mock_scanner.return_value.scan.return_value = MagicMock(file_count=0, files=[])
 
         with (
-            patch("docsift.cli.commands.index.Database", mock_db),
+            patch("sif.cli.commands.index.Database", mock_db),
             patch(
-                "docsift.cli.commands.index.CollectionRepository",
+                "sif.cli.commands.index.CollectionRepository",
                 return_value=mock_coll_repo,
             ),
             patch(
-                "docsift.cli.commands.index.DocumentRepository",
+                "sif.cli.commands.index.DocumentRepository",
                 return_value=mock_doc_repo,
             ),
-            patch("docsift.cli.commands.index.FileScanner", mock_scanner),
+            patch("sif.cli.commands.index.FileScanner", mock_scanner),
             patch(
                 "subprocess.run",
                 return_value=MagicMock(returncode=0, stderr="", stdout=""),
@@ -240,16 +240,16 @@ class TestIndexPreUpdateHook:
         mock_scanner = MagicMock()
 
         with (
-            patch("docsift.cli.commands.index.Database", mock_db),
+            patch("sif.cli.commands.index.Database", mock_db),
             patch(
-                "docsift.cli.commands.index.CollectionRepository",
+                "sif.cli.commands.index.CollectionRepository",
                 return_value=mock_coll_repo,
             ),
             patch(
-                "docsift.cli.commands.index.DocumentRepository",
+                "sif.cli.commands.index.DocumentRepository",
                 return_value=mock_doc_repo,
             ),
-            patch("docsift.cli.commands.index.FileScanner", mock_scanner),
+            patch("sif.cli.commands.index.FileScanner", mock_scanner),
             patch(
                 "subprocess.run",
                 return_value=MagicMock(returncode=1, stderr="failed", stdout=""),

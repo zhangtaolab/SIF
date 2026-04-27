@@ -1,8 +1,8 @@
-"""Unit tests for DocSift Settings configuration."""
+"""Unit tests for SIF Settings configuration."""
 
 import pytest
 
-from docsift.config.settings import Settings
+from sif.config.settings import Settings
 
 
 def test_default_model_type_is_modelscope() -> None:
@@ -51,8 +51,8 @@ def test_api_key_is_excluded_from_repr() -> None:
 
 
 def test_model_type_env_var_override(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Test that DOCSIFT_MODEL_TYPE env var overrides model_type."""
+    """Test that SIF_MODEL_TYPE env var overrides model_type."""
     with monkeypatch.context() as m:
-        m.setenv("DOCSIFT_MODEL_TYPE", "openai")
+        m.setenv("SIF_MODEL_TYPE", "openai")
         settings = Settings()
         assert settings.model_type == "openai"

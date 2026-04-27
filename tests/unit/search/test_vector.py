@@ -5,8 +5,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from docsift.core.models import SearchOptions
-from docsift.search.vector import VectorSearcher
+from sif.core.models import SearchOptions
+from sif.search.vector import VectorSearcher
 
 
 class TestVectorSearcher:

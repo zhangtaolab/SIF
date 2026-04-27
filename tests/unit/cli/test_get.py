@@ -4,8 +4,8 @@ from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 
-from docsift.cli.commands.get import get_group
-from docsift.core.models import Collection, Document
+from sif.cli.commands.get import get_group
+from sif.core.models import Collection, Document
 
 
 class TestMultiGet:
@@ -33,13 +33,13 @@ class TestMultiGet:
         mock_coll_repo.list_all.return_value = []
 
         with (
-            patch("docsift.cli.commands.get.Database", return_value=mock_db),
+            patch("sif.cli.commands.get.Database", return_value=mock_db),
             patch(
-                "docsift.cli.commands.get.DocumentRepository",
+                "sif.cli.commands.get.DocumentRepository",
                 return_value=mock_doc_repo,
             ),
             patch(
-                "docsift.database.repositories.CollectionRepository",
+                "sif.database.repositories.CollectionRepository",
                 return_value=mock_coll_repo,
             ),
         ):
@@ -71,13 +71,13 @@ class TestMultiGet:
         mock_doc_repo.list_by_collection.return_value = [doc1, doc2, doc3]
 
         with (
-            patch("docsift.cli.commands.get.Database", return_value=mock_db),
+            patch("sif.cli.commands.get.Database", return_value=mock_db),
             patch(
-                "docsift.cli.commands.get.DocumentRepository",
+                "sif.cli.commands.get.DocumentRepository",
                 return_value=mock_doc_repo,
             ),
             patch(
-                "docsift.database.repositories.CollectionRepository",
+                "sif.database.repositories.CollectionRepository",
                 return_value=mock_coll_repo,
             ),
         ):
@@ -104,13 +104,13 @@ class TestMultiGet:
         mock_doc_repo.get_by_id.return_value = doc1
 
         with (
-            patch("docsift.cli.commands.get.Database", return_value=mock_db),
+            patch("sif.cli.commands.get.Database", return_value=mock_db),
             patch(
-                "docsift.cli.commands.get.DocumentRepository",
+                "sif.cli.commands.get.DocumentRepository",
                 return_value=mock_doc_repo,
             ),
             patch(
-                "docsift.database.repositories.CollectionRepository",
+                "sif.database.repositories.CollectionRepository",
                 return_value=mock_coll_repo,
             ),
         ):
@@ -137,13 +137,13 @@ class TestMultiGet:
         mock_coll_repo.list_all.return_value = []
 
         with (
-            patch("docsift.cli.commands.get.Database", return_value=mock_db),
+            patch("sif.cli.commands.get.Database", return_value=mock_db),
             patch(
-                "docsift.cli.commands.get.DocumentRepository",
+                "sif.cli.commands.get.DocumentRepository",
                 return_value=mock_doc_repo,
             ),
             patch(
-                "docsift.database.repositories.CollectionRepository",
+                "sif.database.repositories.CollectionRepository",
                 return_value=mock_coll_repo,
             ),
         ):
@@ -176,9 +176,9 @@ class TestGetLineNumbers:
         mock_doc_repo.get_by_id.return_value = doc
 
         with (
-            patch("docsift.cli.commands.get.Database", return_value=mock_db),
+            patch("sif.cli.commands.get.Database", return_value=mock_db),
             patch(
-                "docsift.cli.commands.get.DocumentRepository",
+                "sif.cli.commands.get.DocumentRepository",
                 return_value=mock_doc_repo,
             ),
         ):
@@ -211,13 +211,13 @@ class TestGetLineNumbers:
         mock_coll_repo.list_all.return_value = []
 
         with (
-            patch("docsift.cli.commands.get.Database", return_value=mock_db),
+            patch("sif.cli.commands.get.Database", return_value=mock_db),
             patch(
-                "docsift.cli.commands.get.DocumentRepository",
+                "sif.cli.commands.get.DocumentRepository",
                 return_value=mock_doc_repo,
             ),
             patch(
-                "docsift.database.repositories.CollectionRepository",
+                "sif.database.repositories.CollectionRepository",
                 return_value=mock_coll_repo,
             ),
         ):

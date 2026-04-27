@@ -6,7 +6,7 @@ import sqlite3
 
 import pytest
 
-from docsift.database.schema import SchemaManager
+from sif.database.schema import SchemaManager
 
 
 def _load_vec(db: sqlite3.Connection) -> bool:

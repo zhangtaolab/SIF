@@ -12,8 +12,8 @@ from typing import Any
 
 import pytest
 
-from docsift.core.models import SearchResult
-from docsift.search.rrf import RRFFusion
+from sif.core.models import SearchResult
+from sif.search.rrf import RRFFusion
 
 
 # =============================================================================

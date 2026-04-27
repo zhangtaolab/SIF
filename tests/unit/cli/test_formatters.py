@@ -1,6 +1,6 @@
 """Tests for CLI formatters."""
 
-from docsift.cli.formatters import (
+from sif.cli.formatters import (
     add_line_numbers_to_results,
     prepend_line_numbers,
 )

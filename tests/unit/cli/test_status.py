@@ -6,16 +6,16 @@ from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 
-from docsift.cli.main import status_cmd
+from sif.cli.main import status_cmd
 
 
 class TestStatusCommand:
     """Tests for status command."""
 
     def test_status_uses_settings_db_path(self) -> None:
-        """Test that status respects DOCSIFT_DB_PATH via Settings."""
+        """Test that status respects SIF_DB_PATH via Settings."""
         runner = CliRunner()
-        custom_path = "/custom/path/docsift.db"
+        custom_path = "/custom/path/sif.db"
 
         mock_settings = MagicMock()
         mock_path = MagicMock()
@@ -23,8 +23,8 @@ class TestStatusCommand:
         mock_path.__str__ = MagicMock(return_value=custom_path)
         mock_settings.get_db_path.return_value = mock_path
 
-        with patch("docsift.cli.main.get_settings", return_value=mock_settings):
-            with patch("docsift.cli.main.Database") as MockDB:
+        with patch("sif.cli.main.get_settings", return_value=mock_settings):
+            with patch("sif.cli.main.Database") as MockDB:
                 mock_db = MagicMock()
                 mock_db.get_stats.return_value = {
                     "collections": 1,
@@ -43,17 +43,17 @@ class TestStatusCommand:
         assert str(call_path) == custom_path
 
     def test_status_respects_env_var(self) -> None:
-        """Test that status command respects DOCSIFT_DB_PATH env var."""
-        runner = CliRunner(env={"DOCSIFT_DB_PATH": "/tmp/test-docsift.db"})
+        """Test that status command respects SIF_DB_PATH env var."""
+        runner = CliRunner(env={"SIF_DB_PATH": "/tmp/test-sif.db"})
 
         mock_settings = MagicMock()
         mock_path = MagicMock()
         mock_path.exists.return_value = True
-        mock_path.__str__ = MagicMock(return_value="/tmp/test-docsift.db")
+        mock_path.__str__ = MagicMock(return_value="/tmp/test-sif.db")
         mock_settings.get_db_path.return_value = mock_path
 
-        with patch("docsift.cli.main.get_settings", return_value=mock_settings):
-            with patch("docsift.cli.main.Database") as MockDB:
+        with patch("sif.cli.main.get_settings", return_value=mock_settings):
+            with patch("sif.cli.main.Database") as MockDB:
                 mock_db = MagicMock()
                 mock_db.get_stats.return_value = {
                     "collections": 0,
@@ -69,4 +69,4 @@ class TestStatusCommand:
         assert result.exit_code == 0
         MockDB.assert_called_once()
         call_path = MockDB.call_args[0][0]
-        assert str(call_path) == "/tmp/test-docsift.db"
+        assert str(call_path) == "/tmp/test-sif.db"

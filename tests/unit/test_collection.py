@@ -3,8 +3,8 @@
 import pytest
 from datetime import datetime
 
-from docsift.core.collection import Collection, CollectionManager
-from docsift.models.collection import CollectionCreate, CollectionResponse
+from sif.core.collection import Collection, CollectionManager
+from sif.models.collection import CollectionCreate, CollectionResponse
 
 
 class MockCollectionRepository:

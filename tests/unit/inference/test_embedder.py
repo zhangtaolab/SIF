@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from docsift.embedding.model import EmbeddingModel, ModelType
+from sif.embedding.model import EmbeddingModel, ModelType
 
 
 class TestModelType:
@@ -285,6 +285,6 @@ class TestEmbeddingModelFactory:
 
     def test_factory_protocol_exists(self):
         """Test that EmbeddingModelFactory protocol exists."""
-        from docsift.embedding.model import EmbeddingModelFactory
+        from sif.embedding.model import EmbeddingModelFactory
 
         assert EmbeddingModelFactory is not None

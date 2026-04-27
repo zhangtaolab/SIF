@@ -2,8 +2,8 @@
 
 import pytest
 
-from docsift.core.models import SearchResult
-from docsift.search.benchmark import (
+from sif.core.models import SearchResult
+from sif.search.benchmark import (
     SearchEvaluator,
     mean_reciprocal_rank,
     precision_at_k,

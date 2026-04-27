@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from docsift.search.expansion import QueryExpansion
+from sif.search.expansion import QueryExpansion
 
 
 class TestQueryExpansionInit:
