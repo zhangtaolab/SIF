@@ -22,13 +22,13 @@ SIF is a local CLI search engine for indexing and searching markdown documents. 
 ### Installation
 
 ```bash
-pip install sif
+pip install docsif
 ```
 
 For full functionality including embeddings:
 
 ```bash
-pip install "sif[all]"
+pip install "docsif[all]"
 ```
 
 ### Basic Usage
@@ -49,7 +49,7 @@ sif search query "python decorators"
 ### From PyPI (Recommended)
 
 ```bash
-pip install sif
+pip install docsif
 ```
 
 ### From Source
