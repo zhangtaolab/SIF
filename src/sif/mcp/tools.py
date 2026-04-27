@@ -107,9 +107,9 @@ class MockSearchBackend:
                 path=f"/docs/document_{i}.md",
                 title=f"Document {i}",
                 content=(
-                f"This is the content of document {i}. "
-                f"It contains information about various topics."
-            ),
+                    f"This is the content of document {i}. "
+                    f"It contains information about various topics."
+                ),
                 metadata={"category": "general", "index": i},
             )
             self._documents[doc.doc_id] = doc
@@ -263,9 +263,7 @@ class MockSearchBackend:
 class ToolRegistry:
     """Registry for MCP tools."""
 
-    def __init__(
-        self, backend: Optional[SearchBackend] = None
-    ) -> None:
+    def __init__(self, backend: Optional[SearchBackend] = None) -> None:
         self.backend = backend or MockSearchBackend()
         self._tools: dict[str, MCPTool] = {}
         self._handlers: dict[str, callable] = {}

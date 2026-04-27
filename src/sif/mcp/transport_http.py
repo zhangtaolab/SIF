@@ -201,7 +201,7 @@ class HTTPTransport:
             async def event_generator() -> AsyncGenerator[str, None]:
                 try:
                     # Send initial connection message
-                    msg = json.dumps({'message': 'Connected to MCP server'})
+                    msg = json.dumps({"message": "Connected to MCP server"})
                     yield f"event: connected\ndata: {msg}\n\n"
 
                     while True:

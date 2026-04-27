@@ -162,9 +162,7 @@ class TestVectorSearcher:
         searcher = VectorSearcher(mock_db)
         searcher._vec_available = True
 
-        options = SearchOptions(
-            min_score=0.5
-        )
+        options = SearchOptions(min_score=0.5)
         results = searcher.search([0.1, 0.2], options)
 
         assert len(results) == 1

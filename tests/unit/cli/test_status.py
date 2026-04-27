@@ -53,9 +53,7 @@ class TestStatusCommand:
         mock_settings.get_db_path.return_value = mock_path
 
         with patch("sif.cli.main.get_settings", return_value=mock_settings):
-            with patch(
-                "sif.cli.main.Database"
-            ) as MockDB:
+            with patch("sif.cli.main.Database") as MockDB:
                 mock_db = MagicMock()
                 mock_db.get_stats.return_value = {
                     "collections": 0,
