@@ -3,16 +3,16 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "docsift"
+name = "sif"
 version = "0.1.0"
-description = "DocSift - Document indexing and search tool"
+description = "SIF - Search / Index / Find - Local document search engine"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.9"
 authors = [
-    {name = "DocSift Team"},
+    {name = "SIF Team"},
 ]
-keywords = ["search", "documents", "indexing", "cli", "vector-search"]
+keywords = ["search", "documents", "indexing", "cli", "vector-search", "sif"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -61,15 +61,15 @@ all = [
 ]
 
 [project.scripts]
-docsift = "docsift.cli.main:main"
+sif = "sif.cli.main:main"
 
 [project.urls]
-Homepage = "https://github.com/docsift/docsift"
-Documentation = "https://docsift.readthedocs.io"
-Repository = "https://github.com/docsift/docsift"
+Homepage = "https://github.com/zhangtaolab/sif"
+Documentation = "https://sif.readthedocs.io"
+Repository = "https://github.com/zhangtaolab/sif"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/docsift"]
+packages = ["src/sif"]
 
 [tool.black]
 line-length = 100
@@ -157,7 +157,7 @@ convention = "google"
 max-complexity = 10
 
 [tool.ruff.lint.isort]
-known-first-party = ["docsift"]
+known-first-party = ["sif"]
 known-third-party = ["click", "rich", "sentence_transformers", "numpy"]
 combine-as-imports = true
 split-on-trailing-comma = true
@@ -170,7 +170,7 @@ docstring-quotes = "double"
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*" = ["D", "S101", "PLR2004"]
-"src/docsift/cli/*.py" = ["T20"]
+"src/sif/cli/*.py" = ["T20"]
 "__init__.py" = ["D104"]
 
 [tool.ruff.format]
@@ -214,4 +214,4 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "--cov=src/docsift --cov-report=term-missing --cov-report=html --cov-report=xml"
+addopts = "--cov=src/sif --cov-report=term-missing --cov-report=html --cov-report=xml"
