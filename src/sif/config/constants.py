@@ -1,14 +1,14 @@
-"""Constants for DocSift."""
+"""Constants for SIF."""
 
 # Application info
-APP_NAME = "docsift"
+APP_NAME = "sif"
 APP_VERSION = "0.1.0"
-APP_DESCRIPTION = "A local CLI search engine for indexing and searching markdown documents"
+APP_DESCRIPTION = "A local CLI search engine for indexing and searching documents (SIF: Search / Index / Find)"
 
 # Default paths
-DEFAULT_DB_PATH = "~/.local/share/docsift/docsift.db"
-DEFAULT_MODEL_PATH = "~/.local/share/docsift/models"
-DEFAULT_CONFIG_PATH = "~/.config/docsift"
+DEFAULT_DB_PATH = "~/.local/share/sif/sif.db"
+DEFAULT_MODEL_PATH = "~/.local/share/sif/models"
+DEFAULT_CONFIG_PATH = "~/.config/sif"
 
 # Chunking defaults
 DEFAULT_CHUNK_SIZE = 512
