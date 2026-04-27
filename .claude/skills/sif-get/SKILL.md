@@ -1,19 +1,19 @@
 ---
-name: docsift-get
-description: "Retrieve document content from DocSift index by path, ID, or pattern"
+name: sif-get
+description: "Retrieve document content from SIF index by path, ID, or pattern"
 argument-hint: "<path_or_pattern> [--lines N] [--from-line M]"
 allowed-tools:
   - Bash
 ---
 
 <objective>
-Retrieve document content from the user's DocSift index.
+Retrieve document content from the user's SIF index.
 
 Supports single document by path or document ID.
 Supports batch retrieval via glob patterns or comma-separated paths.
 Returns document content as plain text (first line is the path, followed by content).
 
-Requires docsift CLI to be installed and available in PATH.
+Requires sif CLI to be installed and available in PATH.
 </objective>
 
 <process>
@@ -32,32 +32,32 @@ Requires docsift CLI to be installed and available in PATH.
 
    **Single document by path:**
    ```bash
-   docsift -q get get --line-numbers "{path}"
+   sif -q get get --line-numbers "{path}"
    ```
 
    **Single document by ID:**
    ```bash
-   docsift -q get get --line-numbers "{doc_id}"
+   sif -q get get --line-numbers "{doc_id}"
    ```
 
    **Limited lines:**
    ```bash
-   docsift -q get get --line-numbers --lines 50 "{path}"
+   sif -q get get --line-numbers --lines 50 "{path}"
    ```
 
    **From specific line:**
    ```bash
-   docsift -q get get --line-numbers --from-line 10 --lines 20 "{path}"
+   sif -q get get --line-numbers --from-line 10 --lines 20 "{path}"
    ```
 
    **Batch retrieval (glob pattern):**
    ```bash
-   docsift -q get multi-get --line-numbers "{pattern}"
+   sif -q get multi-get --line-numbers "{pattern}"
    ```
 
    **Batch retrieval (comma-separated):**
    ```bash
-   docsift -q get multi-get --line-numbers "{path1},{path2},{path3}"
+   sif -q get multi-get --line-numbers "{path1},{path2},{path3}"
    ```
 
 4. **Return output to LLM**
@@ -68,22 +68,22 @@ Requires docsift CLI to be installed and available in PATH.
 5. **Error handling**
    - If return code != 0: return stderr content to LLM for interpretation
    - If document not found: stderr will indicate — let LLM explain to user
-   - If no index exists: note user needs to run `docsift update` first
+   - If no index exists: note user needs to run `sif update` first
 
 </process>
 
 <example>
 
 User: "Read my notes/python.md file"
-→ docsift -q get get --line-numbers "notes/python.md"
+→ sif -q get get --line-numbers "notes/python.md"
 
 User: "Show first 30 lines of README.md"
-→ docsift -q get get --line-numbers --lines 30 "README.md"
+→ sif -q get get --line-numbers --lines 30 "README.md"
 
 User: "Get all markdown files in the notes folder"
-→ docsift -q get multi-get --line-numbers "notes/*.md"
+→ sif -q get multi-get --line-numbers "notes/*.md"
 
 User: "Read README and CONTRIBUTING"
-→ docsift -q get multi-get --line-numbers "README.md,CONTRIBUTING.md"
+→ sif -q get multi-get --line-numbers "README.md,CONTRIBUTING.md"
 
 </example>
