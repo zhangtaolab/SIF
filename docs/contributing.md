@@ -1,6 +1,6 @@
-# Contributing to DocSift
+# Contributing to SIF
 
-Thank you for your interest in contributing to DocSift! This document provides guidelines for contributing to the project.
+Thank you for your interest in contributing to SIF! This document provides guidelines for contributing to the project.
 
 ## Code of Conduct
 
@@ -26,7 +26,7 @@ When reporting bugs, include:
 - **Title**: Clear and descriptive
 - **Description**: What happened vs. what you expected
 - **Steps to reproduce**: Numbered steps
-- **Environment**: OS, Python version, DocSift version
+- **Environment**: OS, Python version, SIF version
 - **Logs**: Relevant error messages
 
 **Template:**
@@ -46,7 +46,7 @@ What you expected to happen.
 **Environment**
 - OS: [e.g., macOS 14.0]
 - Python: [e.g., 3.11.0]
-- DocSift: [e.g., 0.1.0]
+- SIF: [e.g., 0.1.0]
 
 **Logs**
 ```
@@ -75,7 +75,7 @@ Feature requests are welcome! Include:
 - [ ] Tests pass (`pytest`)
 - [ ] Code is formatted (`ruff format .`)
 - [ ] Code passes linting (`ruff check .`)
-- [ ] Type checking passes (`mypy src/docsift`)
+- [ ] Type checking passes (`mypy src/sif`)
 - [ ] Documentation updated
 - [ ] CHANGELOG.md updated
 - [ ] Commit messages follow conventions
@@ -108,8 +108,8 @@ See [Development Guide](development.md) for detailed setup instructions.
 Quick start:
 
 ```bash
-git clone https://github.com/docsift/docsift.git
-cd docsift
+git clone https://github.com/sif/sif.git
+cd sif
 python -m venv venv
 source venv/bin/activate
 pip install -e ".[dev]"
@@ -147,7 +147,7 @@ ruff check --fix .
 ### Type Checking
 
 ```bash
-mypy src/docsift
+mypy src/sif
 ```
 
 ### Testing
@@ -157,7 +157,7 @@ mypy src/docsift
 pytest
 
 # Run with coverage
-pytest --cov=docsift
+pytest --cov=sif
 
 # Run specific test
 pytest tests/unit/test_collection.py
@@ -287,7 +287,7 @@ def test_index_and_search():
 Aim for high coverage:
 
 ```bash
-pytest --cov=docsift --cov-report=html
+pytest --cov=sif --cov-report=html
 open htmlcov/index.html
 ```
 
@@ -357,8 +357,8 @@ Look for issues labeled:
 
 ## Questions?
 
-- GitHub Discussions: [github.com/docsift/docsift/discussions](https://github.com/docsift/docsift/discussions)
-- Issues: [github.com/docsift/docsift/issues](https://github.com/docsift/docsift/issues)
+- GitHub Discussions: [github.com/sif/sif/discussions](https://github.com/sif/sif/discussions)
+- Issues: [github.com/sif/sif/issues](https://github.com/sif/sif/issues)
 
 ## Recognition
 
@@ -374,4 +374,4 @@ By contributing, you agree that your contributions will be licensed under the MI
 
 ## Thank You!
 
-Every contribution, no matter how small, helps make DocSift better. Thank you for your support!
+Every contribution, no matter how small, helps make SIF better. Thank you for your support!

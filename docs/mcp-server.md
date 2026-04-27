@@ -1,10 +1,10 @@
 # MCP Server
 
-DocSift includes a Model Context Protocol (MCP) server for integration with AI assistants and other MCP-compatible tools.
+SIF includes a Model Context Protocol (MCP) server for integration with AI assistants and other MCP-compatible tools.
 
 ## Overview
 
-The Model Context Protocol (MCP) is an open protocol that enables seamless integration between AI systems and external data sources. DocSift's MCP server allows AI assistants to:
+The Model Context Protocol (MCP) is an open protocol that enables seamless integration between AI systems and external data sources. SIF's MCP server allows AI assistants to:
 
 - Search your document collections
 - Retrieve specific documents
@@ -15,29 +15,29 @@ The Model Context Protocol (MCP) is an open protocol that enables seamless integ
 
 ```
 +-----------------+      +------------------+      +--------------+
-|   AI Assistant  |<---->|   MCP Server     |<---->|   DocSift    |
+|   AI Assistant  |<---->|   MCP Server     |<---->|   SIF    |
 |  (Claude, etc.) |      |  (stdio/http)    |      |   Backend    |
 +-----------------+      +------------------+      +--------------+
 ```
 
 ## Implementation Note
 
-DocSift has two MCP implementations:
-- **Legacy**: `docsift/mcp/` — functional style (deprecated)
-- **Refactored**: `docsift/mcp_server/` — OOP with `Transport` ABC
+SIF has two MCP implementations:
+- **Legacy**: `sif/mcp/` — functional style (deprecated)
+- **Refactored**: `sif/mcp_server/` — OOP with `Transport` ABC
 
 The CLI commands use the legacy implementation for backward compatibility.
 
 ## Transport Types
 
-DocSift's MCP server supports two transport methods:
+SIF's MCP server supports two transport methods:
 
 ### stdio Transport (Default)
 
 Uses standard input/output for communication. Ideal for local AI assistants.
 
 ```bash
-docsift mcp stdio
+sif mcp stdio
 ```
 
 **Use cases:**
@@ -50,7 +50,7 @@ docsift mcp stdio
 Uses HTTP for communication. Ideal for remote or distributed setups.
 
 ```bash
-docsift mcp http --host 127.0.0.1 --port 8080
+sif mcp http --host 127.0.0.1 --port 8080
 ```
 
 **Use cases:**
@@ -64,10 +64,10 @@ Runs the MCP server as a background daemon.
 
 ```bash
 # Start daemon
-docsift mcp daemon --host 127.0.0.1 --port 3000
+sif mcp daemon --host 127.0.0.1 --port 3000
 
 # Stop daemon
-docsift mcp daemon --stop
+sif mcp daemon --stop
 ```
 
 ## Available Tools
@@ -262,23 +262,23 @@ Get indexing status.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DOCSIFT_MCP_HOST` | `127.0.0.1` | HTTP server host |
-| `DOCSIFT_MCP_PORT` | `8080` | HTTP server port |
-| `DOCSIFT_MCP_TRANSPORT` | `stdio` | Default transport type |
+| `SIF_MCP_HOST` | `127.0.0.1` | HTTP server host |
+| `SIF_MCP_PORT` | `8080` | HTTP server port |
+| `SIF_MCP_TRANSPORT` | `stdio` | Default transport type |
 
 ### .env File Example
 
 ```bash
 # MCP Server Configuration
-DOCSIFT_MCP_HOST=127.0.0.1
-DOCSIFT_MCP_PORT=8080
-DOCSIFT_MCP_TRANSPORT=stdio
+SIF_MCP_HOST=127.0.0.1
+SIF_MCP_PORT=8080
+SIF_MCP_TRANSPORT=stdio
 
 # Database
-DOCSIFT_DB_PATH=~/.local/share/docsift/docsift.db
+SIF_DB_PATH=~/.local/share/sif/sif.db
 
 # Model
-DOCSIFT_MODEL_NAME=Qwen/Qwen3-Embedding-0.6B
+SIF_MODEL_NAME=Qwen/Qwen3-Embedding-0.6B
 ```
 
 ## Integration Examples
@@ -290,8 +290,8 @@ Add to Claude Desktop configuration:
 ```json
 {
   "mcpServers": {
-    "docsift": {
-      "command": "docsift",
+    "sif": {
+      "command": "sif",
       "args": ["mcp", "stdio"]
     }
   }
@@ -311,10 +311,10 @@ import json
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-async def use_docsift_mcp():
+async def use_sif_mcp():
     # Configure server parameters
     server_params = StdioServerParameters(
-        command="docsift",
+        command="sif",
         args=["mcp", "stdio"]
     )
 
@@ -337,7 +337,7 @@ async def use_docsift_mcp():
             )
             print(json.dumps(result, indent=2))
 
-asyncio.run(use_docsift_mcp())
+asyncio.run(use_sif_mcp())
 ```
 
 ### HTTP Client
@@ -345,7 +345,7 @@ asyncio.run(use_docsift_mcp())
 ```python
 import requests
 
-# Start server: docsift mcp http --host 127.0.0.1 --port 8080
+# Start server: sif mcp http --host 127.0.0.1 --port 8080
 
 response = requests.post(
     "http://127.0.0.1:8080/mcp/tools/search",
@@ -375,10 +375,10 @@ print(results)
 
 ```bash
 # Bind to localhost only (default)
-docsift mcp http --host 127.0.0.1
+sif mcp http --host 127.0.0.1
 
 # Bind to all interfaces (use with caution)
-docsift mcp http --host 0.0.0.0
+sif mcp http --host 0.0.0.0
 ```
 
 ## Troubleshooting
@@ -390,17 +390,17 @@ docsift mcp http --host 0.0.0.0
 lsof -i :8080
 
 # Use different port
-docsift mcp http --port 8081
+sif mcp http --port 8081
 ```
 
 ### Connection Issues
 
 ```bash
 # Test stdio transport
-docsift mcp stdio
+sif mcp stdio
 
 # Test HTTP transport
-docsift mcp http
+sif mcp http
 curl http://127.0.0.1:8080/mcp/health
 ```
 
@@ -408,7 +408,7 @@ curl http://127.0.0.1:8080/mcp/health
 
 ```bash
 # List available MCP commands
-docsift mcp --help
+sif mcp --help
 ```
 
 ## Advanced Usage
@@ -418,9 +418,9 @@ docsift mcp --help
 Extend the MCP server with custom tools:
 
 ```python
-from docsift.mcp_server.server import MCPServer
-from docsift.mcp_server.transport import StdioTransport
-from docsift.mcp_server.handlers import ToolHandler
+from sif.mcp_server.server import MCPServer
+from sif.mcp_server.transport import StdioTransport
+from sif.mcp_server.handlers import ToolHandler
 
 class CustomToolHandler(ToolHandler):
     @property
@@ -447,10 +447,10 @@ Run multiple transport types simultaneously:
 
 ```bash
 # Terminal 1: stdio for Claude
-docsift mcp stdio
+sif mcp stdio
 
 # Terminal 2: HTTP for web integration
-docsift mcp http --port 8080
+sif mcp http --port 8080
 ```
 
 ## Performance Tuning
@@ -460,7 +460,7 @@ docsift mcp http --port 8080
 Adjust batch size for large collections:
 
 ```bash
-export DOCSIFT_BATCH_SIZE=500
+export SIF_BATCH_SIZE=500
 ```
 
 ### Connection Pooling

@@ -1,10 +1,10 @@
 # Search Algorithms
 
-Deep dive into DocSift's search algorithms and ranking mechanisms.
+Deep dive into SIF's search algorithms and ranking mechanisms.
 
 ## Overview
 
-DocSift implements three search strategies:
+SIF implements three search strategies:
 
 1. **BM25** - Full-text search using SQLite FTS5
 2. **Vector Search** - Semantic similarity using embeddings
@@ -85,8 +85,8 @@ Where:
 ### Implementation
 
 ```python
-from docsift.search.bm25 import BM25Searcher
-from docsift.core.models import SearchOptions
+from sif.search.bm25 import BM25Searcher
+from sif.core.models import SearchOptions
 
 searcher = BM25Searcher(db_connection)
 options = SearchOptions(limit=10)
@@ -95,7 +95,7 @@ results = searcher.search("python decorators", options)
 
 ### SQLite FTS5 Integration
 
-DocSift uses SQLite FTS5 for BM25 implementation:
+SIF uses SQLite FTS5 for BM25 implementation:
 
 ```sql
 -- Create FTS5 virtual table
@@ -131,7 +131,7 @@ Where:
 ### Implementation
 
 ```python
-from docsift.search.vector import VectorSearcher
+from sif.search.vector import VectorSearcher
 
 searcher = VectorSearcher(db_connection, embedding_dim=1024)
 results = searcher.search(query_embedding, options)
@@ -160,7 +160,7 @@ results = searcher.search(query_embedding, options)
 
 ### Vector Index
 
-DocSift uses sqlite-vec for vector storage:
+SIF uses sqlite-vec for vector storage:
 
 ```sql
 -- Create vector table
@@ -203,9 +203,9 @@ Where:
 ### Implementation
 
 ```python
-from docsift.search.hybrid import HybridSearcher
-from docsift.search.bm25 import BM25Searcher
-from docsift.search.vector import VectorSearcher
+from sif.search.hybrid import HybridSearcher
+from sif.search.bm25 import BM25Searcher
+from sif.search.vector import VectorSearcher
 
 # Create component searchers
 bm25 = BM25Searcher(db_connection)
@@ -256,7 +256,7 @@ Query expansion improves recall by adding related terms.
 ### Implementation
 
 ```python
-from docsift.search.expansion import QueryExpansion
+from sif.search.expansion import QueryExpansion
 
 expander = QueryExpansion(embedding_manager=manager)
 
@@ -282,8 +282,8 @@ Cross-encoders:
 ### Implementation
 
 ```python
-from docsift.search.rerank import create_reranker
-from docsift.config.settings import get_settings
+from sif.search.rerank import create_reranker
+from sif.config.settings import get_settings
 
 settings = get_settings()
 reranker = create_reranker(settings)
@@ -300,10 +300,10 @@ reranked = reranker.rerank(
 Complete search flow with expansion, reranking, and snippet extraction:
 
 ```python
-from docsift.search.hybrid import SearchPipeline
-from docsift.search.expansion import QueryExpansion
-from docsift.search.rerank import create_reranker
-from docsift.search.snippets import SmartSnippetExtractor
+from sif.search.hybrid import SearchPipeline
+from sif.search.expansion import QueryExpansion
+from sif.search.rerank import create_reranker
+from sif.search.snippets import SmartSnippetExtractor
 
 pipeline = SearchPipeline(
     db_connection,
@@ -388,7 +388,7 @@ accurate_options = SearchOptions(
 Performance varies by hardware and collection size. Run your own benchmarks with:
 
 ```bash
-docsift bench fixture.json
+sif bench fixture.json
 ```
 
 ## Comparison

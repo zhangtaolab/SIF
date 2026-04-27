@@ -1,10 +1,10 @@
 # Data Models
 
-This document describes all data models used in DocSift.
+This document describes all data models used in SIF.
 
 ## Overview
 
-DocSift uses a mix of dataclasses for domain entities and Pydantic models for data validation and serialization. Models are organized by domain:
+SIF uses a mix of dataclasses for domain entities and Pydantic models for data validation and serialization. Models are organized by domain:
 
 - **Collection Models**: Collection management
 - **Document Models**: Document and chunk entities
@@ -19,7 +19,7 @@ DocSift uses a mix of dataclasses for domain entities and Pydantic models for da
 Core domain entity representing a document collection.
 
 ```python
-from docsift.core.models import Collection
+from sif.core.models import Collection
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -61,7 +61,7 @@ collection = Collection(
 Core domain entity representing an indexed document.
 
 ```python
-from docsift.core.models import Document
+from sif.core.models import Document
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -101,7 +101,7 @@ document = Document(
 Represents a chunk of a document for embedding and search.
 
 ```python
-from docsift.core.models import DocumentChunk
+from sif.core.models import DocumentChunk
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -139,7 +139,7 @@ chunk = DocumentChunk(
 Domain entity representing search context for a path.
 
 ```python
-from docsift.core.models import PathContext
+from sif.core.models import PathContext
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -175,7 +175,7 @@ path_ctx = PathContext(
 ### SearchType (Enum)
 
 ```python
-from docsift.core.models import SearchType
+from sif.core.models import SearchType
 from enum import Enum
 
 class SearchType(str, Enum):
@@ -191,7 +191,7 @@ class SearchType(str, Enum):
 Options for controlling search behavior.
 
 ```python
-from docsift.core.models import SearchOptions
+from sif.core.models import SearchOptions
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -225,7 +225,7 @@ options = SearchOptions(
 A single search result.
 
 ```python
-from docsift.core.models import SearchResult
+from sif.core.models import SearchResult
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -262,7 +262,7 @@ result = SearchResult(
 ### ModelType (Enum)
 
 ```python
-from docsift.models.embedding import ModelType
+from sif.models.embedding import ModelType
 from enum import Enum
 
 class ModelType(str, Enum):
@@ -276,7 +276,7 @@ class ModelType(str, Enum):
 ### EmbeddingConfig (Pydantic Model)
 
 ```python
-from docsift.models.embedding import EmbeddingConfig
+from sif.models.embedding import EmbeddingConfig
 from pydantic import BaseModel, Field
 
 class EmbeddingConfig(BaseModel):
@@ -329,7 +329,7 @@ modelscope_config = EmbeddingConfig(
 ### EmbeddingModelInfo (Pydantic Model)
 
 ```python
-from docsift.models.embedding import EmbeddingModelInfo
+from sif.models.embedding import EmbeddingModelInfo
 from pydantic import BaseModel, Field, ConfigDict
 
 class EmbeddingModelInfo(BaseModel):
@@ -347,7 +347,7 @@ class EmbeddingModelInfo(BaseModel):
 ### EmbeddingRequest / EmbeddingResponse (Pydantic Models)
 
 ```python
-from docsift.models.embedding import EmbeddingRequest, EmbeddingResponse
+from sif.models.embedding import EmbeddingRequest, EmbeddingResponse
 from pydantic import BaseModel, Field
 
 class EmbeddingRequest(BaseModel):
@@ -475,7 +475,7 @@ CREATE TABLE contexts (
 All domain models support JSON serialization via `to_dict()` and `from_dict()`:
 
 ```python
-from docsift.core.models import Collection, SearchResult
+from sif.core.models import Collection, SearchResult
 import json
 
 # Serialize
@@ -490,7 +490,7 @@ restored = Collection.from_dict(data)
 Pydantic models support standard Pydantic serialization:
 
 ```python
-from docsift.models.embedding import EmbeddingConfig
+from sif.models.embedding import EmbeddingConfig
 
 # Serialize
 config = EmbeddingConfig(model_type=ModelType.GGUF)

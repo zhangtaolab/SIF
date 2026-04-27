@@ -1,8 +1,8 @@
-# DocSift Architecture
+# SIF Architecture
 
 ## Overview
 
-DocSift follows a layered architecture with clean separation of concerns, designed for modularity, testability, and extensibility. The architecture is inspired by Domain-Driven Design (DDD) principles and implements several well-known design patterns.
+SIF follows a layered architecture with clean separation of concerns, designed for modularity, testability, and extensibility. The architecture is inspired by Domain-Driven Design (DDD) principles and implements several well-known design patterns.
 
 ## Architecture Diagram
 
@@ -75,7 +75,7 @@ The infrastructure layer provides technical capabilities:
 
 **Purpose**: Abstract data access layer, decouple domain logic from storage
 
-**Location**: `docsift/database/repositories.py`
+**Location**: `sif/database/repositories.py`
 
 ```python
 class Repository(ABC, Generic[T]):
@@ -101,7 +101,7 @@ class Repository(ABC, Generic[T]):
 
 **Purpose**: Pluggable search algorithms that can be used interchangeably
 
-**Location**: `docsift/search/bm25.py`, `docsift/search/vector.py`, `docsift/search/hybrid.py`
+**Location**: `sif/search/bm25.py`, `sif/search/vector.py`, `sif/search/hybrid.py`
 
 **Implementations**:
 - `BM25Searcher`: Full-text search via SQLite FTS5
@@ -118,7 +118,7 @@ class Repository(ABC, Generic[T]):
 
 **Purpose**: Create embedding model instances based on configuration
 
-**Location**: `docsift/embedding/factory.py`
+**Location**: `sif/embedding/factory.py`
 
 ```python
 class EmbeddingModelFactory:
@@ -158,7 +158,7 @@ class CollectionManager:
 ### Indexing Flow
 
 ```
-1. User: docsift collection add my-collection ~/notes
+1. User: sif collection add my-collection ~/notes
    │
    ▼
 2. CLI: Parse command, validate inputs
@@ -191,7 +191,7 @@ class CollectionManager:
 ### Search Flow
 
 ```
-1. User: docsift search query "machine learning"
+1. User: sif search query "machine learning"
    │
    ▼
 2. CLI: Parse query, build SearchQuery
@@ -227,7 +227,7 @@ class CollectionManager:
 ## Module Structure
 
 ```
-docsift/
+sif/
 ├── __init__.py              # Package exports
 ├── _version.py              # Version information
 ├── core/                    # Domain entities and business logic

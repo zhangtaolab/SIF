@@ -1,6 +1,6 @@
 # Development Guide
 
-Guide for contributing to DocSift development.
+Guide for contributing to SIF development.
 
 ## Setup
 
@@ -13,8 +13,8 @@ Guide for contributing to DocSift development.
 ### Clone Repository
 
 ```bash
-git clone https://github.com/docsift/docsift.git
-cd docsift
+git clone https://github.com/sif/sif.git
+cd sif
 ```
 
 ### Create Virtual Environment
@@ -25,8 +25,8 @@ python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 # Using conda
-conda create -n docsift python=3.11
-conda activate docsift
+conda create -n sif python=3.11
+conda activate sif
 ```
 
 ### Install Dependencies
@@ -45,7 +45,7 @@ pip install -e ".[all]"      # Everything
 
 ```bash
 # Check version
-docsift --version
+sif --version
 
 # Run tests
 pytest
@@ -57,8 +57,8 @@ ruff check .
 ## Project Structure
 
 ```
-docsift/
-├── src/docsift/           # Source code
+sif/
+├── src/sif/           # Source code
 │   ├── core/              # Domain entities
 │   ├── models/            # Pydantic models
 │   ├── database/          # Data access
@@ -98,7 +98,7 @@ Edit code following the style guidelines.
 pytest
 
 # Run with coverage
-pytest --cov=docsift
+pytest --cov=sif
 
 # Run specific test file
 pytest tests/unit/test_collection.py
@@ -117,7 +117,7 @@ ruff format .
 ruff check .
 
 # Type checking
-mypy src/docsift
+mypy src/sif
 ```
 
 ### 5. Commit Changes
@@ -238,7 +238,7 @@ tests/
 ```python
 # tests/unit/test_collection.py
 import pytest
-from docsift.core.collection import Collection, CollectionManager
+from sif.core.collection import Collection, CollectionManager
 from tests.mocks import MockCollectionRepository
 
 
@@ -281,7 +281,7 @@ class TestCollectionManager:
 ```python
 # tests/conftest.py
 import pytest
-from docsift.core.collection import Collection
+from sif.core.collection import Collection
 
 
 @pytest.fixture
@@ -307,7 +307,7 @@ def mock_repository():
 pytest
 
 # Run with coverage report
-pytest --cov=docsift --cov-report=html
+pytest --cov=sif --cov-report=html
 
 # Run specific test
 pytest tests/unit/test_collection.py::TestCollectionManager::test_create_collection
@@ -354,8 +354,8 @@ logging.basicConfig(level=logging.DEBUG)
 Or via environment variable:
 
 ```bash
-export DOCSIFT_LOG_LEVEL=DEBUG
-docsift search "query"
+export SIF_LOG_LEVEL=DEBUG
+sif search "query"
 ```
 
 ### IDE Setup
@@ -369,10 +369,10 @@ docsift search "query"
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Python: DocSift CLI",
+      "name": "Python: SIF CLI",
       "type": "python",
       "request": "launch",
-      "module": "docsift.cli.main",
+      "module": "sif.cli.main",
       "args": ["search", "python decorators"],
       "console": "integratedTerminal"
     },
@@ -391,7 +391,7 @@ docsift search "query"
 
 1. Go to Run → Edit Configurations
 2. Add new Python configuration
-3. Set script path to `src/docsift/cli/main.py`
+3. Set script path to `src/sif/cli/main.py`
 4. Set parameters to your command arguments
 
 ### Profiling
@@ -416,7 +416,7 @@ stats.print_stats(20)
 
 ### Schema Changes
 
-1. Create migration in `docsift/database/migrations.py`:
+1. Create migration in `sif/database/migrations.py`:
 
 ```python
 def migrate_v2_to_v3(conn: sqlite3.Connection) -> None:
@@ -435,26 +435,26 @@ def migrate_v2_to_v3(conn: sqlite3.Connection) -> None:
 
 ```bash
 # Use test database
-export DOCSIFT_DB_PATH=./test.db
+export SIF_DB_PATH=./test.db
 
 # Index test data
-docsift collection create test
-docsift index add test ./test-data
+sif collection create test
+sif index add test ./test-data
 
 # Run queries
-docsift search "test query"
+sif search "test query"
 ```
 
 ## Adding New Features
 
 ### New Search Strategy
 
-1. Create file in `src/docsift/search/`:
+1. Create file in `src/sif/search/`:
 
 ```python
-# src/docsift/search/custom.py
-from docsift.search.strategy import SearchStrategy, SearchContext
-from docsift.models.search import SearchOptions, SearchResult
+# src/sif/search/custom.py
+from sif.search.strategy import SearchStrategy, SearchContext
+from sif.models.search import SearchOptions, SearchResult
 
 class CustomSearchStrategy(SearchStrategy):
     def search(
@@ -479,10 +479,10 @@ class CustomSearchStrategy(SearchStrategy):
 
 ### New CLI Command
 
-1. Create command in `src/docsift/cli/commands/`:
+1. Create command in `src/sif/cli/commands/`:
 
 ```python
-# src/docsift/cli/commands/custom.py
+# src/sif/cli/commands/custom.py
 import click
 
 @click.command(name="custom")
@@ -492,10 +492,10 @@ def custom_command(input: str) -> None:
     click.echo(f"Processing: {input}")
 ```
 
-2. Register in `src/docsift/cli/main.py`:
+2. Register in `src/sif/cli/main.py`:
 
 ```python
-from docsift.cli.commands.custom import custom_command
+from sif.cli.commands.custom import custom_command
 
 cli.add_command(custom_command, name="custom")
 ```
@@ -504,10 +504,10 @@ cli.add_command(custom_command, name="custom")
 
 ### New Model
 
-1. Create Pydantic model in `src/docsift/models/`:
+1. Create Pydantic model in `src/sif/models/`:
 
 ```python
-# src/docsift/models/custom.py
+# src/sif/models/custom.py
 from pydantic import BaseModel, Field
 
 class CustomModel(BaseModel):
@@ -523,7 +523,7 @@ class CustomModel(BaseModel):
 
 ### Version Bump
 
-1. Update version in `src/docsift/_version.py`
+1. Update version in `src/sif/_version.py`
 
 2. Update CHANGELOG.md
 
@@ -573,7 +573,7 @@ pytest
 **Type checking errors:**
 ```bash
 # Update mypy cache
-mypy --clear-cache src/docsift
+mypy --clear-cache src/sif
 ```
 
 ## Resources
@@ -586,8 +586,8 @@ mypy --clear-cache src/docsift
 
 ## Getting Help
 
-- GitHub Issues: [github.com/docsift/docsift/issues](https://github.com/docsift/docsift/issues)
-- Discussions: [github.com/docsift/docsift/discussions](https://github.com/docsift/docsift/discussions)
+- GitHub Issues: [github.com/sif/sif/issues](https://github.com/sif/sif/issues)
+- Discussions: [github.com/sif/sif/discussions](https://github.com/sif/sif/discussions)
 
 ## Related Documentation
 

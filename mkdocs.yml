@@ -1,8 +1,8 @@
-# MkDocs configuration for DocSift documentation
-site_name: DocSift Documentation
+# MkDocs configuration for SIF documentation
+site_name: SIF Documentation
 site_description: Local AI-powered document search engine
-site_author: DocSift Team
-site_url: https://docsift.readthedocs.io
+site_author: SIF Team
+site_url: https://sif.readthedocs.io
 
 docs_dir: docs
 site_dir: site
@@ -107,16 +107,16 @@ nav:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/docsift/docsift
+      link: https://github.com/zhangtaolab/sif
     - icon: fontawesome/brands/python
-      link: https://pypi.org/project/docsift/
+      link: https://pypi.org/project/sif/
   version:
     provider: mike
 
 # Copyright
-copyright: Copyright &copy; 2024 DocSift Team
+copyright: Copyright &copy; 2024 SIF Team
 
 # Repository
-repo_name: docsift/docsift
-repo_url: https://github.com/docsift/docsift
+repo_name: zhangtaolab/sif
+repo_url: https://github.com/zhangtaolab/sif
 edit_uri: edit/main/docs/

@@ -11,16 +11,16 @@
 
 ### Method 1: Install from PyPI (Recommended)
 
-The easiest way to install DocSift is from PyPI:
+The easiest way to install SIF is from PyPI:
 
 ```bash
-pip install docsift
+pip install sif
 ```
 
 For full functionality including embeddings:
 
 ```bash
-pip install "docsift[all]"
+pip install "sif[all]"
 ```
 
 ### Method 2: Install from Source
@@ -29,8 +29,8 @@ For development or to get the latest features:
 
 ```bash
 # Clone the repository
-git clone https://github.com/docsift/docsift.git
-cd docsift
+git clone https://github.com/sif/sif.git
+cd sif
 
 # Create a virtual environment (recommended)
 python -m venv venv
@@ -45,19 +45,19 @@ pip install -e ".[dev]"
 For an isolated installation:
 
 ```bash
-pipx install docsift
+pipx install sif
 ```
 
 ## Optional Dependencies
 
-DocSift has several optional dependency groups:
+SIF has several optional dependency groups:
 
 ### Embedding Support
 
 For vector search functionality:
 
 ```bash
-pip install "docsift[embed]"
+pip install "sif[embed]"
 ```
 
 This installs:
@@ -66,10 +66,10 @@ This installs:
 
 ### Development Dependencies
 
-For contributing to DocSift:
+For contributing to SIF:
 
 ```bash
-pip install "docsift[dev]"
+pip install "sif[dev]"
 ```
 
 This installs:
@@ -84,7 +84,7 @@ This installs:
 To install everything:
 
 ```bash
-pip install "docsift[all]"
+pip install "sif[all]"
 ```
 
 ## Platform-Specific Instructions
@@ -113,8 +113,8 @@ Using Homebrew:
 # Install Python if not already installed
 brew install python@3.11
 
-# Install DocSift
-pip3 install docsift
+# Install SIF
+pip3 install sif
 ```
 
 ### Windows
@@ -123,29 +123,29 @@ Using PowerShell:
 
 ```powershell
 # Install Python from python.org or Microsoft Store
-# Then install DocSift
-pip install docsift
+# Then install SIF
+pip install sif
 ```
 
 ## Verifying Installation
 
-After installation, verify DocSift is working:
+After installation, verify SIF is working:
 
 ```bash
 # Check version
-docsift --version
+sif --version
 
 # Show help
-docsift --help
+sif --help
 ```
 
 Expected output:
 ```
-DocSift version 0.1.0
+SIF version 0.1.0
 
-Usage: docsift [OPTIONS] COMMAND [ARGS]...
+Usage: sif [OPTIONS] COMMAND [ARGS]...
 
-  DocSift - Document indexing and search tool.
+  SIF - Document indexing and search tool.
 
 Options:
   --version         Show version and exit.
@@ -166,14 +166,14 @@ Commands:
 
 ### Common Issues
 
-#### ImportError: No module named 'docsift'
+#### ImportError: No module named 'sif'
 
-**Cause**: DocSift is not installed or not in PATH
+**Cause**: SIF is not installed or not in PATH
 
 **Solution**:
 ```bash
 # Reinstall
-pip install --force-reinstall docsift
+pip install --force-reinstall sif
 
 # Check if pip is using the correct Python
 which python
@@ -203,7 +203,7 @@ python -c "import sqlite3; print(sqlite3.sqlite_version)"
 python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
 
 # Or specify a local model path
-export DOCSIFT_MODEL_PATH=/path/to/local/model
+export SIF_MODEL_PATH=/path/to/local/model
 ```
 
 #### Permission Denied
@@ -212,43 +212,43 @@ export DOCSIFT_MODEL_PATH=/path/to/local/model
 
 **Solution**:
 ```bash
-# Create docsift directory with proper permissions
-mkdir -p ~/.local/share/docsift
-chmod 755 ~/.local/share/docsift
+# Create sif directory with proper permissions
+mkdir -p ~/.local/share/sif
+chmod 755 ~/.local/share/sif
 
 # Or change database path
-export DOCSIFT_DB_PATH=/path/with/write/permission/docsift.db
+export SIF_DB_PATH=/path/with/write/permission/sif.db
 ```
 
 ### Getting Help
 
 If you encounter issues not covered here:
 
-1. Check the [GitHub Issues](https://github.com/docsift/docsift/issues)
-2. Run with verbose mode: `docsift -v <command>`
-3. Check logs: `~/.local/share/docsift/logs/docsift.log`
+1. Check the [GitHub Issues](https://github.com/sif/sif/issues)
+2. Run with verbose mode: `sif -v <command>`
+3. Check logs: `~/.local/share/sif/logs/sif.log`
 
 ## Uninstallation
 
-To remove DocSift:
+To remove SIF:
 
 ```bash
-pip uninstall docsift
+pip uninstall sif
 ```
 
 To also remove data and configuration:
 
 ```bash
 # Remove database
-rm -rf ~/.local/share/docsift
+rm -rf ~/.local/share/sif
 
 # Remove configuration
-rm -rf ~/.config/docsift
+rm -rf ~/.config/sif
 ```
 
 ## Next Steps
 
 After installation, see:
 - [Quick Start Guide](../README.md#quick-start) - Get started quickly
-- [Configuration](configuration.md) - Configure DocSift
+- [Configuration](configuration.md) - Configure SIF
 - [CLI Reference](cli-reference.md) - Learn the commands

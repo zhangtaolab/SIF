@@ -1,6 +1,6 @@
 # Python API Reference
 
-Complete reference for DocSift's Python API.
+Complete reference for SIF's Python API.
 
 ## Core Module
 
@@ -9,7 +9,7 @@ Complete reference for DocSift's Python API.
 Domain entity representing a document collection.
 
 ```python
-from docsift import Collection
+from sif import Collection
 ```
 
 #### Class: `Collection`
@@ -70,8 +70,8 @@ collection.mark_indexed()
 High-level manager for collection operations.
 
 ```python
-from docsift import CollectionManager
-from docsift.database.repository import SQLiteCollectionRepository
+from sif import CollectionManager
+from sif.database.repository import SQLiteCollectionRepository
 
 # Create manager with repository
 repository = SQLiteCollectionRepository(db_connection)
@@ -159,7 +159,7 @@ collection = manager.remove_path("uuid-string", "~/Documents/old-notes")
 Domain entity representing an indexed document.
 
 ```python
-from docsift import Document
+from sif import Document
 ```
 
 #### Class: `Document`
@@ -184,7 +184,7 @@ class Document:
 Represents a chunk of a document.
 
 ```python
-from docsift import DocumentChunk
+from sif import DocumentChunk
 ```
 
 #### Class: `DocumentChunk`
@@ -206,7 +206,7 @@ class DocumentChunk:
 Domain entity representing search context.
 
 ```python
-from docsift import Context, ContextManager
+from sif import Context, ContextManager
 ```
 
 #### Class: `Context`
@@ -227,7 +227,7 @@ class Context:
 ### Search Models
 
 ```python
-from docsift.models.search import SearchQuery, SearchResult, SearchOptions, SearchType
+from sif.models.search import SearchQuery, SearchResult, SearchOptions, SearchType
 ```
 
 #### Enum: `SearchType`
@@ -333,7 +333,7 @@ class SearchResponse(BaseModel):
 ### Collection Models
 
 ```python
-from docsift.models.collection import CollectionCreate, CollectionUpdate, CollectionResponse
+from sif.models.collection import CollectionCreate, CollectionUpdate, CollectionResponse
 ```
 
 #### Class: `CollectionCreate`
@@ -377,10 +377,10 @@ class CollectionResponse(BaseModel):
 ### Search Strategies
 
 ```python
-from docsift.search.strategy import SearchStrategy, SearchContext
-from docsift.search.bm25 import BM25SearchStrategy
-from docsift.search.vector import VectorSearchStrategy
-from docsift.search.hybrid import HybridSearchStrategy
+from sif.search.strategy import SearchStrategy, SearchContext
+from sif.search.bm25 import BM25SearchStrategy
+from sif.search.vector import VectorSearchStrategy
+from sif.search.hybrid import HybridSearchStrategy
 ```
 
 #### Class: `SearchContext`
@@ -461,7 +461,7 @@ results = strategy.search(context, options)
 ### RRF (Reciprocal Rank Fusion)
 
 ```python
-from docsift.search.rrf import reciprocal_rank_fusion
+from sif.search.rrf import reciprocal_rank_fusion
 ```
 
 #### Function: `reciprocal_rank_fusion`
@@ -485,7 +485,7 @@ def reciprocal_rank_fusion(
 
 **Usage:**
 ```python
-from docsift.search.rrf import reciprocal_rank_fusion
+from sif.search.rrf import reciprocal_rank_fusion
 
 bm25_results = [("doc1", 0.9), ("doc2", 0.8)]
 vector_results = [("doc2", 0.95), ("doc1", 0.85)]
@@ -499,7 +499,7 @@ fused = reciprocal_rank_fusion([bm25_results, vector_results], k=60)
 ### Repository
 
 ```python
-from docsift.database.repository import SQLiteCollectionRepository
+from sif.database.repository import SQLiteCollectionRepository
 ```
 
 #### Class: `SQLiteCollectionRepository`
@@ -520,7 +520,7 @@ class SQLiteCollectionRepository:
 ### Connection
 
 ```python
-from docsift.database.connection import DatabaseConnection
+from sif.database.connection import DatabaseConnection
 ```
 
 #### Class: `DatabaseConnection`
@@ -538,9 +538,9 @@ class DatabaseConnection:
 
 **Usage:**
 ```python
-from docsift.database.connection import DatabaseConnection
+from sif.database.connection import DatabaseConnection
 
-conn = DatabaseConnection("~/.local/share/docsift/docsift.db")
+conn = DatabaseConnection("~/.local/share/sif/sif.db")
 conn.connect()
 
 cursor = conn.execute("SELECT * FROM collections WHERE name = ?", ("my-notes",))
@@ -554,8 +554,8 @@ conn.close()
 ### Embedding Model
 
 ```python
-from docsift.embedding.model import EmbeddingModel
-from docsift.embedding.factory import EmbeddingModelFactory
+from sif.embedding.model import EmbeddingModel
+from sif.embedding.factory import EmbeddingModelFactory
 ```
 
 #### Class: `EmbeddingModel` (Abstract)
@@ -590,7 +590,7 @@ class EmbeddingModelFactory:
 
 **Usage:**
 ```python
-from docsift.embedding.factory import EmbeddingModelFactory
+from sif.embedding.factory import EmbeddingModelFactory
 
 # Sentence Transformer
 model = EmbeddingModelFactory.create_sentence_transformer("all-MiniLM-L6-v2")
@@ -607,7 +607,7 @@ print(f"Dimension: {model.dimension}")  # 384
 ### Embedding Manager
 
 ```python
-from docsift.embedding.manager import EmbeddingManager
+from sif.embedding.manager import EmbeddingManager
 ```
 
 #### Class: `EmbeddingManager`
@@ -630,8 +630,8 @@ class EmbeddingManager:
 ### MCPServer
 
 ```python
-from docsift.mcp_server.server import MCPServer
-from docsift.mcp_server.transport import StdioTransport, HttpTransport
+from sif.mcp_server.server import MCPServer
+from sif.mcp_server.transport import StdioTransport, HttpTransport
 ```
 
 #### Class: `MCPServer`
@@ -647,8 +647,8 @@ class MCPServer:
 
 **Usage:**
 ```python
-from docsift.mcp_server.server import MCPServer
-from docsift.mcp_server.transport import StdioTransport
+from sif.mcp_server.server import MCPServer
+from sif.mcp_server.transport import StdioTransport
 
 transport = StdioTransport()
 server = MCPServer(transport)
@@ -660,17 +660,17 @@ server.start()
 ### Complete Search Example
 
 ```python
-from docsift.database.connection import DatabaseConnection
-from docsift.database.repository import SQLiteCollectionRepository
-from docsift.embedding.factory import EmbeddingModelFactory
-from docsift.search.bm25 import BM25SearchStrategy
-from docsift.search.vector import VectorSearchStrategy
-from docsift.search.hybrid import HybridSearchStrategy
-from docsift.search.strategy import SearchContext
-from docsift.models.search import SearchQuery, SearchOptions, SearchType
+from sif.database.connection import DatabaseConnection
+from sif.database.repository import SQLiteCollectionRepository
+from sif.embedding.factory import EmbeddingModelFactory
+from sif.search.bm25 import BM25SearchStrategy
+from sif.search.vector import VectorSearchStrategy
+from sif.search.hybrid import HybridSearchStrategy
+from sif.search.strategy import SearchContext
+from sif.models.search import SearchQuery, SearchOptions, SearchType
 
 # Setup
-conn = DatabaseConnection("~/.local/share/docsift/docsift.db")
+conn = DatabaseConnection("~/.local/share/sif/sif.db")
 conn.connect()
 
 repository = SQLiteCollectionRepository(conn)
@@ -713,12 +713,12 @@ conn.close()
 ### Collection Management Example
 
 ```python
-from docsift import CollectionManager
-from docsift.database.connection import DatabaseConnection
-from docsift.database.repository import SQLiteCollectionRepository
+from sif import CollectionManager
+from sif.database.connection import DatabaseConnection
+from sif.database.repository import SQLiteCollectionRepository
 
 # Setup
-conn = DatabaseConnection("~/.local/share/docsift/docsift.db")
+conn = DatabaseConnection("~/.local/share/sif/sif.db")
 conn.connect()
 
 repository = SQLiteCollectionRepository(conn)
@@ -754,8 +754,8 @@ conn.close()
 ### Custom Search Strategy Example
 
 ```python
-from docsift.search.strategy import SearchStrategy, SearchContext
-from docsift.models.search import SearchOptions, SearchResult
+from sif.search.strategy import SearchStrategy, SearchContext
+from sif.models.search import SearchOptions, SearchResult
 
 class CustomSearchStrategy(SearchStrategy):
     """Custom search strategy example."""
@@ -785,7 +785,7 @@ class CustomSearchStrategy(SearchStrategy):
 
 ## Type Hints
 
-DocSift uses full type hints throughout. Key types:
+SIF uses full type hints throughout. Key types:
 
 ```python
 from typing import Any, Protocol
@@ -808,29 +808,29 @@ RawResults = list[RawResult]
 
 ## Error Handling
 
-DocSift uses exceptions for error handling:
+SIF uses exceptions for error handling:
 
 ```python
-class DocSiftError(Exception):
-    """Base exception for DocSift."""
+class SIFError(Exception):
+    """Base exception for SIF."""
     pass
 
-class CollectionNotFoundError(DocSiftError):
+class CollectionNotFoundError(SIFError):
     """Raised when a collection is not found."""
     pass
 
-class DocumentNotFoundError(DocSiftError):
+class DocumentNotFoundError(SIFError):
     """Raised when a document is not found."""
     pass
 
-class IndexError(DocSiftError):
+class IndexError(SIFError):
     """Raised when an indexing operation fails."""
     pass
 ```
 
 **Usage:**
 ```python
-from docsift.core.collection import CollectionManager
+from sif.core.collection import CollectionManager
 
 try:
     collection = manager.get_collection("non-existent-id")

@@ -1,18 +1,18 @@
-# DocSift Documentation
+# SIF Documentation
 
-Welcome to the DocSift documentation! DocSift is a local AI-powered document search engine that keeps all your data on your machine.
+Welcome to the SIF documentation! SIF is a local AI-powered document search engine that keeps all your data on your machine.
 
-## What is DocSift?
+## What is SIF?
 
-DocSift is a CLI tool for indexing and searching markdown documents. It combines traditional full-text search with modern semantic search to provide accurate and relevant results.
+SIF is a CLI tool for indexing and searching markdown documents. It combines traditional full-text search with modern semantic search to provide accurate and relevant results.
 
 ```bash
 # Index your documents
-docsift collection add ~/Documents/notes --name my-notes
-docsift index update --collection my-notes
+sif collection add ~/Documents/notes --name my-notes
+sif index update --collection my-notes
 
 # Search with AI-powered relevance
-docsift search query "python decorators"
+sif search query "python decorators"
 ```
 
 ## Key Features
@@ -33,7 +33,7 @@ docsift search query "python decorators"
 
     ---
 
-    Install DocSift and index your first collection.
+    Install SIF and index your first collection.
 
     [:octicons-arrow-right-24: Installation](installation.md)
 
@@ -57,7 +57,7 @@ docsift search query "python decorators"
 
     ---
 
-    Integrate DocSift with AI assistants.
+    Integrate SIF with AI assistants.
 
     [:octicons-arrow-right-24: MCP Server](mcp-server.md)
 
@@ -66,13 +66,13 @@ docsift search query "python decorators"
 ## Installation
 
 ```bash
-pip install docsift
+pip install sif
 ```
 
 For full functionality:
 
 ```bash
-pip install "docsift[all]"
+pip install "sif[all]"
 ```
 
 ## Quick Start
@@ -80,31 +80,31 @@ pip install "docsift[all]"
 ### 1. Create a Collection
 
 ```bash
-docsift collection add ~/Documents/notes --name my-notes --description "Personal notes"
+sif collection add ~/Documents/notes --name my-notes --description "Personal notes"
 ```
 
 ### 2. Index Your Documents
 
 ```bash
-docsift index update --collection my-notes
+sif index update --collection my-notes
 ```
 
 ### 3. Search
 
 ```bash
 # Basic search
-docsift search query "python decorators"
+sif search query "python decorators"
 
 # Hybrid search with more results
-docsift search query "machine learning" --limit 20
+sif search query "machine learning" --limit 20
 
 # Search in specific collection
-docsift search query "python decorators" --collection my-notes
+sif search query "python decorators" --collection my-notes
 ```
 
 ## Architecture
 
-DocSift follows a layered architecture:
+SIF follows a layered architecture:
 
 ```
 ┌─────────────────────────────────────────┐
@@ -131,7 +131,7 @@ Learn more in the [Architecture](architecture.md) documentation.
 Best for exact keyword matching:
 
 ```bash
-docsift search search "python decorators"
+sif search search "python decorators"
 ```
 
 ### Vector (Semantic)
@@ -139,7 +139,7 @@ docsift search search "python decorators"
 Best for conceptual similarity:
 
 ```bash
-docsift search vsearch "functions that wrap other functions"
+sif search vsearch "functions that wrap other functions"
 ```
 
 ### Hybrid (Combined)
@@ -147,18 +147,18 @@ docsift search vsearch "functions that wrap other functions"
 Best overall results:
 
 ```bash
-docsift search query "python decorators"
+sif search query "python decorators"
 ```
 
 Learn more about [Search Algorithms](search-algorithms.md).
 
 ## MCP Server
 
-Integrate DocSift with AI assistants like Claude:
+Integrate SIF with AI assistants like Claude:
 
 ```bash
 # Start MCP server
-docsift mcp stdio
+sif mcp stdio
 ```
 
 Configure in Claude Desktop:
@@ -166,8 +166,8 @@ Configure in Claude Desktop:
 ```json
 {
   "mcpServers": {
-    "docsift": {
-      "command": "docsift",
+    "sif": {
+      "command": "sif",
       "args": ["mcp", "stdio"]
     }
   }
@@ -178,21 +178,21 @@ Learn more about the [MCP Server](mcp-server.md).
 
 ## Configuration
 
-Configure DocSift via environment variables or `.env` file:
+Configure SIF via environment variables or `.env` file:
 
 ```bash
 # Database location
-DOCSIFT_DB_PATH=~/.local/share/docsift/docsift.db
+SIF_DB_PATH=~/.local/share/sif/sif.db
 
 # Embedding model
-DOCSIFT_MODEL_NAME=Qwen/Qwen3-Embedding-0.6B
+SIF_MODEL_NAME=Qwen/Qwen3-Embedding-0.6B
 
 # Chunking settings
-DOCSIFT_CHUNK_SIZE=512
-DOCSIFT_CHUNK_OVERLAP=128
+SIF_CHUNK_SIZE=512
+SIF_CHUNK_OVERLAP=128
 
 # Logging
-DOCSIFT_LOG_LEVEL=INFO
+SIF_LOG_LEVEL=INFO
 ```
 
 See [Configuration](configuration.md) for all options.
@@ -203,8 +203,8 @@ We welcome contributions! See the [Contributing Guide](contributing.md) to get s
 
 ```bash
 # Clone repository
-git clone https://github.com/docsift/docsift.git
-cd docsift
+git clone https://github.com/sif/sif.git
+cd sif
 
 # Install in development mode
 pip install -e ".[dev]"
@@ -215,12 +215,12 @@ pytest
 
 ## License
 
-DocSift is licensed under the MIT License. See [LICENSE](https://github.com/docsift/docsift/blob/main/LICENSE) for details.
+SIF is licensed under the MIT License. See [LICENSE](https://github.com/sif/sif/blob/main/LICENSE) for details.
 
 ## Support
 
-- GitHub Issues: [github.com/docsift/docsift/issues](https://github.com/docsift/docsift/issues)
-- GitHub Discussions: [github.com/docsift/docsift/discussions](https://github.com/docsift/docsift/discussions)
+- GitHub Issues: [github.com/sif/sif/issues](https://github.com/sif/sif/issues)
+- GitHub Discussions: [github.com/sif/sif/discussions](https://github.com/sif/sif/discussions)
 
 ---
 

@@ -1,6 +1,6 @@
 # CLI Reference
 
-Complete reference for all DocSift CLI commands.
+Complete reference for all SIF CLI commands.
 
 ## Global Options
 
@@ -10,14 +10,14 @@ These options can be used with any command:
 |--------|-------|------|---------|-------------|
 | `--version` | `` | flag | `false` | Show the version and exit. |
 | `--index` | `-i` | path | — | Path to the index database |
-| `--config` | `-c` | path | `/Users/forrest/.docsift/config.yaml` | Path to the configuration file |
+| `--config` | `-c` | path | `/Users/forrest/.sif/config.yaml` | Path to the configuration file |
 | `--verbose` | `-v` | flag | `false` | Enable verbose output |
 | `--quiet` | `-q` | flag | `false` | Suppress non-error output |
 
 ## Command Overview
 
 ```
-docsift
+sif
 ├── collection      Manage document collections.
 │   ├── add             Add a new collection.
 │   ├── remove          Remove a collection.
@@ -80,7 +80,7 @@ Fixture format (JSON):
 Add a new collection.
 
 ```bash
-docsift collection add [OPTIONS]
+sif collection add [OPTIONS]
 ```
 
 **Arguments:**
@@ -104,7 +104,7 @@ docsift collection add [OPTIONS]
 Disable a collection from default searches.
 
 ```bash
-docsift collection disable [OPTIONS]
+sif collection disable [OPTIONS]
 ```
 
 **Arguments:**
@@ -118,7 +118,7 @@ docsift collection disable [OPTIONS]
 Enable a collection for default searches.
 
 ```bash
-docsift collection enable [OPTIONS]
+sif collection enable [OPTIONS]
 ```
 
 **Arguments:**
@@ -132,7 +132,7 @@ docsift collection enable [OPTIONS]
 Exclude a collection from default searches.
 
 ```bash
-docsift collection exclude [OPTIONS]
+sif collection exclude [OPTIONS]
 ```
 
 **Arguments:**
@@ -146,7 +146,7 @@ docsift collection exclude [OPTIONS]
 Include a collection in default searches.
 
 ```bash
-docsift collection include [OPTIONS]
+sif collection include [OPTIONS]
 ```
 
 **Arguments:**
@@ -160,7 +160,7 @@ docsift collection include [OPTIONS]
 List all collections.
 
 ```bash
-docsift collection list [OPTIONS]
+sif collection list [OPTIONS]
 ```
 
 **Options:**
@@ -174,7 +174,7 @@ docsift collection list [OPTIONS]
 List files in a collection.
 
 ```bash
-docsift collection ls [OPTIONS]
+sif collection ls [OPTIONS]
 ```
 
 **Arguments:**
@@ -189,7 +189,7 @@ docsift collection ls [OPTIONS]
 Remove a collection.
 
 ```bash
-docsift collection remove [OPTIONS]
+sif collection remove [OPTIONS]
 ```
 
 **Arguments:**
@@ -209,7 +209,7 @@ docsift collection remove [OPTIONS]
 Rename a collection.
 
 ```bash
-docsift collection rename [OPTIONS]
+sif collection rename [OPTIONS]
 ```
 
 **Arguments:**
@@ -224,7 +224,7 @@ docsift collection rename [OPTIONS]
 Show collection details.
 
 ```bash
-docsift collection show [OPTIONS]
+sif collection show [OPTIONS]
 ```
 
 **Arguments:**
@@ -238,7 +238,7 @@ docsift collection show [OPTIONS]
 Set or clear a pre-index shell command for a collection.
 
 ```bash
-docsift collection update-cmd [OPTIONS]
+sif collection update-cmd [OPTIONS]
 ```
 
 **Arguments:**
@@ -261,7 +261,7 @@ docsift collection update-cmd [OPTIONS]
 Add context for a path, collection, or global scope.
 
 ```bash
-docsift context add [OPTIONS]
+sif context add [OPTIONS]
 ```
 
 **Arguments:**
@@ -277,7 +277,7 @@ docsift context add [OPTIONS]
 List all contexts.
 
 ```bash
-docsift context list [OPTIONS]
+sif context list [OPTIONS]
 ```
 
 **Options:**
@@ -291,7 +291,7 @@ docsift context list [OPTIONS]
 Remove orphaned path contexts (whose target paths no longer exist in the index).
 
 ```bash
-docsift context prune [OPTIONS]
+sif context prune [OPTIONS]
 ```
 
 ### `context remove`
@@ -299,7 +299,7 @@ docsift context prune [OPTIONS]
 Remove a context by its ID.
 
 ```bash
-docsift context remove [OPTIONS]
+sif context remove [OPTIONS]
 ```
 
 **Arguments:**
@@ -313,7 +313,7 @@ docsift context remove [OPTIONS]
 Remove a context by its ID.
 
 ```bash
-docsift context rm [OPTIONS]
+sif context rm [OPTIONS]
 ```
 
 **Arguments:**
@@ -329,7 +329,7 @@ docsift context rm [OPTIONS]
 Get a document by path or document ID.
 
 ```bash
-docsift get get [OPTIONS]
+sif get get [OPTIONS]
 ```
 
 **Arguments:**
@@ -351,7 +351,7 @@ docsift get get [OPTIONS]
 Get multiple documents matching a pattern.
 
 ```bash
-docsift get multi-get [OPTIONS]
+sif get multi-get [OPTIONS]
 ```
 
 **Arguments:**
@@ -374,7 +374,7 @@ docsift get multi-get [OPTIONS]
 Generate embeddings for documents.
 
 ```bash
-docsift index embed [OPTIONS]
+sif index embed [OPTIONS]
 ```
 
 **Options:**
@@ -392,7 +392,7 @@ docsift index embed [OPTIONS]
 Show index status.
 
 ```bash
-docsift index status [OPTIONS]
+sif index status [OPTIONS]
 ```
 
 ### `index update`
@@ -400,7 +400,7 @@ docsift index status [OPTIONS]
 Update the index by scanning collections.
 
 ```bash
-docsift index update [OPTIONS]
+sif index update [OPTIONS]
 ```
 
 **Options:**
@@ -420,7 +420,7 @@ This is the recommended search command for best results.
 
 
 ```bash
-docsift search query [OPTIONS]
+sif search query [OPTIONS]
 ```
 
 **Arguments:**
@@ -454,7 +454,7 @@ docsift search query [OPTIONS]
 Search documents using BM25.
 
 ```bash
-docsift search search [OPTIONS]
+sif search search [OPTIONS]
 ```
 
 **Arguments:**
@@ -485,7 +485,7 @@ docsift search search [OPTIONS]
 Search documents using vector similarity.
 
 ```bash
-docsift search vsearch [OPTIONS]
+sif search vsearch [OPTIONS]
 ```
 
 **Arguments:**
@@ -514,7 +514,7 @@ docsift search vsearch [OPTIONS]
 Run MCP server as a daemon.
 
 ```bash
-docsift mcp daemon [OPTIONS]
+sif mcp daemon [OPTIONS]
 ```
 
 **Options:**
@@ -532,7 +532,7 @@ docsift mcp daemon [OPTIONS]
 Run MCP server in HTTP mode.
 
 ```bash
-docsift mcp http [OPTIONS]
+sif mcp http [OPTIONS]
 ```
 
 **Options:**
@@ -548,7 +548,7 @@ docsift mcp http [OPTIONS]
 Run MCP server in stdio mode.
 
 ```bash
-docsift mcp stdio [OPTIONS]
+sif mcp stdio [OPTIONS]
 ```
 
 ## Other Commands
@@ -570,7 +570,7 @@ Fixture format (JSON):
 
 
 ```bash
-docsift bench [OPTIONS]
+sif bench [OPTIONS]
 ```
 
 **Arguments:**
@@ -595,7 +595,7 @@ docsift bench [OPTIONS]
 Clean up the index (remove orphaned entries).
 
 ```bash
-docsift cleanup [OPTIONS]
+sif cleanup [OPTIONS]
 ```
 
 **Options:**
@@ -609,7 +609,7 @@ docsift cleanup [OPTIONS]
 List indexed documents as a virtual file tree.
 
 ```bash
-docsift ls [OPTIONS]
+sif ls [OPTIONS]
 ```
 
 **Arguments:**
@@ -624,7 +624,7 @@ docsift ls [OPTIONS]
 Download a GGUF model file.
 
 ```bash
-docsift pull [OPTIONS]
+sif pull [OPTIONS]
 ```
 
 **Arguments:**
@@ -644,7 +644,7 @@ docsift pull [OPTIONS]
 Show index status.
 
 ```bash
-docsift status [OPTIONS]
+sif status [OPTIONS]
 ```
 
 ## Output Formats
@@ -673,43 +673,43 @@ Several commands support multiple output formats via flags:
 **Setting up a new collection:**
 ```bash
 # Add a collection
-docsift collection add ~/Documents/notes --name my-notes --description "Personal notes"
+sif collection add ~/Documents/notes --name my-notes --description "Personal notes"
 
 # Update index
-docsift index update --collection my-notes
+sif index update --collection my-notes
 
 # Search
-docsift search query "python tips"
+sif search query "python tips"
 ```
 
 **Managing collection visibility:**
 ```bash
 # Exclude from default searches
-docsift collection exclude my-notes
+sif collection exclude my-notes
 
 # Include again
-docsift collection include my-notes
+sif collection include my-notes
 
 # Set pre-update command
-docsift collection update-cmd my-notes --cmd "git pull"
+sif collection update-cmd my-notes --cmd "git pull"
 ```
 
 **Adding context:**
 ```bash
 # Add global context
-docsift context add global global "I am a software engineer."
+sif context add global global "I am a software engineer."
 
 # Add collection context
-docsift context add collection my-notes "These are my programming notes."
+sif context add collection my-notes "These are my programming notes."
 
 # List contexts
-docsift context list
+sif context list
 
 # Prune orphaned contexts
-docsift context prune
+sif context prune
 ```
 
 **Hybrid search with options:**
 ```bash
-docsift search query "python decorators" --explain --candidate-limit 30 --limit 10
+sif search query "python decorators" --explain --candidate-limit 30 --limit 10
 ```

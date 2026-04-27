@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to DocSift will be documented in this file.
+All notable changes to SIF will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -38,7 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.0] - 2024-01-20
 
 ### Added
-- Initial release of DocSift
+- Initial release of SIF
 - Core domain entities (Collection, Document, Context)
 - Pydantic models for validation
 - SQLite repository pattern implementation
@@ -158,7 +158,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Version Numbering
 
-DocSift follows [Semantic Versioning](https://semver.org/):
+SIF follows [Semantic Versioning](https://semver.org/):
 
 - **MAJOR**: Incompatible API changes
 - **MINOR**: Backward-compatible functionality additions
@@ -184,13 +184,13 @@ For minor releases:
 
 ```bash
 # Backup database
-cp ~/.local/share/docsift/docsift.db ~/.local/share/docsift/docsift.db.backup
+cp ~/.local/share/sif/sif.db ~/.local/share/sif/sif.db.backup
 
 # Upgrade package
-pip install --upgrade docsift
+pip install --upgrade sif
 
 # Reindex if needed
-docsift index rebuild --all
+sif index rebuild --all
 ```
 
 ## Future Roadmap
@@ -216,11 +216,11 @@ docsift index rebuild --all
 
 ## Contributors
 
-Thanks to all contributors who have helped shape DocSift!
+Thanks to all contributors who have helped shape SIF!
 
-- DocSift Team
+- SIF Team
 
 ---
 
-[Unreleased]: https://github.com/docsift/docsift/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/docsift/docsift/releases/tag/v0.1.0
+[Unreleased]: https://github.com/sif/sif/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/sif/sif/releases/tag/v0.1.0
