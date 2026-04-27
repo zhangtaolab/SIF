@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 import click
 from rich.console import Console
 from rich.table import Table
@@ -29,7 +27,7 @@ def context_group() -> None:
 @click.pass_context
 def context_add(
     ctx: click.Context,
-    type: str,
+    type: str,  # noqa: A002
     target: str,
     content: str,
 ) -> None:
@@ -98,7 +96,7 @@ def context_remove(ctx: click.Context, context_id: str) -> None:
     help="Filter by context type",
 )
 @click.pass_context
-def context_list(ctx: click.Context, context_type: Optional[str]) -> None:
+def context_list(ctx: click.Context, context_type: str | None) -> None:
     """List all contexts."""
     index_path = ctx.obj["index_path"]
 
@@ -111,10 +109,7 @@ def context_list(ctx: click.Context, context_type: Optional[str]) -> None:
 
     with db.connection:
         repo = ContextRepository(db.connection)
-        if context_type:
-            contexts = repo.list_by_type(context_type)
-        else:
-            contexts = repo.list_all()
+        contexts = repo.list_by_type(context_type) if context_type else repo.list_all()
 
     if not contexts:
         console.print("[yellow]No contexts found.[/yellow]")

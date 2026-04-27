@@ -12,21 +12,20 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 
-def test_imports() -> bool:
+def test_imports() -> None:
     """Test all core imports."""
     print("Testing imports...")
     try:
         print("✅ All imports successful")
-        return True
     except Exception as e:
         print(f"❌ Import failed: {e}")
         import traceback
 
         traceback.print_exc()
-        return False
+        raise
 
 
-def test_database() -> bool:
+def test_database() -> None:
     """Test database operations."""
     print("\nTesting database...")
     try:
@@ -43,16 +42,15 @@ def test_database() -> bool:
             print(f"✅ Database created: {db_path}")
             print(f"   Stats: {stats}")
 
-        return True
     except Exception as e:
         print(f"❌ Database test failed: {e}")
         import traceback
 
         traceback.print_exc()
-        return False
+        raise
 
 
-def test_collection_repository() -> bool:
+def test_collection_repository() -> None:
     """Test collection repository."""
     print("\nTesting collection repository...")
     try:
@@ -88,16 +86,15 @@ def test_collection_repository() -> bool:
                 assert len(collections) == 1
                 print(f"✅ Listed {len(collections)} collection(s)")
 
-        return True
     except Exception as e:
         print(f"❌ Collection repository test failed: {e}")
         import traceback
 
         traceback.print_exc()
-        return False
+        raise
 
 
-def test_document_repository() -> bool:
+def test_document_repository() -> None:
     """Test document repository."""
     print("\nTesting document repository...")
     try:
@@ -145,16 +142,15 @@ def test_document_repository() -> bool:
                 assert len(docs) == 1
                 print(f"✅ Listed {len(docs)} document(s)")
 
-        return True
     except Exception as e:
         print(f"❌ Document repository test failed: {e}")
         import traceback
 
         traceback.print_exc()
-        return False
+        raise
 
 
-def test_chunker() -> bool:
+def test_chunker() -> None:
     """Test document chunking."""
     print("\nTesting chunker...")
     try:
@@ -178,16 +174,15 @@ def test_chunker() -> bool:
         assert len(md_chunks) > 0
         print(f"✅ Markdown chunker created {len(md_chunks)} chunks")
 
-        return True
     except Exception as e:
         print(f"❌ Chunker test failed: {e}")
         import traceback
 
         traceback.print_exc()
-        return False
+        raise
 
 
-def test_rrf() -> bool:
+def test_rrf() -> None:
     """Test RRF fusion."""
     print("\nTesting RRF fusion...")
     try:
@@ -217,16 +212,15 @@ def test_rrf() -> bool:
         assert fused[0].document_id in ["doc1", "doc2"]
         print(f"✅ Top result: {fused[0].document_id}")
 
-        return True
     except Exception as e:
         print(f"❌ RRF test failed: {e}")
         import traceback
 
         traceback.print_exc()
-        return False
+        raise
 
 
-def test_cli() -> bool:
+def test_cli() -> None:
     """Test CLI."""
     print("\nTesting CLI...")
     try:
@@ -247,16 +241,15 @@ def test_cli() -> bool:
         assert result.exit_code == 0
         print("✅ CLI --version works")
 
-        return True
     except Exception as e:
         print(f"❌ CLI test failed: {e}")
         import traceback
 
         traceback.print_exc()
-        return False
+        raise
 
 
-def test_scanner() -> bool:
+def test_scanner() -> None:
     """Test file scanner."""
     print("\nTesting scanner...")
     try:
@@ -277,16 +270,15 @@ def test_scanner() -> bool:
             assert result.file_count == 3
             print(f"✅ Scanned {result.file_count} files")
 
-        return True
     except Exception as e:
         print(f"❌ Scanner test failed: {e}")
         import traceback
 
         traceback.print_exc()
-        return False
+        raise
 
 
-def test_parser() -> bool:
+def test_parser() -> None:
     """Test document parser."""
     print("\nTesting parser...")
     try:
@@ -312,13 +304,12 @@ This is the content.
             assert "Test Title" in parsed.content
             print(f"✅ Parsed: {parsed.title}")
 
-        return True
     except Exception as e:
         print(f"❌ Parser test failed: {e}")
         import traceback
 
         traceback.print_exc()
-        return False
+        raise
 
 
 def main() -> int:
@@ -342,8 +333,8 @@ def main() -> int:
     results = []
     for name, test_func in tests:
         try:
-            passed = test_func()
-            results.append((name, passed))
+            test_func()
+            results.append((name, True))
         except Exception as e:
             print(f"\n❌ {name} test crashed: {e}")
             import traceback

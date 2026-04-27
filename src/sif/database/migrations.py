@@ -116,7 +116,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS chunk_embeddings USING vec0(
 class MigrationManager:
     """Manages database schema migrations."""
 
-    def __init__(self, connection: "DatabaseConnection") -> None:
+    def __init__(self, connection: "DatabaseConnection") -> None:  # noqa: F821
         self._connection = connection
 
     def get_current_version(self) -> int:

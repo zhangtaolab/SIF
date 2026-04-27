@@ -1,6 +1,6 @@
 """Unit tests for collection management."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pytest
 
@@ -166,8 +166,8 @@ class TestCollectionModels:
             "paths": ["/path/one"],
             "document_count": 10,
             "chunk_count": 50,
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow(),
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
         }
 
         model = CollectionResponse(**data)

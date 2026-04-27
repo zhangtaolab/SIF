@@ -61,7 +61,7 @@ def is_markdown_file(path: Path) -> bool:
     Returns:
         True if the file has a markdown extension
     """
-    from sif.config.constants import MARKDOWN_EXTENSIONS
+    from sif.config.constants import MARKDOWN_EXTENSIONS  # noqa: PLC0415
 
     return path.suffix.lower() in MARKDOWN_EXTENSIONS
 

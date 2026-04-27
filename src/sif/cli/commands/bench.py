@@ -35,7 +35,7 @@ console = Console()
 )
 @click.option("--json", "output_json", is_flag=True, help="Output as JSON")
 @click.pass_context
-def bench_cmd(
+def bench_cmd(  # noqa: C901, PLR0913, PLR0915
     ctx: click.Context,
     fixture: Path,
     limit: int,
@@ -89,7 +89,7 @@ def bench_cmd(
         console.print(f"[yellow]Failed to load embedding model: {e}[/yellow]")
 
     def search_fn(query: str):
-        from sif.core.models import SearchOptions
+        from sif.core.models import SearchOptions  # noqa: PLC0415
 
         options = SearchOptions(
             limit=limit,
@@ -116,7 +116,7 @@ def bench_cmd(
         with db.connection:
             pipeline = SearchPipeline(
                 db.connection,
-                embedder=manager._model if manager else None,
+                embedder=manager._model if manager else None,  # noqa: SLF001
                 embedding_dim=embedding_dim,
             )
             return pipeline.search(query, options)
@@ -126,7 +126,7 @@ def bench_cmd(
     try:
         metrics = evaluator.evaluate(search_fn)
     except Exception as e:
-        raise click.ClickException(f"Benchmark failed: {e}")
+        raise click.ClickException(f"Benchmark failed: {e}") from e
 
     # Output results
     if output_json:

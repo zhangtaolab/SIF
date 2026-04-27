@@ -130,7 +130,7 @@ def status_cmd(ctx: click.Context) -> None:
 
     except Exception as e:
         console.print(f"[red]Error reading index: {e}[/red]")
-        raise click.ClickException(str(e))
+        raise click.ClickException(str(e)) from e
 
 
 @cli.command("cleanup")
@@ -151,7 +151,7 @@ def cleanup_cmd(ctx: click.Context) -> None:
         with db.transaction() as conn:
             # Clean up orphaned chunks
             cursor = conn.execute("""
-                DELETE FROM document_chunks 
+                DELETE FROM document_chunks
                 WHERE document_id NOT IN (SELECT id FROM documents)
             """)
             chunks_removed = cursor.rowcount
@@ -159,22 +159,22 @@ def cleanup_cmd(ctx: click.Context) -> None:
             # Clean up orphaned embeddings
             try:
                 cursor = conn.execute("""
-                    DELETE FROM document_embeddings 
+                    DELETE FROM document_embeddings
                     WHERE document_id NOT IN (SELECT id FROM documents)
                 """)
                 embeddings_removed = cursor.rowcount
-            except sqlite3.OperationalError:
+            except sqlite3.OperationalError:  # noqa: F821
                 embeddings_removed = 0
 
             # Clean up expired LLM cache
-            from datetime import datetime
+            from datetime import datetime, timezone  # noqa: PLC0415
 
             cursor = conn.execute(
                 """
-                DELETE FROM llm_cache 
+                DELETE FROM llm_cache
                 WHERE expires_at IS NOT NULL AND expires_at <= ?
             """,
-                (datetime.utcnow().isoformat(),),
+                (datetime.now(timezone.utc).isoformat(),),
             )
             cache_removed = cursor.rowcount
 

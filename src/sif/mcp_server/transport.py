@@ -80,14 +80,14 @@ class StdioTransport(Transport):
 
     def send(self, message: dict[str, Any]) -> None:
         """Send a message via stdout."""
-        import json
+        import json  # noqa: PLC0415
 
         json_str = json.dumps(message)
         print(json_str, flush=True)
 
     def receive(self) -> dict[str, Any] | None:
         """Receive a message from stdin."""
-        import json
+        import json  # noqa: PLC0415
 
         try:
             line = sys.stdin.readline()
@@ -191,8 +191,8 @@ class HTTPTransport(Transport):
 
     def start(self) -> None:
         """Start HTTP transport."""
-        import uvicorn
-        from fastapi import FastAPI
+        import uvicorn  # noqa: PLC0415
+        from fastapi import FastAPI  # noqa: PLC0415
 
         logger.info(f"Starting HTTP transport on {self._host}:{self._port}")
 

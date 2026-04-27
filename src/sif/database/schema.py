@@ -126,7 +126,7 @@ class SchemaManager:
             self.db.execute("RELEASE SAVEPOINT sp_migration")
         except Exception as e:
             self.db.execute("ROLLBACK TO SAVEPOINT sp_migration")
-            import sys
+            import sys  # noqa: PLC0415
 
             print(f"Migration failed: {e}", file=sys.stderr)
             raise
@@ -285,21 +285,21 @@ class SchemaManager:
         """Create database indexes."""
         # Documents indexes
         self.db.execute("""
-            CREATE INDEX IF NOT EXISTS idx_documents_collection 
+            CREATE INDEX IF NOT EXISTS idx_documents_collection
             ON documents(collection_id)
         """)
         self.db.execute("""
-            CREATE INDEX IF NOT EXISTS idx_documents_path 
+            CREATE INDEX IF NOT EXISTS idx_documents_path
             ON documents(path)
         """)
         self.db.execute("""
-            CREATE INDEX IF NOT EXISTS idx_documents_checksum 
+            CREATE INDEX IF NOT EXISTS idx_documents_checksum
             ON documents(checksum)
         """)
 
         # Chunks indexes
         self.db.execute("""
-            CREATE INDEX IF NOT EXISTS idx_chunks_document 
+            CREATE INDEX IF NOT EXISTS idx_chunks_document
             ON document_chunks(document_id)
         """)
 
@@ -311,7 +311,7 @@ class SchemaManager:
 
         # LLM cache index
         self.db.execute("""
-            CREATE INDEX IF NOT EXISTS idx_llm_cache_lookup 
+            CREATE INDEX IF NOT EXISTS idx_llm_cache_lookup
             ON llm_cache(model_name, prompt_hash)
         """)
 

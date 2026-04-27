@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import re
 from abc import ABC, abstractmethod
-from typing import List
 
 from sif.core.models import DocumentChunk
 
@@ -13,7 +12,7 @@ class Chunker(ABC):
     """Base class for document chunkers."""
 
     @abstractmethod
-    def chunk(self, text: str) -> List[DocumentChunk]:
+    def chunk(self, text: str) -> list[DocumentChunk]:
         """Split text into chunks.
 
         Args:
@@ -38,7 +37,7 @@ class FixedSizeChunker(Chunker):
         self.chunk_size = chunk_size
         self.overlap = overlap
 
-    def chunk(self, text: str) -> List[DocumentChunk]:
+    def chunk(self, text: str) -> list[DocumentChunk]:
         """Split text into fixed-size chunks."""
         chunks = []
         start = 0
@@ -86,7 +85,7 @@ class MarkdownChunker(Chunker):
         self.max_chunk_size = max_chunk_size
         self.heading_pattern = re.compile(r"^(#{1,6}\s+.+)$", re.MULTILINE)
 
-    def chunk(self, text: str) -> List[DocumentChunk]:
+    def chunk(self, text: str) -> list[DocumentChunk]:
         """Split markdown by headings."""
         # Find all headings
         headings = list(self.heading_pattern.finditer(text))
@@ -138,7 +137,7 @@ class CodeChunker(Chunker):
         self.max_chunk_size = max_chunk_size
         self.language = language
 
-    def chunk(self, text: str) -> List[DocumentChunk]:
+    def chunk(self, text: str) -> list[DocumentChunk]:
         """Split code by functions/classes."""
         # Simple regex-based approach for Python
         if self.language == "python":
@@ -192,7 +191,7 @@ class AutoChunker(Chunker):
         """
         self.max_chunk_size = max_chunk_size
 
-    def chunk(self, text: str) -> List[DocumentChunk]:
+    def chunk(self, text: str) -> list[DocumentChunk]:
         """Automatically select and apply chunking strategy."""
         # Check if markdown
         if "#" in text and re.search(r"^#+\s+", text, re.MULTILINE):

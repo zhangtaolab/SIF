@@ -47,7 +47,7 @@ class DocumentIndexer:
     and database storage for document indexing.
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         scanner: FileScanner,
         parser: MarkdownParser,
@@ -152,8 +152,8 @@ class DocumentIndexer:
         Returns:
             Index status
         """
-        import hashlib
-        import uuid
+        import hashlib  # noqa: PLC0415
+        import uuid  # noqa: PLC0415
 
         # Calculate checksum
         with open(file_path, "rb") as f:
@@ -191,7 +191,7 @@ class DocumentIndexer:
             embedding_response = self._embedding_manager.embed(chunk_texts)
 
             # Create document chunks with embeddings
-            for i, (chunk, embedding) in enumerate(zip(chunks, embedding_response.embeddings)):
+            for _i, (chunk, embedding) in enumerate(zip(chunks, embedding_response.embeddings)):
                 doc_chunk = DocumentChunk(
                     id=str(uuid.uuid4()),
                     document_id=document.id,

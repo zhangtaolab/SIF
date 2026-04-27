@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any
 
 from sif.mcp.server import MCPServer
 from sif.utils.logging import get_logger
@@ -16,9 +16,9 @@ def run_http_server(
 ) -> None:
     """Run MCP server in HTTP mode using FastAPI."""
     try:
-        import uvicorn
-        from fastapi import FastAPI, Request
-        from fastapi.responses import JSONResponse
+        import uvicorn  # noqa: PLC0415
+        from fastapi import FastAPI, Request  # noqa: PLC0415
+        from fastapi.responses import JSONResponse  # noqa: PLC0415
     except ImportError:
         logger.error("FastAPI not installed. Install with: pip install fastapi uvicorn")
         raise
@@ -34,12 +34,12 @@ def run_http_server(
         return JSONResponse(content=response)
 
     @app.get("/health")
-    async def health() -> Dict[str, str]:
+    async def health() -> dict[str, str]:
         """Health check endpoint."""
         return {"status": "ok"}
 
     @app.get("/")
-    async def root() -> Dict[str, Any]:
+    async def root() -> dict[str, Any]:
         """Root endpoint."""
         return {
             "name": "SIF MCP Server",

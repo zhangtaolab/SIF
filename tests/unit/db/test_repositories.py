@@ -7,7 +7,7 @@ This module tests the Repository pattern implementations including:
 """
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from unittest.mock import MagicMock, create_autospec
 
 import pytest
@@ -48,8 +48,8 @@ class TestCollectionRepository:
             document_count=5,
             chunk_count=20,
             metadata={"key": "value"},
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
         )
 
     @pytest.fixture
@@ -315,8 +315,8 @@ class TestDocumentRepository:
                 author="Test Author",
                 tags=["test", "sample"],
             ),
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
         )
 
     @pytest.fixture
@@ -609,8 +609,8 @@ class TestContextRepository:
             target_id=str(uuid.uuid4()),
             context_type=ContextType.COLLECTION,
             content="This is context content for testing",
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
         )
 
     @pytest.fixture
@@ -955,7 +955,7 @@ class InMemoryCollectionRepository:
             del self._name_index[old_collection.name]
             self._name_index[entity.name] = entity.id
 
-        entity.updated_at = datetime.utcnow()
+        entity.updated_at = datetime.now(timezone.utc)
         self._collections[entity.id] = entity
         return entity
 

@@ -4,7 +4,7 @@ import csv
 import io
 import json
 from dataclasses import asdict, is_dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from rich import box
 from rich.console import Console
@@ -33,7 +33,7 @@ def format_json(data: Any, indent: int = 2) -> str:
     return json.dumps(data, indent=indent, default=serialize, ensure_ascii=False)
 
 
-def format_csv(data: List[Dict[str, Any]]) -> str:
+def format_csv(data: list[dict[str, Any]]) -> str:
     """Format list of dictionaries as CSV string."""
     if not data:
         return ""
@@ -45,7 +45,7 @@ def format_csv(data: List[Dict[str, Any]]) -> str:
     return output.getvalue()
 
 
-def format_markdown_table(data: List[Dict[str, Any]], title: Optional[str] = None) -> str:
+def format_markdown_table(data: list[dict[str, Any]], title: Optional[str] = None) -> str:
     """Format list of dictionaries as Markdown table."""
     if not data:
         return ""
@@ -82,7 +82,7 @@ def format_xml(data: Any, root_tag: str = "root") -> str:
     return f'<?xml version="1.0" encoding="UTF-8"?>\n{to_xml(data, root_tag)}'
 
 
-def format_files_list(paths: List[str]) -> str:
+def format_files_list(paths: list[str]) -> str:
     """Format list of file paths."""
     return "\n".join(paths)
 
@@ -95,14 +95,14 @@ def print_json(data: Any, console: Optional[Console] = None) -> None:
     cons.print(syntax)
 
 
-def print_csv(data: List[Dict[str, Any]], console: Optional[Console] = None) -> None:
+def print_csv(data: list[dict[str, Any]], console: Optional[Console] = None) -> None:
     """Print data as CSV."""
     cons = console or Console()
     cons.print(format_csv(data))
 
 
 def print_markdown(
-    data: List[Dict[str, Any]], title: Optional[str] = None, console: Optional[Console] = None
+    data: list[dict[str, Any]], title: Optional[str] = None, console: Optional[Console] = None
 ) -> None:
     """Print data as Markdown table."""
     cons = console or Console()
@@ -117,7 +117,7 @@ def print_xml(data: Any, root_tag: str = "root", console: Optional[Console] = No
     cons.print(syntax)
 
 
-def print_files(paths: List[str], console: Optional[Console] = None) -> None:
+def print_files(paths: list[str], console: Optional[Console] = None) -> None:
     """Print list of files."""
     cons = console or Console()
     for path in paths:
@@ -125,7 +125,7 @@ def print_files(paths: List[str], console: Optional[Console] = None) -> None:
 
 
 def print_table(
-    data: List[Dict[str, Any]], title: Optional[str] = None, console: Optional[Console] = None
+    data: list[dict[str, Any]], title: Optional[str] = None, console: Optional[Console] = None
 ) -> None:
     """Print data as a rich table."""
     cons = console or Console()
@@ -185,7 +185,7 @@ def print_panel(
 
 
 def print_tree(
-    data: Dict[str, Any], title: str = "Tree", console: Optional[Console] = None
+    data: dict[str, Any], title: str = "Tree", console: Optional[Console] = None
 ) -> None:
     """Print data as a tree structure."""
     cons = console or Console()
@@ -213,8 +213,8 @@ def prepend_line_numbers(content: str) -> str:
 
 
 def add_line_numbers_to_results(
-    results: List[Dict[str, Any]], content_key: str = "content"
-) -> List[Dict[str, Any]]:
+    results: list[dict[str, Any]], content_key: str = "content"
+) -> list[dict[str, Any]]:
     """Add a 'line_numbers' field to each result dict based on content."""
     formatted = []
     for item in results:
@@ -237,7 +237,7 @@ class OutputFormatter:
         self.format_type = format_type
         self.console = console or Console()
 
-    def print(self, data: Any, title: Optional[str] = None) -> None:
+    def print(self, data: Any, title: Optional[str] = None) -> None:  # noqa: PLR0912
         """Print data in the specified format."""
         if self.format_type == "json":
             print_json(data, self.console)

@@ -12,7 +12,7 @@ logger = get_logger(__name__)
 class SearchTool(ToolHandler):
     """MCP tool for searching documents."""
 
-    def __init__(self, search_service: "SearchService") -> None:
+    def __init__(self, search_service: "SearchService") -> None:  # noqa: F821
         """Initialize search tool.
 
         Args:
@@ -79,7 +79,7 @@ class SearchTool(ToolHandler):
 class IndexTool(ToolHandler):
     """MCP tool for indexing documents."""
 
-    def __init__(self, indexer: "DocumentIndexer") -> None:
+    def __init__(self, indexer: "DocumentIndexer") -> None:  # noqa: F821
         """Initialize index tool.
 
         Args:
@@ -132,7 +132,7 @@ class IndexTool(ToolHandler):
 class CollectionTool(ToolHandler):
     """MCP tool for managing collections."""
 
-    def __init__(self, collection_manager: "CollectionManager") -> None:
+    def __init__(self, collection_manager: "CollectionManager") -> None:  # noqa: F821
         """Initialize collection tool.
 
         Args:

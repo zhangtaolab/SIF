@@ -1,7 +1,7 @@
 """Context domain entity and manager."""
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum, auto
 from typing import Protocol
 
@@ -27,13 +27,13 @@ class Context:
     content: str
     context_type: ContextType
     target_id: str
-    created_at: datetime = field(default_factory=datetime.utcnow)
-    updated_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def update_content(self, content: str) -> None:
         """Update the context content."""
         self.content = content
-        self.updated_at = datetime.utcnow()
+        self.updated_at = datetime.now(timezone.utc)
 
 
 class ContextRepository(Protocol):
@@ -89,7 +89,7 @@ class ContextManager:
         context_type: ContextType,
     ) -> Context:
         """Add context to a target."""
-        import uuid
+        import uuid  # noqa: PLC0415
 
         # Check if context already exists for this target
         existing = self._repository.get_by_target(target_id, context_type)

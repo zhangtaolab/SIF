@@ -7,7 +7,7 @@ import sys
 import tempfile
 import uuid
 from collections.abc import Generator
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -216,9 +216,9 @@ def sample_collection(sample_collection_id: str) -> Collection:
         document_count=5,
         chunk_count=20,
         metadata={"key": "value"},
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
-        last_indexed_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+        last_indexed_at=datetime.now(timezone.utc),
     )
 
 
@@ -276,9 +276,9 @@ def sample_document(
         checksum=checksum,
         file_size=len(content),
         metadata=sample_document_metadata,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
-        indexed_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+        indexed_at=datetime.now(timezone.utc),
     )
 
 
@@ -351,8 +351,8 @@ def sample_context() -> Context:
         context_type=ContextType.COLLECTION,
         content="Context content for testing",
         metadata={"source": "test"},
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
     )
 
 

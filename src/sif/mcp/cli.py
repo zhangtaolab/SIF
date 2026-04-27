@@ -31,10 +31,10 @@ def main():
 Examples:
   # Run in stdio mode (for Claude Desktop)
   %(prog)s stdio
-  
+
   # Run in HTTP mode
   %(prog)s http --host 0.0.0.0 --port 8080
-  
+
   # Run with debug logging
   %(prog)s http --log-level debug
         """,

@@ -217,7 +217,7 @@ class TestIndexPreUpdateHook:
             )
 
         assert result.exit_code == 0
-        mock_run.assert_called_once_with("echo hello", shell=True, capture_output=True, text=True)
+        mock_run.assert_called_once_with("echo hello", shell=True, capture_output=True, text=True, check=False)
         assert "Running pre-update command" in result.output
 
     def test_index_update_fails_fast_on_pre_update_cmd_error(self):

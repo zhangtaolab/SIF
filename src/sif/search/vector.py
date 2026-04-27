@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
-from typing import List, Optional
 
 from sif.core.models import SearchOptions, SearchResult
 
@@ -32,9 +31,9 @@ class VectorSearcher:
 
     def search(
         self,
-        query_embedding: List[float],
-        options: Optional[SearchOptions] = None,
-    ) -> List[SearchResult]:
+        query_embedding: list[float],
+        options: SearchOptions | None = None,
+    ) -> list[SearchResult]:
         """Search documents by vector similarity."""
         if options is None:
             options = SearchOptions()
@@ -42,9 +41,9 @@ class VectorSearcher:
 
     def _search_with_vec(
         self,
-        query_embedding: List[float],
+        query_embedding: list[float],
         options: SearchOptions,
-    ) -> List[SearchResult]:
+    ) -> list[SearchResult]:
         """Search using sqlite-vec."""
         # Convert embedding to vec format
         embedding_str = self._embedding_to_vec(query_embedding)
@@ -118,11 +117,11 @@ class VectorSearcher:
             result.context_description = context_map.get(os.path.realpath(result.path))
         return results
 
-    def _embedding_to_vec(self, embedding: List[float]) -> str:
+    def _embedding_to_vec(self, embedding: list[float]) -> str:
         """Convert embedding to sqlite-vec format."""
         return json.dumps(embedding)
 
-    def _get_document_content(self, document_id: str) -> Optional[str]:
+    def _get_document_content(self, document_id: str) -> str | None:
         """Get document content."""
         cursor = self.db.execute("SELECT content FROM documents WHERE id = ?", (document_id,))
         row = cursor.fetchone()
@@ -132,8 +131,8 @@ class VectorSearcher:
         self,
         embedding_id: str,
         document_id: str,
-        chunk_id: Optional[str],
-        embedding: List[float],
+        chunk_id: str | None,
+        embedding: list[float],
     ) -> None:
         """Add an embedding to the index."""
         self._add_embedding_vec(embedding_id, document_id, chunk_id, embedding)
@@ -142,8 +141,8 @@ class VectorSearcher:
         self,
         embedding_id: str,
         document_id: str,
-        chunk_id: Optional[str],
-        embedding: List[float],
+        chunk_id: str | None,
+        embedding: list[float],
     ) -> None:
         """Add embedding using sqlite-vec."""
         embedding_str = self._embedding_to_vec(embedding)
@@ -159,7 +158,7 @@ class VectorSearcher:
 
     def add_embeddings_batch(
         self,
-        items: List[tuple[str, str, Optional[str], List[float]]],
+        items: list[tuple[str, str, str | None, list[float]]],
     ) -> None:
         """Add multiple embeddings in a single batch operation.
 

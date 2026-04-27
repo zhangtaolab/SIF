@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Optional
 
 import click
 from rich.console import Console
@@ -31,12 +30,12 @@ def mcp_stdio_cmd(ctx: click.Context) -> None:
         )
 
     try:
-        from sif.mcp.server import run_stdio_server
+        from sif.mcp.server import run_stdio_server  # noqa: PLC0415
 
         run_stdio_server(str(index_path))
     except ImportError as e:
         console.print(f"[red]MCP server not available: {e}[/red]")
-        raise click.ClickException("Install with: pip install sif[mcp]")
+        raise click.ClickException("Install with: pip install sif[mcp]") from None
 
 
 @mcp_group.command("http")
@@ -56,12 +55,12 @@ def mcp_http_cmd(
     console.print(f"[green]Starting MCP HTTP server on {host}:{port}[/green]")
 
     try:
-        from sif.mcp.server_http import run_http_server
+        from sif.mcp.server_http import run_http_server  # noqa: PLC0415
 
         run_http_server(str(index_path), host=host, port=port, reload=reload)
     except ImportError as e:
         console.print(f"[red]HTTP server not available: {e}[/red]")
-        raise click.ClickException("Install with: pip install sif[http]")
+        raise click.ClickException("Install with: pip install sif[http]") from None
 
 
 @mcp_group.command("daemon")
@@ -71,12 +70,12 @@ def mcp_http_cmd(
 @click.option("--log-file", help="Log file path")
 @click.option("--stop", is_flag=True, help="Stop the daemon")
 @click.pass_context
-def mcp_daemon_cmd(
+def mcp_daemon_cmd(  # noqa: PLR0913
     ctx: click.Context,
     host: str,
     port: int,
-    pid_file: Optional[str],
-    log_file: Optional[str],
+    pid_file: str | None,  # noqa: ARG001
+    log_file: str | None,  # noqa: ARG001
     stop: bool,
 ) -> None:
     """Run MCP server as a daemon."""

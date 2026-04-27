@@ -1,7 +1,7 @@
 """Collection domain entity and manager."""
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Protocol
 
 
@@ -20,31 +20,31 @@ class Collection:
     document_count: int = 0
     chunk_count: int = 0
     metadata: dict[str, Any] = field(default_factory=dict)
-    created_at: datetime = field(default_factory=datetime.utcnow)
-    updated_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     last_indexed_at: datetime | None = None
 
     def add_path(self, path: str) -> None:
         """Add a path to the collection if not already present."""
         if path not in self.paths:
             self.paths.append(path)
-            self.updated_at = datetime.utcnow()
+            self.updated_at = datetime.now(timezone.utc)
 
     def remove_path(self, path: str) -> None:
         """Remove a path from the collection."""
         if path in self.paths:
             self.paths.remove(path)
-            self.updated_at = datetime.utcnow()
+            self.updated_at = datetime.now(timezone.utc)
 
     def update_metadata(self, **kwargs: Any) -> None:
         """Update collection metadata."""
         self.metadata.update(kwargs)
-        self.updated_at = datetime.utcnow()
+        self.updated_at = datetime.now(timezone.utc)
 
     def mark_indexed(self) -> None:
         """Mark the collection as indexed."""
-        self.last_indexed_at = datetime.utcnow()
-        self.updated_at = datetime.utcnow()
+        self.last_indexed_at = datetime.now(timezone.utc)
+        self.updated_at = datetime.now(timezone.utc)
 
 
 class CollectionRepository(Protocol):
@@ -97,7 +97,7 @@ class CollectionManager:
         metadata: dict[str, Any] | None = None,
     ) -> Collection:
         """Create a new collection."""
-        import uuid
+        import uuid  # noqa: PLC0415
 
         if self._repository.exists(name):
             raise ValueError(f"Collection '{name}' already exists")
@@ -135,7 +135,7 @@ class CollectionManager:
         if description is not None:
             collection.description = description
 
-        collection.updated_at = datetime.utcnow()
+        collection.updated_at = datetime.now(timezone.utc)
         return self._repository.update(collection)
 
     def delete_collection(self, collection_id: str) -> bool:

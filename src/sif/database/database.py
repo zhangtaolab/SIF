@@ -6,7 +6,6 @@ import sqlite3
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Optional
 
 import sqlite_vec
 
@@ -19,8 +18,8 @@ class Database:
     def __init__(self, db_path: str | Path) -> None:
         self.db_path = Path(db_path).expanduser().resolve()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._connection: Optional[sqlite3.Connection] = None
-        self._schema: Optional[SchemaManager] = None
+        self._connection: sqlite3.Connection | None = None
+        self._schema: SchemaManager | None = None
 
     @property
     def connection(self) -> sqlite3.Connection:
@@ -50,7 +49,7 @@ class Database:
 
     def init_schema(self) -> None:
         """Initialize database schema."""
-        from sif.config.settings import get_settings
+        from sif.config.settings import get_settings  # noqa: PLC0415
 
         settings = get_settings()
         self._schema = SchemaManager(self.connection, embedding_dim=settings.embedding_dim)
@@ -84,7 +83,7 @@ class Database:
     def get_stats(self) -> dict:
         """Get database statistics."""
         if self._schema is None:
-            from sif.config.settings import get_settings
+            from sif.config.settings import get_settings  # noqa: PLC0415
 
             settings = get_settings()
             self._schema = SchemaManager(self.connection, embedding_dim=settings.embedding_dim)
@@ -93,7 +92,7 @@ class Database:
     def reset(self) -> None:
         """Reset database (drop all tables)."""
         if self._schema is None:
-            from sif.config.settings import get_settings
+            from sif.config.settings import get_settings  # noqa: PLC0415
 
             settings = get_settings()
             self._schema = SchemaManager(self.connection, embedding_dim=settings.embedding_dim)

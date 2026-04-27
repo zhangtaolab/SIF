@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import sqlite3
-from typing import List, Optional, Tuple
 
 from sif.core.models import SearchOptions, SearchResult
 
@@ -15,7 +14,7 @@ class BM25Searcher:
     def __init__(self, db: sqlite3.Connection) -> None:
         self.db = db
 
-    def search(self, query: str, options: Optional[SearchOptions] = None) -> List[SearchResult]:
+    def search(self, query: str, options: SearchOptions | None = None) -> list[SearchResult]:
         """Search documents using BM25."""
         if options is None:
             options = SearchOptions()
@@ -34,7 +33,7 @@ class BM25Searcher:
 
         # Execute search
         sql = f"""
-            SELECT 
+            SELECT
                 d.id as document_id,
                 d.title,
                 d.path,
@@ -100,8 +99,8 @@ class BM25Searcher:
         return results
 
     def search_chunks(
-        self, query: str, options: Optional[SearchOptions] = None
-    ) -> List[Tuple[str, str, float]]:
+        self, query: str, options: SearchOptions | None = None
+    ) -> list[tuple[str, str, float]]:
         """Search document chunks using BM25.
 
         Returns list of (document_id, chunk_content, score) tuples.
@@ -112,7 +111,7 @@ class BM25Searcher:
         fts_query = self._build_fts_query(query)
 
         sql = """
-            SELECT 
+            SELECT
                 dc.document_id,
                 dc.content,
                 rank as score
@@ -153,18 +152,18 @@ class BM25Searcher:
         # For multiple terms, use AND
         return " AND ".join(f"{term}*" for term in terms)
 
-    def _get_document_content(self, document_id: str) -> Optional[str]:
+    def _get_document_content(self, document_id: str) -> str | None:
         """Get document content."""
         cursor = self.db.execute("SELECT content FROM documents WHERE id = ?", (document_id,))
         row = cursor.fetchone()
         return row[0] if row else None
 
-    def _get_highlights(self, document_id: str, query: str, max_highlights: int = 3) -> List[str]:
+    def _get_highlights(self, document_id: str, query: str, max_highlights: int = 3) -> list[str]:
         """Get highlighted snippets for a document."""
         # Get chunks for the document
         cursor = self.db.execute(
             """
-            SELECT content FROM document_chunks 
+            SELECT content FROM document_chunks
             WHERE document_id = ?
             ORDER BY sequence
             """,
@@ -194,7 +193,7 @@ class BM25Searcher:
 
         return highlights
 
-    def _extract_snippet(self, text: str, query_terms: List[str], context: int = 50) -> str:
+    def _extract_snippet(self, text: str, query_terms: list[str], context: int = 50) -> str:
         """Extract a snippet around query matches."""
         text_lower = text.lower()
 

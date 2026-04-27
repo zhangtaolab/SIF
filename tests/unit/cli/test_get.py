@@ -134,6 +134,7 @@ class TestMultiGet:
 
         mock_doc_repo.get_by_id.return_value = None
         mock_doc_repo.get_by_path.return_value = None
+        mock_doc_repo.get_by_filename.return_value = None
         mock_coll_repo.list_all.return_value = []
 
         with (
@@ -155,6 +156,42 @@ class TestMultiGet:
 
         assert result.exit_code == 0
         assert "No documents matching pattern" in result.output
+
+    def test_multi_get_by_filename(self):
+        """Test multi-get with short filename lookup."""
+        runner = CliRunner()
+
+        doc1 = Document(id="doc1", path="/notes/a.md", collection_id="coll1", content="content a")
+
+        mock_db = MagicMock()
+        mock_doc_repo = MagicMock()
+        mock_coll_repo = MagicMock()
+
+        mock_doc_repo.get_by_id.return_value = None
+        mock_doc_repo.get_by_path.return_value = None
+        mock_doc_repo.get_by_filename.return_value = doc1
+        mock_coll_repo.list_all.return_value = []
+
+        with (
+            patch("sif.cli.commands.get.Database", return_value=mock_db),
+            patch(
+                "sif.cli.commands.get.DocumentRepository",
+                return_value=mock_doc_repo,
+            ),
+            patch(
+                "sif.database.repositories.CollectionRepository",
+                return_value=mock_coll_repo,
+            ),
+        ):
+            result = runner.invoke(
+                get_group,
+                ["multi-get", "a.md"],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code == 0
+        assert "Found 1 matching document(s)" in result.output
+        assert "/notes/a.md" in result.output
 
 
 class TestGetLineNumbers:

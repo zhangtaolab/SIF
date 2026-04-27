@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 
 from sif.utils.logging import get_logger
 
 
 logger = get_logger(__name__)
+
+if TYPE_CHECKING:
+    from sif.embedding.manager import EmbeddingManager
 
 
 class QueryExpansion:
@@ -49,8 +54,7 @@ class QueryExpansion:
         expansion_terms = self._get_expansion_terms(query)
 
         variants = [query]
-        for term in expansion_terms[: self._expansion_factor]:
-            variants.append(f"{query} {term}")
+        variants.extend(f"{query} {term}" for term in expansion_terms[: self._expansion_factor])
 
         if intent:
             variants = [f"{intent}: {v}" for v in variants]

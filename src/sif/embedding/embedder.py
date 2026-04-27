@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
-from typing import List, Optional
 
 import numpy as np
 
@@ -22,8 +21,8 @@ class SentenceTransformerEmbedder(Embedder):
     def __init__(
         self,
         model_name: str = "all-MiniLM-L6-v2",
-        device: Optional[str] = None,
-        cache_dir: Optional[str] = None,
+        device: str | None = None,
+        cache_dir: str | None = None,
     ) -> None:
         """Initialize sentence transformer embedder.
 
@@ -33,7 +32,7 @@ class SentenceTransformerEmbedder(Embedder):
             cache_dir: Cache directory for models
         """
         try:
-            from sentence_transformers import SentenceTransformer
+            from sentence_transformers import SentenceTransformer  # noqa: PLC0415
         except ImportError:
             logger.error(
                 "sentence-transformers not installed. "
@@ -44,9 +43,14 @@ class SentenceTransformerEmbedder(Embedder):
         self.model_name = model_name
 
         if device is None:
-            import torch
+            import torch  # noqa: PLC0415
 
-            device = "cuda" if torch.cuda.is_available() else "cpu"
+            if torch.cuda.is_available():
+                device = "cuda"
+            elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                device = "mps"
+            else:
+                device = "cpu"
 
         logger.info(f"Loading embedding model: {model_name} on {device}")
 
@@ -67,7 +71,7 @@ class SentenceTransformerEmbedder(Embedder):
         self._dimension = self.model.get_sentence_embedding_dimension()
         logger.info(f"Embedding dimension: {self._dimension}")
 
-    def embed(self, text: str) -> List[float]:
+    def embed(self, text: str) -> list[float]:
         """Embed a single text.
 
         Args:
@@ -79,7 +83,7 @@ class SentenceTransformerEmbedder(Embedder):
         embedding = self.model.encode(text, normalize_embeddings=True)
         return embedding.tolist()
 
-    def embed_batch(self, texts: List[str]) -> List[List[float]]:
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
         """Embed multiple texts.
 
         Args:
@@ -108,7 +112,7 @@ class LlamaCppEmbedder(Embedder):
         self,
         model_path: str | Path,
         n_ctx: int = 8192,
-        n_threads: Optional[int] = None,
+        n_threads: int | None = None,
         verbose: bool = False,
     ) -> None:
         """Initialize llama.cpp embedder.
@@ -120,7 +124,7 @@ class LlamaCppEmbedder(Embedder):
             verbose: Enable verbose output
         """
         try:
-            from llama_cpp import Llama
+            from llama_cpp import Llama  # noqa: PLC0415
         except ImportError:
             logger.error(
                 "llama-cpp-python not installed. Install with: pip install llama-cpp-python"
@@ -130,7 +134,7 @@ class LlamaCppEmbedder(Embedder):
         self.model_path = Path(model_path)
 
         if n_threads is None:
-            import os
+            import os  # noqa: PLC0415
 
             n_threads = os.cpu_count() or 4
 
@@ -147,7 +151,7 @@ class LlamaCppEmbedder(Embedder):
         self._dimension = self.model.n_embd()
         logger.info(f"Embedding dimension: {self._dimension}")
 
-    def embed(self, text: str) -> List[float]:
+    def embed(self, text: str) -> list[float]:
         """Embed a single text."""
         embedding = self.model.embed(text)
         # Normalize
@@ -156,7 +160,7 @@ class LlamaCppEmbedder(Embedder):
             embedding = embedding / norm
         return embedding.tolist()
 
-    def embed_batch(self, texts: List[str]) -> List[List[float]]:
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
         """Embed multiple texts."""
         embeddings = []
         for text in texts:
@@ -176,8 +180,8 @@ class ModelScopeEmbedder(Embedder):
     def __init__(
         self,
         model_id: str = "iic/gte_Qwen2-7B-instruct",
-        device: Optional[str] = None,
-        cache_dir: Optional[str] = None,
+        device: str | None = None,
+        cache_dir: str | None = None,
         force_download: bool = False,
     ) -> None:
         """Initialize ModelScope embedder.
@@ -202,15 +206,20 @@ class ModelScopeEmbedder(Embedder):
 
         # Initialize with sentence-transformers
         try:
-            from sentence_transformers import SentenceTransformer
+            from sentence_transformers import SentenceTransformer  # noqa: PLC0415
         except ImportError:
             logger.error("sentence-transformers not installed")
             raise
 
         if device is None:
-            import torch
+            import torch  # noqa: PLC0415
 
-            device = "cuda" if torch.cuda.is_available() else "cpu"
+            if torch.cuda.is_available():
+                device = "cuda"
+            elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                device = "mps"
+            else:
+                device = "cpu"
 
         logger.info(f"Loading ModelScope model: {model_id} on {device}")
 
@@ -230,12 +239,12 @@ class ModelScopeEmbedder(Embedder):
         self.model_id = model_id
         logger.info(f"Embedding dimension: {self._dimension}")
 
-    def embed(self, text: str) -> List[float]:
+    def embed(self, text: str) -> list[float]:
         """Embed a single text."""
         embedding = self.model.encode(text, normalize_embeddings=True)
         return embedding.tolist()
 
-    def embed_batch(self, texts: List[str]) -> List[List[float]]:
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
         """Embed multiple texts."""
         embeddings = self.model.encode(
             texts,
@@ -263,7 +272,7 @@ class SimpleEmbedder(Embedder):
         self.vocabulary: dict = {}
         self._doc_count = 0
 
-    def embed(self, text: str) -> List[float]:
+    def embed(self, text: str) -> list[float]:
         """Embed text using simple hashing."""
         # Simple hash-based embedding
 
@@ -285,7 +294,7 @@ class SimpleEmbedder(Embedder):
 
         return embedding
 
-    def embed_batch(self, texts: List[str]) -> List[List[float]]:
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
         """Embed multiple texts."""
         return [self.embed(text) for text in texts]
 

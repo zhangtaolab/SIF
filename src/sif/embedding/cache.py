@@ -45,7 +45,7 @@ class EmbeddingCache:
 
             # Create index for faster lookups
             conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_model 
+                CREATE INDEX IF NOT EXISTS idx_model
                 ON embeddings(model_id)
             """)
 
@@ -109,8 +109,8 @@ class EmbeddingCache:
             with sqlite3.connect(self._db_path) as conn:
                 conn.execute(
                     """
-                    INSERT OR REPLACE INTO embeddings 
-                    (content_hash, embedding, model_id) 
+                    INSERT OR REPLACE INTO embeddings
+                    (content_hash, embedding, model_id)
                     VALUES (?, ?, ?)
                     """,
                     (content_hash, embedding_json, model_id),

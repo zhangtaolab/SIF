@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
-from typing import Any, Dict
+from typing import Any
 
 from sif.database.connection import DatabaseConnection
 from sif.search.bm25 import BM25Searcher
@@ -21,7 +21,7 @@ class MCPServer:
     def __init__(self, index_path: str) -> None:
         self.index_path = index_path
 
-    def handle_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
+    def handle_request(self, request: dict[str, Any]) -> dict[str, Any]:
         """Handle an MCP request."""
         method = request.get("method", "")
         params = request.get("params", {})
@@ -43,7 +43,7 @@ class MCPServer:
             logger.exception("Error handling request")
             return self._error_response(request_id, -32603, str(e))
 
-    def _handle_initialize(self, request_id: Any) -> Dict[str, Any]:
+    def _handle_initialize(self, request_id: Any) -> dict[str, Any]:
         """Handle initialize request."""
         return {
             "jsonrpc": "2.0",
@@ -61,7 +61,7 @@ class MCPServer:
             },
         }
 
-    def _handle_tools_list(self, request_id: Any) -> Dict[str, Any]:
+    def _handle_tools_list(self, request_id: Any) -> dict[str, Any]:
         """Handle tools/list request."""
         tools = [
             {
@@ -157,7 +157,7 @@ class MCPServer:
             "result": {"tools": tools},
         }
 
-    def _handle_tools_call(self, request_id: Any, params: Dict[str, Any]) -> Dict[str, Any]:
+    def _handle_tools_call(self, request_id: Any, params: dict[str, Any]) -> dict[str, Any]:
         """Handle tools/call request."""
         tool_name = params.get("name", "")
         arguments = params.get("arguments", {})
@@ -176,16 +176,16 @@ class MCPServer:
             return self._tool_status(request_id)
         return self._error_response(request_id, -32602, f"Unknown tool: {tool_name}")
 
-    def _tool_query(self, request_id: Any, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    def _tool_query(self, request_id: Any, arguments: dict[str, Any]) -> dict[str, Any]:
         """Execute query tool."""
         query = arguments.get("query", "")
         collections = arguments.get("collections", [])
         limit = arguments.get("limit", 10)
         min_score = arguments.get("min_score", 0.0)
 
-        from sif.core.models import SearchOptions
-        from sif.database.repositories import CollectionRepository
-        from sif.database.schema import SchemaManager
+        from sif.core.models import SearchOptions  # noqa: PLC0415
+        from sif.database.repositories import CollectionRepository  # noqa: PLC0415
+        from sif.database.schema import SchemaManager  # noqa: PLC0415
 
         with DatabaseConnection(self.index_path).transaction() as conn:
             SchemaManager(conn).create_all()
@@ -215,15 +215,15 @@ class MCPServer:
             },
         }
 
-    def _tool_lex_search(self, request_id: Any, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    def _tool_lex_search(self, request_id: Any, arguments: dict[str, Any]) -> dict[str, Any]:
         """Execute lex_search tool."""
         query = arguments.get("query", "")
         collections = arguments.get("collections", [])
         limit = arguments.get("limit", 10)
 
-        from sif.core.models import SearchOptions
-        from sif.database.repositories import CollectionRepository
-        from sif.database.schema import SchemaManager
+        from sif.core.models import SearchOptions  # noqa: PLC0415
+        from sif.database.repositories import CollectionRepository  # noqa: PLC0415
+        from sif.database.schema import SchemaManager  # noqa: PLC0415
 
         with DatabaseConnection(self.index_path).transaction() as conn:
             SchemaManager(conn).create_all()
@@ -253,19 +253,22 @@ class MCPServer:
             },
         }
 
-    def _tool_vec_search(self, request_id: Any, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    def _tool_vec_search(self, request_id: Any, arguments: dict[str, Any]) -> dict[str, Any]:
         """Execute vec_search tool."""
         # For now, fall back to BM25
         return self._tool_lex_search(request_id, arguments)
 
-    def _tool_get(self, request_id: Any, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    def _tool_get(self, request_id: Any, arguments: dict[str, Any]) -> dict[str, Any]:
         """Execute get tool."""
         path_or_docid = arguments.get("path_or_docid", "")
         from_line = arguments.get("from_line", 1)
         max_lines = arguments.get("max_lines")
 
-        from sif.database.repositories import CollectionRepository, DocumentRepository
-        from sif.database.schema import SchemaManager
+        from sif.database.repositories import (  # noqa: PLC0415
+            CollectionRepository,
+            DocumentRepository,
+        )
+        from sif.database.schema import SchemaManager  # noqa: PLC0415
 
         with DatabaseConnection(self.index_path).transaction() as conn:
             SchemaManager(conn).create_all()
@@ -303,15 +306,18 @@ class MCPServer:
             },
         }
 
-    def _tool_multi_get(self, request_id: Any, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    def _tool_multi_get(self, request_id: Any, arguments: dict[str, Any]) -> dict[str, Any]:
         """Execute multi_get tool."""
         pattern = arguments.get("pattern", "")
         max_bytes = arguments.get("max_bytes", 100000)
 
-        import fnmatch
+        import fnmatch  # noqa: PLC0415
 
-        from sif.database.repositories import CollectionRepository, DocumentRepository
-        from sif.database.schema import SchemaManager
+        from sif.database.repositories import (  # noqa: PLC0415
+            CollectionRepository,
+            DocumentRepository,
+        )
+        from sif.database.schema import SchemaManager  # noqa: PLC0415
 
         documents = []
         errors = []
@@ -355,9 +361,9 @@ class MCPServer:
             },
         }
 
-    def _tool_status(self, request_id: Any) -> Dict[str, Any]:
+    def _tool_status(self, request_id: Any) -> dict[str, Any]:
         """Execute status tool."""
-        from sif.database.schema import SchemaManager
+        from sif.database.schema import SchemaManager  # noqa: PLC0415
 
         with DatabaseConnection(self.index_path).transaction() as conn:
             SchemaManager(conn).create_all()
@@ -376,7 +382,7 @@ class MCPServer:
             },
         }
 
-    def _handle_resources_list(self, request_id: Any) -> Dict[str, Any]:
+    def _handle_resources_list(self, request_id: Any) -> dict[str, Any]:
         """Handle resources/list request."""
         return {
             "jsonrpc": "2.0",
@@ -384,11 +390,11 @@ class MCPServer:
             "result": {"resources": []},
         }
 
-    def _handle_resources_read(self, request_id: Any, params: Dict[str, Any]) -> Dict[str, Any]:
+    def _handle_resources_read(self, request_id: Any, params: dict[str, Any]) -> dict[str, Any]:
         """Handle resources/read request."""
         return self._error_response(request_id, -32602, "Resources not implemented")
 
-    def _error_response(self, request_id: Any, code: int, message: str) -> Dict[str, Any]:
+    def _error_response(self, request_id: Any, code: int, message: str) -> dict[str, Any]:
         """Create an error response."""
         return {
             "jsonrpc": "2.0",

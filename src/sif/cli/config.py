@@ -3,7 +3,7 @@
 import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 
 @dataclass
@@ -52,8 +52,8 @@ class Config:
     config_path: str = field(default_factory=lambda: str(Path.home() / ".sif" / "config.json"))
 
     # Collections and contexts
-    collections: Dict[str, CollectionConfig] = field(default_factory=dict)
-    contexts: Dict[str, ContextConfig] = field(default_factory=dict)
+    collections: dict[str, CollectionConfig] = field(default_factory=dict)
+    contexts: dict[str, ContextConfig] = field(default_factory=dict)
 
     # Settings
     embed: EmbedConfig = field(default_factory=EmbedConfig)
@@ -63,7 +63,7 @@ class Config:
     mcp_port: int = 8080
     mcp_http: bool = False
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert config to dictionary."""
         return {
             "index_path": self.index_path,
@@ -77,7 +77,7 @@ class Config:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "Config":
+    def from_dict(cls, data: dict[str, Any]) -> "Config":
         """Create config from dictionary."""
         config = cls()
 

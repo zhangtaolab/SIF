@@ -5,15 +5,14 @@ from __future__ import annotations
 import fnmatch
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Set
 
 
 @dataclass
 class ScanResult:
     """Result of scanning a directory."""
 
-    files: List[Path] = field(default_factory=list)
-    scanned_dirs: Set[Path] = field(default_factory=set)
+    files: list[Path] = field(default_factory=list)
+    scanned_dirs: set[Path] = field(default_factory=set)
     file_count: int = 0
 
     def __post_init__(self):
@@ -55,7 +54,7 @@ class FileScanner:
         self,
         root_path: Path,
         pattern: str = "**/*.md",
-        ignore_patterns: List[str] | None = None,
+        ignore_patterns: list[str] | None = None,
     ) -> ScanResult:
         """Scan a directory for files matching a pattern.
 
@@ -95,7 +94,7 @@ class FileScanner:
         self,
         file_path: Path,
         root_path: Path,
-        ignore_patterns: List[str],
+        ignore_patterns: list[str],
     ) -> bool:
         """Check if a file should be ignored.
 
@@ -122,11 +121,7 @@ class FileScanner:
                     return True
 
         # Check filename
-        for pattern in ignore_patterns:
-            if fnmatch.fnmatch(file_path.name, pattern):
-                return True
-
-        return False
+        return any(fnmatch.fnmatch(file_path.name, pattern) for pattern in ignore_patterns)
 
     def get_stats(self, scan_result: ScanResult) -> dict:
         """Get statistics about a scan result.

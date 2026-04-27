@@ -34,7 +34,7 @@ def index_group() -> None:
 @click.option("--collection", "-c", help="Update specific collection only")
 @click.option("--force", "-f", is_flag=True, help="Force re-index all documents")
 @click.pass_context
-def update_cmd(ctx: click.Context, collection: str | None, force: bool) -> None:
+def update_cmd(ctx: click.Context, collection: str | None, force: bool) -> None:  # noqa: C901, PLR0912, PLR0915
     """Update the index by scanning collections."""
     index_path = ctx.obj["index_path"]
 
@@ -76,6 +76,7 @@ def update_cmd(ctx: click.Context, collection: str | None, force: bool) -> None:
                     shell=True,
                     capture_output=True,
                     text=True,
+                    check=False,
                 )
                 if result.returncode != 0:
                     err_msg = (
@@ -160,9 +161,9 @@ def update_cmd(ctx: click.Context, collection: str | None, force: bool) -> None:
 
             # Update collection stats
             coll.document_count = len(doc_repo.list_by_collection(coll.id))
-            from datetime import datetime
+            from datetime import datetime, timezone  # noqa: PLC0415
 
-            coll.last_indexed_at = datetime.utcnow()
+            coll.last_indexed_at = datetime.now(timezone.utc)
             coll_repo.update(coll)
 
         console.print("\n[green]Index updated:[/green]")
@@ -182,10 +183,10 @@ def update_cmd(ctx: click.Context, collection: str | None, force: bool) -> None:
     help="Embedding model type override",
 )
 @click.pass_context
-def embed_cmd(
+def embed_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     ctx: click.Context,
     collection: str | None,
-    force: bool,
+    force: bool,  # noqa: ARG001
     chunk_strategy: str,
     model: str | None,
     model_type: str | None = None,
@@ -197,9 +198,9 @@ def embed_cmd(
     db.init_schema()
 
     # Initialize embedder
-    from sif.config.settings import get_settings
-    from sif.embedding.manager import EmbeddingManager
-    from sif.search.vector import VectorSearcher
+    from sif.config.settings import get_settings  # noqa: PLC0415
+    from sif.embedding.manager import EmbeddingManager  # noqa: PLC0415
+    from sif.search.vector import VectorSearcher  # noqa: PLC0415
 
     settings = get_settings()
     if model:
@@ -288,6 +289,6 @@ def embed_cmd(
 def index_status_cmd(ctx: click.Context) -> None:
     """Show index status."""
     # Delegate to main status command
-    from sif.cli.main import status_cmd
+    from sif.cli.main import status_cmd  # noqa: PLC0415
 
     ctx.invoke(status_cmd)

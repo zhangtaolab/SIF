@@ -15,7 +15,7 @@ import asyncio
 import json
 import logging
 from collections.abc import AsyncGenerator
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from fastapi import FastAPI, Request
@@ -178,7 +178,7 @@ class HTTPTransport:
 
         return app
 
-    def _register_routes(self, app: FastAPI) -> None:
+    def _register_routes(self, app: FastAPI) -> None:  # noqa: C901, PLR0915
         """Register FastAPI routes."""
 
         @app.get("/health", response_model=HealthResponse)
@@ -187,7 +187,7 @@ class HTTPTransport:
             return HealthResponse(
                 status="healthy" if self.server.state != ServerState.SHUTDOWN else "shutdown",
                 server=self.server.get_server_info(),
-                timestamp=datetime.utcnow().isoformat(),
+                timestamp=datetime.now(timezone.utc).isoformat(),
             )
 
         @app.get("/mcp/v1/sse")
@@ -216,7 +216,7 @@ class HTTPTransport:
                             yield f"event: message\ndata: {data}\n\n"
                         except asyncio.TimeoutError:
                             # Send keepalive
-                            yield f"event: ping\ndata: {json.dumps({'time': datetime.utcnow().isoformat()})}\n\n"
+                            yield f"event: ping\ndata: {json.dumps({'time': datetime.now(timezone.utc).isoformat()})}\n\n"
 
                 except asyncio.CancelledError:
                     logger.info("SSE connection cancelled")
@@ -359,7 +359,7 @@ def get_http_transport() -> Optional[HTTPTransport]:
 # ============================================================================
 
 
-async def run_http_server(
+async def run_http_server(  # noqa: PLR0913
     host: str = "0.0.0.0",
     port: int = 8080,
     server: Optional[MCPServer] = None,
@@ -378,7 +378,7 @@ async def run_http_server(
         cors_origins: Optional CORS allowed origins
         log_level: Uvicorn log level
     """
-    import uvicorn
+    import uvicorn  # noqa: PLC0415
 
     app = create_http_app(server=server, config=config, cors_origins=cors_origins)
 
@@ -395,7 +395,7 @@ async def run_http_server(
 
 def main():
     """Main entry point for HTTP transport."""
-    import argparse
+    import argparse  # noqa: PLC0415
 
     parser = argparse.ArgumentParser(description="SIF MCP HTTP Server")
     parser.add_argument("--host", default="0.0.0.0", help="Host to bind to")

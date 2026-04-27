@@ -32,8 +32,9 @@ def format_results_json(results: list) -> str:
 def format_results_csv(results: list) -> str:
     """Format results as CSV."""
     lines = ["rank,score,title,path,collection"]
-    for r in results:
-        lines.append(f'"{r.rank}","{r.score:.4f}","{r.title}","{r.path}","{r.collection_name}"')
+    lines.extend(
+        f'"{r.rank}","{r.score:.4f}","{r.title}","{r.path}","{r.collection_name}"' for r in results
+    )
     return "\n".join(lines)
 
 
@@ -95,7 +96,7 @@ def search_group() -> None:
 @click.option("--files", "output_files", is_flag=True, help="Output file paths only")
 @click.option("-q", "--quiet", is_flag=True, help="Suppress non-error output")
 @click.pass_context
-def search_cmd(
+def search_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     ctx: click.Context,
     query: str,
     limit: int,
@@ -244,7 +245,7 @@ def search_cmd(
 )
 @click.option("-q", "--quiet", is_flag=True, help="Suppress non-error output")
 @click.pass_context
-def vsearch_cmd(
+def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     ctx: click.Context,
     query: str,
     limit: int,
@@ -270,11 +271,11 @@ def vsearch_cmd(
             )
         return
 
-    from sif.config.settings import get_settings
-    from sif.database.database import Database
-    from sif.database.repositories import CollectionRepository
-    from sif.embedding.manager import EmbeddingManager
-    from sif.search.vector import VectorSearcher
+    from sif.config.settings import get_settings  # noqa: PLC0415
+    from sif.database.database import Database  # noqa: PLC0415
+    from sif.database.repositories import CollectionRepository  # noqa: PLC0415
+    from sif.embedding.manager import EmbeddingManager  # noqa: PLC0415
+    from sif.search.vector import VectorSearcher  # noqa: PLC0415
 
     settings = get_settings()
     if model_type:
@@ -284,9 +285,9 @@ def vsearch_cmd(
         manager = EmbeddingManager.from_settings(settings)
         query_embedding = manager.embed_single(query)
     except ImportError as e:
-        raise click.ClickException(f"Embedding backend not installed: {e}")
+        raise click.ClickException(f"Embedding backend not installed: {e}") from None
     except Exception as e:
-        raise click.ClickException(f"Failed to load embedding model: {e}")
+        raise click.ClickException(f"Failed to load embedding model: {e}") from e
 
     db = Database(index_path)
     db.init_schema()
@@ -387,7 +388,7 @@ def vsearch_cmd(
 )
 @click.option("-q", "--quiet", is_flag=True, help="Suppress non-error output")
 @click.pass_context
-def query_cmd(
+def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     ctx: click.Context,
     query: str,
     limit: int,
@@ -451,11 +452,11 @@ def query_cmd(
             options.collection_ids = [c.id for c in enabled]
 
     # Load embedder for hybrid search
-    from sif.config.settings import get_settings
-    from sif.embedding.manager import EmbeddingManager
-    from sif.search.expansion import QueryExpansion
-    from sif.search.rerank import create_reranker
-    from sif.search.snippets import SmartSnippetExtractor
+    from sif.config.settings import get_settings  # noqa: PLC0415
+    from sif.embedding.manager import EmbeddingManager  # noqa: PLC0415
+    from sif.search.expansion import QueryExpansion  # noqa: PLC0415
+    from sif.search.rerank import create_reranker  # noqa: PLC0415
+    from sif.search.snippets import SmartSnippetExtractor  # noqa: PLC0415
 
     settings = get_settings()
     if model_type:
@@ -466,10 +467,9 @@ def query_cmd(
         manager.load_model()
         embedding_dim = len(manager.embed_single("probe"))
     except ImportError as e:
-        raise click.ClickException(f"Embedding backend not installed: {e}")
+        raise click.ClickException(f"Embedding backend not installed: {e}") from None
     except Exception as e:
-        raise click.ClickException(f"Failed to load embedding model: {e}")
-
+        raise click.ClickException(f"Failed to load embedding model: {e}") from e
     # Create optional components
     query_expander = QueryExpansion(embedding_manager=manager)
 
@@ -490,7 +490,7 @@ def query_cmd(
     with db.connection:
         pipeline = SearchPipeline(
             db.connection,
-            embedder=manager._model,
+            embedder=manager._model,  # noqa: SLF001
             query_expander=query_expander,
             reranker=reranker,
             snippet_extractor=snippet_extractor,

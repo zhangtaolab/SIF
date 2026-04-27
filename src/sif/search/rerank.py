@@ -70,7 +70,7 @@ class LlamaCppReranker:
         """Load the GGUF model."""
         if self._model is not None:
             return
-        from llama_cpp import Llama
+        from llama_cpp import Llama  # noqa: PLC0415
 
         path = self._model_path or self._model_name
         if not path:
@@ -98,7 +98,7 @@ class LlamaCppReranker:
         if self._model is None:
             self.load()
 
-        import numpy as np
+        import numpy as np  # noqa: PLC0415
 
         # Embed query once
         query_emb = self._model.embed(query)
@@ -147,7 +147,7 @@ class CrossEncoderReranker:
         """Load the cross-encoder model."""
         if self._model is not None:
             return
-        from sentence_transformers import CrossEncoder
+        from sentence_transformers import CrossEncoder  # noqa: PLC0415
 
         model_id = self._model_path or self._model_name
 
@@ -156,7 +156,7 @@ class CrossEncoderReranker:
         local_path = model_id
         if "/" in model_id and not Path(model_id).exists():
             try:
-                from sif.models.download import ModelDownloader
+                from sif.models.download import ModelDownloader  # noqa: PLC0415
 
                 downloader = ModelDownloader(self._cache_dir)
                 downloaded = downloader.download(model_id)
@@ -216,7 +216,7 @@ class Qwen3Reranker:
     https://huggingface.co/Qwen/Qwen3-Reranker-0.6B
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         model_name: str = "Qwen/Qwen3-Reranker-0.6B",
         model_path: str | None = None,
@@ -241,15 +241,15 @@ class Qwen3Reranker:
         if self._model is not None:
             return
 
-        import torch
-        from transformers import AutoModelForCausalLM, AutoTokenizer
+        import torch  # noqa: PLC0415
+        from transformers import AutoModelForCausalLM, AutoTokenizer  # noqa: PLC0415
 
         model_id = self._model_path or self._model_name
         local_path = model_id
 
         # Download from ModelScope if needed
         if "/" in model_id and not Path(model_id).exists():
-            from sif.models.download import ModelDownloader
+            from sif.models.download import ModelDownloader  # noqa: PLC0415
 
             downloader = ModelDownloader(self._cache_dir)
             downloaded = downloader.download(model_id)
@@ -313,7 +313,7 @@ class Qwen3Reranker:
         if self._model is None:
             self.load()
 
-        import torch
+        import torch  # noqa: PLC0415
 
         # Build prompts
         texts: list[str] = []

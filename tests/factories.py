@@ -2,7 +2,7 @@
 
 import hashlib
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from sif.core.collection import Collection
@@ -38,8 +38,8 @@ class CollectionFactory:
             document_count=document_count,
             chunk_count=chunk_count,
             metadata=metadata or {},
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
         )
 
     @classmethod
@@ -108,8 +108,8 @@ class DocumentFactory:
             checksum=checksum,
             file_size=len(actual_content),
             metadata=metadata or DocumentMetadataFactory.create(),
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
         )
 
         if with_chunks:
@@ -199,8 +199,8 @@ class ContextFactory:
             context_type=context_type,
             content=content or f"Context content {cls._counter} for testing",
             metadata=metadata or {"source": "test"},
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
         )
 
     @classmethod

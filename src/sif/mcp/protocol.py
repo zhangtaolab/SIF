@@ -316,13 +316,16 @@ class StatusOutput(BaseModel):
 # ============================================================================
 
 
-def create_success_response(id: str | int | None, result: Any) -> JsonRpcResponse:
+def create_success_response(id: str | int | None, result: Any) -> JsonRpcResponse:  # noqa: A002
     """Create a successful JSON-RPC response."""
     return JsonRpcResponse(id=id, result=result)
 
 
 def create_error_response(
-    id: str | int | None, code: int, message: str, data: Any = None
+    id: str | int | None,
+    code: int,
+    message: str,
+    data: Any = None,  # noqa: A002
 ) -> JsonRpcResponse:
     """Create an error JSON-RPC response."""
     return JsonRpcResponse(id=id, error=JsonRpcError(code=code, message=message, data=data))

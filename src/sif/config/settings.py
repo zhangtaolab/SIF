@@ -190,7 +190,7 @@ class Settings(BaseSettings):
         if self.db_path:
             return self.db_path
 
-        from platformdirs import user_data_dir
+        from platformdirs import user_data_dir  # noqa: PLC0415
 
         data_dir = Path(user_data_dir(self.app_name))
         data_dir.mkdir(parents=True, exist_ok=True)
@@ -201,7 +201,7 @@ class Settings(BaseSettings):
         if self.cache_dir:
             return self.cache_dir
 
-        from platformdirs import user_cache_dir
+        from platformdirs import user_cache_dir  # noqa: PLC0415
 
         cache_dir = Path(user_cache_dir(self.app_name))
         cache_dir.mkdir(parents=True, exist_ok=True)

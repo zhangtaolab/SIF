@@ -63,10 +63,7 @@ class DatabaseConnection:
     ) -> sqlite3.Cursor:
         """Execute a query and return the cursor."""
         with self.connect() as conn:
-            if parameters:
-                cursor = conn.execute(query, parameters)
-            else:
-                cursor = conn.execute(query)
+            cursor = conn.execute(query, parameters) if parameters else conn.execute(query)
             conn.commit()
             return cursor
 

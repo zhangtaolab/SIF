@@ -5,10 +5,10 @@ from __future__ import annotations
 import hashlib
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Protocol
+from typing import Any, Protocol
 
 
 class ChunkStrategy(Enum):
@@ -37,18 +37,23 @@ class Collection:
     name: str
     path: str
     pattern: str = "**/*.md"
-    ignore_patterns: List[str] = field(default_factory=list)
+    ignore_patterns: list[str] = field(default_factory=list)
     include_by_default: bool = True
-    description: Optional[str] = None
-    pre_update_cmd: Optional[str] = None
+    description: str | None = None
+    pre_update_cmd: str | None = None
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    created_at: datetime = field(default_factory=datetime.utcnow)
-    updated_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     document_count: int = 0
     chunk_count: int = 0
-    last_indexed_at: Optional[datetime] = None
+    last_indexed_at: datetime | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def mark_indexed(self) -> None:
+        """Mark collection as indexed, updating timestamps."""
+        self.last_indexed_at = datetime.now(timezone.utc)
+        self.updated_at = datetime.now(timezone.utc)
+
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             "id": self.id,
@@ -67,7 +72,7 @@ class Collection:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> Collection:
+    def from_dict(cls, data: dict[str, Any]) -> Collection:
         """Create from dictionary."""
         return cls(
             id=data.get("id", str(uuid.uuid4())),
@@ -80,10 +85,10 @@ class Collection:
             pre_update_cmd=data.get("pre_update_cmd"),
             created_at=datetime.fromisoformat(data["created_at"])
             if "created_at" in data
-            else datetime.utcnow(),
+            else datetime.now(timezone.utc),
             updated_at=datetime.fromisoformat(data["updated_at"])
             if "updated_at" in data
-            else datetime.utcnow(),
+            else datetime.now(timezone.utc),
             document_count=data.get("document_count", 0),
             chunk_count=data.get("chunk_count", 0),
             last_indexed_at=datetime.fromisoformat(data["last_indexed_at"])
@@ -101,12 +106,12 @@ class DocumentChunk:
     start_pos: int
     end_pos: int
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    document_id: Optional[str] = None
+    document_id: str | None = None
     token_count: int = 0
-    embedding: Optional[List[float]] = None
-    embedding_id: Optional[str] = None
+    embedding: list[float] | None = None
+    embedding_id: str | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             "id": self.id,
@@ -127,16 +132,16 @@ class Document:
     path: str
     collection_id: str
     content: str
-    title: Optional[str] = None
+    title: str | None = None
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     filename: str = field(init=False)
     checksum: str = field(init=False)
     file_size: int = field(init=False)
-    mtime: float = field(default_factory=lambda: datetime.utcnow().timestamp())
-    created_at: datetime = field(default_factory=datetime.utcnow)
-    updated_at: datetime = field(default_factory=datetime.utcnow)
-    chunks: List[DocumentChunk] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    mtime: float = field(default_factory=lambda: datetime.now(timezone.utc).timestamp())
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    chunks: list[DocumentChunk] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
         """Initialize computed fields."""
@@ -146,7 +151,7 @@ class Document:
         if self.title is None:
             self.title = self.filename
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             "id": self.id,
@@ -171,12 +176,12 @@ class PathContext:
     path: str
     context: str
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    collection_id: Optional[str] = None
+    collection_id: str | None = None
     context_type: str = "path"
-    created_at: datetime = field(default_factory=datetime.utcnow)
-    updated_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             "id": self.id,
@@ -198,14 +203,14 @@ class SearchResult:
     path: str
     collection_name: str
     score: float
-    content: Optional[str] = None
-    highlights: List[str] = field(default_factory=list)
+    content: str | None = None
+    highlights: list[str] = field(default_factory=list)
     rank: int = 0
-    scores: Dict[str, Optional[float]] = field(default_factory=dict)
-    snippet: Optional[str] = None
-    context_description: Optional[str] = None
+    scores: dict[str, float | None] = field(default_factory=dict)
+    snippet: str | None = None
+    context_description: str | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             "document_id": self.document_id,
@@ -228,14 +233,14 @@ class SearchOptions:
 
     limit: int = 10
     offset: int = 0
-    collection_ids: Optional[List[str]] = None
+    collection_ids: list[str] | None = None
     min_score: float = 0.0
     include_content: bool = False
     include_highlights: bool = True
     max_highlights: int = 3
     explain: bool = False
     candidate_limit: int = 20
-    intent: Optional[str] = None
+    intent: str | None = None
     snippet_max_length: int = 300
 
 
@@ -247,9 +252,9 @@ class IndexStats:
     document_count: int = 0
     chunk_count: int = 0
     total_size_bytes: int = 0
-    last_indexed_at: Optional[datetime] = None
+    last_indexed_at: datetime | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             "collection_count": self.collection_count,
@@ -263,11 +268,11 @@ class IndexStats:
 class Embedder(Protocol):
     """Protocol for embedding models."""
 
-    def embed(self, text: str) -> List[float]:
+    def embed(self, text: str) -> list[float]:
         """Embed a single text."""
         ...
 
-    def embed_batch(self, texts: List[str]) -> List[List[float]]:
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
         """Embed multiple texts."""
         ...
 
@@ -280,7 +285,7 @@ class Embedder(Protocol):
 class Reranker(Protocol):
     """Protocol for reranking models."""
 
-    def rerank(self, query: str, documents: List[str]) -> List[tuple[int, float]]:
+    def rerank(self, query: str, documents: list[str]) -> list[tuple[int, float]]:
         """Rerank documents for a query."""
         ...
 
@@ -288,6 +293,6 @@ class Reranker(Protocol):
 class QueryExpander(Protocol):
     """Protocol for query expansion."""
 
-    def expand(self, query: str) -> List[str]:
+    def expand(self, query: str) -> list[str]:
         """Expand a query into multiple variants."""
         ...

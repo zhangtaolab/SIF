@@ -1,7 +1,7 @@
 """Document domain entity."""
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Protocol
 
 
@@ -52,8 +52,8 @@ class Document:
     file_size: int
     metadata: DocumentMetadata = field(default_factory=DocumentMetadata)
     chunks: list[DocumentChunk] = field(default_factory=list)
-    created_at: datetime = field(default_factory=datetime.utcnow)
-    updated_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     indexed_at: datetime | None = None
 
     @property
@@ -62,7 +62,7 @@ class Document:
         if self.metadata.title:
             return self.metadata.title
         # Extract filename as fallback
-        import os
+        import os  # noqa: PLC0415
 
         return os.path.splitext(os.path.basename(self.path))[0]
 
@@ -81,8 +81,8 @@ class Document:
 
     def mark_indexed(self) -> None:
         """Mark the document as indexed."""
-        self.indexed_at = datetime.utcnow()
-        self.updated_at = datetime.utcnow()
+        self.indexed_at = datetime.now(timezone.utc)
+        self.updated_at = datetime.now(timezone.utc)
 
 
 class DocumentRepository(Protocol):

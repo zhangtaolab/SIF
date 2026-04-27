@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 import click
 from rich.console import Console
@@ -29,11 +28,11 @@ def get_group() -> None:
 @click.option("--lines", "-l", type=int, help="Number of lines to show")
 @click.option("--line-numbers", is_flag=True, help="Show line numbers")
 @click.pass_context
-def get_cmd(
+def get_cmd(  # noqa: C901, PLR0912
     ctx: click.Context,
     path_or_docid: str,
-    from_line: Optional[int],
-    lines: Optional[int],
+    from_line: int | None,
+    lines: int | None,
     line_numbers: bool,
 ) -> None:
     """Get a document by path or document ID."""
@@ -55,7 +54,7 @@ def get_cmd(
         if not doc:
             # Try to find by path
             # Need collection ID - search all collections
-            from sif.database.repositories import CollectionRepository
+            from sif.database.repositories import CollectionRepository  # noqa: PLC0415
 
             coll_repo = CollectionRepository(db.connection)
 
@@ -63,6 +62,10 @@ def get_cmd(
                 doc = doc_repo.get_by_path(path_or_docid, coll.id)
                 if doc:
                     break
+
+        if not doc:
+            # Try matching by filename (short name lookup)
+            doc = doc_repo.get_by_filename(path_or_docid)
 
         if not doc:
             # Try as file path
@@ -74,7 +77,7 @@ def get_cmd(
                     console.print(content)
                     return
                 except Exception as e:
-                    raise click.ClickException(f"Cannot read file: {e}")
+                    raise click.ClickException(f"Cannot read file: {e}") from e
 
             raise click.ClickException(f"Document not found: {path_or_docid}")
 
@@ -117,7 +120,7 @@ def get_cmd(
 @click.option("--max-bytes", "-b", type=int, default=100000, help="Max bytes per file")
 @click.option("--line-numbers", is_flag=True, help="Show line numbers")
 @click.pass_context
-def multi_get_cmd(
+def multi_get_cmd(  # noqa: C901
     ctx: click.Context,
     pattern: str,
     max_bytes: int,
@@ -130,47 +133,50 @@ def multi_get_cmd(
         console.print("[yellow]No index found.[/yellow]")
         return
 
-    import fnmatch
+    import fnmatch  # noqa: PLC0415
 
     db = Database(index_path)
     db.init_schema()
 
     with db.connection:
         doc_repo = DocumentRepository(db.connection)
-        from sif.database.repositories import CollectionRepository
+        from sif.database.repositories import CollectionRepository  # noqa: PLC0415
 
         coll_repo = CollectionRepository(db.connection)
 
         matched_docs: list[Document] = []
+
+        def _lookup_by_id_or_path_or_filename(item: str) -> Document | None:
+            """Try ID, then exact path, then filename match."""
+            doc = doc_repo.get_by_id(item)
+            if doc:
+                return doc
+            for coll in coll_repo.list_all():
+                doc = doc_repo.get_by_path(item, coll.id)
+                if doc:
+                    return doc
+            return doc_repo.get_by_filename(item)
 
         if "," in pattern:
             # Comma-separated IDs/paths
             items = [item.strip() for item in pattern.split(",") if item.strip()]
             seen_ids: set[str] = set()
             for item in items:
-                doc = doc_repo.get_by_id(item)
-                if not doc:
-                    for coll in coll_repo.list_all():
-                        doc = doc_repo.get_by_path(item, coll.id)
-                        if doc:
-                            break
+                doc = _lookup_by_id_or_path_or_filename(item)
                 if doc and doc.id not in seen_ids:
                     matched_docs.append(doc)
                     seen_ids.add(doc.id)
         elif "*" in pattern or "?" in pattern:
             # Glob pattern
             for coll in coll_repo.list_all():
-                for doc in doc_repo.list_by_collection(coll.id):
-                    if fnmatch.fnmatch(doc.path, pattern) or fnmatch.fnmatch(doc.filename, pattern):
-                        matched_docs.append(doc)
+                matched_docs.extend(
+                    doc
+                    for doc in doc_repo.list_by_collection(coll.id)
+                    if fnmatch.fnmatch(doc.path, pattern) or fnmatch.fnmatch(doc.filename, pattern)
+                )
         else:
             # Single item
-            doc = doc_repo.get_by_id(pattern)
-            if not doc:
-                for coll in coll_repo.list_all():
-                    doc = doc_repo.get_by_path(pattern, coll.id)
-                    if doc:
-                        break
+            doc = _lookup_by_id_or_path_or_filename(pattern)
             if doc:
                 matched_docs.append(doc)
 

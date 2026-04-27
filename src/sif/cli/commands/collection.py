@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 import click
 from rich.console import Console
@@ -32,13 +31,13 @@ def collection_group() -> None:
 @click.option("--description", "-d", help="Collection description")
 @click.option("--no-default", is_flag=True, help="Don't include in default searches")
 @click.pass_context
-def collection_add(
+def collection_add(  # noqa: PLR0913
     ctx: click.Context,
     path: str,
     name: str,
     pattern: str,
     ignore: tuple,
-    description: Optional[str],
+    description: str | None,
     no_default: bool,
 ) -> None:
     """Add a new collection."""
@@ -88,7 +87,7 @@ def collection_remove(ctx: click.Context, name: str) -> None:
             raise click.ClickException(f"Collection '{name}' not found")
 
         # Delete documents first (cascade will handle chunks)
-        from sif.database.repositories import DocumentRepository
+        from sif.database.repositories import DocumentRepository  # noqa: PLC0415
 
         doc_repo = DocumentRepository(conn)
         doc_repo.delete_by_collection(collection.id)
@@ -323,7 +322,7 @@ def collection_exclude(ctx: click.Context, name: str) -> None:
 @click.argument("name")
 @click.argument("subpath", required=False)
 @click.pass_context
-def collection_ls(ctx: click.Context, name: str, subpath: Optional[str]) -> None:
+def collection_ls(ctx: click.Context, name: str, subpath: str | None) -> None:  # noqa: ARG001
     """List files in a collection."""
     index_path = ctx.obj["index_path"]
 
@@ -338,7 +337,7 @@ def collection_ls(ctx: click.Context, name: str, subpath: Optional[str]) -> None
             raise click.ClickException(f"Collection '{name}' not found")
 
         # Scan files
-        from sif.indexing.scanner import FileScanner
+        from sif.indexing.scanner import FileScanner  # noqa: PLC0415
 
         scanner = FileScanner()
         scan_result = scanner.scan(

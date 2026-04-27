@@ -7,7 +7,6 @@ import logging
 import os
 import sys
 import warnings
-from typing import Optional
 
 
 # Default logging format
@@ -61,7 +60,7 @@ def _apply_quiet_mode() -> None:
     os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
 
     try:
-        from transformers import logging as transformers_logging
+        from transformers import logging as transformers_logging  # noqa: PLC0415
 
         transformers_logging.set_verbosity_error()
     except ImportError:
@@ -94,8 +93,8 @@ def suppress_stderr():
 
 def setup_logging(
     level: str = "INFO",
-    format_str: Optional[str] = None,
-    handler: Optional[logging.Handler] = None,
+    format_str: str | None = None,
+    handler: logging.Handler | None = None,
 ) -> None:
     """Setup logging configuration.
 

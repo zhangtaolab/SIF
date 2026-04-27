@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
-from typing import Optional
 
 from sif.utils.logging import get_logger, is_quiet, suppress_output
 
@@ -30,7 +29,7 @@ class ModelDownloader:
         },
     }
 
-    def __init__(self, cache_dir: Optional[str | Path] = None) -> None:
+    def __init__(self, cache_dir: str | Path | None = None) -> None:
         """Initialize model downloader.
 
         Args:
@@ -44,7 +43,7 @@ class ModelDownloader:
     def download(
         self,
         model_id: str,
-        revision: Optional[str] = None,
+        revision: str | None = None,
         force: bool = False,
     ) -> Path:
         """Download a model from ModelScope.
@@ -58,7 +57,7 @@ class ModelDownloader:
             Path to downloaded model directory
         """
         try:
-            from modelscope import snapshot_download
+            from modelscope import snapshot_download  # noqa: PLC0415
         except ImportError:
             logger.error("modelscope not installed. Install with: pip install modelscope")
             raise
@@ -99,7 +98,7 @@ class ModelDownloader:
 
     def download_embedding_model(
         self,
-        model_id: Optional[str] = None,
+        model_id: str | None = None,
         force: bool = False,
     ) -> Path:
         """Download embedding model.
@@ -118,7 +117,7 @@ class ModelDownloader:
 
     def download_reranker_model(
         self,
-        model_id: Optional[str] = None,
+        model_id: str | None = None,
         force: bool = False,
     ) -> Path:
         """Download reranker model.
@@ -137,7 +136,7 @@ class ModelDownloader:
 
     def download_query_expansion_model(
         self,
-        model_id: Optional[str] = None,
+        model_id: str | None = None,
         force: bool = False,
     ) -> Path:
         """Download query expansion model.
@@ -164,7 +163,7 @@ class ModelDownloader:
             Model information dictionary
         """
         try:
-            from modelscope.hub.api import HubApi
+            from modelscope.hub.api import HubApi  # noqa: PLC0415
 
             api = HubApi()
             info = api.get_model_info(model_id)
@@ -201,7 +200,7 @@ class ModelDownloader:
 
     def clear_cache(self) -> None:
         """Clear all cached models."""
-        import shutil
+        import shutil  # noqa: PLC0415
 
         if self.cache_dir.exists():
             shutil.rmtree(self.cache_dir)

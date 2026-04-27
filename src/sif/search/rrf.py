@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Tuple
-
 from sif.core.models import SearchResult
 
 
@@ -21,9 +19,9 @@ class RRFFusion:
 
     def fuse(
         self,
-        results_lists: List[List[SearchResult]],
+        results_lists: list[list[SearchResult]],
         limit: int = 10,
-    ) -> List[SearchResult]:
+    ) -> list[SearchResult]:
         """Fuse multiple ranked lists using RRF.
 
         Args:
@@ -34,7 +32,7 @@ class RRFFusion:
             Fused and re-ranked list of results
         """
         # Map document_id to scores
-        scores: Dict[str, Tuple[float, SearchResult]] = {}
+        scores: dict[str, tuple[float, SearchResult]] = {}
 
         for list_idx, results in enumerate(results_lists):
             for rank, result in enumerate(results, 1):
@@ -44,7 +42,7 @@ class RRFFusion:
                 rrf_score = 1.0 / (self.k + rank)
 
                 # Build scores dict
-                doc_scores: Dict[str, Optional[float]] = {}
+                doc_scores: dict[str, float | None] = {}
                 if result.scores:
                     doc_scores.update(result.scores)
 
@@ -56,7 +54,7 @@ class RRFFusion:
                 if doc_id in scores:
                     existing_score, existing_result = scores[doc_id]
                     # Merge scores from existing result
-                    merged_scores: Dict[str, Optional[float]] = {}
+                    merged_scores: dict[str, float | None] = {}
                     if existing_result.scores:
                         merged_scores.update(existing_result.scores)
                     merged_scores.update(doc_scores)
@@ -84,7 +82,7 @@ class RRFFusion:
 
         # Build final results
         fused_results = []
-        for rank, (doc_id, (score, result)) in enumerate(sorted_scores[:limit], 1):
+        for rank, (_doc_id, (score, result)) in enumerate(sorted_scores[:limit], 1):
             result.score = score
             result.rank = rank
             result.scores["rrf_score"] = score
@@ -94,10 +92,10 @@ class RRFFusion:
 
     def fuse_with_weights(
         self,
-        results_lists: List[List[SearchResult]],
-        weights: List[float],
+        results_lists: list[list[SearchResult]],
+        weights: list[float],
         limit: int = 10,
-    ) -> List[SearchResult]:
+    ) -> list[SearchResult]:
         """Fuse multiple ranked lists with weights.
 
         Args:
@@ -116,7 +114,7 @@ class RRFFusion:
         normalized_weights = [w / total_weight for w in weights]
 
         # Map document_id to weighted scores
-        scores: Dict[str, Tuple[float, SearchResult]] = {}
+        scores: dict[str, tuple[float, SearchResult]] = {}
 
         for list_idx, (results, weight) in enumerate(zip(results_lists, normalized_weights)):
             for rank, result in enumerate(results, 1):
@@ -126,7 +124,7 @@ class RRFFusion:
                 rrf_score = weight * (1.0 / (self.k + rank))
 
                 # Build scores dict
-                doc_scores: Dict[str, Optional[float]] = {}
+                doc_scores: dict[str, float | None] = {}
                 if result.scores:
                     doc_scores.update(result.scores)
 
@@ -138,7 +136,7 @@ class RRFFusion:
                 if doc_id in scores:
                     existing_score, existing_result = scores[doc_id]
                     # Merge scores from existing result
-                    merged_scores: Dict[str, Optional[float]] = {}
+                    merged_scores: dict[str, float | None] = {}
                     if existing_result.scores:
                         merged_scores.update(existing_result.scores)
                     merged_scores.update(doc_scores)
@@ -166,7 +164,7 @@ class RRFFusion:
 
         # Build final results
         fused_results = []
-        for rank, (doc_id, (score, result)) in enumerate(sorted_scores[:limit], 1):
+        for rank, (_doc_id, (score, result)) in enumerate(sorted_scores[:limit], 1):
             result.score = score
             result.rank = rank
             result.scores["rrf_score"] = score

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING
 
 from sif.core.models import Embedder, SearchOptions, SearchResult, SearchType
 from sif.search.bm25 import BM25Searcher
@@ -27,7 +27,7 @@ class HybridSearcher:
     def __init__(
         self,
         db: sqlite3.Connection,
-        embedder: Optional[Embedder] = None,
+        embedder: Embedder | None = None,
         embedding_dim: int = 768,
     ) -> None:
         self.db = db
@@ -39,8 +39,8 @@ class HybridSearcher:
     def search(
         self,
         query: str,
-        options: Optional[SearchOptions] = None,
-    ) -> List[SearchResult]:
+        options: SearchOptions | None = None,
+    ) -> list[SearchResult]:
         """Search using hybrid approach (BM25 + Vector + RRF).
 
         Args:
@@ -57,7 +57,7 @@ class HybridSearcher:
         bm25_results = self.bm25.search(query, options)
 
         # Get vector results if embedder is available
-        vector_results: List[SearchResult] = []
+        vector_results: list[SearchResult] = []
         if self.embedder is not None:
             query_embedding = self.embedder.embed(query)
             vector_results = self.vector.search(query_embedding, options)
@@ -142,7 +142,7 @@ class HybridSearcher:
                 result.context_description = context_map[normalized_path]
         return results
 
-    def _get_document_content(self, document_id: str) -> Optional[str]:
+    def _get_document_content(self, document_id: str) -> str | None:
         """Get document content."""
         cursor = self.db.execute("SELECT content FROM documents WHERE id = ?", (document_id,))
         row = cursor.fetchone()
@@ -153,18 +153,18 @@ class HybridSearcher:
         document_id: str,
         query: str,
         max_highlights: int = 3,
-    ) -> List[str]:
+    ) -> list[str]:
         """Get highlighted snippets."""
-        return self.bm25._get_highlights(document_id, query, max_highlights)
+        return self.bm25._get_highlights(document_id, query, max_highlights)  # noqa: SLF001
 
 
 class SearchPipeline:
     """Complete search pipeline with prefix routing, expansion, and reranking."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         db: sqlite3.Connection,
-        embedder: Optional[Embedder] = None,
+        embedder: Embedder | None = None,
         query_expander: QueryExpansion | None = None,
         reranker: LlamaCppReranker | CrossEncoderReranker | None = None,
         snippet_extractor: SmartSnippetExtractor | None = None,
@@ -176,11 +176,11 @@ class SearchPipeline:
         self.reranker = reranker
         self.snippet_extractor = snippet_extractor
 
-    def search(
+    def search(  # noqa: C901, PLR0912
         self,
         query: str,
-        options: Optional[SearchOptions] = None,
-    ) -> List[SearchResult]:
+        options: SearchOptions | None = None,
+    ) -> list[SearchResult]:
         """Execute full search pipeline with prefix routing.
 
         1. Parse query prefix to determine search mode
@@ -256,7 +256,7 @@ class SearchPipeline:
                 reranked = self.reranker.rerank(parsed_query, candidates, top_k=options.limit)
                 results = reranked
             except Exception as e:
-                raise RuntimeError(f"Reranking failed: {e}")
+                raise RuntimeError(f"Reranking failed: {e}") from e
 
         # Extract smart snippets if not already present
         if self.snippet_extractor is not None:
@@ -265,7 +265,7 @@ class SearchPipeline:
                     query_terms = parsed_query.lower().split()
                     result.snippet = self.snippet_extractor.extract(result.content, query_terms)
 
-        return self.hybrid._attach_contexts(results)
+        return self.hybrid._attach_contexts(results)  # noqa: SLF001
 
     def _parse_query_prefix(self, query: str) -> tuple[str, SearchType]:
         """Parse query prefix to determine search mode."""

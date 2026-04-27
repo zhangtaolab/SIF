@@ -6,7 +6,7 @@ import hashlib
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 import frontmatter
 
@@ -18,7 +18,7 @@ class ParsedDocument:
     path: str
     content: str
     title: str
-    metadata: Dict[str, Any]
+    metadata: dict[str, Any]
     checksum: str
     mtime: float
 
@@ -59,11 +59,7 @@ class MarkdownParser:
         if not title:
             # Try to extract from first H1
             match = self.title_pattern.search(body)
-            if match:
-                title = match.group(1).strip()
-            else:
-                # Use filename as title
-                title = file_path.stem
+            title = match.group(1).strip() if match else file_path.stem
 
         # Calculate checksum
         checksum = hashlib.sha256(content.encode()).hexdigest()
@@ -175,7 +171,7 @@ class CodeParser:
         )
 
 
-def create_parser(file_path: Path) -> Optional[MarkdownParser | TextParser | CodeParser]:
+def create_parser(file_path: Path) -> MarkdownParser | TextParser | CodeParser | None:
     """Create appropriate parser for a file.
 
     Args:

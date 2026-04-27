@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime
-from typing import List, Optional
+from datetime import datetime, timezone
 
 from sif.core.models import (
     Collection,
@@ -47,26 +46,26 @@ class CollectionRepository:
         )
         return collection
 
-    def get_by_id(self, collection_id: str) -> Optional[Collection]:
+    def get_by_id(self, collection_id: str) -> Collection | None:
         """Get collection by ID."""
         cursor = self.db.execute("SELECT * FROM collections WHERE id = ?", (collection_id,))
         row = cursor.fetchone()
         return self._row_to_collection(row) if row else None
 
-    def get_by_name(self, name: str) -> Optional[Collection]:
+    def get_by_name(self, name: str) -> Collection | None:
         """Get collection by name."""
         cursor = self.db.execute("SELECT * FROM collections WHERE name = ?", (name,))
         row = cursor.fetchone()
         return self._row_to_collection(row) if row else None
 
-    def list_all(self) -> List[Collection]:
+    def list_all(self) -> list[Collection]:
         """List all collections."""
         cursor = self.db.execute("SELECT * FROM collections ORDER BY name")
         return [self._row_to_collection(row) for row in cursor.fetchall()]
 
     def update(self, collection: Collection) -> Collection:
         """Update a collection."""
-        collection.updated_at = datetime.utcnow()
+        collection.updated_at = datetime.now(timezone.utc)
         self.db.execute(
             """
             UPDATE collections SET
@@ -102,7 +101,7 @@ class CollectionRepository:
         cursor = self.db.execute("SELECT 1 FROM collections WHERE name = ?", (name,))
         return cursor.fetchone() is not None
 
-    def list_enabled(self) -> List[Collection]:
+    def list_enabled(self) -> list[Collection]:
         """List all collections enabled for default searches."""
         cursor = self.db.execute(
             "SELECT * FROM collections WHERE include_by_default = 1 ORDER BY name"
@@ -122,6 +121,8 @@ class CollectionRepository:
             pre_update_cmd=row["pre_update_cmd"],
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
+            document_count=row["document_count"],
+            chunk_count=row["chunk_count"],
             last_indexed_at=datetime.fromisoformat(row["last_indexed_at"])
             if row["last_indexed_at"]
             else None,
@@ -161,13 +162,13 @@ class DocumentRepository:
 
         return document
 
-    def get_by_id(self, document_id: str) -> Optional[Document]:
+    def get_by_id(self, document_id: str) -> Document | None:
         """Get document by ID."""
         cursor = self.db.execute("SELECT * FROM documents WHERE id = ?", (document_id,))
         row = cursor.fetchone()
         return self._row_to_document(row) if row else None
 
-    def get_by_path(self, path: str, collection_id: str) -> Optional[Document]:
+    def get_by_path(self, path: str, collection_id: str) -> Document | None:
         """Get document by path and collection."""
         cursor = self.db.execute(
             "SELECT * FROM documents WHERE path = ? AND collection_id = ?", (path, collection_id)
@@ -175,7 +176,16 @@ class DocumentRepository:
         row = cursor.fetchone()
         return self._row_to_document(row) if row else None
 
-    def list_by_collection(self, collection_id: str) -> List[Document]:
+    def get_by_filename(self, filename: str) -> Document | None:
+        """Get document by filename (across all collections).
+
+        Returns the first match if multiple documents share the same filename.
+        """
+        cursor = self.db.execute("SELECT * FROM documents WHERE filename = ? LIMIT 1", (filename,))
+        row = cursor.fetchone()
+        return self._row_to_document(row) if row else None
+
+    def list_by_collection(self, collection_id: str) -> list[Document]:
         """List documents in a collection."""
         cursor = self.db.execute(
             "SELECT * FROM documents WHERE collection_id = ? ORDER BY filename", (collection_id,)
@@ -184,7 +194,7 @@ class DocumentRepository:
 
     def update(self, document: Document) -> Document:
         """Update a document."""
-        document.updated_at = datetime.utcnow()
+        document.updated_at = datetime.now(timezone.utc)
         self.db.execute(
             """
             UPDATE documents SET
@@ -209,7 +219,7 @@ class DocumentRepository:
     def delete(self, document_id: str) -> bool:
         """Delete a document."""
         # Delete document chunks first
-        from sif.database.repositories import DocumentChunkRepository
+        from sif.database.repositories import DocumentChunkRepository  # noqa: PLC0415
 
         chunk_repo = DocumentChunkRepository(self.db)
         chunk_repo.delete_by_document(document_id)
@@ -226,7 +236,7 @@ class DocumentRepository:
         doc_ids = [row[0] for row in cursor.fetchall()]
 
         # Delete chunks for each document
-        from sif.database.repositories import DocumentChunkRepository
+        from sif.database.repositories import DocumentChunkRepository  # noqa: PLC0415
 
         chunk_repo = DocumentChunkRepository(self.db)
         for doc_id in doc_ids:
@@ -235,7 +245,7 @@ class DocumentRepository:
         cursor = self.db.execute("DELETE FROM documents WHERE collection_id = ?", (collection_id,))
         return cursor.rowcount
 
-    def get_checksum(self, document_id: str) -> Optional[str]:
+    def get_checksum(self, document_id: str) -> str | None:
         """Get document checksum."""
         cursor = self.db.execute("SELECT checksum FROM documents WHERE id = ?", (document_id,))
         row = cursor.fetchone()
@@ -291,24 +301,24 @@ class DocumentChunkRepository:
                 chunk.end_pos,
                 chunk.token_count,
                 chunk.embedding_id,
-                datetime.utcnow().isoformat(),
+                datetime.now(timezone.utc).isoformat(),
             ),
         )
 
         return chunk
 
-    def create_many(self, chunks: List[DocumentChunk]) -> List[DocumentChunk]:
+    def create_many(self, chunks: list[DocumentChunk]) -> list[DocumentChunk]:
         """Create multiple chunks."""
         for chunk in chunks:
             self.create(chunk)
         return chunks
 
-    def get_by_document(self, document_id: str) -> List[DocumentChunk]:
+    def get_by_document(self, document_id: str) -> list[DocumentChunk]:
         """Get chunks for a document."""
         cursor = self.db.execute(
             """
-            SELECT * FROM document_chunks 
-            WHERE document_id = ? 
+            SELECT * FROM document_chunks
+            WHERE document_id = ?
             ORDER BY sequence
             """,
             (document_id,),
@@ -344,7 +354,7 @@ class ContextRepository:
 
     def create(self, context: PathContext) -> PathContext:
         """Create a new context."""
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         self.db.execute(
             """
             INSERT INTO contexts (id, target_id, context_type, content, created_at, updated_at)
@@ -354,7 +364,7 @@ class ContextRepository:
         )
         return context
 
-    def get_by_target(self, target_id: str, context_type: str = "path") -> Optional[PathContext]:
+    def get_by_target(self, target_id: str, context_type: str = "path") -> PathContext | None:
         """Get context by target_id and context_type."""
         cursor = self.db.execute(
             "SELECT * FROM contexts WHERE target_id = ? AND context_type = ?",
@@ -363,23 +373,23 @@ class ContextRepository:
         row = cursor.fetchone()
         return self._row_to_context(row) if row else None
 
-    def get_by_path(self, path: str) -> Optional[PathContext]:
+    def get_by_path(self, path: str) -> PathContext | None:
         """Get context by path (backward-compatible alias)."""
         return self.get_by_target(path, "path")
 
-    def list_all(self) -> List[PathContext]:
+    def list_all(self) -> list[PathContext]:
         """List all contexts."""
         cursor = self.db.execute("SELECT * FROM contexts ORDER BY context_type, target_id")
         return [self._row_to_context(row) for row in cursor.fetchall()]
 
-    def list_by_type(self, context_type: str) -> List[PathContext]:
+    def list_by_type(self, context_type: str) -> list[PathContext]:
         """List contexts by type."""
         cursor = self.db.execute(
             "SELECT * FROM contexts WHERE context_type = ? ORDER BY target_id", (context_type,)
         )
         return [self._row_to_context(row) for row in cursor.fetchall()]
 
-    def list_by_collection(self, collection_id: str) -> List[PathContext]:
+    def list_by_collection(self, collection_id: str) -> list[PathContext]:
         """List contexts for a collection."""
         cursor = self.db.execute(
             "SELECT * FROM contexts WHERE context_type = 'collection' "
@@ -396,7 +406,7 @@ class ContextRepository:
             SET content = ?, updated_at = ?
             WHERE id = ?
             """,
-            (context.context, datetime.utcnow().isoformat(), context.id),
+            (context.context, datetime.now(timezone.utc).isoformat(), context.id),
         )
         return context
 
@@ -437,15 +447,15 @@ class LLMCacheRepository:
     def __init__(self, db: sqlite3.Connection) -> None:
         self.db = db
 
-    def get(self, model_name: str, prompt_hash: str) -> Optional[str]:
+    def get(self, model_name: str, prompt_hash: str) -> str | None:
         """Get cached response."""
         cursor = self.db.execute(
             """
-            SELECT response FROM llm_cache 
+            SELECT response FROM llm_cache
             WHERE model_name = ? AND prompt_hash = ?
             AND (expires_at IS NULL OR expires_at > ?)
             """,
-            (model_name, prompt_hash, datetime.utcnow().isoformat()),
+            (model_name, prompt_hash, datetime.now(timezone.utc).isoformat()),
         )
         row = cursor.fetchone()
         return row[0] if row else None
@@ -456,17 +466,17 @@ class LLMCacheRepository:
         prompt_hash: str,
         prompt: str,
         response: str,
-        ttl_seconds: Optional[int] = None,
+        ttl_seconds: int | None = None,
     ) -> None:
         """Cache a response."""
         expires_at = None
         if ttl_seconds:
-            expires_at = datetime.utcnow().timestamp() + ttl_seconds
+            expires_at = datetime.now(timezone.utc).timestamp() + ttl_seconds
             expires_at = datetime.fromtimestamp(expires_at).isoformat()
 
         self.db.execute(
             """
-            INSERT OR REPLACE INTO llm_cache 
+            INSERT OR REPLACE INTO llm_cache
             (id, model_name, prompt_hash, prompt, response, created_at, expires_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
@@ -476,7 +486,7 @@ class LLMCacheRepository:
                 prompt_hash,
                 prompt,
                 response,
-                datetime.utcnow().isoformat(),
+                datetime.now(timezone.utc).isoformat(),
                 expires_at,
             ),
         )
@@ -485,6 +495,6 @@ class LLMCacheRepository:
         """Clear expired cache entries."""
         cursor = self.db.execute(
             "DELETE FROM llm_cache WHERE expires_at IS NOT NULL AND expires_at <= ?",
-            (datetime.utcnow().isoformat(),),
+            (datetime.now(timezone.utc).isoformat(),),
         )
         return cursor.rowcount

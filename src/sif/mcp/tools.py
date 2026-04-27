@@ -235,7 +235,7 @@ class MockSearchBackend:
         errors = []
         total_bytes = 0
 
-        for doc_id, doc in self._documents.items():
+        for _doc_id, doc in self._documents.items():
             if fnmatch.fnmatch(doc.path, pattern) or fnmatch.fnmatch(doc.doc_id, pattern):
                 doc_bytes = len(doc.content.encode("utf-8"))
 

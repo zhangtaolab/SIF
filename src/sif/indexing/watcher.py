@@ -17,7 +17,7 @@ class IndexingEventHandler(FileSystemEventHandler):
     def __init__(
         self,
         collection_id: str,
-        indexer: "DocumentIndexer",
+        indexer: "DocumentIndexer",  # noqa: F821
         extensions: set[str] | None = None,
     ) -> None:
         """Initialize event handler.
@@ -88,7 +88,7 @@ class FileWatcher:
 
     def __init__(
         self,
-        indexer: "DocumentIndexer",
+        indexer: "DocumentIndexer",  # noqa: F821
         extensions: set[str] | None = None,
     ) -> None:
         """Initialize file watcher.
