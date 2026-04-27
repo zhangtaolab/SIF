@@ -1,4 +1,4 @@
-"""Configuration settings for DocSift."""
+"""Configuration settings for SIF."""
 
 from functools import lru_cache
 from pathlib import Path
@@ -13,11 +13,11 @@ class Settings(BaseSettings):
     """Application settings using Pydantic Settings.
 
     Settings are loaded from environment variables and .env files.
-    Environment variables should be prefixed with DOCSIFT_.
+    Environment variables should be prefixed with SIF_.
     """
 
     model_config = SettingsConfigDict(
-        env_prefix="DOCSIFT_",
+        env_prefix="SIF_",
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
