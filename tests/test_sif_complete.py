@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Complete test suite for DocSift."""
+"""Complete test suite for SIF."""
 
 from __future__ import annotations
 
@@ -15,19 +15,19 @@ def test_imports() -> bool:
     """Test all core imports."""
     print("Testing imports...")
     try:
-        from docsift.core.models import Collection, Document, SearchResult
-        from docsift.database.database import Database
-        from docsift.database.repositories import (
+        from sif.core.models import Collection, Document, SearchResult
+        from sif.database.database import Database
+        from sif.database.repositories import (
             CollectionRepository,
             DocumentRepository,
         )
-        from docsift.database.schema import SchemaManager
-        from docsift.search import BM25Searcher, HybridSearcher, RRFFusion, VectorSearcher
-        from docsift.indexing import create_chunker
-        from docsift.indexing.parser import MarkdownParser
-        from docsift.indexing.scanner import FileScanner
-        from docsift.cli.main import cli
-        from docsift.mcp.server import MCPServer
+        from sif.database.schema import SchemaManager
+        from sif.search import BM25Searcher, HybridSearcher, RRFFusion, VectorSearcher
+        from sif.indexing import create_chunker
+        from sif.indexing.parser import MarkdownParser
+        from sif.indexing.scanner import FileScanner
+        from sif.cli.main import cli
+        from sif.mcp.server import MCPServer
 
         print("✅ All imports successful")
         return True
@@ -43,7 +43,7 @@ def test_database() -> bool:
     """Test database operations."""
     print("\nTesting database...")
     try:
-        from docsift.database.database import Database
+        from sif.database.database import Database
 
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "test.db"
@@ -69,9 +69,9 @@ def test_collection_repository() -> bool:
     """Test collection repository."""
     print("\nTesting collection repository...")
     try:
-        from docsift.core.models import Collection
-        from docsift.database.database import Database
-        from docsift.database.repositories import CollectionRepository
+        from sif.core.models import Collection
+        from sif.database.database import Database
+        from sif.database.repositories import CollectionRepository
 
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "test.db"
@@ -114,9 +114,9 @@ def test_document_repository() -> bool:
     """Test document repository."""
     print("\nTesting document repository...")
     try:
-        from docsift.core.models import Collection, Document
-        from docsift.database.database import Database
-        from docsift.database.repositories import (
+        from sif.core.models import Collection, Document
+        from sif.database.database import Database
+        from sif.database.repositories import (
             CollectionRepository,
             DocumentRepository,
         )
@@ -171,7 +171,7 @@ def test_chunker() -> bool:
     """Test document chunking."""
     print("\nTesting chunker...")
     try:
-        from docsift.indexing import create_chunker
+        from sif.indexing import create_chunker
 
         chunker = create_chunker("fixed", chunk_size=100, overlap=20)
         text = "# Heading\n\nThis is paragraph 1.\n\nThis is paragraph 2.\n\n## Subheading\n\nMore content here."
@@ -200,8 +200,8 @@ def test_rrf() -> bool:
     """Test RRF fusion."""
     print("\nTesting RRF fusion...")
     try:
-        from docsift.core.models import SearchResult
-        from docsift.search.rrf import RRFFusion
+        from sif.core.models import SearchResult
+        from sif.search.rrf import RRFFusion
 
         rrf = RRFFusion(k=60)
 
@@ -240,14 +240,14 @@ def test_cli() -> bool:
     print("\nTesting CLI...")
     try:
         from click.testing import CliRunner
-        from docsift.cli.main import cli
+        from sif.cli.main import cli
 
         runner = CliRunner()
 
         # Test --help
         result = runner.invoke(cli, ["--help"])
         assert result.exit_code == 0
-        assert "DocSift" in result.output
+        assert "SIF" in result.output
         print("✅ CLI --help works")
 
         # Test --version
@@ -268,7 +268,7 @@ def test_scanner() -> bool:
     """Test file scanner."""
     print("\nTesting scanner...")
     try:
-        from docsift.indexing.scanner import FileScanner
+        from sif.indexing.scanner import FileScanner
 
         with tempfile.TemporaryDirectory() as tmpdir:
             # Create test files
@@ -298,7 +298,7 @@ def test_parser() -> bool:
     """Test document parser."""
     print("\nTesting parser...")
     try:
-        from docsift.indexing.parser import MarkdownParser
+        from sif.indexing.parser import MarkdownParser
 
         with tempfile.TemporaryDirectory() as tmpdir:
             # Create test markdown file
@@ -332,7 +332,7 @@ This is the content.
 def main() -> int:
     """Run all tests."""
     print("=" * 60)
-    print("DocSift Complete Test Suite")
+    print("SIF Complete Test Suite")
     print("=" * 60)
 
     tests = [
