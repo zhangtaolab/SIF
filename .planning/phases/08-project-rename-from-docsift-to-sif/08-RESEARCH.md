@@ -457,22 +457,19 @@ pytest -x -q
 | A6 | `tests/test_docsift_complete.py` should be renamed to `tests/test_sif_complete.py` | Code Examples | If missed, test file name is inconsistent with new branding |
 | A7 | `htmlcov/`, `.pytest_cache/`, and `.mypy_cache/` can be safely deleted and regenerated | Runtime State Inventory | If preserved, may contain stale paths causing confusion |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **PyPI package name availability**
+1. **PyPI package name availability** — RESOLVED
    - What we know: The target name is `sif` (per D-07).
-   - What's unclear: Whether `sif` is already registered on PyPI by another project.
-   - Recommendation: Verify with `pip search sif` or check pypi.org/project/sif before finalizing. If taken, discuss alternative with user.
+   - Resolution: Plans use `sif` as the package name. PyPI availability is a deployment concern outside this phase's scope.
 
-2. **Model cache migration edge cases**
+2. **Model cache migration edge cases** — RESOLVED
    - What we know: D-02 specifies auto-migration of `~/.docsift/models/` to `~/.sif/models/` on first run.
-   - What's unclear: What happens if `~/.sif/models/` already exists (e.g., from a previous partial rename attempt).
-   - Recommendation: Migration code should check `if old.exists() and not new.exists()` before renaming. If both exist, print a warning and leave old directory for manual cleanup.
+   - Resolution: Plan 08-02 Task 3 implements guard clause `if old.exists() and not new.exists()`. If both exist, warning is printed and old directory is left for manual cleanup.
 
-3. **CLAUDE.md update scope**
+3. **CLAUDE.md update scope** — RESOLVED
    - What we know: CLAUDE.md contains 14 `docsift` references including project instructions for Claude Code.
-   - What's unclear: Whether CLAUDE.md should be updated as part of this phase or treated as a separate documentation task.
-   - Recommendation: Update CLAUDE.md as part of step 7 (documentation update) since it is a project instruction file checked into the repo.
+   - Resolution: Plan 08-06 Task 2 explicitly updates CLAUDE.md as part of the documentation rename step.
 
 ## Environment Availability
 
