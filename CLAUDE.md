@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-DocSift is a Python 3.9+ local hybrid search engine for personal knowledge bases. It indexes Markdown notes and documents, providing BM25 keyword search, semantic vector search, and hybrid ranking. It exposes both a Click CLI and an MCP server, keeping all data local in SQLite.
+SIF is a Python 3.9+ local hybrid search engine for personal knowledge bases. It indexes Markdown notes and documents, providing BM25 keyword search, semantic vector search, and hybrid ranking. It exposes both a Click CLI and an MCP server, keeping all data local in SQLite.
 
 ## Common Development Commands
 
@@ -38,22 +38,22 @@ ruff check --fix src tests
 
 Type check:
 ```bash
-mypy src/docsift
+mypy src/sif
 ```
 
 Run the CLI locally:
 ```bash
-python -m docsift.cli.main --help
+python -m sif.cli.main --help
 # or after pip install -e .
-docsift --help
+sif --help
 ```
 
 ## High-Level Architecture
 
-DocSift uses a layered architecture with clean separation between presentation, application, domain, and infrastructure layers.
+SIF uses a layered architecture with clean separation between presentation, application, domain, and infrastructure layers.
 
 ```
-src/docsift/
+src/sif/
 ├── cli/                    # Click CLI entry point and commands
 ├── mcp/                    # Legacy functional MCP server
 ├── mcp_server/             # Refactored OOP MCP server (Transport ABC)
@@ -68,17 +68,17 @@ src/docsift/
 
 ### Key Architectural Patterns
 
-**Repository Pattern:** All database access flows through repository classes in `src/docsift/database/repositories.py`. There is also a legacy `src/docsift/database/sqlite_repository.py` that should be consolidated and removed. Note: `indexer.py` currently imports `DocumentRepository` from `docsift.database.repository` (singular), which may be a stale import.
+**Repository Pattern:** All database access flows through repository classes in `src/sif/database/repositories.py`. There is also a legacy `src/sif/database/sqlite_repository.py` that should be consolidated and removed. Note: `indexer.py` currently imports `DocumentRepository` from `sif.database.repository` (singular), which may be a stale import.
 
-**Protocol-Based Extensibility:** `src/docsift/core/models.py` defines protocols like `Embedder` that decouple search and indexing from specific embedding providers. The embedding factory in `src/docsift/embedding/factory.py` currently contains placeholder/random implementations that need to be replaced with real `sentence-transformers` and `llama-cpp-python` loaders.
+**Protocol-Based Extensibility:** `src/sif/core/models.py` defines protocols like `Embedder` that decouple search and indexing from specific embedding providers. The embedding factory in `src/sif/embedding/factory.py` currently contains placeholder/random implementations that need to be replaced with real `sentence-transformers` and `llama-cpp-python` loaders.
 
-**Factory Pattern:** `EmbeddingModelFactory` creates model instances based on `ModelType`. `Chunker` hierarchy (`FixedSizeChunker`, `MarkdownChunker`, `CodeChunker`, `AutoChunker`) uses `create_chunker()` factory in `src/docsift/indexing/chunker.py`.
+**Factory Pattern:** `EmbeddingModelFactory` creates model instances based on `ModelType`. `Chunker` hierarchy (`FixedSizeChunker`, `MarkdownChunker`, `CodeChunker`, `AutoChunker`) uses `create_chunker()` factory in `src/sif/indexing/chunker.py`.
 
 **Dual MCP Implementations:** There are two MCP server implementations:
-- Legacy: `src/docsift/mcp/` — functional style
-- Refactored: `src/docsift/mcp_server/` — OOP with `Transport` ABC (`StdioTransport`, `HTTPTransport`)
+- Legacy: `src/sif/mcp/` — functional style
+- Refactored: `src/sif/mcp_server/` — OOP with `Transport` ABC (`StdioTransport`, `HTTPTransport`)
 
-**Search Strategy Pattern:** Each search type is a class in `src/docsift/search/`:
+**Search Strategy Pattern:** Each search type is a class in `src/sif/search/`:
 - `BM25Searcher` — SQLite FTS5
 - `VectorSearcher` — `sqlite-vec` (currently has a Python fallback that should be removed)
 - `HybridSearcher` — Combines BM25 + Vector via `RRFFusion`
@@ -86,13 +86,13 @@ src/docsift/
 
 ### Data Flow
 
-All persistent state lives in a single SQLite database (default `~/.docsift/index.sqlite` or via `Settings.get_db_path()`). The `SchemaManager` in `src/docsift/database/schema.py` creates tables, FTS5 virtual tables, and vector tables. FTS5 tables currently lack `content=` configurations and SQLite triggers to keep them synchronized with the main tables.
+All persistent state lives in a single SQLite database (default `~/.sif/index.sqlite` or via `Settings.get_db_path()`). The `SchemaManager` in `src/sif/database/schema.py` creates tables, FTS5 virtual tables, and vector tables. FTS5 tables currently lack `content=` configurations and SQLite triggers to keep them synchronized with the main tables.
 
 Embedding models are loaded on demand and cached in `EmbeddingManager._model`.
 
 ### Configuration
 
-Settings are defined in `src/docsift/config/settings.py` using Pydantic Settings. Environment variables use the `DOCSIFT_` prefix (e.g., `DOCSIFT_DB_PATH`, `DOCSIFT_MODEL_NAME`). Settings are cached via `@lru_cache` in `get_settings()`.
+Settings are defined in `src/sif/config/settings.py` using Pydantic Settings. Environment variables use the `SIF_` prefix (e.g., `SIF_DB_PATH`, `SIF_MODEL_NAME`). Settings are cached via `@lru_cache` in `get_settings()`.
 
 ### Error Handling Conventions
 
@@ -106,14 +106,14 @@ Settings are defined in `src/docsift/config/settings.py` using Pydantic Settings
 - Line length: 100 (enforced by ruff).
 - Max complexity (mccabe): 10.
 - Ruff isort with `combine-as-imports = true`.
-- Order: stdlib, third-party, first-party (`docsift`).
+- Order: stdlib, third-party, first-party (`sif`).
 - Two blank lines after imports.
 - Type annotations are strict (`disallow_untyped_defs = true`).
 - CLI modules relax `disallow_untyped_decorators` for Click decorators.
 
 ### Logging
 
-Get module-level loggers with `logger = get_logger(__name__)`. Logger names are prefixed with `docsift`. Output goes to `stderr`.
+Get module-level loggers with `logger = get_logger(__name__)`. Logger names are prefixed with `sif`. Output goes to `stderr`.
 
 ## GSD Workflow
 
