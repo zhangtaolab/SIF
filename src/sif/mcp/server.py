@@ -6,10 +6,10 @@ import json
 import sys
 from typing import Any, Dict, List
 
-from docsift.database.connection import DatabaseConnection
-from docsift.search.bm25 import BM25Searcher
-from docsift.search.hybrid import HybridSearcher
-from docsift.utils.logging import get_logger
+from sif.database.connection import DatabaseConnection
+from sif.search.bm25 import BM25Searcher
+from sif.search.hybrid import HybridSearcher
+from sif.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
@@ -55,7 +55,7 @@ class MCPServer:
                     "resources": {},
                 },
                 "serverInfo": {
-                    "name": "docsift-mcp",
+                    "name": "sif-mcp",
                     "version": "0.1.0",
                 },
             },
@@ -184,9 +184,9 @@ class MCPServer:
         limit = arguments.get("limit", 10)
         min_score = arguments.get("min_score", 0.0)
 
-        from docsift.core.models import SearchOptions
-        from docsift.database.repositories import CollectionRepository
-        from docsift.database.schema import SchemaManager
+        from sif.core.models import SearchOptions
+        from sif.database.repositories import CollectionRepository
+        from sif.database.schema import SchemaManager
 
         with DatabaseConnection(self.index_path).transaction() as conn:
             SchemaManager(conn).create_all()
@@ -222,9 +222,9 @@ class MCPServer:
         collections = arguments.get("collections", [])
         limit = arguments.get("limit", 10)
 
-        from docsift.core.models import SearchOptions
-        from docsift.database.repositories import CollectionRepository
-        from docsift.database.schema import SchemaManager
+        from sif.core.models import SearchOptions
+        from sif.database.repositories import CollectionRepository
+        from sif.database.schema import SchemaManager
 
         with DatabaseConnection(self.index_path).transaction() as conn:
             SchemaManager(conn).create_all()
@@ -265,8 +265,8 @@ class MCPServer:
         from_line = arguments.get("from_line", 1)
         max_lines = arguments.get("max_lines")
 
-        from docsift.database.repositories import CollectionRepository, DocumentRepository
-        from docsift.database.schema import SchemaManager
+        from sif.database.repositories import CollectionRepository, DocumentRepository
+        from sif.database.schema import SchemaManager
 
         with DatabaseConnection(self.index_path).transaction() as conn:
             SchemaManager(conn).create_all()
@@ -310,8 +310,8 @@ class MCPServer:
         max_bytes = arguments.get("max_bytes", 100000)
 
         import fnmatch
-        from docsift.database.repositories import CollectionRepository, DocumentRepository
-        from docsift.database.schema import SchemaManager
+        from sif.database.repositories import CollectionRepository, DocumentRepository
+        from sif.database.schema import SchemaManager
 
         documents = []
         errors = []
@@ -357,7 +357,7 @@ class MCPServer:
 
     def _tool_status(self, request_id: Any) -> Dict[str, Any]:
         """Execute status tool."""
-        from docsift.database.schema import SchemaManager
+        from sif.database.schema import SchemaManager
 
         with DatabaseConnection(self.index_path).transaction() as conn:
             SchemaManager(conn).create_all()

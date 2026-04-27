@@ -99,7 +99,7 @@ def pull_cmd(
 ) -> None:
     """Download a GGUF model file."""
     target_cache = (
-        Path(cache_dir).expanduser().resolve() if cache_dir else Path.home() / ".docsift" / "models"
+        Path(cache_dir).expanduser().resolve() if cache_dir else Path.home() / ".sif" / "models"
     )
     target_cache.mkdir(parents=True, exist_ok=True)
 

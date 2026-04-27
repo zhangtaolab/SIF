@@ -49,8 +49,8 @@ class Config:
     """Main configuration class for DocSift."""
 
     # Paths
-    index_path: str = field(default_factory=lambda: str(Path.home() / ".docsift" / "index.db"))
-    config_path: str = field(default_factory=lambda: str(Path.home() / ".docsift" / "config.json"))
+    index_path: str = field(default_factory=lambda: str(Path.home() / ".sif" / "index.db"))
+    config_path: str = field(default_factory=lambda: str(Path.home() / ".sif" / "config.json"))
 
     # Collections and contexts
     collections: Dict[str, CollectionConfig] = field(default_factory=dict)

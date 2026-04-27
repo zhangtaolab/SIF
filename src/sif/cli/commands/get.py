@@ -9,10 +9,10 @@ import click
 from rich.console import Console
 from rich.syntax import Syntax
 
-from docsift.cli.formatters import prepend_line_numbers
-from docsift.core.models import Document
-from docsift.database.database import Database
-from docsift.database.repositories import DocumentRepository
+from sif.cli.formatters import prepend_line_numbers
+from sif.core.models import Document
+from sif.database.database import Database
+from sif.database.repositories import DocumentRepository
 
 console = Console()
 
@@ -55,7 +55,7 @@ def get_cmd(
         if not doc:
             # Try to find by path
             # Need collection ID - search all collections
-            from docsift.database.repositories import CollectionRepository
+            from sif.database.repositories import CollectionRepository
 
             coll_repo = CollectionRepository(db.connection)
 
@@ -137,7 +137,7 @@ def multi_get_cmd(
 
     with db.connection:
         doc_repo = DocumentRepository(db.connection)
-        from docsift.database.repositories import CollectionRepository
+        from sif.database.repositories import CollectionRepository
 
         coll_repo = CollectionRepository(db.connection)
 

@@ -5,8 +5,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Callable
 
-from docsift.core.models import SearchResult
-from docsift.utils.logging import get_logger
+from sif.core.models import SearchResult
+from sif.utils.logging import get_logger
 
 
 logger = get_logger(__name__)

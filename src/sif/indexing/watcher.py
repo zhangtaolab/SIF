@@ -5,7 +5,7 @@ from pathlib import Path
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
-from docsift.utils.logging import get_logger
+from sif.utils.logging import get_logger
 
 logger = get_logger(__name__)
 

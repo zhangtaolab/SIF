@@ -7,10 +7,10 @@ This package provides embedding functionality using the Factory pattern:
 - Support for GGUF models via llama-cpp-python
 """
 
-from docsift.embedding.manager import EmbeddingManager
-from docsift.embedding.model import EmbeddingModel, ModelType
-from docsift.embedding.factory import EmbeddingModelFactory
-from docsift.embedding.cache import EmbeddingCache
+from sif.embedding.manager import EmbeddingManager
+from sif.embedding.model import EmbeddingModel, ModelType
+from sif.embedding.factory import EmbeddingModelFactory
+from sif.embedding.cache import EmbeddingCache
 
 __all__ = [
     "EmbeddingManager",

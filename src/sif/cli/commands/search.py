@@ -8,13 +8,13 @@ import click
 from rich.console import Console
 from rich.table import Table
 
-from docsift.cli.formatters import add_line_numbers_to_results, prepend_line_numbers
-from docsift.core.models import SearchOptions
-from docsift.database.database import Database
-from docsift.database.repositories import CollectionRepository
-from docsift.search.bm25 import BM25Searcher
-from docsift.search.hybrid import SearchPipeline
-from docsift.utils.logging import set_quiet
+from sif.cli.formatters import add_line_numbers_to_results, prepend_line_numbers
+from sif.core.models import SearchOptions
+from sif.database.database import Database
+from sif.database.repositories import CollectionRepository
+from sif.search.bm25 import BM25Searcher
+from sif.search.hybrid import SearchPipeline
+from sif.utils.logging import set_quiet
 
 
 console = Console()
@@ -120,7 +120,7 @@ def search_cmd(
 
     if not index_path.exists():
         if not quiet:
-            console.print("[yellow]No index found. Run 'docsift update' first.[/yellow]")
+            console.print("[yellow]No index found. Run 'sif update' first.[/yellow]")
         return
 
     db = Database(index_path)
@@ -266,15 +266,15 @@ def vsearch_cmd(
     if not index_path.exists():
         if not quiet:
             console.print(
-                "[yellow]No index found. Run 'docsift update' and 'docsift embed' first.[/yellow]"
+                "[yellow]No index found. Run 'sif update' and 'sif embed' first.[/yellow]"
             )
         return
 
-    from docsift.config.settings import get_settings
-    from docsift.database.database import Database
-    from docsift.database.repositories import CollectionRepository
-    from docsift.embedding.manager import EmbeddingManager
-    from docsift.search.vector import VectorSearcher
+    from sif.config.settings import get_settings
+    from sif.database.database import Database
+    from sif.database.repositories import CollectionRepository
+    from sif.embedding.manager import EmbeddingManager
+    from sif.search.vector import VectorSearcher
 
     settings = get_settings()
     if model_type:
@@ -418,7 +418,7 @@ def query_cmd(
 
     if not index_path.exists():
         if not quiet:
-            console.print("[yellow]No index found. Run 'docsift update' first.[/yellow]")
+            console.print("[yellow]No index found. Run 'sif update' first.[/yellow]")
         return
 
     db = Database(index_path)
@@ -451,11 +451,11 @@ def query_cmd(
             options.collection_ids = [c.id for c in enabled]
 
     # Load embedder for hybrid search
-    from docsift.config.settings import get_settings
-    from docsift.embedding.manager import EmbeddingManager
-    from docsift.search.expansion import QueryExpansion
-    from docsift.search.rerank import create_reranker
-    from docsift.search.snippets import SmartSnippetExtractor
+    from sif.config.settings import get_settings
+    from sif.embedding.manager import EmbeddingManager
+    from sif.search.expansion import QueryExpansion
+    from sif.search.rerank import create_reranker
+    from sif.search.snippets import SmartSnippetExtractor
 
     settings = get_settings()
     if model_type:

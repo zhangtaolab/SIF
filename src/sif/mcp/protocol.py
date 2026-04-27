@@ -103,7 +103,7 @@ class InitializeResult(BaseModel):
     protocolVersion: str = "2024-11-05"
     capabilities: ServerCapabilities = Field(default_factory=ServerCapabilities)
     serverInfo: dict[str, str] = Field(
-        default_factory=lambda: {"name": "docsift-mcp-server", "version": "1.0.0"}
+        default_factory=lambda: {"name": "sif-mcp-server", "version": "1.0.0"}
     )
 
 

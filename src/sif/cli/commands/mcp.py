@@ -30,12 +30,12 @@ def mcp_stdio_cmd(ctx: click.Context) -> None:
         )
 
     try:
-        from docsift.mcp.server import run_stdio_server
+        from sif.mcp.server import run_stdio_server
 
         run_stdio_server(str(index_path))
     except ImportError as e:
         console.print(f"[red]MCP server not available: {e}[/red]")
-        raise click.ClickException("Install with: pip install docsift[mcp]")
+        raise click.ClickException("Install with: pip install sif[mcp]")
 
 
 @mcp_group.command("http")
@@ -55,12 +55,12 @@ def mcp_http_cmd(
     console.print(f"[green]Starting MCP HTTP server on {host}:{port}[/green]")
 
     try:
-        from docsift.mcp.server_http import run_http_server
+        from sif.mcp.server_http import run_http_server
 
         run_http_server(str(index_path), host=host, port=port, reload=reload)
     except ImportError as e:
         console.print(f"[red]HTTP server not available: {e}[/red]")
-        raise click.ClickException("Install with: pip install docsift[http]")
+        raise click.ClickException("Install with: pip install sif[http]")
 
 
 @mcp_group.command("daemon")

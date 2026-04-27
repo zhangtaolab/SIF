@@ -6,7 +6,7 @@ from pathlib import Path
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from docsift.config.constants import APP_NAME, DEFAULT_CHUNK_OVERLAP, DEFAULT_CHUNK_SIZE
+from sif.config.constants import APP_NAME, DEFAULT_CHUNK_OVERLAP, DEFAULT_CHUNK_SIZE
 
 
 class Settings(BaseSettings):
@@ -194,7 +194,7 @@ class Settings(BaseSettings):
 
         data_dir = Path(user_data_dir(self.app_name))
         data_dir.mkdir(parents=True, exist_ok=True)
-        return data_dir / "docsift.db"
+        return data_dir / "sif.db"
 
     def get_cache_dir(self) -> Path:
         """Get the cache directory, creating default if not set."""

@@ -9,16 +9,16 @@ import click
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
-from docsift.core.models import Document
-from docsift.database.database import Database
-from docsift.database.repositories import (
+from sif.core.models import Document
+from sif.database.database import Database
+from sif.database.repositories import (
     CollectionRepository,
     DocumentChunkRepository,
     DocumentRepository,
 )
-from docsift.indexing.chunker import create_chunker
-from docsift.indexing.parser import MarkdownParser
-from docsift.indexing.scanner import FileScanner
+from sif.indexing.chunker import create_chunker
+from sif.indexing.parser import MarkdownParser
+from sif.indexing.scanner import FileScanner
 
 console = Console()
 
@@ -54,7 +54,7 @@ def update_cmd(ctx: click.Context, collection: str | None, force: bool) -> None:
 
         if not collections:
             console.print(
-                "[yellow]No collections found. Add one with 'docsift collection add'.[/yellow]"
+                "[yellow]No collections found. Add one with 'sif collection add'.[/yellow]"
             )
             return
 
@@ -193,9 +193,9 @@ def embed_cmd(
     db.init_schema()
 
     # Initialize embedder
-    from docsift.config.settings import Settings, get_settings
-    from docsift.embedding.manager import EmbeddingManager
-    from docsift.search.vector import VectorSearcher
+    from sif.config.settings import Settings, get_settings
+    from sif.embedding.manager import EmbeddingManager
+    from sif.search.vector import VectorSearcher
 
     settings = get_settings()
     if model:
@@ -284,6 +284,6 @@ def embed_cmd(
 def index_status_cmd(ctx: click.Context) -> None:
     """Show index status."""
     # Delegate to main status command
-    from docsift.cli.main import status_cmd
+    from sif.cli.main import status_cmd
 
     ctx.invoke(status_cmd)

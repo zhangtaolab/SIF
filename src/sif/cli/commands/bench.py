@@ -9,13 +9,13 @@ import click
 from rich.console import Console
 from rich.table import Table
 
-from docsift.config.settings import get_settings
-from docsift.database.database import Database
-from docsift.database.repositories import CollectionRepository
-from docsift.embedding.manager import EmbeddingManager
-from docsift.search.benchmark import SearchEvaluator
-from docsift.search.hybrid import SearchPipeline
-from docsift.utils.logging import get_logger
+from sif.config.settings import get_settings
+from sif.database.database import Database
+from sif.database.repositories import CollectionRepository
+from sif.embedding.manager import EmbeddingManager
+from sif.search.benchmark import SearchEvaluator
+from sif.search.hybrid import SearchPipeline
+from sif.utils.logging import get_logger
 
 
 logger = get_logger(__name__)
@@ -61,7 +61,7 @@ def bench_cmd(
     index_path = ctx.obj["index_path"]
 
     if not index_path.exists():
-        console.print("[yellow]No index found. Run 'docsift update' first.[/yellow]")
+        console.print("[yellow]No index found. Run 'sif update' first.[/yellow]")
         return
 
     # Load fixture
@@ -89,7 +89,7 @@ def bench_cmd(
         console.print(f"[yellow]Failed to load embedding model: {e}[/yellow]")
 
     def search_fn(query: str):
-        from docsift.core.models import SearchOptions
+        from sif.core.models import SearchOptions
 
         options = SearchOptions(
             limit=limit,

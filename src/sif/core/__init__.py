@@ -4,9 +4,9 @@ This package contains the core domain models and business logic
 that define the fundamental concepts of the DocSift system.
 """
 
-from docsift.core.collection import Collection, CollectionManager
-from docsift.core.document import Document, DocumentChunk, DocumentMetadata
-from docsift.core.context import Context, ContextManager, ContextType
+from sif.core.collection import Collection, CollectionManager
+from sif.core.document import Document, DocumentChunk, DocumentMetadata
+from sif.core.context import Context, ContextManager, ContextType
 
 __all__ = [
     "Collection",

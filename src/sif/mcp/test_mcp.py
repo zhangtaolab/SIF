@@ -6,7 +6,7 @@ This script demonstrates how to use the DocSift MCP server programmatically.
 
 import asyncio
 import json
-from docsift.mcp import (
+from sif.mcp import (
     create_server,
     create_http_app,
     JsonRpcRequest,

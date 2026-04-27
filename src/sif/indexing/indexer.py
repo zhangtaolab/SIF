@@ -4,14 +4,14 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from pathlib import Path
 
-from docsift.core.models import Collection, Document, DocumentChunk
-from docsift.database.repositories import DocumentRepository
-from docsift.embedding.manager import EmbeddingManager
-from docsift.indexing.chunker import Chunker
-from docsift.indexing.parser import MarkdownParser
-from docsift.indexing.scanner import FileScanner
-from docsift.utils.logging import get_logger
-from docsift.utils.progress import ProgressTracker, RichProgressTracker
+from sif.core.models import Collection, Document, DocumentChunk
+from sif.database.repositories import DocumentRepository
+from sif.embedding.manager import EmbeddingManager
+from sif.indexing.chunker import Chunker
+from sif.indexing.parser import MarkdownParser
+from sif.indexing.scanner import FileScanner
+from sif.utils.logging import get_logger
+from sif.utils.progress import ProgressTracker, RichProgressTracker
 
 logger = get_logger(__name__)
 

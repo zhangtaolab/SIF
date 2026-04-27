@@ -3,9 +3,9 @@
 from abc import ABC, abstractmethod
 from typing import Any, Generic, TypeVar
 
-from docsift.core.collection import Collection
-from docsift.core.document import Document, DocumentChunk
-from docsift.core.context import Context, ContextType
+from sif.core.collection import Collection
+from sif.core.document import Document, DocumentChunk
+from sif.core.context import Context, ContextType
 
 T = TypeVar("T")
 

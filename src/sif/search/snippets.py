@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from docsift.utils.logging import get_logger
+from sif.utils.logging import get_logger
 
 
 logger = get_logger(__name__)

@@ -3,7 +3,7 @@
 from abc import ABC, abstractmethod
 from typing import Protocol
 
-from docsift.models.embedding import ModelType
+from sif.models.embedding import ModelType
 
 
 class EmbeddingModel(ABC):

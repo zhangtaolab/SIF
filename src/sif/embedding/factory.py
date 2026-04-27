@@ -1,12 +1,12 @@
 """Embedding model factory."""
 
-from docsift.embedding.embedder import (
+from sif.embedding.embedder import (
     LlamaCppEmbedder,
     ModelScopeEmbedder,
     SentenceTransformerEmbedder,
 )
-from docsift.embedding.model import EmbeddingModel, ModelType
-from docsift.utils.logging import get_logger
+from sif.embedding.model import EmbeddingModel, ModelType
+from sif.utils.logging import get_logger
 
 
 logger = get_logger(__name__)

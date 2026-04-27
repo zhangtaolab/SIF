@@ -6,8 +6,8 @@ import math
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from docsift.core.models import SearchResult
-from docsift.utils.logging import get_logger, is_quiet, suppress_output
+from sif.core.models import SearchResult
+from sif.utils.logging import get_logger, is_quiet, suppress_output
 
 
 if TYPE_CHECKING:
@@ -156,7 +156,7 @@ class CrossEncoderReranker:
         local_path = model_id
         if "/" in model_id and not Path(model_id).exists():
             try:
-                from docsift.models.download import ModelDownloader
+                from sif.models.download import ModelDownloader
 
                 downloader = ModelDownloader(self._cache_dir)
                 downloaded = downloader.download(model_id)
@@ -253,7 +253,7 @@ class Qwen3Reranker:
 
         # Download from ModelScope if needed
         if "/" in model_id and not Path(model_id).exists():
-            from docsift.models.download import ModelDownloader
+            from sif.models.download import ModelDownloader
 
             downloader = ModelDownloader(self._cache_dir)
             downloaded = downloader.download(model_id)

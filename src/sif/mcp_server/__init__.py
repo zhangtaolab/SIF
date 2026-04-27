@@ -7,10 +7,10 @@ This package provides MCP server functionality:
 - Tool and resource definitions
 """
 
-from docsift.mcp_server.server import MCPServer
-from docsift.mcp_server.transport import Transport, StdioTransport, HTTPTransport
-from docsift.mcp_server.handlers import ToolHandler, ResourceHandler
-from docsift.mcp_server.tools import SearchTool, IndexTool, CollectionTool
+from sif.mcp_server.server import MCPServer
+from sif.mcp_server.transport import Transport, StdioTransport, HTTPTransport
+from sif.mcp_server.handlers import ToolHandler, ResourceHandler
+from sif.mcp_server.tools import SearchTool, IndexTool, CollectionTool
 
 __all__ = [
     "MCPServer",

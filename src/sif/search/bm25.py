@@ -6,7 +6,7 @@ import os
 import sqlite3
 from typing import List, Optional, Tuple
 
-from docsift.core.models import SearchOptions, SearchResult
+from sif.core.models import SearchOptions, SearchResult
 
 
 class BM25Searcher:

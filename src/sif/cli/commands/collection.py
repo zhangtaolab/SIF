@@ -10,10 +10,10 @@ from rich.console import Console
 from rich.table import Table
 from rich.tree import Tree
 
-from docsift.core.models import Collection
-from docsift.database.database import Database
-from docsift.database.repositories import CollectionRepository
-from docsift.indexing.scanner import FileScanner
+from sif.core.models import Collection
+from sif.database.database import Database
+from sif.database.repositories import CollectionRepository
+from sif.indexing.scanner import FileScanner
 
 console = Console()
 
@@ -88,7 +88,7 @@ def collection_remove(ctx: click.Context, name: str) -> None:
             raise click.ClickException(f"Collection '{name}' not found")
 
         # Delete documents first (cascade will handle chunks)
-        from docsift.database.repositories import DocumentRepository
+        from sif.database.repositories import DocumentRepository
 
         doc_repo = DocumentRepository(conn)
         doc_repo.delete_by_collection(collection.id)
@@ -338,7 +338,7 @@ def collection_ls(ctx: click.Context, name: str, subpath: Optional[str]) -> None
             raise click.ClickException(f"Collection '{name}' not found")
 
         # Scan files
-        from docsift.indexing.scanner import FileScanner
+        from sif.indexing.scanner import FileScanner
 
         scanner = FileScanner()
         scan_result = scanner.scan(

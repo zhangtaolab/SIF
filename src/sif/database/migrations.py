@@ -2,8 +2,8 @@
 
 from pathlib import Path
 
-from docsift.config.constants import CURRENT_SCHEMA_VERSION
-from docsift.utils.logging import get_logger
+from sif.config.constants import CURRENT_SCHEMA_VERSION
+from sif.utils.logging import get_logger
 
 logger = get_logger(__name__)
 

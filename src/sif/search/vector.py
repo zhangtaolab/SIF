@@ -7,7 +7,7 @@ import os
 import sqlite3
 from typing import List, Optional
 
-from docsift.core.models import SearchOptions, SearchResult
+from sif.core.models import SearchOptions, SearchResult
 
 
 class VectorSearcher:

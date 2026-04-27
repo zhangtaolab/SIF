@@ -8,9 +8,9 @@ import click
 from rich.console import Console
 from rich.table import Table
 
-from docsift.core.models import PathContext
-from docsift.database.database import Database
-from docsift.database.repositories import CollectionRepository, ContextRepository
+from sif.core.models import PathContext
+from sif.database.database import Database
+from sif.database.repositories import CollectionRepository, ContextRepository
 
 
 console = Console()

@@ -10,7 +10,7 @@ from typing import Generator, Optional
 
 import sqlite_vec
 
-from docsift.database.schema import SchemaManager
+from sif.database.schema import SchemaManager
 
 
 class Database:
@@ -50,7 +50,7 @@ class Database:
 
     def init_schema(self) -> None:
         """Initialize database schema."""
-        from docsift.config.settings import get_settings
+        from sif.config.settings import get_settings
 
         settings = get_settings()
         self._schema = SchemaManager(self.connection, embedding_dim=settings.embedding_dim)
@@ -84,7 +84,7 @@ class Database:
     def get_stats(self) -> dict:
         """Get database statistics."""
         if self._schema is None:
-            from docsift.config.settings import get_settings
+            from sif.config.settings import get_settings
 
             settings = get_settings()
             self._schema = SchemaManager(self.connection, embedding_dim=settings.embedding_dim)
@@ -93,7 +93,7 @@ class Database:
     def reset(self) -> None:
         """Reset database (drop all tables)."""
         if self._schema is None:
-            from docsift.config.settings import get_settings
+            from sif.config.settings import get_settings
 
             settings = get_settings()
             self._schema = SchemaManager(self.connection, embedding_dim=settings.embedding_dim)

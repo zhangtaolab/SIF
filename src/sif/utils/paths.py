@@ -4,7 +4,7 @@ from pathlib import Path
 
 from platformdirs import user_cache_dir, user_config_dir, user_data_dir
 
-from docsift.config.constants import APP_NAME
+from sif.config.constants import APP_NAME
 
 
 def get_data_dir() -> Path:
@@ -61,7 +61,7 @@ def is_markdown_file(path: Path) -> bool:
     Returns:
         True if the file has a markdown extension
     """
-    from docsift.config.constants import MARKDOWN_EXTENSIONS
+    from sif.config.constants import MARKDOWN_EXTENSIONS
 
     return path.suffix.lower() in MARKDOWN_EXTENSIONS
 

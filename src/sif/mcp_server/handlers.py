@@ -3,7 +3,7 @@
 from abc import ABC, abstractmethod
 from typing import Any
 
-from docsift.utils.logging import get_logger
+from sif.utils.logging import get_logger
 
 logger = get_logger(__name__)
 

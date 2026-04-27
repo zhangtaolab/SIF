@@ -1,7 +1,7 @@
 """MCP server implementation."""
 
-from docsift.mcp_server.transport import Transport
-from docsift.utils.logging import get_logger
+from sif.mcp_server.transport import Transport
+from sif.utils.logging import get_logger
 
 logger = get_logger(__name__)
 

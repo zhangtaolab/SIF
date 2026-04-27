@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 from typing import Optional
 
-from docsift.utils.logging import get_logger, is_quiet, suppress_output
+from sif.utils.logging import get_logger, is_quiet, suppress_output
 
 logger = get_logger(__name__)
 
@@ -37,7 +37,7 @@ class ModelDownloader:
             cache_dir: Directory to cache downloaded models
         """
         if cache_dir is None:
-            cache_dir = Path.home() / ".docsift" / "models"
+            cache_dir = Path.home() / ".sif" / "models"
         self.cache_dir = Path(cache_dir).expanduser().resolve()
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional, Tuple
 
-from docsift.core.models import SearchResult
+from sif.core.models import SearchResult
 
 
 class RRFFusion:

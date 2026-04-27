@@ -7,10 +7,10 @@ This package provides various utility functions:
 - Progress indicators
 """
 
-from docsift.utils.logging import setup_logging, get_logger
-from docsift.utils.paths import get_data_dir, get_cache_dir, get_config_dir
-from docsift.utils.text import normalize_text, truncate_text, count_tokens
-from docsift.utils.progress import ProgressTracker
+from sif.utils.logging import setup_logging, get_logger
+from sif.utils.paths import get_data_dir, get_cache_dir, get_config_dir
+from sif.utils.text import normalize_text, truncate_text, count_tokens
+from sif.utils.progress import ProgressTracker
 
 __all__ = [
     "setup_logging",

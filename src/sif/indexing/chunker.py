@@ -6,7 +6,7 @@ import re
 from abc import ABC, abstractmethod
 from typing import List
 
-from docsift.core.models import DocumentChunk
+from sif.core.models import DocumentChunk
 
 
 class Chunker(ABC):

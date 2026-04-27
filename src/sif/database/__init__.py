@@ -1,14 +1,14 @@
 """Database access layer for DocSift."""
 
-from docsift.database.connection import DatabaseConnection, ConnectionPool
-from docsift.database.repositories import (
+from sif.database.connection import DatabaseConnection, ConnectionPool
+from sif.database.repositories import (
     CollectionRepository,
     DocumentRepository,
     DocumentChunkRepository,
     LLMCacheRepository,
     PathContextRepository,
 )
-from docsift.database.migrations import MigrationManager
+from sif.database.migrations import MigrationManager
 
 __all__ = [
     "DatabaseConnection",

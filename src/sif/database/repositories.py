@@ -7,7 +7,7 @@ import sqlite3
 from datetime import datetime
 from typing import List, Optional
 
-from docsift.core.models import (
+from sif.core.models import (
     Collection,
     Document,
     DocumentChunk,
@@ -209,7 +209,7 @@ class DocumentRepository:
     def delete(self, document_id: str) -> bool:
         """Delete a document."""
         # Delete document chunks first
-        from docsift.database.repositories import DocumentChunkRepository
+        from sif.database.repositories import DocumentChunkRepository
 
         chunk_repo = DocumentChunkRepository(self.db)
         chunk_repo.delete_by_document(document_id)
@@ -226,7 +226,7 @@ class DocumentRepository:
         doc_ids = [row[0] for row in cursor.fetchall()]
 
         # Delete chunks for each document
-        from docsift.database.repositories import DocumentChunkRepository
+        from sif.database.repositories import DocumentChunkRepository
 
         chunk_repo = DocumentChunkRepository(self.db)
         for doc_id in doc_ids:

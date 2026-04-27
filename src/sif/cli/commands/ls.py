@@ -6,8 +6,8 @@ import click
 from rich.console import Console
 from rich.tree import Tree
 
-from docsift.database.database import Database
-from docsift.database.repositories import CollectionRepository, DocumentRepository
+from sif.database.database import Database
+from sif.database.repositories import CollectionRepository, DocumentRepository
 
 
 console = Console()

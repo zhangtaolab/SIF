@@ -6,16 +6,16 @@ import os
 import sqlite3
 from typing import TYPE_CHECKING, List, Optional
 
-from docsift.core.models import Embedder, SearchOptions, SearchResult, SearchType
-from docsift.search.bm25 import BM25Searcher
-from docsift.search.rrf import RRFFusion
-from docsift.search.vector import VectorSearcher
-from docsift.utils.logging import get_logger
+from sif.core.models import Embedder, SearchOptions, SearchResult, SearchType
+from sif.search.bm25 import BM25Searcher
+from sif.search.rrf import RRFFusion
+from sif.search.vector import VectorSearcher
+from sif.utils.logging import get_logger
 
 if TYPE_CHECKING:
-    from docsift.search.expansion import QueryExpansion
-    from docsift.search.rerank import CrossEncoderReranker, LlamaCppReranker
-    from docsift.search.snippets import SmartSnippetExtractor
+    from sif.search.expansion import QueryExpansion
+    from sif.search.rerank import CrossEncoderReranker, LlamaCppReranker
+    from sif.search.snippets import SmartSnippetExtractor
 
 logger = get_logger(__name__)
 

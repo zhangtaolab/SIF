@@ -8,9 +8,9 @@ from typing import List, Optional
 
 import numpy as np
 
-from docsift.core.models import Embedder
-from docsift.models.download import ModelDownloader
-from docsift.utils.logging import get_logger, is_quiet, suppress_output
+from sif.core.models import Embedder
+from sif.models.download import ModelDownloader
+from sif.utils.logging import get_logger, is_quiet, suppress_output
 
 
 logger = get_logger(__name__)

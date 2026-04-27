@@ -7,32 +7,32 @@ This package contains all Pydantic models used for:
 - API schema definitions
 """
 
-from docsift.models.collection import (
+from sif.models.collection import (
     CollectionCreate,
     CollectionUpdate,
     CollectionResponse,
     CollectionListResponse,
 )
-from docsift.models.document import (
+from sif.models.document import (
     DocumentCreate,
     DocumentUpdate,
     DocumentResponse,
     DocumentSearchResult,
     ChunkResponse,
 )
-from docsift.models.context import (
+from sif.models.context import (
     ContextCreate,
     ContextUpdate,
     ContextResponse,
 )
-from docsift.models.search import (
+from sif.models.search import (
     SearchQuery,
     SearchResult,
     SearchResponse,
     SearchOptions,
     SearchType,
 )
-from docsift.models.embedding import (
+from sif.models.embedding import (
     EmbeddingConfig,
     EmbeddingModelInfo,
     EmbeddingRequest,

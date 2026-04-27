@@ -5,7 +5,7 @@ from typing import Protocol
 from rich.progress import Progress as RichProgress
 from rich.progress import SpinnerColumn, TextColumn, BarColumn, TaskID
 
-from docsift.utils.logging import get_logger
+from sif.utils.logging import get_logger
 
 logger = get_logger(__name__)
 

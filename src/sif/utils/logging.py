@@ -118,7 +118,7 @@ def setup_logging(
         handler.setFormatter(formatter)
 
     # Configure root logger
-    root_logger = logging.getLogger("docsift")
+    root_logger = logging.getLogger("sif")
     root_logger.setLevel(getattr(logging, level.upper()))
     root_logger.handlers = []
     root_logger.addHandler(handler)
@@ -140,4 +140,4 @@ def get_logger(name: str) -> logging.Logger:
     Returns:
         Logger instance
     """
-    return logging.getLogger(f"docsift.{name}")
+    return logging.getLogger(f"sif.{name}")

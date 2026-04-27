@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 from typing import Any, Dict
 
-from docsift.mcp.server import MCPServer
-from docsift.utils.logging import get_logger
+from sif.mcp.server import MCPServer
+from sif.utils.logging import get_logger
 
 logger = get_logger(__name__)
 

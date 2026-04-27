@@ -2,12 +2,12 @@
 
 import time
 
-from docsift.config.settings import Settings
-from docsift.core.models import Embedder
-from docsift.embedding.cache import EmbeddingCache
-from docsift.embedding.factory import EmbeddingModelFactory
-from docsift.models.embedding import EmbeddingConfig, EmbeddingResponse, ModelType
-from docsift.utils.logging import get_logger
+from sif.config.settings import Settings
+from sif.core.models import Embedder
+from sif.embedding.cache import EmbeddingCache
+from sif.embedding.factory import EmbeddingModelFactory
+from sif.models.embedding import EmbeddingConfig, EmbeddingResponse, ModelType
+from sif.utils.logging import get_logger
 
 
 logger = get_logger(__name__)
