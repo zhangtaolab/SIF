@@ -1,15 +1,15 @@
 {
   "mcpServers": {
-    "docsift": {
+    "sif": {
       "command": "python",
       "args": [
         "-m",
-        "docsift.mcp.transport_stdio"
+        "sif.mcp.transport_stdio"
       ],
       "env": {
-        "PYTHONPATH": "/path/to/docsift/src"
+        "PYTHONPATH": "/path/to/sif/src"
       },
-      "description": "DocSift MCP Server for document search and retrieval",
+      "description": "SIF MCP Server for document search and retrieval",
       "disabled": false
     }
   }

@@ -1,6 +1,6 @@
-# DocSift MCP Server
+# SIF MCP Server
 
-Model Context Protocol (MCP) server implementation for DocSift.
+Model Context Protocol (MCP) server implementation for SIF.
 
 ## Features
 
@@ -27,19 +27,19 @@ pip install fastapi uvicorn pydantic
 ### Stdio Mode (Claude Desktop)
 
 ```python
-from docsift.mcp.transport_stdio import run_stdio
+from sif.mcp.transport_stdio import run_stdio
 run_stdio()
 ```
 
 Or run directly:
 ```bash
-python -m docsift.mcp.transport_stdio
+python -m sif.mcp.transport_stdio
 ```
 
 ### HTTP Mode
 
 ```python
-from docsift.mcp.transport_http import run_http_server
+from sif.mcp.transport_http import run_http_server
 
 async def main():
     await run_http_server(host="0.0.0.0", port=8080)
@@ -50,7 +50,7 @@ asyncio.run(main())
 
 Or run directly:
 ```bash
-python -m docsift.mcp.transport_http --host 0.0.0.0 --port 8080
+python -m sif.mcp.transport_http --host 0.0.0.0 --port 8080
 ```
 
 ## API Endpoints (HTTP Mode)
@@ -227,7 +227,7 @@ Get the current status of all document collections.
 ### ServerConfig
 
 ```python
-from docsift.mcp import ServerConfig
+from sif.mcp import ServerConfig
 
 config = ServerConfig(
     name="my-mcp-server",
@@ -241,7 +241,7 @@ config = ServerConfig(
 ### Custom Search Backend
 
 ```python
-from docsift.mcp import ToolRegistry, SearchBackend
+from sif.mcp import ToolRegistry, SearchBackend
 
 class MySearchBackend(SearchBackend):
     async def hybrid_search(self, query, collections=None, limit=10, min_score=0.0):
