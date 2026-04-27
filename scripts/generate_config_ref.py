@@ -8,11 +8,11 @@ import sys
 from pathlib import Path
 
 
-# Ensure the src directory is on the path so we can import docsift
+# Ensure the src directory is on the path so we can import sif
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from docsift.config.settings import Settings  # noqa: E402
+from sif.config.settings import Settings  # noqa: E402
 
 
 def get_type_name(annotation: object) -> str:
@@ -63,8 +63,8 @@ def get_validators() -> dict[str, str]:
 def get_computed_default(field_name: str) -> str | None:
     """Return computed default description for Path fields that default to None."""
     computed = {
-        "db_path": "~/.local/share/docsift/docsift.db (computed)",
-        "cache_dir": "~/.cache/docsift (computed)",
+        "db_path": "~/.local/share/sif/sif.db (computed)",
+        "cache_dir": "~/.cache/sif (computed)",
     }
     return computed.get(field_name)
 
@@ -106,7 +106,7 @@ def _append_header(lines: list[str]) -> None:
     lines.append("# Configuration")
     lines.append("")
     lines.append(
-        "DocSift can be configured through environment variables or a `.env` file. "
+        "SIF can be configured through environment variables or a `.env` file. "
         "This guide covers all available configuration options."
     )
     lines.append("")
@@ -117,8 +117,8 @@ def _append_header(lines: list[str]) -> None:
     lines.append("Set configuration directly in your shell:")
     lines.append("")
     lines.append("```bash")
-    lines.append("export DOCSIFT_DB_PATH=/custom/path/docsift.db")
-    lines.append("export DOCSIFT_LOG_LEVEL=DEBUG")
+    lines.append("export SIF_DB_PATH=/custom/path/sif.db")
+    lines.append("export SIF_LOG_LEVEL=DEBUG")
     lines.append("```")
     lines.append("")
     lines.append("### .env File")
@@ -129,9 +129,9 @@ def _append_header(lines: list[str]) -> None:
     lines.append("")
     lines.append("```bash")
     lines.append("# ~/.env or ./.env")
-    lines.append("DOCSIFT_DB_PATH=~/.local/share/docsift/docsift.db")
-    lines.append("DOCSIFT_MODEL_NAME=Qwen/Qwen3-Embedding-0.6B")
-    lines.append("DOCSIFT_LOG_LEVEL=INFO")
+    lines.append("SIF_DB_PATH=~/.local/share/sif/sif.db")
+    lines.append("SIF_MODEL_NAME=Qwen/Qwen3-Embedding-0.6B")
+    lines.append("SIF_LOG_LEVEL=INFO")
     lines.append("```")
     lines.append("")
     lines.append("### Configuration Precedence")
@@ -160,7 +160,7 @@ def _append_options_tables(lines: list[str]) -> None:
             if field_name not in model_fields:
                 continue
             field_info = model_fields[field_name]
-            env_var = f"`DOCSIFT_{field_name.upper()}`"
+            env_var = f"`SIF_{field_name.upper()}`"
             type_name = get_type_name(field_info.annotation)
             default = field_info.default
             if default is None:
@@ -181,7 +181,7 @@ def _append_validation_rules(lines: list[str]) -> None:
     lines.append("## Validation Rules")
     lines.append("")
     lines.append(
-        "DocSift validates configuration on startup. "
+        "SIF validates configuration on startup. "
         "Invalid values will raise errors:"
     )
     lines.append("")
@@ -224,41 +224,41 @@ def _append_env_example(lines: list[str]) -> None:
     lines.append("")
     lines.append("```bash")
     lines.append("# Database")
-    lines.append("DOCSIFT_DB_PATH=~/.local/share/docsift/docsift.db")
+    lines.append("SIF_DB_PATH=~/.local/share/sif/sif.db")
     lines.append("")
     lines.append("# Embedding Model")
-    lines.append("DOCSIFT_MODEL_NAME=Qwen/Qwen3-Embedding-0.6B")
-    lines.append("DOCSIFT_EMBEDDING_DIM=1024")
-    lines.append("DOCSIFT_MODEL_TYPE=sentence_transformers")
-    lines.append("DOCSIFT_BATCH_SIZE=32")
+    lines.append("SIF_MODEL_NAME=Qwen/Qwen3-Embedding-0.6B")
+    lines.append("SIF_EMBEDDING_DIM=1024")
+    lines.append("SIF_MODEL_TYPE=sentence_transformers")
+    lines.append("SIF_BATCH_SIZE=32")
     lines.append("")
     lines.append("# Reranker")
-    lines.append("DOCSIFT_RERANKER_MODEL_NAME=Qwen/Qwen3-Reranker-0.6B")
-    lines.append("DOCSIFT_RERANKER_MODEL_TYPE=transformers")
-    lines.append("DOCSIFT_RERANKER_BATCH_SIZE=32")
+    lines.append("SIF_RERANKER_MODEL_NAME=Qwen/Qwen3-Reranker-0.6B")
+    lines.append("SIF_RERANKER_MODEL_TYPE=transformers")
+    lines.append("SIF_RERANKER_BATCH_SIZE=32")
     lines.append("")
     lines.append("# API (for OpenAI-compatible backends)")
-    lines.append("# DOCSIFT_API_KEY=your-api-key")
-    lines.append("# DOCSIFT_API_BASE=https://api.openai.com/v1")
+    lines.append("# SIF_API_KEY=your-api-key")
+    lines.append("# SIF_API_BASE=https://api.openai.com/v1")
     lines.append("")
     lines.append("# Chunking")
-    lines.append("DOCSIFT_CHUNK_SIZE=512")
-    lines.append("DOCSIFT_CHUNK_OVERLAP=128")
+    lines.append("SIF_CHUNK_SIZE=512")
+    lines.append("SIF_CHUNK_OVERLAP=128")
     lines.append("")
     lines.append("# Search")
-    lines.append("DOCSIFT_DEFAULT_SEARCH_TYPE=hybrid")
-    lines.append("DOCSIFT_DEFAULT_LIMIT=10")
+    lines.append("SIF_DEFAULT_SEARCH_TYPE=hybrid")
+    lines.append("SIF_DEFAULT_LIMIT=10")
     lines.append("")
     lines.append("# MCP Server")
-    lines.append("DOCSIFT_MCP_HOST=127.0.0.1")
-    lines.append("DOCSIFT_MCP_PORT=8080")
-    lines.append("DOCSIFT_MCP_TRANSPORT=stdio")
+    lines.append("SIF_MCP_HOST=127.0.0.1")
+    lines.append("SIF_MCP_PORT=8080")
+    lines.append("SIF_MCP_TRANSPORT=stdio")
     lines.append("")
     lines.append("# Logging")
-    lines.append("DOCSIFT_LOG_LEVEL=INFO")
+    lines.append("SIF_LOG_LEVEL=INFO")
     lines.append("")
     lines.append("# Cache")
-    lines.append("DOCSIFT_CACHE_EMBEDDINGS=true")
+    lines.append("SIF_CACHE_EMBEDDINGS=true")
     lines.append("```")
     lines.append("")
 
@@ -268,13 +268,13 @@ def _append_validation_example(lines: list[str]) -> None:
     lines.append("## Configuration Validation")
     lines.append("")
     lines.append(
-        "DocSift validates configuration on startup. "
+        "SIF validates configuration on startup. "
         "Invalid configurations will produce errors:"
     )
     lines.append("")
     lines.append("```bash")
-    lines.append("$ export DOCSIFT_MODEL_TYPE=invalid")
-    lines.append("docsift collection list")
+    lines.append("$ export SIF_MODEL_TYPE=invalid")
+    lines.append("sif collection list")
     lines.append(
         "Error: Invalid model_type: invalid. Must be one of "
         "['gguf', 'huggingface', 'modelscope', 'openai', 'sentence_transformers']"
@@ -291,10 +291,10 @@ def _append_viewing_config(lines: list[str]) -> None:
     lines.append("")
     lines.append("```bash")
     lines.append("# View effective configuration")
-    lines.append("docsift config show")
+    lines.append("sif config show")
     lines.append("")
     lines.append("# View with defaults")
-    lines.append("docsift config show --with-defaults")
+    lines.append("sif config show --with-defaults")
     lines.append("```")
     lines.append("")
 
@@ -318,7 +318,7 @@ def _append_best_practices(lines: list[str]) -> None:
         "4. **Tune chunk size**: Adjust based on your document characteristics"
     )
     lines.append(
-        "5. **Cache embeddings**: Enable `DOCSIFT_CACHE_EMBEDDINGS` "
+        "5. **Cache embeddings**: Enable `SIF_CACHE_EMBEDDINGS` "
         "for repeated indexing"
     )
     lines.append("")
@@ -340,18 +340,18 @@ def _append_troubleshooting(lines: list[str]) -> None:
     lines.append("chmod 644 .env")
     lines.append("")
     lines.append("# Test with explicit path")
-    lines.append("export DOCSIFT_ENV_FILE=/path/to/.env")
+    lines.append("export SIF_ENV_FILE=/path/to/.env")
     lines.append("```")
     lines.append("")
     lines.append("### Environment Variables Not Applied")
     lines.append("")
     lines.append("```bash")
     lines.append("# Check if variable is set")
-    lines.append("echo $DOCSIFT_LOG_LEVEL")
+    lines.append("echo $SIF_LOG_LEVEL")
     lines.append("")
     lines.append("# Check in Python")
     lines.append(
-        'python -c "import os; print(os.getenv(\'DOCSIFT_LOG_LEVEL\'))"'
+        'python -c "import os; print(os.getenv(\'SIF_LOG_LEVEL\'))"'
     )
     lines.append("```")
     lines.append("")

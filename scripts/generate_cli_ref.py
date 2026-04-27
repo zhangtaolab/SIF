@@ -10,11 +10,11 @@ from typing import Any
 import click
 
 
-# Ensure docsift is importable
+# Ensure sif is importable
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root / "src"))
 
-from docsift.cli.main import cli  # noqa: E402
+from sif.cli.main import cli  # noqa: E402
 
 
 def _is_sentinel(value: Any) -> bool:
@@ -86,7 +86,7 @@ def _format_command_section(path: str, cmd: click.Command) -> list[str]:
         section.append(cmd.help)
         section.append("")
 
-    section.append(f"```bash\ndocsift {path} [OPTIONS]\n```")
+    section.append(f"```bash\nsif {path} [OPTIONS]\n```")
     section.append("")
 
     args = [p for p in cmd.params if isinstance(p, click.Argument)]
@@ -135,7 +135,7 @@ def generate_cli_reference() -> str:
 
     lines.append("# CLI Reference")
     lines.append("")
-    lines.append("Complete reference for all DocSift CLI commands.")
+    lines.append("Complete reference for all SIF CLI commands.")
     lines.append("")
 
     # Global options
@@ -164,7 +164,7 @@ def generate_cli_reference() -> str:
     lines.append("## Command Overview")
     lines.append("")
     lines.append("```")
-    lines.append("docsift")
+    lines.append("sif")
     lines.extend(_build_tree_lines(cli))
     lines.append("```")
     lines.append("")
@@ -252,28 +252,28 @@ def generate_cli_reference() -> str:
     lines.append("```bash")
     lines.append("# Add a collection")
     lines.append(
-        'docsift collection add ~/Documents/notes '
+        'sif collection add ~/Documents/notes '
         '--name my-notes --description "Personal notes"'
     )
     lines.append("")
     lines.append("# Update index")
-    lines.append("docsift index update my-notes")
+    lines.append("sif index update my-notes")
     lines.append("")
     lines.append("# Search")
-    lines.append('docsift search "python tips"')
+    lines.append('sif search "python tips"')
     lines.append("```")
     lines.append("")
 
     lines.append("**Managing collection visibility:**")
     lines.append("```bash")
     lines.append("# Exclude from default searches")
-    lines.append("docsift collection exclude my-notes")
+    lines.append("sif collection exclude my-notes")
     lines.append("")
     lines.append("# Include again")
-    lines.append("docsift collection include my-notes")
+    lines.append("sif collection include my-notes")
     lines.append("")
     lines.append("# Set pre-update command")
-    lines.append('docsift collection update-cmd my-notes --cmd "git pull"')
+    lines.append('sif collection update-cmd my-notes --cmd "git pull"')
     lines.append("```")
     lines.append("")
 
@@ -281,27 +281,27 @@ def generate_cli_reference() -> str:
     lines.append("```bash")
     lines.append("# Add global context")
     lines.append(
-        'docsift context add global global "I am a software engineer."'
+        'sif context add global global "I am a software engineer."'
     )
     lines.append("")
     lines.append("# Add collection context")
     lines.append(
-        'docsift context add collection my-notes '
+        'sif context add collection my-notes '
         '"These are my programming notes."'
     )
     lines.append("")
     lines.append("# List contexts")
-    lines.append("docsift context list")
+    lines.append("sif context list")
     lines.append("")
     lines.append("# Prune orphaned contexts")
-    lines.append("docsift context prune")
+    lines.append("sif context prune")
     lines.append("```")
     lines.append("")
 
     lines.append("**Hybrid search with options:**")
     lines.append("```bash")
     lines.append(
-        'docsift search query "python decorators" '
+        'sif search query "python decorators" '
         "--explain --candidate-limit 30 --limit 10"
     )
     lines.append("```")

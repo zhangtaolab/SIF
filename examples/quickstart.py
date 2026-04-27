@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """
-DocSift Quickstart Example
+SIF Quickstart Example
 
-This script demonstrates the basic usage of DocSift for document indexing and search.
+This script demonstrates the basic usage of SIF for document indexing and search.
 
 Prerequisites:
-    pip install docsift
+    pip install sif
 
 Usage:
     python quickstart.py
 
 This example will:
-    1. Initialize a DocSift database
+    1. Initialize a SIF database
     2. Add a document collection
     3. Index documents
     4. Perform searches
@@ -165,7 +165,7 @@ def example_database_operations() -> None:
     print("=" * 60)
     
     try:
-        from docsift.database import DatabaseConnection, MigrationManager
+        from sif.database import DatabaseConnection, MigrationManager
         
         # Create a temporary database
         with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
@@ -189,7 +189,7 @@ def example_database_operations() -> None:
         
     except ImportError as e:
         print(f"   ✗ Import error: {e}")
-        print("   Make sure DocSift is installed: pip install docsift")
+        print("   Make sure SIF is installed: pip install sif")
     except Exception as e:
         print(f"   ✗ Error: {e}")
 
@@ -201,7 +201,7 @@ def example_collection_management() -> None:
     print("=" * 60)
     
     try:
-        from docsift.core import Collection
+        from sif.core import Collection
         
         # Create a temporary directory for the collection
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -241,7 +241,7 @@ def example_search() -> None:
     print("=" * 60)
     
     try:
-        from docsift.search import BM25SearchStrategy, SearchContext
+        from sif.search import BM25SearchStrategy, SearchContext
         
         print("\n1. Creating search strategy...")
         strategy = BM25SearchStrategy()
@@ -254,8 +254,8 @@ def example_search() -> None:
         
         # Note: Actual search requires an indexed database
         print("\n3. To perform actual searches:")
-        print("   - Index your documents first: docsift update")
-        print("   - Then search: docsift search 'your query'")
+        print("   - Index your documents first: sif update")
+        print("   - Then search: sif search 'your query'")
         
     except ImportError as e:
         print(f"   ✗ Import error: {e}")
@@ -270,36 +270,36 @@ def example_cli_usage() -> None:
     print("=" * 60)
     
     print("""
-Common DocSift CLI commands:
+Common SIF CLI commands:
 
 # Show help
-docsift --help
+sif --help
 
 # Add a collection
-docsift collection add /path/to/documents --name mydocs
+sif collection add /path/to/documents --name mydocs
 
 # List collections
-docsift collection list
+sif collection list
 
 # Update index
-docsift update
+sif update
 
 # Search documents
-docsift search "machine learning"
-docsift search "python tutorial" --limit 20
+sif search "machine learning"
+sif search "python tutorial" --limit 20
 
 # Vector search
-docsift vsearch "similar documents" --collection mydocs
+sif vsearch "similar documents" --collection mydocs
 
 # Get document by path
-docsift get /path/to/document.md
+sif get /path/to/document.md
 
 # Check status
-docsift status
+sif status
 
 # Start MCP server
-docsift mcp stdio    # For Claude Desktop
-docsift mcp http     # HTTP server
+sif mcp stdio    # For Claude Desktop
+sif mcp http     # HTTP server
 """)
 
 
@@ -310,7 +310,7 @@ def example_configuration() -> None:
     print("=" * 60)
     
     try:
-        from docsift.cli.config import Config
+        from sif.cli.config import Config
         
         print("\n1. Loading configuration...")
         config = Config()
@@ -321,7 +321,7 @@ def example_configuration() -> None:
         print(f"   - Data dir: {config.get_data_dir()}")
         
         print("\n3. To customize configuration:")
-        print("   - Create: ~/.config/docsift/config.yaml")
+        print("   - Create: ~/.config/sif/config.yaml")
         print("   - See example_config.yaml for options")
         
     except ImportError as e:
@@ -331,12 +331,12 @@ def example_configuration() -> None:
 
 
 def main() -> int:
-    """Main function demonstrating DocSift usage."""
+    """Main function demonstrating SIF usage."""
     print("=" * 60)
-    print("DocSift Quickstart Example")
+    print("SIF Quickstart Example")
     print("=" * 60)
     print()
-    print("This script demonstrates basic DocSift functionality.")
+    print("This script demonstrates basic SIF functionality.")
     print()
     
     # Run examples
@@ -352,15 +352,15 @@ def main() -> int:
     print("=" * 60)
     print("""
 Next steps:
-    1. Install DocSift: pip install docsift
-    2. Add a collection: docsift collection add /path/to/docs
-    3. Update index: docsift update
-    4. Search: docsift search "your query"
+    1. Install SIF: pip install sif
+    2. Add a collection: sif collection add /path/to/docs
+    3. Update index: sif update
+    4. Search: sif search "your query"
 
 For more information:
-    - Documentation: https://docsift.readthedocs.io
-    - CLI help: docsift --help
-    - GitHub: https://github.com/docsift/docsift
+    - Documentation: https://sif.readthedocs.io
+    - CLI help: sif --help
+    - GitHub: https://github.com/sif/sif
 """)
     
     return 0

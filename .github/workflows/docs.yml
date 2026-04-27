@@ -5,8 +5,8 @@ on:
     paths:
       - 'docs/**'
       - 'README.md'
-      - 'src/docsift/cli/**'
-      - 'src/docsift/config/**'
+      - 'src/sif/cli/**'
+      - 'src/sif/config/**'
       - 'scripts/generate_cli_ref.py'
       - 'scripts/generate_config_ref.py'
       - 'tests/test_docs.py'

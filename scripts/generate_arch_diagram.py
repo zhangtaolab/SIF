@@ -6,7 +6,7 @@ import ast
 from pathlib import Path
 from typing import Dict, List, Set
 
-SRC_DIR = Path("src/docsift")
+SRC_DIR = Path("src/sif")
 
 
 def extract_imports(file_path: Path) -> list[str]:
@@ -18,11 +18,11 @@ def extract_imports(file_path: Path) -> list[str]:
     imports: list[str] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom):
-            if node.module and node.module.startswith("docsift."):
+            if node.module and node.module.startswith("sif."):
                 imports.append(node.module)
         elif isinstance(node, ast.Import):
             for alias in node.names:
-                if alias.name.startswith("docsift."):
+                if alias.name.startswith("sif."):
                     imports.append(alias.name)
     return imports
 
@@ -34,7 +34,7 @@ def scan_modules(src_dir: Path) -> Dict[str, List[str]]:
         if py_file.name == "__init__.py":
             continue
         rel = py_file.relative_to(src_dir)
-        module_name = "docsift." + "/".join(rel.parent.parts) + "/" + rel.stem
+        module_name = "sif." + "/".join(rel.parent.parts) + "/" + rel.stem
         modules[module_name] = extract_imports(py_file)
     return modules
 
@@ -52,7 +52,7 @@ def build_dependency_graph(modules: Dict[str, List[str]]) -> Dict[str, Set[str]]
     for mod, imports in modules.items():
         src_pkg = mod.split("/")[0]
         for imp in imports:
-            imp_pkg = imp.split(".")[1]  # docsift.PKG.mod -> PKG
+            imp_pkg = imp.split(".")[1]  # sif.PKG.mod -> PKG
             if imp_pkg != src_pkg:
                 pkg_deps.setdefault(src_pkg, set()).add(imp_pkg)
 

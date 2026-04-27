@@ -1,11 +1,11 @@
-# Makefile for DocSift project
+# Makefile for SIF project
 # Provides convenient commands for common development tasks
 
 .PHONY: help install install-dev install-all test test-verbose test-fast docs-test docs-generate lint lint-fix format format-check typecheck coverage clean build docs pre-commit security all ci dev-setup dev-check update-deps info
 
 # Default target
 help:
-	@echo "DocSift Development Commands"
+	@echo "SIF Development Commands"
 	@echo "============================"
 	@echo ""
 	@echo "Setup:"
@@ -38,27 +38,27 @@ help:
 
 # Installation targets
 install:
-	@echo "Installing DocSift..."
+	@echo "Installing SIF..."
 	pip install -e .
 
 install-dev:
-	@echo "Installing DocSift with development dependencies..."
+	@echo "Installing SIF with development dependencies..."
 	pip install -e ".[dev]"
 	pre-commit install
 
 install-all:
-	@echo "Installing DocSift with all dependencies..."
+	@echo "Installing SIF with all dependencies..."
 	pip install -e ".[dev,all]"
 	pre-commit install
 
 # Testing targets
 test:
 	@echo "Running tests with coverage..."
-	pytest --cov=src/docsift --cov-report=term-missing --cov-report=html --cov-report=xml
+	pytest --cov=src/sif --cov-report=term-missing --cov-report=html --cov-report=xml
 
 test-verbose:
 	@echo "Running tests with verbose output..."
-	pytest -vvs --tb=short --cov=src/docsift --cov-report=term-missing
+	pytest -vvs --tb=short --cov=src/sif --cov-report=term-missing
 
 test-fast:
 	@echo "Running tests without coverage (faster)..."
@@ -93,18 +93,18 @@ format-check:
 # Type checking target
 typecheck:
 	@echo "Running mypy type checker..."
-	mypy src/docsift
+	mypy src/sif
 
 # Coverage target
 coverage:
 	@echo "Generating coverage report..."
-	pytest --cov=src/docsift --cov-report=html --cov-report=xml --cov-report=term-missing
+	pytest --cov=src/sif --cov-report=html --cov-report=xml --cov-report=term-missing
 	@echo "HTML report generated at: htmlcov/index.html"
 
 # Security scan target
 security:
 	@echo "Running security scan with bandit..."
-	bandit -r src/docsift -c pyproject.toml
+	bandit -r src/sif -c pyproject.toml
 
 # Pre-commit hooks target
 pre-commit:
@@ -173,8 +173,8 @@ update-deps:
 
 # Show project info
 info:
-	@echo "DocSift Project Information"
+	@echo "SIF Project Information"
 	@echo "==========================="
 	@echo "Python version: $$(python --version)"
 	@echo "Installed packages:"
-	@pip list | grep -E "(docsift|ruff|mypy|pytest|black|bandit)" || true
+	@pip list | grep -E "(sif|ruff|mypy|pytest|black|bandit)" || true
