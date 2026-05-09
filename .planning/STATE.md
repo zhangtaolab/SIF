@@ -5,11 +5,11 @@ milestone_name: milestone
 status: completed
 last_updated: "2026-04-27T13:00:25.232Z"
 progress:
-  total_phases: 8
-  completed_phases: 6
-  total_plans: 40
-  completed_plans: 45
-  percent: 100
+  total_phases: 9
+  completed_phases: 8
+  total_plans: 46
+  completed_plans: 46
+  percent: 89
 ---
 
 # DocSift — Project State
@@ -18,18 +18,18 @@ progress:
 
 - **Name:** DocSift
 - **Core Value:** 用户可以在自己的笔记和文档库中，用自然语言快速、准确地找到需要的信息——无论关键词是否匹配。
-- **Current Focus:** Phase 08 — project-rename-from-docsift-to-sif
+- **Current Focus:** Phase 09 — MCP Server Implementation
 - **Tech Stack:** Python 3.10+, SQLite (FTS5 + sqlite-vec), Click, Pydantic, sentence-transformers, llama-cpp-python
 
 ## Current Position
 
-Phase: 08 (project-rename-from-docsift-to-sif) — COMPLETED
-Plan: 8 of 8
+Phase: 09 (mcp-server-implementation) — NOT STARTED
+Plan: 0 of 6
 
-- **Phase:** 08
+- **Phase:** 09
 - **Plan:** Not started
-- **Status:** Milestone complete
-- **Progress Bar:** `[████████████████████] 100%`
+- **Status:** In Progress
+- **Progress Bar:** `[████████████████░░░░] 89%`
 
 ## Phase History
 
@@ -42,11 +42,12 @@ Plan: 8 of 8
 | 05 — Agent Context Experience | 2026-04-18 | 2026-04-18 | 7/7 plans passed. 3 gap closure fixes committed. Qwen3 models set as default. |
 | 06 — Documentation Audit & Refresh | 2026-04-18 | 2026-04-18 | All 7 plans passed. Auto-generated CLI/config references, docs code block validator (12 tests), Makefile target, GitHub Actions CI workflow. |
 | 07 — CLI Claude Skill | 2026-04-20 | 2026-04-20 | 2/2 plans passed. docsift-search and docsift-get Claude skills created in .claude/skills/. |
+| 08 — Project rename from DocSift to SIF | 2026-04-27 | 2026-04-27 | 8/8 plans passed. Complete rename of package, CLI, env vars, docs, tests, and skills. |
 
 ## Performance Metrics
 
 - **Requirements mapped:** 31/31 v1 + 7 DOC requirements
-- **Phases defined:** 8
+- **Phases defined:** 9
 - **Tests passing:** 377 passed, 11 skipped, 0 failed
 - **Known blockers:** 0
 
@@ -84,6 +85,7 @@ Plan: 8 of 8
 
 - Phase 7 added (2026-04-20): Generate Claude skills for all CLI commands in the project
 - Phase 8 added (2026-04-27): Project rename from DocSift to SIF
+- Phase 9 added (2026-05-08): MCP Server Implementation — unify dual MCP implementations and implement real tool handlers
 
 ### TODOs
 
@@ -97,5 +99,5 @@ Plan: 8 of 8
 
 ## Session Continuity
 
-- **Last action:** Plan 05 completed — all 31 test files updated to sif imports, patch targets, and command references; test_docsift_complete.py renamed to test_sif_complete.py; pytest collects 388 tests
-- **Next expected action:** Execute Plan 06: update documentation files (README, docs/, scripts/) to use sif references
+- **Last action:** Phase 9 added to roadmap — MCP Server Implementation with 6 planned plans
+- **Next expected action:** Discuss or plan Phase 09: MCP Server Implementation

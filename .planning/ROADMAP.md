@@ -1,7 +1,7 @@
 # DocSift Roadmap
 
 **Granularity:** Standard
-**Phases:** 8
+**Phases:** 9
 **Coverage:** 31/31 v1 requirements mapped
 
 ## Phases
@@ -13,6 +13,8 @@
 - [x] **Phase 5: Agent Context Experience** - Allow users to augment collections with contextual descriptions for better retrieval
 - [x] **Phase 6: Documentation Audit & Refresh** - Ensure all docs accurately reflect CLI, API, and config; establish docs testing infrastructure
 - [x] **Phase 7: CLI Claude Skill** - Generate Claude skills for all CLI commands
+- [x] **Phase 8: Project rename from DocSift to SIF** - Rename the entire project from DocSift to SIF
+- [ ] **Phase 9: MCP Server Implementation** - Unify dual MCP implementations and implement real tool handlers with stdio/HTTP transports
 
 ## Phase Details
 
@@ -132,6 +134,7 @@ Plans:
 | 6. Documentation Audit & Refresh | 7/7 | Complete | 2026-04-18 |
 | 7. CLI Claude Skill | 2/2 | Complete | 2026-04-20 |
 | 8. Project rename from DocSift to SIF | 8/8 | Complete | 2026-04-27 |
+| 9. MCP Server Implementation | 0/0 | Not Started | — |
 
 ### Phase 6: Documentation Audit & Refresh
 
@@ -198,3 +201,25 @@ Plans:
 - [x] 08-06-PLAN.md — Update README.md, CLAUDE.md, docs/, and mkdocs.yml
 - [x] 08-07-PLAN.md — Rename Claude Skills and update skill files
 - [x] 08-08-PLAN.md — Run full quality suite: pytest, ruff, mypy, CLI verification, grep audit
+
+### Phase 9: MCP Server Implementation
+
+**Goal**: The MCP server provides real search and document retrieval capabilities through both stdio and HTTP transports, with a unified implementation replacing the current dual legacy/refactored split.
+**Depends on**: Phase 8
+**Requirements**: MCP-01, MCP-02, MCP-03, MCP-04
+**Success Criteria** (what must be TRUE):
+  1. A single unified MCP implementation exists (legacy `mcp/` and refactored `mcp_server/` are consolidated)
+  2. MCP tools (`query`, `get`, `multi_get`, `status`) execute real searches against the SQLite index, not mock data
+  3. stdio transport works for CLI integration (e.g., Claude Desktop, Cline)
+  4. HTTP transport works for remote access with FastAPI and SSE
+  5. CORS defaults are secure (non-`*`) in HTTP mode
+  6. Full test suite passes including MCP integration tests
+**Plans:** TBD
+
+Plans:
+- [ ] 09-01-PLAN.md — Unify dual MCP implementations into a single `mcp/` package
+- [ ] 09-02-PLAN.md — Implement real SearchBackend connecting to Database + Searchers
+- [ ] 09-03-PLAN.md — Implement MCP tool handlers (query, get, multi_get, status) with real search
+- [ ] 09-04-PLAN.md — Implement stdio transport with proper MCP protocol (2024-11-05)
+- [ ] 09-05-PLAN.md — Implement HTTP transport with FastAPI, SSE, and secure CORS defaults
+- [ ] 09-06-PLAN.md — Write MCP integration tests and run full quality suite
