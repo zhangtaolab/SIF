@@ -19,7 +19,7 @@ created: 2026-05-12
 |----------|-------|
 | **Framework** | pytest 8.x |
 | **Config file** | `pyproject.toml` |
-| **Quick run command** | `pytest tests/test_mcp/ -x -q` |
+| **Quick run command** | `pytest tests/unit/mcp/ -x -q` |
 | **Full suite command** | `ruff check src tests && ruff format --check src tests && pytest` |
 | **Estimated runtime** | ~30 seconds |
 
@@ -27,7 +27,7 @@ created: 2026-05-12
 
 ## Sampling Rate
 
-- **After every task commit:** Run `pytest tests/test_mcp/ -x -q`
+- **After every task commit:** Run `pytest tests/unit/mcp/ -x -q`
 - **After every plan wave:** Run `ruff check src tests && ruff format --check src tests && pytest`
 - **Before `/gsd-verify-work`:** Full suite must be green
 - **Max feedback latency:** 60 seconds
@@ -38,11 +38,11 @@ created: 2026-05-12
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| 09-01-01 | 01 | 1 | MCP-01 | T-09-01 | No mock data left in mcp/tools.py | unit | `pytest tests/test_mcp/test_unified_package.py -x -q` | ❌ W0 | ⬜ pending |
-| 09-02-01 | 02 | 1 | MCP-02 | T-09-02 | SearchBackend uses real DB connection | unit | `pytest tests/test_mcp/test_search_backend.py -x -q` | ❌ W0 | ⬜ pending |
-| 09-03-01 | 03 | 2 | MCP-03 | T-09-03 | Tool handlers return real search results | unit | `pytest tests/test_mcp/test_tool_handlers.py -x -q` | ❌ W0 | ⬜ pending |
-| 09-04-01 | 04 | 2 | MCP-04 | T-09-04 | stdio transport outputs valid JSON-RPC | unit | `pytest tests/test_mcp/test_stdio_transport.py -x -q` | ❌ W0 | ⬜ pending |
-| 09-05-01 | 05 | 3 | MCP-04 | T-09-05 | HTTP transport CORS defaults are non-wildcard | unit | `pytest tests/test_mcp/test_http_transport.py -x -q` | ❌ W0 | ⬜ pending |
+| 09-01-01 | 01 | 1 | MCP-01 | T-09-01 | No mock data left in mcp/tools.py | unit | `pytest tests/unit/mcp/test_unified_package.py -x -q` | ❌ W0 | ⬜ pending |
+| 09-02-01 | 02 | 1 | MCP-02 | T-09-02 | SearchBackend uses real DB connection | unit | `pytest tests/unit/mcp/test_search_backend.py -x -q` | ❌ W0 | ⬜ pending |
+| 09-03-01 | 03 | 2 | MCP-03 | T-09-03 | Tool handlers return real search results | unit | `pytest tests/unit/mcp/test_tool_handlers.py -x -q` | ❌ W0 | ⬜ pending |
+| 09-04-01 | 04 | 2 | MCP-04 | T-09-04 | stdio transport outputs valid JSON-RPC | unit | `pytest tests/unit/mcp/test_stdio_transport.py -x -q` | ❌ W0 | ⬜ pending |
+| 09-05-01 | 05 | 3 | MCP-04 | T-09-05 | HTTP transport CORS defaults are non-wildcard | unit | `pytest tests/unit/mcp/test_http_transport.py -x -q` | ❌ W0 | ⬜ pending |
 | 09-06-01 | 06 | 3 | MCP-01–04 | — | Full quality suite passes | integration | `ruff check src tests && ruff format --check src tests && pytest` | ❌ W0 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
@@ -51,10 +51,10 @@ created: 2026-05-12
 
 ## Wave 0 Requirements
 
-- [ ] `tests/test_mcp/` — test package directory
-- [ ] `tests/test_mcp/__init__.py` — package init
-- [ ] `tests/test_mcp/conftest.py` — MCP test fixtures (mock transport, temp DB)
-- [ ] `tests/test_mcp/test_protocol.py` — protocol model validation tests
+- [ ] `tests/unit/mcp/` — test package directory
+- [ ] `tests/unit/mcp/__init__.py` — package init
+- [ ] `tests/unit/mcp/conftest.py` — MCP test fixtures (mock transport, temp DB)
+- [ ] `tests/unit/mcp/test_protocol.py` — protocol model validation tests
 
 *Wave 0 creates the MCP test infrastructure before implementation begins.*
 

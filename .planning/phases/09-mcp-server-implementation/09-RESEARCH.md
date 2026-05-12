@@ -287,7 +287,7 @@ class StdioTransport:
 
 ### Pattern 5: Streamable HTTP Transport
 
-**What:** Single `/mcp` endpoint. POST accepts JSON-RPC requests; GET opens SSE stream. CORS defaults are secure.
+**What:** Single `/mcp` endpoint. POST accepts JSON-RPC requests; GET opens SSE stream. CORS defaults are secure. Session tracking via `MCP-Session-Id` header.
 
 **When to use:** `sif mcp http` for remote access.
 
@@ -484,24 +484,18 @@ def truncate_content(content: str, max_size: int = MAX_CONTENT_SIZE) -> str:
 | A2 | `asyncio.to_thread()` is sufficient for SQLite concurrency safety | Architecture Patterns | If wrong (e.g., on network filesystems), could see database locks; SQLite on local disk is safe with separate connections |
 | A3 | The MCP 2024-11-05 protocol version is what Claude Desktop expects | Standard Stack | If Claude updates to a newer protocol, the server may need version negotiation; currently both spec and client expect 2024-11-05 |
 | A4 | `docs://{doc_id}` is the only resource URI scheme needed | Architecture Patterns | If future phases need `collection://` or other schemes, the resource parser needs extension; currently within Claude's discretion |
-| A5 | Streamable HTTP (single `/mcp` endpoint) is preferred over old HTTP+SSE | Architecture Patterns | SPEC.md mentions old endpoints in acceptance criteria but CONTEXT.md D-10/D-11 explicitly mandates Streamable HTTP; this discrepancy was noted and CONTEXT decisions take precedence |
+| A5 | Streamable HTTP (single `/mcp` endpoint) is preferred over old HTTP+SSE | Architecture Patterns | SPEC.md acceptance criteria updated to match Streamable HTTP per D-10/D-11 |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Should the embedding model be preloaded at server startup?**
-   - What we know: `EmbeddingManager.load_model()` is lazy; first request is slow.
-   - What's unclear: Whether preloading at startup is worth the memory cost for short-lived stdio sessions.
-   - Recommendation: Lazy load (current behavior) for stdio; optional `--preload-model` flag for HTTP daemon mode.
+1. ~~**Should the embedding model be preloaded at server startup?**~~ **RESOLVED**
+   - Decision: Lazy load (current behavior) for stdio; optional `--preload-model` flag for HTTP daemon mode.
 
-2. **How should `notifications/cancelled` interrupt in-flight tool calls?**
-   - What we know: CONTEXT.md D-09 says handle `cancelled` notifications.
-   - What's unclear: Python's `asyncio` cancellation is cooperative; a running sqlite3 query in a thread cannot be forcefully cancelled.
-   - Recommendation: Track in-flight task IDs; on `cancelled`, call `.cancel()` on the asyncio Task. Document that cancellation is best-effort.
+2. ~~**How should `notifications/cancelled` interrupt in-flight tool calls?**~~ **RESOLVED**
+   - Decision: Track in-flight task IDs; on `cancelled`, call `.cancel()` on the asyncio Task. Document that cancellation is best-effort.
 
-3. **Should `resources/list` return all documents or be paginated?**
-   - What we know: Resources are `docs://{doc_id}` URIs.
-   - What's unclear: Whether listing all documents is practical for large indexes.
-   - Recommendation: Return empty list for now (out of scope per SPEC.md); document that `resources/list` is not implemented.
+3. ~~**Should `resources/list` return all documents or be paginated?**~~ **RESOLVED**
+   - Decision: Return empty list for now (out of scope per SPEC.md); document that `resources/list` is not implemented.
 
 ## Environment Availability
 

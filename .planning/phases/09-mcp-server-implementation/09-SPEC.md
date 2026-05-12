@@ -43,10 +43,10 @@ Neither implementation connects to the actual SQLite index or search pipeline. T
    - Target: Line-delimited JSON-RPC 2.0 with proper `initialize` handshake, `tools/list`, `tools/call`, and `resources/read` support; logs go to stderr only
    - Acceptance: Claude Desktop configuration pointing to `sif mcp stdio` successfully initializes and lists tools; sending a `query` call returns results
 
-5. **HTTP transport**: FastAPI-based HTTP/SSE server for remote access.
-   - Current: `transport_http.py` has FastAPI app with SSE and JSON-RPC endpoints but no real tool integration
-   - Target: FastAPI app exposes `/mcp/v1/messages` (JSON-RPC), `/mcp/v1/sse` (SSE), `/health`; tool calls execute real searches; proper startup/shutdown lifecycle
-   - Acceptance: `curl http://localhost:3000/mcp/v1/tools` returns the 4 tool definitions; `curl -X POST http://localhost:3000/mcp/v1/messages` with a `tools/call` payload returns real search results
+5. **HTTP transport**: FastAPI-based Streamable HTTP server for remote access (2025-11-25 standard).
+   - Current: `transport_http.py` has FastAPI app with old SSE and JSON-RPC endpoints but no real tool integration
+   - Target: FastAPI app exposes single `/mcp` endpoint supporting POST (JSON-RPC) and GET (SSE stream); tool calls execute real searches; session management via `MCP-Session-Id` header; proper startup/shutdown lifecycle
+   - Acceptance: `curl -X GET http://localhost:3000/mcp` opens SSE stream; `curl -X POST http://localhost:3000/mcp` with a `tools/call` payload returns real search results; response includes `MCP-Session-Id` header for session tracking
 
 6. **Secure CORS defaults**: HTTP mode does not use wildcard `*` origins by default.
    - Current: `cors_origins` defaults to `["*"]` in both `transport_http.py` and CLI
@@ -70,7 +70,7 @@ Neither implementation connects to the actual SQLite index or search pipeline. T
 - `SearchBackend` connecting to real database and search pipeline
 - 4 MCP tools: `query`, `get`, `multi_get`, `status`
 - stdio transport with MCP 2024-11-05 protocol
-- HTTP transport with FastAPI, JSON-RPC, SSE
+- HTTP transport with FastAPI and Streamable HTTP (single `/mcp` endpoint)
 - Secure CORS defaults for HTTP mode
 - Resources: `docs://{doc_id}` with optional line slicing
 - CLI command updates to use new implementation
@@ -89,6 +89,7 @@ Neither implementation connects to the actual SQLite index or search pipeline. T
 
 - MCP protocol version: 2024-11-05 (current stable)
 - HTTP framework: FastAPI (already a project dependency)
+- HTTP transport standard: Streamable HTTP (2025-11-25) — single `/mcp` endpoint, POST for JSON-RPC, GET for SSE, `MCP-Session-Id` header for session tracking
 - stdio transport: Line-delimited JSON-RPC 2.0; stdout must never contain non-JSON output (logs to stderr)
 - SearchBackend must use `DatabaseConnection` context manager for safe connection handling
 - Tool handler response format must match MCP `ToolsCallResult` schema (list of content items with `type: "text"`)
@@ -100,12 +101,13 @@ Neither implementation connects to the actual SQLite index or search pipeline. T
 - [ ] `src/sif/mcp_server/` directory does not exist (deleted)
 - [ ] `sif mcp stdio` starts without error and responds to `initialize` request with protocolVersion "2024-11-05"
 - [ ] Claude Desktop configured with `sif mcp stdio` successfully lists 4 tools (query, get, multi_get, status)
-- [ ] `curl http://localhost:3000/mcp/v1/tools` returns JSON with 4 tool definitions
+- [ ] `curl -X GET http://localhost:3000/mcp` opens SSE stream with `text/event-stream` content type
+- [ ] `curl -X POST http://localhost:3000/mcp` with a `tools/call` payload returns real search results and includes `MCP-Session-Id` header
 - [ ] `tools/call` for `query` with a known search term returns results whose doc_ids exist in the database
 - [ ] `tools/call` for `status` returns document count matching `SELECT COUNT(*) FROM documents`
 - [ ] `resources/read` for `docs://{known_doc_id}` returns content matching the database
 - [ ] HTTP server started without `--cors-origins` responds with `Access-Control-Allow-Origin: http://localhost:3000` (not `*`)
-- [ ] `pytest tests/unit/mcp/` passes with ≥80% coverage of `src/sif/mcp/`
+- [ ] `pytest tests/unit/mcp/` passes with >=80% coverage of `src/sif/mcp/`
 - [ ] `ruff check src/sif/mcp/` passes with zero errors
 - [ ] Full quality suite passes: `ruff check src tests`, `ruff format --check src tests`, `pytest`
 
@@ -128,7 +130,7 @@ Neither implementation connects to the actual SQLite index or search pipeline. T
 | 1     | Researcher      | Resources in scope?                      | **Yes** — basic Resources with line slicing        |
 | 2     | Simplifier      | Irreducible core if 50% cut?             | **stdio + HTTP + all 4 tools**                     |
 | 2     | Simplifier      | What does "basic Resources" mean?        | **docs://{doc_id} with from_line/max_lines**       |
-| 2     | Simplifier      | Minimum success criteria?                | **Claude Desktop stdio + curl HTTP /tools**        |
+| 2     | Simplifier      | Minimum success criteria?                | **Claude Desktop stdio + curl HTTP /mcp**          |
 | 3     | Boundary Keeper | Confirm exclusions?                      | **All 5 exclusions confirmed**, no additions       |
 | 3     | Boundary Keeper | Handle old implementations?              | **Delete old directories directly**                |
 | 3     | Boundary Keeper | New implementation directory?            | **src/sif/mcp/**                                   |
