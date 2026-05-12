@@ -7,6 +7,7 @@ from io import StringIO
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from fastapi.testclient import TestClient
 
 from sif.mcp.handlers import (
     GetToolHandler,
@@ -14,8 +15,8 @@ from sif.mcp.handlers import (
     QueryToolHandler,
     StatusToolHandler,
 )
-from sif.mcp.protocol import MCPErrorCode
-from sif.mcp.server import MCPServer, ServerState
+from sif.mcp.protocol import MCPErrorCode, SearchResult
+from sif.mcp.server import MCPServer
 from sif.mcp.transports.http import create_app
 from sif.mcp.transports.stdio import StdioTransport
 
@@ -136,8 +137,6 @@ class TestStdioIntegration:
     async def test_stdio_tools_call_query(self) -> None:
         """Verify tools/call for query tool returns search results."""
         backend = _make_backend()
-        from sif.mcp.protocol import SearchResult
-
         backend.hybrid_search = AsyncMock(
             return_value=[
                 SearchResult(
@@ -169,8 +168,8 @@ class TestStdioIntegration:
         await transport.run()
 
         stdout.seek(0)
-        lines = [l.strip() for l in stdout.readlines() if l.strip()]
-        responses = [json.loads(l) for l in lines]
+        lines = [line.strip() for line in stdout.readlines() if line.strip()]
+        responses = [json.loads(line) for line in lines]
 
         assert len(responses) == 2
         assert responses[1]["id"] == 2
@@ -200,8 +199,8 @@ class TestStdioIntegration:
         await transport.run()
 
         stdout.seek(0)
-        lines = [l.strip() for l in stdout.readlines() if l.strip()]
-        responses = [json.loads(l) for l in lines]
+        lines = [line.strip() for line in stdout.readlines() if line.strip()]
+        responses = [json.loads(line) for line in lines]
 
         assert responses[1]["error"]["code"] == MCPErrorCode.UNKNOWN_TOOL
 
@@ -222,8 +221,8 @@ class TestStdioIntegration:
         await transport.run()
 
         stdout.seek(0)
-        lines = [l.strip() for l in stdout.readlines() if l.strip()]
-        responses = [json.loads(l) for l in lines]
+        lines = [line.strip() for line in stdout.readlines() if line.strip()]
+        responses = [json.loads(line) for line in lines]
 
         assert responses[1]["error"]["code"] == MCPErrorCode.METHOD_NOT_FOUND
 
@@ -258,7 +257,6 @@ class TestHTTPIntegration:
     @pytest.fixture
     def client(self, http_server):
         """Create a FastAPI TestClient."""
-        from fastapi.testclient import TestClient
 
         app = create_app(http_server, sse_ping_interval=0.01, sse_max_events=1)
         return TestClient(app)
@@ -314,7 +312,6 @@ class TestHTTPIntegration:
 
     def test_http_cors_secure_by_default(self, http_server) -> None:
         """Verify default CORS does not use wildcard."""
-        from fastapi.testclient import TestClient
 
         app = create_app(http_server)
         client = TestClient(app)
@@ -330,7 +327,6 @@ class TestHTTPIntegration:
 
     def test_http_origin_rejection(self, http_server) -> None:
         """Verify POST with disallowed Origin returns 403."""
-        from fastapi.testclient import TestClient
 
         app = create_app(http_server)
         client = TestClient(app)
