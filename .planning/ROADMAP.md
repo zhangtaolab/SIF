@@ -217,9 +217,16 @@ Plans:
 **Plans:** 6 plans
 
 Plans:
+**Wave 1**
 - [ ] 09-01-PLAN.md — Unify dual MCP implementations into a single `mcp/` package (MCP-01)
+
+**Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 09-02-PLAN.md — Implement real SearchBackend connecting to Database + Searchers (MCP-02)
 - [ ] 09-03-PLAN.md — Implement MCP tool handlers (query, get, multi_get, status) with real search (MCP-02)
+
+**Wave 3** *(blocked on Wave 2 completion)*
 - [ ] 09-04-PLAN.md — Implement stdio transport with proper MCP protocol (MCP-03)
 - [ ] 09-05-PLAN.md — Implement HTTP transport with FastAPI, Streamable HTTP, and secure CORS defaults (MCP-03, MCP-04)
+
+**Wave 4** *(blocked on Wave 3 completion)*
 - [ ] 09-06-PLAN.md — Write MCP integration tests and run full quality suite (MCP-01, MCP-02, MCP-03, MCP-04)
