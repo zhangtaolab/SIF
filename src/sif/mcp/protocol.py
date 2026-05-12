@@ -1,5 +1,5 @@
 """
-MCP (Model Context Protocol) Protocol Definitions
+MCP (Model Context Protocol) Protocol Definitions.
 
 This module defines the message types and protocol structures for MCP,
 following the JSON-RPC 2.0 specification.
@@ -87,9 +87,9 @@ class MCPErrorCode(int, Enum):
 class InitializeParams(BaseModel):
     """Parameters for initialize request."""
 
-    protocolVersion: str = "2024-11-05"
+    protocolVersion: str = "2024-11-05"  # noqa: N815
     capabilities: dict[str, Any] = Field(default_factory=dict)
-    clientInfo: dict[str, str] = Field(default_factory=dict)
+    clientInfo: dict[str, str] = Field(default_factory=dict)  # noqa: N815
 
 
 class ServerCapabilities(BaseModel):
@@ -101,9 +101,9 @@ class ServerCapabilities(BaseModel):
 class InitializeResult(BaseModel):
     """Result for initialize request."""
 
-    protocolVersion: str = "2024-11-05"
+    protocolVersion: str = "2024-11-05"  # noqa: N815
     capabilities: ServerCapabilities = Field(default_factory=ServerCapabilities)
-    serverInfo: dict[str, str] = Field(
+    serverInfo: dict[str, str] = Field(  # noqa: N815
         default_factory=lambda: {"name": "sif-mcp-server", "version": "1.0.0"}
     )
 
@@ -126,7 +126,7 @@ class MCPTool(BaseModel):
 
     name: str
     description: str
-    inputSchema: ToolInputSchema = Field(default_factory=ToolInputSchema)
+    inputSchema: ToolInputSchema = Field(default_factory=ToolInputSchema)  # noqa: N815
 
 
 class ToolsListParams(BaseModel):
@@ -139,7 +139,7 @@ class ToolsListResult(BaseModel):
     """Result for tools/list request."""
 
     tools: list[MCPTool] = Field(default_factory=list)
-    nextCursor: Optional[str] = None
+    nextCursor: Optional[str] = None  # noqa: N815
 
 
 class ToolsCallParams(BaseModel):
@@ -155,14 +155,14 @@ class ToolContentItem(BaseModel):
     type: Literal["text", "image", "resource"] = "text"
     text: Optional[str] = None
     data: Optional[str] = None  # For image base64 data
-    mimeType: Optional[str] = None
+    mimeType: Optional[str] = None  # noqa: N815
 
 
 class ToolsCallResult(BaseModel):
     """Result for tools/call request."""
 
     content: list[ToolContentItem] = Field(default_factory=list)
-    isError: bool = False
+    isError: bool = False  # noqa: N815
 
 
 # ============================================================================
@@ -322,10 +322,10 @@ def create_success_response(id: str | int | None, result: Any) -> JsonRpcRespons
 
 
 def create_error_response(
-    id: str | int | None,
+    id: str | int | None,  # noqa: A002
     code: int,
     message: str,
-    data: Any = None,  # noqa: A002
+    data: Any = None,
 ) -> JsonRpcResponse:
     """Create an error JSON-RPC response."""
     return JsonRpcResponse(id=id, error=JsonRpcError(code=code, message=message, data=data))

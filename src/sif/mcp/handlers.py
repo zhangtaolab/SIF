@@ -1,9 +1,14 @@
-"""MCP request handlers."""
+"""MCP ToolHandler ABC."""
+
+from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from typing import Any
 
+from sif.mcp.protocol import ToolsCallResult
 from sif.utils.logging import get_logger
+
+from .backend import SearchBackend
 
 
 logger = get_logger(__name__)
@@ -31,38 +36,18 @@ class ToolHandler(ABC):
         ...
 
     @abstractmethod
-    def handle(self, params: dict[str, Any]) -> dict[str, Any]:
+    async def handle(
+        self,
+        params: dict[str, Any],
+        backend: SearchBackend,
+    ) -> ToolsCallResult:
         """Handle a tool call.
 
         Args:
             params: Tool parameters
+            backend: Search backend instance
 
         Returns:
             Tool result
-        """
-        ...
-
-
-class ResourceHandler(ABC):
-    """Abstract base class for MCP resource handlers."""
-
-    @property
-    @abstractmethod
-    def uri(self) -> str:
-        """Resource URI."""
-        ...
-
-    @property
-    @abstractmethod
-    def mime_type(self) -> str:
-        """Resource MIME type."""
-        ...
-
-    @abstractmethod
-    def handle(self) -> dict[str, Any]:
-        """Handle a resource request.
-
-        Returns:
-            Resource content
         """
         ...

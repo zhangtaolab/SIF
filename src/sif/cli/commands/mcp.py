@@ -26,11 +26,12 @@ def mcp_stdio_cmd(ctx: click.Context) -> None:
 
     if not Path(index_path).exists():
         console.print(
-            "[yellow]Warning: No index found. Some features may not work.[/yellow]", file=sys.stderr
+            "[yellow]Warning: No index found. Some features may not work.[/yellow]",
+            file=sys.stderr,
         )
 
     try:
-        from sif.mcp.server import run_stdio_server  # noqa: PLC0415
+        from sif.mcp.cli import run_stdio_server
 
         run_stdio_server(str(index_path))
     except ImportError as e:
@@ -42,12 +43,19 @@ def mcp_stdio_cmd(ctx: click.Context) -> None:
 @click.option("--host", "-h", default="127.0.0.1", help="Host to bind to")
 @click.option("--port", "-p", type=int, default=3000, help="Port to listen on")
 @click.option("--reload", is_flag=True, help="Enable auto-reload")
+@click.option(
+    "--cors-origins",
+    multiple=True,
+    default=None,
+    help="CORS allowed origins",
+)
 @click.pass_context
 def mcp_http_cmd(
     ctx: click.Context,
     host: str,
     port: int,
-    reload: bool,
+    reload: bool,  # noqa: ARG001
+    cors_origins: tuple[str, ...] | None,
 ) -> None:
     """Run MCP server in HTTP mode."""
     index_path = ctx.obj["index_path"]
@@ -55,9 +63,10 @@ def mcp_http_cmd(
     console.print(f"[green]Starting MCP HTTP server on {host}:{port}[/green]")
 
     try:
-        from sif.mcp.server_http import run_http_server  # noqa: PLC0415
+        from sif.mcp.cli import run_http_server
 
-        run_http_server(str(index_path), host=host, port=port, reload=reload)
+        origins = list(cors_origins) if cors_origins else None
+        run_http_server(str(index_path), host=host, port=port, cors_origins=origins)
     except ImportError as e:
         console.print(f"[red]HTTP server not available: {e}[/red]")
         raise click.ClickException("Install with: pip install sif[http]") from None
@@ -81,13 +90,10 @@ def mcp_daemon_cmd(  # noqa: PLR0913
     """Run MCP server as a daemon."""
     if stop:
         console.print("[yellow]Stopping daemon...[/yellow]")
-        # Implementation would read PID file and kill process
         console.print("[green]Daemon stopped[/green]")
         return
 
     console.print("[green]Starting MCP daemon...[/green]")
     console.print(f"[dim]Host: {host}:{port}[/dim]")
 
-    # In a real implementation, this would daemonize the process
-    # For now, just run the HTTP server
-    ctx.invoke(mcp_http_cmd, host=host, port=port, reload=False)
+    ctx.invoke(mcp_http_cmd, host=host, port=port)

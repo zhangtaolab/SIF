@@ -1,9 +1,14 @@
 """SIF MCP (Model Context Protocol) Server."""
 
-from sif.mcp.server import MCPServer, run_stdio_server
+from __future__ import annotations
+
+from sif.mcp.backend import SearchBackend
+from sif.mcp.handlers import ToolHandler
+from sif.mcp.server import MCPServer
 
 
 __all__ = [
     "MCPServer",
-    "run_stdio_server",
+    "SearchBackend",
+    "ToolHandler",
 ]
