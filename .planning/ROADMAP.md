@@ -14,7 +14,7 @@
 - [x] **Phase 6: Documentation Audit & Refresh** - Ensure all docs accurately reflect CLI, API, and config; establish docs testing infrastructure
 - [x] **Phase 7: CLI Claude Skill** - Generate Claude skills for all CLI commands
 - [x] **Phase 8: Project rename from DocSift to SIF** - Rename the entire project from DocSift to SIF
-- [ ] **Phase 9: MCP Server Implementation** - Unify dual MCP implementations and implement real tool handlers with stdio/HTTP transports
+- [x] **Phase 9: MCP Server Implementation** - Unify dual MCP implementations and implement real tool handlers with stdio/HTTP transports
 
 ## Phase Details
 
@@ -134,7 +134,7 @@ Plans:
 | 6. Documentation Audit & Refresh | 7/7 | Complete | 2026-04-18 |
 | 7. CLI Claude Skill | 2/2 | Complete | 2026-04-20 |
 | 8. Project rename from DocSift to SIF | 8/8 | Complete | 2026-04-27 |
-| 9. MCP Server Implementation | 0/6 | Not Started | — |
+| 9. MCP Server Implementation | 6/6 | Complete | 2026-05-12 |
 
 ### Phase 6: Documentation Audit & Refresh
 
@@ -218,15 +218,15 @@ Plans:
 
 Plans:
 **Wave 1**
-- [ ] 09-01-PLAN.md — Unify dual MCP implementations into a single `mcp/` package (MCP-01)
+- [x] 09-01-PLAN.md — Unify dual MCP implementations into a single `mcp/` package (MCP-01)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 09-02-PLAN.md — Implement real SearchBackend connecting to Database + Searchers (MCP-02)
-- [ ] 09-03-PLAN.md — Implement MCP tool handlers (query, get, multi_get, status) with real search (MCP-02)
+- [x] 09-02-PLAN.md — Implement real SearchBackend connecting to Database + Searchers (MCP-02)
+- [x] 09-03-PLAN.md — Implement MCP tool handlers (query, get, multi_get, status) with real search (MCP-02)
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 09-04-PLAN.md — Implement stdio transport with proper MCP protocol (MCP-03)
-- [ ] 09-05-PLAN.md — Implement HTTP transport with FastAPI, Streamable HTTP, and secure CORS defaults (MCP-03, MCP-04)
+- [x] 09-04-PLAN.md — Implement stdio transport with proper MCP protocol (MCP-03)
+- [x] 09-05-PLAN.md — Implement HTTP transport with FastAPI, Streamable HTTP, and secure CORS defaults (MCP-03, MCP-04)
 
 **Wave 4** *(blocked on Wave 3 completion)*
-- [ ] 09-06-PLAN.md — Write MCP integration tests and run full quality suite (MCP-01, MCP-02, MCP-03, MCP-04)
+- [x] 09-06-PLAN.md — Write MCP integration tests and run full quality suite (MCP-01, MCP-02, MCP-03, MCP-04)
