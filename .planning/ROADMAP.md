@@ -134,7 +134,7 @@ Plans:
 | 6. Documentation Audit & Refresh | 7/7 | Complete | 2026-04-18 |
 | 7. CLI Claude Skill | 2/2 | Complete | 2026-04-20 |
 | 8. Project rename from DocSift to SIF | 8/8 | Complete | 2026-04-27 |
-| 9. MCP Server Implementation | 0/0 | Not Started | — |
+| 9. MCP Server Implementation | 0/6 | Not Started | — |
 
 ### Phase 6: Documentation Audit & Refresh
 
@@ -214,12 +214,12 @@ Plans:
   4. HTTP transport works for remote access with FastAPI and SSE
   5. CORS defaults are secure (non-`*`) in HTTP mode
   6. Full test suite passes including MCP integration tests
-**Plans:** TBD
+**Plans:** 6 plans
 
 Plans:
-- [ ] 09-01-PLAN.md — Unify dual MCP implementations into a single `mcp/` package
-- [ ] 09-02-PLAN.md — Implement real SearchBackend connecting to Database + Searchers
-- [ ] 09-03-PLAN.md — Implement MCP tool handlers (query, get, multi_get, status) with real search
-- [ ] 09-04-PLAN.md — Implement stdio transport with proper MCP protocol (2024-11-05)
-- [ ] 09-05-PLAN.md — Implement HTTP transport with FastAPI, SSE, and secure CORS defaults
-- [ ] 09-06-PLAN.md — Write MCP integration tests and run full quality suite
+- [ ] 09-01-PLAN.md — Unify dual MCP implementations into a single `mcp/` package (MCP-01)
+- [ ] 09-02-PLAN.md — Implement real SearchBackend connecting to Database + Searchers (MCP-02)
+- [ ] 09-03-PLAN.md — Implement MCP tool handlers (query, get, multi_get, status) with real search (MCP-02)
+- [ ] 09-04-PLAN.md — Implement stdio transport with proper MCP protocol (MCP-03)
+- [ ] 09-05-PLAN.md — Implement HTTP transport with FastAPI, Streamable HTTP, and secure CORS defaults (MCP-03, MCP-04)
+- [ ] 09-06-PLAN.md — Write MCP integration tests and run full quality suite (MCP-01, MCP-02, MCP-03, MCP-04)
