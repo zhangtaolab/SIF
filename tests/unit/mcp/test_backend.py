@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from sif.mcp.backend import SearchBackend, _truncate_content
 from sif.mcp.protocol import CollectionInfo, Document, SearchResult
@@ -164,12 +165,8 @@ async def test_get_status(backend):
         patch("sif.mcp.backend.DatabaseConnection") as mock_db,
     ):
         mock_repo.return_value.list_all.return_value = [mock_coll]
-        mock_db.return_value.transaction.return_value.__enter__ = MagicMock(
-            return_value=mock_conn
-        )
-        mock_db.return_value.transaction.return_value.__exit__ = MagicMock(
-            return_value=False
-        )
+        mock_db.return_value.transaction.return_value.__enter__ = MagicMock(return_value=mock_conn)
+        mock_db.return_value.transaction.return_value.__exit__ = MagicMock(return_value=False)
         collections, total = await backend.get_status()
 
     assert isinstance(collections, list)

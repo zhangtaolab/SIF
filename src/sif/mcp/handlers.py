@@ -130,9 +130,7 @@ class GetToolHandler(ToolHandler):
         )
         if doc is None:
             return ToolsCallResult(
-                content=[
-                    ToolContentItem(type="text", text="Document not found")
-                ],
+                content=[ToolContentItem(type="text", text="Document not found")],
                 isError=True,
             )
         output = GetOutput(document=doc)

@@ -142,9 +142,7 @@ class SearchBackend:
             max_b = max_bytes or (100 * 1024)
             for coll in coll_repo.list_all():
                 for doc in doc_repo.list_by_collection(coll.id):
-                    if fnmatch.fnmatch(doc.path, pattern) or fnmatch.fnmatch(
-                        doc.filename, pattern
-                    ):
+                    if fnmatch.fnmatch(doc.path, pattern) or fnmatch.fnmatch(doc.filename, pattern):
                         content = doc.content
                         content_bytes = len(content.encode("utf-8"))
                         if total_bytes + content_bytes > max_b:
@@ -182,9 +180,7 @@ class SearchBackend:
                         name=coll.name,
                         document_count=count,
                         last_updated=(
-                            coll.last_indexed_at.isoformat()
-                            if coll.last_indexed_at
-                            else None
+                            coll.last_indexed_at.isoformat() if coll.last_indexed_at else None
                         ),
                     )
                 )

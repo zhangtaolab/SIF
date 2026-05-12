@@ -2,17 +2,8 @@
 
 from __future__ import annotations
 
-
-def run_stdio_server(db_path: str) -> None:
-    """Run MCP server in stdio mode."""
-    raise NotImplementedError("Implemented in plan 09-04")
+from sif.mcp.transports.http import run_http_server
+from sif.mcp.transports.stdio import run_stdio_server_sync as run_stdio_server
 
 
-def run_http_server(
-    db_path: str,
-    host: str = "127.0.0.1",
-    port: int = 3000,
-    cors_origins: list[str] | None = None,
-) -> None:
-    """Run MCP server in HTTP mode."""
-    raise NotImplementedError("Implemented in plan 09-05")
+__all__ = ["run_http_server", "run_stdio_server"]
