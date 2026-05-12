@@ -1,34 +1,31 @@
 {
   "version": "1.0",
-  "timestamp": "2026-05-09T00:00:00Z",
+  "timestamp": "2026-05-12T07:45:00Z",
   "phase": "9",
   "phase_name": "mcp-server-implementation",
   "phase_dir": ".planning/phases/09-mcp-server-implementation",
-  "plan": 0,
-  "task": 2,
-  "total_tasks": 3,
-  "status": "paused",
+  "plan": 6,
+  "task": 0,
+  "total_tasks": 0,
+  "status": "complete",
   "completed_tasks": [
-    {"id": 1, "name": "spec-phase: write SPEC.md with 8 locked requirements", "status": "done", "commit": "a83df34"},
-    {"id": 2, "name": "discuss-phase: gather context with 14 implementation decisions", "status": "done", "commit": "694254b"}
+    {"id": 1, "name": "09-01: Unify MCP package structure", "status": "done", "commit": "965c095"},
+    {"id": 2, "name": "09-02: SearchBackend implementation", "status": "done", "commit": "e84e372"},
+    {"id": 3, "name": "09-03: Tool handlers + server dispatch", "status": "done", "commit": "e84e372"},
+    {"id": 4, "name": "09-04: stdio transport", "status": "done", "commit": "b935567"},
+    {"id": 5, "name": "09-05: HTTP transport", "status": "done", "commit": "b935567"},
+    {"id": 6, "name": "09-06: Integration tests + quality suite", "status": "done", "commit": "18c5341"},
+    {"id": 7, "name": "Phase verification and tracking updates", "status": "done", "commit": "4ea32b4"}
   ],
-  "remaining_tasks": [
-    {"id": 3, "name": "plan-phase: create executable plans for MCP implementation", "status": "not_started"}
-  ],
+  "remaining_tasks": [],
   "blockers": [],
   "human_actions_pending": [],
   "decisions": [
-    {"decision": "Reuse legacy mcp/protocol.py Pydantic models", "rationale": "Models are well-defined and SIF-specific; rewriting adds no value", "phase": "9"},
-    {"decision": "Use OOP ToolHandler ABC pattern", "rationale": "Better testability and clarity than functional handlers", "phase": "9"},
-    {"decision": "New DatabaseConnection per tool call", "rationale": "Safety first, no concurrency issues with SQLite", "phase": "9"},
-    {"decision": "async SearchBackend with sync sqlite3 wrapped in executor", "rationale": "Matches async transport semantics while reusing sync searchers", "phase": "9"},
-    {"decision": "Cache embedder via EmbeddingManager singleton", "rationale": "Balances safety (new DB connections) with performance (cached models)", "phase": "9"},
-    {"decision": "Full MCP lifecycle implementation (initialize → tools/list → tools/call)", "rationale": "Claude Desktop standard flow", "phase": "9"},
-    {"decision": "Tiered error handling: fatal→exit, recoverable→JSON-RPC error", "rationale": "Clean failure for unrecoverable, graceful for recoverable", "phase": "9"},
-    {"decision": "Streamable HTTP (2025-11-25) single /mcp endpoint", "rationale": "New MCP standard replaces deprecated HTTP+SSE", "phase": "9"},
-    {"decision": "No backwards compatibility with old HTTP+SSE transport", "rationale": "Simplify implementation, new standard is sufficient", "phase": "9"}
+    {"decision": "Phase 9 complete — all 6 plans executed and verified", "rationale": "MCP integration tests pass with 86% coverage; full project suite 419/0", "phase": "9"}
   ],
-  "uncommitted_files": [],
-  "next_action": "Run /gsd-plan-phase 9 to create executable plans for MCP implementation",
-  "context_notes": "Phase 9 is fully specified and discussed. SPEC.md has 8 locked requirements, CONTEXT.md has 14 implementation decisions covering architecture, SearchBackend lifecycle, stdio protocol, HTTP transport, and security. Ready to proceed to planning. No code changes have been made yet — this is a pure design phase."
+  "uncommitted_files": [
+    "D .planning/phases/09-mcp-server-implementation/.continue-here.md"
+  ],
+  "next_action": "Complete v1.0 milestone via /gsd-complete-milestone or begin v1.1 planning",
+  "context_notes": "All 9 phases of the v1.0 milestone are complete. Phase 9 MCP Server Implementation was the final phase. The project now has: unified MCP package with stdio/HTTP transports, 4 real tool handlers (query, get, multi_get, status), SearchBackend with real DB connectivity, and 86% MCP test coverage. No active work in progress — this is a milestone boundary pause."
 }
