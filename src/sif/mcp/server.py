@@ -12,7 +12,10 @@ from sif.mcp.protocol import (
     MCPErrorCode,
     MCPTool,
     ServerCapabilities,
+    ToolContentItem,
     ToolInputSchema,
+    ToolsCallParams,
+    ToolsCallResult,
     ToolsListResult,
     create_error_response,
     create_success_response,
@@ -83,23 +86,89 @@ class MCPServer:
             return create_success_response(request.id, result.model_dump())
 
         if method == "tools/call":
-            return create_error_response(
-                request.id,
-                MCPErrorCode.METHOD_NOT_FOUND,
-                "tools/call not yet implemented",
-            )
+            return await self._handle_tools_call(request)
 
         if method == "resources/read":
-            return create_error_response(
-                request.id,
-                MCPErrorCode.METHOD_NOT_FOUND,
-                "Resources not yet implemented",
-            )
+            return await self._handle_resources_read(request)
 
         return create_error_response(
             request.id,
             MCPErrorCode.METHOD_NOT_FOUND,
             f"Method not found: {method}",
+        )
+
+    async def _handle_tools_call(
+        self,
+        request: JsonRpcRequest,
+    ) -> JsonRpcResponse:
+        """Handle tools/call request."""
+        try:
+            params = ToolsCallParams(**(request.params or {}))
+        except Exception as e:
+            return create_error_response(
+                request.id,
+                MCPErrorCode.INVALID_PARAMS,
+                f"Invalid params: {e}",
+            )
+
+        handler = self._tools.get(params.name)
+        if handler is None:
+            return create_error_response(
+                request.id,
+                MCPErrorCode.UNKNOWN_TOOL,
+                f"Unknown tool: {params.name}",
+            )
+
+        try:
+            result = await handler.handle(params.arguments, self.backend)
+        except Exception as e:
+            logger.exception("Tool execution error")
+            result = ToolsCallResult(
+                content=[ToolContentItem(type="text", text=f"Error: {e}")],
+                isError=True,
+            )
+
+        return create_success_response(request.id, result.model_dump())
+
+    async def _handle_resources_read(
+        self,
+        request: JsonRpcRequest,
+    ) -> JsonRpcResponse:
+        """Handle resources/read request."""
+        params = request.params or {}
+        uri = params.get("uri", "")
+
+        if not uri.startswith("docs://"):
+            return create_error_response(
+                request.id,
+                MCPErrorCode.INVALID_PARAMS,
+                f"Invalid URI scheme: {uri}",
+            )
+
+        doc_id = uri[7:].split("?")[0]
+        from_line = params.get("from_line")
+        max_lines = params.get("max_lines")
+
+        doc = await self.backend.get_document(doc_id, from_line, max_lines)
+        if doc is None:
+            return create_error_response(
+                request.id,
+                MCPErrorCode.INVALID_PARAMS,
+                f"Document not found: {doc_id}",
+            )
+
+        mime_type = "text/markdown" if doc.path.endswith(".md") else "text/plain"
+        return create_success_response(
+            request.id,
+            {
+                "contents": [
+                    {
+                        "uri": uri,
+                        "mimeType": mime_type,
+                        "text": doc.content,
+                    }
+                ]
+            },
         )
 
     async def handle_notification(
