@@ -22,7 +22,7 @@ class ScanResult:
 class FileScanner:
     """Scanner for finding files matching patterns."""
 
-    DEFAULT_IGNORE_PATTERNS = [
+    DEFAULT_IGNORE_PATTERNS = (
         "node_modules",
         ".git",
         ".svn",
@@ -45,7 +45,7 @@ class FileScanner:
         "*~",
         ".idea",
         ".vscode",
-    ]
+    )
 
     def __init__(self) -> None:
         """Initialize the file scanner."""
