@@ -56,31 +56,29 @@ class MCPServer:
         request: JsonRpcRequest,
     ) -> JsonRpcResponse:
         """Handle an MCP request."""
+        response: JsonRpcResponse | None = None
+        method = request.method
+
         if self.state == ServerState.SHUTDOWN:
-            return create_error_response(
+            response = create_error_response(
                 request.id,
                 MCPErrorCode.INTERNAL_ERROR,
                 "Server is shutting down",
             )
-
-        method = request.method
-
-        if method == "initialize":
+        elif method == "initialize":
             self.state = ServerState.INITIALIZED
             result = InitializeResult(
                 protocolVersion="2024-11-05",
                 capabilities=ServerCapabilities(),
             )
-            return create_success_response(request.id, result.model_dump())
-
-        if self.state != ServerState.INITIALIZED:
-            return create_error_response(
+            response = create_success_response(request.id, result.model_dump())
+        elif self.state != ServerState.INITIALIZED:
+            response = create_error_response(
                 request.id,
                 MCPErrorCode.SERVER_NOT_INITIALIZED,
                 "Server not initialized",
             )
-
-        if method == "tools/list":
+        elif method == "tools/list":
             tools_list = [
                 MCPTool(
                     name=h.name,
@@ -90,19 +88,19 @@ class MCPServer:
                 for h in self._tools.values()
             ]
             result = ToolsListResult(tools=tools_list)
-            return create_success_response(request.id, result.model_dump())
+            response = create_success_response(request.id, result.model_dump())
+        elif method == "tools/call":
+            response = await self._handle_tools_call(request)
+        elif method == "resources/read":
+            response = await self._handle_resources_read(request)
+        else:
+            response = create_error_response(
+                request.id,
+                MCPErrorCode.METHOD_NOT_FOUND,
+                f"Method not found: {method}",
+            )
 
-        if method == "tools/call":
-            return await self._handle_tools_call(request)
-
-        if method == "resources/read":
-            return await self._handle_resources_read(request)
-
-        return create_error_response(
-            request.id,
-            MCPErrorCode.METHOD_NOT_FOUND,
-            f"Method not found: {method}",
-        )
+        return response
 
     async def _handle_tools_call(
         self,
