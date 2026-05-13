@@ -42,7 +42,7 @@ class StdioTransport:
     async def _read_message(self) -> dict[str, Any] | None:
         """Read a JSON-RPC message from stdin."""
         async with self._read_lock:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             line = await loop.run_in_executor(None, self.stdin.readline)
 
         if not line:
@@ -68,7 +68,7 @@ class StdioTransport:
     async def _write_message(self, message: dict[str, Any]) -> None:
         """Write a JSON-RPC message to stdout."""
         async with self._write_lock:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             data = json.dumps(message, ensure_ascii=False) + "\n"
             await loop.run_in_executor(None, self.stdout.write, data)
             await loop.run_in_executor(None, self.stdout.flush)
