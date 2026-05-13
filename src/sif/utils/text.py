@@ -22,8 +22,7 @@ def normalize_text(text: str) -> str:
     # Replace multiple whitespace with single space
     text = WHITESPACE_PATTERN.sub(" ", text)
     # Strip leading/trailing whitespace
-    text = text.strip()
-    return text
+    return text.strip()
 
 
 def truncate_text(text: str, max_length: int, suffix: str = "...") -> str:

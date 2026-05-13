@@ -170,6 +170,7 @@ class SearchPipeline:
         snippet_extractor: SmartSnippetExtractor | None = None,
         embedding_dim: int = 768,
     ) -> None:
+        """Initialize search pipeline with optional components."""
         self.db = db
         self.hybrid = HybridSearcher(db, embedder, embedding_dim)
         self.query_expander = query_expander
@@ -269,13 +270,13 @@ class SearchPipeline:
 
     def _parse_query_prefix(self, query: str) -> tuple[str, SearchType]:
         """Parse query prefix to determine search mode."""
-        PREFIX_MAP = {
+        prefix_map = {
             "lex:": SearchType.BM25,
             "vec:": SearchType.VECTOR,
             "hyde:": SearchType.HYDE,
             "expand:": SearchType.EXPAND,
         }
-        for prefix, search_type in PREFIX_MAP.items():
+        for prefix, search_type in prefix_map.items():
             if query.startswith(prefix):
                 return query[len(prefix) :].strip(), search_type
         return query, SearchType.HYBRID

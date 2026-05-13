@@ -39,7 +39,7 @@ def set_quiet(quiet: bool = True) -> None:
 
     Use this when quiet mode is triggered after setup_logging has already run.
     """
-    global _quiet_mode
+    global _quiet_mode  # noqa: PLW0603
     _quiet_mode = quiet
     if quiet:
         _apply_quiet_mode()

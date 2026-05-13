@@ -59,6 +59,7 @@ class LlamaCppReranker:
         n_threads: int | None = None,
         batch_size: int = 32,
     ) -> None:
+        """Initialize GGUF cross-encoder reranker."""
         self._model_path = model_path
         self._model_name = model_name
         self._n_ctx = n_ctx
@@ -136,6 +137,7 @@ class CrossEncoderReranker:
         batch_size: int = 32,
         cache_dir: str | None = None,
     ) -> None:
+        """Initialize sentence-transformers CrossEncoder reranker."""
         self._model_name = model_name
         self._model_path = model_path
         self._device = device
@@ -225,6 +227,7 @@ class Qwen3Reranker:
         cache_dir: str | None = None,
         max_length: int = 8192,
     ) -> None:
+        """Initialize Qwen3 reranker with transformers backend."""
         self._model_name = model_name
         self._model_path = model_path
         self._device = device

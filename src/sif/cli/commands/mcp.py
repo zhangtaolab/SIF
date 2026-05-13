@@ -31,7 +31,7 @@ def mcp_stdio_cmd(ctx: click.Context) -> None:
         )
 
     try:
-        from sif.mcp.cli import run_stdio_server
+        from sif.mcp.cli import run_stdio_server  # noqa: PLC0415
 
         run_stdio_server(str(index_path))
     except ImportError as e:
@@ -63,7 +63,7 @@ def mcp_http_cmd(
     console.print(f"[green]Starting MCP HTTP server on {host}:{port}[/green]")
 
     try:
-        from sif.mcp.cli import run_http_server
+        from sif.mcp.cli import run_http_server  # noqa: PLC0415
 
         origins = list(cors_origins) if cors_origins else None
         run_http_server(str(index_path), host=host, port=port, cors_origins=origins)

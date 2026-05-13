@@ -17,10 +17,10 @@ class TestEmbeddingManager:
             embedding_dim=256,
         )
         manager = EmbeddingManager.from_settings(settings)
-        assert manager._config.model_type == ModelType.OPENAI  # noqa: SLF001
-        assert manager._config.api_key == "sk-test"  # noqa: SLF001
-        assert manager._config.api_base == "https://api.example.com/v1"  # noqa: SLF001
-        assert manager._config.embedding_dim == 256  # noqa: SLF001
+        assert manager._config.model_type == ModelType.OPENAI
+        assert manager._config.api_key == "sk-test"
+        assert manager._config.api_base == "https://api.example.com/v1"
+        assert manager._config.embedding_dim == 256
 
     def test_load_model_uses_factory(self) -> None:
         mock_embedder = MagicMock()
@@ -30,7 +30,7 @@ class TestEmbeddingManager:
         config = EmbeddingConfig(model_type=ModelType.SENTENCE_TRANSFORMERS, model_name="test")
         manager = EmbeddingManager(config=config, factory=mock_factory)
         manager.load_model()
-        assert manager._model is mock_embedder  # noqa: SLF001
+        assert manager._model is mock_embedder
         mock_factory.create_model.assert_called_once()
         call_kwargs = mock_factory.create_model.call_args.kwargs
         assert call_kwargs["model_type"] == ModelType.SENTENCE_TRANSFORMERS
@@ -68,7 +68,7 @@ class TestEmbeddingManager:
         manager = EmbeddingManager(config=config, factory=mock_factory)
         manager.load_model()
         manager.unload_model()
-        assert manager._model is None  # noqa: SLF001
+        assert manager._model is None
 
     def test_get_model_info_when_loaded(self) -> None:
         mock_embedder = MagicMock()

@@ -137,12 +137,12 @@ def print_table(
     table = Table(title=title, box=box.ROUNDED)
 
     # Add columns
-    for key in data[0].keys():
+    for key in data[0]:
         table.add_column(str(key), overflow="fold")
 
     # Add rows
     for row in data:
-        values = [str(row.get(k, "")) for k in data[0].keys()]
+        values = [str(row.get(k, "")) for k in data[0]]
         table.add_row(*values)
 
     cons.print(table)

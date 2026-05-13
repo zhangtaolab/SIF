@@ -13,6 +13,7 @@ class VectorSearcher:
     """Vector similarity search using sqlite-vec or fallback."""
 
     def __init__(self, db: sqlite3.Connection, embedding_dim: int = 768) -> None:
+        """Initialize vector searcher with sqlite-vec."""
         self.db = db
         self.embedding_dim = embedding_dim
         self._vec_available = self._check_vec_extension()

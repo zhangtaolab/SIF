@@ -187,7 +187,7 @@ _config: Optional[Config] = None
 
 def get_config() -> Config:
     """Get the global configuration instance."""
-    global _config
+    global _config  # noqa: PLW0603
     if _config is None:
         _config = Config.load()
     return _config
@@ -195,12 +195,12 @@ def get_config() -> Config:
 
 def set_config(config: Config) -> None:
     """Set the global configuration instance."""
-    global _config
+    global _config  # noqa: PLW0603
     _config = config
 
 
 def reload_config(path: Optional[str] = None) -> Config:
     """Reload configuration from file."""
-    global _config
+    global _config  # noqa: PLW0603
     _config = Config.load(path)
     return _config
