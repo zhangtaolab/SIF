@@ -56,6 +56,13 @@ class MCPServer:
         request: JsonRpcRequest,
     ) -> JsonRpcResponse:
         """Handle an MCP request."""
+        if self.state == ServerState.SHUTDOWN:
+            return create_error_response(
+                request.id,
+                MCPErrorCode.INTERNAL_ERROR,
+                "Server is shutting down",
+            )
+
         method = request.method
 
         if method == "initialize":
@@ -181,5 +188,8 @@ class MCPServer:
             logger.debug("Client initialized")
         elif method == "notifications/cancelled":
             logger.debug("Request cancelled")
+        elif method == "notifications/shutdown":
+            self.state = ServerState.SHUTDOWN
+            logger.debug("Server shutdown requested")
         else:
             logger.debug("Unhandled notification: %s", method)
