@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 import uuid
+from collections import OrderedDict
 from typing import Any
 
 
@@ -37,8 +39,10 @@ logger = get_logger(__name__)
 DEFAULT_CORS_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"]
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 3000
+SESSION_MAX_AGE = 3600  # 1 hour
+SESSION_MAX_COUNT = 10000
 
-_sessions: dict[str, Any] = {}
+_sessions: OrderedDict[str, dict[str, Any]] = OrderedDict()
 
 
 def _generate_session_id() -> str:
@@ -49,10 +53,16 @@ def _generate_session_id() -> str:
 def _get_session_id(request_headers: dict[str, str]) -> str:
     """Get or create session ID from request headers."""
     session_id = request_headers.get("mcp-session-id")
+    now = time.time()
+    # Enforce max session count (LRU eviction)
+    while _sessions and len(_sessions) > SESSION_MAX_COUNT:
+        _sessions.popitem(last=False)
     if session_id and session_id in _sessions:
+        _sessions[session_id]["last_accessed"] = now
+        _sessions.move_to_end(session_id)
         return session_id
     new_id = _generate_session_id()
-    _sessions[new_id] = {}
+    _sessions[new_id] = {"created": now, "last_accessed": now}
     return new_id
 
 
