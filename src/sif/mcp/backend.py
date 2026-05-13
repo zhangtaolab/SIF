@@ -116,7 +116,7 @@ class SearchBackend:
                         break
             if not doc:
                 return None
-            content = _truncate_content(doc.content)
+            content = doc.content  # Do NOT truncate yet
             line_start: int | None = None
             line_end: int | None = None
             if from_line is not None:
@@ -126,6 +126,9 @@ class SearchBackend:
                 content = "\n".join(lines[start:end])
                 line_start = start + 1
                 line_end = start + len(content.split("\n"))
+                if content.endswith("\n"):
+                    line_end -= 1
+            content = _truncate_content(content)
             return Document(
                 doc_id=doc.id,
                 path=doc.path,
