@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import types
 from pathlib import Path
 
 from sif.utils.logging import get_logger, is_quiet, suppress_output
@@ -14,7 +15,7 @@ logger = get_logger(__name__)
 class ModelDownloader:
     """Download models from ModelScope."""
 
-    DEFAULT_MODELS = {
+    DEFAULT_MODELS = types.MappingProxyType({
         "embedding": {
             "model_id": "iic/gte_Qwen2-7B-instruct",
             "description": "General text embedding model",
@@ -27,7 +28,7 @@ class ModelDownloader:
             "model_id": "qwen/Qwen2.5-0.5B-Instruct",
             "description": "Query expansion model",
         },
-    }
+    })
 
     def __init__(self, cache_dir: str | Path | None = None) -> None:
         """Initialize model downloader.
