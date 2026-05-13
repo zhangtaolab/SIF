@@ -231,7 +231,7 @@ def add_line_numbers_to_results(
 class OutputFormatter:
     """Handles output formatting based on format option."""
 
-    FORMATS = ["table", "json", "csv", "md", "xml", "files"]
+    FORMATS = ("table", "json", "csv", "md", "xml", "files")
 
     def __init__(self, format_type: str = "table", console: Optional[Console] = None):
         """Initialize the output formatter."""
