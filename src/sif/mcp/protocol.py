@@ -10,7 +10,7 @@ Reference: https://modelcontextprotocol.io/
 from enum import Enum
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # ============================================================================
@@ -232,8 +232,8 @@ class QueryInput(BaseModel):
 
     query: str
     collections: Optional[list[str]] = None
-    limit: int = 10
-    min_score: float = 0.0
+    limit: int = Field(default=10, ge=1)
+    min_score: float = Field(default=0.0, ge=0.0)
 
 
 class QueryOutput(BaseModel):
@@ -274,8 +274,8 @@ class GetInput(BaseModel):
     """Input for get tool."""
 
     path_or_docid: str
-    from_line: Optional[int] = None
-    max_lines: Optional[int] = None
+    from_line: Optional[int] = Field(default=None, ge=1)
+    max_lines: Optional[int] = Field(default=None, ge=1)
 
 
 class GetOutput(BaseModel):
@@ -288,7 +288,7 @@ class MultiGetInput(BaseModel):
     """Input for multi_get tool."""
 
     pattern: str
-    max_bytes: Optional[int] = None
+    max_bytes: Optional[int] = Field(default=None, ge=0)
 
 
 class MultiGetOutput(BaseModel):
