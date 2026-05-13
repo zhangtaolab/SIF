@@ -358,7 +358,6 @@ class DocumentChunkRepository:
         )
 
 
-        """Initialize the document chunk repository."""
 class ContextRepository:
     """Repository for context operations."""
 
