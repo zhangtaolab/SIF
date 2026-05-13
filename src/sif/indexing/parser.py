@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import types
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -111,7 +112,7 @@ class CodeParser:
     """Parser for code files."""
 
     # File extensions to language mapping
-    LANGUAGE_MAP = {
+    LANGUAGE_MAP = types.MappingProxyType({
         ".py": "python",
         ".js": "javascript",
         ".ts": "typescript",
@@ -137,7 +138,7 @@ class CodeParser:
         ".toml": "toml",
         ".xml": "xml",
         ".sql": "sql",
-    }
+    })
 
     def parse(self, file_path: Path) -> ParsedDocument:
         """Parse a code file."""
