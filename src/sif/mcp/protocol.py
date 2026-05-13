@@ -51,6 +51,7 @@ class JsonRpcResponse(BaseModel):
 
     @model_validator(mode="after")
     def check_mutual_exclusivity(self) -> "JsonRpcResponse":
+        """Ensure result and error are mutually exclusive per JSON-RPC 2.0 spec."""
         if self.result is not None and self.error is not None:
             raise ValueError("result and error are mutually exclusive")
         return self

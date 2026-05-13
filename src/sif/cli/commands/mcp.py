@@ -80,12 +80,12 @@ def mcp_http_cmd(
 @click.option("--stop", is_flag=True, help="Stop the daemon")
 @click.pass_context
 def mcp_daemon_cmd(  # noqa: PLR0913
-    ctx: click.Context,
-    host: str,
-    port: int,
+    ctx: click.Context,  # noqa: ARG001
+    host: str,  # noqa: ARG001
+    port: int,  # noqa: ARG001
     pid_file: str | None,  # noqa: ARG001
     log_file: str | None,  # noqa: ARG001
-    stop: bool,
+    stop: bool,  # noqa: ARG001
 ) -> None:
     """Run MCP server as a daemon."""
     raise click.ClickException(
