@@ -162,16 +162,6 @@ def create_app(
         allow_headers=["*"],
     )
 
-    @app.middleware("http")
-    async def validate_origin(request: Request, call_next: Any) -> Response:
-        origin = request.headers.get("origin")
-        if origin and origin not in origins:
-            return JSONResponse(
-                status_code=403,
-                content={"error": "Origin not allowed"},
-            )
-        return await call_next(request)
-
     @app.post("/mcp")
     async def mcp_post(req: Request) -> Response:
         return await _mcp_post_handler(req, server)
