@@ -88,12 +88,6 @@ def mcp_daemon_cmd(  # noqa: PLR0913
     stop: bool,
 ) -> None:
     """Run MCP server as a daemon."""
-    if stop:
-        console.print("[yellow]Stopping daemon...[/yellow]")
-        console.print("[green]Daemon stopped[/green]")
-        return
-
-    console.print("[green]Starting MCP daemon...[/green]")
-    console.print(f"[dim]Host: {host}:{port}[/dim]")
-
-    ctx.invoke(mcp_http_cmd, host=host, port=port)
+    raise click.ClickException(
+        "Daemon mode is not yet implemented. Use 'mcp http' instead."
+    )
