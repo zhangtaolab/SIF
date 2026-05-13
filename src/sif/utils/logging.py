@@ -72,9 +72,12 @@ def _apply_quiet_mode() -> None:
 @contextlib.contextmanager
 def suppress_output():
     """Suppress both stdout and stderr output within the context block."""
-    with open(os.devnull, "w") as devnull:
-        with contextlib.redirect_stdout(devnull), contextlib.redirect_stderr(devnull):
-            yield
+    with (
+        open(os.devnull, "w") as devnull,
+        contextlib.redirect_stdout(devnull),
+        contextlib.redirect_stderr(devnull),
+    ):
+        yield
 
 
 @contextlib.contextmanager

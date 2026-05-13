@@ -80,6 +80,7 @@ class ContextManager:
     """
 
     def __init__(self, repository: ContextRepository) -> None:
+        """Initialize the context manager."""
         self._repository = repository
 
     def add_context(

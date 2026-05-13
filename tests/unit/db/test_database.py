@@ -17,7 +17,7 @@ class TestDatabaseConnection:
         db_path = temp_dir / "nested" / "path" / "test.db"
 
         # Act
-        conn = DatabaseConnection(db_path)
+        _conn = DatabaseConnection(db_path)
 
         # Assert
         assert db_path.parent.exists()
@@ -63,7 +63,7 @@ class TestDatabaseConnection:
         conn = DatabaseConnection(temp_db_path)
 
         # Act & Assert - should not raise
-        with conn.connect() as db:
+        with conn.connect() as _db:
             # Try to use vec0 virtual table (if available)
             pass
 

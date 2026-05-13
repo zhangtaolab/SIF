@@ -30,6 +30,7 @@ class HybridSearcher:
         embedder: Embedder | None = None,
         embedding_dim: int = 768,
     ) -> None:
+        """Initialize the hybrid searcher."""
         self.db = db
         self.embedder = embedder
         self.bm25 = BM25Searcher(db)

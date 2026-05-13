@@ -87,6 +87,7 @@ class CollectionManager:
     """
 
     def __init__(self, repository: CollectionRepository) -> None:
+        """Initialize the collection manager."""
         self._repository = repository
 
     def create_collection(

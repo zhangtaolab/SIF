@@ -10,6 +10,7 @@ class SchemaManager:
     """Manages database schema creation and migrations."""
 
     def __init__(self, db: sqlite3.Connection, embedding_dim: int = 384) -> None:
+        """Initialize the schema manager."""
         self.db = db
         self.embedding_dim = embedding_dim
 

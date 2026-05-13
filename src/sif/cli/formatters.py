@@ -234,6 +234,7 @@ class OutputFormatter:
     FORMATS = ["table", "json", "csv", "md", "xml", "files"]
 
     def __init__(self, format_type: str = "table", console: Optional[Console] = None):
+        """Initialize the output formatter."""
         self.format_type = format_type
         self.console = console or Console()
 

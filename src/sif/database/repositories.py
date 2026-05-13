@@ -18,6 +18,7 @@ class CollectionRepository:
     """Repository for collection operations."""
 
     def __init__(self, db: sqlite3.Connection) -> None:
+        """Initialize the collection repository."""
         self.db = db
 
     def create(self, collection: Collection) -> Collection:
@@ -133,6 +134,7 @@ class DocumentRepository:
     """Repository for document operations."""
 
     def __init__(self, db: sqlite3.Connection) -> None:
+        """Initialize the document repository."""
         self.db = db
 
     def create(self, document: Document) -> Document:
@@ -290,6 +292,7 @@ class DocumentChunkRepository:
     """Repository for document chunk operations."""
 
     def __init__(self, db: sqlite3.Connection) -> None:
+        """Initialize the document chunk repository."""
         self.db = db
 
     def create(self, chunk: DocumentChunk) -> DocumentChunk:
@@ -355,10 +358,12 @@ class DocumentChunkRepository:
         )
 
 
+        """Initialize the document chunk repository."""
 class ContextRepository:
     """Repository for context operations."""
 
     def __init__(self, db: sqlite3.Connection) -> None:
+        """Initialize the context repository."""
         self.db = db
 
     def create(self, context: PathContext) -> PathContext:
@@ -454,6 +459,7 @@ class LLMCacheRepository:
     """Repository for LLM cache operations."""
 
     def __init__(self, db: sqlite3.Connection) -> None:
+        """Initialize the LLM cache repository."""
         self.db = db
 
     def get(self, model_name: str, prompt_hash: str) -> str | None:

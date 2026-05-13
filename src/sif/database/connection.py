@@ -16,6 +16,7 @@ class DatabaseConnection:
     """
 
     def __init__(self, db_path: Path | str) -> None:
+        """Initialize the database connection."""
         self._db_path = Path(db_path)
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -111,6 +112,7 @@ class ConnectionPool:
         db_path: Path | str,
         max_connections: int = 5,
     ) -> None:
+        """Initialize the connection pool."""
         self._db_path = Path(db_path)
         self._max_connections = max_connections
         self._connections: list[sqlite3.Connection] = []

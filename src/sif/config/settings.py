@@ -60,7 +60,10 @@ class Settings(BaseSettings):
     )
     model_type: str = Field(
         default="modelscope",
-        description="Embedding model type (gguf, sentence_transformers, openai, huggingface, modelscope)",
+        description=(
+            "Embedding model type (gguf, sentence_transformers, "
+            "openai, huggingface, modelscope)"
+        ),
     )
     n_gpu_layers: int = Field(
         default=0,
@@ -172,8 +175,7 @@ class Settings(BaseSettings):
         """Expand user home directory in paths."""
         if v is None:
             return None
-        path = Path(v).expanduser()
-        return path
+        return Path(v).expanduser()
 
     @field_validator("log_level")
     @classmethod

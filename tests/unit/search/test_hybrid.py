@@ -236,7 +236,7 @@ class TestSearchPipelineExpansion:
             ),
         ]
 
-        results = pipeline.search("query", SearchOptions(limit=5))
+        _results = pipeline.search("query", SearchOptions(limit=5))
 
         assert mock_expander.expand.called
         assert pipeline.hybrid.bm25.search.call_count == 2

@@ -12,6 +12,7 @@ class BM25Searcher:
     """BM25 full-text search using SQLite FTS5."""
 
     def __init__(self, db: sqlite3.Connection) -> None:
+        """Initialize the BM25 searcher."""
         self.db = db
 
     def search(self, query: str, options: SearchOptions | None = None) -> list[SearchResult]:

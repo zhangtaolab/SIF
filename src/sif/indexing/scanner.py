@@ -48,7 +48,7 @@ class FileScanner:
     ]
 
     def __init__(self) -> None:
-        pass
+        """Initialize the file scanner."""
 
     def scan(
         self,

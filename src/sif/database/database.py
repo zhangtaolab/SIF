@@ -16,6 +16,7 @@ class Database:
     """Main database class for SIF."""
 
     def __init__(self, db_path: str | Path) -> None:
+        """Initialize the database connection wrapper."""
         self.db_path = Path(db_path).expanduser().resolve()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._connection: sqlite3.Connection | None = None
@@ -104,6 +105,7 @@ class DatabaseConnection:
     """Lightweight database connection wrapper."""
 
     def __init__(self, db_path: str | Path) -> None:
+        """Initialize the database connection wrapper."""
         self.db_path = Path(db_path).expanduser().resolve()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 

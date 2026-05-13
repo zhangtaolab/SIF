@@ -117,6 +117,7 @@ class MigrationManager:
     """Manages database schema migrations."""
 
     def __init__(self, connection: "DatabaseConnection") -> None:  # noqa: F821
+        """Initialize the migration manager."""
         self._connection = connection
 
     def get_current_version(self) -> int:

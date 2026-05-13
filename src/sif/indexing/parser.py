@@ -27,6 +27,7 @@ class MarkdownParser:
     """Parser for Markdown documents."""
 
     def __init__(self) -> None:
+        """Initialize the markdown parser."""
         self.title_pattern = re.compile(r"^#\s+(.+)$", re.MULTILINE)
 
     def parse(self, file_path: Path) -> ParsedDocument:
