@@ -129,7 +129,7 @@ async def _mcp_get_handler(
         while not await request.is_disconnected():
             if max_events is not None and count >= max_events:
                 break
-            yield f"data: {json.dumps({'ping': True})}\n\n"
+            yield f"event: ping\ndata: {json.dumps({'ping': True})}\n\n"
             count += 1
             await asyncio.sleep(ping_interval)
 
