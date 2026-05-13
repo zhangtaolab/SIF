@@ -10,6 +10,7 @@ from sif.config.settings import Settings, get_settings
 from sif.core.models import SearchOptions
 from sif.database.connection import DatabaseConnection
 from sif.database.repositories import CollectionRepository, DocumentRepository
+from sif.embedding.factory import EmbeddingModelFactory
 from sif.mcp.protocol import CollectionInfo, Document, SearchResult
 from sif.search.hybrid import SearchPipeline
 
@@ -33,6 +34,11 @@ class SearchBackend:
         """Initialize SearchBackend."""
         self.db_path = db_path
         self.settings = settings or get_settings()
+        self._embedder = EmbeddingModelFactory.create_model(
+            self.settings.model_type,
+            self.settings.model_path,
+            self.settings.model_name,
+        )
 
     async def _run_in_db(self, callback: Callable[[Any], T]) -> T:
         """Run a callback with a fresh database connection in a thread."""
@@ -66,7 +72,7 @@ class SearchBackend:
                 ]
             pipeline = SearchPipeline(
                 conn,
-                embedder=None,
+                embedder=self._embedder,
                 embedding_dim=self.settings.embedding_dim,
             )
             core_results = pipeline.search(query, options)
