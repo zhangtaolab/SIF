@@ -20,11 +20,14 @@ T = TypeVar("T")
 
 def _truncate_content(content: str, max_size: int = 100 * 1024) -> str:
     """Truncate content to max_size bytes."""
+    suffix = "\n... [truncated]"
     encoded = content.encode("utf-8")
     if len(encoded) <= max_size:
         return content
-    truncated = encoded[:max_size].decode("utf-8", errors="ignore")
-    return truncated + "\n... [truncated]"
+    truncated = encoded[: max_size - len(suffix.encode("utf-8"))].decode(
+        "utf-8", errors="ignore"
+    )
+    return truncated + suffix
 
 
 class SearchBackend:
