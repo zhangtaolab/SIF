@@ -214,6 +214,6 @@ def run_http_server(
     """Run MCP server in HTTP mode."""
     backend = SearchBackend(db_path)
     server = MCPServer(backend)
-    server.register_tools(create_default_tools(backend))
+    server.register_tools(create_default_tools())
     transport = HTTPTransport(server, host=host, port=port, cors_origins=cors_origins)
     transport.run()

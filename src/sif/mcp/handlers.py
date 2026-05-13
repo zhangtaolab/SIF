@@ -209,7 +209,7 @@ class StatusToolHandler(ToolHandler):
         )
 
 
-def create_default_tools(backend: SearchBackend) -> list[ToolHandler]:  # noqa: ARG001
+def create_default_tools() -> list[ToolHandler]:
     """Create default tool handlers."""
     return [
         QueryToolHandler(),

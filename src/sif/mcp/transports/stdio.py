@@ -128,7 +128,7 @@ async def run_stdio_server(db_path: str) -> None:
     """Run MCP server in stdio mode."""
     backend = SearchBackend(db_path)
     server = MCPServer(backend)
-    server.register_tools(create_default_tools(backend))
+    server.register_tools(create_default_tools())
     transport = StdioTransport(server)
     await transport.run()
 
