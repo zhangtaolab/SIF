@@ -137,6 +137,7 @@ class SearchBackend:
                 metadata=doc.metadata,
                 line_start=line_start,
                 line_end=line_end,
+                collection_id=doc.collection_id,
             )
 
         return await self._run_in_db(_get)
@@ -171,6 +172,7 @@ class SearchBackend:
                                 title=doc.title,
                                 content=_truncate_content(content),
                                 metadata=doc.metadata,
+                                collection_id=doc.collection_id,
                             )
                         )
             return documents, errors

@@ -211,6 +211,7 @@ class Document(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     line_start: Optional[int] = None
     line_end: Optional[int] = None
+    collection_id: Optional[str] = None
 
 
 class CollectionInfo(BaseModel):
