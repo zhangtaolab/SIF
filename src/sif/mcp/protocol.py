@@ -49,6 +49,12 @@ class JsonRpcResponse(BaseModel):
     result: Optional[Any] = None
     error: Optional[JsonRpcError] = None
 
+    @model_validator(mode="after")
+    def check_mutual_exclusivity(self) -> "JsonRpcResponse":
+        if self.result is not None and self.error is not None:
+            raise ValueError("result and error are mutually exclusive")
+        return self
+
 
 class JsonRpcNotification(BaseModel):
     """JSON-RPC 2.0 Notification object (no id)."""
