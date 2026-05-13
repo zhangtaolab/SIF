@@ -182,14 +182,11 @@ class SearchBackend:
 
         def _status(conn: Any) -> tuple[list[CollectionInfo], int]:
             coll_repo = CollectionRepository(conn)
+            doc_repo = DocumentRepository(conn)
             collections = coll_repo.list_all()
             infos = []
             for coll in collections:
-                cursor = conn.execute(
-                    "SELECT COUNT(*) FROM documents WHERE collection_id = ?",
-                    (coll.id,),
-                )
-                count = cursor.fetchone()[0]
+                count = doc_repo.count_by_collection(coll.id)
                 infos.append(
                     CollectionInfo(
                         name=coll.name,
@@ -199,8 +196,7 @@ class SearchBackend:
                         ),
                     )
                 )
-            cursor = conn.execute("SELECT COUNT(*) FROM documents")
-            total = cursor.fetchone()[0]
+            total = sum(info.document_count for info in infos)
             return infos, total
 
         return await self._run_in_db(_status)

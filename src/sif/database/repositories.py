@@ -258,6 +258,15 @@ class DocumentRepository:
         )
         return cursor.fetchone() is not None
 
+    def count_by_collection(self, collection_id: str) -> int:
+        """Count documents in a collection."""
+        cursor = self.db.execute(
+            "SELECT COUNT(*) FROM documents WHERE collection_id = ?",
+            (collection_id,),
+        )
+        row = cursor.fetchone()
+        return row[0] if row else 0
+
     def _row_to_document(self, row: sqlite3.Row) -> Document:
         """Convert database row to Document."""
         doc = Document(
