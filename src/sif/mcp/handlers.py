@@ -28,23 +28,9 @@ logger = get_logger(__name__)
 class ToolHandler(ABC):
     """Abstract base class for MCP tool handlers."""
 
-    @property
-    @abstractmethod
-    def name(self) -> str:
-        """Tool name."""
-        ...
-
-    @property
-    @abstractmethod
-    def description(self) -> str:
-        """Tool description."""
-        ...
-
-    @property
-    @abstractmethod
-    def input_schema(self) -> dict[str, Any]:
-        """JSON schema for tool input."""
-        ...
+    name: str
+    description: str
+    input_schema: dict[str, Any]
 
     @abstractmethod
     async def handle(

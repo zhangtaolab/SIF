@@ -11,6 +11,7 @@ from sif.core.models import SearchOptions
 from sif.database.connection import DatabaseConnection
 from sif.database.repositories import CollectionRepository, DocumentRepository
 from sif.embedding.factory import EmbeddingModelFactory
+from sif.embedding.model import ModelType
 from sif.mcp.protocol import CollectionInfo, Document, SearchResult
 from sif.search.hybrid import SearchPipeline
 from sif.utils.logging import get_logger
@@ -41,9 +42,12 @@ class SearchBackend:
         self.settings = settings or get_settings()
         self._embedder: Any = None
         try:
-            self._embedder = EmbeddingModelFactory.create_model(
-                self.settings.model_type,
-                self.settings.model_path,
+            factory = EmbeddingModelFactory()
+            model_type = ModelType(self.settings.model_type)
+            model_path = str(self.settings.model_path) if self.settings.model_path else None
+            self._embedder = factory.create_model(
+                model_type,
+                model_path,
                 self.settings.model_name,
             )
         except Exception:

@@ -56,6 +56,7 @@ async def test_get_document_found(backend):
     mock_doc.title = "Test"
     mock_doc.content = "Hello\nWorld"
     mock_doc.metadata = {}
+    mock_doc.collection_id = "coll1"
 
     with patch("sif.mcp.backend.DocumentRepository") as mock_repo:
         mock_repo.return_value.get_by_id.return_value = mock_doc
@@ -75,6 +76,7 @@ async def test_get_document_with_line_slicing(backend):
     mock_doc.title = "Test"
     mock_doc.content = "line1\nline2\nline3\nline4"
     mock_doc.metadata = {}
+    mock_doc.collection_id = "coll1"
 
     with patch("sif.mcp.backend.DocumentRepository") as mock_repo:
         mock_repo.return_value.get_by_id.return_value = mock_doc
@@ -109,6 +111,7 @@ async def test_get_documents_by_pattern(backend):
     mock_doc.title = "Test"
     mock_doc.content = "Hello"
     mock_doc.metadata = {}
+    mock_doc.collection_id = "coll1"
 
     with (
         patch("sif.mcp.backend.CollectionRepository") as mock_coll_repo,
@@ -133,6 +136,7 @@ async def test_get_documents_by_pattern_max_bytes(backend):
     mock_doc.title = "Test"
     mock_doc.content = "x" * 200
     mock_doc.metadata = {}
+    mock_doc.collection_id = "coll1"
 
     with (
         patch("sif.mcp.backend.CollectionRepository") as mock_coll_repo,
