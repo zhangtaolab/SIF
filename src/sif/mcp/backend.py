@@ -67,9 +67,12 @@ class SearchBackend:
             )
             if collections:
                 repo = CollectionRepository(conn)
-                options.collection_ids = [
+                matched = [
                     c.id for c in (repo.get_by_name(n) for n in collections) if c
                 ]
+                if not matched:
+                    return []
+                options.collection_ids = matched
             pipeline = SearchPipeline(
                 conn,
                 embedder=self._embedder,
