@@ -13,6 +13,10 @@ from sif.database.repositories import CollectionRepository, DocumentRepository
 from sif.embedding.factory import EmbeddingModelFactory
 from sif.mcp.protocol import CollectionInfo, Document, SearchResult
 from sif.search.hybrid import SearchPipeline
+from sif.utils.logging import get_logger
+
+
+logger = get_logger(__name__)
 
 
 T = TypeVar("T")
@@ -24,9 +28,7 @@ def _truncate_content(content: str, max_size: int = 100 * 1024) -> str:
     encoded = content.encode("utf-8")
     if len(encoded) <= max_size:
         return content
-    truncated = encoded[: max_size - len(suffix.encode("utf-8"))].decode(
-        "utf-8", errors="ignore"
-    )
+    truncated = encoded[: max_size - len(suffix.encode("utf-8"))].decode("utf-8", errors="ignore")
     return truncated + suffix
 
 
@@ -37,11 +39,15 @@ class SearchBackend:
         """Initialize SearchBackend."""
         self.db_path = db_path
         self.settings = settings or get_settings()
-        self._embedder = EmbeddingModelFactory.create_model(
-            self.settings.model_type,
-            self.settings.model_path,
-            self.settings.model_name,
-        )
+        self._embedder: Any = None
+        try:
+            self._embedder = EmbeddingModelFactory.create_model(
+                self.settings.model_type,
+                self.settings.model_path,
+                self.settings.model_name,
+            )
+        except Exception:
+            logger.warning("Failed to load embedder; vector search will be unavailable")
 
     async def _run_in_db(self, callback: Callable[[Any], T]) -> T:
         """Run a callback with a fresh database connection in a thread."""
@@ -70,9 +76,7 @@ class SearchBackend:
             )
             if collections:
                 repo = CollectionRepository(conn)
-                matched = [
-                    c.id for c in (repo.get_by_name(n) for n in collections) if c
-                ]
+                matched = [c.id for c in (repo.get_by_name(n) for n in collections) if c]
                 if not matched:
                     return []
                 options.collection_ids = matched

@@ -88,6 +88,4 @@ def mcp_daemon_cmd(  # noqa: PLR0913
     stop: bool,  # noqa: ARG001
 ) -> None:
     """Run MCP server as a daemon."""
-    raise click.ClickException(
-        "Daemon mode is not yet implemented. Use 'mcp http' instead."
-    )
+    raise click.ClickException("Daemon mode is not yet implemented. Use 'mcp http' instead.")
