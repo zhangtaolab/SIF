@@ -42,7 +42,7 @@ Plan: 6 of 6
 | 04 — Advanced Search Pipeline | 2026-04-17 | 2026-04-17 | All 5 plans passed. BM25, vector, hybrid search, reranking, query expansion, and benchmarking all functional. |
 | 05 — Agent Context Experience | 2026-04-18 | 2026-04-18 | 7/7 plans passed. 3 gap closure fixes committed. Qwen3 models set as default. |
 | 06 — Documentation Audit & Refresh | 2026-04-18 | 2026-04-18 | All 7 plans passed. Auto-generated CLI/config references, docs code block validator (12 tests), Makefile target, GitHub Actions CI workflow. |
-| 07 — CLI Claude Skill | 2026-04-20 | 2026-04-20 | 2/2 plans passed. docsift-search and docsift-get Claude skills created in .claude/skills/. |
+| 07 — CLI Claude Skill | 2026-04-20 | 2026-05-30 | 2/2 plans passed. sif-search and sif-get skills created, symlinked to ~/.claude/skills/. |
 | 08 — Project rename from DocSift to SIF | 2026-04-27 | 2026-04-27 | 8/8 plans passed. Complete rename of package, CLI, env vars, docs, tests, and skills. |
 | 09 — MCP Server Implementation | 2026-05-12 | 2026-05-12 | 6/6 plans passed. Unified MCP package, SearchBackend, 4 tool handlers, stdio/HTTP transports, integration tests. 86% MCP coverage. |
 
@@ -50,7 +50,7 @@ Plan: 6 of 6
 
 - **Requirements mapped:** 31/31 v1 + 7 DOC requirements
 - **Phases defined:** 9
-- **Tests passing:** 419 passed, 11 skipped, 0 failed
+- **Tests passing:** 505 passed, 11 skipped, 0 failed
 - **Known blockers:** 0
 
 ## Accumulated Context
