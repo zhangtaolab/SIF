@@ -14,6 +14,8 @@ from sif.utils.logging import get_logger, is_quiet, suppress_output
 
 logger = get_logger(__name__)
 
+_PROGRESS_BAR_THRESHOLD = 100
+
 
 class SentenceTransformerEmbedder(Embedder):
     """Embedder using sentence-transformers."""
@@ -95,7 +97,7 @@ class SentenceTransformerEmbedder(Embedder):
         embeddings = self.model.encode(
             texts,
             normalize_embeddings=True,
-            show_progress_bar=len(texts) > 100,
+            show_progress_bar=len(texts) > _PROGRESS_BAR_THRESHOLD,
         )
         return embeddings.tolist()
 
@@ -249,7 +251,7 @@ class ModelScopeEmbedder(Embedder):
         embeddings = self.model.encode(
             texts,
             normalize_embeddings=True,
-            show_progress_bar=len(texts) > 100,
+            show_progress_bar=len(texts) > _PROGRESS_BAR_THRESHOLD,
         )
         return embeddings.tolist()
 

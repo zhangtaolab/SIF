@@ -15,7 +15,8 @@ class ScanResult:
     scanned_dirs: set[Path] = field(default_factory=set)
     file_count: int = 0
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
+        """Initialize file_count from files list."""
         self.file_count = len(self.files)
 
 

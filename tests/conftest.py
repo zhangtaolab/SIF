@@ -607,7 +607,7 @@ def docs_test_db(tmp_path: Path) -> Generator[Path, None, None]:
 
 
 @pytest.fixture
-def docs_runner(docs_test_db: Path) -> "CliRunner":
+def docs_runner(docs_test_db: Path) -> "CliRunner":  # noqa: F821
     """Provide a CliRunner with docs test database pre-configured."""
     from click.testing import CliRunner
 

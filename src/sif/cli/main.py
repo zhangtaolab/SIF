@@ -70,16 +70,16 @@ def cli(ctx: click.Context, index: str, config: str, verbose: bool, quiet: bool)
     ctx.obj["index_path"].parent.mkdir(parents=True, exist_ok=True)
 
 
-# Import and register subcommands
-from sif.cli.commands.bench import bench_cmd
-from sif.cli.commands.collection import collection_group
-from sif.cli.commands.context import context_group
-from sif.cli.commands.get import get_group
-from sif.cli.commands.index import index_group
-from sif.cli.commands.ls import ls_cmd
-from sif.cli.commands.mcp import mcp_group
-from sif.cli.commands.pull import pull_cmd
-from sif.cli.commands.search import search_group
+# Import and register subcommands after cli group to avoid circular imports
+from sif.cli.commands.bench import bench_cmd  # noqa: E402
+from sif.cli.commands.collection import collection_group  # noqa: E402
+from sif.cli.commands.context import context_group  # noqa: E402
+from sif.cli.commands.get import get_group  # noqa: E402
+from sif.cli.commands.index import index_group  # noqa: E402
+from sif.cli.commands.ls import ls_cmd  # noqa: E402
+from sif.cli.commands.mcp import mcp_group  # noqa: E402
+from sif.cli.commands.pull import pull_cmd  # noqa: E402
+from sif.cli.commands.search import search_group  # noqa: E402
 
 
 cli.add_command(collection_group)

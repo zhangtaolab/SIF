@@ -24,7 +24,7 @@ class TestStatusCommand:
         mock_settings.get_db_path.return_value = mock_path
 
         with patch("sif.cli.main.get_settings", return_value=mock_settings):
-            with patch("sif.cli.main.Database") as MockDB:
+            with patch("sif.cli.main.Database") as mock_db_cls:
                 mock_db = MagicMock()
                 mock_db.get_stats.return_value = {
                     "collections": 1,
@@ -33,13 +33,13 @@ class TestStatusCommand:
                     "contexts": 0,
                     "total_size_bytes": 1024,
                 }
-                MockDB.return_value = mock_db
+                mock_db_cls.return_value = mock_db
                 result = runner.invoke(status_cmd)
 
         assert result.exit_code == 0
         # Verify Database was called with the Settings-resolved path
-        MockDB.assert_called_once()
-        call_path = MockDB.call_args[0][0]
+        mock_db_cls.assert_called_once()
+        call_path = mock_db_cls.call_args[0][0]
         assert str(call_path) == custom_path
 
     def test_status_respects_env_var(self) -> None:
@@ -53,7 +53,7 @@ class TestStatusCommand:
         mock_settings.get_db_path.return_value = mock_path
 
         with patch("sif.cli.main.get_settings", return_value=mock_settings):
-            with patch("sif.cli.main.Database") as MockDB:
+            with patch("sif.cli.main.Database") as mock_db_cls:
                 mock_db = MagicMock()
                 mock_db.get_stats.return_value = {
                     "collections": 0,
@@ -62,11 +62,11 @@ class TestStatusCommand:
                     "contexts": 0,
                     "total_size_bytes": 0,
                 }
-                MockDB.return_value = mock_db
+                mock_db_cls.return_value = mock_db
                 result = runner.invoke(status_cmd)
 
         # The command should use the env var path
         assert result.exit_code == 0
-        MockDB.assert_called_once()
-        call_path = MockDB.call_args[0][0]
+        mock_db_cls.assert_called_once()
+        call_path = mock_db_cls.call_args[0][0]
         assert str(call_path) == "/tmp/test-sif.db"

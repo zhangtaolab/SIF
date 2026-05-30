@@ -8,6 +8,9 @@ import sqlite3
 from sif.core.models import SearchOptions, SearchResult
 
 
+_SNIPPET_MAX_LEN = 200
+
+
 class BM25Searcher:
     """BM25 full-text search using SQLite FTS5."""
 
@@ -214,4 +217,6 @@ class BM25Searcher:
                 return snippet.strip()
 
         # Return first part if no match found
-        return text[:200].strip() + "..." if len(text) > 200 else text.strip()
+        if len(text) > _SNIPPET_MAX_LEN:
+            return text[:_SNIPPET_MAX_LEN].strip() + "..."
+        return text.strip()

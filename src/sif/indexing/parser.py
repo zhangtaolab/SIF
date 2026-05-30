@@ -76,6 +76,9 @@ class MarkdownParser:
         )
 
 
+_TITLE_MAX_LEN = 100
+
+
 class TextParser:
     """Parser for plain text documents."""
 
@@ -89,7 +92,7 @@ class TextParser:
         title = ""
         for line in lines:
             stripped = line.strip()
-            if stripped and len(stripped) < 100:
+            if stripped and len(stripped) < _TITLE_MAX_LEN:
                 title = stripped
                 break
 

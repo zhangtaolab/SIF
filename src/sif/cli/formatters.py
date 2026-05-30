@@ -169,7 +169,7 @@ def print_warning(message: str, console: Optional[Console] = None) -> None:
 def print_info(message: str, console: Optional[Console] = None) -> None:
     """Print an info message."""
     cons = console or Console()
-    cons.print(f"[blue]ℹ[/blue] {message}")
+    cons.print(f"[blue]i[/blue] {message}")
 
 
 def print_panel(

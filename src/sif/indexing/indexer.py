@@ -19,6 +19,7 @@ logger = get_logger(__name__)
 
 class IndexStatus(Enum):
     """Status of indexing operation."""
+    """Status of indexing operation."""
 
     PENDING = auto()
     INDEXING = auto()
@@ -106,10 +107,25 @@ class DocumentIndexer:
             errors=[],
         )
 
-        for file_path in scan_result.files:
-            try:
-                file_result = self._index_file(file_path, collection.id)
+        def _safe_index_file(
+            file_path: Path,
+        ) -> tuple[IndexStatus | None, str | None]:
+            """Index a single file, catching exceptions.
 
+            Returns (status, error_message). Status is None on error.
+            """
+            try:
+                return self._index_file(file_path, collection.id), None
+            except Exception as e:
+                return None, f"{file_path}: {e!s}"
+
+        for file_path in scan_result.files:
+            file_result, error = _safe_index_file(file_path)
+            if error:
+                logger.error(f"Error indexing {file_path}: {error}")
+                result.files_failed += 1
+                result.errors.append(error)
+            else:
                 result.files_processed += 1
                 if file_result == IndexStatus.ADDED:
                     result.files_added += 1
@@ -117,13 +133,7 @@ class DocumentIndexer:
                     result.files_updated += 1
                 elif file_result == IndexStatus.SKIPPED:
                     result.files_skipped += 1
-
                 self._progress.update()
-
-            except Exception as e:
-                logger.error(f"Error indexing {file_path}: {e}")
-                result.files_failed += 1
-                result.errors.append(f"{file_path}: {e!s}")
 
         self._progress.finish()
 
@@ -161,10 +171,9 @@ class DocumentIndexer:
 
         # Check if file already indexed
         existing = self._repository.get_by_path(str(file_path), collection_id)
-        if existing:
-            if existing.checksum == checksum:
-                logger.debug(f"File unchanged, skipping: {file_path}")
-                return IndexStatus.SKIPPED
+        if existing and existing.checksum == checksum:
+            logger.debug(f"File unchanged, skipping: {file_path}")
+            return IndexStatus.SKIPPED
 
         # Parse file
         parse_result = self._parser.parse(file_path)

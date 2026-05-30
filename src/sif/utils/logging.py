@@ -106,7 +106,7 @@ def setup_logging(
         format_str: Log format string
         handler: Custom log handler
     """
-    global _quiet_mode
+    global _quiet_mode  # noqa: PLW0603
     _quiet_mode = level.upper() == "WARNING"
 
     if format_str is None:

@@ -41,30 +41,25 @@ from sif.models.search import (
 
 
 __all__ = [
-    # Collection models
+    "ChunkResponse",
     "CollectionCreate",
-    "CollectionUpdate",
-    "CollectionResponse",
     "CollectionListResponse",
-    # Document models
+    "CollectionResponse",
+    "CollectionUpdate",
+    "ContextCreate",
+    "ContextResponse",
+    "ContextUpdate",
     "DocumentCreate",
-    "DocumentUpdate",
     "DocumentResponse",
     "DocumentSearchResult",
-    "ChunkResponse",
-    # Context models
-    "ContextCreate",
-    "ContextUpdate",
-    "ContextResponse",
-    # Search models
-    "SearchQuery",
-    "SearchResult",
-    "SearchResponse",
-    "SearchOptions",
-    "SearchType",
-    # Embedding models
+    "DocumentUpdate",
     "EmbeddingConfig",
     "EmbeddingModelInfo",
     "EmbeddingRequest",
     "EmbeddingResponse",
+    "SearchOptions",
+    "SearchQuery",
+    "SearchResponse",
+    "SearchResult",
+    "SearchType",
 ]

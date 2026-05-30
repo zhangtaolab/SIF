@@ -68,11 +68,9 @@ class ModelDownloader:
         model_cache_dir = self.cache_dir / model_hash
 
         # Check if already cached
-        if not force and model_cache_dir.exists():
-            # Check if model files exist
-            if any(model_cache_dir.iterdir()):
-                logger.info(f"Using cached model: {model_id}")
-                return model_cache_dir
+        if not force and model_cache_dir.exists() and any(model_cache_dir.iterdir()):
+            logger.info(f"Using cached model: {model_id}")
+            return model_cache_dir
 
         # Download model
         logger.info(f"Downloading model from ModelScope: {model_id}")
@@ -187,17 +185,11 @@ class ModelDownloader:
         if not self.cache_dir.exists():
             return []
 
-        models = []
-        for item in self.cache_dir.iterdir():
-            if item.is_dir():
-                models.append(
-                    {
-                        "path": str(item),
-                        "name": item.name,
-                    }
-                )
-
-        return models
+        return [
+            {"path": str(item), "name": item.name}
+            for item in self.cache_dir.iterdir()
+            if item.is_dir()
+        ]
 
     def clear_cache(self) -> None:
         """Clear all cached models."""

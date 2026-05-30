@@ -1,5 +1,7 @@
 """Database migration management."""
 
+import contextlib
+
 from sif.config.constants import CURRENT_SCHEMA_VERSION
 from sif.utils.logging import get_logger
 
@@ -180,9 +182,7 @@ class MigrationManager:
         ]
 
         for table in tables:
-            try:
+            with contextlib.suppress(Exception):
                 self._connection.execute(f"DROP TABLE IF EXISTS {table}")
-            except Exception as e:
-                logger.warning(f"Error dropping table {table}: {e}")
 
         logger.info("Database reset completed")

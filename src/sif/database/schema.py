@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import re
 import sqlite3
 
@@ -125,11 +126,8 @@ class SchemaManager:
                 ON contexts(target_id, context_type)
             """)
             self.db.execute("RELEASE SAVEPOINT sp_migration")
-        except Exception as e:
+        except Exception:
             self.db.execute("ROLLBACK TO SAVEPOINT sp_migration")
-            import sys  # noqa: PLC0415
-
-            print(f"Migration failed: {e}", file=sys.stderr)
             raise
 
     def _create_llm_cache_table(self) -> None:
@@ -329,10 +327,8 @@ class SchemaManager:
             "collections",
         ]
         for table in tables:
-            try:
+            with contextlib.suppress(sqlite3.OperationalError):
                 self.db.execute(f"DROP TABLE IF EXISTS {table}")
-            except sqlite3.OperationalError:
-                pass
         self.db.commit()
 
     def get_stats(self) -> dict:

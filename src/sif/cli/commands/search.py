@@ -19,6 +19,10 @@ from sif.utils.logging import set_quiet
 
 console = Console()
 
+# Display truncation constants
+_TITLE_MAX_LEN = 50
+_CONTENT_MAX_LEN = 200
+
 
 def format_results_json(results: list) -> str:
     """Format results as JSON."""
@@ -213,12 +217,13 @@ def search_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             row = [
                 str(r.rank),
                 f"{r.score:.4f}",
-                r.title[:50] + "..." if len(r.title) > 50 else r.title,
+                r.title[:_TITLE_MAX_LEN] + "..." if len(r.title) > _TITLE_MAX_LEN else r.title,
                 r.collection_name,
             ]
             if line_numbers and getattr(r, "content", None):
                 content = prepend_line_numbers(r.content)
-                content = content[:200] + "..." if len(content) > 200 else content
+                if len(content) > _CONTENT_MAX_LEN:
+                    content = content[:_CONTENT_MAX_LEN] + "..."
                 row.append(content)
             table.add_row(*row)
 
@@ -347,12 +352,13 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             row = [
                 str(r.rank),
                 f"{r.score:.4f}",
-                r.title[:50] + "..." if len(r.title) > 50 else r.title,
+                r.title[:_TITLE_MAX_LEN] + "..." if len(r.title) > _TITLE_MAX_LEN else r.title,
                 r.collection_name,
             ]
             if line_numbers and getattr(r, "content", None):
                 content = prepend_line_numbers(r.content)
-                content = content[:200] + "..." if len(content) > 200 else content
+                if len(content) > _CONTENT_MAX_LEN:
+                    content = content[:_CONTENT_MAX_LEN] + "..."
                 row.append(content)
             table.add_row(*row)
 
@@ -556,12 +562,13 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             row = [
                 str(r.rank),
                 f"{r.score:.4f}",
-                r.title[:50] + "..." if len(r.title) > 50 else r.title,
+                r.title[:_TITLE_MAX_LEN] + "..." if len(r.title) > _TITLE_MAX_LEN else r.title,
                 r.collection_name,
             ]
             if line_numbers and getattr(r, "content", None):
                 content = prepend_line_numbers(r.content)
-                content = content[:200] + "..." if len(content) > 200 else content
+                if len(content) > _CONTENT_MAX_LEN:
+                    content = content[:_CONTENT_MAX_LEN] + "..."
                 row.append(content)
             table.add_row(*row)
 
