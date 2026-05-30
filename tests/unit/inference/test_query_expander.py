@@ -69,7 +69,7 @@ class TestQueryExpansionExpand:
 
         # Mock _get_expansion_terms to return some terms
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(expander, "_get_expansion_terms", lambda q: ["term1", "term2"])
+            mp.setattr(expander, "_get_expansion_terms", lambda _q: ["term1", "term2"])
 
             # Act
             result = expander.expand("test query")
@@ -97,7 +97,7 @@ class TestQueryExpansionExpand:
 
         # Mock _get_expansion_terms to return some terms
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(expander, "_get_expansion_terms", lambda q: ["term1"])
+            mp.setattr(expander, "_get_expansion_terms", lambda _q: ["term1"])
 
             # Act
             result = expander.expand("test query", intent="code")
@@ -154,7 +154,7 @@ class TestQueryExpansionExpandBatch:
 
         # Mock _get_expansion_terms to return some terms
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(expander, "_get_expansion_terms", lambda q: ["term1"])
+            mp.setattr(expander, "_get_expansion_terms", lambda _q: ["term1"])
 
             queries = ["query 1", "query 2", "query 3"]
 
@@ -173,7 +173,7 @@ class TestQueryExpansionExpandBatch:
 
         # Mock _get_expansion_terms to return same term for all queries
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(expander, "_get_expansion_terms", lambda q: ["term1"])
+            mp.setattr(expander, "_get_expansion_terms", lambda _q: ["term1"])
 
             queries = ["query 1", "query 2"]
 

@@ -23,18 +23,20 @@ class TestStatusCommand:
         mock_path.__str__ = MagicMock(return_value=custom_path)
         mock_settings.get_db_path.return_value = mock_path
 
-        with patch("sif.cli.main.get_settings", return_value=mock_settings):
-            with patch("sif.cli.main.Database") as mock_db_cls:
-                mock_db = MagicMock()
-                mock_db.get_stats.return_value = {
-                    "collections": 1,
-                    "documents": 5,
-                    "chunks": 10,
-                    "contexts": 0,
-                    "total_size_bytes": 1024,
-                }
-                mock_db_cls.return_value = mock_db
-                result = runner.invoke(status_cmd)
+        with (
+            patch("sif.cli.main.get_settings", return_value=mock_settings),
+            patch("sif.cli.main.Database") as mock_db_cls,
+        ):
+            mock_db = MagicMock()
+            mock_db.get_stats.return_value = {
+                "collections": 1,
+                "documents": 5,
+                "chunks": 10,
+                "contexts": 0,
+                "total_size_bytes": 1024,
+            }
+            mock_db_cls.return_value = mock_db
+            result = runner.invoke(status_cmd)
 
         assert result.exit_code == 0
         # Verify Database was called with the Settings-resolved path
@@ -52,18 +54,20 @@ class TestStatusCommand:
         mock_path.__str__ = MagicMock(return_value="/tmp/test-sif.db")
         mock_settings.get_db_path.return_value = mock_path
 
-        with patch("sif.cli.main.get_settings", return_value=mock_settings):
-            with patch("sif.cli.main.Database") as mock_db_cls:
-                mock_db = MagicMock()
-                mock_db.get_stats.return_value = {
-                    "collections": 0,
-                    "documents": 0,
-                    "chunks": 0,
-                    "contexts": 0,
-                    "total_size_bytes": 0,
-                }
-                mock_db_cls.return_value = mock_db
-                result = runner.invoke(status_cmd)
+        with (
+            patch("sif.cli.main.get_settings", return_value=mock_settings),
+            patch("sif.cli.main.Database") as mock_db_cls,
+        ):
+            mock_db = MagicMock()
+            mock_db.get_stats.return_value = {
+                "collections": 0,
+                "documents": 0,
+                "chunks": 0,
+                "contexts": 0,
+                "total_size_bytes": 0,
+            }
+            mock_db_cls.return_value = mock_db
+            result = runner.invoke(status_cmd)
 
         # The command should use the env var path
         assert result.exit_code == 0

@@ -155,7 +155,7 @@ class TestCollectionModels:
 
     def test_collection_create_name_required(self):
         """Test that name is required."""
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError, match="name"):
             CollectionCreate(name="")
 
     def test_collection_response(self):

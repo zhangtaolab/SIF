@@ -93,7 +93,7 @@ class TestDatabaseConnection:
             db.commit()
 
         # Act & Assert
-        with pytest.raises(ValueError), conn.transaction() as db:  # noqa: PT012
+        with pytest.raises(ValueError, match="Test error"), conn.transaction() as db:  # noqa: PT012
             db.execute("INSERT INTO test (id) VALUES (1)")
             raise ValueError("Test error")
 

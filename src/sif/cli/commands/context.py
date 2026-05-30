@@ -127,7 +127,7 @@ def context_list(ctx: click.Context, context_type: str | None) -> None:
         # Truncate long contexts for display
         content_text = ctx_item.context
         if len(content_text) > _CONTEXT_TRUNCATE_LEN:
-            content_text = content_text[:_CONTEXT_TRUNCATE_LEN - 3] + "..."
+            content_text = content_text[: _CONTEXT_TRUNCATE_LEN - 3] + "..."
         table.add_row(ctx_item.context_type, ctx_item.path, content_text)
 
     console.print(table)

@@ -171,8 +171,8 @@ class TestSchemaManagerContextsTable:
 
         with pytest.raises(sqlite3.IntegrityError):
             vec_db.execute(
-                "INSERT INTO contexts (id, target_id, context_type, content, created_at, updated_at) "
-                "VALUES ('x', '/a.md', 'invalid', 'desc', '2024-01-01', '2024-01-02')"
+                "INSERT INTO contexts (id, target_id, context_type, content, created_at, "
+                "updated_at) VALUES ('x', '/a.md', 'invalid', 'desc', '2024-01-01', '2024-01-02')"
             )
 
 

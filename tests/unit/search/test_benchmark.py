@@ -84,7 +84,7 @@ class TestSearchEvaluator:
         }
         evaluator = SearchEvaluator(fixture)
 
-        def mock_search(query: str) -> list[SearchResult]:
+        def mock_search(_query: str) -> list[SearchResult]:
             return [
                 SearchResult(
                     document_id="doc-1",
@@ -123,8 +123,8 @@ class TestSearchEvaluator:
         }
         evaluator = SearchEvaluator(fixture)
 
-        def mock_search(query: str) -> list[SearchResult]:
-            if query == "q1":
+        def mock_search(_query: str) -> list[SearchResult]:
+            if _query == "q1":
                 return [
                     SearchResult(
                         document_id="doc-a",

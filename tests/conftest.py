@@ -104,8 +104,7 @@ def temp_db_path(temp_dir: Path) -> Path:
 @pytest.fixture
 def db_connection(temp_db_path: Path) -> DatabaseConnection:
     """Provide a database connection."""
-    conn = DatabaseConnection(temp_db_path)
-    return conn
+    return DatabaseConnection(temp_db_path)
 
 
 @pytest.fixture
@@ -285,7 +284,7 @@ def sample_document(
 @pytest.fixture
 def sample_documents(
     sample_collection_id: str,
-    sample_document_metadata: DocumentMetadata,
+    _sample_document_metadata: DocumentMetadata,
 ) -> list[Document]:
     """Return a list of sample documents."""
     documents = []
@@ -428,12 +427,12 @@ def mock_embedder() -> MagicMock:
     mock.loaded = True
 
     # Mock embed method to return deterministic embeddings
-    def mock_embed(texts: list[str], normalize: bool = True) -> list[list[float]]:
+    def mock_embed(texts: list[str], normalize: bool = True) -> list[list[float]]:  # noqa: ARG001
         import random
 
         return [[random.Random(hash(t) & 0xFFFFFFFF).random() for _ in range(384)] for t in texts]
 
-    def mock_embed_single(text: str, normalize: bool = True) -> list[float]:
+    def mock_embed_single(text: str, normalize: bool = True) -> list[float]:  # noqa: ARG001
         return mock_embed([text])[0]
 
     mock.embed.side_effect = mock_embed
@@ -611,5 +610,4 @@ def docs_runner(docs_test_db: Path) -> "CliRunner":  # noqa: F821
     """Provide a CliRunner with docs test database pre-configured."""
     from click.testing import CliRunner
 
-    runner = CliRunner(env={"SIF_DB_PATH": str(docs_test_db)})
-    return runner
+    return CliRunner(env={"SIF_DB_PATH": str(docs_test_db)})

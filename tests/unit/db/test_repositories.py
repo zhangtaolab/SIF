@@ -34,8 +34,7 @@ class TestCollectionRepository:
     @pytest.fixture
     def mock_collection_repo(self) -> MagicMock:
         """Create a mock CollectionRepository."""
-        mock = create_autospec(AbstractCollectionRepository, instance=True)
-        return mock
+        return create_autospec(AbstractCollectionRepository, instance=True)
 
     @pytest.fixture
     def sample_collection(self) -> Collection:
@@ -297,8 +296,7 @@ class TestDocumentRepository:
     @pytest.fixture
     def mock_document_repo(self) -> MagicMock:
         """Create a mock DocumentRepository."""
-        mock = create_autospec(AbstractDocumentRepository, instance=True)
-        return mock
+        return create_autospec(AbstractDocumentRepository, instance=True)
 
     @pytest.fixture
     def sample_document(self) -> Document:
@@ -598,8 +596,7 @@ class TestContextRepository:
     @pytest.fixture
     def mock_context_repo(self) -> MagicMock:
         """Create a mock ContextRepository."""
-        mock = create_autospec(AbstractContextRepository, instance=True)
-        return mock
+        return create_autospec(AbstractContextRepository, instance=True)
 
     @pytest.fixture
     def sample_context(self) -> Context:
@@ -817,8 +814,7 @@ class TestSearchRepository:
     @pytest.fixture
     def mock_search_repo(self) -> MagicMock:
         """Create a mock SearchRepository."""
-        mock = create_autospec(SearchRepository, instance=True)
-        return mock
+        return create_autospec(SearchRepository, instance=True)
 
     def test_search_fts(self, mock_search_repo: MagicMock) -> None:
         """Test full-text search.

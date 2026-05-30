@@ -330,17 +330,18 @@ def main() -> int:
         ("Parser", test_parser),
     ]
 
-    results = []
-    for name, test_func in tests:
+    def _run_test(name: str, test_func) -> tuple[str, bool]:
         try:
             test_func()
-            results.append((name, True))
+            return (name, True)
         except Exception as e:
             print(f"\n❌ {name} test crashed: {e}")
             import traceback
 
             traceback.print_exc()
-            results.append((name, False))
+            return (name, False)
+
+    results = [_run_test(name, test_func) for name, test_func in tests]
 
     # Print summary
     print("\n" + "=" * 60)

@@ -17,9 +17,9 @@ class CollectionFactory:
     _counter = 0
 
     @classmethod
-    def create(
+    def create(  # noqa: PLR0913
         cls,
-        id: str | None = None,
+        id: str | None = None,  # noqa: A002
         name: str | None = None,
         description: str | None = None,
         paths: list[str] | None = None,
@@ -54,7 +54,7 @@ class DocumentMetadataFactory:
     _counter = 0
 
     @classmethod
-    def create(
+    def create(  # noqa: PLR0913
         cls,
         title: str | None = None,
         author: str | None = None,
@@ -82,9 +82,9 @@ class DocumentFactory:
     _counter = 0
 
     @classmethod
-    def create(
+    def create(  # noqa: PLR0913
         cls,
-        id: str | None = None,
+        id: str | None = None,  # noqa: A002
         collection_id: str | None = None,
         path: str | None = None,
         content: str | None = None,
@@ -138,9 +138,9 @@ class DocumentChunkFactory:
     _counter = 0
 
     @classmethod
-    def create(
+    def create(  # noqa: PLR0913
         cls,
-        id: str | None = None,
+        id: str | None = None,  # noqa: A002
         document_id: str | None = None,
         content: str | None = None,
         start_line: int | None = None,
@@ -184,7 +184,7 @@ class ContextFactory:
     @classmethod
     def create(
         cls,
-        id: str | None = None,
+        id: str | None = None,  # noqa: A002
         target_id: str | None = None,
         context_type: ContextType = ContextType.COLLECTION,
         content: str | None = None,
@@ -213,7 +213,7 @@ class SearchOptionsFactory:
     """Factory for creating test search options."""
 
     @classmethod
-    def create(
+    def create(  # noqa: PLR0913
         cls,
         limit: int = 10,
         offset: int = 0,
@@ -221,11 +221,11 @@ class SearchOptionsFactory:
         include_chunks: bool = True,
         include_metadata: bool = True,
         highlight_matches: bool = True,
-        search_type: SearchType = SearchType.HYBRID,
+        _search_type: SearchType = SearchType.HYBRID,
         **kwargs,
     ) -> SearchOptions:
         """Create test search options."""
-        options = SearchOptions(
+        return SearchOptions(
             limit=limit,
             offset=offset,
             threshold=threshold,
@@ -234,7 +234,6 @@ class SearchOptionsFactory:
             highlight_matches=highlight_matches,
             **kwargs,
         )
-        return options
 
     @classmethod
     def bm25(cls, **kwargs) -> SearchOptions:
@@ -258,7 +257,7 @@ class SearchResultFactory:
     _counter = 0
 
     @classmethod
-    def create(
+    def create(  # noqa: PLR0913
         cls,
         document_id: str | None = None,
         document_path: str | None = None,

@@ -185,7 +185,8 @@ class TestVectorSearcher:
         content_cursor.fetchone.return_value = ("document content",)
         context_cursor = MagicMock()
         context_cursor.fetchall.return_value = []
-        # First execute is vec_version() in __init__, second is search query, third is content lookup, fourth is context lookup
+        # First execute is vec_version() in __init__, second is search query,
+        # third is content lookup, fourth is context lookup
         mock_db.execute.side_effect = [MagicMock(), mock_cursor, content_cursor, context_cursor]
 
         searcher = VectorSearcher(mock_db)

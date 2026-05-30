@@ -61,8 +61,7 @@ class Settings(BaseSettings):
     model_type: str = Field(
         default="modelscope",
         description=(
-            "Embedding model type (gguf, sentence_transformers, "
-            "openai, huggingface, modelscope)"
+            "Embedding model type (gguf, sentence_transformers, openai, huggingface, modelscope)"
         ),
     )
     n_gpu_layers: int = Field(

@@ -113,10 +113,10 @@ class TestEmbeddingModelProperties:
             def unload(self):
                 pass
 
-            def embed(self, texts, normalize=True):
+            def embed(self, _texts, _normalize=True):
                 return []
 
-            def embed_single(self, text, normalize=True):
+            def embed_single(self, _text, _normalize=True):
                 return []
 
         model = TestModel("test-id", 384, 512)
@@ -133,10 +133,10 @@ class TestEmbeddingModelProperties:
             def unload(self):
                 pass
 
-            def embed(self, texts, normalize=True):
+            def embed(self, _texts, _normalize=True):
                 return []
 
-            def embed_single(self, text, normalize=True):
+            def embed_single(self, _text, _normalize=True):
                 return []
 
         model = TestModel("test-id", 768, 512)
@@ -153,10 +153,10 @@ class TestEmbeddingModelProperties:
             def unload(self):
                 pass
 
-            def embed(self, texts, normalize=True):
+            def embed(self, _texts, _normalize=True):
                 return []
 
-            def embed_single(self, text, normalize=True):
+            def embed_single(self, _text, _normalize=True):
                 return []
 
         model = TestModel("test-id", 384, 1024)
@@ -173,10 +173,10 @@ class TestEmbeddingModelProperties:
             def unload(self):
                 pass
 
-            def embed(self, texts, normalize=True):
+            def embed(self, _texts, _normalize=True):
                 return []
 
-            def embed_single(self, text, normalize=True):
+            def embed_single(self, _text, _normalize=True):
                 return []
 
         model = TestModel("test-id", 384, 512)
@@ -197,10 +197,10 @@ class TestEmbeddingModelCountTokens:
             def unload(self):
                 pass
 
-            def embed(self, texts, normalize=True):
+            def embed(self, _texts, _normalize=True):
                 return []
 
-            def embed_single(self, text, normalize=True):
+            def embed_single(self, _text, _normalize=True):
                 return []
 
         model = TestModel("test-id", 384, 512)
@@ -219,10 +219,10 @@ class TestEmbeddingModelCountTokens:
             def unload(self):
                 pass
 
-            def embed(self, texts, normalize=True):
+            def embed(self, _texts, _normalize=True):
                 return []
 
-            def embed_single(self, text, normalize=True):
+            def embed_single(self, _text, _normalize=True):
                 return []
 
         model = TestModel("test-id", 384, 512)

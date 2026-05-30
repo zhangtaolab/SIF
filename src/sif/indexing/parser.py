@@ -115,33 +115,35 @@ class CodeParser:
     """Parser for code files."""
 
     # File extensions to language mapping
-    LANGUAGE_MAP = types.MappingProxyType({
-        ".py": "python",
-        ".js": "javascript",
-        ".ts": "typescript",
-        ".jsx": "jsx",
-        ".tsx": "tsx",
-        ".rs": "rust",
-        ".go": "go",
-        ".java": "java",
-        ".cpp": "cpp",
-        ".c": "c",
-        ".h": "c",
-        ".hpp": "cpp",
-        ".rb": "ruby",
-        ".php": "php",
-        ".swift": "swift",
-        ".kt": "kotlin",
-        ".scala": "scala",
-        ".r": "r",
-        ".sh": "bash",
-        ".yaml": "yaml",
-        ".yml": "yaml",
-        ".json": "json",
-        ".toml": "toml",
-        ".xml": "xml",
-        ".sql": "sql",
-    })
+    LANGUAGE_MAP = types.MappingProxyType(
+        {
+            ".py": "python",
+            ".js": "javascript",
+            ".ts": "typescript",
+            ".jsx": "jsx",
+            ".tsx": "tsx",
+            ".rs": "rust",
+            ".go": "go",
+            ".java": "java",
+            ".cpp": "cpp",
+            ".c": "c",
+            ".h": "c",
+            ".hpp": "cpp",
+            ".rb": "ruby",
+            ".php": "php",
+            ".swift": "swift",
+            ".kt": "kotlin",
+            ".scala": "scala",
+            ".r": "r",
+            ".sh": "bash",
+            ".yaml": "yaml",
+            ".yml": "yaml",
+            ".json": "json",
+            ".toml": "toml",
+            ".xml": "xml",
+            ".sql": "sql",
+        }
+    )
 
     def parse(self, file_path: Path) -> ParsedDocument:
         """Parse a code file."""

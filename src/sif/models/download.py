@@ -15,20 +15,22 @@ logger = get_logger(__name__)
 class ModelDownloader:
     """Download models from ModelScope."""
 
-    DEFAULT_MODELS = types.MappingProxyType({
-        "embedding": {
-            "model_id": "iic/gte_Qwen2-7B-instruct",
-            "description": "General text embedding model",
-        },
-        "reranker": {
-            "model_id": "iic/gte_Qwen2-7B-instruct",
-            "description": "Reranking model",
-        },
-        "query_expansion": {
-            "model_id": "qwen/Qwen2.5-0.5B-Instruct",
-            "description": "Query expansion model",
-        },
-    })
+    DEFAULT_MODELS = types.MappingProxyType(
+        {
+            "embedding": {
+                "model_id": "iic/gte_Qwen2-7B-instruct",
+                "description": "General text embedding model",
+            },
+            "reranker": {
+                "model_id": "iic/gte_Qwen2-7B-instruct",
+                "description": "Reranking model",
+            },
+            "query_expansion": {
+                "model_id": "qwen/Qwen2.5-0.5B-Instruct",
+                "description": "Query expansion model",
+            },
+        }
+    )
 
     def __init__(self, cache_dir: str | Path | None = None) -> None:
         """Initialize model downloader.

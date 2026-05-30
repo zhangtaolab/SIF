@@ -19,6 +19,7 @@ logger = get_logger(__name__)
 
 class IndexStatus(Enum):
     """Status of indexing operation."""
+
     """Status of indexing operation."""
 
     PENDING = auto()

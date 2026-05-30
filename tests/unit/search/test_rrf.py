@@ -281,9 +281,7 @@ class TestRRFKValues:
         high_k_spread = fused_high_k[0].score - fused_high_k[-1].score
         assert low_k_spread > high_k_spread
 
-    def test_override_k_in_fuse(
-        self, rrf_fusion: RRFFusion, bm25_results: list[SearchResult]
-    ) -> None:
+    def test_override_k_in_fuse(self, bm25_results: list[SearchResult]) -> None:
         """Test overriding k value in fuse method.
 
         Arrange: Create RRF with default k, override in fuse
@@ -438,7 +436,7 @@ class TestRRFWeightedFusion:
         weights = [1.0, 2.0, 3.0]
 
         # Act & Assert
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="weights"):
             rrf_fusion.fuse_with_weights(result_lists, weights=weights)
 
 

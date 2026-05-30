@@ -34,7 +34,7 @@ class TestSearchQuery:
 
     def test_search_query_validation(self):
         """Test search query validation."""
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError, match="query"):
             SearchQuery(query="")  # Empty query should fail
 
 
@@ -65,10 +65,10 @@ class TestSearchOptions:
 
     def test_limit_validation(self):
         """Test limit validation."""
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError, match="limit"):
             SearchOptions(limit=0)  # Should be >= 1
 
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError, match="limit"):
             SearchOptions(limit=101)  # Should be <= 100
 
 
