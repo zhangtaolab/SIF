@@ -44,7 +44,7 @@ class TestStdioIntegration:
                     MagicMock(name="notes", document_count=5, last_updated=None, size_bytes=None),
                 ],
                 5,
-            )
+            ),
         )
 
         server = MCPServer(backend)
@@ -54,7 +54,7 @@ class TestStdioIntegration:
                 GetToolHandler(),
                 MultiGetToolHandler(),
                 StatusToolHandler(),
-            ]
+            ],
         )
 
         messages = [
@@ -147,7 +147,7 @@ class TestStdioIntegration:
                     score=0.9,
                     highlights=["hi"],
                 ),
-            ]
+            ],
         )
 
         server = MCPServer(backend)
@@ -250,7 +250,7 @@ class TestHTTPIntegration:
                 GetToolHandler(),
                 MultiGetToolHandler(),
                 StatusToolHandler(),
-            ]
+            ],
         )
         return server
 
@@ -269,7 +269,7 @@ class TestHTTPIntegration:
                     MagicMock(name="notes", document_count=5, last_updated=None, size_bytes=None),
                 ],
                 5,
-            )
+            ),
         )
 
         # initialize

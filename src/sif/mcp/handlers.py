@@ -80,8 +80,8 @@ class QueryToolHandler(ToolHandler):
                 ToolContentItem(
                     type="text",
                     text=json.dumps(output.model_dump(), ensure_ascii=False),
-                )
-            ]
+                ),
+            ],
         )
 
 
@@ -125,8 +125,8 @@ class GetToolHandler(ToolHandler):
                 ToolContentItem(
                     type="text",
                     text=json.dumps(output.model_dump(), ensure_ascii=False),
-                )
-            ]
+                ),
+            ],
         )
 
 
@@ -161,8 +161,8 @@ class MultiGetToolHandler(ToolHandler):
                 ToolContentItem(
                     type="text",
                     text=json.dumps(output.model_dump(), ensure_ascii=False),
-                )
-            ]
+                ),
+            ],
         )
 
 
@@ -190,8 +190,8 @@ class StatusToolHandler(ToolHandler):
                 ToolContentItem(
                     type="text",
                     text=json.dumps(output.model_dump(), ensure_ascii=False),
-                )
-            ]
+                ),
+            ],
         )
 
 

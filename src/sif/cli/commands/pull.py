@@ -78,7 +78,7 @@ def _download_model(model_spec: str, target_cache: Path) -> Path:
             return _download_from_modelscope(repo_id, filename, target_cache)
         except ImportError:
             raise click.ClickException(
-                f"HuggingFace failed: {hf_err}. ModelScope not installed."
+                f"HuggingFace failed: {hf_err}. ModelScope not installed.",
             ) from hf_err
         except Exception as ms_err:
             raise click.ClickException(f"Download failed: HF={hf_err}, MS={ms_err}") from ms_err

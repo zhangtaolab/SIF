@@ -111,7 +111,7 @@ class InitializeResult(BaseModel):
     protocolVersion: str = "2024-11-05"  # noqa: N815
     capabilities: ServerCapabilities = Field(default_factory=ServerCapabilities)
     serverInfo: dict[str, str] = Field(  # noqa: N815
-        default_factory=lambda: {"name": "sif-mcp-server", "version": "1.0.0"}
+        default_factory=lambda: {"name": "sif-mcp-server", "version": "1.0.0"},
     )
 
 

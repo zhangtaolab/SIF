@@ -102,7 +102,7 @@ def print_csv(data: list[dict[str, Any]], console: Optional[Console] = None) -> 
 
 
 def print_markdown(
-    data: list[dict[str, Any]], title: Optional[str] = None, console: Optional[Console] = None
+    data: list[dict[str, Any]], title: Optional[str] = None, console: Optional[Console] = None,
 ) -> None:
     """Print data as Markdown table."""
     cons = console or Console()
@@ -125,7 +125,7 @@ def print_files(paths: list[str], console: Optional[Console] = None) -> None:
 
 
 def print_table(
-    data: list[dict[str, Any]], title: Optional[str] = None, console: Optional[Console] = None
+    data: list[dict[str, Any]], title: Optional[str] = None, console: Optional[Console] = None,
 ) -> None:
     """Print data as a rich table."""
     cons = console or Console()
@@ -185,7 +185,7 @@ def print_panel(
 
 
 def print_tree(
-    data: dict[str, Any], title: str = "Tree", console: Optional[Console] = None
+    data: dict[str, Any], title: str = "Tree", console: Optional[Console] = None,
 ) -> None:
     """Print data as a tree structure."""
     cons = console or Console()
@@ -213,7 +213,7 @@ def prepend_line_numbers(content: str) -> str:
 
 
 def add_line_numbers_to_results(
-    results: list[dict[str, Any]], content_key: str = "content"
+    results: list[dict[str, Any]], content_key: str = "content",
 ) -> list[dict[str, Any]]:
     """Add a 'line_numbers' field to each result dict based on content."""
     formatted = []

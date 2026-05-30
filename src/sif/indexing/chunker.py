@@ -62,7 +62,7 @@ class FixedSizeChunker(Chunker):
                         sequence=sequence,
                         start_pos=start,
                         end_pos=end,
-                    )
+                    ),
                 )
                 sequence += 1
 
@@ -117,7 +117,7 @@ class MarkdownChunker(Chunker):
                         sequence=sequence,
                         start_pos=start,
                         end_pos=end,
-                    )
+                    ),
                 )
                 sequence += 1
 
@@ -173,7 +173,7 @@ class CodeChunker(Chunker):
                         sequence=sequence,
                         start_pos=start,
                         end_pos=end,
-                    )
+                    ),
                 )
                 sequence += 1
 

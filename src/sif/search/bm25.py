@@ -76,7 +76,7 @@ class BM25Searcher:
 
             if options.include_highlights:
                 result.highlights = self._get_highlights(
-                    row["document_id"], query, options.max_highlights
+                    row["document_id"], query, options.max_highlights,
                 )
 
             results.append(result)
@@ -103,7 +103,7 @@ class BM25Searcher:
         return results
 
     def search_chunks(
-        self, query: str, options: SearchOptions | None = None
+        self, query: str, options: SearchOptions | None = None,
     ) -> list[tuple[str, str, float]]:
         """Search document chunks using BM25.
 

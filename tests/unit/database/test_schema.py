@@ -53,7 +53,7 @@ class TestSchemaManagerMigration:
         vec_db.execute(
             "INSERT INTO path_contexts (id, path, context, created_at, updated_at) "
             "VALUES ('ctx-1', '/notes/a.md', 'Important notes', "
-            "'2024-01-01T00:00:00', '2024-01-02T00:00:00')"
+            "'2024-01-01T00:00:00', '2024-01-02T00:00:00')",
         )
         vec_db.commit()
 
@@ -62,13 +62,13 @@ class TestSchemaManagerMigration:
 
         # Old table should be gone
         cursor = vec_db.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='path_contexts'"
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='path_contexts'",
         )
         assert cursor.fetchone() is None
 
         # Data should be in contexts with context_type='path'
         cursor = vec_db.execute(
-            "SELECT target_id, context_type, content FROM contexts WHERE id='ctx-1'"
+            "SELECT target_id, context_type, content FROM contexts WHERE id='ctx-1'",
         )
         row = cursor.fetchone()
         assert row is not None
@@ -81,11 +81,11 @@ class TestSchemaManagerMigration:
         _create_old_path_contexts_table(vec_db)
         vec_db.execute(
             "INSERT INTO path_contexts (id, path, context, created_at, updated_at) "
-            "VALUES ('ctx-1', '/a.md', 'desc A', '2024-01-01T10:00:00', '2024-01-02T10:00:00')"
+            "VALUES ('ctx-1', '/a.md', 'desc A', '2024-01-01T10:00:00', '2024-01-02T10:00:00')",
         )
         vec_db.execute(
             "INSERT INTO path_contexts (id, path, context, created_at, updated_at) "
-            "VALUES ('ctx-2', '/b.md', 'desc B', '2024-03-01T12:00:00', '2024-03-02T12:00:00')"
+            "VALUES ('ctx-2', '/b.md', 'desc B', '2024-03-01T12:00:00', '2024-03-02T12:00:00')",
         )
         vec_db.commit()
 
@@ -106,7 +106,7 @@ class TestSchemaManagerMigration:
         _create_old_path_contexts_table(vec_db)
         vec_db.execute(
             "INSERT INTO path_contexts (id, path, context, created_at, updated_at) "
-            "VALUES ('ctx-1', '/a.md', 'desc', '2024-01-01T00:00:00', '2024-01-02T00:00:00')"
+            "VALUES ('ctx-1', '/a.md', 'desc', '2024-01-01T00:00:00', '2024-01-02T00:00:00')",
         )
         vec_db.commit()
 
@@ -114,7 +114,7 @@ class TestSchemaManagerMigration:
         manager.create_all()
 
         cursor = vec_db.execute(
-            "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_contexts_target'"
+            "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_contexts_target'",
         )
         assert cursor.fetchone() is not None
 
@@ -123,7 +123,7 @@ class TestSchemaManagerMigration:
         _create_old_path_contexts_table(vec_db)
         vec_db.execute(
             "INSERT INTO path_contexts (id, path, context, created_at, updated_at) "
-            "VALUES ('ctx-1', '/a.md', 'desc', '2024-01-01T00:00:00', '2024-01-02T00:00:00')"
+            "VALUES ('ctx-1', '/a.md', 'desc', '2024-01-01T00:00:00', '2024-01-02T00:00:00')",
         )
         vec_db.commit()
 
@@ -140,7 +140,7 @@ class TestSchemaManagerMigration:
         manager.create_all()
 
         cursor = vec_db.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='contexts'"
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='contexts'",
         )
         assert cursor.fetchone() is not None
 
@@ -157,7 +157,7 @@ class TestSchemaManagerContextsTable:
         manager.create_all()
 
         cursor = vec_db.execute(
-            "SELECT sql FROM sqlite_master WHERE type='table' AND name='contexts'"
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='contexts'",
         )
         row = cursor.fetchone()
         assert row is not None
@@ -172,7 +172,7 @@ class TestSchemaManagerContextsTable:
         with pytest.raises(sqlite3.IntegrityError):
             vec_db.execute(
                 "INSERT INTO contexts (id, target_id, context_type, content, created_at, "
-                "updated_at) VALUES ('x', '/a.md', 'invalid', 'desc', '2024-01-01', '2024-01-02')"
+                "updated_at) VALUES ('x', '/a.md', 'invalid', 'desc', '2024-01-01', '2024-01-02')",
             )
 
 

@@ -26,7 +26,7 @@ class TestBenchCommand:
         fixture = {
             "queries": [
                 {"query": "test", "relevant_docids": ["doc-1"]},
-            ]
+            ],
         }
         fixture_path = tmp_path / "fixture.json"
         fixture_path.write_text(json.dumps(fixture))
@@ -65,7 +65,7 @@ class TestBenchCommand:
         fixture = {
             "queries": [
                 {"query": "test", "relevant_docids": ["doc-1"]},
-            ]
+            ],
         }
         fixture_path = tmp_path / "fixture.json"
         fixture_path.write_text(json.dumps(fixture))

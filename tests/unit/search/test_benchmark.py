@@ -80,7 +80,7 @@ class TestSearchEvaluator:
         fixture = {
             "queries": [
                 {"query": "test", "relevant_docids": ["doc-1", "doc-2"]},
-            ]
+            ],
         }
         evaluator = SearchEvaluator(fixture)
 
@@ -119,7 +119,7 @@ class TestSearchEvaluator:
             "queries": [
                 {"query": "q1", "relevant_docids": ["doc-a"]},
                 {"query": "q2", "relevant_docids": ["doc-b"]},
-            ]
+            ],
         }
         evaluator = SearchEvaluator(fixture)
 

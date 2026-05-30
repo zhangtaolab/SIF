@@ -29,7 +29,7 @@ class ModelDownloader:
                 "model_id": "qwen/Qwen2.5-0.5B-Instruct",
                 "description": "Query expansion model",
             },
-        }
+        },
     )
 
     def __init__(self, cache_dir: str | Path | None = None) -> None:

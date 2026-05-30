@@ -63,7 +63,7 @@ def extract_code_blocks(md_path: Path) -> list[dict[str, Any]]:
                 "language": lang or "text",
                 "content": block_content,
                 "file": md_path.name,
-            }
+            },
         )
     return blocks
 
@@ -204,7 +204,7 @@ class TestDocsCodeBlocks:
                         if missing:
                             pytest.fail(
                                 f"JSON output in {block['file']} missing keys: {missing}. "
-                                f"Expected one of: {list(JSON_OUTPUT_SCHEMAS.keys())}"
+                                f"Expected one of: {list(JSON_OUTPUT_SCHEMAS.keys())}",
                             )
 
     def test_python_blocks_are_valid_syntax(self) -> None:
@@ -321,7 +321,7 @@ class TestDocsCodeBlocks:
         """Docs must not use 'sif search <query>' without subcommand."""
         search_pattern = re.compile(
             r"sif\s+search\s+(?!search\s|query\s|vsearch\s)"
-            r"([^-\s\"']|['\"])"
+            r"([^-\s\"']|['\"])",
         )
         for md_file in DOCS_FILES:
             if not md_file.exists():
@@ -337,7 +337,7 @@ class TestDocsCodeBlocks:
                         continue
                     pytest.fail(
                         f"Bare 'sif search <query>' found in "
-                        f"{md_file.name} line {i}: {line.strip()}"
+                        f"{md_file.name} line {i}: {line.strip()}",
                     )
 
     def test_no_positional_args_for_option_only_commands(self) -> None:
@@ -358,13 +358,13 @@ class TestDocsCodeBlocks:
                     if len(parts) > 3 and not parts[3].startswith("-"):
                         pytest.fail(
                             f"index update with positional arg in "
-                            f"{md_file.name} line {i}: {stripped}"
+                            f"{md_file.name} line {i}: {stripped}",
                         )
                 if stripped.startswith("sif status ") and len(stripped.split()) > 2:
                     parts = stripped.split()
                     if len(parts) > 2 and not parts[2].startswith("-"):
                         pytest.fail(
-                            f"status with positional arg in {md_file.name} line {i}: {stripped}"
+                            f"status with positional arg in {md_file.name} line {i}: {stripped}",
                         )
 
     def test_no_collection_delete_command(self) -> None:
@@ -376,7 +376,7 @@ class TestDocsCodeBlocks:
             if "sif collection delete" in content:
                 pytest.fail(
                     f"Old 'collection delete' command found in {md_file.name} "
-                    f"— use 'collection remove'"
+                    f"— use 'collection remove'",
                 )
 
     def test_configuration_no_phantom_fields(self) -> None:
@@ -455,5 +455,5 @@ class TestDocsCodeBlocks:
                         ]
                     ):
                         pytest.fail(
-                            f"Invalid SQL in {block['file']}: does not start with a valid keyword"
+                            f"Invalid SQL in {block['file']}: does not start with a valid keyword",
                         )

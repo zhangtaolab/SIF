@@ -24,8 +24,8 @@ def mock_server():
                 "jsonrpc": "2.0",
                 "id": 1,
                 "result": {"protocolVersion": "2024-11-05"},
-            }
-        )
+            },
+        ),
     )
     server.handle_notification = AsyncMock()
     return server
@@ -75,8 +75,8 @@ def test_mcp_post_tools_list(client, mock_server) -> None:
                 "jsonrpc": "2.0",
                 "id": 2,
                 "result": {"tools": []},
-            }
-        )
+            },
+        ),
     )
 
     response = client.post(
@@ -101,8 +101,8 @@ def test_mcp_post_tools_call(client, mock_server) -> None:
                 "jsonrpc": "2.0",
                 "id": 2,
                 "result": {"content": []},
-            }
-        )
+            },
+        ),
     )
 
     response = client.post(
@@ -154,8 +154,8 @@ def test_mcp_session_persistence(client, mock_server) -> None:
                 "jsonrpc": "2.0",
                 "id": 2,
                 "result": {"tools": []},
-            }
-        )
+            },
+        ),
     )
 
     response2 = client.post(

@@ -142,7 +142,7 @@ class CodeParser:
             ".toml": "toml",
             ".xml": "xml",
             ".sql": "sql",
-        }
+        },
     )
 
     def parse(self, file_path: Path) -> ParsedDocument:

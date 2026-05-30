@@ -38,7 +38,7 @@ class SentenceTransformerEmbedder(Embedder):
         except ImportError:
             logger.error(
                 "sentence-transformers not installed. "
-                "Install with: pip install sentence-transformers"
+                "Install with: pip install sentence-transformers",
             )
             raise
 
@@ -129,7 +129,7 @@ class LlamaCppEmbedder(Embedder):
             from llama_cpp import Llama  # noqa: PLC0415
         except ImportError:
             logger.error(
-                "llama-cpp-python not installed. Install with: pip install llama-cpp-python"
+                "llama-cpp-python not installed. Install with: pip install llama-cpp-python",
             )
             raise
 

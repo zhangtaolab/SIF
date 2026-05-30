@@ -97,7 +97,7 @@ class SearchEvaluator:
             for k in k_values:
                 metrics.setdefault(f"precision@{k}", []).append(precision_at_k(relevance, k))
                 metrics.setdefault(f"recall@{k}", []).append(
-                    recall_at_k(relevance, len(relevant_ids), k)
+                    recall_at_k(relevance, len(relevant_ids), k),
                 )
 
         # Average across queries

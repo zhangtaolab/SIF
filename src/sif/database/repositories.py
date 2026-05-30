@@ -105,7 +105,7 @@ class CollectionRepository:
     def list_enabled(self) -> list[Collection]:
         """List all collections enabled for default searches."""
         cursor = self.db.execute(
-            "SELECT * FROM collections WHERE include_by_default = 1 ORDER BY name"
+            "SELECT * FROM collections WHERE include_by_default = 1 ORDER BY name",
         )
         return [self._row_to_collection(row) for row in cursor.fetchall()]
 
@@ -173,7 +173,7 @@ class DocumentRepository:
     def get_by_path(self, path: str, collection_id: str) -> Document | None:
         """Get document by path and collection."""
         cursor = self.db.execute(
-            "SELECT * FROM documents WHERE path = ? AND collection_id = ?", (path, collection_id)
+            "SELECT * FROM documents WHERE path = ? AND collection_id = ?", (path, collection_id),
         )
         row = cursor.fetchone()
         return self._row_to_document(row) if row else None
@@ -190,7 +190,7 @@ class DocumentRepository:
     def list_by_collection(self, collection_id: str) -> list[Document]:
         """List documents in a collection."""
         cursor = self.db.execute(
-            "SELECT * FROM documents WHERE collection_id = ? ORDER BY filename", (collection_id,)
+            "SELECT * FROM documents WHERE collection_id = ? ORDER BY filename", (collection_id,),
         )
         return [self._row_to_document(row) for row in cursor.fetchall()]
 
@@ -233,7 +233,7 @@ class DocumentRepository:
         """Delete all documents in a collection."""
         # Get document IDs
         cursor = self.db.execute(
-            "SELECT id FROM documents WHERE collection_id = ?", (collection_id,)
+            "SELECT id FROM documents WHERE collection_id = ?", (collection_id,),
         )
         doc_ids = [row[0] for row in cursor.fetchall()]
 
@@ -256,7 +256,7 @@ class DocumentRepository:
     def exists(self, path: str, collection_id: str) -> bool:
         """Check if document exists."""
         cursor = self.db.execute(
-            "SELECT 1 FROM documents WHERE path = ? AND collection_id = ?", (path, collection_id)
+            "SELECT 1 FROM documents WHERE path = ? AND collection_id = ?", (path, collection_id),
         )
         return cursor.fetchone() is not None
 
@@ -340,7 +340,7 @@ class DocumentChunkRepository:
     def delete_by_document(self, document_id: str) -> int:
         """Delete all chunks for a document."""
         cursor = self.db.execute(
-            "DELETE FROM document_chunks WHERE document_id = ?", (document_id,)
+            "DELETE FROM document_chunks WHERE document_id = ?", (document_id,),
         )
         return cursor.rowcount
 
@@ -398,7 +398,7 @@ class ContextRepository:
     def list_by_type(self, context_type: str) -> list[PathContext]:
         """List contexts by type."""
         cursor = self.db.execute(
-            "SELECT * FROM contexts WHERE context_type = ? ORDER BY target_id", (context_type,)
+            "SELECT * FROM contexts WHERE context_type = ? ORDER BY target_id", (context_type,),
         )
         return [self._row_to_context(row) for row in cursor.fetchall()]
 

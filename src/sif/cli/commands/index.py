@@ -55,7 +55,7 @@ def update_cmd(ctx: click.Context, collection: str | None, force: bool) -> None:
 
         if not collections:
             console.print(
-                "[yellow]No collections found. Add one with 'sif collection add'.[/yellow]"
+                "[yellow]No collections found. Add one with 'sif collection add'.[/yellow]",
             )
             return
 
@@ -268,7 +268,7 @@ def embed_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
 
                     if batch_items:
                         vector_searcher = VectorSearcher(
-                            db.connection, len(manager.embed_single("probe"))
+                            db.connection, len(manager.embed_single("probe")),
                         )
                         vector_searcher.add_embeddings_batch(batch_items)
 

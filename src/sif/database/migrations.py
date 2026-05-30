@@ -126,7 +126,7 @@ class MigrationManager:
         """Get the current schema version."""
         try:
             row = self._connection.fetchone(
-                "SELECT version FROM schema_version ORDER BY version DESC LIMIT 1"
+                "SELECT version FROM schema_version ORDER BY version DESC LIMIT 1",
             )
             return row["version"] if row else 0
         except Exception:
@@ -141,7 +141,7 @@ class MigrationManager:
             return
 
         logger.info(
-            f"Migrating database from version {current_version} to {CURRENT_SCHEMA_VERSION}"
+            f"Migrating database from version {current_version} to {CURRENT_SCHEMA_VERSION}",
         )
 
         # Apply schema

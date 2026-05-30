@@ -73,7 +73,7 @@ class TestEmbedCommand:
             patch(
                 "sif.config.settings.get_settings",
                 return_value=MagicMock(
-                    model_name="test", model_dump=lambda: {"model_name": "test"}
+                    model_name="test", model_dump=lambda: {"model_name": "test"},
                 ),
             ),
             patch(
@@ -134,7 +134,7 @@ class TestEmbedCommand:
             patch(
                 "sif.cli.commands.index.create_chunker",
                 return_value=MagicMock(
-                    chunk=lambda text: [MagicMock(content=text, id=f"chunk-{text}")]
+                    chunk=lambda text: [MagicMock(content=text, id=f"chunk-{text}")],
                 ),
             ),
             patch(
@@ -144,7 +144,7 @@ class TestEmbedCommand:
             patch(
                 "sif.config.settings.get_settings",
                 return_value=MagicMock(
-                    model_name="test", model_dump=lambda: {"model_name": "test"}
+                    model_name="test", model_dump=lambda: {"model_name": "test"},
                 ),
             ),
             patch(
@@ -185,7 +185,7 @@ class TestEmbedCommand:
             if "update" in kwargs:
                 captured_updates.update(kwargs["update"])
             return MagicMock(
-                model_type=kwargs.get("update", {}).get("model_type", "sentence_transformers")
+                model_type=kwargs.get("update", {}).get("model_type", "sentence_transformers"),
             )
 
         mock_settings = MagicMock()

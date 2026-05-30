@@ -144,7 +144,7 @@ class DocumentIndexer:
 
         logger.info(
             f"Indexing complete: {result.files_added} added, "
-            f"{result.files_updated} updated, {result.files_failed} failed"
+            f"{result.files_updated} updated, {result.files_failed} failed",
         )
 
         return result

@@ -89,7 +89,7 @@ async def test_process_message_request() -> None:
     """Test processing a request message."""
     server = MagicMock()
     server.handle_request = AsyncMock(
-        return_value=MagicMock(model_dump=lambda **_: {"jsonrpc": "2.0", "id": 1, "result": {}})
+        return_value=MagicMock(model_dump=lambda **_: {"jsonrpc": "2.0", "id": 1, "result": {}}),
     )
     stdin = StringIO("")
     stdout = StringIO()
@@ -135,7 +135,7 @@ async def test_run_loop_processes_request() -> None:
     """Test run loop processes a request and exits on EOF."""
     server = MagicMock()
     server.handle_request = AsyncMock(
-        return_value=MagicMock(model_dump=lambda **_: {"jsonrpc": "2.0", "id": 1, "result": {}})
+        return_value=MagicMock(model_dump=lambda **_: {"jsonrpc": "2.0", "id": 1, "result": {}}),
     )
     stdin = StringIO('{"jsonrpc":"2.0","id":1,"method":"initialize"}\n')
     stdout = StringIO()

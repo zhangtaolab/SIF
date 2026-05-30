@@ -576,10 +576,10 @@ def docs_test_db(tmp_path: Path) -> Generator[Path, None, None]:
         docs_dir = tmp_path / "docs"
         docs_dir.mkdir()
         (docs_dir / "python.md").write_text(
-            "# Python Decorators\n\nDecorators are a powerful feature."
+            "# Python Decorators\n\nDecorators are a powerful feature.",
         )
         (docs_dir / "machine-learning.md").write_text(
-            "# Machine Learning\n\nNeural networks are..."
+            "# Machine Learning\n\nNeural networks are...",
         )
 
         # Insert documents

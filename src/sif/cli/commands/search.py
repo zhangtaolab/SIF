@@ -169,16 +169,16 @@ def search_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             format_results_json(
                 add_line_numbers_to_results([r.to_dict() for r in results])
                 if line_numbers
-                else results
-            )
+                else results,
+            ),
         )
     elif output_csv:
         console.print(
             format_results_csv(
                 add_line_numbers_to_results([r.to_dict() for r in results])
                 if line_numbers
-                else results
-            )
+                else results,
+            ),
         )
     elif output_md:
         console.print(
@@ -187,7 +187,7 @@ def search_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 if line_numbers
                 else results,
                 query,
-            )
+            ),
         )
     elif output_xml:
         console.print(
@@ -196,7 +196,7 @@ def search_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 if line_numbers
                 else results,
                 query,
-            )
+            ),
         )
     else:
         # Rich table output
@@ -272,7 +272,7 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     if not index_path.exists():
         if not quiet:
             console.print(
-                "[yellow]No index found. Run 'sif update' and 'sif embed' first.[/yellow]"
+                "[yellow]No index found. Run 'sif update' and 'sif embed' first.[/yellow]",
             )
         return
 
@@ -331,8 +331,8 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             format_results_json(
                 add_line_numbers_to_results([r.to_dict() for r in results])
                 if line_numbers
-                else results
-            )
+                else results,
+            ),
         )
     else:
         if not results:
@@ -487,7 +487,7 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             if not quiet:
                 console.print(
                     "[yellow]Reranker not available. "
-                    "Install with: pip install -e '.[embed]'[/yellow]"
+                    "Install with: pip install -e '.[embed]'[/yellow]",
                 )
 
     snippet_extractor = SmartSnippetExtractor(max_length=options.snippet_max_length)
@@ -514,16 +514,16 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             format_results_json(
                 add_line_numbers_to_results([r.to_dict() for r in results])
                 if line_numbers
-                else results
-            )
+                else results,
+            ),
         )
     elif output_csv:
         console.print(
             format_results_csv(
                 add_line_numbers_to_results([r.to_dict() for r in results])
                 if line_numbers
-                else results
-            )
+                else results,
+            ),
         )
     elif output_md:
         console.print(
@@ -532,7 +532,7 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 if line_numbers
                 else results,
                 query,
-            )
+            ),
         )
     elif output_xml:
         console.print(
@@ -541,7 +541,7 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 if line_numbers
                 else results,
                 query,
-            )
+            ),
         )
     else:
         # Rich table output

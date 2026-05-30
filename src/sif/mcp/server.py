@@ -171,8 +171,8 @@ class MCPServer:
                         "uri": uri,
                         "mimeType": mime_type,
                         "text": doc.content,
-                    }
-                ]
+                    },
+                ],
             },
         )
 

@@ -33,7 +33,7 @@ class TestBM25Searcher:
                     "collection_name": "c",
                     "score": -1.0,
                 },
-            ]
+            ],
         )
         # Add a context cursor for the _attach_contexts call
         context_cursor = MagicMock()
@@ -72,7 +72,7 @@ class TestBM25Searcher:
                     "collection_name": "c",
                     "score": -2.0,
                 },
-            ]
+            ],
         )
         # Add a context cursor for the _attach_contexts call
         context_cursor = MagicMock()
@@ -110,7 +110,7 @@ class TestBM25Searcher:
                     "collection_name": "c",
                     "score": -5.0,
                 },
-            ]
+            ],
         )
         # Add a context cursor for the _attach_contexts call
         context_cursor = MagicMock()
@@ -175,7 +175,7 @@ class TestBM25Searcher:
                     "collection_name": "c",
                     "score": -1.0,
                 },
-            ]
+            ],
         )
         content_cursor = MagicMock()
         content_cursor.fetchone.return_value = ["document content"]
@@ -205,7 +205,7 @@ class TestBM25Searcher:
                     "collection_name": "c",
                     "score": -1.0,
                 },
-            ]
+            ],
         )
         chunk_cursor = MagicMock()
         chunk_cursor.fetchall.return_value = []
@@ -237,7 +237,7 @@ class TestBM25Searcher:
                     "content": "chunk content",
                     "score": -1.0,
                 },
-            ]
+            ],
         )
 
         searcher = BM25Searcher(mock_db)

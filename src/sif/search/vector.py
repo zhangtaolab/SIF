@@ -19,7 +19,7 @@ class VectorSearcher:
         self._vec_available = self._check_vec_extension()
         if not self._vec_available:
             raise RuntimeError(
-                "sqlite-vec extension is not available. Install sqlite-vec to use vector search."
+                "sqlite-vec extension is not available. Install sqlite-vec to use vector search.",
             )
 
     def _check_vec_extension(self) -> bool:

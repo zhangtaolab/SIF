@@ -181,7 +181,7 @@ class SearchBackend:
                                 content=_truncate_content(content),
                                 metadata=doc.metadata,
                                 collection_id=doc.collection_id,
-                            )
+                            ),
                         )
             return documents, errors
 
@@ -204,7 +204,7 @@ class SearchBackend:
                         last_updated=(
                             coll.last_indexed_at.isoformat() if coll.last_indexed_at else None
                         ),
-                    )
+                    ),
                 )
             total = sum(info.document_count for info in infos)
             return infos, total

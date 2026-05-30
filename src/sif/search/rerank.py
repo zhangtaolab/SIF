@@ -43,7 +43,7 @@ def _sort_and_build_results(
                 scores=new_scores,
                 snippet=result.snippet,
                 context_description=result.context_description,
-            )
+            ),
         )
     return reranked
 

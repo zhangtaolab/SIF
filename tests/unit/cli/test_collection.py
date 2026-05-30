@@ -180,7 +180,7 @@ class TestIndexPreUpdateHook:
 
         mock_db = MagicMock()
         mock_db.return_value.connection.__enter__ = MagicMock(
-            return_value=mock_db.return_value.connection
+            return_value=mock_db.return_value.connection,
         )
         mock_db.return_value.connection.__exit__ = MagicMock(return_value=False)
         mock_db.return_value.init_schema = MagicMock()
@@ -218,7 +218,7 @@ class TestIndexPreUpdateHook:
 
         assert result.exit_code == 0
         mock_run.assert_called_once_with(
-            "echo hello", shell=True, capture_output=True, text=True, check=False
+            "echo hello", shell=True, capture_output=True, text=True, check=False,
         )
         assert "Running pre-update command" in result.output
 
@@ -229,7 +229,7 @@ class TestIndexPreUpdateHook:
 
         mock_db = MagicMock()
         mock_db.return_value.connection.__enter__ = MagicMock(
-            return_value=mock_db.return_value.connection
+            return_value=mock_db.return_value.connection,
         )
         mock_db.return_value.connection.__exit__ = MagicMock(return_value=False)
         mock_db.return_value.init_schema = MagicMock()

@@ -67,7 +67,7 @@ class TestCollectionRepository:
         ]
 
     def test_get_by_id_existing(
-        self, mock_collection_repo: MagicMock, sample_collection: Collection
+        self, mock_collection_repo: MagicMock, sample_collection: Collection,
     ) -> None:
         """Test retrieving an existing collection by ID.
 
@@ -105,7 +105,7 @@ class TestCollectionRepository:
         mock_collection_repo.get_by_id.assert_called_once_with("nonexistent-id")
 
     def test_get_by_name_existing(
-        self, mock_collection_repo: MagicMock, sample_collection: Collection
+        self, mock_collection_repo: MagicMock, sample_collection: Collection,
     ) -> None:
         """Test retrieving a collection by name.
 
@@ -141,7 +141,7 @@ class TestCollectionRepository:
         assert result is None
 
     def test_create_collection(
-        self, mock_collection_repo: MagicMock, sample_collection: Collection
+        self, mock_collection_repo: MagicMock, sample_collection: Collection,
     ) -> None:
         """Test creating a new collection.
 
@@ -162,7 +162,7 @@ class TestCollectionRepository:
         mock_collection_repo.create.assert_called_once_with(sample_collection)
 
     def test_update_collection(
-        self, mock_collection_repo: MagicMock, sample_collection: Collection
+        self, mock_collection_repo: MagicMock, sample_collection: Collection,
     ) -> None:
         """Test updating an existing collection.
 
@@ -217,7 +217,7 @@ class TestCollectionRepository:
         assert result is False
 
     def test_list_all_collections(
-        self, mock_collection_repo: MagicMock, sample_collections: list[Collection]
+        self, mock_collection_repo: MagicMock, sample_collections: list[Collection],
     ) -> None:
         """Test listing all collections.
 
@@ -349,7 +349,7 @@ class TestDocumentRepository:
         ]
 
     def test_get_by_id_existing(
-        self, mock_document_repo: MagicMock, sample_document: Document
+        self, mock_document_repo: MagicMock, sample_document: Document,
     ) -> None:
         """Test retrieving an existing document by ID.
 
@@ -386,7 +386,7 @@ class TestDocumentRepository:
         assert result is None
 
     def test_get_by_path_existing(
-        self, mock_document_repo: MagicMock, sample_document: Document
+        self, mock_document_repo: MagicMock, sample_document: Document,
     ) -> None:
         """Test retrieving a document by path.
 
@@ -412,7 +412,7 @@ class TestDocumentRepository:
         )
 
     def test_create_document(
-        self, mock_document_repo: MagicMock, sample_document: Document
+        self, mock_document_repo: MagicMock, sample_document: Document,
     ) -> None:
         """Test creating a new document.
 
@@ -432,7 +432,7 @@ class TestDocumentRepository:
         mock_document_repo.create.assert_called_once_with(sample_document)
 
     def test_update_document(
-        self, mock_document_repo: MagicMock, sample_document: Document
+        self, mock_document_repo: MagicMock, sample_document: Document,
     ) -> None:
         """Test updating an existing document.
 
@@ -471,7 +471,7 @@ class TestDocumentRepository:
         mock_document_repo.delete.assert_called_once_with(document_id)
 
     def test_list_by_collection(
-        self, mock_document_repo: MagicMock, sample_documents: list[Document]
+        self, mock_document_repo: MagicMock, sample_documents: list[Document],
     ) -> None:
         """Test listing documents by collection.
 
@@ -544,7 +544,7 @@ class TestDocumentRepository:
         mock_document_repo.get_checksum.assert_called_once_with(document_id)
 
     def test_get_chunks(
-        self, mock_document_repo: MagicMock, sample_chunks: list[DocumentChunk]
+        self, mock_document_repo: MagicMock, sample_chunks: list[DocumentChunk],
     ) -> None:
         """Test retrieving document chunks.
 
@@ -565,7 +565,7 @@ class TestDocumentRepository:
         mock_document_repo.get_chunks.assert_called_once_with(document_id)
 
     def test_save_chunks(
-        self, mock_document_repo: MagicMock, sample_chunks: list[DocumentChunk]
+        self, mock_document_repo: MagicMock, sample_chunks: list[DocumentChunk],
     ) -> None:
         """Test saving document chunks.
 
@@ -625,7 +625,7 @@ class TestContextRepository:
         return contexts
 
     def test_get_by_id_existing(
-        self, mock_context_repo: MagicMock, sample_context: Context
+        self, mock_context_repo: MagicMock, sample_context: Context,
     ) -> None:
         """Test retrieving an existing context by ID.
 
@@ -662,7 +662,7 @@ class TestContextRepository:
         assert result is None
 
     def test_get_by_target_existing(
-        self, mock_context_repo: MagicMock, sample_context: Context
+        self, mock_context_repo: MagicMock, sample_context: Context,
     ) -> None:
         """Test retrieving context by target ID and type.
 
@@ -743,7 +743,7 @@ class TestContextRepository:
         mock_context_repo.delete.assert_called_once_with(context_id)
 
     def test_list_by_type(
-        self, mock_context_repo: MagicMock, sample_contexts: list[Context]
+        self, mock_context_repo: MagicMock, sample_contexts: list[Context],
     ) -> None:
         """Test listing contexts by type.
 
@@ -766,7 +766,7 @@ class TestContextRepository:
         mock_context_repo.list_by_type.assert_called_once_with(ContextType.COLLECTION)
 
     def test_list_all_contexts(
-        self, mock_context_repo: MagicMock, sample_contexts: list[Context]
+        self, mock_context_repo: MagicMock, sample_contexts: list[Context],
     ) -> None:
         """Test listing all contexts.
 
@@ -985,7 +985,7 @@ class TestInMemoryCollectionRepository:
         )
 
     def test_create_and_get(
-        self, repo: InMemoryCollectionRepository, sample_collection: Collection
+        self, repo: InMemoryCollectionRepository, sample_collection: Collection,
     ) -> None:
         """Test creating and retrieving a collection."""
         # Act
@@ -999,7 +999,7 @@ class TestInMemoryCollectionRepository:
         assert retrieved.name == sample_collection.name
 
     def test_get_by_name(
-        self, repo: InMemoryCollectionRepository, sample_collection: Collection
+        self, repo: InMemoryCollectionRepository, sample_collection: Collection,
     ) -> None:
         """Test retrieving by name."""
         # Arrange
@@ -1013,7 +1013,7 @@ class TestInMemoryCollectionRepository:
         assert result.name == "test-collection"
 
     def test_update(
-        self, repo: InMemoryCollectionRepository, sample_collection: Collection
+        self, repo: InMemoryCollectionRepository, sample_collection: Collection,
     ) -> None:
         """Test updating a collection."""
         # Arrange
@@ -1029,7 +1029,7 @@ class TestInMemoryCollectionRepository:
         assert retrieved.description == "Updated description"
 
     def test_delete(
-        self, repo: InMemoryCollectionRepository, sample_collection: Collection
+        self, repo: InMemoryCollectionRepository, sample_collection: Collection,
     ) -> None:
         """Test deleting a collection."""
         # Arrange
@@ -1044,7 +1044,7 @@ class TestInMemoryCollectionRepository:
         assert retrieved is None
 
     def test_exists(
-        self, repo: InMemoryCollectionRepository, sample_collection: Collection
+        self, repo: InMemoryCollectionRepository, sample_collection: Collection,
     ) -> None:
         """Test exists check."""
         # Act & Assert - before creation
@@ -1075,7 +1075,7 @@ class TestInMemoryCollectionRepository:
         assert len(result) == 3
 
     def test_delete_updates_name_index(
-        self, repo: InMemoryCollectionRepository, sample_collection: Collection
+        self, repo: InMemoryCollectionRepository, sample_collection: Collection,
     ) -> None:
         """Test that deleting removes from name index."""
         # Arrange

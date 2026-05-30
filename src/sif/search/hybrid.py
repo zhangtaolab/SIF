@@ -79,7 +79,7 @@ class HybridSearcher:
                     result.content = self._get_document_content(result.document_id)
                 if options.include_highlights and not result.highlights:
                     result.highlights = self._get_highlights(
-                        result.document_id, query, options.max_highlights
+                        result.document_id, query, options.max_highlights,
                     )
 
         # Deduplicate by document_id, keeping highest score
@@ -321,5 +321,5 @@ class SearchPipeline:
         raise RuntimeError(
             "HyDE search requires a text-generation-capable model (e.g., GGUF). "
             "The current embedder does not support .generate() or .create_completion(). "
-            "Use vec: prefix for vector-only search instead."
+            "Use vec: prefix for vector-only search instead.",
         )

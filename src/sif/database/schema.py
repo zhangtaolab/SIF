@@ -107,7 +107,7 @@ class SchemaManager:
     def _migrate_path_contexts(self) -> None:
         """Migrate path_contexts -> contexts atomically using SAVEPOINT."""
         cursor = self.db.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='path_contexts'"
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='path_contexts'",
         )
         if not cursor.fetchone():
             return
@@ -151,7 +151,7 @@ class SchemaManager:
         def _fts_is_misconfigured(table_name: str, expected_content: str) -> bool:
             """Check if an existing FTS5 table lacks the correct content= setting."""
             cursor = self.db.execute(
-                "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table_name,)
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table_name,),
             )
             row = cursor.fetchone()
             if not row:
@@ -257,7 +257,7 @@ class SchemaManager:
             return
 
         cursor = self.db.execute(
-            "SELECT sql FROM sqlite_master WHERE type='table' AND name='document_embeddings'"
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='document_embeddings'",
         )
         row = cursor.fetchone()
         if row and row[0]:
@@ -268,7 +268,7 @@ class SchemaManager:
                     raise RuntimeError(
                         f"Embedding dimension mismatch: database has FLOAT[{existing_dim}], "
                         f"but settings require FLOAT[{self.embedding_dim}]. "
-                        f"Rebuild the index with 'sif cleanup' or delete the database file."
+                        f"Rebuild the index with 'sif cleanup' or delete the database file.",
                     )
 
         self.db.execute(f"""
