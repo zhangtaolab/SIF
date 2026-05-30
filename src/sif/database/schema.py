@@ -151,7 +151,8 @@ class SchemaManager:
         def _fts_is_misconfigured(table_name: str, expected_content: str) -> bool:
             """Check if an existing FTS5 table lacks the correct content= setting."""
             cursor = self.db.execute(
-                "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table_name,),
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name=?",
+                (table_name,),
             )
             row = cursor.fetchone()
             if not row:

@@ -218,7 +218,11 @@ class TestIndexPreUpdateHook:
 
         assert result.exit_code == 0
         mock_run.assert_called_once_with(
-            "echo hello", shell=True, capture_output=True, text=True, check=False,
+            "echo hello",
+            shell=True,
+            capture_output=True,
+            text=True,
+            check=False,
         )
         assert "Running pre-update command" in result.output
 

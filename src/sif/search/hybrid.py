@@ -79,7 +79,9 @@ class HybridSearcher:
                     result.content = self._get_document_content(result.document_id)
                 if options.include_highlights and not result.highlights:
                     result.highlights = self._get_highlights(
-                        result.document_id, query, options.max_highlights,
+                        result.document_id,
+                        query,
+                        options.max_highlights,
                     )
 
         # Deduplicate by document_id, keeping highest score

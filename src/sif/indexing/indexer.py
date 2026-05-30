@@ -20,10 +20,9 @@ logger = get_logger(__name__)
 class IndexStatus(Enum):
     """Status of indexing operation."""
 
-    """Status of indexing operation."""
-
     PENDING = auto()
     INDEXING = auto()
+    ADDED = auto()
     COMPLETED = auto()
     FAILED = auto()
     SKIPPED = auto()
@@ -206,6 +205,7 @@ class DocumentIndexer:
                     id=str(uuid.uuid4()),
                     document_id=document.id,
                     content=chunk.content,
+                    sequence=chunk.sequence,
                     start_pos=chunk.start_pos,
                     end_pos=chunk.end_pos,
                     token_count=chunk.token_count,

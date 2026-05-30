@@ -155,7 +155,9 @@ class SearchRepository(ABC):
 
     @abstractmethod
     def get_document_for_result(
-        self, document_id: str, include_chunks: bool = True,
+        self,
+        document_id: str,
+        include_chunks: bool = True,
     ) -> dict[str, Any] | None:
         """Get document details for a search result."""
         ...

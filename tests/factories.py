@@ -17,7 +17,7 @@ class CollectionFactory:
     _counter = 0
 
     @classmethod
-    def create(  # noqa: PLR0913
+    def create(
         cls,
         id: str | None = None,  # noqa: A002
         name: str | None = None,
@@ -54,7 +54,7 @@ class DocumentMetadataFactory:
     _counter = 0
 
     @classmethod
-    def create(  # noqa: PLR0913
+    def create(
         cls,
         title: str | None = None,
         author: str | None = None,
@@ -82,7 +82,7 @@ class DocumentFactory:
     _counter = 0
 
     @classmethod
-    def create(  # noqa: PLR0913
+    def create(
         cls,
         id: str | None = None,  # noqa: A002
         collection_id: str | None = None,
@@ -138,7 +138,7 @@ class DocumentChunkFactory:
     _counter = 0
 
     @classmethod
-    def create(  # noqa: PLR0913
+    def create(
         cls,
         id: str | None = None,  # noqa: A002
         document_id: str | None = None,
@@ -213,7 +213,7 @@ class SearchOptionsFactory:
     """Factory for creating test search options."""
 
     @classmethod
-    def create(  # noqa: PLR0913
+    def create(
         cls,
         limit: int = 10,
         offset: int = 0,
@@ -257,7 +257,7 @@ class SearchResultFactory:
     _counter = 0
 
     @classmethod
-    def create(  # noqa: PLR0913
+    def create(
         cls,
         document_id: str | None = None,
         document_path: str | None = None,

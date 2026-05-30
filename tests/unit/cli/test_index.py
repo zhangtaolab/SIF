@@ -73,7 +73,8 @@ class TestEmbedCommand:
             patch(
                 "sif.config.settings.get_settings",
                 return_value=MagicMock(
-                    model_name="test", model_dump=lambda: {"model_name": "test"},
+                    model_name="test",
+                    model_dump=lambda: {"model_name": "test"},
                 ),
             ),
             patch(
@@ -144,7 +145,8 @@ class TestEmbedCommand:
             patch(
                 "sif.config.settings.get_settings",
                 return_value=MagicMock(
-                    model_name="test", model_dump=lambda: {"model_name": "test"},
+                    model_name="test",
+                    model_dump=lambda: {"model_name": "test"},
                 ),
             ),
             patch(

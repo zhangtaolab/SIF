@@ -16,7 +16,10 @@ class TestSearchFiltering:
         runner = CliRunner()
 
         enabled_coll = Collection(
-            id="coll1", name="enabled", path="/notes", include_by_default=True,
+            id="coll1",
+            name="enabled",
+            path="/notes",
+            include_by_default=True,
         )
 
         mock_repo = MagicMock()
@@ -88,7 +91,10 @@ class TestSearchFiltering:
         runner = CliRunner()
 
         enabled_coll = Collection(
-            id="coll1", name="enabled", path="/notes", include_by_default=True,
+            id="coll1",
+            name="enabled",
+            path="/notes",
+            include_by_default=True,
         )
 
         mock_repo = MagicMock()
@@ -143,7 +149,10 @@ class TestSearchFiltering:
         runner = CliRunner()
 
         enabled_coll = Collection(
-            id="coll1", name="enabled", path="/notes", include_by_default=True,
+            id="coll1",
+            name="enabled",
+            path="/notes",
+            include_by_default=True,
         )
 
         mock_repo = MagicMock()

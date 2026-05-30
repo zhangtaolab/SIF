@@ -135,8 +135,8 @@ class Document:
     title: str | None = None
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     filename: str = field(init=False)
-    checksum: str = field(init=False)
-    file_size: int = field(init=False)
+    checksum: str | None = None
+    file_size: int | None = None
     mtime: float = field(default_factory=lambda: datetime.now(timezone.utc).timestamp())
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
@@ -146,10 +146,20 @@ class Document:
     def __post_init__(self):
         """Initialize computed fields."""
         self.filename = Path(self.path).name
-        self.checksum = hashlib.sha256(self.content.encode()).hexdigest()
-        self.file_size = len(self.content.encode())
+        if self.checksum is None:
+            self.checksum = hashlib.sha256(self.content.encode()).hexdigest()
+        if self.file_size is None:
+            self.file_size = len(self.content.encode())
         if self.title is None:
             self.title = self.filename
+
+    def add_chunk(self, chunk: DocumentChunk) -> None:
+        """Add a chunk to the document."""
+        self.chunks.append(chunk)
+
+    def clear_chunks(self) -> None:
+        """Remove all chunks from the document."""
+        self.chunks.clear()
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""

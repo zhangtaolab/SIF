@@ -203,7 +203,8 @@ class TestSearchPipelinePrefixRouting:
         pipeline = SearchPipeline(mock_db, embedder=mock_embedder)
 
         with pytest.raises(
-            RuntimeError, match="HyDE search requires a text-generation-capable model",
+            RuntimeError,
+            match="HyDE search requires a text-generation-capable model",
         ):
             pipeline.search("hyde: test query")
 
