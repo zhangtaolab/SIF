@@ -97,7 +97,7 @@ Plan: 6 of 6
 ### TODOs
 
 - [x] Plan Phase 06 documentation audit and refresh — 7 plans created and verified
-- [x] Phase 7: CLI Claude Skill — docsift-search and docsift-get skills created and committed
+- [x] Phase 7: CLI Claude Skill — sif-search and sif-get skills created, symlinked, and committed
 - [ ] (Backlog) Phase 8: LLM-based query expansion — model tested (Qwen3.5-2B), awaiting v1.0 ship
 
 ### Blockers

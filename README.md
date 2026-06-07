@@ -4,6 +4,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 
+**SIF** = **S**earch / **I**ndex / **F**ind
+
 SIF is a local CLI search engine for indexing and searching markdown documents. It provides powerful full-text and semantic search capabilities while keeping all data on your machine.
 
 ## Features
@@ -215,6 +217,8 @@ SIF follows a layered architecture with clean separation of concerns:
 ```
 
 See [docs/architecture.md](docs/architecture.md) for detailed architecture documentation.
+
+> **Note:** SIF can also be read as **Semantic Intelligence Framework** — reflecting its use of semantic embeddings and AI-assisted retrieval.
 
 ## Documentation
 
