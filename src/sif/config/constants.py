@@ -2,7 +2,7 @@
 
 # Application info
 APP_NAME = "sif"
-APP_VERSION = "0.1.0"
+APP_VERSION = "0.2.1"
 APP_DESCRIPTION = (
     "A local CLI search engine for indexing and searching documents (SIF: Search / Index / Find)"
 )
