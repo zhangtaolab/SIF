@@ -33,7 +33,8 @@ class EmbeddingCache:
 
     def _init_db(self) -> None:
         """Initialize the cache database."""
-        with sqlite3.connect(self._db_path) as conn:
+        conn = sqlite3.connect(self._db_path)
+        try:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS embeddings (
                     content_hash TEXT PRIMARY KEY,
@@ -50,6 +51,8 @@ class EmbeddingCache:
             """)
 
             conn.commit()
+        finally:
+            conn.close()
 
     def _hash_content(self, content: str) -> str:
         """Create a hash of the content.
@@ -74,18 +77,20 @@ class EmbeddingCache:
         """
         content_hash = self._hash_content(content)
 
+        conn = sqlite3.connect(self._db_path)
         try:
-            with sqlite3.connect(self._db_path) as conn:
-                cursor = conn.execute(
-                    "SELECT embedding FROM embeddings WHERE content_hash = ? AND model_id = ?",
-                    (content_hash, model_id),
-                )
-                row = cursor.fetchone()
+            cursor = conn.execute(
+                "SELECT embedding FROM embeddings WHERE content_hash = ? AND model_id = ?",
+                (content_hash, model_id),
+            )
+            row = cursor.fetchone()
 
-                if row:
-                    return json.loads(row[0])
+            if row:
+                return json.loads(row[0])
         except Exception as e:
             logger.warning(f"Error reading from cache: {e}")
+        finally:
+            conn.close()
 
         return None
 
@@ -105,19 +110,21 @@ class EmbeddingCache:
         content_hash = self._hash_content(content)
         embedding_json = json.dumps(embedding)
 
+        conn = sqlite3.connect(self._db_path)
         try:
-            with sqlite3.connect(self._db_path) as conn:
-                conn.execute(
-                    """
-                    INSERT OR REPLACE INTO embeddings
-                    (content_hash, embedding, model_id)
-                    VALUES (?, ?, ?)
-                    """,
-                    (content_hash, embedding_json, model_id),
-                )
-                conn.commit()
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO embeddings
+                (content_hash, embedding, model_id)
+                VALUES (?, ?, ?)
+                """,
+                (content_hash, embedding_json, model_id),
+            )
+            conn.commit()
         except Exception as e:
             logger.warning(f"Error writing to cache: {e}")
+        finally:
+            conn.close()
 
     def get_batch(
         self,
@@ -160,21 +167,23 @@ class EmbeddingCache:
         Returns:
             Number of entries cleared
         """
+        conn = sqlite3.connect(self._db_path)
         try:
-            with sqlite3.connect(self._db_path) as conn:
-                if model_id:
-                    cursor = conn.execute(
-                        "DELETE FROM embeddings WHERE model_id = ?",
-                        (model_id,),
-                    )
-                else:
-                    cursor = conn.execute("DELETE FROM embeddings")
+            if model_id:
+                cursor = conn.execute(
+                    "DELETE FROM embeddings WHERE model_id = ?",
+                    (model_id,),
+                )
+            else:
+                cursor = conn.execute("DELETE FROM embeddings")
 
-                conn.commit()
-                return cursor.rowcount
+            conn.commit()
+            return cursor.rowcount
         except Exception as e:
             logger.warning(f"Error clearing cache: {e}")
             return 0
+        finally:
+            conn.close()
 
     def get_stats(self) -> dict:
         """Get cache statistics.
@@ -182,15 +191,17 @@ class EmbeddingCache:
         Returns:
             Dictionary with cache statistics
         """
+        conn = sqlite3.connect(self._db_path)
         try:
-            with sqlite3.connect(self._db_path) as conn:
-                cursor = conn.execute("SELECT COUNT(*), model_id FROM embeddings GROUP BY model_id")
-                rows = cursor.fetchall()
+            cursor = conn.execute("SELECT COUNT(*), model_id FROM embeddings GROUP BY model_id")
+            rows = cursor.fetchall()
 
-                return {
-                    "total_entries": sum(r[0] for r in rows),
-                    "by_model": {r[1]: r[0] for r in rows},
-                }
+            return {
+                "total_entries": sum(r[0] for r in rows),
+                "by_model": {r[1]: r[0] for r in rows},
+            }
         except Exception as e:
             logger.warning(f"Error getting cache stats: {e}")
             return {"total_entries": 0, "by_model": {}}
+        finally:
+            conn.close()

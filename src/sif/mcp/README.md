@@ -5,52 +5,62 @@ Model Context Protocol (MCP) server implementation for SIF.
 ## Features
 
 - **Dual Transport Support**: stdio (for Claude Desktop) and HTTP (for web clients)
-- **Six Search Tools**:
-  - `query` - Hybrid search (FTS + Vector + Reranking)
-  - `lex_search` - BM25 full-text search
-  - `vec_search` - Vector semantic search
+- **Four Search Tools**:
+  - `query` - Hybrid search (BM25 + Vector + Reranking)
   - `get` - Get document by path or doc_id
-  - `multi_get` - Batch get documents by pattern
+  - `multi_get` - Batch get documents by glob pattern
   - `status` - Get index status
-- **JSON-RPC 2.0 Protocol**: Full compliance with MCP specification
-- **Server-Sent Events**: Real-time streaming for HTTP transport
-- **FastAPI Integration**: Modern async web framework
+- **JSON-RPC 2.0 Protocol**: Compliant with MCP specification
+- **Streamable HTTP**: Session-aware `/mcp` endpoint with POST/GET support
 
 ## Installation
 
+Install SIF with the MCP extra:
+
 ```bash
-pip install fastapi uvicorn pydantic
+pip install -e ".[mcp]"
 ```
 
 ## Usage
 
-### Stdio Mode (Claude Desktop)
+### CLI (recommended)
+
+```bash
+# stdio mode (Claude Desktop)
+sif mcp stdio
+
+# HTTP mode
+sif mcp http --host 127.0.0.1 --port 8080
+```
+
+### Programmatic
 
 ```python
-from sif.mcp.transport_stdio import run_stdio
-run_stdio()
+from sif.mcp.cli import run_stdio_server, run_http_server
+
+DB_PATH = "/Users/forrest/.sif/index.sqlite"
+
+# stdio
+run_stdio_server(DB_PATH)
+
+# HTTP
+run_http_server(DB_PATH, host="127.0.0.1", port=8080)
 ```
 
-Or run directly:
-```bash
-python -m sif.mcp.transport_stdio
-```
-
-### HTTP Mode
+To assemble the server manually:
 
 ```python
-from sif.mcp.transport_http import run_http_server
+from sif.mcp.backend import SearchBackend
+from sif.mcp.handlers import create_default_tools
+from sif.mcp.server import MCPServer
+from sif.mcp.transports.http import HTTPTransport
 
-async def main():
-    await run_http_server(host="0.0.0.0", port=8080)
+backend = SearchBackend("/Users/forrest/.sif/index.sqlite")
+server = MCPServer(backend)
+server.register_tools(create_default_tools())
 
-import asyncio
-asyncio.run(main())
-```
-
-Or run directly:
-```bash
-python -m sif.mcp.transport_http --host 0.0.0.0 --port 8080
+transport = HTTPTransport(server, host="127.0.0.1", port=8080)
+transport.run()
 ```
 
 ## API Endpoints (HTTP Mode)
@@ -58,11 +68,8 @@ python -m sif.mcp.transport_http --host 0.0.0.0 --port 8080
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/health` | GET | Health check |
-| `/mcp/v1/sse` | GET | Server-Sent Events stream |
-| `/mcp/v1/messages` | POST | JSON-RPC message endpoint |
-| `/mcp/v1/batch` | POST | Batch JSON-RPC messages |
-| `/mcp/v1/tools` | GET | List available tools |
-| `/mcp/v1/status` | GET | Get server status |
+| `/mcp` | POST | JSON-RPC message endpoint |
+| `/mcp` | GET | Server-Sent Events (SSE) stream |
 
 ## Tools
 
@@ -97,35 +104,9 @@ Hybrid search combining full-text search (BM25), vector semantic search, and rer
 }
 ```
 
-### lex_search
-
-BM25 full-text search for keyword-based document retrieval.
-
-**Input:**
-```json
-{
-  "query": "search terms",
-  "collections": ["default"],
-  "limit": 10
-}
-```
-
-### vec_search
-
-Vector semantic search for finding documents with similar meaning.
-
-**Input:**
-```json
-{
-  "query": "search terms",
-  "collections": ["default"],
-  "limit": 10
-}
-```
-
 ### get
 
-Get a document by its path or document ID.
+Get a document by its path or document ID, with optional line range.
 
 **Input:**
 ```json
@@ -161,8 +142,7 @@ Get the current status of all document collections.
     {
       "name": "default",
       "document_count": 100,
-      "last_updated": "2024-01-01T00:00:00",
-      "size_bytes": 1024000
+      "last_updated": "2024-01-01T00:00:00"
     }
   ],
   "total_documents": 100
@@ -171,11 +151,11 @@ Get the current status of all document collections.
 
 ## Protocol Flow
 
-1. **Initialize**: Client sends `initialize` request
-2. **Ready**: Server responds with capabilities
-3. **Notification**: Client sends `notifications/initialized`
-4. **Tools/List**: Client requests available tools
-5. **Tools/Call**: Client calls tools as needed
+1. **initialize**: Client sends `initialize` request
+2. Server responds with capabilities
+3. **notifications/initialized**: Client sends initialized notification
+4. **tools/list**: Client requests available tools
+5. **tools/call**: Client calls tools as needed
 
 ## Example JSON-RPC Messages
 
@@ -222,35 +202,35 @@ Get the current status of all document collections.
 }
 ```
 
-## Configuration
-
-### ServerConfig
+## Custom Tool Handler
 
 ```python
-from sif.mcp import ServerConfig
+from typing import Any, ClassVar
 
-config = ServerConfig(
-    name="my-mcp-server",
-    version="1.0.0",
-    protocol_version="2024-11-05",
-    enable_logging=True,
-    max_concurrent_requests=100
-)
-```
+from sif.mcp.backend import SearchBackend
+from sif.mcp.handlers import ToolHandler, create_default_tools
+from sif.mcp.protocol import ToolContentItem, ToolsCallResult
+from sif.mcp.server import MCPServer
 
-### Custom Search Backend
 
-```python
-from sif.mcp import ToolRegistry, SearchBackend
+class PingToolHandler(ToolHandler):
+    name: ClassVar[str] = "ping"
+    description: ClassVar[str] = "Return server status."
+    input_schema: ClassVar[dict[str, Any]] = {
+        "type": "object",
+        "properties": {},
+        "required": [],
+    }
 
-class MySearchBackend(SearchBackend):
-    async def hybrid_search(self, query, collections=None, limit=10, min_score=0.0):
-        # Your implementation
-        pass
-    
-    # ... implement other methods
+    async def handle(self, params: dict[str, Any], backend: SearchBackend) -> ToolsCallResult:
+        return ToolsCallResult(
+            content=[ToolContentItem(type="text", text='{"status":"ok"}')],
+        )
 
-tool_registry = ToolRegistry(backend=MySearchBackend())
+
+backend = SearchBackend("/Users/forrest/.sif/index.sqlite")
+server = MCPServer(backend)
+server.register_tools(create_default_tools() + [PingToolHandler()])
 ```
 
 ## License

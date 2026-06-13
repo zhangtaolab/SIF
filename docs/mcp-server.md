@@ -8,33 +8,30 @@ The Model Context Protocol (MCP) is an open protocol that enables seamless integ
 
 - Search your document collections
 - Retrieve specific documents
-- List available collections
 - Get indexing status
 
 ## Architecture
 
 ```
 +-----------------+      +------------------+      +--------------+
-|   AI Assistant  |<---->|   MCP Server     |<---->|   SIF    |
-|  (Claude, etc.) |      |  (stdio/http)    |      |   Backend    |
+|   AI Assistant  |<---->|   MCP Server     |<---->|   SIF Index  |
+|  (Claude, etc.) |      |  (stdio/http)    |      |   (SQLite)   |
 +-----------------+      +------------------+      +--------------+
 ```
 
-## Implementation Note
+The MCP implementation lives in `src/sif/mcp/` and provides:
 
-SIF has two MCP implementations:
-- **Legacy**: `sif/mcp/` — functional style (deprecated)
-- **Refactored**: `sif/mcp_server/` — OOP with `Transport` ABC
-
-The CLI commands use the legacy implementation for backward compatibility.
+- `MCPServer` — JSON-RPC request handler and tool registry
+- `SearchBackend` — async wrapper around SIF search/retrieval
+- `ToolHandler` — pluggable tool handlers
+- `StdioTransport` — stdio transport for Claude Desktop
+- `HTTPTransport` — FastAPI-based HTTP transport with SSE
 
 ## Transport Types
 
-SIF's MCP server supports two transport methods:
+### stdio Transport
 
-### stdio Transport (Default)
-
-Uses standard input/output for communication. Ideal for local AI assistants.
+Uses standard input/output for communication. Ideal for Claude Desktop.
 
 ```bash
 sif mcp stdio
@@ -47,7 +44,7 @@ sif mcp stdio
 
 ### HTTP Transport
 
-Uses HTTP for communication. Ideal for remote or distributed setups.
+Uses HTTP for communication. Supports Streamable HTTP with a single `/mcp` endpoint.
 
 ```bash
 sif mcp http --host 127.0.0.1 --port 8080
@@ -58,40 +55,35 @@ sif mcp http --host 127.0.0.1 --port 8080
 - Web-based assistants
 - Distributed systems
 
-### Daemon Transport
+**HTTP Endpoints:**
 
-Runs the MCP server as a background daemon.
-
-```bash
-# Start daemon
-sif mcp daemon --host 127.0.0.1 --port 3000
-
-# Stop daemon
-sif mcp daemon --stop
-```
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Health check |
+| `/mcp` | POST | JSON-RPC message endpoint |
+| `/mcp` | GET | Server-Sent Events (SSE) stream |
 
 ## Available Tools
 
-### search
+### query
 
-Search indexed documents using various search strategies.
+Hybrid search combining BM25 full-text search, vector semantic search, and reranking.
 
 **Parameters:**
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `query` | string | Yes | Search query |
-| `collection` | string | No | Collection name to search |
-| `search_type` | string | No | Search type: "bm25", "vector", "hybrid" |
+| `collections` | array | No | Collection names to search |
 | `limit` | integer | No | Maximum results (default: 10) |
+| `min_score` | number | No | Minimum score threshold (default: 0.0) |
 
 **Example:**
 ```json
 {
-  "name": "search",
+  "name": "query",
   "arguments": {
     "query": "python decorators",
-    "collection": "my-notes",
-    "search_type": "hybrid",
+    "collections": ["my-notes"],
     "limit": 5
   }
 }
@@ -102,64 +94,71 @@ Search indexed documents using various search strategies.
 {
   "results": [
     {
-      "document_id": "doc_abc123",
-      "document_path": "/notes/python/decorators.md",
-      "document_title": "Python Decorators",
+      "doc_id": "doc_abc123",
+      "path": "/notes/python/decorators.md",
+      "title": "Python Decorators",
       "score": 0.89,
-      "content_preview": "Python decorators are a powerful feature...",
-      "highlights": ["decorators are a powerful"]
+      "content": "Full document content...",
+      "highlights": ["decorators are a powerful"],
+      "metadata": {}
     }
-  ],
-  "total": 23,
-  "search_time_ms": 45
+  ]
 }
 ```
 
-### get_document
+### get
 
-Retrieve a specific document by ID.
+Retrieve a specific document by path or document ID.
 
 **Parameters:**
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `document_id` | string | Yes | Document ID |
+| `path_or_docid` | string | Yes | Document path or ID |
+| `from_line` | integer | No | Start line (1-based) |
+| `max_lines` | integer | No | Maximum lines to return |
 
 **Example:**
 ```json
 {
-  "name": "get_document",
+  "name": "get",
   "arguments": {
-    "document_id": "doc_abc123"
+    "path_or_docid": "/notes/python/decorators.md",
+    "max_lines": 50
   }
 }
 ```
 
-**Response:**
-```json
-{
-  "document": {
-    "id": "doc_abc123",
-    "path": "/notes/python/decorators.md",
-    "title": "Python Decorators",
-    "content": "Full document content...",
-    "metadata": {
-      "tags": ["python", "advanced"]
-    }
-  }
-}
-```
+### multi_get
 
-### list_collections
-
-List all available collections.
+Batch retrieve documents matching a glob pattern.
 
 **Parameters:**
-None
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `pattern` | string | Yes | Glob pattern (e.g. `/notes/*.md`) |
+| `max_bytes` | integer | No | Maximum total bytes to return |
 
 **Example:**
 ```json
 {
-  "name": "list_collections"
+  "name": "multi_get",
+  "arguments": {
+    "pattern": "/notes/*.md"
+  }
+}
+```
+
+### status
+
+Get indexing status for all collections.
+
+**Parameters:** None
+
+**Example:**
+```json
+{
+  "name": "status",
+  "arguments": {}
 }
 ```
 
@@ -168,91 +167,12 @@ None
 {
   "collections": [
     {
-      "id": "col_xyz789",
       "name": "my-notes",
-      "description": "Personal notes",
       "document_count": 42,
-      "paths": ["~/Documents/notes"]
-    },
-    {
-      "id": "col_abc456",
-      "name": "work-docs",
-      "description": "Work documentation",
-      "document_count": 156,
-      "paths": ["~/Work/docs"]
+      "last_updated": "2024-01-20T14:22:00Z"
     }
-  ]
-}
-```
-
-### get_collection
-
-Get details about a specific collection.
-
-**Parameters:**
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `name` | string | Yes | Collection name |
-
-**Example:**
-```json
-{
-  "name": "get_collection",
-  "arguments": {
-    "name": "my-notes"
-  }
-}
-```
-
-**Response:**
-```json
-{
-  "collection": {
-    "id": "col_xyz789",
-    "name": "my-notes",
-    "description": "Personal notes",
-    "document_count": 42,
-    "chunk_count": 156,
-    "paths": ["~/Documents/notes"],
-    "created_at": "2024-01-15T10:30:00Z",
-    "last_indexed_at": "2024-01-20T14:22:00Z"
-  }
-}
-```
-
-### get_status
-
-Get indexing status.
-
-**Parameters:**
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `collection` | string | No | Collection name (optional) |
-
-**Example:**
-```json
-{
-  "name": "get_status",
-  "arguments": {
-    "collection": "my-notes"
-  }
-}
-```
-
-**Response:**
-```json
-{
-  "status": {
-    "collections": 3,
-    "total_documents": 523,
-    "total_chunks": 2456,
-    "collection_status": {
-      "name": "my-notes",
-      "documents": 42,
-      "chunks": 156,
-      "last_indexed": "2024-01-20T14:22:00Z"
-    }
-  }
+  ],
+  "total_documents": 42
 }
 ```
 
@@ -262,9 +182,9 @@ Get indexing status.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `SIF_DB_PATH` | `~/.sif/index.sqlite` | Path to SQLite database |
 | `SIF_MCP_HOST` | `127.0.0.1` | HTTP server host |
 | `SIF_MCP_PORT` | `8080` | HTTP server port |
-| `SIF_MCP_TRANSPORT` | `stdio` | Default transport type |
 
 ### .env File Example
 
@@ -272,10 +192,9 @@ Get indexing status.
 # MCP Server Configuration
 SIF_MCP_HOST=127.0.0.1
 SIF_MCP_PORT=8080
-SIF_MCP_TRANSPORT=stdio
 
 # Database
-SIF_DB_PATH=~/.local/share/sif/sif.db
+SIF_DB_PATH=~/.sif/index.sqlite
 
 # Model
 SIF_MODEL_NAME=Qwen/Qwen3-Embedding-0.6B
@@ -292,7 +211,10 @@ Add to Claude Desktop configuration:
   "mcpServers": {
     "sif": {
       "command": "sif",
-      "args": ["mcp", "stdio"]
+      "args": ["mcp", "stdio"],
+      "env": {
+        "SIF_DB_PATH": "/Users/forrest/.sif/index.sqlite"
+      }
     }
   }
 }
@@ -303,43 +225,6 @@ Location:
 - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
 - Linux: `~/.config/Claude/claude_desktop_config.json`
 
-### Custom MCP Client
-
-```python
-import asyncio
-import json
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
-
-async def use_sif_mcp():
-    # Configure server parameters
-    server_params = StdioServerParameters(
-        command="sif",
-        args=["mcp", "stdio"]
-    )
-
-    async with stdio_client(server_params) as (read, write):
-        async with ClientSession(read, write) as session:
-            # Initialize
-            await session.initialize()
-
-            # List available tools
-            tools = await session.list_tools()
-            print(f"Available tools: {[tool.name for tool in tools.tools]}")
-
-            # Search documents
-            result = await session.call_tool(
-                "search",
-                arguments={
-                    "query": "python decorators",
-                    "limit": 5
-                }
-            )
-            print(json.dumps(result, indent=2))
-
-asyncio.run(use_sif_mcp())
-```
-
 ### HTTP Client
 
 ```python
@@ -347,16 +232,76 @@ import requests
 
 # Start server: sif mcp http --host 127.0.0.1 --port 8080
 
+# 1. initialize
 response = requests.post(
-    "http://127.0.0.1:8080/mcp/tools/search",
+    "http://127.0.0.1:8080/mcp",
     json={
-        "query": "python decorators",
-        "limit": 5
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {"protocolVersion": "2024-11-05"}
     }
 )
 
-results = response.json()
-print(results)
+# 2. tools/list
+response = requests.post(
+    "http://127.0.0.1:8080/mcp",
+    json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}
+)
+
+# 3. tools/call
+response = requests.post(
+    "http://127.0.0.1:8080/mcp",
+    json={
+        "jsonrpc": "2.0",
+        "id": 3,
+        "method": "tools/call",
+        "params": {
+            "name": "query",
+            "arguments": {
+                "query": "python decorators",
+                "limit": 5
+            }
+        }
+    }
+)
+
+print(response.json())
+```
+
+### Custom Tool Handler
+
+```python
+from typing import Any, ClassVar
+
+from sif.mcp.backend import SearchBackend
+from sif.mcp.handlers import ToolHandler, create_default_tools
+from sif.mcp.protocol import ToolContentItem, ToolsCallResult
+from sif.mcp.server import MCPServer
+
+
+class PingToolHandler(ToolHandler):
+    name: ClassVar[str] = "ping"
+    description: ClassVar[str] = "Return server status."
+    input_schema: ClassVar[dict[str, Any]] = {
+        "type": "object",
+        "properties": {},
+        "required": [],
+    }
+
+    async def handle(
+        self,
+        params: dict[str, Any],
+        backend: SearchBackend,
+    ) -> ToolsCallResult:
+        return ToolsCallResult(
+            content=[ToolContentItem(type="text", text='{"status":"ok"}')],
+        )
+
+
+backend = SearchBackend("/Users/forrest/.sif/index.sqlite")
+server = MCPServer(backend)
+server.register_tools(create_default_tools() + [PingToolHandler()])
 ```
 
 ## Security Considerations
@@ -364,12 +309,13 @@ print(results)
 ### Local-First Design
 
 - All data stays on your machine
-- No data sent to external services
+- No data sent to external services by default
 - AI assistant only accesses indexed documents
 
 ### Network Security (HTTP Transport)
 
 - Default binds to localhost only
+- CORS defaults to `http://localhost:3000` and `http://127.0.0.1:3000`
 - Use firewall rules for remote access
 - Consider authentication for production use
 
@@ -401,7 +347,7 @@ sif mcp stdio
 
 # Test HTTP transport
 sif mcp http
-curl http://127.0.0.1:8080/mcp/health
+curl http://127.0.0.1:8080/health
 ```
 
 ### Tool Not Found
@@ -411,124 +357,9 @@ curl http://127.0.0.1:8080/mcp/health
 sif mcp --help
 ```
 
-## Advanced Usage
-
-### Custom Tool Handlers
-
-Extend the MCP server with custom tools:
-
-```python
-from sif.mcp_server.server import MCPServer
-from sif.mcp_server.transport import StdioTransport
-from sif.mcp_server.handlers import ToolHandler
-
-class CustomToolHandler(ToolHandler):
-    @property
-    def name(self) -> str:
-        return "custom_search"
-
-    @property
-    def description(self) -> str:
-        return "Custom search with filters"
-
-    def handle(self, arguments: dict) -> dict:
-        # Custom implementation
-        return {"results": []}
-
-# Create server with custom handler
-transport = StdioTransport()
-server = MCPServer(transport, tool_handlers=[CustomToolHandler()])
-server.start()
-```
-
-### Multiple Transports
-
-Run multiple transport types simultaneously:
-
-```bash
-# Terminal 1: stdio for Claude
-sif mcp stdio
-
-# Terminal 2: HTTP for web integration
-sif mcp http --port 8080
-```
-
-## Performance Tuning
-
-### Batch Size
-
-Adjust batch size for large collections:
-
-```bash
-export SIF_BATCH_SIZE=500
-```
-
-### Connection Pooling
-
-The MCP server reuses database connections automatically.
-
-## API Reference
-
-### MCPServer
-
-```python
-class MCPServer:
-    def __init__(
-        self,
-        transport: Transport,
-        tool_handlers: list[ToolHandler] | None = None,
-    ) -> None
-
-    def start(self) -> None
-    def stop(self) -> None
-    @property
-    def is_running(self) -> bool
-```
-
-### Transport
-
-```python
-class Transport(ABC):
-    @abstractmethod
-    def start(self) -> None: ...
-
-    @abstractmethod
-    def stop(self) -> None: ...
-
-    @abstractmethod
-    def send(self, message: dict) -> None: ...
-
-    @abstractmethod
-    def receive(self) -> dict: ...
-```
-
-### StdioTransport
-
-```python
-class StdioTransport(Transport):
-    def __init__(self) -> None: ...
-```
-
-### HttpTransport
-
-```python
-class HttpTransport(Transport):
-    def __init__(
-        self,
-        host: str = "127.0.0.1",
-        port: int = 8080,
-    ) -> None: ...
-```
-
 ## Best Practices
 
-1. **Use stdio for local AI assistants** - More secure, no network exposure
-2. **Use HTTP for distributed systems** - Better for remote access
-3. **Monitor logs** - Check for errors and performance issues
-4. **Regular indexing** - Keep index up to date for accurate results
-
-## Related Documentation
-
-- [Configuration](configuration.md) - MCP configuration options
-- [CLI Reference](cli-reference.md) - MCP CLI commands
-- [Architecture](architecture.md) - MCP server architecture
+1. **Use stdio for local AI assistants** — More secure, no network exposure
+2. **Use HTTP for distributed systems** — Better for remote access
+3. **Monitor logs** — Check for errors and performance issues
+4. **Regular indexing** — Keep index up to date for accurate results

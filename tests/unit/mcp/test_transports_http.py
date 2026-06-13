@@ -134,7 +134,7 @@ def test_mcp_post_invalid_json(client) -> None:
     """Test POST /mcp with invalid JSON returns 400."""
     response = client.post(
         "/mcp",
-        data="not json",
+        content="not json",
     )
     assert response.status_code == 400
     assert "mcp-session-id" in response.headers

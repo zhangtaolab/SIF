@@ -33,14 +33,14 @@ def test_database() -> None:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "test.db"
-            db = Database(db_path)
-            db.init_schema()
+            with Database(db_path) as db:
+                db.init_schema()
 
-            # Test connection
-            stats = db.get_stats()
-            assert isinstance(stats, dict)
-            print(f"✅ Database created: {db_path}")
-            print(f"   Stats: {stats}")
+                # Test connection
+                stats = db.get_stats()
+                assert isinstance(stats, dict)
+                print(f"✅ Database created: {db_path}")
+                print(f"   Stats: {stats}")
 
     except Exception as e:
         print(f"❌ Database test failed: {e}")
@@ -60,31 +60,31 @@ def test_collection_repository() -> None:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "test.db"
-            db = Database(db_path)
-            db.init_schema()
+            with Database(db_path) as db:
+                db.init_schema()
 
-            with db.transaction() as conn:
-                repo = CollectionRepository(conn)
+                with db.transaction() as conn:
+                    repo = CollectionRepository(conn)
 
-                # Create collection
-                collection = Collection(
-                    name="test_collection",
-                    path="/tmp/test",
-                    pattern="**/*.md",
-                )
-                repo.create(collection)
-                print(f"✅ Collection created: {collection.name}")
+                    # Create collection
+                    collection = Collection(
+                        name="test_collection",
+                        path="/tmp/test",
+                        pattern="**/*.md",
+                    )
+                    repo.create(collection)
+                    print(f"✅ Collection created: {collection.name}")
 
-                # Get by name
-                retrieved = repo.get_by_name("test_collection")
-                assert retrieved is not None
-                assert retrieved.name == "test_collection"
-                print(f"✅ Collection retrieved: {retrieved.name}")
+                    # Get by name
+                    retrieved = repo.get_by_name("test_collection")
+                    assert retrieved is not None
+                    assert retrieved.name == "test_collection"
+                    print(f"✅ Collection retrieved: {retrieved.name}")
 
-                # List all
-                collections = repo.list_all()
-                assert len(collections) == 1
-                print(f"✅ Listed {len(collections)} collection(s)")
+                    # List all
+                    collections = repo.list_all()
+                    assert len(collections) == 1
+                    print(f"✅ Listed {len(collections)} collection(s)")
 
     except Exception as e:
         print(f"❌ Collection repository test failed: {e}")
@@ -107,40 +107,40 @@ def test_document_repository() -> None:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "test.db"
-            db = Database(db_path)
-            db.init_schema()
+            with Database(db_path) as db:
+                db.init_schema()
 
-            with db.transaction() as conn:
-                # Create collection first
-                coll_repo = CollectionRepository(conn)
-                collection = Collection(
-                    name="test_docs",
-                    path="/tmp/docs",
-                    pattern="**/*.md",
-                )
-                coll_repo.create(collection)
+                with db.transaction() as conn:
+                    # Create collection first
+                    coll_repo = CollectionRepository(conn)
+                    collection = Collection(
+                        name="test_docs",
+                        path="/tmp/docs",
+                        pattern="**/*.md",
+                    )
+                    coll_repo.create(collection)
 
-                # Create document
-                doc_repo = DocumentRepository(conn)
-                document = Document(
-                    path="/tmp/docs/test.md",
-                    collection_id=collection.id,
-                    content="# Test\n\nThis is a test document.",
-                    title="Test Document",
-                )
-                doc_repo.create(document)
-                print(f"✅ Document created: {document.title}")
+                    # Create document
+                    doc_repo = DocumentRepository(conn)
+                    document = Document(
+                        path="/tmp/docs/test.md",
+                        collection_id=collection.id,
+                        content="# Test\n\nThis is a test document.",
+                        title="Test Document",
+                    )
+                    doc_repo.create(document)
+                    print(f"✅ Document created: {document.title}")
 
-                # Get by ID
-                retrieved = doc_repo.get_by_id(document.id)
-                assert retrieved is not None
-                assert retrieved.title == "Test Document"
-                print(f"✅ Document retrieved: {retrieved.title}")
+                    # Get by ID
+                    retrieved = doc_repo.get_by_id(document.id)
+                    assert retrieved is not None
+                    assert retrieved.title == "Test Document"
+                    print(f"✅ Document retrieved: {retrieved.title}")
 
-                # List by collection
-                docs = doc_repo.list_by_collection(collection.id)
-                assert len(docs) == 1
-                print(f"✅ Listed {len(docs)} document(s)")
+                    # List by collection
+                    docs = doc_repo.list_by_collection(collection.id)
+                    assert len(docs) == 1
+                    print(f"✅ Listed {len(docs)} document(s)")
 
     except Exception as e:
         print(f"❌ Document repository test failed: {e}")

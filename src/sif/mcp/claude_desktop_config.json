@@ -1,13 +1,13 @@
 {
   "mcpServers": {
     "sif": {
-      "command": "python",
+      "command": "sif",
       "args": [
-        "-m",
-        "sif.mcp.transport_stdio"
+        "mcp",
+        "stdio"
       ],
       "env": {
-        "PYTHONPATH": "/path/to/sif/src"
+        "SIF_DB_PATH": "/Users/forrest/.sif/index.sqlite"
       },
       "description": "SIF MCP Server for document search and retrieval",
       "disabled": false
