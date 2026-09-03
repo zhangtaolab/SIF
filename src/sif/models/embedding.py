@@ -32,7 +32,7 @@ class EmbeddingConfig(BaseModel):
     n_ctx: int = Field(2048, ge=512, description="Context size")
 
     # API keys (for remote models)
-    api_key: str | None = Field(None, exclude=True)
+    api_key: str | None = Field(None, exclude=True, repr=False)
     api_base: str | None = None
 
     # Caching

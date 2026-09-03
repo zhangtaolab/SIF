@@ -24,6 +24,14 @@ class TestEmbeddingManager:
         assert manager._config.api_base == "https://api.example.com/v1"
         assert manager._config.embedding_dim == 256
 
+    def test_embedding_config_api_key_never_leaks(self) -> None:
+        """api_key must be absent from both repr() and model_dump()."""
+        config = EmbeddingConfig(api_key="sk-secret")
+        assert config.api_key == "sk-secret"
+        assert "sk-secret" not in repr(config)
+        assert "api_key" not in config.model_dump()
+        assert "sk-secret" not in str(config.model_dump())
+
     def test_cache_is_segmented_by_model(self, tmp_path: Path) -> None:
         """Same text under two models must not share cached embeddings."""
         cache = EmbeddingCache(tmp_path)
