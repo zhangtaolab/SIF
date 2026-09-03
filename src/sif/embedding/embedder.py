@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import hashlib
+import json
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
@@ -264,6 +267,9 @@ class ModelScopeEmbedder(Embedder):
 class OpenAIEmbedder(Embedder):
     """Embedder using an OpenAI-compatible embeddings API."""
 
+    _DIM_CACHE_FILENAME = "openai_dim_cache.json"
+    _DIM_CACHE_TTL_SECONDS = 604800  # 7 days
+
     def __init__(  # noqa: PLR0913
         self,
         model_name: str = "text-embedding-3-small",
@@ -281,9 +287,11 @@ class OpenAIEmbedder(Embedder):
                 logged or embedded in exception messages.
             api_base: Base URL of an OpenAI-compatible endpoint; the SDK
                 appends the /embeddings path. None uses the SDK default.
-            embedding_dim: Caller-supplied embedding dimension. When None the
-                dimension is detected from the endpoint via a minimal probe.
-            cache_dir: Reserved for endpoint dimension caching.
+            embedding_dim: Caller-supplied embedding dimension. When it
+                disagrees with the endpoint-detected dimension, construction
+                fails fast (misconfigured SIF_EMBEDDING_DIM).
+            cache_dir: Directory for the endpoint dimension cache
+                (openai_dim_cache.json, 7-day TTL, keyed by model name).
             batch_size: Number of texts per embeddings.create request.
         """
         try:
@@ -296,15 +304,82 @@ class OpenAIEmbedder(Embedder):
 
         self.model_name = model_name
         self._batch_size = batch_size
-        self._cache_dir = cache_dir
+        self._cache_dir = Path(cache_dir) if cache_dir is not None else None
         self._client = OpenAI(api_key=api_key, base_url=api_base)
 
-        if embedding_dim is not None:
-            self._dimension = embedding_dim
-        else:
-            self._dimension = self._probe_dimension()
+        resolved_dim = self._resolve_dimension()
+        if embedding_dim is not None and embedding_dim != resolved_dim:
+            raise RuntimeError(
+                f"Embedding dimension mismatch: model '{model_name}' produces "
+                f"{resolved_dim}-dimensional embeddings but SIF_EMBEDDING_DIM "
+                f"is set to {embedding_dim}. Set SIF_EMBEDDING_DIM to the "
+                f"endpoint model's dimension."
+            )
+        self._dimension = resolved_dim
 
         logger.info(f"OpenAI embedder ready: {model_name} (dim={self._dimension})")
+
+    def _resolve_dimension(self) -> int:
+        """Resolve the endpoint's embedding dimension.
+
+        The API is the source of truth: a cached detection younger than the
+        TTL is reused, otherwise a minimal probe detects it and refreshes the
+        cache. Cache failures never crash loading — they degrade to a probe.
+        """
+        cached = self._read_dim_cache()
+        if cached is not None:
+            return cached
+        dimension = self._probe_dimension()
+        self._write_dim_cache(dimension)
+        return dimension
+
+    def _read_dim_cache(self) -> int | None:
+        """Read a fresh cached dimension for this model, if any."""
+        if self._cache_dir is None:
+            return None
+        cache_file = self._cache_dir / self._DIM_CACHE_FILENAME
+        try:
+            with open(cache_file, encoding="utf-8") as f:
+                cache = json.load(f)
+            entry = cache.get(self.model_name) if isinstance(cache, dict) else None
+            if not isinstance(entry, dict):
+                return None
+            detected_at = datetime.fromisoformat(str(entry["detected_at"]))
+            age = (datetime.now(timezone.utc) - detected_at).total_seconds()
+            if age > self._DIM_CACHE_TTL_SECONDS:
+                return None
+            return int(entry["dimension"])
+        except FileNotFoundError:
+            return None
+        except (OSError, ValueError, KeyError, TypeError) as e:
+            logger.warning(f"Ignoring unreadable OpenAI dimension cache ({cache_file}): {e}")
+            return None
+
+    def _write_dim_cache(self, dimension: int) -> None:
+        """Persist the detected dimension for this model, preserving others."""
+        if self._cache_dir is None:
+            return
+        cache_file = self._cache_dir / self._DIM_CACHE_FILENAME
+        try:
+            self._cache_dir.mkdir(parents=True, exist_ok=True)
+            entries: dict[str, dict[str, Any]] = {}
+            try:
+                with open(cache_file, encoding="utf-8") as f:
+                    loaded = json.load(f)
+                if isinstance(loaded, dict):
+                    entries = loaded
+            except (OSError, ValueError):
+                logger.warning(
+                    f"Discarding unreadable OpenAI dimension cache before rewrite ({cache_file})"
+                )
+            entries[self.model_name] = {
+                "dimension": dimension,
+                "detected_at": datetime.now(timezone.utc).isoformat(),
+            }
+            with open(cache_file, "w", encoding="utf-8") as f:
+                json.dump(entries, f)
+        except OSError as e:
+            logger.warning(f"Failed to write OpenAI dimension cache ({cache_file}): {e}")
 
     def _probe_dimension(self) -> int:
         """Detect the embedding dimension with a minimal probe request."""

@@ -74,8 +74,7 @@ def _make_fake_openai(
                 raise RuntimeError("simulated endpoint failure")
             count = len(texts) if item_count is None else item_count
             data = [
-                SimpleNamespace(embedding=_vector_for(texts[i % len(texts)]))
-                for i in range(count)
+                SimpleNamespace(embedding=_vector_for(texts[i % len(texts)])) for i in range(count)
             ]
             return SimpleNamespace(data=data)
 
@@ -258,7 +257,7 @@ class TestOpenAIEmbedderDimensionCache:
         data = json.loads(cache_file.read_text())
         assert data["m1"]["dimension"] == DIM
 
-    def test_no_cache_dir_probes_per_instance(self, tmp_path: Path) -> None:
+    def test_no_cache_dir_probes_per_instance(self) -> None:
         fake_module, _ctor, create_calls = _make_fake_openai()
 
         with patch.dict("sys.modules", {"openai": fake_module}):
@@ -333,9 +332,7 @@ class TestOpenAIEmbedderDimensionCache:
         data = json.loads(cache_file.read_text())
         assert data["m1"]["dimension"] == DIM
 
-    def test_manager_path_probe_matches_settings_dim(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_manager_path_probe_matches_settings_dim(self, monkeypatch: pytest.MonkeyPatch) -> None:
         for var in (
             "SIF_MODEL_TYPE",
             "SIF_API_KEY",
