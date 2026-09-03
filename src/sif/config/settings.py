@@ -73,6 +73,7 @@ class Settings(BaseSettings):
         default=None,
         description="API key for remote embedding models",
         repr=False,
+        exclude=True,
     )
     api_base: str | None = Field(
         default=None,

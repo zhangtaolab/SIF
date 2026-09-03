@@ -50,6 +50,14 @@ def test_api_key_is_excluded_from_repr() -> None:
     assert "sk-secret" not in repr(settings)
 
 
+def test_api_key_is_excluded_from_model_dump(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that api_key is excluded from serialized settings."""
+    monkeypatch.delenv("SIF_API_KEY", raising=False)
+    settings = Settings(api_key="sk-secret", _env_file=None)
+    assert "api_key" not in settings.model_dump()
+    assert "sk-secret" not in str(settings.model_dump())
+
+
 def test_model_type_env_var_override(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test that SIF_MODEL_TYPE env var overrides model_type."""
     with monkeypatch.context() as m:
