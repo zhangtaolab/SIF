@@ -32,7 +32,9 @@ def _fake_openai_module() -> tuple[types.ModuleType, list[dict]]:
     class _FakeEmbeddings:
         def create(self, **kwargs: object) -> SimpleNamespace:
             texts = list(kwargs["input"])
-            return SimpleNamespace(data=[SimpleNamespace(embedding=list(VEC8)) for _ in texts])
+            return SimpleNamespace(
+                data=[SimpleNamespace(index=i, embedding=list(VEC8)) for i, _ in enumerate(texts)]
+            )
 
     class _FakeClient:
         def __init__(self) -> None:

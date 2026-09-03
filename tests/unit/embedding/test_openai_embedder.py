@@ -41,6 +41,8 @@ def _make_fake_openai(
     item_count: int | None = None,
     fail_on_texts: frozenset[str] = frozenset(),
     content_aware: bool = False,
+    reverse_order: bool = False,
+    indices: list[int] | None = None,
 ) -> tuple[types.ModuleType, list[dict], list[dict]]:
     """Build a fake openai module backed by a recording client.
 
@@ -51,6 +53,10 @@ def _make_fake_openai(
         fail_on_texts: Raise when any of these texts appears in a request.
         content_aware: Return vectors derived from each input text's length
             so output ordering is observable from results alone.
+        reverse_order: Return response items in reverse request order, each
+            still carrying its correct index field.
+        indices: Force these index values on the response items
+            (misindexed-response test).
 
     Returns:
         Tuple of (fake module, recorded constructor kwargs, recorded
@@ -72,9 +78,16 @@ def _make_fake_openai(
             texts = list(kwargs["input"])
             if any(t in fail_on_texts for t in texts):
                 raise RuntimeError("simulated endpoint failure")
-            count = len(texts) if item_count is None else item_count
+            if indices is not None:
+                order = list(indices)
+            else:
+                count = len(texts) if item_count is None else item_count
+                order = list(range(count))
+            if reverse_order:
+                order.reverse()
             data = [
-                SimpleNamespace(embedding=_vector_for(texts[i % len(texts)])) for i in range(count)
+                SimpleNamespace(index=i, embedding=_vector_for(texts[i % len(texts)]))
+                for i in order
             ]
             return SimpleNamespace(data=data)
 
@@ -154,6 +167,29 @@ class TestOpenAIEmbedderBehavior:
         with patch.dict("sys.modules", {"openai": fake_module}):
             embedder = OpenAIEmbedder(model_name="test-model", embedding_dim=DIM)
             with pytest.raises(RuntimeError, match=r"test-model.*expected 3.*got 1"):
+                embedder.embed_batch(["a", "b", "c"])
+
+    def test_embed_batch_normalizes_reordered_response(self) -> None:
+        fake_module, _ctor, _create = _make_fake_openai(content_aware=True, reverse_order=True)
+
+        with patch.dict("sys.modules", {"openai": fake_module}):
+            embedder = OpenAIEmbedder(model_name="test-model", embedding_dim=DIM)
+            result = embedder.embed_batch(["a", "bb", "ccc"])
+
+        # Vectors must stay associated with their own text despite the
+        # reversed response order.
+        expected = [
+            _unit_vector([float(len(t)), 1.0] + [0.0] * (DIM - 2)) for t in ("a", "bb", "ccc")
+        ]
+        for got, want in zip(result, expected, strict=True):
+            assert got == pytest.approx(want)
+
+    def test_misindexed_response_raises_runtime_error(self) -> None:
+        fake_module, _ctor, _create = _make_fake_openai(indices=[0, 0, 1])
+
+        with patch.dict("sys.modules", {"openai": fake_module}):
+            embedder = OpenAIEmbedder(model_name="test-model", embedding_dim=DIM)
+            with pytest.raises(RuntimeError, match="misindexed"):
                 embedder.embed_batch(["a", "b", "c"])
 
     def test_import_error_logs_install_hint(self, caplog: pytest.LogCaptureFixture) -> None:

@@ -20,7 +20,9 @@ def _fake_openai_module(dim=8):
         def create(self, **kwargs):
             create_calls.append(kwargs)
             texts = list(kwargs["input"])
-            return SimpleNamespace(data=[SimpleNamespace(embedding=list(vec)) for _ in texts])
+            return SimpleNamespace(
+                data=[SimpleNamespace(index=i, embedding=list(vec)) for i, _ in enumerate(texts)]
+            )
 
     class _FakeClient:
         def __init__(self):

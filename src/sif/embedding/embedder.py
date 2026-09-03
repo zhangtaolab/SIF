@@ -404,7 +404,16 @@ class OpenAIEmbedder(Embedder):
                     f"Embedding model '{self.model_name}' returned a ragged response: "
                     f"expected {len(batch)} embeddings, got {len(response.data)}"
                 )
-            embeddings.extend(self._normalize(item.embedding) for item in response.data)
+            # Compatible endpoints are not required to return items in request
+            # order; each item's index field identifies its input position.
+            data = sorted(response.data, key=lambda item: item.index)
+            if [item.index for item in data] != list(range(len(batch))):
+                raise RuntimeError(
+                    f"Embedding model '{self.model_name}' returned misindexed "
+                    f"embeddings: expected indices 0..{len(batch) - 1}, got "
+                    f"{[item.index for item in data]}"
+                )
+            embeddings.extend(self._normalize(item.embedding) for item in data)
         return embeddings
 
     @staticmethod
