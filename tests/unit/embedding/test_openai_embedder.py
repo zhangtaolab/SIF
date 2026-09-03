@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import math
 import types
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -199,3 +202,165 @@ class TestOpenAIEmbedderBehavior:
             assert embedder.embed_batch([]) == []
 
         assert _embed_calls(create_calls) == []
+
+
+class TestOpenAIEmbedderDimensionCache:
+    """Dimension auto-detection with local cache and fail-fast validation (D-05)."""
+
+    def test_probe_once_then_cache_hit(self, tmp_path: Path) -> None:
+        fake_module, _ctor, create_calls = _make_fake_openai()
+
+        with patch.dict("sys.modules", {"openai": fake_module}):
+            first = OpenAIEmbedder(
+                model_name="text-embedding-3-small",
+                embedding_dim=None,
+                cache_dir=str(tmp_path),
+            )
+            assert first.dimension == DIM
+            assert len(create_calls) == 1
+            assert (tmp_path / "openai_dim_cache.json").exists()
+
+            create_calls.clear()
+            second = OpenAIEmbedder(
+                model_name="text-embedding-3-small",
+                embedding_dim=None,
+                cache_dir=str(tmp_path),
+            )
+            assert second.dimension == DIM
+
+        assert len(create_calls) == 0
+
+    def test_cache_file_schema(self, tmp_path: Path) -> None:
+        fake_module, _ctor, _calls = _make_fake_openai()
+
+        with patch.dict("sys.modules", {"openai": fake_module}):
+            OpenAIEmbedder(model_name="m1", embedding_dim=None, cache_dir=str(tmp_path))
+
+        data = json.loads((tmp_path / "openai_dim_cache.json").read_text())
+        entry = data["m1"]
+        assert entry["dimension"] == DIM
+        # detected_at must parse as an ISO-8601 timestamp
+        datetime.fromisoformat(entry["detected_at"])
+
+    def test_expired_cache_entry_reprobes(self, tmp_path: Path) -> None:
+        stale = datetime.now(timezone.utc) - timedelta(days=8)
+        cache_file = tmp_path / "openai_dim_cache.json"
+        cache_file.write_text(
+            json.dumps({"m1": {"dimension": 999, "detected_at": stale.isoformat()}})
+        )
+
+        fake_module, _ctor, create_calls = _make_fake_openai()
+        with patch.dict("sys.modules", {"openai": fake_module}):
+            embedder = OpenAIEmbedder(model_name="m1", embedding_dim=None, cache_dir=str(tmp_path))
+
+        assert len(create_calls) == 1
+        assert embedder.dimension == DIM
+        data = json.loads(cache_file.read_text())
+        assert data["m1"]["dimension"] == DIM
+
+    def test_no_cache_dir_probes_per_instance(self, tmp_path: Path) -> None:
+        fake_module, _ctor, create_calls = _make_fake_openai()
+
+        with patch.dict("sys.modules", {"openai": fake_module}):
+            embedder = OpenAIEmbedder(model_name="m1", embedding_dim=None, cache_dir=None)
+            assert embedder.dimension == DIM
+
+        assert len(create_calls) == 1
+
+    def test_per_model_cache_keys(self, tmp_path: Path) -> None:
+        fake_module, _ctor, create_calls = _make_fake_openai()
+
+        with patch.dict("sys.modules", {"openai": fake_module}):
+            OpenAIEmbedder(model_name="m1", embedding_dim=None, cache_dir=str(tmp_path))
+
+            create_calls.clear()
+            OpenAIEmbedder(model_name="m2", embedding_dim=None, cache_dir=str(tmp_path))
+
+        assert len(create_calls) == 1
+        data = json.loads((tmp_path / "openai_dim_cache.json").read_text())
+        assert set(data) == {"m1", "m2"}
+        assert data["m1"]["dimension"] == DIM
+        assert data["m2"]["dimension"] == DIM
+
+    def test_dimension_mismatch_fails_fast(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        for var in (
+            "SIF_MODEL_TYPE",
+            "SIF_API_KEY",
+            "SIF_API_BASE",
+            "SIF_EMBEDDING_DIM",
+            "SIF_CACHE_EMBEDDINGS",
+        ):
+            monkeypatch.delenv(var, raising=False)
+
+        vec6 = _unit_vector([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        fake_module, _ctor, _calls = _make_fake_openai(vec6)
+
+        settings = Settings(
+            model_type="openai",
+            model_name="text-embedding-3-small",
+            api_key="test-key",
+            api_base="https://api.example.com/v1",
+            cache_embeddings=False,
+            embedding_dim=DIM,
+        )
+
+        with patch.dict("sys.modules", {"openai": fake_module}):
+            manager = EmbeddingManager.from_settings(settings)
+            with pytest.raises(RuntimeError) as excinfo:
+                manager.embed(["hello world"])
+
+        message = str(excinfo.value)
+        assert "6" in message
+        assert str(DIM) in message
+        assert "SIF_EMBEDDING_DIM" in message
+
+    def test_corrupt_cache_treated_as_miss(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        cache_file = tmp_path / "openai_dim_cache.json"
+        cache_file.write_text("{not valid json")
+
+        fake_module, _ctor, create_calls = _make_fake_openai()
+        with (
+            patch.dict("sys.modules", {"openai": fake_module}),
+            caplog.at_level(logging.WARNING, logger="sif.embedding.embedder"),
+        ):
+            embedder = OpenAIEmbedder(model_name="m1", embedding_dim=None, cache_dir=str(tmp_path))
+
+        assert embedder.dimension == DIM
+        assert len(create_calls) == 1
+        assert "cache" in caplog.text.lower()
+        data = json.loads(cache_file.read_text())
+        assert data["m1"]["dimension"] == DIM
+
+    def test_manager_path_probe_matches_settings_dim(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        for var in (
+            "SIF_MODEL_TYPE",
+            "SIF_API_KEY",
+            "SIF_API_BASE",
+            "SIF_EMBEDDING_DIM",
+            "SIF_CACHE_EMBEDDINGS",
+        ):
+            monkeypatch.delenv(var, raising=False)
+
+        fake_module, _ctor, create_calls = _make_fake_openai()
+        settings = Settings(
+            model_type="openai",
+            model_name="text-embedding-3-small",
+            api_key="test-key",
+            api_base="https://api.example.com/v1",
+            cache_embeddings=False,
+            embedding_dim=DIM,
+        )
+
+        with patch.dict("sys.modules", {"openai": fake_module}):
+            manager = EmbeddingManager.from_settings(settings)
+            response = manager.embed(["hello world"])
+
+        probes = [c for c in create_calls if list(c["input"]) == _PROBE_INPUT]
+        assert len(probes) == 1
+        assert probes[0]["model"] == settings.model_name
+        assert response.embeddings[0] == pytest.approx(VEC8)
+        assert response.dimensions == DIM
