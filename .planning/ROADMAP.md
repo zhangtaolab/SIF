@@ -81,14 +81,14 @@ Plans:
   3. Document indexing benefits from batch embedding insertion for better performance
   4. User can download embedding models from ModelScope as an alternative to HuggingFace
 
-**Plans:** 7 plans (6 executed + 1 gap closure)
+**Plans:** 7/7 plans executed (6 executed + 1 gap closure)
 
 Plans:
 **Wave 1**
 
 - [x] 03-01-PLAN.md — Add Settings fields for embedding backends and create unit tests (VEC-01)
 - [x] 03-02-PLAN.md — Implement OpenAIEmbedder, wire ModelScope, refactor factory to Embedder protocol (VEC-01, VEC-04)
-- [ ] 03-07-PLAN.md — Implement the missing OpenAI-compatible API embedding backend: OpenAIEmbedder, factory wiring, dimension auto-detect/cache, and both missing Wave-0 test files (gap closure, VEC-01)
+- [x] 03-07-PLAN.md — Implement the missing OpenAI-compatible API embedding backend: OpenAIEmbedder, factory wiring, dimension auto-detect/cache, and both missing Wave-0 test files (gap closure, VEC-01)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -158,7 +158,7 @@ Plans:
 |-------|----------------|--------|-----------|
 | 1. Foundation Fix | 6/6 | Complete | 2026-04-14 |
 | 2. CLI Core Completion | 6/6 | Complete | 2026-04-15 |
-| 3. Embedding & Vector Search | 6/6 | Complete | 2026-04-16 |
+| 3. Embedding & Vector Search | 7/7 | In Progress|  |
 | 4. Advanced Search Pipeline | 5/5 | Complete | 2026-04-17 |
 | 5. Agent Context Experience | 7/7 | Complete | 2026-04-18 |
 | 6. Documentation Audit & Refresh | 7/7 | Complete | 2026-04-18 |

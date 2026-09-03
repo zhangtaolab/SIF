@@ -2,17 +2,17 @@
 gsd_state_version: 1.0
 milestone: v1.0
 current_phase: 09
+current_phase_name: Embedding & Vector Search
 status: executing
-stopped_at: context exhaustion at 75% (2026-06-13)
-last_updated: "2026-09-03T03:02:00.707Z"
-state_head: dd3a49534eff63acf69a4624fa424099e26307ce
+stopped_at: Completed 03-07-PLAN.md (phase 03 gap closure — ready for verification)
+last_updated: "2026-09-03T03:41:13.214Z"
+state_head: 445ecca5c33132f6224b42595f4c9477080ff218
 progress:
   total_phases: 9
   completed_phases: 4
   total_plans: 47
-  completed_plans: 46
+  completed_plans: 47
 milestone_name: milestone
-current_phase_name: Embedding & Vector Search
 ---
 
 # DocSift — Project State
@@ -26,12 +26,12 @@ current_phase_name: Embedding & Vector Search
 
 ## Current Position
 
-Phase: 03 (Embedding & Vector Search) — READY TO EXECUTE
-Plan: 1 of 6
+Phase: 03 (Embedding & Vector Search) — gap closure EXECUTING
+Plan: 7 of 7 (complete — phase ready for verification)
 
-- **Phase:** 09
-- **Plan:** Complete
-- **Status:** Ready to execute
+- **Phase:** 03 (gap closure; phases 01-09 originally executed, 03 gap closed by plan 03-07)
+- **Plan:** Complete — 7 of 7 plans have SUMMARYs
+- **Status:** Phase 03 ready for verification (03-VERIFICATION gap closed)
 - **Progress Bar:** `[████████████████████] 100%`
 
 ## Phase History
@@ -52,8 +52,14 @@ Plan: 1 of 6
 
 - **Requirements mapped:** 31/31 v1 + 7 DOC requirements
 - **Phases defined:** 9
-- **Tests passing:** 505 passed, 11 skipped, 0 failed
+- **Tests passing:** 528 passed, 11 skipped, 0 failed
 - **Known blockers:** 0
+
+**Per-Plan Metrics:**
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| Phase 03 P07 | 23min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -89,6 +95,11 @@ Plan: 1 of 6
 - [Phase 06-discuss]: Docs tests use pytest fixture with temp DB + minimal test data, CliRunner primary + subprocess secondary
 - [Phase 06-discuss]: Technical docs validated via AST parsing: extract public API from code, verify against documented names
 - [Phase 06-discuss]: Architecture diagram strategy: keep ASCII in README (manual), generate Mermaid in architecture.md (scripted)
+- [Phase 09]: [Phase 03-07]: OpenAI-compatible endpoints addressed via OpenAI(api_key, base_url) — SDK appends /embeddings; api_base=None uses SDK default (D-04)
+- [Phase 09]: [Phase 03-07]: Dimension source of truth is the API — one minimal probe cached per model to openai_dim_cache.json with 7-day TTL; corrupt/missing cache degrades to probe, never crashes load (D-05)
+- [Phase 09]: [Phase 03-07]: Configured embedding_dim disagreeing with API-detected dimension fails fast at load naming both values + SIF_EMBEDDING_DIM (extends D-09 fail-fast philosophy)
+- [Phase 09]: [Phase 03-07]: api_key passes only to the OpenAI client constructor — never logged, interpolated, or embedded in exceptions (threat T-03-01)
+- [Phase 09]: [Phase 03-07]: Factory honest signatures -> Embedder / **kwargs: Any completed the refactor plan 03-02 promised (03-REVIEW WR-01/WR-02)
 
 ### Roadmap Evolution
 
@@ -112,8 +123,8 @@ Plan: 1 of 6
 
 ## Session Continuity
 
-- **Last session:** 2026-06-13T01:57:08.536Z
-- **Stopped at:** context exhaustion at 75% (2026-06-13)
+- **Last session:** 2026-09-03T03:41:13.051Z
+- **Stopped at:** Completed 03-07-PLAN.md (phase 03 gap closure — ready for verification)
 - **Resume file:** None
 - **Last action:** Phase 9 complete — integration tests written, 86% MCP coverage, full quality suite passes (419 tests)
 - **Next expected action:** Verify phase goal achievement (/gsd-verify-work or manual verification)
