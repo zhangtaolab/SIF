@@ -19,10 +19,12 @@
 ## Phase Details
 
 ### Phase 1: Foundation Fix
+
 **Goal**: Core indexing and search infrastructure is trustworthy and free of critical bugs, stubs, and missing dependencies.
 **Depends on**: Nothing (first phase)
 **Requirements**: FND-01, FND-02, FND-03, FND-04, FND-05, FND-06, FND-07, FND-08
 **Success Criteria** (what must be TRUE):
+
   1. Project installs cleanly with all runtime dependencies declared in `pyproject.toml`
   2. Document indexing correctly skips unchanged files and updates changed ones based on checksum
   3. Embedding factory loads real `sentence-transformers` and `llama-cpp-python` models instead of stubs or random vectors
@@ -30,10 +32,11 @@
   5. FTS5 search results stay synchronized with the main document table
   6. Vector search CLI does not silently fall back to BM25 when the embedder is unavailable
   7. SQLite connections are safe across async and multi-threaded operations
+
 **Plans:** 6 plans
 
-
 Plans:
+
 - [x] 01-01-PLAN.md — Fix missing runtime dependencies in pyproject.toml
 - [x] 01-02-PLAN.md — Fix FTS5 synchronization and consolidate repository files
 - [x] 01-03-PLAN.md — Fix inverted checksum comparison and remove hardcoded model path
@@ -42,19 +45,23 @@ Plans:
 - [x] 01-06-PLAN.md — Improve SQLite connection safety for async/multi-threaded contexts
 
 ### Phase 2: CLI Core Completion
+
 **Goal**: Users can manage collections and retrieve documents through a complete, functional CLI.
 **Depends on**: Phase 1
 **Requirements**: CLI-01, CLI-02, CLI-03, CLI-04, CLI-05, CLI-08
 **Success Criteria** (what must be TRUE):
+
   1. User can batch-retrieve documents by glob pattern, comma-separated list, or docid with `multi-get`
   2. User can list indexed documents as a virtual file tree via `ls`
   3. User can set or clear a pre-index shell command per collection with `collection update-cmd`
   4. User can include or exclude collections from default queries with `collection include/exclude`
   5. User can download and verify local GGUF model files with `pull`
   6. Search and retrieval output can display line numbers via `--line-numbers`
+
 **Plans:** 6/6 plans executed
 
 Plans:
+
 - [x] 02-01-PLAN.md — Implement multi-get batch document retrieval (CLI-01)
 - [x] 02-02-PLAN.md — Implement ls virtual file tree for indexed documents (CLI-02)
 - [x] 02-03-PLAN.md — Add collection update-cmd, include/exclude, and wire --all in search (CLI-03, CLI-04)
@@ -63,30 +70,46 @@ Plans:
 - [x] 02-06-PLAN.md — Add collection enable/disable commands
 
 ### Phase 3: Embedding & Vector Search
+
 **Goal**: Users can perform semantic vector search with configurable embedding backends.
 **Depends on**: Phase 1
 **Requirements**: VEC-01, VEC-02, VEC-03, VEC-04
 **Success Criteria** (what must be TRUE):
+
   1. User can configure different embedding backends (sentence-transformers, llama-cpp-python, OpenAI-compatible API) via Settings and CLI
   2. Vector search uses `sqlite-vec` and refuses brute-force Python fallback on large indexes
   3. Document indexing benefits from batch embedding insertion for better performance
   4. User can download embedding models from ModelScope as an alternative to HuggingFace
+
 **Plans:** 7 plans (6 executed + 1 gap closure)
 
 Plans:
+**Wave 1**
+
 - [x] 03-01-PLAN.md — Add Settings fields for embedding backends and create unit tests (VEC-01)
 - [x] 03-02-PLAN.md — Implement OpenAIEmbedder, wire ModelScope, refactor factory to Embedder protocol (VEC-01, VEC-04)
-- [x] 03-03-PLAN.md — Make SchemaManager dimension-aware with fail-fast mismatch detection (VEC-02)
-- [x] 03-04-PLAN.md — Add batch embedding insertion to VectorSearcher and create tests (VEC-02, VEC-03)
-- [x] 03-05-PLAN.md — Refactor EmbeddingManager to use Embedder protocol and create tests (VEC-01, VEC-03)
-- [x] 03-06-PLAN.md — Integrate EmbeddingManager into CLI search/index commands and fix indexer (VEC-01, VEC-02, VEC-03)
 - [ ] 03-07-PLAN.md — Implement the missing OpenAI-compatible API embedding backend: OpenAIEmbedder, factory wiring, dimension auto-detect/cache, and both missing Wave-0 test files (gap closure, VEC-01)
 
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 03-03-PLAN.md — Make SchemaManager dimension-aware with fail-fast mismatch detection (VEC-02)
+- [x] 03-04-PLAN.md — Add batch embedding insertion to VectorSearcher and create tests (VEC-02, VEC-03)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 03-05-PLAN.md — Refactor EmbeddingManager to use Embedder protocol and create tests (VEC-01, VEC-03)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [x] 03-06-PLAN.md — Integrate EmbeddingManager into CLI search/index commands and fix indexer (VEC-01, VEC-02, VEC-03)
+
 ### Phase 4: Advanced Search Pipeline
+
 **Goal**: Users can perform high-quality hybrid searches with reranking, query expansion, and diagnostic visibility.
 **Depends on**: Phase 2, Phase 3
 **Requirements**: SRCH-01, SRCH-02, SRCH-03, SRCH-04, SRCH-05, SRCH-06, SRCH-07, SRCH-08, CLI-06, CLI-07
 **Success Criteria** (what must be TRUE):
+
   1. User can apply LLM reranking to search results for better relevance ranking
   2. User can use query document syntax (`lex:`, `vec:`, `hyde:`, `expand:`) for targeted search modes
   3. User can see score breakdowns across BM25, RRF, and reranker stages with `--explain`
@@ -95,9 +118,11 @@ Plans:
   6. User can pass intent hints through `--intent` to guide search behavior
   7. Search results show the most relevant snippet extracted from each chunk
   8. User can run benchmark fixtures to measure precision@k, recall, and MRR
+
 **Plans:** 5 plans
 
 Plans:
+
 - [x] 04-01-PLAN.md — Extend core models, add reranker settings, implement CrossEncoderReranker, fix RRF score preservation (SRCH-01, SRCH-04, SRCH-05)
 - [x] 04-02-PLAN.md — Implement QueryExpansion with embedding-based PRF and SmartSnippetExtractor (SRCH-02, SRCH-07)
 - [x] 04-03-PLAN.md — Wire SearchPipeline with prefix routing, explainability, candidate capping; update CLI commands (SRCH-03, SRCH-04, SRCH-05, SRCH-06, CLI-06, CLI-07)
@@ -105,16 +130,20 @@ Plans:
 - [x] 04-05-PLAN.md — Fix broken tests and run full quality suite
 
 ### Phase 5: Agent Context Experience
+
 **Goal**: Users can augment document collections with contextual descriptions to improve retrieval quality for agent workflows.
 **Depends on**: Phase 4
 **Requirements**: CTX-01, CTX-02, CTX-03
 **Success Criteria** (what must be TRUE):
+
   1. User can add contextual descriptions to paths or collections via `context add`
   2. User can list and remove contextual descriptions via `context list` and `context rm`
   3. Search results include relevant contextual descriptions alongside document content
+
 **Plans:** 7 plans (4 original + 3 gap closure)
 
 Plans:
+
 - [x] 05-01-PLAN.md — Migrate path_contexts to unified contexts table, rename repository, add SearchResult field (CTX-01)
 - [x] 05-02-PLAN.md — Implement context CLI: add (all types), list --type, remove/rm alias, prune (CTX-01, CTX-02)
 - [x] 05-03-PLAN.md — Attach path context descriptions to BM25, vector, and hybrid search results (CTX-03)
@@ -143,6 +172,7 @@ Plans:
 **Depends on**: Phase 5
 **Requirements**: DOC-01, DOC-02, DOC-03, DOC-04, DOC-05, DOC-06, DOC-07
 **Success Criteria** (what must be TRUE):
+
   1. `docs/cli-reference.md` accurately describes every current Click command, subcommand, argument, and option
   2. `docs/configuration.md` documents every `Settings` field with correct default value
   3. Every shell command example in `docs/quickstart.md` executes successfully
@@ -150,9 +180,11 @@ Plans:
   5. Technical docs (`mcp-server.md`, `search-algorithms.md`, `architecture.md`, `models.md`) are up-to-date
   6. All code examples in docs are executed or syntax-checked
   7. Docs test infrastructure exists (`tests/test_docs.py`, `make docs-test`, GitHub Actions CI)
+
 **Plans:** 7 plans
 
 Plans:
+
 - [x] 06-01-PLAN.md — Auto-generate CLI reference from Click --help
 - [x] 06-02-PLAN.md — Introspect Settings class and validate configuration.md
 - [x] 06-03-PLAN.md — Execute and validate quickstart.md code examples
@@ -167,11 +199,14 @@ Plans:
 **Depends on**: Phase 6
 **Requirements**: TBD
 **Success Criteria** (what must be TRUE):
+
   1. `docsift-search` skill allows Claude to search the user's document index
   2. `docsift-get` skill allows Claude to retrieve document content by path or pattern
+
 **Plans:** 2 plans
 
 Plans:
+
 - [x] 07-01-PLAN.md — Create docsift-search skill for search commands
 - [x] 07-02-PLAN.md — Create docsift-get skill for document retrieval
 
@@ -181,6 +216,7 @@ Plans:
 **Depends on**: Phase 7
 **Requirements**: TBD
 **Success Criteria** (what must be TRUE):
+
   1. Python package directory is `src/sif/` (not `src/docsift/`)
   2. CLI command is `sif` (not `docsift`)
   3. Environment variable prefix is `SIF_` (not `DOCSIFT_`)
@@ -191,9 +227,11 @@ Plans:
   8. pyproject.toml uses `sif` for package name, scripts, and tool configs
   9. Model cache auto-migrates from old docsift path on first CLI run
   10. Full test suite passes after rename
+
 **Plans:** 8/8 plans executed
 
 Plans:
+
 - [x] 08-01-PLAN.md — Rename src/docsift/ to src/sif/ and update pyproject.toml
 - [x] 08-02-PLAN.md — Update constants.py, metadata files, and add model cache migration to CLI
 - [x] 08-03-PLAN.md — Update all Python imports in src/sif/ from docsift to sif
@@ -209,25 +247,31 @@ Plans:
 **Depends on**: Phase 8
 **Requirements**: MCP-01, MCP-02, MCP-03, MCP-04
 **Success Criteria** (what must be TRUE):
+
   1. A single unified MCP implementation exists (legacy `mcp/` and refactored `mcp_server/` are consolidated)
   2. MCP tools (`query`, `get`, `multi_get`, `status`) execute real searches against the SQLite index, not mock data
   3. stdio transport works for CLI integration (e.g., Claude Desktop, Cline)
   4. HTTP transport works for remote access with FastAPI and SSE
   5. CORS defaults are secure (non-`*`) in HTTP mode
   6. Full test suite passes including MCP integration tests
+
 **Plans:** 6 plans
 
 Plans:
 **Wave 1**
+
 - [x] 09-01-PLAN.md — Unify dual MCP implementations into a single `mcp/` package (MCP-01)
 
 **Wave 2** *(blocked on Wave 1 completion)*
+
 - [x] 09-02-PLAN.md — Implement real SearchBackend connecting to Database + Searchers (MCP-02)
 - [x] 09-03-PLAN.md — Implement MCP tool handlers (query, get, multi_get, status) with real search (MCP-02)
 
 **Wave 3** *(blocked on Wave 2 completion)*
+
 - [x] 09-04-PLAN.md — Implement stdio transport with proper MCP protocol (MCP-03)
 - [x] 09-05-PLAN.md — Implement HTTP transport with FastAPI, Streamable HTTP, and secure CORS defaults (MCP-03, MCP-04)
 
 **Wave 4** *(blocked on Wave 3 completion)*
+
 - [x] 09-06-PLAN.md — Write MCP integration tests and run full quality suite (MCP-01, MCP-02, MCP-03, MCP-04)
