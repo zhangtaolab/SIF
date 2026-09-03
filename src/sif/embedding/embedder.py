@@ -261,6 +261,92 @@ class ModelScopeEmbedder(Embedder):
         return self._dimension
 
 
+class OpenAIEmbedder(Embedder):
+    """Embedder using an OpenAI-compatible embeddings API."""
+
+    def __init__(  # noqa: PLR0913
+        self,
+        model_name: str = "text-embedding-3-small",
+        api_key: str | None = None,
+        api_base: str | None = None,
+        embedding_dim: int | None = None,
+        cache_dir: str | None = None,
+        batch_size: int = 64,
+    ) -> None:
+        """Initialize an OpenAI-compatible embedder.
+
+        Args:
+            model_name: Model name as the endpoint knows it.
+            api_key: API key; passed only to the client constructor and never
+                logged or embedded in exception messages.
+            api_base: Base URL of an OpenAI-compatible endpoint; the SDK
+                appends the /embeddings path. None uses the SDK default.
+            embedding_dim: Caller-supplied embedding dimension. When None the
+                dimension is detected from the endpoint via a minimal probe.
+            cache_dir: Reserved for endpoint dimension caching.
+            batch_size: Number of texts per embeddings.create request.
+        """
+        try:
+            from openai import OpenAI  # noqa: PLC0415
+        except ImportError:
+            logger.error(
+                "openai not installed. Install with: pip install sif[openai]",
+            )
+            raise
+
+        self.model_name = model_name
+        self._batch_size = batch_size
+        self._cache_dir = cache_dir
+        self._client = OpenAI(api_key=api_key, base_url=api_base)
+
+        if embedding_dim is not None:
+            self._dimension = embedding_dim
+        else:
+            self._dimension = self._probe_dimension()
+
+        logger.info(f"OpenAI embedder ready: {model_name} (dim={self._dimension})")
+
+    def _probe_dimension(self) -> int:
+        """Detect the embedding dimension with a minimal probe request."""
+        response = self._client.embeddings.create(input=["."], model=self.model_name)
+        return len(response.data[0].embedding)
+
+    def embed(self, text: str) -> list[float]:
+        """Embed a single text."""
+        response = self._client.embeddings.create(input=[text], model=self.model_name)
+        return self._normalize(response.data[0].embedding)
+
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        """Embed multiple texts, one API call per batch_size slice."""
+        if not texts:
+            return []
+        embeddings: list[list[float]] = []
+        for start in range(0, len(texts), self._batch_size):
+            batch = texts[start : start + self._batch_size]
+            response = self._client.embeddings.create(input=batch, model=self.model_name)
+            if len(response.data) != len(batch):
+                raise RuntimeError(
+                    f"Embedding model '{self.model_name}' returned a ragged response: "
+                    f"expected {len(batch)} embeddings, got {len(response.data)}"
+                )
+            embeddings.extend(self._normalize(item.embedding) for item in response.data)
+        return embeddings
+
+    @staticmethod
+    def _normalize(vector: list[float]) -> list[float]:
+        """L2-normalize a vector, consistent with the local backends."""
+        arr = np.asarray(vector, dtype=float)
+        norm = np.linalg.norm(arr)
+        if norm > 0:
+            arr = arr / norm
+        return arr.tolist()
+
+    @property
+    def dimension(self) -> int:
+        """Get embedding dimension."""
+        return self._dimension
+
+
 class SimpleEmbedder(Embedder):
     """Simple embedder using TF-IDF (fallback when no ML models available)."""
 
