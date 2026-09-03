@@ -15,8 +15,9 @@ class EmbeddingCache:
     """Cache for embeddings to avoid recomputation.
 
     Uses SQLite for persistent storage of embeddings keyed by
-    content hash. This allows embeddings to be reused across
-    application restarts.
+    content hash and model identifier. This allows embeddings to be
+    reused across application restarts while keeping each model's
+    vectors in a separate segment.
     """
 
     def __init__(self, cache_dir: Path | str) -> None:
@@ -35,12 +36,26 @@ class EmbeddingCache:
         """Initialize the cache database."""
         conn = sqlite3.connect(self._db_path)
         try:
+            # Legacy caches keyed the table by content hash alone, so one
+            # model's entry replaced another's for the same text. Rebuild
+            # such tables; cached entries simply re-embed on demand.
+            cursor = conn.execute(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='embeddings'"
+            )
+            row = cursor.fetchone()
+            if row:
+                sql = " ".join((row[0] or "").lower().split())
+                if "primary key (content_hash, model_id)" not in sql:
+                    logger.info("Rebuilding embedding cache with per-model segmentation")
+                    conn.execute("DROP TABLE embeddings")
+
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS embeddings (
-                    content_hash TEXT PRIMARY KEY,
+                    content_hash TEXT NOT NULL,
                     embedding TEXT NOT NULL,
                     model_id TEXT NOT NULL,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (content_hash, model_id)
                 )
             """)
 

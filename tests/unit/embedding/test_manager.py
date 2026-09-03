@@ -1,8 +1,10 @@
 """Unit tests for EmbeddingManager."""
 
+from pathlib import Path
 from unittest.mock import MagicMock
 
 from sif.config.settings import Settings
+from sif.embedding.cache import EmbeddingCache
 from sif.embedding.manager import EmbeddingManager
 from sif.models.embedding import EmbeddingConfig, ModelType
 
@@ -21,6 +23,44 @@ class TestEmbeddingManager:
         assert manager._config.api_key == "sk-test"
         assert manager._config.api_base == "https://api.example.com/v1"
         assert manager._config.embedding_dim == 256
+
+    def test_cache_is_segmented_by_model(self, tmp_path: Path) -> None:
+        """Same text under two models must not share cached embeddings."""
+        cache = EmbeddingCache(tmp_path)
+
+        def make_manager(model_name: str) -> tuple[EmbeddingManager, MagicMock]:
+            mock_embedder = MagicMock()
+            mock_embedder.embed_batch.return_value = [[0.1, 0.2]]
+            mock_embedder.dimension = 2
+            mock_factory = MagicMock()
+            mock_factory.create_model.return_value = mock_embedder
+            config = EmbeddingConfig(
+                model_type=ModelType.SENTENCE_TRANSFORMERS,
+                model_name=model_name,
+                cache_embeddings=True,
+                cache_dir=str(tmp_path),
+            )
+            return (
+                EmbeddingManager(config=config, factory=mock_factory, cache=cache),
+                mock_embedder,
+            )
+
+        manager_a, embedder_a = make_manager("model-a")
+        response_a = manager_a.embed(["hello"])
+        embedder_a.embed_batch.assert_called_once_with(["hello"])
+        assert response_a.embeddings == [[0.1, 0.2]]
+
+        # A different model reading the same text must miss the shared bucket.
+        manager_b, embedder_b = make_manager("model-b")
+        response_b = manager_b.embed(["hello"])
+        embedder_b.embed_batch.assert_called_once_with(["hello"])
+        assert response_b.embeddings == [[0.1, 0.2]]
+
+        # The same model re-embedding must hit the cache (no backend call).
+        manager_a2, embedder_a2 = make_manager("model-a")
+        response_a2 = manager_a2.embed(["hello"])
+        embedder_a2.embed_batch.assert_not_called()
+        assert response_a2.embeddings == [[0.1, 0.2]]
 
     def test_load_model_uses_factory(self) -> None:
         mock_embedder = MagicMock()

@@ -119,13 +119,20 @@ class EmbeddingManager:
 
         start_time = time.time()
 
+        # Cache bucket must identify the actual model: different backends /
+        # model names produce incompatible vectors for the same text, so they
+        # must never read each other's cached embeddings.
+        model_id = f"{self._config.model_type.value}:{self._config.model_name}"
+        if self._config.api_base:
+            model_id = f"{model_id}@{self._config.api_base}"
+
         # Check cache for cached embeddings
         embeddings: list[list[float] | None] = [None] * len(texts)
         texts_to_embed: list[tuple[int, str]] = []
 
         if use_cache and self._cache:
             for i, text in enumerate(texts):
-                cached = self._cache.get(text)
+                cached = self._cache.get(text, model_id=model_id)
                 if cached is not None:
                     embeddings[i] = cached
                 else:
@@ -141,7 +148,7 @@ class EmbeddingManager:
             # Store in cache
             if use_cache and self._cache:
                 for _idx, text, emb in zip(indices, to_embed, new_embeddings):
-                    self._cache.set(text, emb)
+                    self._cache.set(text, emb, model_id=model_id)
 
             # Fill in results
             for idx, emb in zip(indices, new_embeddings):
