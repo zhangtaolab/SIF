@@ -118,55 +118,94 @@ class EmbeddingManager:
         self.load_model()
 
         start_time = time.time()
-
-        # Cache bucket must identify the actual model: different backends /
-        # model names produce incompatible vectors for the same text, so they
-        # must never read each other's cached embeddings.
-        model_id = f"{self._config.model_type.value}:{self._config.model_name}"
-        if self._config.api_base:
-            model_id = f"{model_id}@{self._config.api_base}"
-
-        # Check cache for cached embeddings
-        embeddings: list[list[float] | None] = [None] * len(texts)
-        texts_to_embed: list[tuple[int, str]] = []
-
-        if use_cache and self._cache:
-            for i, text in enumerate(texts):
-                cached = self._cache.get(text, model_id=model_id)
-                if cached is not None:
-                    embeddings[i] = cached
-                else:
-                    texts_to_embed.append((i, text))
-        else:
-            texts_to_embed = list(enumerate(texts))
-
-        # Generate embeddings for uncached texts
-        if texts_to_embed and self._model:
-            indices, to_embed = zip(*texts_to_embed, strict=True)
-            new_embeddings = self._model.embed_batch(list(to_embed))
-
-            # Store in cache
-            if use_cache and self._cache:
-                for _idx, text, emb in zip(indices, to_embed, new_embeddings, strict=True):
-                    self._cache.set(text, emb, model_id=model_id)
-
-            # Fill in results
-            for idx, emb in zip(indices, new_embeddings, strict=True):
-                embeddings[idx] = emb
-
+        embeddings = self._compute_embeddings(texts, use_cache)
         processing_time = (time.time() - start_time) * 1000
 
         # Count tokens (rough estimate)
         total_tokens = sum(len(t) // 4 for t in texts)
 
         actual_dim = self._model.dimension if self._model else self._config.embedding_dim
+
+        # Guard the 1:1 texts<->embeddings contract: silently dropping
+        # unfilled slots would misalign chunk->vector associations upstream.
+        result_embeddings = [e for e in embeddings if e is not None]
+        if len(result_embeddings) != len(texts):
+            raise RuntimeError(
+                f"Embedding model returned {len(result_embeddings)} embeddings for "
+                f"{len(texts)} inputs"
+            )
+
         return EmbeddingResponse(
-            embeddings=[e for e in embeddings if e is not None],
+            embeddings=result_embeddings,
             model_id=self._config.model_name,
             dimensions=actual_dim,
             total_tokens=total_tokens,
             processing_time_ms=processing_time,
         )
+
+    def _cache_model_id(self) -> str:
+        """Build the cache bucket identifier for the configured model.
+
+        The bucket must identify the actual model: different backends /
+        model names produce incompatible vectors for the same text, so they
+        must never read each other's cached embeddings.
+        """
+        model_id = f"{self._config.model_type.value}:{self._config.model_name}"
+        if self._config.api_base:
+            model_id = f"{model_id}@{self._config.api_base}"
+        return model_id
+
+    def _lookup_cached(
+        self,
+        texts: list[str],
+        embeddings: list[list[float] | None],
+        use_cache: bool,
+    ) -> list[tuple[int, str]]:
+        """Fill embeddings from the cache; return (index, text) pairs left to embed."""
+        if not (use_cache and self._cache):
+            return list(enumerate(texts))
+
+        model_id = self._cache_model_id()
+        texts_to_embed: list[tuple[int, str]] = []
+        for i, text in enumerate(texts):
+            cached = self._cache.get(text, model_id=model_id)
+            if cached is not None:
+                embeddings[i] = cached
+            else:
+                texts_to_embed.append((i, text))
+        return texts_to_embed
+
+    def _compute_embeddings(
+        self,
+        texts: list[str],
+        use_cache: bool,
+    ) -> list[list[float] | None]:
+        """Produce one embedding slot per text, using the cache when allowed."""
+        assert self._model is not None  # guaranteed by load_model() in embed()
+        embeddings: list[list[float] | None] = [None] * len(texts)
+        texts_to_embed = self._lookup_cached(texts, embeddings, use_cache)
+        if not texts_to_embed:
+            return embeddings
+
+        indices, to_embed = zip(*texts_to_embed, strict=True)
+        new_embeddings = self._model.embed_batch(list(to_embed))
+        if len(new_embeddings) != len(to_embed):
+            raise RuntimeError(
+                f"Embedding model returned {len(new_embeddings)} embeddings for "
+                f"{len(to_embed)} inputs"
+            )
+
+        # Store in cache
+        if use_cache and self._cache:
+            model_id = self._cache_model_id()
+            for _idx, text, emb in zip(indices, to_embed, new_embeddings, strict=True):
+                self._cache.set(text, emb, model_id=model_id)
+
+        # Fill in results
+        for idx, emb in zip(indices, new_embeddings, strict=True):
+            embeddings[idx] = emb
+
+        return embeddings
 
     def embed_single(
         self,

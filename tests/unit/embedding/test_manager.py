@@ -3,6 +3,8 @@
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
+
 from sif.config.settings import Settings
 from sif.embedding.cache import EmbeddingCache
 from sif.embedding.manager import EmbeddingManager
@@ -107,6 +109,18 @@ class TestEmbeddingManager:
         manager = EmbeddingManager(config=config, factory=mock_factory)
         result = manager.embed_single("hello")
         assert result == [0.1, 0.2]
+
+    def test_embed_fails_fast_on_short_backend_response(self) -> None:
+        """A backend returning fewer vectors than inputs must fail fast."""
+        mock_embedder = MagicMock()
+        mock_embedder.embed_batch.return_value = [[0.1, 0.2]]  # 1 vector for 2 texts
+        mock_embedder.dimension = 2
+        mock_factory = MagicMock()
+        mock_factory.create_model.return_value = mock_embedder
+        config = EmbeddingConfig(model_type=ModelType.SENTENCE_TRANSFORMERS, model_name="test")
+        manager = EmbeddingManager(config=config, factory=mock_factory)
+        with pytest.raises(RuntimeError, match="1 embeddings for 2 inputs"):
+            manager.embed(["hello", "world"])
 
     def test_unload_model_clears_reference(self) -> None:
         mock_embedder = MagicMock()
