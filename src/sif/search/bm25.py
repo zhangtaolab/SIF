@@ -3,12 +3,32 @@
 from __future__ import annotations
 
 import os
+import re
 import sqlite3
 
 from sif.core.models import SearchOptions, SearchResult
 
 
 _SNIPPET_MAX_LEN = 200
+
+# Characters with special meaning in FTS5 MATCH expressions; they cannot be
+# escaped, so they are stripped from user tokens before quoting.
+_FTS_METACHARS = re.compile(r'["*():^]')
+
+
+def _sanitize_term(term: str) -> str:
+    """Sanitize a raw query token into a safe FTS5 phrase.
+
+    Metacharacters are replaced with spaces (the tokenizer then treats the
+    remainder as plain phrase text) and the result is wrapped in double
+    quotes so the token is matched literally instead of being parsed as
+    FTS5 query syntax. A trailing ``*`` outside the quotes keeps prefix
+    matching. Returns an empty string for tokens with nothing left.
+    """
+    cleaned = _FTS_METACHARS.sub(" ", term).strip()
+    if not cleaned:
+        return ""
+    return f'"{cleaned}"*'
 
 
 class BM25Searcher:
@@ -141,24 +161,18 @@ class BM25Searcher:
         return results
 
     def _build_fts_query(self, query: str) -> str:
-        """Build FTS5 query from user query.
+        """Build a safe FTS5 query from raw user input.
 
-        Handles:
-        - Multiple terms (AND search)
-        - Phrases (quoted strings)
-        - Prefix search (term*)
+        Each whitespace-separated token is sanitized into a quoted prefix
+        phrase and tokens are joined with AND, so ordinary input like
+        ``e-mail``, ``don't``, or ``c++`` cannot be parsed as FTS5 query
+        syntax. A query with no usable terms yields an empty phrase, which
+        matches nothing instead of raising sqlite3.OperationalError.
         """
-        # Simple implementation: just join terms with AND
-        terms = query.split()
+        terms = [t for t in (_sanitize_term(tok) for tok in query.split()) if t]
         if not terms:
-            return "*"
-
-        # Use NEAR for better relevance
-        if len(terms) == 1:
-            return f"{terms[0]}*"
-
-        # For multiple terms, use AND
-        return " AND ".join(f"{term}*" for term in terms)
+            return '""'
+        return " AND ".join(terms)
 
     def _get_document_content(self, document_id: str) -> str | None:
         """Get document content."""
