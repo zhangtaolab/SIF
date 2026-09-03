@@ -1,10 +1,38 @@
 """Tests for index CLI commands."""
 
+import types
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 
 from sif.cli.commands.index import embed_cmd
+from sif.config.settings import Settings
+
+
+def _fake_openai_module(dim=8):
+    """Build a fake openai module recording embeddings.create calls."""
+    create_calls = []
+    constructor_calls = []
+    vec = [0.5] * dim
+
+    class _FakeEmbeddings:
+        def create(self, **kwargs):
+            create_calls.append(kwargs)
+            texts = list(kwargs["input"])
+            return SimpleNamespace(data=[SimpleNamespace(embedding=list(vec)) for _ in texts])
+
+    class _FakeClient:
+        def __init__(self):
+            self.embeddings = _FakeEmbeddings()
+
+    def _openai(**kwargs):
+        constructor_calls.append(kwargs)
+        return _FakeClient()
+
+    module = types.ModuleType("openai")
+    module.OpenAI = _openai
+    return module, create_calls
 
 
 class TestEmbedCommand:
@@ -232,3 +260,71 @@ class TestEmbedCommand:
 
         assert result.exit_code == 0
         assert captured_updates["model_type"] == "openai"
+
+    def test_embed_cmd_openai_model_type_reaches_endpoint(self):
+        """embed_cmd --model-type openai embeds via real manager + fake endpoint."""
+        runner = CliRunner()
+
+        coll = self._make_collection()
+        doc = self._make_document(content="hello world")
+
+        mock_coll_repo = MagicMock()
+        mock_coll_repo.list_all.return_value = [coll]
+
+        mock_doc_repo = MagicMock()
+        mock_doc_repo.list_by_collection.return_value = [doc]
+
+        mock_chunk_repo = MagicMock()
+
+        # Real settings; base model_type deliberately differs so the test
+        # proves the --model-type flag switches the backend to openai.
+        real_settings = Settings(
+            model_type="modelscope",
+            model_name="test-embed-model",
+            api_key="test-key",
+            api_base="https://api.example.com/v1",
+            cache_embeddings=False,
+            embedding_dim=8,
+        )
+
+        fake_module, create_calls = _fake_openai_module()
+
+        with (
+            patch("sif.cli.commands.index.Database", return_value=MagicMock()),
+            patch(
+                "sif.cli.commands.index.CollectionRepository",
+                return_value=mock_coll_repo,
+            ),
+            patch(
+                "sif.cli.commands.index.DocumentRepository",
+                return_value=mock_doc_repo,
+            ),
+            patch(
+                "sif.cli.commands.index.DocumentChunkRepository",
+                return_value=mock_chunk_repo,
+            ),
+            patch(
+                "sif.cli.commands.index.create_chunker",
+                return_value=MagicMock(chunk=lambda text: [MagicMock(content=text, id="c1")]),
+            ),
+            patch(
+                "sif.config.settings.get_settings",
+                return_value=real_settings,
+            ),
+            patch(
+                "sif.search.vector.VectorSearcher",
+                return_value=MagicMock(),
+            ),
+            patch.dict("sys.modules", {"openai": fake_module}),
+        ):
+            result = runner.invoke(
+                embed_cmd,
+                ["--model-type", "openai"],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code == 0
+        assert "Failed to load embedding model" not in result.output
+        assert "Error embedding collection" not in result.output
+        recorded_models = {c["model"] for c in create_calls}
+        assert "test-embed-model" in recorded_models
