@@ -1,203 +1,254 @@
 ---
 phase: 03-embedding-vector-search
-reviewed: 2026-09-03T00:51:00Z
+reviewed: 2026-09-03T04:02:30Z
 depth: standard
-files_reviewed: 12
+files_reviewed: 15
 files_reviewed_list:
+  - pyproject.toml
   - src/sif/config/settings.py
   - src/sif/embedding/embedder.py
   - src/sif/embedding/factory.py
   - src/sif/embedding/manager.py
   - src/sif/models/embedding.py
+  - tests/integration/test_search_pipeline.py
+  - tests/unit/cli/test_index.py
   - tests/unit/config/test_settings.py
+  - tests/unit/embedding/test_factory.py
   - tests/unit/embedding/test_manager.py
-  - tests/unit/embedding/test_embedder_impl.py
+  - tests/unit/embedding/test_openai_embedder.py
   - tests/unit/search/test_bm25.py
   - tests/unit/search/test_hybrid.py
   - tests/unit/search/test_vector.py
-  - tests/integration/test_search_pipeline.py
 findings:
   critical: 3
-  warning: 10
-  info: 6
-  total: 19
+  warning: 11
+  info: 7
+  total: 21
 status: issues_found
 ---
 
 # Phase 03: Code Review Report
 
-**Reviewed:** 2026-09-03T00:51:00Z
+**Reviewed:** 2026-09-03T04:02:30Z
 **Depth:** standard
-**Files Reviewed:** 12
+**Files Reviewed:** 15
 **Status:** issues_found
 
 ## Summary
 
-Reviewed the Phase 03 embedding/vector-search surface: Settings, embedder implementations, factory, manager, embedding models, and their unit/integration tests. Cross-referenced every import against its dependency module (`sif.embedding.model`, `sif.embedding.cache`, `sif.models.download`, `sif.core.models`, `sif.search.{bm25,vector,hybrid,rrf}`).
+Fresh re-review after gap-closure plan 03-07 (OpenAI embedding backend). The 03-07 work itself is solid: `OpenAIEmbedder` follows the lazy-import pattern with the `sif[openai]` install hint, `api_key` is passed only to the `OpenAI(...)` constructor and never logged or interpolated inside the new code, `embed_batch` validates response length per slice and raises before any cache write, the dimension mismatch error names both values plus `SIF_EMBEDDING_DIM`, the factory wiring is correct, and the new tests (fake `openai` module, dispatch matrix, CLI end-to-end tracer) are well constructed. All 192 in-scope tests pass and ruff is clean on the in-scope files.
 
-All 106 tests in the reviewed test files pass, but empirical verification (real sqlite-vec round-trip, pydantic 2.13 repr behavior, mypy with the project's own `python_version = "3.9"`, real FTS5 query execution) exposed three critical defects that the mocked tests cannot catch:
+However, three blockers remain — two carried over from the previous review and unfixed, one environmental consequence of them — and the new OpenAI backend materially aggravates the first: the embedding cache is not segmented by model, so switching between the newly-supported backends silently serves stale wrong-model (wrong-dimension) vectors under default settings. Empirically verified issues: FTS5 crashes on common user queries (`e-mail`, `don't`, `c++`), `repr(EmbeddingConfig(...))` leaks `api_key` while `settings.model_dump()` leaks it the opposite way, and the declared Python 3.9 support is broken at import time. Additional warnings cover the MCP path that 03-07 did not wire (SIF_API_KEY dead-ends there), dead configuration plumbing (`batch_size`), response-order assumptions, and test side effects on the developer's home directory.
 
-1. The embedding cache is keyed `"default"` for every model, so switching embedding models silently serves stale vectors from the old model into the index.
-2. The package declares `requires-python = ">=3.9"` while the reviewed modules use PEP 604 `X | Y` annotations evaluated eagerly — `import sif` crashes outright on Python 3.9.
-3. The BM25 FTS query is built from raw user input with no escaping; common queries (`C++`, `a-b`, an unbalanced quote, a trailing `AND`) raise `sqlite3.OperationalError`, unhandled in the CLI.
-
-Additionally, the project's own quality gate is failing: `mypy src/sif` reports 76 errors in the embedding/config modules alone, including the return-type fabrications in `factory.py`.
+Findings marked with cross-references were discovered while tracing the reviewed files' imports/callers; the primary defect location is cited first.
 
 ## Critical Issues
 
-### CR-01: Embedding cache is not segmented by model — stale cross-model embeddings silently served
+### CR-01: Embedding cache is not segmented by model — switching backends silently serves stale wrong-model embeddings
 
-**File:** `src/sif/embedding/manager.py:128,143-144`
-**Issue:** `EmbeddingManager.embed()` calls `self._cache.get(text)` and `self._cache.set(text, emb)` without the `model_id` argument. `EmbeddingCache` (src/sif/embedding/cache.py:68, 97-101) supports per-model segmentation (`model_id: str = "default"`), but the manager hardcodes `"default"` for every model. Since `cache_embeddings` defaults to `True` (settings.py:146-149) and `from_settings()` always wires a cache, any switch of `SIF_MODEL_NAME` / `SIF_MODEL_TYPE` makes the manager return cached embeddings computed by the *previous* model for any unchanged chunk text — wrong dimension and wrong semantic space. The response then reports `dimensions = self._model.dimension` (manager.py:155), actively misdescribing the returned vectors. The indexer (src/sif/indexing/indexer.py:200-212) and `sif index embed` (src/sif/cli/commands/index.py:260-274) consume these directly, so the vector index is silently populated with embeddings from a different model. No test covers cache/model interplay.
+**File:** `src/sif/embedding/manager.py:128,143-144` (cross-ref `src/sif/embedding/cache.py:68,97`)
+**Issue:** `EmbeddingCache.get()`/`set()` accept a `model_id` parameter documented as "Model identifier for cache segmentation", but `EmbeddingManager.embed()` never passes it — every model reads and writes the `"default"` bucket, keyed only by content hash. Plan 03-07 makes this acute: with default settings (`cache_embeddings=True`, cache dir `~/.Caches/SIF`), a user who embeds with one backend (e.g. modelscope/Qwen, 1024-dim) and then runs `sif index embed --model-type openai` gets the old model's cached vectors returned for every previously-seen chunk text — no API call, no error. Depending on whether `"probe"` (`src/sif/cli/commands/index.py:272`, which routes through the same cache) is also cached, this either silently poisons the vector index with semantically meaningless vectors from the wrong model, or fails with a confusing sqlite-vec dimension error. `EmbeddingResponse.dimensions` reports the *new* model's dimension while the embeddings carry the *old* model's — an internally inconsistent response. There is no TTL on this cache, so the poisoning is permanent until the user manually deletes the DB.
 **Fix:**
 ```python
-# manager.py — pass the model identity to every cache call
-cached = self._cache.get(text, model_id=self._config.model_name)
+# src/sif/embedding/manager.py (embed method)
+model_id = self._config.model_name
 ...
-self._cache.set(text, emb, model_id=self._config.model_name)
+cached = self._cache.get(text, model_id=model_id)
+...
+self._cache.set(text, emb, model_id=model_id)
+```
+(Consider including `model_type`/dimension in the key as well, and add a regression test that embeds the same text under two models and asserts both miss the shared bucket.)
+
+### CR-02: BM25 FTS5 query built from raw user input — common queries crash with unhandled `sqlite3.OperationalError`
+
+**File:** `src/sif/search/bm25.py:143-161` (`_build_fts_query`; pinned by `tests/unit/search/test_bm25.py:251-267` which only covers the happy path)
+**Issue:** `_build_fts_query` interpolates raw whitespace-split tokens into an FTS5 `MATCH` expression with no escaping. Verified empirically against a real FTS5 table:
+
+```
+'e-mail'  -> 'e-mail*'   OperationalError: no such column: mail
+"c++"     -> 'c++*'      OperationalError: fts5: syntax error near "+"
+"don't"   -> "don't*"    OperationalError: fts5: syntax error near "'"
+'foo:bar' -> 'foo:bar*'  OperationalError: no such column: foo
+'(paren)' -> '(paren)*'  OperationalError: fts5: syntax error near "*"
+'a AND'   -> 'a* AND AND*' OperationalError: fts5: syntax error near "AND"
+'"quote'  -> '"quote*'   OperationalError: unterminated string
 ```
 
-### CR-02: Declared Python 3.9 support is broken — modules crash on import under 3.9
-
-**File:** `src/sif/config/settings.py:32-41`, `src/sif/models/embedding.py:22-40`, `src/sif/embedding/manager.py:28-30`, `src/sif/embedding/factory.py:21-23`
-**Issue:** `pyproject.toml` declares `requires-python = ">=3.9"` and mypy is configured with `python_version = "3.9"`, but these four reviewed modules use PEP 604 union syntax (`str | None`, `Path | None`, `EmbeddingConfig | None`) **without** `from __future__ import annotations` (only `embedder.py` has it). Annotations in class bodies and function signatures are evaluated eagerly, and `X | Y` requires Python 3.10 — so on a real 3.9 interpreter `import sif.config.settings` raises `TypeError: unsupported operand type(s) for |` before any code runs. The package will pip-install on 3.9 (metadata allows it) and then be unusable. Running the project's own gate confirms it: `mypy` reports 76 errors in these modules, including repeated `X | Y syntax for unions requires Python 3.10 [syntax]`. CLAUDE.md's "Target Python 3.9+; use `list[str] | None` union syntax" is self-contradictory and the code picked the 3.10-only half. (Adding `from __future__ import annotations` is not sufficient: pydantic must resolve these annotations at runtime for `Settings`/`EmbeddingConfig`, which still fails on 3.9.)
-**Fix:**
-```toml
-# pyproject.toml — make metadata match reality
-requires-python = ">=3.10"
-```
-(and update CLAUDE.md; alternatively keep 3.9 by converting every union to `Optional[...]`/`Union[...]` across the evaluated-annotation modules, which is a much larger change).
-
-### CR-03: BM25 FTS5 query built from raw user input — search crashes on common queries, unhandled in CLI
-
-**File:** `tests/unit/search/test_bm25.py:251-267` (pins the contract); defect in `src/sif/search/bm25.py:143-161` (`_build_fts_query`, cross-referenced)
-**Issue:** `_build_fts_query` interpolates raw query terms into FTS5 MATCH syntax (`f"{term}*"`). Verified against a real FTS5 table: `sif search "C++"` → `fts5: syntax error near "+"`; `"hello \"world"` → `unterminated string`; `"foo AND"` → `fts5: syntax error near "AND"`; `"a-b"` → `no such column: b`. These are ordinary queries for a knowledge-base tool (hyphenated filenames, quoted phrases, boolean-looking words). `BM25Searcher.search` is invoked with no try/except in the CLI (src/sif/cli/commands/search.py:158-160), so users get an unhandled `sqlite3.OperationalError` traceback. The reviewed tests only assert the naive happy path (`"hello*"` / `"hello* AND world*"`), locking in the unescaped behavior with zero negative cases.
-**Fix:** Quote each term as an FTS5 phrase before appending the prefix operator, and strip embedded quotes:
+Hyphenated words and apostrophes are ordinary search input for a personal knowledge base. The exception propagates uncaught through `HybridSearcher.search` → `SearchPipeline.search` → `pipeline.search(query, options)` at `src/sif/cli/commands/search.py:505` (no surrounding try/except), so `sif search don't` terminates with a raw traceback instead of results. The docstring also claims phrase/quoted-string handling that does not exist.
+**Fix:** Sanitize each token before building the expression — strip FTS5 metacharacters and wrap tokens in double quotes, e.g.:
 ```python
+import re
+
+def _sanitize_term(term: str) -> str:
+    # Remove FTS5 metacharacters; keep word characters, digits, and internal -/_/'.
+    cleaned = re.sub(r"""["*():^]""", "", term)
+    return f'"{cleaned}"' if cleaned else ""
+
 def _build_fts_query(self, query: str) -> str:
-    terms = [t.replace('"', "") for t in query.split() if t.replace('"', "")]
+    terms = [t for t in (self._sanitize_term(tok) for tok in query.split()) if t]
     if not terms:
         return "*"
-    return " AND ".join(f'"{term}"*' for term in terms)
+    return " AND ".join(terms)
 ```
-Add tests for `"C++"`, `"a-b"`, unbalanced quotes, and trailing boolean words.
+(Decide deliberately whether prefix `*` is kept — if kept, append `*` outside the closing quote is invalid; quote-wrapped phrases without `*` are the safe form. Also add tests for the crashing inputs above, and consider catching `sqlite3.OperationalError` at the CLI boundary to degrade gracefully.)
+
+### CR-03: Declared Python 3.9 support is broken — modules crash on import under 3.9
+
+**File:** `pyproject.toml:11,21-24` (`requires-python = ">=3.9"` + 3.9 classifier); `src/sif/config/settings.py:32`, `src/sif/models/embedding.py:22-40`, `src/sif/embedding/manager.py:28-30`, `src/sif/embedding/factory.py:24-27`
+**Issue:** These reviewed modules use PEP 604 unions (`Path | None`, `str | None`, `EmbeddingConfig | None`) in eagerly-evaluated annotation positions *without* `from __future__ import annotations` (only `embedder.py` has it — and even there, pydantic resolves annotations via `get_type_hints`, which re-evaluates the strings and still fails on 3.9). On Python 3.9, `import sif.config.settings` raises `TypeError: unsupported operand type(s) for |` at class-definition time, so the package installs (pip honors `>=3.9`) but is unusable. The project's own tooling confirms the fiction: `[tool.mypy] python_version = "3.9"` cannot even type-check the installed `sentence_transformers`/`huggingface_hub` dependencies (verified: `mypy src/sif` aborts with "Pattern matching is only supported in Python 3.10 and greater"). CLAUDE.md's style rule ("Target Python 3.9+; use `list[str] | None` union syntax") is internally contradictory. Note the previous review flagged this and it was not addressed by 03-07, which added more `str | None`/`int | None` annotations to `embedder.py`/`factory.py`.
+**Fix:** Either honestly bump the floor (recommended, matching what the code already assumes):
+```toml
+requires-python = ">=3.10"
+classifiers = [... "Programming Language :: Python :: 3.10", ...]  # drop 3.9
+```
+plus `[tool.mypy] python_version = "3.10"` and updating CLAUDE.md's style section; or convert all annotations in these modules to `Optional[...]`/`Union[...]` and add a 3.9 CI job to prove it.
 
 ## Warnings
 
-### WR-01: Factory return types are fabricated — returns `Embedder` impls annotated as `EmbeddingModel`
-
-**File:** `src/sif/embedding/factory.py:18-92` (cross-ref `src/sif/embedding/model.py:9-99`)
-**Issue:** `create_model(...) -> EmbeddingModel` but every branch returns `SentenceTransformerEmbedder` / `LlamaCppEmbedder` / `ModelScopeEmbedder`, which implement the `Embedder` protocol (src/sif/core/models.py:278-292) and are *not* subclasses of the `EmbeddingModel` ABC (no `load`/`unload`/`embed_single`). mypy confirms: `Incompatible return value type (got "LlamaCppEmbedder", expected "EmbeddingModel") [return-value]` (x3) and `manager.py:81: Incompatible types in assignment (expression has type "EmbeddingModel", variable has type "Embedder | None")`. The `EmbeddingModel` ABC and the duplicate `EmbeddingModelFactory` Protocol in `model.py` are parallel dead abstractions (nothing instantiates `EmbeddingModel`; the Protocol duplicates the concrete class). The `ModelType` re-export also trips mypy (`Module "sif.embedding.model" does not explicitly export attribute "ModelType"`).
-**Fix:** Annotate `create_model` and the `_create_*` helpers as `-> Embedder`; delete `sif/embedding/model.py` (or fold its `count_tokens` into the protocol) and fix the `__init__.py` re-exports.
-
-### WR-02: `**kwargs: dict[str, any]` uses the builtin `any` as a type
-
-**File:** `src/sif/embedding/factory.py:23,41,57,69,77,85`; `src/sif/embedding/model.py:113`
-**Issue:** `any` is the builtin function, not `typing.Any`. mypy: `Function "builtins.any" is not valid as a type [valid-type]` — 6 occurrences in the reviewed file. The annotation is also semantically wrong for `**kwargs` (each keyword arg isn't a `dict`). These errors contribute to the failing `mypy src/sif` gate documented in CLAUDE.md.
-**Fix:** `from typing import Any` and `**kwargs: Any`.
-
-### WR-03: `embed()` silently drops failed slots — embeddings can misalign with input texts
-
-**File:** `src/sif/embedding/manager.py:156-157`
-**Issue:** `embeddings=[e for e in embeddings if e is not None]` filters out any slot that was neither cached nor filled by `embed_batch` (e.g., a backend returning fewer vectors than texts). The response then contains fewer embeddings than input texts with no error, so position `i` no longer corresponds to `texts[i]`. Both consumers zip silently against this list (`indexer.py:203`, `cli/commands/index.py:265`), so trailing chunks get no embedding at all — silent data loss in the index instead of a loud failure.
-**Fix:**
-```python
-if any(e is None for e in embeddings):
-    raise RuntimeError(
-        f"Embedding backend returned {sum(e is None for e in embeddings)} fewer embeddings than inputs"
-    )
-```
-
-### WR-04: `normalize` parameter is accepted and documented but ignored
-
-**File:** `src/sif/embedding/manager.py:102-107,164-169`
-**Issue:** `embed(texts, normalize=True)` and `embed_single(...)` declare and document a `normalize` flag, but it is discarded (`# noqa: ARG002`) and every backend always L2-normalizes (`normalize_embeddings=True` in embedder.py:85,97-101). A caller requesting unnormalized vectors silently gets normalized ones — an API contract violation, and combined with CR-01 it means cache behavior can never be tuned either.
-**Fix:** Either plumb the flag into the backends (and into the cache key), or remove the parameter from the public signatures.
-
-### WR-05: `n_gpu_layers` and other documented settings are silently dropped by the factory
-
-**File:** `src/sif/embedding/factory.py:38-52` (cross-ref `src/sif/embedding/embedder.py:113-151`, `src/sif/config/settings.py:67-71`)
-**Issue:** `manager.load_model()` passes `embedding_dim`, `max_tokens`, `n_gpu_layers`, `n_ctx`, `api_key`, `api_base`, `cache_dir` (manager.py:81-92), but `_create_gguf_model` reads only `n_ctx`/`n_threads`/`verbose`, and `LlamaCppEmbedder.__init__` neither accepts `n_gpu_layers` nor passes it to `Llama(...)`. The documented setting "Number of GPU layers for GGUF models" therefore does nothing — a user who sets `SIF_N_GPU_LAYERS=32` gets silent CPU inference. Likewise `embedding_dim`/`max_tokens`/`api_key`/`api_base` are dropped everywhere (`api_key` will be required the moment the `openai` backend stops raising `NotImplementedError`), and `_create_modelscope_model` never forwards `force_download`. `Settings.embedding_dim` is never validated against the loaded model's actual dimension.
-**Fix:** Add `n_gpu_layers: int = 0` to `LlamaCppEmbedder.__init__` and pass `n_gpu_layers=n_gpu_layers` to `Llama(...)`; in the factory, read `n_gpu_layers=kwargs.get("n_gpu_layers", 0)`.
-
-### WR-06: `model_path` / `reranker_model_path` are not `expanduser`-ed, unlike `db_path`/`cache_dir`
-
-**File:** `src/sif/config/settings.py:171-177`
-**Issue:** The `expand_path` validator (mode="before") covers only `"db_path", "cache_dir"`. A user setting `SIF_MODEL_PATH=~/models/qwen.gguf` gets `Path("~/models/qwen.gguf")` verbatim, which does not resolve; `LlamaCppEmbedder` then fails to open the model. Same for `reranker_model_path`. The inconsistent treatment within the same Settings class makes this easy to hit.
-**Fix:** `@field_validator("db_path", "cache_dir", "model_path", "reranker_model_path", mode="before")`.
-
-### WR-07: `EmbeddingConfig.api_key` leaks in `repr()` despite `exclude=True`
+### WR-01: `EmbeddingConfig.api_key` leaks in `repr()` — violates threat T-03-01's repr requirement
 
 **File:** `src/sif/models/embedding.py:35`
-**Issue:** Verified on the project's pydantic (2.13.3): `repr(EmbeddingConfig(api_key="sk-supersecret"))` contains the secret — `exclude=True` only affects `model_dump()`, not `__repr__`. `Settings.api_key` is correctly protected with `repr=False` (settings.py:72-76) and `test_settings.py:46-50` asserts that, but the Pydantic model that actually travels through `EmbeddingManager.from_settings()` is unprotected; any debug log, traceback, or print of the config exposes the key.
-**Fix:** `api_key: str | None = Field(None, exclude=True, repr=False)`.
+**Issue:** `api_key: str | None = Field(None, exclude=True)` — in pydantic v2, `exclude` only affects `model_dump()`/`model_dump_json()`, not `repr()`. Verified empirically: `repr(EmbeddingConfig(api_key="sk-X"))` contains the key. T-03-01 (03-07 plan, threat table) requires api_key to never appear in reprs. `EmbeddingManager` carries this config on `self._config`; any future debug logging of the config object leaks the secret. `Settings.api_key` got `repr=False` — the two models are hardened in exactly opposite ways.
+**Fix:** `api_key: str | None = Field(None, exclude=True, repr=False)`
 
-### WR-08: `ModelScopeEmbedder` picks the model directory from an unsorted `glob("*")[0]`
+### WR-02: `Settings.model_dump()` includes `api_key` — serialization leak path
 
-**File:** `src/sif/embedding/embedder.py:201-207`
-**Issue:** After download, the code does `model_dirs = list(model_path.glob("*"))` and uses `model_dirs[0]` if it is a directory. `Path.glob` ordering is filesystem-dependent (not sorted, not stable), so if the snapshot directory contains any subdirectory (auxiliary exports, `onnx/`, etc.) the embedder may load that subdirectory as "the model" — a nondeterministic failure that depends on directory insertion order. The mocked tests never exercise this logic (`download.return_value = Path("/tmp/model")` doesn't exist, so glob is empty and the fallback path is taken).
-**Fix:** Look for a known marker file instead, e.g. `next((p for p in model_path.glob("*/config.json")), model_path / "config.json")` parent resolution, or `sorted(model_path.glob("*"))` plus explicit `config.json` check.
+**File:** `src/sif/config/settings.py:72-76`
+**Issue:** `Settings.api_key` has `repr=False` but not `exclude=True`. Verified empirically: `str(Settings(api_key="sk-X").model_dump())` contains the key while `repr()` does not. No current call site dumps settings, but any debug/diagnostic dump (the natural reflex when debugging configuration) exfiltrates the secret into logs.
+**Fix:** `api_key: str | None = Field(default=None, description="API key for remote embedding models", repr=False, exclude=True)` — and add a test asserting both `repr()` and `model_dump()` are clean.
 
-### WR-09: Vector tests never touch a real sqlite-vec, and the tested `chunk_id=None` contract is invalid against the real backend
+### WR-03: `EmbeddingManager.embed()` silently drops unfilled slots — embeddings can misalign with input texts
 
-**File:** `tests/unit/search/test_vector.py:51-73` (cross-ref `src/sif/search/vector.py:160-178`)
-**Issue:** All assertions are string-matches against `MagicMock` (`assert "vec_f32(?)" in sql`). `sqlite_vec` **is installed in the venv**, so a real round-trip is cheap — and when run, it disproves the tested contract: the test explicitly passes `("e2", "d2", None, [0.3, 0.4])` and asserts the batch succeeds, but a real vec0 table rejects NULL for a TEXT metadata column: `sqlite3.OperationalError: Expected text for TEXT metadata column chunk_id, received NULL` (verified). `add_embeddings_batch`'s own annotation `chunk_id: str | None` invites this. The production caller happens to pass `chunk.id`, so the bug is latent, but the unit test provides false confidence for exactly the case it claims to cover. (The SELECT path — MATCH/k with JOINs and the collection filter — does execute correctly against real sqlite-vec; only inserts with NULL fail.)
-**Fix:** Change the contract to `chunk_id: str` and coerce `None -> ""` inside `add_embeddings_batch`, and add one real-DB round-trip test: `sqlite3.connect(":memory:")` + `sqlite_vec.load(conn)` + create vec0 table + insert + search.
+**File:** `src/sif/embedding/manager.py:137-148,157`
+**Issue:** If a backend's `embed_batch` returns fewer vectors than requested (misbehaving or partially-failing local backend — the OpenAI ragged guard only protects the openai path), `zip(indices, new_embeddings)` silently truncates, the leftover `embeddings[i]` stay `None`, and the final `[e for e in embeddings if e is not None]` silently shortens the response with no error. `EmbeddingResponse` then violates the 1:1 texts↔embeddings contract, and `embed_cmd` (`src/sif/cli/commands/index.py:265`) zips chunks against embeddings — tail chunks silently get no vectors persisted, or worse, associations shift if a middle slot is dropped after a partial cache fill.
+**Fix:** After `new_embeddings = self._model.embed_batch(list(to_embed))`, validate and fail fast:
+```python
+if len(new_embeddings) != len(to_embed):
+    raise RuntimeError(
+        f"Embedding model returned {len(new_embeddings)} embeddings for "
+        f"{len(to_embed)} inputs"
+    )
+```
+and return `embeddings` directly (asserting none are `None`) instead of filtering.
 
-### WR-10: `test_from_settings_passes_api_key_and_api_base` writes a real cache database to the user's home
+### WR-04: `OpenAIEmbedder.embed_batch` assumes `response.data` ordering — reordered responses silently corrupt the index
+
+**File:** `src/sif/embedding/embedder.py:399-408`
+**Issue:** The class is explicitly designed for OpenAI-*compatible* endpoints via `api_base` (vLLM, LM Studio, Ollama, etc.), but `embed_batch` assumes `response.data[i]` corresponds to `batch[i]`. Each item carries an `index` field precisely because ordering is not guaranteed by every compatible server. A reordered response passes the length check and produces silently wrong chunk→vector associations — strictly worse than the ragged case 03-07 guarded against, because there is no error at all. The new tests' fakes always return in-order data, baking in the assumption.
+**Fix:** Validate/normalize per slice:
+```python
+data = sorted(response.data, key=lambda item: item.index)
+if [item.index for item in data] != list(range(len(batch))):
+    raise RuntimeError(
+        f"Embedding model '{self.model_name}' returned misindexed embeddings ..."
+    )
+```
+(the openai SDK response model always populates `index`).
+
+### WR-05: Dimension cache is keyed by model name only — endpoints cross-contaminate for up to 7 days
+
+**File:** `src/sif/embedding/embedder.py:340,375`
+**Issue:** `openai_dim_cache.json` entries are keyed by `self.model_name` alone. Two endpoints serving the same model name with different dimensions (e.g. OpenAI's `text-embedding-3-small` vs. a local server exposing a quantized/`dimensions`-reduced variant under the same name, selected via `SIF_API_BASE`) share one entry: after probing endpoint A, constructing against endpoint B returns A's cached dim for 7 days — either a spurious fail-fast mismatch or, when `embedding_dim=None`, a silently wrong `dimension` for the rest of the run.
+**Fix:** Include the endpoint in the key (e.g. `f"{api_base or 'default'}::{model_name}"`) or store `api_base` in the entry and treat a mismatch as a cache miss.
+
+### WR-06: `batch_size` configuration never reaches `OpenAIEmbedder` — `SIF_BATCH_SIZE` silently ignored
+
+**File:** `src/sif/embedding/manager.py:81-92`, `src/sif/embedding/factory.py:70-82`
+**Issue:** `Settings.batch_size` ("Batch size for inference", default 32, env `SIF_BATCH_SIZE`) is copied into `EmbeddingConfig.batch_size` but `load_model()` never passes it to the factory, and `_create_openai_model` never forwards it — `OpenAIEmbedder` always slices at its hardcoded default of 64. The new backend is the only one with a real batch-size knob, and it is the one place the setting does not apply. `max_tokens` is likewise passed and silently dropped (documented truncation never happens; acceptable for the API's own limits, but then the plumbing is misleading).
+**Fix:** In `_create_openai_model`: `batch_size=kwargs.get("batch_size", 64)` and in `EmbeddingManager.load_model` add `batch_size=self._config.batch_size`.
+
+### WR-07: MCP `SearchBackend` drops `api_key`/`api_base` — `SIF_MODEL_TYPE=openai` via MCP silently loses vector search
+
+**File:** `src/sif/mcp/backend.py:39-50` (cross-file consumer of the reviewed `factory.py`)
+**Issue:** The other factory call site constructs the model as `factory.create_model(model_type, model_path, self.settings.model_name)` — no `api_key`, `api_base`, `embedding_dim`, or `cache_dir`. With the openai backend now wired in the factory, MCP users setting `SIF_API_KEY`/`SIF_API_BASE` get `OpenAI(api_key=None, ...)` which raises (no OPENAI_API_KEY either), and the surrounding `except Exception: logger.warning("Failed to load embedder; vector search will be unavailable")` degrades silently. Plan 03-07's goal ("SIF_MODEL_TYPE=openai ... no longer terminates in a load-time error; api_key/api_base ... flow through") is closed on the CLI path but not the MCP path.
+**Fix:** Mirror `EmbeddingManager.from_settings`'s kwargs:
+```python
+self._embedder = factory.create_model(
+    model_type,
+    model_path,
+    self.settings.model_name,
+    api_key=self.settings.api_key,
+    api_base=self.settings.api_base,
+    embedding_dim=self.settings.embedding_dim,
+    cache_dir=str(self.settings.get_cache_dir()) if self.settings.cache_embeddings else None,
+)
+```
+(or better, reuse `EmbeddingManager.from_settings` here).
+
+### WR-08: `embed_cmd`'s load-error handlers are unreachable; embedding failures still exit 0
+
+**File:** `src/sif/cli/commands/index.py:211-218,277-278` (cross-ref reviewed `tests/unit/cli/test_index.py:327-328`)
+**Issue:** The `try: EmbeddingManager.from_settings(...) except ImportError/Exception` block promises "Embedding backend not installed" / "Failed to load embedding model" handling, but model loading is lazy (first `manager.embed`), so the OpenAI `ImportError` and the dimension-mismatch `RuntimeError` can never be raised there — they surface inside the per-collection `except Exception` as "Error embedding collection" and are swallowed. The command then prints "Embedding complete: 0 chunks embedded" and exits 0 even when every collection failed, breaking scripting/automation. The reviewed CLI test only asserts the two error strings are absent, so the misleading classification and exit code are untested.
+**Fix:** Load eagerly inside the first try block (`manager.load_model()` after `from_settings`) so backend/dimension errors hit the dedicated handlers, and make the per-collection failure path track a failure flag that converts to a non-zero exit (`raise click.ClickException(...)` after the loop, or `ctx.exit(1)`).
+
+### WR-09: `test_from_settings_passes_api_key_and_api_base` writes a real cache database to the developer's home
 
 **File:** `tests/unit/embedding/test_manager.py:11-23`
-**Issue:** `EmbeddingManager.from_settings(settings)` constructs `EmbeddingCache(config.cache_dir)` because `cache_embeddings` defaults to True, and `settings.get_cache_dir()` mkdirs the real platform cache dir. Verified: running this test created `/Users/forrest/Library/Caches/sif/embeddings_cache.db`. Tests must not mutate state outside the repo/tmp tree — this leaves droppings on every developer/CI machine and can couple tests to pre-existing cache contents.
-**Fix:** `settings = Settings(..., cache_embeddings=False)` or monkeypatch a `tmp_path` cache dir.
+**Issue:** The test constructs `Settings(model_type="openai", ..., embedding_dim=256)` without `cache_embeddings=False` and without clearing `SIF_CACHE_EMBEDDINGS`, so `from_settings` creates `EmbeddingCache(user_cache_dir)` — mkdir plus a real SQLite DB (`embeddings_cache.db`) under the developer's `~/Library/Caches/SIF` (verified present on this machine). Every test run mutates user state outside the repo; sibling tests in `test_factory.py`/`test_openai_embedder.py` carefully disable the cache, this one does not.
+**Fix:** Pass `cache_embeddings=False` to the `Settings(...)` constructor (and optionally `monkeypatch.delenv("SIF_CACHE_EMBEDDINGS", raising=False)` for belt-and-braces).
 
-### WR-11: Search tests build the entire "integration" on `MagicMock` DBs
+### WR-10: `SearchPipeline` expansion silently drops an expander's first variant — reviewed tests encode the faulty contract
 
-**File:** `tests/integration/test_search_pipeline.py:14-17,23-194`
-**Issue:** Despite being the integration suite for Phase 03's core deliverable, every test mocks the sqlite3 connection; no test loads the real schema (`SchemaManager`), real FTS5 tables, or real sqlite-vec. Consequently the actual pipeline (schema → index → BM25/vec/hybrid search → RRF) is never executed end-to-end anywhere in the suite — which is precisely why CR-03 (FTS injection), WR-09 (NULL chunk_id), and the real-dimension behavior are all invisible to CI. The fixtures also encode fragile `execute.side_effect` ordering assumptions that break on any refactor of query sequencing.
-**Fix:** Add a genuine integration test: real `Database` on a tmp file (or `:memory:`), `init_schema()`, insert 3 documents via repositories, run `SearchPipeline.search()` for all three modes, assert ordering/dedup.
+**File:** `tests/unit/search/test_hybrid.py:215-265` (cross-ref `src/sif/search/hybrid.py:224-238`)
+**Issue:** The pipeline seeds `queries = [parsed_query]` and then iterates `expanded[1:]`, assuming `QueryExpander.expand()` echoes the original query as element 0. The `QueryExpander` protocol (`src/sif/core/models.py:303-309`) promises only "expand a query into multiple variants" — no echo guarantee. A conforming expander returning `["variant1", "variant2"]` loses `variant1` entirely. Both reviewed tests feed mocks that echo the original (`["query", "query variant"]`), so the suite pins the buggy assumption rather than the protocol.
+**Fix:** In `hybrid.py`, deduplicate against the original without slicing: iterate all of `expanded`, skip any variant equal (case-insensitively) to `parsed_query`, and add a test where `expand` returns variants without the original echo.
+
+### WR-11: Settings default test is not hermetic against real env vars / `.env`
+
+**File:** `tests/unit/config/test_settings.py:8-11`
+**Issue:** `test_default_model_type_is_modelscope` calls `Settings()` with no kwargs. Pydantic-settings reads `SIF_MODEL_TYPE` from the environment and a `.env` file in the CWD — a developer who followed the README and exported `SIF_MODEL_TYPE=openai` (the exact workflow plan 03-07 documents) gets a red suite. The 03-07 tests in `test_factory.py`/`test_openai_embedder.py` carefully `monkeypatch.delenv` these vars; this file does not.
+**Fix:** Wrap with `monkeypatch` clearing the relevant vars (or pass `_env_file=None` and unset `SIF_MODEL_TYPE`):
+```python
+def test_default_model_type_is_modelscope(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("SIF_MODEL_TYPE", raising=False)
+    assert Settings().model_type == "modelscope"
+```
 
 ## Info
 
-### IN-01: `SimpleEmbedder` docstring says TF-IDF; implementation is a degenerate periodic hash; dead state
+### IN-01: Legacy duplicate embedding abstraction still exported from the package root
 
-**File:** `src/sif/embedding/embedder.py:264-306`
-**Issue:** Class/method docstrings claim "TF-IDF" but the code is sha256-hash based. Because `idx = i % len(hash_bytes)` with a 32-byte digest, every embedding has period 32 — dimensions `i` and `i+32` are identical for *all* texts, so a 384-dim vector carries only 32 degrees of freedom and cosine similarity is noise. `self.vocabulary` and `self._doc_count` are never used. Nothing in `src/` constructs it (only `create_embedder`, itself unused outside tests) — so it is effectively test-only code that looks like a production fallback.
-**Fix:** Fix the docstrings, delete `vocabulary`/`_doc_count`, and either derive per-dimension values from a proper hash stream (e.g., `hashlib.shake_256(text.encode()).digest(self._dimension)`) or delete the class if the fallback is no longer intended.
+**File:** `src/sif/embedding/model.py:9-126`, `src/sif/embedding/__init__.py:13-23`
+**Issue:** `EmbeddingModel` (an ABC with a `load`/`unload`/`embed` interface incompatible with the `Embedder` protocol the factory actually returns) and the `EmbeddingModelFactory` Protocol remain, and `__init__.py` re-exports them; `mcp/backend.py` imports `ModelType` through this shim. Harmless today (model.py re-exports the canonical `sif.models.embedding.ModelType`) but a consolidation trap.
+**Fix:** Delete `model.py`, export `ModelType` from `sif.models.embedding` in `__init__.py`, and update `mcp/backend.py` + `tests/unit/inference/test_embedder.py` imports.
 
-### IN-02: Duplicate factory layers with divergent type keys and defaults
+### IN-02: `create_embedder()` free function is dead code and now diverges further — no `openai` branch
 
-**File:** `src/sif/embedding/embedder.py:309-330` vs `src/sif/embedding/factory.py:15-92`
-**Issue:** Two parallel factories: `create_embedder("sentence_transformer")` (string keys, default model `all-MiniLM-L6-v2`) and `EmbeddingModelFactory.create_model(ModelType.SENTENCE_TRANSFORMERS, ...)` (enum keys, config default `Qwen/Qwen3-Embedding-0.6B`). `ModelScopeEmbedder`'s own default is a third value (`iic/gte_Qwen2-7B-instruct`). Nothing in `src/` uses `create_embedder`.
-**Fix:** Remove `create_embedder` (or make it a thin alias of the enum-based factory) and centralize default model ids in one place.
+**File:** `src/sif/embedding/embedder.py:470-491`
+**Issue:** No callers anywhere in `src/` or `tests/`. It uses different type strings ("sentence_transformer", "llama_cpp") than `ModelType`, and 03-07 did not add an `openai` branch — the second factory layer is now strictly less capable than the first.
+**Fix:** Delete it (or route it through `EmbeddingModelFactory` if a public function API is wanted).
 
-### IN-03: `get_model_info()` returns different keys depending on load state
+### IN-03: `EmbeddingManager.embed(normalize=...)` parameter is documented but ignored
 
-**File:** `src/sif/embedding/manager.py:183-200`
-**Issue:** When unloaded it returns `{"loaded": False, "model_name": ...}`; when loaded it returns `{"loaded": True, "model_id": ...}`. Callers must handle two different key names for the same concept.
-**Fix:** Use `model_id` (or `model_name`) in both branches.
+**File:** `src/sif/embedding/manager.py:102-107,164-169`
+**Issue:** `normalize` is accepted (with `# noqa: ARG002`) and described in the docstring, but never forwarded; all backends normalize unconditionally. `EmbeddingRequest.normalize` (`src/sif/models/embedding.py:61`) is likewise plumbed nowhere. Callers cannot actually get unnormalized vectors.
+**Fix:** Either honor it (pass through to backends that support it) or remove the parameter and the model field.
 
-### IN-04: `test_model_type_validation_accepts_valid_values` omits `huggingface`
+### IN-04: `ModelScopeEmbedder` selects the model directory via unsorted `glob("*")[0]`
 
-**File:** `tests/unit/config/test_settings.py:16`
-**Issue:** The validator (settings.py:155) accepts five backends including `huggingface`; the test's `valid_types` list covers only four, so the fifth accepted value is untested.
-**Fix:** Add `"huggingface"` to the list.
+**File:** `src/sif/embedding/embedder.py:204-210`
+**Issue:** `list(model_path.glob("*"))` order is filesystem-dependent; a snapshot directory containing multiple entries (e.g. a `.temp` dir, `.lock` file — both observed in the real cache dir on this machine) can be picked instead of the model, failing later with an opaque sentence-transformers error.
+**Fix:** Filter to directories and prefer a deterministic choice, e.g. pick the entry containing a `config.json`, or `sorted(p for p in model_path.iterdir() if p.is_dir())`.
 
-### IN-05: `__builtins__["__import__"]` relies on implementation-defined behavior
+### IN-05: `_write_dim_cache` performs a non-atomic, unlocked read-modify-write
 
-**File:** `tests/unit/embedding/test_embedder_impl.py:230,349,493`
-**Issue:** Whether `__builtins__` is a dict or the module itself differs between `__main__` and imported modules (CPython implementation detail). It happens to be subscriptable under pytest here, but the portable form is simply `builtins.__import__`.
-**Fix:** `import builtins; original_import = builtins.__import__`.
+**File:** `src/sif/embedding/embedder.py:362-382`
+**Issue:** Concurrent processes (two `sif` invocations) can interleave read/write and lose other models' entries; a crash mid-`json.dump` truncates the file. Self-healing (corrupt file is treated as a miss and rewritten) so impact is limited to a redundant probe, but the write is also visible-partial to a concurrent reader.
+**Fix:** Write to `cache_file.with_suffix(".json.tmp")` then `os.replace(...)`, and accept last-writer-wins for the entry merge.
 
-### IN-06: Settings tests are not hermetic against real env vars / `.env`
+### IN-06: `_probe_dimension` indexes `response.data[0]` unguarded and a missing API key surfaces as a generic SDK error
 
-**File:** `tests/unit/config/test_settings.py:8-11,28-31`
-**Issue:** `Settings()` reads the process environment and a `.env` from CWD (`env_file=".env"`). A developer or CI shell exporting `SIF_MODEL_TYPE` (or a repo-root `.env`) flips `test_default_model_type_is_modelscope` and `test_api_base_validation_*` without any code change. Only one test (line 53) uses `monkeypatch`.
-**Fix:** Wrap default-value tests in `monkeypatch.delenv("SIF_MODEL_TYPE", raising=False)` (or clear all `SIF_*` vars) before constructing `Settings()`.
+**File:** `src/sif/embedding/embedder.py:384-387,308`
+**Issue:** An endpoint returning an empty `data` list raises `IndexError` instead of a diagnosable error; and when `api_key` is None with no `OPENAI_API_KEY`, the `OpenAI(...)` constructor raises an SDK message that never mentions `SIF_API_KEY` — the setting a SIF user would actually set. Fix: check `if not response.data: raise RuntimeError(...)` naming the model, and catch the constructor error to hint `SIF_API_KEY`/`OPENAI_API_KEY`.
+
+### IN-07: `__builtins__["__import__"]` relies on implementation-defined behavior
+
+**File:** `tests/unit/embedding/test_openai_embedder.py:160-165`
+**Issue:** In imported modules `__builtins__` is a dict on CPython but this is a CPython implementation detail (it is the module itself in `__main__` and on other implementations). Works today; fragile pattern to copy.
+**Fix:** Use `patch("builtins.__import__", ...)` as the accompanying `with` block already does — the `original_import = __builtins__["__import__"]` lookup can be `import builtins; original_import = builtins.__import__`.
 
 ---
 
-_Reviewed: 2026-09-03T00:51:00Z_
+_Reviewed: 2026-09-03T04:02:30Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
-
-_Empirical verification performed during review: full run of all 12 reviewed test files (106 passed); pydantic 2.13.3 repr check for WR-07; mypy with project config (76 errors); real FTS5 execution for CR-03; real sqlite-vec insert/search round-trip for WR-09; filesystem check for WR-10._
