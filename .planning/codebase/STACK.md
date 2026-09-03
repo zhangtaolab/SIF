@@ -52,6 +52,7 @@
 - `torch` (imported at runtime) — Device selection (CPU/CUDA) for sentence-transformers
 - `llama-cpp-python` (runtime import) — GGUF local embedding support in `src/docsift/embedding/embedder.py`
 - `modelscope` (runtime import) — Chinese model downloading in `src/docsift/models/download.py`
+- `openai>=2.0.0` (`openai` extra, also in `all`) — OpenAI-compatible API embedding backend (`OpenAIEmbedder`, phase 03-07); client addressed as `{api_base}/embeddings` via SDK `base_url`
 
 **MCP Server:**
 - `fastapi` (runtime import in `src/docsift/mcp_server/transport.py`) — HTTP transport
