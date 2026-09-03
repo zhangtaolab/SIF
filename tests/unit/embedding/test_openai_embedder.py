@@ -144,7 +144,7 @@ class TestOpenAIEmbedderBehavior:
         assert len(embeds) == 3
         assert [len(e["input"]) for e in embeds] == [64, 64, 22]
         assert len(result) == 150
-        for text, vector in zip(texts, result):
+        for text, vector in zip(texts, result, strict=True):
             expected = _unit_vector([float(len(text)), 1.0] + [0.0] * (DIM - 2))
             assert vector == pytest.approx(expected)
 

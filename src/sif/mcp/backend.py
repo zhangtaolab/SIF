@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import fnmatch
-from typing import Any, Callable, TypeVar
+from collections.abc import Callable
+from typing import Any, TypeVar
 
 from sif.config.settings import Settings, get_settings
 from sif.core.models import SearchOptions

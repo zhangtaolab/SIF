@@ -2,7 +2,7 @@
 
 ## System Requirements
 
-- **Python**: 3.9 or higher
+- **Python**: 3.10 or higher
 - **Operating System**: Linux, macOS, or Windows
 - **Memory**: Minimum 4GB RAM (8GB+ recommended for large collections)
 - **Disk Space**: Varies based on document collection size

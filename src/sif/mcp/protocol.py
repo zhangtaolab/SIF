@@ -8,7 +8,7 @@ Reference: https://modelcontextprotocol.io/
 """
 
 from enum import Enum
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -28,9 +28,9 @@ class JsonRpcRequest(BaseModel):
     """JSON-RPC 2.0 Request object."""
 
     jsonrpc: Literal["2.0"] = "2.0"
-    id: Optional[str | int] = None
+    id: str | int | None = None
     method: str
-    params: Optional[dict[str, Any]] = None
+    params: dict[str, Any] | None = None
 
 
 class JsonRpcError(BaseModel):
@@ -38,16 +38,16 @@ class JsonRpcError(BaseModel):
 
     code: int
     message: str
-    data: Optional[Any] = None
+    data: Any | None = None
 
 
 class JsonRpcResponse(BaseModel):
     """JSON-RPC 2.0 Response object."""
 
     jsonrpc: Literal["2.0"] = "2.0"
-    id: Optional[str | int] = None
-    result: Optional[Any] = None
-    error: Optional[JsonRpcError] = None
+    id: str | int | None = None
+    result: Any | None = None
+    error: JsonRpcError | None = None
 
     @model_validator(mode="after")
     def check_mutual_exclusivity(self) -> "JsonRpcResponse":
@@ -62,7 +62,7 @@ class JsonRpcNotification(BaseModel):
 
     jsonrpc: Literal["2.0"] = "2.0"
     method: str
-    params: Optional[dict[str, Any]] = None
+    params: dict[str, Any] | None = None
 
 
 # ============================================================================
@@ -139,14 +139,14 @@ class MCPTool(BaseModel):
 class ToolsListParams(BaseModel):
     """Parameters for tools/list request."""
 
-    cursor: Optional[str] = None
+    cursor: str | None = None
 
 
 class ToolsListResult(BaseModel):
     """Result for tools/list request."""
 
     tools: list[MCPTool] = Field(default_factory=list)
-    nextCursor: Optional[str] = None  # noqa: N815
+    nextCursor: str | None = None  # noqa: N815
 
 
 class ToolsCallParams(BaseModel):
@@ -160,9 +160,9 @@ class ToolContentItem(BaseModel):
     """Content item in tool call result."""
 
     type: Literal["text", "image", "resource"] = "text"
-    text: Optional[str] = None
-    data: Optional[str] = None  # For image base64 data
-    mimeType: Optional[str] = None  # noqa: N815
+    text: str | None = None
+    data: str | None = None  # For image base64 data
+    mimeType: str | None = None  # noqa: N815
 
 
 class ToolsCallResult(BaseModel):
@@ -201,8 +201,8 @@ class SearchResult(BaseModel):
 
     doc_id: str
     path: str
-    title: Optional[str] = None
-    content: Optional[str] = None
+    title: str | None = None
+    content: str | None = None
     score: float
     highlights: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -213,12 +213,12 @@ class Document(BaseModel):
 
     doc_id: str
     path: str
-    title: Optional[str] = None
+    title: str | None = None
     content: str
     metadata: dict[str, Any] = Field(default_factory=dict)
-    line_start: Optional[int] = None
-    line_end: Optional[int] = None
-    collection_id: Optional[str] = None
+    line_start: int | None = None
+    line_end: int | None = None
+    collection_id: str | None = None
 
 
 class CollectionInfo(BaseModel):
@@ -226,8 +226,8 @@ class CollectionInfo(BaseModel):
 
     name: str
     document_count: int
-    last_updated: Optional[str] = None
-    size_bytes: Optional[int] = None
+    last_updated: str | None = None
+    size_bytes: int | None = None
 
 
 # ============================================================================
@@ -239,7 +239,7 @@ class QueryInput(BaseModel):
     """Input for query tool."""
 
     query: str
-    collections: Optional[list[str]] = None
+    collections: list[str] | None = None
     limit: int = Field(default=10, ge=1)
     min_score: float = Field(default=0.0, ge=0.0)
 
@@ -254,7 +254,7 @@ class LexSearchInput(BaseModel):
     """Input for lex_search tool."""
 
     query: str
-    collections: Optional[list[str]] = None
+    collections: list[str] | None = None
     limit: int = 10
 
 
@@ -268,7 +268,7 @@ class VecSearchInput(BaseModel):
     """Input for vec_search tool."""
 
     query: str
-    collections: Optional[list[str]] = None
+    collections: list[str] | None = None
     limit: int = 10
 
 
@@ -282,21 +282,21 @@ class GetInput(BaseModel):
     """Input for get tool."""
 
     path_or_docid: str
-    from_line: Optional[int] = Field(default=None, ge=1)
-    max_lines: Optional[int] = Field(default=None, ge=1)
+    from_line: int | None = Field(default=None, ge=1)
+    max_lines: int | None = Field(default=None, ge=1)
 
 
 class GetOutput(BaseModel):
     """Output for get tool."""
 
-    document: Optional[Document] = None
+    document: Document | None = None
 
 
 class MultiGetInput(BaseModel):
     """Input for multi_get tool."""
 
     pattern: str
-    max_bytes: Optional[int] = Field(default=None, ge=0)
+    max_bytes: int | None = Field(default=None, ge=0)
 
 
 class MultiGetOutput(BaseModel):

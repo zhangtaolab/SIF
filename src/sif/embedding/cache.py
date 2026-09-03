@@ -170,7 +170,7 @@ class EmbeddingCache:
             embeddings: List of embeddings
             model_id: Model identifier
         """
-        for content, embedding in zip(contents, embeddings):
+        for content, embedding in zip(contents, embeddings, strict=True):
             self.set(content, embedding, model_id)
 
     def clear(self, model_id: str | None = None) -> int:

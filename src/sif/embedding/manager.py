@@ -142,16 +142,16 @@ class EmbeddingManager:
 
         # Generate embeddings for uncached texts
         if texts_to_embed and self._model:
-            indices, to_embed = zip(*texts_to_embed)
+            indices, to_embed = zip(*texts_to_embed, strict=True)
             new_embeddings = self._model.embed_batch(list(to_embed))
 
             # Store in cache
             if use_cache and self._cache:
-                for _idx, text, emb in zip(indices, to_embed, new_embeddings):
+                for _idx, text, emb in zip(indices, to_embed, new_embeddings, strict=True):
                     self._cache.set(text, emb, model_id=model_id)
 
             # Fill in results
-            for idx, emb in zip(indices, new_embeddings):
+            for idx, emb in zip(indices, new_embeddings, strict=True):
                 embeddings[idx] = emb
 
         processing_time = (time.time() - start_time) * 1000

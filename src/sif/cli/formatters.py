@@ -4,7 +4,7 @@ import csv
 import io
 import json
 from dataclasses import asdict, is_dataclass
-from typing import Any, Optional
+from typing import Any
 
 from rich import box
 from rich.console import Console
@@ -45,7 +45,7 @@ def format_csv(data: list[dict[str, Any]]) -> str:
     return output.getvalue()
 
 
-def format_markdown_table(data: list[dict[str, Any]], title: Optional[str] = None) -> str:
+def format_markdown_table(data: list[dict[str, Any]], title: str | None = None) -> str:
     """Format list of dictionaries as Markdown table."""
     if not data:
         return ""
@@ -87,7 +87,7 @@ def format_files_list(paths: list[str]) -> str:
     return "\n".join(paths)
 
 
-def print_json(data: Any, console: Optional[Console] = None) -> None:
+def print_json(data: Any, console: Console | None = None) -> None:
     """Print data as formatted JSON."""
     cons = console or Console()
     json_str = format_json(data)
@@ -95,7 +95,7 @@ def print_json(data: Any, console: Optional[Console] = None) -> None:
     cons.print(syntax)
 
 
-def print_csv(data: list[dict[str, Any]], console: Optional[Console] = None) -> None:
+def print_csv(data: list[dict[str, Any]], console: Console | None = None) -> None:
     """Print data as CSV."""
     cons = console or Console()
     cons.print(format_csv(data))
@@ -103,15 +103,15 @@ def print_csv(data: list[dict[str, Any]], console: Optional[Console] = None) -> 
 
 def print_markdown(
     data: list[dict[str, Any]],
-    title: Optional[str] = None,
-    console: Optional[Console] = None,
+    title: str | None = None,
+    console: Console | None = None,
 ) -> None:
     """Print data as Markdown table."""
     cons = console or Console()
     cons.print(format_markdown_table(data, title))
 
 
-def print_xml(data: Any, root_tag: str = "root", console: Optional[Console] = None) -> None:
+def print_xml(data: Any, root_tag: str = "root", console: Console | None = None) -> None:
     """Print data as XML."""
     cons = console or Console()
     xml_str = format_xml(data, root_tag)
@@ -119,7 +119,7 @@ def print_xml(data: Any, root_tag: str = "root", console: Optional[Console] = No
     cons.print(syntax)
 
 
-def print_files(paths: list[str], console: Optional[Console] = None) -> None:
+def print_files(paths: list[str], console: Console | None = None) -> None:
     """Print list of files."""
     cons = console or Console()
     for path in paths:
@@ -128,8 +128,8 @@ def print_files(paths: list[str], console: Optional[Console] = None) -> None:
 
 def print_table(
     data: list[dict[str, Any]],
-    title: Optional[str] = None,
-    console: Optional[Console] = None,
+    title: str | None = None,
+    console: Console | None = None,
 ) -> None:
     """Print data as a rich table."""
     cons = console or Console()
@@ -152,25 +152,25 @@ def print_table(
     cons.print(table)
 
 
-def print_success(message: str, console: Optional[Console] = None) -> None:
+def print_success(message: str, console: Console | None = None) -> None:
     """Print a success message."""
     cons = console or Console()
     cons.print(f"[green]✓[/green] {message}")
 
 
-def print_error(message: str, console: Optional[Console] = None) -> None:
+def print_error(message: str, console: Console | None = None) -> None:
     """Print an error message."""
     cons = console or Console()
     cons.print(f"[red]✗[/red] {message}")
 
 
-def print_warning(message: str, console: Optional[Console] = None) -> None:
+def print_warning(message: str, console: Console | None = None) -> None:
     """Print a warning message."""
     cons = console or Console()
     cons.print(f"[yellow]⚠[/yellow] {message}")
 
 
-def print_info(message: str, console: Optional[Console] = None) -> None:
+def print_info(message: str, console: Console | None = None) -> None:
     """Print an info message."""
     cons = console or Console()
     cons.print(f"[blue]i[/blue] {message}")
@@ -178,9 +178,9 @@ def print_info(message: str, console: Optional[Console] = None) -> None:
 
 def print_panel(
     content: str,
-    title: Optional[str] = None,
+    title: str | None = None,
     border_style: str = "blue",
-    console: Optional[Console] = None,
+    console: Console | None = None,
 ) -> None:
     """Print content in a panel."""
     cons = console or Console()
@@ -191,7 +191,7 @@ def print_panel(
 def print_tree(
     data: dict[str, Any],
     title: str = "Tree",
-    console: Optional[Console] = None,
+    console: Console | None = None,
 ) -> None:
     """Print data as a tree structure."""
     cons = console or Console()
@@ -240,12 +240,12 @@ class OutputFormatter:
 
     FORMATS = ("table", "json", "csv", "md", "xml", "files")
 
-    def __init__(self, format_type: str = "table", console: Optional[Console] = None):
+    def __init__(self, format_type: str = "table", console: Console | None = None):
         """Initialize the output formatter."""
         self.format_type = format_type
         self.console = console or Console()
 
-    def print(self, data: Any, title: Optional[str] = None) -> None:  # noqa: PLR0912
+    def print(self, data: Any, title: str | None = None) -> None:  # noqa: PLR0912
         """Print data in the specified format."""
         if self.format_type == "json":
             print_json(data, self.console)
@@ -272,6 +272,6 @@ class OutputFormatter:
             print_json(data, self.console)
 
 
-def get_formatter(format_type: str = "table", console: Optional[Console] = None) -> OutputFormatter:
+def get_formatter(format_type: str = "table", console: Console | None = None) -> OutputFormatter:
     """Get an output formatter instance."""
     return OutputFormatter(format_type, console)

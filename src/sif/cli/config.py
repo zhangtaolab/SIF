@@ -3,7 +3,7 @@
 import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 
 @dataclass
@@ -12,7 +12,7 @@ class CollectionConfig:
 
     name: str
     path: str
-    mask: Optional[str] = None
+    mask: str | None = None
     enabled: bool = True
 
 
@@ -115,7 +115,7 @@ class Config:
 
         return config
 
-    def save(self, path: Optional[str] = None) -> None:
+    def save(self, path: str | None = None) -> None:
         """Save configuration to file."""
         save_path = Path(path or self.config_path)
         save_path.parent.mkdir(parents=True, exist_ok=True)
@@ -124,7 +124,7 @@ class Config:
             json.dump(self.to_dict(), f, indent=2)
 
     @classmethod
-    def load(cls, path: Optional[str] = None) -> "Config":
+    def load(cls, path: str | None = None) -> "Config":
         """Load configuration from file."""
         config_path = Path(path or cls().config_path)
 
@@ -141,7 +141,7 @@ class Config:
         config.config_path = str(config_path)
         return config
 
-    def add_collection(self, name: str, path: str, mask: Optional[str] = None) -> None:
+    def add_collection(self, name: str, path: str, mask: str | None = None) -> None:
         """Add a new collection."""
         self.collections[name] = CollectionConfig(name=name, path=path, mask=mask)
 
@@ -172,17 +172,17 @@ class Config:
             return True
         return False
 
-    def get_collection(self, name: str) -> Optional[CollectionConfig]:
+    def get_collection(self, name: str) -> CollectionConfig | None:
         """Get a collection by name."""
         return self.collections.get(name)
 
-    def get_context(self, path: str) -> Optional[ContextConfig]:
+    def get_context(self, path: str) -> ContextConfig | None:
         """Get a context by path."""
         return self.contexts.get(path)
 
 
 # Global config instance
-_config: Optional[Config] = None
+_config: Config | None = None
 
 
 def get_config() -> Config:
@@ -199,7 +199,7 @@ def set_config(config: Config) -> None:
     _config = config
 
 
-def reload_config(path: Optional[str] = None) -> Config:
+def reload_config(path: str | None = None) -> Config:
     """Reload configuration from file."""
     global _config  # noqa: PLW0603
     _config = Config.load(path)

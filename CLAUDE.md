@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-SIF is a Python 3.9+ local hybrid search engine for personal knowledge bases. It indexes Markdown notes and documents, providing BM25 keyword search, semantic vector search, and hybrid ranking. It exposes both a Click CLI and an MCP server, keeping all data local in SQLite.
+SIF is a Python 3.10+ local hybrid search engine for personal knowledge bases. It indexes Markdown notes and documents, providing BM25 keyword search, semantic vector search, and hybrid ranking. It exposes both a Click CLI and an MCP server, keeping all data local in SQLite.
 
 ## Common Development Commands
 
@@ -102,7 +102,7 @@ Settings are defined in `src/sif/config/settings.py` using Pydantic Settings. En
 
 ### Code Style
 
-- Target Python 3.9+; use `list[str] | None` union syntax.
+- Target Python 3.10+; use `list[str] | None` union syntax.
 - Line length: 100 (enforced by ruff).
 - Max complexity (mccabe): 10.
 - Ruff isort with `combine-as-imports = true`.

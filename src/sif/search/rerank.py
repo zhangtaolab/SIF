@@ -22,7 +22,7 @@ def _sort_and_build_results(
     top_k: int,
 ) -> list[SearchResult]:
     """Sort results by score descending and rebuild SearchResult objects."""
-    scored = list(zip(results, scores))
+    scored = list(zip(results, scores, strict=True))
     scored.sort(key=lambda x: x[1], reverse=True)
 
     reranked: list[SearchResult] = []

@@ -122,7 +122,7 @@ class QueryExpansion:
             # Return top-k most similar terms that are NOT already in the query
             scored = [
                 (term, sim)
-                for term, sim in zip(candidate_list, similarities)
+                for term, sim in zip(candidate_list, similarities, strict=True)
                 if term.lower() not in query_words_lower
             ]
             scored.sort(key=lambda x: x[1], reverse=True)

@@ -6,7 +6,7 @@ Guide for contributing to SIF development.
 
 ### Prerequisites
 
-- Python 3.9+
+- Python 3.10+
 - Git
 - Virtual environment tool (venv, conda, or pyenv)
 

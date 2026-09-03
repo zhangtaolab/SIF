@@ -116,7 +116,9 @@ class RRFFusion:
         # Map document_id to weighted scores
         scores: dict[str, tuple[float, SearchResult]] = {}
 
-        for list_idx, (results, weight) in enumerate(zip(results_lists, normalized_weights)):
+        for list_idx, (results, weight) in enumerate(
+            zip(results_lists, normalized_weights, strict=True)
+        ):
             for rank, result in enumerate(results, 1):
                 doc_id = result.document_id
 

@@ -200,7 +200,9 @@ class DocumentIndexer:
             embedding_response = self._embedding_manager.embed(chunk_texts)
 
             # Create document chunks with embeddings
-            for _i, (chunk, embedding) in enumerate(zip(chunks, embedding_response.embeddings)):
+            for _i, (chunk, embedding) in enumerate(
+                zip(chunks, embedding_response.embeddings, strict=True)
+            ):
                 doc_chunk = DocumentChunk(
                     id=str(uuid.uuid4()),
                     document_id=document.id,

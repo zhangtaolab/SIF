@@ -262,7 +262,7 @@ def embed_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
 
                     # Persist chunks and embeddings
                     batch_items: list[tuple[str, str, str | None, list[float]]] = []
-                    for (chunk, doc_id), embedding in zip(all_chunks, embeddings):
+                    for (chunk, doc_id), embedding in zip(all_chunks, embeddings, strict=True):
                         chunk_repo.create(chunk)
                         batch_items.append((chunk.id, doc_id, chunk.id, embedding))
 
