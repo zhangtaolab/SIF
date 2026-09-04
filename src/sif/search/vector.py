@@ -53,12 +53,19 @@ class VectorSearcher:
         # (WR-03) and clamped: limit <= 0 would surface as a raw
         # sqlite3.OperationalError from inside the vec0 MATCH.
         collection_filter = ""
-        params = [embedding_str, max(1, options.limit)]
-
         if options.collection_ids:
             placeholders = ", ".join(["?"] * len(options.collection_ids))
             collection_filter = f"AND d.collection_id IN ({placeholders})"
-            params.extend(options.collection_ids)
+
+        # Over-fetch (WR-04): k bounds the vec0 MATCH itself, which sqlite-vec
+        # resolves before the JOIN applies the collection filter — a tight k
+        # silently under-returns filtered searches. Fetch a bounded surplus,
+        # then trim to the requested limit after filtering. Score is monotone
+        # in distance (score = 1 - distance / 2), so trimming after the
+        # min_score filter returns the same rows a tight k would for
+        # unfiltered searches.
+        fetch_k = max(options.limit * 4, 50)
+        params = [embedding_str, fetch_k, *(options.collection_ids or [])]
 
         sql = f"""
             SELECT
@@ -77,7 +84,7 @@ class VectorSearcher:
         cursor = self.db.execute(sql, params)
         results = []
 
-        for rank, row in enumerate(cursor.fetchall(), 1):
+        for row in cursor.fetchall():
             # Convert distance to score (lower distance = higher score)
             # Cosine distance is 0-2, convert to 0-1 score
             score = 1.0 - (row["score"] / 2.0)
@@ -91,13 +98,18 @@ class VectorSearcher:
                 path=row["path"],
                 collection_name=row["collection_name"],
                 score=score,
-                rank=rank,
             )
 
             if options.include_content:
                 result.content = self._get_document_content(row["document_id"])
 
             results.append(result)
+
+        # Trim to the requested limit, then rank sequentially so ranks stay
+        # contiguous after min_score filtering.
+        results = results[: max(1, options.limit)]
+        for rank, result in enumerate(results, 1):
+            result.rank = rank
 
         return self._attach_contexts(results)
 

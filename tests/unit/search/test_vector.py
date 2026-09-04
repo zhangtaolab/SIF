@@ -100,22 +100,45 @@ class TestVectorSearcher:
         params = mock_db.execute.call_args[0][1]
         assert "k = ?" in sql
         assert "k = 5" not in sql
-        assert params[1] == 5
+        # WR-04 over-fetch: fetch_k = max(limit * 4, 50), trimmed after filter
+        assert params[1] == 50
 
     def test_search_clamps_non_positive_limit(self):
-        """WR-03: limit <= 0 is clamped instead of reaching sqlite-vec raw."""
+        """WR-03: limit <= 0 never reaches sqlite-vec raw and trims to one row."""
         mock_db = MagicMock()
-        vec_cursor = MagicMock()
-        vec_cursor.fetchall.return_value = []
-        mock_db.execute.return_value = vec_cursor
+        search_cursor = MagicMock()
+        search_cursor.fetchall.return_value = [
+            {
+                "score": 0.0,
+                "document_id": "doc-1",
+                "title": "Title",
+                "path": "/path",
+                "collection_name": "col",
+            },
+            {
+                "score": 0.2,
+                "document_id": "doc-2",
+                "title": "Title2",
+                "path": "/path2",
+                "collection_name": "col",
+            },
+        ]
+        ctx_cursor = MagicMock()
+        ctx_cursor.fetchall.return_value = []
+        # vec_version() in __init__, search query, context query
+        mock_db.execute.side_effect = [MagicMock(), search_cursor, ctx_cursor]
 
         searcher = VectorSearcher(mock_db)
         searcher._vec_available = True
 
-        searcher.search([0.1, 0.2], SearchOptions(limit=-1))
+        results = searcher.search([0.1, 0.2], SearchOptions(limit=-1))
 
-        params = mock_db.execute.call_args[0][1]
-        assert params[1] == 1
+        # call_args is the context query; the search call is the second one
+        search_call = mock_db.execute.call_args_list[1]
+        params = search_call[0][1]
+        assert params[1] == 50  # fetch floor
+        assert len(results) == 1  # trim clamped to 1
+        assert results[0].rank == 1
 
     def test_search_with_collection_ids(self):
         """Test search includes collection filter."""
@@ -230,6 +253,86 @@ class TestVectorSearcher:
 
         assert len(results) == 1
         assert results[0].content == "document content"
+
+
+class TestVectorFilteredRecall:
+    """WR-04: collection-filtered searches must not under-return.
+
+    k bounds the vec0 MATCH, which sqlite-vec resolves before the JOIN applies
+    the collection filter — a tight k returns only globally-nearest rows, so
+    filtering afterwards can leave a collection's strong matches unseen.
+    """
+
+    def _build_db(self) -> sqlite3.Connection:
+        import sqlite_vec
+
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            conn.enable_load_extension(True)
+            sqlite_vec.load(conn)
+            conn.enable_load_extension(False)
+        except Exception:
+            pytest.skip("sqlite-vec not available")
+
+        conn.execute(
+            "CREATE TABLE documents "
+            "(id TEXT PRIMARY KEY, collection_id TEXT, title TEXT, path TEXT)"
+        )
+        conn.execute("CREATE TABLE collections (id TEXT PRIMARY KEY, name TEXT)")
+        conn.execute("""
+            CREATE TABLE contexts (
+                id TEXT PRIMARY KEY, target_id TEXT NOT NULL, context_type TEXT NOT NULL,
+                content TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE VIRTUAL TABLE document_embeddings USING vec0(
+                embedding_id TEXT PRIMARY KEY,
+                document_id TEXT NOT NULL,
+                chunk_id TEXT,
+                embedding FLOAT[2]
+            )
+        """)
+        conn.execute("INSERT INTO collections VALUES ('c1', 'one'), ('c2', 'two')")
+        # Three c1 rows closest to the query [1, 0]; the two c2 rows — the
+        # filter's target — sit just behind them in global distance order.
+        rows = [
+            ("e1", "d1", "c1", [1.0, 0.1], "c1"),
+            ("e2", "d2", "c1", [1.0, 0.2], "c1"),
+            ("e3", "d3", "c1", [1.0, 0.3], "c1"),
+            ("e4", "d4", "c2", [1.0, 0.4], "c2"),
+            ("e5", "d5", "c2", [1.0, 0.5], "c2"),
+        ]
+        for _eid, did, _cid, _vec, coll in rows:
+            conn.execute("INSERT INTO documents VALUES (?, ?, 'T', ?)", (did, coll, f"/{did}.md"))
+        searcher = VectorSearcher(conn, embedding_dim=2)
+        searcher.add_embeddings_batch([(eid, did, cid, vec) for eid, did, cid, vec, _ in rows])
+        return conn
+
+    def test_collection_filter_returns_matches_beyond_knn_limit(self) -> None:
+        """The two c2 matches are globally ranks 4-5; a tight k=2 would hide them."""
+        conn = self._build_db()
+        try:
+            searcher = VectorSearcher(conn, embedding_dim=2)
+            results = searcher.search([1.0, 0.0], SearchOptions(limit=2, collection_ids=["c2"]))
+
+            assert [r.document_id for r in results] == ["d4", "d5"]
+            assert [r.rank for r in results] == [1, 2]
+        finally:
+            conn.close()
+
+    def test_unfiltered_search_keeps_top_limit_ordering(self) -> None:
+        """Unfiltered searches return the same globally-nearest rows as before."""
+        conn = self._build_db()
+        try:
+            searcher = VectorSearcher(conn, embedding_dim=2)
+            results = searcher.search([1.0, 0.0], SearchOptions(limit=3))
+
+            assert [r.document_id for r in results] == ["d1", "d2", "d3"]
+            assert [r.rank for r in results] == [1, 2, 3]
+        finally:
+            conn.close()
 
 
 class TestVectorEmbeddingDeletion:
