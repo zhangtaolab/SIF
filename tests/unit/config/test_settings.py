@@ -5,9 +5,12 @@ import pytest
 from sif.config.settings import Settings
 
 
-def test_default_model_type_is_modelscope() -> None:
+def test_default_model_type_is_modelscope(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test that default model_type is modelscope."""
-    settings = Settings()
+    # Hermetic against real env vars / .env files (e.g. a developer who
+    # exported SIF_MODEL_TYPE=openai per the README workflow).
+    monkeypatch.delenv("SIF_MODEL_TYPE", raising=False)
+    settings = Settings(_env_file=None)
     assert settings.model_type == "modelscope"
 
 
