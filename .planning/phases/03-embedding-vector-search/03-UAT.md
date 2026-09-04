@@ -1,20 +1,14 @@
 ---
-status: testing
+status: diagnosed
 phase: 03-Embedding & Vector Search
 source: [03-VERIFICATION.md]
 started: 2026-09-03T04:15:32Z
-updated: 2026-09-04T08:47:00Z
+updated: 2026-09-04T08:52:00Z
 ---
 
 ## Current Test
 
-number: 4
-name: Prohibition review: no text egress from local backends
-expected: |
-  Document/chunk text never leaves the device unless model_type=openai is explicitly
-  configured; local backends (sentence_transformers, gguf, modelscope) keep all user
-  content on-device, with model-file download as their only network traffic.
-awaiting: user response
+[testing complete]
 
 ## Tests
 
@@ -70,18 +64,36 @@ note: |
 
 ### 4. Prohibition review: no text egress from local backends
 expected: Document/chunk text never leaves the device unless model_type=openai is explicitly configured; local backends (sentence_transformers, gguf, modelscope) keep all user content on-device, with model-file download as their only network traffic. Verifier LLM-judge verdict is PASS by code inspection (non-authoritative — human confirmation wanted).
-result: [pending]
+result: pass
+note: |
+  Judgment delegated to Claude by user. Full-repo egress audit: the ONLY user-text
+  egress point is OpenAIEmbedder.embed/embed_batch/_probe_dimension
+  (embedder.py:390/395/405, client.embeddings.create), reachable only via
+  factory.py:34 when model_type==OPENAI (explicit SIF_MODEL_TYPE=openai; default
+  is modelscope). snapshot_download (models/download.py:91) and pull.py
+  (urlretrieve/hf_hub_download) move model files only (ingress).
+  mcp/transports/http.py is a local HTTP server (inbound). No other
+  requests/httpx/urlopen hits; no telemetry. Empirical: tests 2/3 modelscope runs
+  sent only model-file traffic; note text stayed in local SQLite + local model.
 
 ### 5. Prohibition review: no silent backend fallback
 expected: When the configured backend fails to load, the failure surfaces as an explicit user-facing error (e.g. ClickException "Failed to load embedding model: ..."), never a silent switch to another backend. Verifier LLM-judge verdict is PASS by code inspection (non-authoritative — human confirmation wanted).
-result: [pending]
+result: pass
+note: |
+  Judgment delegated to Claude by user. grep: SimpleEmbedder has zero call sites
+  (dead fallback, unreachable silently); manager.py contains no try/except or
+  fallback. Failure injections: (1) SIF_MODEL_TYPE=huggingface ->
+  "Error: Failed to load embedding model: HuggingFace models not yet implemented",
+  exit=1; (2) SIF_MODEL_TYPE=openai + dead endpoint (127.0.0.1:9) ->
+  "Error: Failed to load embedding model: Connection error." — both explicit,
+  neither switched backends. (WR-08 fix confirmed live.)
 
 ## Summary
 
 total: 5
-passed: 2
+passed: 4
 issues: 1
-pending: 2
+pending: 0
 skipped: 0
 blocked: 0
 
