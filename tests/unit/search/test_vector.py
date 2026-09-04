@@ -84,6 +84,39 @@ class TestVectorSearcher:
 
         mock_db.executemany.assert_not_called()
 
+    def test_search_binds_k_as_parameter(self):
+        """WR-03: the KNN limit is bound, never interpolated into the SQL text."""
+        mock_db = MagicMock()
+        vec_cursor = MagicMock()
+        vec_cursor.fetchall.return_value = []
+        mock_db.execute.return_value = vec_cursor
+
+        searcher = VectorSearcher(mock_db)
+        searcher._vec_available = True
+
+        searcher.search([0.1, 0.2], SearchOptions(limit=5))
+
+        sql = mock_db.execute.call_args[0][0]
+        params = mock_db.execute.call_args[0][1]
+        assert "k = ?" in sql
+        assert "k = 5" not in sql
+        assert params[1] == 5
+
+    def test_search_clamps_non_positive_limit(self):
+        """WR-03: limit <= 0 is clamped instead of reaching sqlite-vec raw."""
+        mock_db = MagicMock()
+        vec_cursor = MagicMock()
+        vec_cursor.fetchall.return_value = []
+        mock_db.execute.return_value = vec_cursor
+
+        searcher = VectorSearcher(mock_db)
+        searcher._vec_available = True
+
+        searcher.search([0.1, 0.2], SearchOptions(limit=-1))
+
+        params = mock_db.execute.call_args[0][1]
+        assert params[1] == 1
+
     def test_search_with_collection_ids(self):
         """Test search includes collection filter."""
         mock_db = MagicMock()

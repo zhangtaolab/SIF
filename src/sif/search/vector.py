@@ -49,9 +49,11 @@ class VectorSearcher:
         # Convert embedding to vec format
         embedding_str = self._embedding_to_vec(query_embedding)
 
-        # Build collection filter
+        # Build collection filter. The KNN limit is bound as a parameter
+        # (WR-03) and clamped: limit <= 0 would surface as a raw
+        # sqlite3.OperationalError from inside the vec0 MATCH.
         collection_filter = ""
-        params = [embedding_str]
+        params = [embedding_str, max(1, options.limit)]
 
         if options.collection_ids:
             placeholders = ", ".join(["?"] * len(options.collection_ids))
@@ -68,7 +70,7 @@ class VectorSearcher:
             FROM document_embeddings de
             JOIN documents d ON de.document_id = d.id
             JOIN collections c ON d.collection_id = c.id
-            WHERE embedding MATCH ? AND k = {options.limit} {collection_filter}
+            WHERE embedding MATCH ? AND k = ? {collection_filter}
             ORDER BY distance
         """
 
