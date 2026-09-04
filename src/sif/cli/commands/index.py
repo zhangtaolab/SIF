@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import click
 from rich.console import Console
@@ -19,6 +20,10 @@ from sif.database.repositories import (
 from sif.indexing.chunker import create_chunker
 from sif.indexing.parser import MarkdownParser
 from sif.indexing.scanner import FileScanner
+
+
+if TYPE_CHECKING:
+    from sif.search.vector import VectorSearcher
 
 
 console = Console()
@@ -44,6 +49,8 @@ def update_cmd(ctx: click.Context, collection: str | None, force: bool) -> None:
     with db.connection:
         coll_repo = CollectionRepository(db.connection)
         doc_repo = DocumentRepository(db.connection)
+        chunk_repo = DocumentChunkRepository(db.connection)
+        vector_purger = _embedding_purger(db)
 
         # Get collections to update
         if collection:
@@ -131,6 +138,14 @@ def update_cmd(ctx: click.Context, collection: str | None, force: bool) -> None:
                             progress.advance(task)
                             continue
 
+                        # Content changed (or --force): drop stale chunks and
+                        # embeddings so the next `embed` run re-chunks the new
+                        # content instead of trusting the chunk-id-set
+                        # completeness check against stale rows (CR-01).
+                        chunk_repo.delete_by_document(existing.id)
+                        if vector_purger is not None:
+                            vector_purger.delete_embeddings_by_document(existing.id)
+
                         # Update document
                         existing.content = parsed.content
                         existing.title = parsed.title
@@ -170,6 +185,20 @@ def update_cmd(ctx: click.Context, collection: str | None, force: bool) -> None:
         console.print(f"  Added: {total_added}")
         console.print(f"  Updated: {total_updated}")
         console.print(f"  Removed: {total_removed}")
+
+
+def _embedding_purger(db: Database) -> VectorSearcher | None:
+    """Return a VectorSearcher for purging embeddings, or None without sqlite-vec.
+
+    A missing sqlite-vec extension also means no vec0 table — hence no stored
+    embeddings — so callers treat None as "nothing to purge".
+    """
+    from sif.search.vector import VectorSearcher  # noqa: PLC0415
+
+    try:
+        return VectorSearcher(db.connection)
+    except RuntimeError:
+        return None
 
 
 def _needs_embedding(live_chunk_ids: set[str], embedded_chunk_ids: set[str], force: bool) -> bool:

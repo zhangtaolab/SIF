@@ -214,3 +214,134 @@ class TestSchemaManagerVectorTables:
         tables = {row[0] for row in cursor.fetchall()}
         assert "document_embeddings" not in tables
         conn.close()
+
+
+class TestFtsUpdateTrigger:
+    """FND-06 / CR-01: external-content FTS5 update triggers must not direct-UPDATE.
+
+    A direct UPDATE on an external-content FTS5 table corrupts the index
+    ("database disk image is malformed") on medium+ content edits, so the
+    document edit loop (`sif index update` on a changed note) cannot work.
+    """
+
+    MEDIUM_CONTENT = "# Title\n\n" + ("Paragraph text here. " * 400)
+    EDITED_CONTENT = "# Title changed\n\n" + ("Different paragraph text. " * 400)
+
+    @pytest.fixture
+    def fts_db(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            yield conn
+        finally:
+            conn.close()
+
+    def _insert_document(self, db: sqlite3.Connection) -> None:
+        db.execute(
+            "INSERT INTO collections (id, name, path, created_at, updated_at) "
+            "VALUES ('c1', 'n', '/p', '2020-01-01', '2020-01-01')"
+        )
+        db.execute(
+            "INSERT INTO documents (id, collection_id, path, filename, title, content, "
+            "checksum, mtime, created_at, updated_at) "
+            "VALUES ('d1', 'c1', '/p/a.md', 'a.md', 'T', ?, 'x1', 1.0, "
+            "'2020-01-01', '2020-01-01')",
+            (self.MEDIUM_CONTENT,),
+        )
+        db.commit()
+
+    def test_medium_document_update_keeps_fts_in_sync(self, fts_db):
+        """A medium+ content edit through UPDATE documents must not corrupt the index."""
+        SchemaManager(fts_db, embedding_dim=384).create_all()
+        self._insert_document(fts_db)
+
+        fts_db.execute(
+            "UPDATE documents SET content = ?, checksum = 'x2' WHERE id = 'd1'",
+            (self.EDITED_CONTENT,),
+        )
+        fts_db.commit()
+
+        assert (
+            fts_db.execute(
+                "SELECT COUNT(*) FROM documents_fts WHERE documents_fts MATCH 'different'"
+            ).fetchone()[0]
+            == 1
+        )
+        assert (
+            fts_db.execute(
+                "SELECT COUNT(*) FROM documents_fts WHERE documents_fts MATCH 'here'"
+            ).fetchone()[0]
+            == 0
+        )
+        assert fts_db.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+
+    def test_medium_chunk_update_keeps_fts_in_sync(self, fts_db):
+        """The chunks_fts update trigger uses the same safe pattern."""
+        SchemaManager(fts_db, embedding_dim=384).create_all()
+        self._insert_document(fts_db)
+        fts_db.execute(
+            "INSERT INTO document_chunks (id, document_id, sequence, content, created_at) "
+            "VALUES ('ch1', 'd1', 0, ?, '2020-01-01')",
+            (self.MEDIUM_CONTENT,),
+        )
+        fts_db.commit()
+
+        fts_db.execute(
+            "UPDATE document_chunks SET content = ? WHERE id = 'ch1'",
+            (self.EDITED_CONTENT,),
+        )
+        fts_db.commit()
+
+        assert (
+            fts_db.execute(
+                "SELECT COUNT(*) FROM chunks_fts WHERE chunks_fts MATCH 'different'"
+            ).fetchone()[0]
+            == 1
+        )
+        assert fts_db.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+
+    def test_legacy_direct_update_trigger_is_migrated(self, fts_db):
+        """create_all() replaces a pre-existing legacy direct-UPDATE trigger."""
+        SchemaManager(fts_db, embedding_dim=384).create_all()
+
+        for trigger, table in (
+            ("documents_fts_update", "documents_fts"),
+            ("chunks_fts_update", "chunks_fts"),
+        ):
+            fts_db.execute(f"DROP TRIGGER {trigger}")
+            base_table = "documents" if table == "documents_fts" else "document_chunks"
+            fts_db.execute(f"""
+                CREATE TRIGGER {trigger}
+                AFTER UPDATE ON {base_table}
+                BEGIN
+                    UPDATE {table} SET content = new.content WHERE rowid = old.rowid;
+                END
+            """)
+        fts_db.commit()
+
+        SchemaManager(fts_db, embedding_dim=384).create_all()
+
+        for trigger, table in (
+            ("documents_fts_update", "documents_fts"),
+            ("chunks_fts_update", "chunks_fts"),
+        ):
+            sql = fts_db.execute(
+                "SELECT sql FROM sqlite_master WHERE type='trigger' AND name=?",
+                (trigger,),
+            ).fetchone()[0]
+            assert f"UPDATE {table} SET" not in sql
+            assert "VALUES('delete'" in sql
+
+    def test_modern_trigger_is_left_alone(self, fts_db):
+        """create_all() does not churn an already-migrated trigger."""
+        SchemaManager(fts_db, embedding_dim=384).create_all()
+        trigger_sql = fts_db.execute(
+            "SELECT sql FROM sqlite_master WHERE type='trigger' AND name='documents_fts_update'"
+        ).fetchone()[0]
+
+        SchemaManager(fts_db, embedding_dim=384).create_all()
+
+        trigger_sql_after = fts_db.execute(
+            "SELECT sql FROM sqlite_master WHERE type='trigger' AND name='documents_fts_update'"
+        ).fetchone()[0]
+        assert trigger_sql_after == trigger_sql

@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 
-from sif.cli.commands.index import embed_cmd
+from sif.cli.commands.index import embed_cmd, update_cmd
 from sif.config.settings import Settings
 from sif.core.models import SearchOptions
 
@@ -120,6 +120,31 @@ def _delenv_settings_vars(monkeypatch) -> None:
     """Keep Settings construction hermetic against a developer shell (03-REVIEW WR-10/11)."""
     for var in ("SIF_EMBEDDING_DIM", "SIF_MODEL_TYPE", "SIF_MODEL_NAME"):
         monkeypatch.delenv(var, raising=False)
+
+
+def _seed_collection_dir(db_path: Path, settings: Settings, coll_path: str) -> str:
+    """Seed one collection pointing at a real directory; return the collection id."""
+    from sif.core.models import Collection
+    from sif.database.database import Database
+    from sif.database.repositories import CollectionRepository
+
+    db = Database(db_path)
+    with patch("sif.config.settings.get_settings", return_value=settings):
+        db.init_schema()
+        with db.connection:
+            coll_repo = CollectionRepository(db.connection)
+            coll = Collection(name="notes", path=coll_path)
+            coll_repo.create(coll)
+            coll_id = coll.id
+    db.close()
+    return coll_id
+
+
+def _invoke_update(db_path: Path, settings: Settings, args: list[str]) -> object:
+    """Invoke update_cmd against the real database."""
+    runner = CliRunner()
+    with patch("sif.config.settings.get_settings", return_value=settings):
+        return runner.invoke(update_cmd, args, obj={"index_path": db_path})
 
 
 class TestEmbedIdempotency:
@@ -259,3 +284,76 @@ class TestEmbedIdempotency:
         assert emb == chunks
         assert emb_ids == chunk_ids
         assert emb_ids.isdisjoint(partial[2])  # the healed document was re-chunked
+
+
+class TestUpdateInvalidatesStaleChunks:
+    """CR-01: content edits must invalidate chunks/embeddings on `sif index update`.
+
+    Edit note -> update -> embed (no --force) must serve fresh chunk text and
+    fresh vectors; before the fix, the chunk-id-set completeness check saw the
+    stale (never re-chunked) ids and skipped the document forever.
+    """
+
+    ORIGINAL = "# Original\n\n" + ("Original paragraph text. " * 300)
+    REWRITTEN = "# Rewritten\n\n" + ("Rewritten paragraph text. " * 300)
+
+    def test_edited_document_reembeds_with_fresh_content(
+        self,
+        tmp_path: Path,
+        monkeypatch,
+    ) -> None:
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "edit.db"
+        settings = _test_settings()
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        doc_file = notes / "a.md"
+        doc_file.write_text(self.ORIGINAL)
+        _seed_collection_dir(db_path, settings, str(notes))
+        manager, _vector_log = _make_manager_mock()
+
+        # First cycle: update -> embed
+        assert _invoke_update(db_path, settings, []).exit_code == 0
+        assert _invoke_embed(db_path, manager, settings, []).exit_code == 0
+        assert manager.embed.call_count == 1
+        _, chunks1, emb_ids1, chunk_ids1 = _store_state(db_path)
+        assert chunks1 >= 1
+        assert emb_ids1 == chunk_ids1
+
+        # Edit the note (medium+ content), then update + embed without --force
+        doc_file.write_text(self.REWRITTEN)
+        update_result = _invoke_update(db_path, settings, [])
+        assert update_result.exit_code == 0
+        embed_result = _invoke_embed(db_path, manager, settings, [])
+        assert embed_result.exit_code == 0
+
+        # The edited document was NOT skipped: a fresh embed batch ran
+        assert manager.embed.call_count == 2
+
+        conn = sqlite3.connect(str(db_path))
+        try:
+            contents = [row[0] for row in conn.execute("SELECT content FROM document_chunks")]
+            assert contents, "chunks were re-created after the edit"
+            assert all("Rewritten paragraph text" in c for c in contents)
+            assert not any("Original paragraph text" in c for c in contents)
+            # FTS serves the new text (exercises the fixed update trigger)
+            assert (
+                conn.execute(
+                    "SELECT COUNT(*) FROM documents_fts WHERE documents_fts MATCH 'rewritten'"
+                ).fetchone()[0]
+                == 1
+            )
+            assert (
+                conn.execute(
+                    "SELECT COUNT(*) FROM chunks_fts WHERE chunks_fts MATCH 'rewritten'"
+                ).fetchone()[0]
+                >= 1
+            )
+        finally:
+            conn.close()
+
+        # Embeddings reference exactly the fresh chunk set
+        emb2, chunks2, emb_ids2, chunk_ids2 = _store_state(db_path)
+        assert emb2 == chunks2
+        assert emb_ids2 == chunk_ids2
+        assert chunk_ids2.isdisjoint(chunk_ids1)  # re-chunked ids are fresh uuid4s

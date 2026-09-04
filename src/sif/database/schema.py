@@ -145,6 +145,23 @@ class SchemaManager:
             )
         """)
 
+    def _fts_update_trigger_is_legacy(self, trigger_name: str, fts_table: str) -> bool:
+        """Check if an existing FTS sync trigger uses the broken direct-UPDATE form.
+
+        Direct UPDATEs on an external-content FTS5 table are not supported and
+        corrupt the index ("database disk image is malformed") once the edit is
+        large enough to span internal node boundaries. The documented pattern
+        issues a 'delete' command plus a fresh INSERT instead.
+        """
+        cursor = self.db.execute(
+            "SELECT sql FROM sqlite_master WHERE type='trigger' AND name=?",
+            (trigger_name,),
+        )
+        row = cursor.fetchone()
+        if not row or not row[0]:
+            return False
+        return f"UPDATE {fts_table} SET" in row[0]
+
     def _create_fts_tables(self) -> None:
         """Create FTS5 virtual tables for full-text search with triggers."""
 
@@ -162,6 +179,16 @@ class SchemaManager:
 
         needs_rebuild_docs = _fts_is_misconfigured("documents_fts", "documents")
         needs_rebuild_chunks = _fts_is_misconfigured("chunks_fts", "document_chunks")
+
+        # Migrate legacy update triggers that direct-UPDATE the external-content
+        # FTS5 table (FND-06 / CR-01): such UPDATEs corrupt the FTS index once
+        # an edit spans internal node boundaries ("database disk image is
+        # malformed" on medium+ content edits). CREATE TRIGGER IF NOT EXISTS
+        # cannot replace them, so drop the legacy form before recreating below.
+        if self._fts_update_trigger_is_legacy("documents_fts_update", "documents_fts"):
+            self.db.execute("DROP TRIGGER documents_fts_update")
+        if self._fts_update_trigger_is_legacy("chunks_fts_update", "chunks_fts"):
+            self.db.execute("DROP TRIGGER chunks_fts_update")
 
         if needs_rebuild_docs:
             self.db.execute("DROP TABLE IF EXISTS documents_fts")
@@ -200,7 +227,9 @@ class SchemaManager:
             CREATE TRIGGER IF NOT EXISTS documents_fts_update
             AFTER UPDATE ON documents
             BEGIN
-                UPDATE documents_fts SET content = new.content WHERE rowid = old.rowid;
+                INSERT INTO documents_fts(documents_fts, rowid, content)
+                VALUES('delete', old.rowid, old.content);
+                INSERT INTO documents_fts(rowid, content) VALUES(new.rowid, new.content);
             END
         """)
         self.db.execute("""
@@ -223,7 +252,9 @@ class SchemaManager:
             CREATE TRIGGER IF NOT EXISTS chunks_fts_update
             AFTER UPDATE ON document_chunks
             BEGIN
-                UPDATE chunks_fts SET content = new.content WHERE rowid = old.rowid;
+                INSERT INTO chunks_fts(chunks_fts, rowid, content)
+                VALUES('delete', old.rowid, old.content);
+                INSERT INTO chunks_fts(rowid, content) VALUES(new.rowid, new.content);
             END
         """)
         self.db.execute("""
