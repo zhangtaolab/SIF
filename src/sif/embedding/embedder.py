@@ -118,6 +118,7 @@ class LlamaCppEmbedder(Embedder):
         model_path: str | Path,
         n_ctx: int = 8192,
         n_threads: int | None = None,
+        n_gpu_layers: int = 0,
         verbose: bool = False,
     ) -> None:
         """Initialize llama.cpp embedder.
@@ -126,6 +127,7 @@ class LlamaCppEmbedder(Embedder):
             model_path: Path to GGUF model file
             n_ctx: Context size
             n_threads: Number of threads (auto if None)
+            n_gpu_layers: Number of layers to offload to the GPU (0 = CPU only)
             verbose: Enable verbose output
         """
         try:
@@ -149,6 +151,7 @@ class LlamaCppEmbedder(Embedder):
             model_path=str(self.model_path),
             n_ctx=n_ctx,
             n_threads=n_threads,
+            n_gpu_layers=n_gpu_layers,
             embedding=True,
             verbose=verbose,
         )

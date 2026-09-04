@@ -141,6 +141,27 @@ class TestEmbeddingModelFactoryDispatch:
         _assert_working_embedder(model)
         assert model.dimension == 512
 
+    def test_gguf_dispatch_forwards_n_gpu_layers(self) -> None:
+        """WR-08: the settings n_gpu_layers kwarg is forwarded, not dropped."""
+        mock_llama = MagicMock()
+        mock_llama.return_value.n_embd.return_value = 512
+        llama_module = MagicMock()
+        llama_module.Llama = mock_llama
+
+        with (
+            patch.dict("sys.modules", {"llama_cpp": llama_module}),
+            patch("os.cpu_count", return_value=4),
+        ):
+            model = EmbeddingModelFactory().create_model(
+                ModelType.GGUF,
+                "/model.gguf",
+                "test-gguf",
+                n_gpu_layers=7,
+            )
+
+        assert isinstance(model, LlamaCppEmbedder)
+        assert mock_llama.call_args.kwargs["n_gpu_layers"] == 7
+
     def test_modelscope_dispatch(self) -> None:
         mock_downloader_class = MagicMock()
         mock_downloader_class.return_value.download.return_value = Path("/tmp/model")

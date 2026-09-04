@@ -52,6 +52,7 @@ class EmbeddingModelFactory:
             model_path=model_path,
             n_ctx=kwargs.get("n_ctx", 2048),
             n_threads=kwargs.get("n_threads"),
+            n_gpu_layers=kwargs.get("n_gpu_layers", 0),
             verbose=kwargs.get("verbose", False),
         )
 

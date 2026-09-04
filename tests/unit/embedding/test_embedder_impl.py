@@ -384,6 +384,30 @@ class TestLlamaCppEmbedder:
         call_kwargs = mock_llama.call_args.kwargs
         assert call_kwargs["n_threads"] == 4
 
+    def test_init_forwards_n_gpu_layers(self) -> None:
+        """WR-08: n_gpu_layers reaches the Llama constructor instead of being dropped."""
+        mock_model = MagicMock()
+        mock_model.n_embd.return_value = 512
+
+        modules, mock_llama = self._make_module(mock_model)
+        with patch.dict("sys.modules", modules), patch("os.cpu_count", return_value=4):
+            LlamaCppEmbedder(model_path="/model.gguf", n_gpu_layers=7)
+
+        call_kwargs = mock_llama.call_args.kwargs
+        assert call_kwargs["n_gpu_layers"] == 7
+
+    def test_init_defaults_to_cpu_only(self) -> None:
+        """WR-08: without n_gpu_layers the constructor still gets an explicit 0."""
+        mock_model = MagicMock()
+        mock_model.n_embd.return_value = 512
+
+        modules, mock_llama = self._make_module(mock_model)
+        with patch.dict("sys.modules", modules), patch("os.cpu_count", return_value=4):
+            LlamaCppEmbedder(model_path="/model.gguf")
+
+        call_kwargs = mock_llama.call_args.kwargs
+        assert call_kwargs["n_gpu_layers"] == 0
+
     def test_init_fallback_threads(self) -> None:
         """Test n_threads falls back to 4 when cpu_count is None."""
         mock_model = MagicMock()
