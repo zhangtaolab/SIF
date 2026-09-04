@@ -210,12 +210,13 @@ def embed_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
 
     try:
         manager = EmbeddingManager.from_settings(settings)
+        # Load eagerly so backend-missing / dimension-mismatch errors surface
+        # here (model loading is lazy, so from_settings alone never raises).
+        manager.load_model()
     except ImportError as e:
-        console.print(f"[red]Embedding backend not installed: {e}[/red]")
-        return
+        raise click.ClickException(f"Embedding backend not installed: {e}") from e
     except Exception as e:
-        console.print(f"[red]Failed to load embedding model: {e}[/red]")
-        return
+        raise click.ClickException(f"Failed to load embedding model: {e}") from e
 
     with db.connection:
         coll_repo = CollectionRepository(db.connection)
@@ -231,6 +232,7 @@ def embed_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             collections = coll_repo.list_all()
 
         total_chunks = 0
+        failed_collections: list[str] = []
 
         for coll in collections:
             if not coll:
@@ -276,6 +278,7 @@ def embed_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                     total_chunks += len(all_chunks)
                 except Exception as e:
                     console.print(f"  [red]Error embedding collection {coll.name}: {e}[/red]")
+                    failed_collections.append(coll.name)
 
             # Update collection stats
             documents = doc_repo.list_by_collection(coll.id)
@@ -283,6 +286,12 @@ def embed_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             coll_repo.update(coll)
 
         console.print(f"\n[green]Embedding complete: {total_chunks} chunks embedded[/green]")
+
+        if failed_collections:
+            raise click.ClickException(
+                f"Embedding failed for {len(failed_collections)} collection(s): "
+                + ", ".join(failed_collections)
+            )
 
 
 @index_group.command("status")

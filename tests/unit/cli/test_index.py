@@ -123,6 +123,83 @@ class TestEmbedCommand:
         call_args = mock_manager.embed.call_args[0][0]
         assert call_args == ["hello world"]
 
+    def test_embed_cmd_embedding_failure_exits_nonzero(self):
+        """embed_cmd must exit non-zero when embedding a collection fails."""
+        runner = CliRunner()
+
+        coll = self._make_collection()
+        doc = self._make_document(content="hello world")
+
+        mock_coll_repo = MagicMock()
+        mock_coll_repo.list_all.return_value = [coll]
+
+        mock_doc_repo = MagicMock()
+        mock_doc_repo.list_by_collection.return_value = [doc]
+
+        mock_manager = MagicMock()
+        mock_manager.embed.side_effect = RuntimeError("simulated backend failure")
+
+        with (
+            patch("sif.cli.commands.index.Database", return_value=MagicMock()),
+            patch(
+                "sif.cli.commands.index.CollectionRepository",
+                return_value=mock_coll_repo,
+            ),
+            patch(
+                "sif.cli.commands.index.DocumentRepository",
+                return_value=mock_doc_repo,
+            ),
+            patch(
+                "sif.cli.commands.index.DocumentChunkRepository",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "sif.cli.commands.index.create_chunker",
+                return_value=MagicMock(chunk=lambda text: [MagicMock(content=text, id="c1")]),
+            ),
+            patch(
+                "sif.embedding.manager.EmbeddingManager.from_settings",
+                return_value=mock_manager,
+            ),
+            patch(
+                "sif.config.settings.get_settings",
+                return_value=MagicMock(model_name="test"),
+            ),
+        ):
+            result = runner.invoke(
+                embed_cmd,
+                [],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code != 0
+        assert "Error embedding collection" in result.output
+        assert "Embedding failed for 1 collection(s): notes" in result.output
+
+    def test_embed_cmd_backend_load_failure_exits_nonzero(self):
+        """Backend load errors must reach the dedicated handler and exit non-zero."""
+        runner = CliRunner()
+
+        with (
+            patch("sif.cli.commands.index.Database", return_value=MagicMock()),
+            patch(
+                "sif.embedding.manager.EmbeddingManager.from_settings",
+                side_effect=ImportError("openai"),
+            ),
+            patch(
+                "sif.config.settings.get_settings",
+                return_value=MagicMock(model_name="test"),
+            ),
+        ):
+            result = runner.invoke(
+                embed_cmd,
+                ["--model-type", "openai"],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code != 0
+        assert "Embedding backend not installed" in result.output
+
     def test_embed_cmd_batches_across_documents(self):
         """embed_cmd batches embeddings across documents."""
         runner = CliRunner()
