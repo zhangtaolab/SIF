@@ -12,13 +12,18 @@ from sif.models.embedding import EmbeddingConfig, ModelType
 
 
 class TestEmbeddingManager:
-    def test_from_settings_passes_api_key_and_api_base(self) -> None:
+    def test_from_settings_passes_api_key_and_api_base(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Keep the test hermetic: no real cache DB under ~/.Caches/SIF.
+        monkeypatch.delenv("SIF_CACHE_EMBEDDINGS", raising=False)
         settings = Settings(
             model_type="openai",
             model_name="text-embedding-3-small",
             api_key="sk-test",
             api_base="https://api.example.com/v1",
             embedding_dim=256,
+            cache_embeddings=False,
         )
         manager = EmbeddingManager.from_settings(settings)
         assert manager._config.model_type == ModelType.OPENAI
