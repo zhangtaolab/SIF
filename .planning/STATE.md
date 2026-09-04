@@ -4,14 +4,14 @@ milestone: v1.0
 current_phase: 09
 current_phase_name: Embedding & Vector Search
 status: executing
-stopped_at: Completed 03-07-PLAN.md (phase 03 gap closure — ready for verification)
-last_updated: "2026-09-03T03:41:13.214Z"
-state_head: 445ecca5c33132f6224b42595f4c9477080ff218
+stopped_at: Completed 03-08-PLAN.md (phase 03 gap closure — G-03-3 closed)
+last_updated: "2026-09-04T09:55:09.413Z"
+state_head: ec5e22108be3a4b590d08f11c2f98f4e7dbd0ee8
 progress:
   total_phases: 9
   completed_phases: 4
-  total_plans: 47
-  completed_plans: 47
+  total_plans: 48
+  completed_plans: 48
 milestone_name: milestone
 ---
 
@@ -26,12 +26,12 @@ milestone_name: milestone
 
 ## Current Position
 
-Phase: 03 (Embedding & Vector Search) — gap closure EXECUTING
-Plan: 7 of 7 (complete — phase ready for verification)
+Phase: 03 (Embedding & Vector Search) — EXECUTING
+Plan: 8 of 8
 
-- **Phase:** 03 (gap closure; phases 01-09 originally executed, 03 gap closed by plan 03-07)
-- **Plan:** Complete — 7 of 7 plans have SUMMARYs
-- **Status:** Phase 03 ready for verification (03-VERIFICATION gap closed)
+- **Phase:** 03 (gap closure; phases 01-09 originally executed, 03 gaps closed by plans 03-07 and 03-08)
+- **Plan:** Complete — 8 of 8 plans have SUMMARYs
+- **Status:** Phase 03 gap closure complete — ready for verification
 - **Progress Bar:** `[████████████████████] 100%`
 
 ## Phase History
@@ -52,7 +52,7 @@ Plan: 7 of 7 (complete — phase ready for verification)
 
 - **Requirements mapped:** 31/31 v1 + 7 DOC requirements
 - **Phases defined:** 9
-- **Tests passing:** 528 passed, 11 skipped, 0 failed
+- **Tests passing:** 554 passed, 11 skipped, 0 failed
 - **Known blockers:** 0
 
 **Per-Plan Metrics:**
@@ -60,6 +60,7 @@ Plan: 7 of 7 (complete — phase ready for verification)
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
 | Phase 03 P07 | 23min | 3 tasks | 6 files |
+| Phase 03 P08 | 22min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -100,6 +101,9 @@ Plan: 7 of 7 (complete — phase ready for verification)
 - [Phase 09]: [Phase 03-07]: Configured embedding_dim disagreeing with API-detected dimension fails fast at load naming both values + SIF_EMBEDDING_DIM (extends D-09 fail-fast philosophy)
 - [Phase 09]: [Phase 03-07]: api_key passes only to the OpenAI client constructor — never logged, interpolated, or embedded in exceptions (threat T-03-01)
 - [Phase 09]: [Phase 03-07]: Factory honest signatures -> Embedder / **kwargs: Any completed the refactor plan 03-02 promised (03-REVIEW WR-01/WR-02)
+- [Phase 03]: [Phase 03-08] Idempotent embed via delete-before-insert: chunk_repo.delete_by_document -> VectorSearcher.delete_embeddings_by_document -> add_embeddings_batch in one transaction; probe-free dimension from get_model_info() (isinstance-guarded probe fallback)
+- [Phase 03]: [Phase 03-08] --force honored via exact chunk-id-set equality: _needs_embedding(live, embedded, force) module-level helper; default run skips complete documents with zero embed calls, partial/orphaned states self-heal
+- [Phase 03]: [Phase 03-08] VectorSearcher construction failure in embed_cmd surfaces as click.ClickException (D-03 fail-fast extended to the embed path; never swallowed into failed_collections)
 
 ### Roadmap Evolution
 
@@ -123,8 +127,8 @@ Plan: 7 of 7 (complete — phase ready for verification)
 
 ## Session Continuity
 
-- **Last session:** 2026-09-03T03:41:13.051Z
-- **Stopped at:** Completed 03-07-PLAN.md (phase 03 gap closure — ready for verification)
+- **Last session:** 2026-09-04T09:54:19.082Z
+- **Stopped at:** Completed 03-08-PLAN.md (phase 03 gap closure — G-03-3 closed)
 - **Resume file:** None
 - **Last action:** Phase 9 complete — integration tests written, 86% MCP coverage, full quality suite passes (419 tests)
 - **Next expected action:** Verify phase goal achievement (/gsd-verify-work or manual verification)

@@ -81,7 +81,7 @@ Plans:
   3. Document indexing benefits from batch embedding insertion for better performance
   4. User can download embedding models from ModelScope as an alternative to HuggingFace
 
-**Plans:** 8 plans (6 executed + 2 gap closure)
+**Plans:** 8/8 plans executed (6 executed + 2 gap closure)
 
 Plans:
 **Wave 1**
@@ -102,7 +102,7 @@ Plans:
 **Wave 4** *(blocked on Wave 3 completion)*
 
 - [x] 03-06-PLAN.md — Integrate EmbeddingManager into CLI search/index commands and fix indexer (VEC-01, VEC-02, VEC-03)
-- [ ] 03-08-PLAN.md — Make `sif index embed` idempotent for the vector store: delete-before-insert for re-chunked embeddings, honor --force (gap closure G-03-3, VEC-02, VEC-03)
+- [x] 03-08-PLAN.md — Make `sif index embed` idempotent for the vector store: delete-before-insert for re-chunked embeddings, honor --force (gap closure G-03-3, VEC-02, VEC-03)
 
 ### Phase 4: Advanced Search Pipeline
 
@@ -159,7 +159,7 @@ Plans:
 |-------|----------------|--------|-----------|
 | 1. Foundation Fix | 6/6 | Complete | 2026-04-14 |
 | 2. CLI Core Completion | 6/6 | Complete | 2026-04-15 |
-| 3. Embedding & Vector Search | 7/8 | In Progress|  |
+| 3. Embedding & Vector Search | 8/8 | In Progress|  |
 | 4. Advanced Search Pipeline | 5/5 | Complete | 2026-04-17 |
 | 5. Agent Context Experience | 7/7 | Complete | 2026-04-18 |
 | 6. Documentation Audit & Refresh | 7/7 | Complete | 2026-04-18 |
