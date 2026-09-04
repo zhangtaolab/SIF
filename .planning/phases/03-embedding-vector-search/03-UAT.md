@@ -1,14 +1,23 @@
 ---
-status: diagnosed
+status: testing
 phase: 03-Embedding & Vector Search
 source: [03-VERIFICATION.md]
 started: 2026-09-03T04:15:32Z
-updated: 2026-09-04T08:52:00Z
+updated: 2026-09-04T13:02:44Z
 ---
 
 ## Current Test
 
-[testing complete]
+number: 3
+name: G-03-3 re-verification — repeated `sif index embed` idempotency (post-fix)
+expected: |
+  On a real collection: run `sif index embed -c <name>` twice, then
+  `sif search vsearch <query>` — each document appears once per live chunk (no
+  duplicated rows at identical scores); document_embeddings count equals
+  document_chunks count. Original repro for contrast: 7 runs left 21 embedding
+  rows vs 3 chunks and vsearch returned the same document 7 times at 0.4538.
+  This live check also covers the optional D6 spot-check from 03-08 (same shape).
+awaiting: user response
 
 ## Tests
 
@@ -45,7 +54,14 @@ note: |
 
 ### 3. ModelScope interrupted/parallel download resume
 expected: Interrupted or parallel download resumes from the local snapshot cache — no restart-from-zero, no corruption (backstop-tagged truth; not unit-verifiable offline).
-result: issue
+result: pending
+note: |
+  RESUME portion PASSED in the original round (byte-level resume proven, no
+  corruption — see previous note). The issue found during this test (G-03-3,
+  orphaned vectors) was fixed by plan 03-08 (commits bbdfc0e..fe3d0dd) and
+  behaviorally verified by the re-verification round (integration tests re-run
+  independently: 4 passed; full suite 554→572 passed). Re-run the live check
+  above to confirm on a real collection.
 reported: "Resume itself PASSED — byte-level resume proven, no corruption — but repeated `sif index embed` runs pollute the vector store: vsearch returned 混合搜索 ×7 (identical score 0.4538); document_embeddings holds 21 rows with 21 distinct orphan chunk_ids while document_chunks has only 3."
 severity: major
 note: |
@@ -88,12 +104,31 @@ note: |
   "Error: Failed to load embedding model: Connection error." — both explicit,
   neither switched backends. (WR-08 fix confirmed live.)
 
+### 6. CR-01 fix spot-check — edited note re-embeds with fresh content
+expected: |
+  Edit a real note's content (medium+ edit), run `sif index update` then default
+  `sif index embed` (no --force) — the document is re-chunked and re-embedded with
+  fresh content (not skipped as stale, not crashed), and vsearch reflects the edit.
+  Covers fix(03) 3d307da: invalidation in update_cmd + the FTS5 `documents_fts_update`
+  trigger fix in schema.py (FND-06 — direct UPDATE on external-content FTS5 previously
+  crashed medium+ edits with "database disk image is malformed"). Covered by +18 new
+  regression tests (suite 572 passed); this is the live confirmation.
+result: [pending]
+
+### 7. CR-02 fix spot-check (optional) — per-collection failure isolation
+expected: |
+  A multi-collection embed run where one collection fails leaves the other
+  collections' work committed (no rollback-after-success-print; no re-billing of
+  remote backends on retry). Covered by unit tests (fix(03) 44425c8: per-collection
+  transactions, ClickException raised outside the transaction); live check optional.
+result: [pending]
+
 ## Summary
 
-total: 5
+total: 7
 passed: 4
-issues: 1
-pending: 0
+issues: 0
+pending: 3
 skipped: 0
 blocked: 0
 
@@ -101,11 +136,12 @@ blocked: 0
 
 - gap_id: G-03-3
   truth: "Repeated `sif index embed` runs (no --force) are idempotent for the vector store — embeddings of re-chunked documents replace the old ones; search returns each chunk once"
-  status: failed
-  reason: 'Claude-run UAT observed: after 7 embed runs on a 3-chunk collection, vsearch returns duplicated rows (混合搜索 ×7, identical 0.4538); DB has 21 document_embeddings rows with 21 distinct chunk_ids vs 3 document_chunks rows — 18 orphans fully searchable via denormalized vec0 metadata'
+  status: fixed
+  reason: 'Original round observed 21 orphaned document_embeddings rows vs 3 live chunks after 7 embed runs; vsearch returned the same document 7 times at identical score.'
   severity: major
   test: 3
   root_cause: "embed_cmd (src/sif/cli/commands/index.py) calls chunk_repo.delete_by_document(doc.id) which deletes only document_chunks rows, then re-chunks (fresh UUIDs) and calls vector_searcher.add_embeddings_batch() which is insert-only — old document_embeddings rows for the deleted chunk_ids are never removed. --force flag is accepted but ignored (force: bool noqa ARG001), so every run re-chunks everything."
+  closure: "Closed by plan 03-08 (bbdfc0e..fe3d0dd): VectorSearcher.delete_embeddings_by_document wired as delete-before-insert in the re-chunk branch; --force honored via _needs_embedding chunk-id-set equality; tests/integration/test_embed_idempotency.py reproduces the UAT evidence inverted against real sqlite-vec. Re-verification round independently confirmed (17/17 must-haves). Awaiting live re-confirmation (test 3)."
   artifacts:
     - path: "src/sif/cli/commands/index.py"
       issue: "embed_cmd: delete_by_document without matching vector deletion; add_embeddings_batch insert-only; unused --force param"
