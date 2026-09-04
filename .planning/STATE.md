@@ -3,10 +3,10 @@ gsd_state_version: 1.0
 milestone: v1.0
 current_phase: 04
 current_phase_name: Advanced Search Pipeline
-status: planning
-stopped_at: Phase 03 complete, ready to plan Phase 04
-last_updated: "2026-09-04T13:52:30.335Z"
-state_head: 756f5313087d0c987b26877c30d834562818559e
+status: gaps_found
+stopped_at: Phase 04 verification found 1 gap (SC 7 snippet display); awaiting /gsd-plan-phase 04 --gaps
+last_updated: "2026-09-04T15:44:49.332Z"
+state_head: afc49599f85b4be6ac0a66d6b1fd550361fa3b0b
 progress:
   total_phases: 9
   completed_phases: 5
@@ -21,17 +21,17 @@ milestone_name: milestone
 
 - **Name:** DocSift
 - **Core Value:** 用户可以在自己的笔记和文档库中，用自然语言快速、准确地找到需要的信息——无论关键词是否匹配。
-- **Current Focus:** Milestone v1.0 close-out — Phase 03 gap closure verified complete 2026-09-04 (UAT 7/7, SECURITY 19/19 closed); verification bookkeeping for phases 04–09 remains
+- **Current Focus:** Phase 04 — Advanced Search Pipeline
 - **Tech Stack:** Python 3.10+, SQLite (FTS5 + sqlite-vec), Click, Pydantic, sentence-transformers, llama-cpp-python
 
 ## Current Position
 
-Phase: 04 (Advanced Search Pipeline) — bookkeeping pending
-Plan: Not started
+Phase: 04 (Advanced Search Pipeline) — EXECUTING
+Plan: 1 of 5
 
 - **Phase:** 04 — Advanced Search Pipeline (historically executed 2026-04-17, 5/5 plans; verification bookkeeping not yet run)
 - **Plan:** Not started
-- **Status:** Ready to plan
+- **Status:** Executing Phase 04
 - **Progress Bar:** `[████████████████████] 100%`
 
 ## Phase History
@@ -131,8 +131,8 @@ Plan: Not started
 
 ## Session Continuity
 
-- **Last session:** 2026-09-04T13:55:00Z
-- **Stopped at:** Phase 03 verification complete (UAT 7/7 live-confirmed incl. G-03-3 re-verification, CR-01/CR-02 spot-checks; SECURITY.md created, 19/19 threats closed; VERIFICATION passed 17/17). Milestone close-out pending.
+- **Last session:** 2026-09-05T00:00:00Z
+- **Stopped at:** Phase 04 verification bookkeeping ran (/gsd-execute-phase 04): VALIDATION nyquist-compliant 0 gaps, SECURITY 18/18 closed threats_open:0, UI-REVIEW 17/24 advisory, code review 3C/12W/9I advisory, regression gate 572 passed — but goal verification returned gaps_found 7/8 (SC 7 / SRCH-07: snippet display last mile missing). Phase 04 NOT marked complete.
 - **Resume file:** None
-- **Last action:** /gsd-verify-work 03 completed with phase transition (ROADMAP: Phase 3 Complete 2026-09-04)
-- **Next expected action:** Milestone close-out — verification bookkeeping for phases 04–09 (/gsd-audit-uat), then /gsd-complete-milestone v1.0
+- **Last action:** /gsd-execute-phase 04 → verify_phase_goal = gaps_found; 04-VERIFICATION.md committed (3cfed40)
+- **Next expected action:** `/gsd-plan-phase 04 --gaps` (gap closure for SC 7), then `/gsd-execute-phase 04 --gaps-only`; alternatively verify-work for the 3 human-verification items. Phases 05–09 bookkeeping still pending after 04 closes.
