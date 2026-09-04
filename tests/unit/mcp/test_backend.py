@@ -8,6 +8,7 @@ import pytest
 
 from sif.mcp.backend import SearchBackend, _truncate_content
 from sif.mcp.protocol import CollectionInfo, Document, SearchResult
+from sif.models.embedding import ModelType
 
 
 @pytest.fixture
@@ -23,6 +24,36 @@ async def test_search_backend_init(backend):
     """Verify SearchBackend stores db_path and settings."""
     assert backend.db_path == "/tmp/test.db"
     assert backend.settings is not None
+
+
+@pytest.mark.asyncio
+async def test_search_backend_forwards_api_settings_to_factory():
+    """Verify SearchBackend passes api_key/api_base/dim/cache_dir to the factory."""
+    mock_embedder = MagicMock()
+    settings = MagicMock(
+        model_type="openai",
+        model_name="text-embedding-3-small",
+        model_path=None,
+        api_key="sk-test",
+        api_base="https://api.example.com/v1",
+        embedding_dim=8,
+        cache_embeddings=False,
+    )
+
+    with (
+        patch("sif.mcp.backend.get_settings", return_value=settings),
+        patch("sif.mcp.backend.EmbeddingModelFactory") as mock_factory_cls,
+    ):
+        mock_factory_cls.return_value.create_model.return_value = mock_embedder
+        backend = SearchBackend("/tmp/test.db")
+
+    call = mock_factory_cls.return_value.create_model.call_args
+    assert call.args[0] == ModelType.OPENAI
+    assert call.kwargs["api_key"] == "sk-test"
+    assert call.kwargs["api_base"] == "https://api.example.com/v1"
+    assert call.kwargs["embedding_dim"] == 8
+    assert call.kwargs["cache_dir"] is None
+    assert backend._embedder is mock_embedder
 
 
 @pytest.mark.asyncio

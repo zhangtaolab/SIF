@@ -50,6 +50,12 @@ class SearchBackend:
                 model_type,
                 model_path,
                 self.settings.model_name,
+                api_key=self.settings.api_key,
+                api_base=self.settings.api_base,
+                embedding_dim=self.settings.embedding_dim,
+                cache_dir=(
+                    str(self.settings.get_cache_dir()) if self.settings.cache_embeddings else None
+                ),
             )
         except Exception:
             logger.warning("Failed to load embedder; vector search will be unavailable")
