@@ -199,6 +199,94 @@ class TestVectorSearcher:
         assert results[0].content == "document content"
 
 
+class TestVectorEmbeddingDeletion:
+    """Tests for delete_embeddings_by_document and get_embedded_chunk_ids."""
+
+    def test_delete_embeddings_by_document_executes_parameterized_delete(self) -> None:
+        """Test delete runs a DELETE keyed only by the document-id placeholder."""
+        mock_db = MagicMock()
+        cursor = MagicMock()
+        cursor.rowcount = 3
+        mock_db.execute.return_value = cursor
+
+        searcher = VectorSearcher(mock_db)
+        searcher._vec_available = True
+
+        removed = searcher.delete_embeddings_by_document("d1")
+
+        assert removed == 3
+        call = mock_db.execute.call_args
+        sql = call[0][0]
+        assert "DELETE FROM document_embeddings" in sql
+        assert "document_id = ?" in sql
+        assert call[0][1] == ("d1",)
+        # Threat T-03-08-02: the id is never interpolated into the SQL text.
+        assert "d1" not in sql
+
+    def test_get_embedded_chunk_ids_returns_non_none_set(self) -> None:
+        """Test get_embedded_chunk_ids returns the set of non-None chunk ids."""
+        mock_db = MagicMock()
+        cursor = MagicMock()
+        cursor.fetchall.return_value = [("c1",), ("c2",), (None,)]
+        mock_db.execute.return_value = cursor
+
+        searcher = VectorSearcher(mock_db)
+        searcher._vec_available = True
+
+        result = searcher.get_embedded_chunk_ids("d1")
+
+        call = mock_db.execute.call_args
+        sql = call[0][0]
+        assert "SELECT chunk_id FROM document_embeddings" in sql
+        assert "document_id = ?" in sql
+        assert call[0][1] == ("d1",)
+        assert "d1" not in sql
+        assert isinstance(result, set)
+        assert result == {"c1", "c2"}
+
+    def test_delete_embeddings_by_document_on_real_vec0(self) -> None:
+        """Test on a real vec0 table: exactly the target document's rows are removed."""
+        import sqlite_vec
+
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            try:
+                conn.enable_load_extension(True)
+                sqlite_vec.load(conn)
+                conn.enable_load_extension(False)
+            except Exception:
+                pytest.skip("sqlite-vec not available")
+            conn.execute(
+                """
+                CREATE VIRTUAL TABLE document_embeddings USING vec0(
+                    embedding_id TEXT PRIMARY KEY,
+                    document_id TEXT NOT NULL,
+                    chunk_id TEXT,
+                    embedding FLOAT[2]
+                )
+                """,
+            )
+            searcher = VectorSearcher(conn, embedding_dim=2)
+            searcher.add_embeddings_batch(
+                [
+                    ("e1", "d1", "c1", [1.0, 0.0]),
+                    ("e2", "d1", "c2", [0.0, 1.0]),
+                    ("e3", "d2", "c3", [1.0, 1.0]),
+                ],
+            )
+
+            removed = searcher.delete_embeddings_by_document("d1")
+
+            assert removed == 2
+            remaining = conn.execute("SELECT document_id FROM document_embeddings").fetchall()
+            assert [row["document_id"] for row in remaining] == ["d2"]
+            assert searcher.get_embedded_chunk_ids("d1") == set()
+            assert searcher.get_embedded_chunk_ids("d2") == {"c3"}
+        finally:
+            conn.close()
+
+
 class TestVectorContextAttachment:
     """Tests for context_description attachment in vector search results."""
 

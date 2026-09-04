@@ -1,0 +1,185 @@
+"""Integration tests for idempotent `sif index embed` runs (G-03-3).
+
+Reproduces the UAT evidence from 03-UAT.md test 3 inverted: two embed runs on
+one collection must leave document_embeddings with exactly one row per live
+chunk, and vector search must return each chunk exactly once — never once per
+historical run (the observed 21-rows-vs-3-chunks, document-times-7 symptom).
+"""
+
+from __future__ import annotations
+
+import sqlite3
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+from click.testing import CliRunner
+
+from sif.cli.commands.index import embed_cmd
+from sif.config.settings import Settings
+from sif.core.models import SearchOptions
+
+
+DIM = 8
+
+
+def _make_manager_mock() -> tuple[MagicMock, list[list[list[float]]]]:
+    """Build a mocked EmbeddingManager producing deterministic DIM-length vectors.
+
+    Returns the manager mock and a log of per-call vector batches so tests can
+    query the store with the exact vectors a specific run inserted.
+    """
+    manager = MagicMock()
+    manager.get_model_info.return_value = {"loaded": True, "embedding_dim": DIM}
+    vector_log: list[list[list[float]]] = []
+
+    def fake_embed(texts: list[str], **_kwargs: object) -> MagicMock:
+        vectors = []
+        for i in range(len(texts)):
+            vec = [0.0] * DIM
+            vec[i % DIM] = 1.0
+            vec[(i + 1) % DIM] = 0.5
+            # Per-call offset makes each run's vectors distinguishable.
+            vec[DIM - 1] += len(vector_log) * 0.01
+            vectors.append(vec)
+        vector_log.append(vectors)
+        return MagicMock(embeddings=vectors)
+
+    manager.embed.side_effect = fake_embed
+    return manager, vector_log
+
+
+def _seed_collection(db_path: Path, settings: Settings) -> str:
+    """Seed one collection with one multi-section document; return the document id."""
+    from sif.core.models import Collection, Document
+    from sif.database.database import Database
+    from sif.database.repositories import CollectionRepository, DocumentRepository
+
+    db = Database(db_path)
+    with patch("sif.config.settings.get_settings", return_value=settings):
+        db.init_schema()  # creates the vec0 table with the test embedding_dim
+        with db.connection:
+            coll_repo = CollectionRepository(db.connection)
+            doc_repo = DocumentRepository(db.connection)
+            coll = Collection(name="notes", path="/notes", description="idempotency test")
+            coll_repo.create(coll)
+            sections = [
+                f"# Section {i}\n\n" + (f"Paragraph text for section {i}. " * 40)
+                for i in range(1, 4)
+            ]
+            doc = Document(
+                path="/notes/a.md",
+                collection_id=coll.id,
+                content="\n\n".join(sections),
+                title="A",
+            )
+            doc_repo.create(doc)
+            doc_id = doc.id
+    db.close()
+    return doc_id
+
+
+def _store_state(db_path: Path) -> tuple[int, int, set[str], set[str]]:
+    """Return (embedding_count, live_chunk_count, embedding_chunk_ids, live_chunk_ids)."""
+    import sqlite_vec
+
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.enable_load_extension(True)
+        sqlite_vec.load(conn)
+        conn.enable_load_extension(False)
+        emb_count = conn.execute("SELECT COUNT(*) FROM document_embeddings").fetchone()[0]
+        chunk_count = conn.execute("SELECT COUNT(*) FROM document_chunks").fetchone()[0]
+        emb_ids = {row[0] for row in conn.execute("SELECT chunk_id FROM document_embeddings")}
+        chunk_ids = {row[0] for row in conn.execute("SELECT id FROM document_chunks")}
+    finally:
+        conn.close()
+    return emb_count, chunk_count, emb_ids, chunk_ids
+
+
+def _test_settings() -> Settings:
+    """Build hermetic test settings with the fake embedding dimension."""
+    return Settings(embedding_dim=DIM, model_name="test", cache_embeddings=False)
+
+
+def _invoke_embed(
+    db_path: Path,
+    manager: MagicMock,
+    settings: Settings,
+    args: list[str],
+) -> object:
+    """Invoke embed_cmd against the real database with the mocked manager."""
+    runner = CliRunner()
+    with (
+        patch("sif.config.settings.get_settings", return_value=settings),
+        patch("sif.embedding.manager.EmbeddingManager.from_settings", return_value=manager),
+    ):
+        return runner.invoke(embed_cmd, args, obj={"index_path": db_path})
+
+
+def _delenv_settings_vars(monkeypatch) -> None:
+    """Keep Settings construction hermetic against a developer shell (03-REVIEW WR-10/11)."""
+    for var in ("SIF_EMBEDDING_DIM", "SIF_MODEL_TYPE", "SIF_MODEL_NAME"):
+        monkeypatch.delenv(var, raising=False)
+
+
+class TestEmbedIdempotency:
+    """Two consecutive embed runs on one real sqlite-vec database."""
+
+    def test_two_embed_runs_leave_one_row_per_live_chunk(
+        self,
+        tmp_path: Path,
+        monkeypatch,
+    ) -> None:
+        """The UAT 21-rows-vs-3-chunks evidence inverted: replace, not append."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "embed.db"
+        settings = _test_settings()
+        _seed_collection(db_path, settings)
+        manager, _vector_log = _make_manager_mock()
+
+        result1 = _invoke_embed(db_path, manager, settings, [])
+        assert result1.exit_code == 0
+        emb1, chunks1, emb_ids1, chunk_ids1 = _store_state(db_path)
+        assert chunks1 >= 2  # multi-chunk document keeps the invariant non-trivial
+        assert emb1 == chunks1
+        assert emb_ids1 == chunk_ids1
+
+        result2 = _invoke_embed(db_path, manager, settings, [])
+        assert result2.exit_code == 0
+        emb2, chunks2, emb_ids2, chunk_ids2 = _store_state(db_path)
+        assert chunks2 == chunks1
+        assert emb2 == chunks2  # replace, not append
+        assert emb_ids2 == chunk_ids2  # every embedding references a live chunk
+        assert emb_ids2.isdisjoint(emb_ids1)  # re-chunked ids replaced the old ones
+
+    def test_vector_search_returns_each_chunk_once_after_two_runs(
+        self,
+        tmp_path: Path,
+        monkeypatch,
+    ) -> None:
+        """The document-times-7 UAT symptom inverted: one result row per live chunk."""
+        from sif.database.database import Database
+        from sif.search.vector import VectorSearcher
+
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "embed.db"
+        settings = _test_settings()
+        doc_id = _seed_collection(db_path, settings)
+        manager, vector_log = _make_manager_mock()
+
+        assert _invoke_embed(db_path, manager, settings, []).exit_code == 0
+        assert _invoke_embed(db_path, manager, settings, []).exit_code == 0
+
+        emb_count, chunk_count, _, _ = _store_state(db_path)
+        assert emb_count == chunk_count
+
+        db = Database(db_path)
+        try:
+            searcher = VectorSearcher(db.connection, embedding_dim=DIM)
+            run2_vectors = vector_log[-1]
+            results = searcher.search(run2_vectors[0], SearchOptions(limit=chunk_count))
+        finally:
+            db.close()
+
+        assert len(results) == chunk_count
+        assert {r.document_id for r in results} == {doc_id}
