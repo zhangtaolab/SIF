@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -267,6 +268,23 @@ def embed_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     # remote backends are never billed for a throwaway probe embedding.
     model_dim = manager.get_model_info().get("embedding_dim")
     embedding_dim = model_dim if isinstance(model_dim, int) else len(manager.embed_single("probe"))
+
+    # Fail fast when the loaded model's dimension disagrees with the vec0
+    # table's declared dimension (WR-02): local backends validate this nowhere
+    # else, and the mismatch would otherwise surface as a raw sqlite-vec
+    # insert error only after chunks are already written.
+    schema_row = db.connection.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='document_embeddings'"
+    ).fetchone()
+    if schema_row:
+        schema_sql = schema_row[0] if isinstance(schema_row[0], str) else ""
+        dim_match = re.search(r"FLOAT\[(\d+)\]", schema_sql)
+        if dim_match and int(dim_match.group(1)) != embedding_dim:
+            raise click.ClickException(
+                f"Model '{model or settings.model_name}' produces {embedding_dim}-dim "
+                f"embeddings but the index stores {dim_match.group(1)}-dim vectors. "
+                "Set SIF_EMBEDDING_DIM to the model's dimension and rebuild."
+            )
 
     coll_repo = CollectionRepository(db.connection)
     doc_repo = DocumentRepository(db.connection)

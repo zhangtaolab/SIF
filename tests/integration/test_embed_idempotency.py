@@ -386,6 +386,39 @@ class TestUpdateInvalidatesStaleChunks:
         assert chunk_ids2.isdisjoint(chunk_ids1)  # re-chunked ids are fresh uuid4s
 
 
+class TestDimensionMismatchFailsFast:
+    """WR-02: a model whose dim disagrees with the vec0 table must fail fast.
+
+    Local backends drop the settings embedding_dim kwarg, so without this
+    check the mismatch surfaced as a raw sqlite-vec insert error only after
+    chunks were already written — and every later run self-healed into the
+    same failure.
+    """
+
+    def test_model_dim_mismatch_exits_with_remediation_message(
+        self,
+        tmp_path: Path,
+        monkeypatch,
+    ) -> None:
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "mismatch.db"
+        settings = _test_settings()  # schema built with FLOAT[8]
+        _seed_collection(db_path, settings)
+        manager, _vector_log = _make_manager_mock()
+        manager.get_model_info.return_value = {"loaded": True, "embedding_dim": 4}
+
+        result = _invoke_embed(db_path, manager, settings, [])
+
+        assert result.exit_code != 0
+        assert "produces 4-dim embeddings but the index stores 8-dim vectors" in result.output
+        assert "SIF_EMBEDDING_DIM" in result.output
+
+        # Nothing was written: no chunks, no vectors
+        emb, chunks, _, _ = _store_state(db_path)
+        assert chunks == 0
+        assert emb == 0
+
+
 class TestRemovalPurgesEmbeddings:
     """WR-01: removing a vanished file must purge its embeddings, not orphan them.
 
