@@ -230,9 +230,11 @@ class SearchPipeline:
         ):
             try:
                 expanded = self.query_expander.expand(parsed_query)
-                # Deduplicate: keep original first, then unique expanded variants
+                # Deduplicate against the original without assuming the
+                # expander echoes it: the QueryExpander contract only promises
+                # multiple variants, not element-0 echo.
                 seen = {parsed_query.lower()}
-                for variant in expanded[1:]:
+                for variant in expanded:
                     if variant.lower() not in seen:
                         seen.add(variant.lower())
                         queries.append(variant)

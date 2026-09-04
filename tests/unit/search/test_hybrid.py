@@ -264,6 +264,28 @@ class TestSearchPipelineExpansion:
         # Should only search twice (original + one truly unique variant)
         assert pipeline.hybrid.bm25.search.call_count == 2
 
+    def test_pipeline_expansion_without_original_echo(
+        self,
+        mock_db: MagicMock,
+        mock_embedder: MagicMock,
+    ) -> None:
+        """A conforming expander that does not echo the original keeps all variants."""
+        mock_expander = MagicMock()
+        mock_expander.expand.return_value = ["variant1", "variant2"]
+
+        pipeline = SearchPipeline(
+            mock_db,
+            embedder=mock_embedder,
+            query_expander=mock_expander,
+        )
+        pipeline.hybrid.bm25 = create_autospec(BM25Searcher, instance=True)
+        pipeline.hybrid.bm25.search.return_value = []
+
+        pipeline.search("query")
+
+        # Original + both variants: none of the variants is dropped.
+        assert pipeline.hybrid.bm25.search.call_count == 3
+
 
 class TestSearchPipelineReranking:
     """Test SearchPipeline reranking."""
