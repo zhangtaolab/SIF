@@ -60,9 +60,7 @@ class Settings(BaseSettings):
     )
     model_type: str = Field(
         default="modelscope",
-        description=(
-            "Embedding model type (gguf, sentence_transformers, openai, huggingface, modelscope)"
-        ),
+        description="Embedding model type (gguf, sentence_transformers, openai, modelscope)",
     )
     n_gpu_layers: int = Field(
         default=0,
@@ -152,8 +150,15 @@ class Settings(BaseSettings):
     @field_validator("model_type")
     @classmethod
     def validate_model_type(cls, v: str) -> str:
-        """Validate model_type is one of the supported backends."""
-        valid_types = {"sentence_transformers", "gguf", "openai", "modelscope", "huggingface"}
+        """Validate model_type is one of the supported backends.
+
+        "huggingface" is deliberately absent: the backend is not implemented
+        (EmbeddingModelFactory._create_huggingface_model raises
+        NotImplementedError) and accepting it here only deferred the failure
+        to model load time with a confusing error (WR-07). The
+        ModelType.HUGGINGFACE enum member stays for internal use.
+        """
+        valid_types = {"sentence_transformers", "gguf", "openai", "modelscope"}
         if v not in valid_types:
             raise ValueError(f"Invalid model_type: {v}. Must be one of {sorted(valid_types)}")
         return v

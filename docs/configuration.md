@@ -56,7 +56,7 @@ SIF_LOG_LEVEL=INFO
 | `SIF_EMBEDDING_DIM` | int | `1024` | Embedding dimension |
 | `SIF_MAX_TOKENS` | int | `512` | Maximum tokens per input |
 | `SIF_BATCH_SIZE` | int | `32` | Batch size for inference |
-| `SIF_MODEL_TYPE` | str | `sentence_transformers` | Embedding model type (gguf, sentence_transformers, openai, huggingface) (validated by `validate_model_type`) |
+| `SIF_MODEL_TYPE` | str | `sentence_transformers` | Embedding model type (gguf, sentence_transformers, openai, modelscope) (validated by `validate_model_type`) |
 | `SIF_N_GPU_LAYERS` | int | `0` | Number of GPU layers for GGUF models |
 
 ### API Settings

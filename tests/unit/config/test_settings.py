@@ -28,6 +28,12 @@ def test_model_type_validation_rejects_invalid_values() -> None:
         Settings(model_type="invalid")
 
 
+def test_model_type_validation_rejects_unimplemented_huggingface() -> None:
+    """WR-07: "huggingface" validates nowhere — every path to it dead-ends."""
+    with pytest.raises(ValueError, match="Invalid model_type: huggingface"):
+        Settings(model_type="huggingface")
+
+
 def test_api_base_validation_accepts_https_url() -> None:
     """Test that api_base accepts HTTPS URLs."""
     settings = Settings(api_base="https://api.openai.com/v1")
