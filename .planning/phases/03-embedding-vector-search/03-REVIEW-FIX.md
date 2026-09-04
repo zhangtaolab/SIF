@@ -1,265 +1,224 @@
 ---
 phase: 03-embedding-vector-search
-fixed_at: 2026-09-04T00:00:00Z
+fixed_at: 2026-09-04T13:12:00Z
 review_path: .planning/phases/03-embedding-vector-search/03-REVIEW.md
 iteration: 1
-findings_in_scope: 14
-fixed: 14
-skipped: 7
+findings_in_scope: 10
+fixed: 10
+skipped: 0
 status: all_fixed
 ---
 
-# Phase 03: Code Review Fix Report
+# Phase 3: Code Review Fix Report
 
-**Fixed at:** 2026-09-04
-**Source review:** `.planning/phases/03-embedding-vector-search/03-REVIEW.md`
+**Fixed at:** 2026-09-04T13:12:00Z
+**Source review:** .planning/phases/03-embedding-vector-search/03-REVIEW.md
 **Iteration:** 1
-**Fix scope:** critical_warning (3 Critical + 11 Warning in scope; 7 Info out of scope)
 
 **Summary:**
-- Findings in scope: 14 (CR-01..CR-03, WR-01..WR-11)
-- Fixed: 14
-- Skipped: 7 (all Info severity, out of scope per fix_scope)
+- Findings in scope: 10 (2 Critical + 8 Warning; Info findings out of scope per fix_scope)
+- Fixed: 10
+- Skipped: 0
 
-All 14 in-scope findings were fixed, each as an atomic commit on `main`
-(landed via a temporary worktree branch `gsd-reviewfix/03-19150`, fast-forwarded
-to `main` at `072ca7f`). Every fix adds or updates regression tests where the
-review requested them.
-
-**Verification:** full quality suite run per fix and once more after landing,
-from the main checkout at `072ca7f`: `ruff check src tests` (clean),
-`ruff format --check src tests` (clean, 124 files), `pytest` (544 passed,
-11 skipped, 2 pre-existing ResourceWarnings in
-`tests/unit/search/test_bm25.py::TestBM25ContextAttachment`, untouched by this
-work). Fixes were developed and verified inside the isolated worktree
-(`PYTHONPATH=<worktree>/src` over the editable install) and the final gate run
-was repeated in the main checkout after the fast-forward, so the numbers above
-are reproducible from the tree a reader sees. Note: `mypy src/sif` still aborts
-on a site-packages file (`mcp/client/sse.py`) both before and after this work —
-a pre-existing follow-imports configuration issue, not part of the required
-quality suite (see CR-03 notes).
+**Verification (where it ran):** all gates ran inside the isolated review-fix
+worktree (`.claude/worktrees/rf-03-52365-1788523423`, branch
+`gsd-reviewfix/03-52365`), with `PYTHONPATH` pinned to the worktree's `src/`
+because the editable install resolves `sif` to the main checkout. Full suite:
+`python -m pytest -q` -> **572 passed, 11 skipped** (baseline before this
+round: 554 passed, 11 skipped; +18 new tests). `ruff check src tests` and
+`ruff format --check src tests`: clean. `mypy` on the modified files fails
+inside third-party `sentence_transformers` (site-packages, Python-version
+mismatch) — reproduced identically on the pre-fix main checkout, i.e.
+pre-existing and untouched by these fixes.
 
 ## Fixed Issues
 
-### CR-01: Embedding cache not segmented by model
+### CR-01: Content changes never propagate — stale chunks and stale vectors with no invalidation path
 
-**Files modified:** `src/sif/embedding/manager.py`, `src/sif/embedding/cache.py`, `tests/unit/embedding/test_manager.py`
-**Commit:** `3ce5b20`
-**Applied fix:** `EmbeddingManager.embed()` now keys cache reads/writes with a
-model id (`"{model_type}:{model_name}"`, plus `@{api_base}` when set) instead of
-the shared `"default"` bucket. Adapted beyond the suggestion: the review's
-suggested caller-only fix was insufficient — `EmbeddingCache`'s table had
-`PRIMARY KEY (content_hash)` alone, so one model's row *replaced* another's for
-the same text (verified by the new regression test failing before the schema
-change). The table now uses `PRIMARY KEY (content_hash, model_id)` and legacy
-single-key tables are detected and rebuilt on open (cache entries simply
-re-embed). Regression test embeds the same text under two models sharing one
-cache and asserts the second misses, plus a same-model cache-hit assertion.
+**Files modified:** `src/sif/cli/commands/index.py`, `src/sif/database/schema.py`,
+`tests/unit/database/test_schema.py`, `tests/integration/test_embed_idempotency.py`
+**Commit:** 3d307da
+**Applied fix:** Two-part fix, per the verifier's authorized minimal-correct path.
 
-### CR-02: BM25 FTS5 query built from raw user input crashes on common queries
+1. `update_cmd` now invalidates chunk/embedding state when a document's
+   content changes (or `--force` re-indexes): `chunk_repo.delete_by_document()`
+   plus `vector_searcher.delete_embeddings_by_document()` via a new
+   `_embedding_purger()` helper (returns None when sqlite-vec is absent, which
+   also means no vec0 table — nothing to purge). The next `embed` run then
+   sees an empty live chunk set and re-chunks/re-embeds the new content
+   instead of skipping it forever.
+2. Fixed the pre-existing FND-06 trigger bug that blocks the same edit loop:
+   `documents_fts_update` (and the identical `chunks_fts_update` pattern)
+   direct-UPDATEd an external-content FTS5 table, which crashes with
+   `database disk image is malformed` on medium+ content edits (reproduced
+   before fixing; `doc_repo.update()` fires this trigger for every content
+   edit). Both triggers now use the documented `'delete'`-command + INSERT
+   pattern, and `create_all()` migrates legacy triggers by detecting the
+   direct-UPDATE form in `sqlite_master` and dropping/recreating them.
 
-**Files modified:** `src/sif/search/bm25.py`, `tests/unit/search/test_bm25.py`
-**Commit:** `f29d8e8`
-**Applied fix:** Added `_sanitize_term()` — FTS5 metacharacters (`" * ( ) : ^`)
-are replaced with spaces (preserving token boundaries, e.g. `foo:bar` becomes
-phrase `foo bar` which still matches) and the remainder is wrapped in double
-quotes with a trailing `*`. Deviations from the suggested snippet, verified
-empirically against a real `tokenize='porter'` FTS5 table: (1) quote-wrapped
-phrases with `*` *outside* the closing quote are valid phrase-prefix queries on
-SQLite 3.51, so prefix matching is kept rather than dropped; (2) the suggested
-`return "*"` for no usable terms is itself a crasher (`MATCH '*'` ->
-`OperationalError: unknown special query`), so empty/sanitized-away queries now
-return `'""'` (empty phrase, matches nothing, no crash). Tests execute built
-queries for every crashing input from the review against a real FTS5 table and
-assert `e-mail`/`c++`/`don't` still find their documents. The optional
-CLI-boundary `OperationalError` catch was not added — sanitization removes the
-crash class at the source.
+**Decision documented:** without the trigger fix, any medium+ content edit
+crashes inside `update_cmd` — CR-01's edit -> update -> embed loop could not
+work end-to-end — so the trigger fix was included in CR-01 rather than
+deferred. Residual limitation (accepted): documents edited *before* this fix
+(row already updated, chunks stale, embed already skipped them once) stay
+stale until their next edit or `--force`; invalidation happens at update
+time, and embedding state is not versioned by checksum.
 
-### CR-03: Declared Python 3.9 support broken at import time
+**Tests:** 4 new schema tests (medium-update keeps FTS in sync + integrity ok
+for both triggers, legacy-trigger migration, no-churn for migrated triggers)
+— these use a plain in-memory connection (FTS5 is core SQLite) because the
+existing `vec_db` fixture's `load_extension("vec0")` mechanism never loads in
+this environment and would have skipped them everywhere. 1 new end-to-end
+integration test: edit note -> `update` -> `embed` (no --force) -> fresh chunk
+text in `document_chunks`/`chunks_fts`/`documents_fts`, fresh embedding ids,
+second embed batch actually runs (fails on the old code by skipping instead).
 
-**Files modified:** `pyproject.toml`, `CLAUDE.md`, `README.md`, `docs/installation.md`, `docs/development.md`, plus 13 source/test files for mechanical lint conformance
-**Commit:** `bc441d0`
-**Applied fix:** Took the recommended honest-bump path:
-`requires-python = ">=3.10"`, dropped the 3.9 classifier, set
-`[tool.ruff] target-version = "py310"`, `[tool.black] target-version` without
-py39, `[tool.mypy] python_version = "3.10"`, and updated every doc that
-advertised 3.9 (CLAUDE.md overview + style section, README badge, installation
-and development guides; `docs/installation.md`'s "SQLite 3.9.0+" is a SQLite
-version, left alone). The ruff target bump activates py310-only rules, so the
-required mechanical fixes were applied across the codebase: UP045
-(`Optional[X]` -> `X | None`, matching CLAUDE.md's stated style), UP035
-(`typing.Callable` -> `collections.abc`), and B905 (`zip(strict=True)` — at the
-chunks/embeddings join points this additionally enforces the 1:1 contract WR-03
-is about). Note: `mypy src/sif` still aborts, but on a site-packages file
-(`mcp/client/sse.py` pattern matching) — the same abort-class the review
-documented under the old 3.9 config; a separate pre-existing config issue.
+### CR-02: embed_cmd per-collection failure handling defeated by its own transaction
 
-### WR-01: `EmbeddingConfig.api_key` leaks in repr()
+**Files modified:** `src/sif/cli/commands/index.py`, `tests/integration/test_embed_idempotency.py`
+**Commit:** 44425c8
+**Applied fix:** Removed the whole-run `with db.connection:` wrapper and made
+the transaction per collection (reviewer's option A): each collection's
+chunk/persist/stats work commits in its own `with db.connection:` block inside
+a try/except; a failed collection rolls back only itself and is recorded in
+`failed_collections`; the final `ClickException` is raised *outside any
+transaction* after the success print. `total_chunks` is now incremented only
+after a collection's transaction commits, so the "Embedding complete" line
+never reports rolled-back work. The `VectorSearcher`-construction
+`ClickException` is likewise raised outside any open transaction.
+**Tests:** new integration test on a real DB: collection `a-good` embeds,
+collection `b-bad`'s backend call fails -> command exits non-zero naming
+`b-bad`, yet `a-good`'s chunks and embeddings are persisted (asserted by
+re-opening the DB) — fails on the old code, which rolled everything back.
 
-**Files modified:** `src/sif/models/embedding.py`, `tests/unit/embedding/test_manager.py`
-**Commit:** `3649412`
-**Applied fix:** `api_key: str | None = Field(None, exclude=True, repr=False)`,
-closing the repr leak (pydantic v2 `exclude` never affected `repr()`). Added a
-regression test asserting the key is absent from both `repr()` and
-`model_dump()`.
+### WR-01: Deleting a document orphans its vec0 rows
 
-### WR-02: `Settings.model_dump()` includes `api_key`
+**Files modified:** `src/sif/cli/commands/index.py`, `tests/integration/test_embed_idempotency.py`
+**Commit:** bec80ec
+**Applied fix:** The removal loop in `update_cmd` now purges embeddings
+(via the CR-01 `_embedding_purger`) before `doc_repo.delete()`, so vanished
+files no longer leave orphan vectors occupying KNN top-k slots.
+The longer-term suggestion (purge inside `DocumentRepository.delete` for every
+caller) was not taken — repository layer has no VectorSearcher dependency
+today and the finding's minimal fix covers the orphan-manufacturing path.
+**Tests:** new integration test: embed a real file, unlink it, `update` ->
+`Removed: 1`, and both `document_chunks` and `document_embeddings` counts are
+0 (old code left embeddings > 0).
 
-**Files modified:** `src/sif/config/settings.py`, `tests/unit/config/test_settings.py`
-**Commit:** `c9cdc88`
-**Applied fix:** Added `exclude=True` to `Settings.api_key` (alongside the
-existing `repr=False`) and a regression test asserting both `repr()` and
-`model_dump()` are clean. No call site dumps settings today.
+### WR-02: Model dimension never validated against the schema for local backends
 
-### WR-03: `EmbeddingManager.embed()` silently drops unfilled slots
+**Files modified:** `src/sif/cli/commands/index.py`, `tests/integration/test_embed_idempotency.py`
+**Commit:** 5391438
+**Applied fix:** After computing `embedding_dim` from the eagerly-loaded
+model, `embed_cmd` reads the vec0 table's declared `FLOAT[n]` from
+`sqlite_master` and fails fast with a remediation message ("Set
+SIF_EMBEDDING_DIM to the model's dimension and rebuild") before any chunks
+are written. Skips cleanly when the table is absent (no sqlite-vec).
+**Tests:** new integration test: FLOAT[8] schema + manager reporting dim 4 ->
+exit non-zero with "produces 4-dim embeddings but the index stores 8-dim
+vectors", and zero chunks/embeddings written.
 
-**Files modified:** `src/sif/embedding/manager.py`, `tests/unit/embedding/test_manager.py`
-**Commit:** `f6d5642`
-**Applied fix:** After `embed_batch`, a length mismatch raises `RuntimeError`
-("Embedding model returned N embeddings for M inputs") instead of silently
-truncating via `zip()`; the response construction fails if any slot is unfilled
-rather than filtering. `embed()` was split into `_lookup_cached` /
-`_compute_embeddings` helpers to stay under the mccabe-10 limit (no rule
-suppression). Regression test covers the short backend response.
+### WR-03: `k = {options.limit}` interpolates a query parameter into SQL text
 
-### WR-04: `OpenAIEmbedder.embed_batch` assumes `response.data` ordering
+**Files modified:** `src/sif/search/vector.py`, `tests/unit/search/test_vector.py`
+**Commit:** 0978de5
+**Applied fix:** The KNN limit is now bound (`k = ?`) with `max(1,
+options.limit)` clamping, positioned in the params list between the embedding
+and the collection ids to match SQL order. Verified against real sqlite-vec
+that `k = ?` positional binding works. The reviewer's optional CLI
+`min=1`/Field-ge validation was NOT added: `SearchOptions` is a plain shared
+dataclass (CLI, MCP, pipeline) and the single clamp at the only SQL sink
+covers every entry point; adding validation in one or two of them would
+leave the others inconsistent.
+**Tests:** k is bound not interpolated; non-positive limit clamps (fetch
+floor + trim to 1 row).
 
-**Files modified:** `src/sif/embedding/embedder.py`, `tests/unit/embedding/test_openai_embedder.py`, `tests/unit/embedding/test_factory.py`, `tests/unit/cli/test_index.py`
-**Commit:** `87a58e3`
-**Applied fix:** Each slice's response is sorted by `item.index` and validated
-to be exactly `0..n-1`, else `RuntimeError("...misindexed...")`; the ragged
-length check is kept first so its clearer error is preserved. Test fakes in all
-three files now populate `index` like the real SDK (the old fakes baked in the
-in-order assumption). New tests: reversed-order response is normalized to
-correct text->vector mapping; misindexed `[0, 0, 1]` raises.
+### WR-04: Collection filter applied after the KNN k-limit — filtered searches under-return
 
-### WR-05: Dimension cache keyed by model name only
+**Files modified:** `src/sif/search/vector.py`, `tests/unit/search/test_vector.py`
+**Commit:** a8b0943
+**Applied fix:** Over-fetch then trim, as suggested: `fetch_k = max(limit *
+4, 50)` bounded surplus into the vec0 MATCH, collection filter and min_score
+applied on the joined rows (still `ORDER BY distance`), then trim to
+`max(1, options.limit)` and assign ranks sequentially after the cut (also
+fixes the IN-03 rank-gap issue as a side effect). Ordering semantics
+preserved: score is monotone in distance, so unfiltered searches return the
+same rows in the same order as before; `add_embeddings_batch` insert
+semantics untouched per the 03-08 constraint. Fixed a `None` unpack bug
+caught during verification (`*options.collection_ids` when the field is
+None).
+**Tests:** two real-vec0 tests — collection-filtered search returns matches
+sitting at global ranks 4-5 (a tight k=2 returned nothing before), and
+unfiltered search keeps exact top-limit ordering/ranks.
 
-**Files modified:** `src/sif/embedding/embedder.py`, `tests/unit/embedding/test_openai_embedder.py`
-**Commit:** `9c21f0d`
-**Applied fix:** Cache key is now `"{api_base or 'default'}::{model_name}"`
-(taking the review's first suggested option). Docstrings updated. Existing
-cache tests updated to the new key (the expiry test now writes the correct key
-so it tests TTL, not a key miss), and a new test proves two endpoints serving
-the same model name probe independently and coexist in the cache file.
-
-### WR-06: `batch_size` never reaches `OpenAIEmbedder`
-
-**Files modified:** `src/sif/embedding/factory.py`, `src/sif/embedding/manager.py`, `tests/unit/embedding/test_factory.py`, `tests/unit/embedding/test_manager.py`
-**Commit:** `3cbf190`
-**Applied fix:** `EmbeddingManager.load_model()` passes
-`batch_size=self._config.batch_size` to the factory, and
-`_create_openai_model` forwards `batch_size=kwargs.get("batch_size", 64)` to
-`OpenAIEmbedder`. Tests cover factory forwarding and the manager plumbing.
-(`max_tokens` remains unplumbed per the review's note that this is acceptable
-for the API's own limits.)
-
-### WR-07: MCP `SearchBackend` drops `api_key`/`api_base`
-
-**Files modified:** `src/sif/mcp/backend.py`, `tests/unit/mcp/test_backend.py`
-**Commit:** `cce4d60`
-**Applied fix:** Mirrored `EmbeddingManager.from_settings`' kwargs:
-`api_key`, `api_base`, `embedding_dim`, and `cache_dir` (only when
-`cache_embeddings`) are now forwarded to `factory.create_model`, so
-`SIF_MODEL_TYPE=openai` works via MCP instead of silently losing vector search.
-Did not reuse `EmbeddingManager` itself — its `embed()` returns an
-`EmbeddingResponse`, incompatible with the `Embedder` protocol
-`SearchPipeline` expects. New test asserts the factory receives all four
-kwargs.
-
-### WR-08: `embed_cmd` load-error handlers unreachable; failures exit 0
+### WR-05: Invalid `--chunk-strategy` crashes with a raw traceback
 
 **Files modified:** `src/sif/cli/commands/index.py`, `tests/unit/cli/test_index.py`
-**Commit:** `b6eea30`
-**Applied fix:** `manager.load_model()` is called inside the first try block so
-backend-missing/dimension-mismatch errors reach the dedicated handlers (now
-`click.ClickException`, per the project's CLI error convention, instead of
-print-and-return-exit-0), and per-collection embedding failures are tracked and
-convert to a non-zero exit with a summary `ClickException` after the loop. New
-tests cover both the per-collection failure path (exit != 0, message shown) and
-the backend-load-failure path.
+**Commit:** bda12a2
+**Applied fix:** `--chunk-strategy` is now `click.Choice(["auto", "fixed",
+"markdown", "code"])` (the closed set `create_chunker` accepts), so a bad
+value is a usage error (exit 2) instead of a `ValueError` traceback.
+**Tests:** `--chunk-strategy smrt` -> exit code 2 with "Invalid value".
 
-### WR-09: `test_from_settings_passes_api_key_and_api_base` writes a real cache DB to home
+### WR-06: `pre_update_cmd` runs with no timeout — a hung command hangs the CLI forever
 
-**Files modified:** `tests/unit/embedding/test_manager.py`
-**Commit:** `87cdfc7`
-**Applied fix:** `cache_embeddings=False` added to the `Settings(...)`
-construction plus `monkeypatch.delenv("SIF_CACHE_EMBEDDINGS", raising=False)`
-for belt-and-braces, matching the sibling tests.
+**Files modified:** `src/sif/cli/commands/index.py`, `tests/unit/cli/test_collection.py`
+**Commit:** 14c3986
+**Applied fix:** `subprocess.run` now passes `timeout=300` (module constant
+`_PRE_UPDATE_TIMEOUT_SECONDS` — the reviewer's suggested
+`coll.pre_update_timeout` field does not exist on `Collection`, so a shared
+constant is used until such a setting exists) and
+`stdin=subprocess.DEVNULL`; `subprocess.TimeoutExpired` maps to a
+`ClickException` alongside the existing returncode branch.
+**Tests:** existing kwargs assertion updated to the new contract
+(timeout/stdin); new test: `TimeoutExpired` -> non-zero exit with "timed out
+after 300s".
 
-### WR-10: SearchPipeline expansion silently drops an expander's first variant
+### WR-07: `huggingface` advertised as valid `model_type` but every path dead-ends
 
-**Files modified:** `src/sif/search/hybrid.py`, `tests/unit/search/test_hybrid.py`
-**Commit:** `5b99454`
-**Applied fix:** The expansion loop iterates *all* returned variants and skips
-any equal (case-insensitively) to the parsed original, instead of slicing
-`expanded[1:]` under the unguaranteed echo assumption. Existing echo-based
-tests still pass; a new test with a non-echoing expander (`["variant1",
-"variant2"]`) asserts all three searches run.
+**Files modified:** `src/sif/config/settings.py`, `tests/unit/config/test_settings.py`,
+`docs/configuration.md`
+**Commit:** 60a2c08
+**Applied fix:** Removed `"huggingface"` from the Settings validator's valid
+set (and from the field description) so `SIF_MODEL_TYPE=huggingface` fails at
+validation time with the immediate error; `ModelType.HUGGINGFACE` enum member
+and the factory's `NotImplementedError` branch are kept for internal use, per
+the reviewer's preferred option. `docs/configuration.md`'s row documenting
+the validator was updated to match (it listed the accepted set verbatim).
+**Tests:** new rejection test for `model_type="huggingface"`; the 4-backend
+accept test already existed.
 
-### WR-11: Settings default test not hermetic against env/.env
+### WR-08: `SIF_N_GPU_LAYERS` plumbed to the factory and silently dropped
 
-**Files modified:** `tests/unit/config/test_settings.py`
-**Commit:** `072ca7f`
-**Applied fix:** `test_default_model_type_is_modelscope` now takes
-`monkeypatch`, clears `SIF_MODEL_TYPE`, and constructs `Settings(_env_file=None)`
-— hermetic against both a developer's exported variables and a `.env` file.
+**Files modified:** `src/sif/embedding/embedder.py`, `src/sif/embedding/factory.py`,
+`tests/unit/embedding/test_embedder_impl.py`, `tests/unit/embedding/test_factory.py`
+**Commit:** 733c7a1
+**Applied fix:** `LlamaCppEmbedder.__init__` gains `n_gpu_layers: int = 0`
+(forwarded to the `Llama(...)` constructor), and `_create_gguf_model` passes
+`n_gpu_layers=kwargs.get("n_gpu_layers", 0)` so the settings value reaches the
+backend instead of silently no-oping into CPU inference.
+**Tests:** embedder forwards `n_gpu_layers=7` to `Llama` and defaults to an
+explicit 0; factory dispatch forwards the kwarg end-to-end.
 
 ## Skipped Issues
 
-### IN-01: Legacy duplicate embedding abstraction exported from package root
+None — all 10 in-scope findings were fixed. The 10 Info findings (IN-01
+through IN-10) are out of scope for this round per `fix_scope:
+critical_warning`.
 
-**File:** `src/sif/embedding/model.py`, `src/sif/embedding/__init__.py`
-**Reason:** info severity, out of scope
-**Original issue:** `EmbeddingModel` ABC + `EmbeddingModelFactory` Protocol remain and are re-exported; consolidation trap.
-
-### IN-02: `create_embedder()` free function is dead code
-
-**File:** `src/sif/embedding/embedder.py:470-491`
-**Reason:** info severity, out of scope
-**Original issue:** No callers; diverges from `EmbeddingModelFactory` (no openai branch).
-
-### IN-03: `EmbeddingManager.embed(normalize=...)` parameter ignored
-
-**File:** `src/sif/embedding/manager.py`
-**Reason:** info severity, out of scope
-**Original issue:** `normalize` accepted but never forwarded; callers cannot get unnormalized vectors.
-
-### IN-04: `ModelScopeEmbedder` selects model dir via unsorted `glob("*")[0]`
-
-**File:** `src/sif/embedding/embedder.py:204-210`
-**Reason:** info severity, out of scope
-**Original issue:** Filesystem-dependent directory choice can pick a `.temp` dir instead of the model.
-
-### IN-05: `_write_dim_cache` non-atomic, unlocked read-modify-write
-
-**File:** `src/sif/embedding/embedder.py:362-382`
-**Reason:** info severity, out of scope
-**Original issue:** Concurrent processes can lose entries; mid-write crash truncates the file (self-healing).
-
-### IN-06: `_probe_dimension` indexes `response.data[0]` unguarded; missing key error lacks SIF hint
-
-**File:** `src/sif/embedding/embedder.py:384-387,308`
-**Reason:** info severity, out of scope
-**Original issue:** Empty `data` -> IndexError; missing api_key error never mentions `SIF_API_KEY`.
-
-### IN-07: `__builtins__["__import__"]` relies on CPython implementation detail
-
-**File:** `tests/unit/embedding/test_openai_embedder.py:160-165`
-**Reason:** info severity, out of scope
-**Original issue:** Works today on CPython; fragile pattern.
+**Human-verification note (per fixer policy):** CR-01 and CR-02 change
+transaction and index-lifecycle behavior, not just syntax. Both carry
+real-database regression tests that fail on the pre-fix code (edit-loop
+staleness, medium-edit FTS corruption, cross-collection rollback), but the
+behavioral deltas worth a human eyeball are: (a) `sif index update` now
+deletes chunks/embeddings of changed documents inside its transaction — a
+crash between `update` and `embed` leaves the document un-embedded (self-heals
+on the next `embed`), and (b) `sif index embed` now commits per collection,
+so a partially failed run is a partially embedded index by design (matching
+the 03-08 continue-on-error model) rather than all-or-nothing.
 
 ---
 
-**Human verification notes:** all fixed findings are behavior/logic changes;
-each ships with an automated regression test (see per-finding notes), and the
-full suite (544 passed) gates the branch. CR-02's FTS5 sanitization was
-validated empirically against a real `tokenize='porter'` FTS5 table on SQLite
-3.51 (phrase-prefix `"term"*` form confirmed valid); if the project ever
-targets a SQLite older than FTS5 phrase-prefix support, revisit the trailing
-`*`. CR-03's `zip(strict=True)` additions now make length mismatches raise at
-join points — intentional, and aligned with WR-03's fail-fast contract.
-
-_Fixed: 2026-09-04_
+_Fixed: 2026-09-04T13:12:00Z_
 _Fixer: Claude (gsd-code-fixer)_
 _Iteration: 1_
