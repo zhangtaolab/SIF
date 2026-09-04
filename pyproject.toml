@@ -206,12 +206,22 @@ namespace_packages = true
 explicit_package_bases = true
 mypy_path = ["src"]
 
-[tool.mypy.overrides]
-module = [
-    "sentence_transformers.*",
-    "numpy.*",
-]
+# Per-module configuration (consolidated from mypy.ini — single source of truth)
+[[tool.mypy.overrides]]
+module = ["sentence_transformers.*", "numpy.*"]
 ignore_missing_imports = true
+
+# CLI modules may have less strict typing for click decorators
+[[tool.mypy.overrides]]
+module = ["sif.cli.*"]
+disallow_untyped_decorators = false
+
+# Tests are not held to strict typing
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
