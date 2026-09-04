@@ -85,6 +85,21 @@ class TestEmbeddingManager:
         call_kwargs = mock_factory.create_model.call_args.kwargs
         assert call_kwargs["model_type"] == ModelType.SENTENCE_TRANSFORMERS
 
+    def test_load_model_passes_batch_size(self) -> None:
+        """EmbeddingConfig.batch_size must reach the factory/model."""
+        mock_embedder = MagicMock()
+        mock_embedder.dimension = 4
+        mock_factory = MagicMock()
+        mock_factory.create_model.return_value = mock_embedder
+        config = EmbeddingConfig(
+            model_type=ModelType.OPENAI,
+            model_name="test-openai",
+            batch_size=5,
+        )
+        manager = EmbeddingManager(config=config, factory=mock_factory)
+        manager.load_model()
+        assert mock_factory.create_model.call_args.kwargs["batch_size"] == 5
+
     def test_embed_uses_embed_batch(self) -> None:
         mock_embedder = MagicMock()
         mock_embedder.embed_batch.return_value = [[0.1, 0.2], [0.3, 0.4]]

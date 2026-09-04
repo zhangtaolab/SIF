@@ -79,6 +79,7 @@ class EmbeddingModelFactory:
             api_base=kwargs.get("api_base"),
             embedding_dim=kwargs.get("embedding_dim"),
             cache_dir=kwargs.get("cache_dir"),
+            batch_size=kwargs.get("batch_size", 64),
         )
 
     def _create_huggingface_model(

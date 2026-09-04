@@ -84,6 +84,7 @@ class EmbeddingManager:
             model_name=self._config.model_name,
             embedding_dim=self._config.embedding_dim,
             max_tokens=self._config.max_tokens,
+            batch_size=self._config.batch_size,
             n_gpu_layers=self._config.n_gpu_layers,
             n_ctx=self._config.n_ctx,
             api_key=self._config.api_key,

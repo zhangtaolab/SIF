@@ -106,6 +106,20 @@ class TestEmbeddingModelFactoryDispatch:
         assert constructor_calls[0]["api_key"] == "k"
         assert constructor_calls[0]["base_url"] == "https://api.example.com/v1"
 
+    def test_openai_dispatch_forwards_batch_size(self) -> None:
+        fake_module, _constructor_calls = _fake_openai_module()
+
+        with patch.dict("sys.modules", {"openai": fake_module}):
+            model = EmbeddingModelFactory().create_model(
+                ModelType.OPENAI,
+                None,
+                "test-openai",
+                batch_size=7,
+            )
+
+        assert isinstance(model, OpenAIEmbedder)
+        assert model._batch_size == 7
+
     def test_gguf_dispatch(self) -> None:
         factory = EmbeddingModelFactory()
 
