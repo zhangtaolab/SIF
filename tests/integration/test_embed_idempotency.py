@@ -183,3 +183,75 @@ class TestEmbedIdempotency:
 
         assert len(results) == chunk_count
         assert {r.document_id for r in results} == {doc_id}
+
+    def test_default_run_skips_complete_then_force_reembeds_all(
+        self,
+        tmp_path: Path,
+        monkeypatch,
+    ) -> None:
+        """Default run: zero embed calls on a complete store; --force re-embeds everything."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "embed.db"
+        settings = _test_settings()
+        _seed_collection(db_path, settings)
+        manager, _vector_log = _make_manager_mock()
+
+        # Run 1: embed everything
+        assert _invoke_embed(db_path, manager, settings, []).exit_code == 0
+        assert manager.embed.call_count == 1
+        state1 = _store_state(db_path)
+        assert state1[0] == state1[1]
+
+        # Run 2 without --force: everything complete -> zero embed calls, nothing mutated
+        assert _invoke_embed(db_path, manager, settings, []).exit_code == 0
+        assert manager.embed.call_count == 1  # no new embed call
+        assert _store_state(db_path) == state1  # counts and chunk-id sets unchanged
+
+        # Run 3 with --force: full re-embed, invariants preserved
+        assert _invoke_embed(db_path, manager, settings, ["--force"]).exit_code == 0
+        assert manager.embed.call_count == 2  # exactly one more batch
+        emb3, chunks3, emb_ids3, chunk_ids3 = _store_state(db_path)
+        assert emb3 == chunks3
+        assert emb_ids3 == chunk_ids3
+        assert emb_ids3.isdisjoint(state1[2])  # re-chunked rows replaced the old set
+
+    def test_default_run_self_heals_partial_state(
+        self,
+        tmp_path: Path,
+        monkeypatch,
+    ) -> None:
+        """An interrupted run's partial state is detected and re-embedded (D-10 crash-safety)."""
+        import sqlite_vec
+
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "embed.db"
+        settings = _test_settings()
+        _seed_collection(db_path, settings)
+        manager, _vector_log = _make_manager_mock()
+
+        assert _invoke_embed(db_path, manager, settings, []).exit_code == 0
+        assert manager.embed.call_count == 1
+
+        # Simulate an interrupted run: one embedding row vanished mid-state
+        conn = sqlite3.connect(str(db_path))
+        try:
+            conn.enable_load_extension(True)
+            sqlite_vec.load(conn)
+            conn.enable_load_extension(False)
+            conn.execute(
+                "DELETE FROM document_embeddings WHERE chunk_id = "
+                "(SELECT id FROM document_chunks ORDER BY sequence LIMIT 1)"
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        partial = _store_state(db_path)
+        assert partial[0] == partial[1] - 1  # one chunk lacks its embedding
+
+        # The next default run detects the incomplete set and re-embeds it
+        assert _invoke_embed(db_path, manager, settings, []).exit_code == 0
+        assert manager.embed.call_count == 2
+        emb, chunks, emb_ids, chunk_ids = _store_state(db_path)
+        assert emb == chunks
+        assert emb_ids == chunk_ids
+        assert emb_ids.isdisjoint(partial[2])  # the healed document was re-chunked

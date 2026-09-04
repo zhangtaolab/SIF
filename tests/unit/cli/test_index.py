@@ -407,3 +407,130 @@ class TestEmbedCommand:
         assert "Error embedding collection" not in result.output
         recorded_models = {c["model"] for c in create_calls}
         assert "test-embed-model" in recorded_models
+
+    def _make_embed_mocks(self, coll, docs, embedded_chunk_ids, live_chunk):
+        """Build the shared repo/manager/searcher mock set for force-semantics tests."""
+        live_chunk_mock = MagicMock()
+        live_chunk_mock.id = live_chunk
+
+        mock_coll_repo = MagicMock()
+        mock_coll_repo.list_all.return_value = [coll]
+
+        mock_doc_repo = MagicMock()
+        mock_doc_repo.list_by_collection.return_value = docs
+
+        mock_chunk_repo = MagicMock()
+        mock_chunk_repo.get_by_document.return_value = [live_chunk_mock]
+
+        mock_searcher = MagicMock()
+        mock_searcher.get_embedded_chunk_ids.return_value = set(embedded_chunk_ids)
+
+        mock_manager = MagicMock()
+        mock_manager.embed.return_value = MagicMock(embeddings=[[0.1, 0.2]])
+        mock_manager.get_model_info.return_value = {"loaded": True, "embedding_dim": 8}
+
+        return mock_coll_repo, mock_doc_repo, mock_chunk_repo, mock_searcher, mock_manager
+
+    def _invoke_with_mocks(self, runner, mocks, args):
+        """Invoke embed_cmd with the force-semantics mock set wired in."""
+        mock_coll_repo, mock_doc_repo, mock_chunk_repo, mock_searcher, mock_manager = mocks
+        with (
+            patch("sif.cli.commands.index.Database", return_value=MagicMock()),
+            patch(
+                "sif.cli.commands.index.CollectionRepository",
+                return_value=mock_coll_repo,
+            ),
+            patch(
+                "sif.cli.commands.index.DocumentRepository",
+                return_value=mock_doc_repo,
+            ),
+            patch(
+                "sif.cli.commands.index.DocumentChunkRepository",
+                return_value=mock_chunk_repo,
+            ),
+            patch(
+                "sif.cli.commands.index.create_chunker",
+                return_value=MagicMock(chunk=lambda text: [MagicMock(content=text, id="c1")]),
+            ),
+            patch(
+                "sif.embedding.manager.EmbeddingManager.from_settings",
+                return_value=mock_manager,
+            ),
+            patch(
+                "sif.config.settings.get_settings",
+                return_value=MagicMock(model_name="test"),
+            ),
+            patch(
+                "sif.search.vector.VectorSearcher",
+                return_value=mock_searcher,
+            ),
+        ):
+            return runner.invoke(
+                embed_cmd,
+                args,
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+    def test_embed_cmd_default_skips_fully_embedded_document(self):
+        """Default run: a complete chunk/embedding set is skipped with no embed call."""
+        runner = CliRunner()
+
+        coll = self._make_collection()
+        doc = self._make_document(content="hello world")
+
+        mocks = self._make_embed_mocks(
+            coll, [doc], embedded_chunk_ids={"chunk-1"}, live_chunk="chunk-1"
+        )
+
+        result = self._invoke_with_mocks(runner, mocks, [])
+
+        _mock_coll_repo, _mock_doc_repo, mock_chunk_repo, mock_searcher, mock_manager = mocks
+        assert result.exit_code == 0
+        mock_chunk_repo.delete_by_document.assert_not_called()
+        mock_searcher.delete_embeddings_by_document.assert_not_called()
+        mock_manager.embed.assert_not_called()
+        # The skip line names the document
+        assert "Already embedded" in result.output
+        assert doc.path in result.output
+
+    def test_embed_cmd_default_heals_stale_embedding_state(self):
+        """Default run: an orphaned embedding set (stale rows) is re-embedded."""
+        runner = CliRunner()
+
+        coll = self._make_collection()
+        doc = self._make_document(content="hello world")
+
+        # Stored set carries an orphaned row from an older run — sets mismatch
+        mocks = self._make_embed_mocks(
+            coll, [doc], embedded_chunk_ids={"chunk-1", "orphan-chunk"}, live_chunk="chunk-1"
+        )
+
+        result = self._invoke_with_mocks(runner, mocks, [])
+
+        _mock_coll_repo, _mock_doc_repo, mock_chunk_repo, mock_searcher, mock_manager = mocks
+        assert result.exit_code == 0
+        mock_chunk_repo.delete_by_document.assert_called_once_with(doc.id)
+        mock_searcher.delete_embeddings_by_document.assert_called_once_with(doc.id)
+        mock_manager.embed.assert_called_once()
+        mock_searcher.add_embeddings_batch.assert_called_once()
+
+    def test_embed_cmd_force_reembeds_fully_embedded_document(self):
+        """--force re-embeds even when the stored set exactly matches the live chunks."""
+        runner = CliRunner()
+
+        coll = self._make_collection()
+        doc = self._make_document(content="hello world")
+
+        mocks = self._make_embed_mocks(
+            coll, [doc], embedded_chunk_ids={"chunk-1"}, live_chunk="chunk-1"
+        )
+
+        result = self._invoke_with_mocks(runner, mocks, ["--force"])
+
+        _mock_coll_repo, _mock_doc_repo, mock_chunk_repo, mock_searcher, mock_manager = mocks
+        assert result.exit_code == 0
+        mock_chunk_repo.delete_by_document.assert_called_once_with(doc.id)
+        mock_searcher.delete_embeddings_by_document.assert_called_once_with(doc.id)
+        mock_manager.embed.assert_called_once()
+        assert mock_manager.embed.call_args[0][0] == ["hello world"]
+        mock_searcher.add_embeddings_batch.assert_called_once()
