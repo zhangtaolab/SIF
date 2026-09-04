@@ -171,6 +171,12 @@ def update_cmd(ctx: click.Context, collection: str | None, force: bool) -> None:
             # Remove documents that no longer exist
             for path, doc in existing_docs.items():
                 if path not in scanned_paths:
+                    # Purge embeddings before the document row (WR-01): vec0
+                    # rows cannot carry the FK cascade, so orphaned vectors
+                    # would otherwise occupy KNN top-k slots and crowd live
+                    # documents out of vector search results.
+                    if vector_purger is not None:
+                        vector_purger.delete_embeddings_by_document(doc.id)
                     doc_repo.delete(doc.id)
                     total_removed += 1
 

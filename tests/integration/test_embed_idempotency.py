@@ -386,6 +386,47 @@ class TestUpdateInvalidatesStaleChunks:
         assert chunk_ids2.isdisjoint(chunk_ids1)  # re-chunked ids are fresh uuid4s
 
 
+class TestRemovalPurgesEmbeddings:
+    """WR-01: removing a vanished file must purge its embeddings, not orphan them.
+
+    Orphaned vec0 rows are resolved inside the KNN MATCH — before the JOIN
+    filters them out — so they occupy top-k slots and crowd live documents
+    out of vector search results until a manual `sif cleanup`.
+    """
+
+    def test_removed_file_leaves_no_embeddings(
+        self,
+        tmp_path: Path,
+        monkeypatch,
+    ) -> None:
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "remove.db"
+        settings = _test_settings()
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        doc_file = notes / "b.md"
+        doc_file.write_text("# Note\n\n" + ("Removable paragraph text. " * 100))
+        _seed_collection_dir(db_path, settings, str(notes))
+        manager, _vector_log = _make_manager_mock()
+
+        assert _invoke_update(db_path, settings, []).exit_code == 0
+        assert _invoke_embed(db_path, manager, settings, []).exit_code == 0
+        emb1, chunks1, _, _ = _store_state(db_path)
+        assert emb1 == chunks1
+        assert emb1 > 0
+
+        # Delete the file from disk and re-run update
+        doc_file.unlink()
+        result = _invoke_update(db_path, settings, [])
+        assert result.exit_code == 0
+        assert "Removed: 1" in result.output
+
+        # No orphaned chunks or vectors remain
+        emb2, chunks2, _, _ = _store_state(db_path)
+        assert chunks2 == 0
+        assert emb2 == 0
+
+
 class TestPerCollectionTransaction:
     """CR-02: a failing collection must not roll back a successful one.
 
