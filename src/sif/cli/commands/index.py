@@ -221,7 +221,12 @@ def _needs_embedding(live_chunk_ids: set[str], embedded_chunk_ids: set[str], for
 @index_group.command("embed")
 @click.option("--collection", "-c", help="Embed specific collection only")
 @click.option("--force", "-f", is_flag=True, help="Force re-embed all documents")
-@click.option("--chunk-strategy", default="auto", help="Chunking strategy")
+@click.option(
+    "--chunk-strategy",
+    type=click.Choice(["auto", "fixed", "markdown", "code"]),
+    default="auto",
+    help="Chunking strategy",
+)
 @click.option("--model", "-m", help="Embedding model name")
 @click.option(
     "--model-type",

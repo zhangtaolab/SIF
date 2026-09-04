@@ -200,6 +200,31 @@ class TestEmbedCommand:
         assert result.exit_code != 0
         assert "Embedding backend not installed" in result.output
 
+    def test_embed_cmd_invalid_chunk_strategy_is_usage_error(self):
+        """WR-05: an invalid --chunk-strategy is a Click usage error, not a traceback."""
+        runner = CliRunner()
+
+        with (
+            patch("sif.cli.commands.index.Database", return_value=MagicMock()),
+            patch(
+                "sif.embedding.manager.EmbeddingManager.from_settings",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "sif.config.settings.get_settings",
+                return_value=MagicMock(model_name="test"),
+            ),
+        ):
+            result = runner.invoke(
+                embed_cmd,
+                ["--chunk-strategy", "smrt"],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code == 2  # Click usage error
+        assert "Invalid value" in result.output
+        assert isinstance(result.exception, SystemExit)
+
     def test_embed_cmd_batches_across_documents(self):
         """embed_cmd batches embeddings across documents."""
         runner = CliRunner()
