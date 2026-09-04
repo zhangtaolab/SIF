@@ -218,6 +218,11 @@ def embed_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     except Exception as e:
         raise click.ClickException(f"Failed to load embedding model: {e}") from e
 
+    # Probe-free dimension: the eagerly-loaded model already knows its dim, so
+    # remote backends are never billed for a throwaway probe embedding.
+    model_dim = manager.get_model_info().get("embedding_dim")
+    embedding_dim = model_dim if isinstance(model_dim, int) else len(manager.embed_single("probe"))
+
     with db.connection:
         coll_repo = CollectionRepository(db.connection)
         doc_repo = DocumentRepository(db.connection)
@@ -240,7 +245,20 @@ def embed_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
 
             console.print(f"\n[bold]Embedding collection: {coll.name}[/bold]")
             documents = doc_repo.list_by_collection(coll.id)
+
+            if not documents:
+                coll.chunk_count = 0
+                coll_repo.update(coll)
+                continue
+
             chunker = create_chunker(chunk_strategy)
+
+            # One searcher per collection. Construction failure (sqlite-vec
+            # unavailable) is user-facing and never swallowed (D-03 fail-fast).
+            try:
+                vector_searcher = VectorSearcher(db.connection, embedding_dim)
+            except RuntimeError as e:
+                raise click.ClickException(f"Vector store unavailable: {e}") from e
 
             # Collect all chunks across documents
             all_chunks = []  # (chunk, document_id)
@@ -248,6 +266,10 @@ def embed_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
 
             for doc in documents:
                 chunk_repo.delete_by_document(doc.id)
+                # Delete-before-insert (G-03-3): re-chunked rows get fresh
+                # uuid4 ids that can never collide with the old embedding
+                # rows, so the old vectors must be removed explicitly.
+                vector_searcher.delete_embeddings_by_document(doc.id)
                 chunks = chunker.chunk(doc.content)
                 doc_chunks_map[doc.id] = chunks
                 for i, chunk in enumerate(chunks):
@@ -268,12 +290,7 @@ def embed_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                         chunk_repo.create(chunk)
                         batch_items.append((chunk.id, doc_id, chunk.id, embedding))
 
-                    if batch_items:
-                        vector_searcher = VectorSearcher(
-                            db.connection,
-                            len(manager.embed_single("probe")),
-                        )
-                        vector_searcher.add_embeddings_batch(batch_items)
+                    vector_searcher.add_embeddings_batch(batch_items)
 
                     total_chunks += len(all_chunks)
                 except Exception as e:

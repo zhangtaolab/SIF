@@ -176,3 +176,27 @@ class VectorSearcher:
             """,
             rows,
         )
+
+    def delete_embeddings_by_document(self, document_id: str) -> int:
+        """Delete all stored embeddings for a document.
+
+        Returns the number of rows removed. Plain parameterized SQL is correct
+        here: sqlite-vec supports DELETE on vec0 tables by non-key columns.
+        """
+        cursor = self.db.execute(
+            "DELETE FROM document_embeddings WHERE document_id = ?",
+            (document_id,),
+        )
+        return cursor.rowcount
+
+    def get_embedded_chunk_ids(self, document_id: str) -> set[str]:
+        """Get the chunk ids a document currently has stored embeddings for.
+
+        Rows whose chunk_id is NULL are skipped: NULL can never equal a live
+        chunk id, so documents carrying such rows are re-embedded and cleaned.
+        """
+        cursor = self.db.execute(
+            "SELECT chunk_id FROM document_embeddings WHERE document_id = ?",
+            (document_id,),
+        )
+        return {row[0] for row in cursor.fetchall() if row[0] is not None}
