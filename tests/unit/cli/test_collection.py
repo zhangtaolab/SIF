@@ -1,5 +1,6 @@
 """Tests for collection update-cmd and index pre-update hook."""
 
+import subprocess
 from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
@@ -223,8 +224,56 @@ class TestIndexPreUpdateHook:
             capture_output=True,
             text=True,
             check=False,
+            timeout=300,
+            stdin=subprocess.DEVNULL,
         )
         assert "Running pre-update command" in result.output
+
+    def test_index_update_times_out_hung_pre_update_cmd(self):
+        """WR-06: a hung pre-update command exits with a ClickException, not a hang."""
+        runner = CliRunner()
+        collection = Collection(name="notes", path="/tmp/notes", pre_update_cmd="sleep 9999")
+
+        mock_db = MagicMock()
+        mock_db.return_value.connection.__enter__ = MagicMock(
+            return_value=mock_db.return_value.connection,
+        )
+        mock_db.return_value.connection.__exit__ = MagicMock(return_value=False)
+        mock_db.return_value.init_schema = MagicMock()
+
+        mock_coll_repo = MagicMock()
+        mock_coll_repo.get_by_name.return_value = collection
+
+        mock_doc_repo = MagicMock()
+        mock_doc_repo.list_by_collection.return_value = []
+
+        mock_scanner = MagicMock()
+        mock_scanner.return_value.scan.return_value = MagicMock(file_count=0, files=[])
+
+        with (
+            patch("sif.cli.commands.index.Database", mock_db),
+            patch(
+                "sif.cli.commands.index.CollectionRepository",
+                return_value=mock_coll_repo,
+            ),
+            patch(
+                "sif.cli.commands.index.DocumentRepository",
+                return_value=mock_doc_repo,
+            ),
+            patch("sif.cli.commands.index.FileScanner", mock_scanner),
+            patch(
+                "subprocess.run",
+                side_effect=subprocess.TimeoutExpired(cmd="sleep 9999", timeout=300),
+            ),
+        ):
+            result = runner.invoke(
+                update_cmd,
+                ["--collection", "notes"],
+                obj={"index_path": MagicMock()},
+            )
+
+        assert result.exit_code != 0
+        assert "timed out after 300s" in result.output
 
     def test_index_update_fails_fast_on_pre_update_cmd_error(self):
         """Test that index update fails fast on pre-update command error."""

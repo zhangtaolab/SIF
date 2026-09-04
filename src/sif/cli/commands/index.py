@@ -29,6 +29,11 @@ if TYPE_CHECKING:
 
 console = Console()
 
+# A hung pre-update command (network stall, prompt on stdin) must not block
+# `sif index update` forever (WR-06). No per-collection timeout setting exists
+# yet, so all commands share this bound.
+_PRE_UPDATE_TIMEOUT_SECONDS = 300
+
 
 @click.group("index")
 def index_group() -> None:
@@ -79,13 +84,21 @@ def update_cmd(ctx: click.Context, collection: str | None, force: bool) -> None:
 
             if coll.pre_update_cmd:
                 console.print(f"  Running pre-update command: {coll.pre_update_cmd}")
-                result = subprocess.run(
-                    coll.pre_update_cmd,
-                    shell=True,
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )
+                try:
+                    result = subprocess.run(
+                        coll.pre_update_cmd,
+                        shell=True,
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                        timeout=_PRE_UPDATE_TIMEOUT_SECONDS,
+                        stdin=subprocess.DEVNULL,
+                    )
+                except subprocess.TimeoutExpired as e:
+                    raise click.ClickException(
+                        f"Pre-update command for '{coll.name}' timed out after "
+                        f"{_PRE_UPDATE_TIMEOUT_SECONDS}s: {coll.pre_update_cmd}"
+                    ) from e
                 if result.returncode != 0:
                     err_msg = (
                         f"Pre-update command failed for '{coll.name}' "
