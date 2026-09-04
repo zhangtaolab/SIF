@@ -12,7 +12,7 @@ variant) and re-decides every capability from the full-coverage baseline.
 |---|---|---|
 | embeddings.create — single-text input | INTEGRATE | `OpenAIEmbedder.embed()` — core VEC-01 deliverable |
 | embeddings.create — batched input array | INTEGRATE | `OpenAIEmbedder.embed_batch()` slices inputs at `batch_size` and concatenates ordered results |
-| embeddings.create — `dimensions` parameter (Matryoshka truncation) | OPT-OUT | many OpenAI-compatible endpoints ignore or reject `dimensions` (03-RESEARCH.md assumption A2); SIF consumes the endpoint's native dimension via auto-detection + local cache (03-CONTEXT.md D-05) instead of requesting truncation |
+| embeddings.create — `dimensions` parameter (Matryoshka truncation) | OPT-OUT | many OpenAI-compatible endpoints ignore or reject `dimensions` (03-RESEARCH.md A2); SIF uses the endpoint's native dimension via auto-detection + local cache (03-CONTEXT.md D-05) instead |
 | dimension auto-detection (single probe + local cache) | INTEGRATE | locked decision D-05 — first load probes with a minimal input, caches to `openai_dim_cache.json` (7-day TTL) |
 | base_url override (generic OpenAI-compatible endpoints) | INTEGRATE | locked decision D-04 — `api_base` flows Settings → factory kwargs → `OpenAI(base_url=...)`, addressing `{api_base}/embeddings` |
 | model listing (GET /models) | OPT-OUT | not needed — an invalid `SIF_MODEL_NAME` surfaces as an explicit error on the first embed call |
