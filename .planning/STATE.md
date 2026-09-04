@@ -1,15 +1,15 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.0
-current_phase: 09
-current_phase_name: Embedding & Vector Search
-status: executing
-stopped_at: Completed 03-08-PLAN.md (phase 03 gap closure — G-03-3 closed)
-last_updated: "2026-09-04T09:55:09.413Z"
-state_head: ec5e22108be3a4b590d08f11c2f98f4e7dbd0ee8
+current_phase: 04
+current_phase_name: Advanced Search Pipeline
+status: planning
+stopped_at: Phase 03 complete, ready to plan Phase 04
+last_updated: "2026-09-04T13:52:30.335Z"
+state_head: 756f5313087d0c987b26877c30d834562818559e
 progress:
   total_phases: 9
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 48
   completed_plans: 48
 milestone_name: milestone
@@ -21,17 +21,17 @@ milestone_name: milestone
 
 - **Name:** DocSift
 - **Core Value:** 用户可以在自己的笔记和文档库中，用自然语言快速、准确地找到需要的信息——无论关键词是否匹配。
-- **Current Focus:** Phase 03 — Embedding & Vector Search
+- **Current Focus:** Milestone v1.0 close-out — Phase 03 gap closure verified complete 2026-09-04 (UAT 7/7, SECURITY 19/19 closed); verification bookkeeping for phases 04–09 remains
 - **Tech Stack:** Python 3.10+, SQLite (FTS5 + sqlite-vec), Click, Pydantic, sentence-transformers, llama-cpp-python
 
 ## Current Position
 
-Phase: 03 (Embedding & Vector Search) — EXECUTING
-Plan: 8 of 8
+Phase: 04 (Advanced Search Pipeline) — bookkeeping pending
+Plan: Not started
 
-- **Phase:** 03 (gap closure; phases 01-09 originally executed, 03 gaps closed by plans 03-07 and 03-08)
-- **Plan:** Complete — 8 of 8 plans have SUMMARYs
-- **Status:** Phase 03 gap closure complete — ready for verification
+- **Phase:** 04 — Advanced Search Pipeline (historically executed 2026-04-17, 5/5 plans; verification bookkeeping not yet run)
+- **Plan:** Not started
+- **Status:** Ready to plan
 - **Progress Bar:** `[████████████████████] 100%`
 
 ## Phase History
@@ -71,6 +71,10 @@ Plan: 8 of 8
 - ✓ D-03: Vector search fails fast with `RuntimeError` when sqlite-vec is unavailable
 - ✓ D-04: MCP server uses connection-per-request via `DatabaseConnection`
 - ✓ D-05: Heavy ML libraries remain optional extras in `pyproject.toml`
+- [Phase 03 gap closure]: Vector store idempotency = delete-before-insert in the re-chunk transaction + exact chunk-id-set skip; `--force` re-embeds all (G-03-3)
+- [Phase 03 gap closure]: embed_cmd uses one transaction per collection; failure report raised outside transactions (CR-02)
+- [Phase 03 gap closure]: Remote dimension is probe-free at load; dim cache keyed `base_url::model_name` (WR-02/03-07)
+- [Phase 03 gap closure]: Text egress strictly opt-in — OpenAIEmbedder reachable only via explicit `model_type=openai` (P-1, UAT-verified by egress audit)
 - [Phase 09]: Unified `src/sif/mcp/` package replacing dual legacy/refactored implementations
 - [Phase 09]: ToolHandler ABC pattern with async `handle(params, backend)` signature
 - [Phase 09]: SearchBackend with `asyncio.to_thread()` wrapper over sync sqlite3
@@ -127,8 +131,8 @@ Plan: 8 of 8
 
 ## Session Continuity
 
-- **Last session:** 2026-09-04T09:54:19.082Z
-- **Stopped at:** Completed 03-08-PLAN.md (phase 03 gap closure — G-03-3 closed)
+- **Last session:** 2026-09-04T13:55:00Z
+- **Stopped at:** Phase 03 verification complete (UAT 7/7 live-confirmed incl. G-03-3 re-verification, CR-01/CR-02 spot-checks; SECURITY.md created, 19/19 threats closed; VERIFICATION passed 17/17). Milestone close-out pending.
 - **Resume file:** None
-- **Last action:** Phase 9 complete — integration tests written, 86% MCP coverage, full quality suite passes (419 tests)
-- **Next expected action:** Verify phase goal achievement (/gsd-verify-work or manual verification)
+- **Last action:** /gsd-verify-work 03 completed with phase transition (ROADMAP: Phase 3 Complete 2026-09-04)
+- **Next expected action:** Milestone close-out — verification bookkeeping for phases 04–09 (/gsd-audit-uat), then /gsd-complete-milestone v1.0

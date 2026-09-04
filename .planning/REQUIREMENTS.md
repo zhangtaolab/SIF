@@ -49,7 +49,7 @@
 - [x] **VEC-01**: 支持通过 Settings 和 CLI 配置不同的 embedding 后端（sentence-transformers / llama-cpp-python / OpenAI-compatible API）
 - [x] **VEC-02**: 将向量搜索 fallback 改为使用 sqlite-vec，或在大索引时拒绝 brute-force Python 计算
 - [x] **VEC-03**: 支持批量 embedding 插入，提升大规模索引性能
-- [ ] **VEC-04**: 支持从 ModelScope（https://www.modelscope.cn）下载模型文件，作为国内访问 HuggingFace 的替代渠道
+- [x] **VEC-04**: 支持从 ModelScope（https://www.modelscope.cn）下载模型文件，作为国内访问 HuggingFace 的替代渠道
 
 ## v2 Requirements
 
@@ -103,7 +103,7 @@
 | VEC-01 | Phase 3 | Complete |
 | VEC-02 | Phase 3 | Complete |
 | VEC-03 | Phase 3 | Complete |
-| VEC-04 | Phase 3 | Pending |
+| VEC-04 | Phase 3 | Complete |
 | SRCH-01 | Phase 4 | Pending |
 | SRCH-02 | Phase 4 | Pending |
 | SRCH-03 | Phase 4 | Pending |

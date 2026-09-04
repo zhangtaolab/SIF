@@ -58,6 +58,9 @@ DocSift 是 [qmd](https://github.com/tobi/qmd) 的 Python 重构版本，一个�
 | 完全复刻 qmd 功能 | 用户明确要求功能对等 | — In Progress |
 | 本地模型 + API 切换双支持 | 提升灵活性和可访问性 | — In Progress |
 | 优先修复 bug/stub，再补 CLI，再做 rerank/MCP | 先让现有代码可用，再扩展功能 | Phase 01 Complete |
+| 向量库幂等：re-chunk 事务内 delete-before-insert + 精确 chunk-id 集合跳过，`--force` 才全量重嵌 | G-03-3：重复 embed 不再产生孤儿向量/重复计费 | Phase 03 Complete (UAT 7/7) |
+| embed_cmd 每集合一个事务，失败报告在事务外抛出 | CR-02：单集合失败不回滚已成功集合、退出码如实非零 | Phase 03 Complete (live-verified) |
+| 远端维度探测 probe-free，缓存键 `base_url::model_name` | 避免对远端后端产生计费探测请求 | Phase 03 Complete |
 
 ## Evolution
 
@@ -77,4 +80,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-16 after Phase 02 completion*
+*Last updated: 2026-09-04 after Phase 03 gap-closure verification (UAT 7/7, security 19/19 closed)*
