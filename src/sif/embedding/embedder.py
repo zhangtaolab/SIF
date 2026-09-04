@@ -291,7 +291,8 @@ class OpenAIEmbedder(Embedder):
                 disagrees with the endpoint-detected dimension, construction
                 fails fast (misconfigured SIF_EMBEDDING_DIM).
             cache_dir: Directory for the endpoint dimension cache
-                (openai_dim_cache.json, 7-day TTL, keyed by model name).
+                (openai_dim_cache.json, 7-day TTL, keyed by api_base and
+                model name).
             batch_size: Number of texts per embeddings.create request.
         """
         try:
@@ -305,6 +306,9 @@ class OpenAIEmbedder(Embedder):
         self.model_name = model_name
         self._batch_size = batch_size
         self._cache_dir = Path(cache_dir) if cache_dir is not None else None
+        # The dimension cache is keyed by endpoint AND model name: two
+        # endpoints may serve the same model name with different dimensions.
+        self._dim_cache_key = f"{api_base or 'default'}::{model_name}"
         self._client = OpenAI(api_key=api_key, base_url=api_base)
 
         resolved_dim = self._resolve_dimension()
@@ -334,14 +338,14 @@ class OpenAIEmbedder(Embedder):
         return dimension
 
     def _read_dim_cache(self) -> int | None:
-        """Read a fresh cached dimension for this model, if any."""
+        """Read a fresh cached dimension for this endpoint and model, if any."""
         if self._cache_dir is None:
             return None
         cache_file = self._cache_dir / self._DIM_CACHE_FILENAME
         try:
             with open(cache_file, encoding="utf-8") as f:
                 cache = json.load(f)
-            entry = cache.get(self.model_name) if isinstance(cache, dict) else None
+            entry = cache.get(self._dim_cache_key) if isinstance(cache, dict) else None
             if not isinstance(entry, dict):
                 return None
             detected_at = datetime.fromisoformat(str(entry["detected_at"]))
@@ -356,7 +360,7 @@ class OpenAIEmbedder(Embedder):
             return None
 
     def _write_dim_cache(self, dimension: int) -> None:
-        """Persist the detected dimension for this model, preserving others."""
+        """Persist the detected dimension for this endpoint and model, preserving others."""
         if self._cache_dir is None:
             return
         cache_file = self._cache_dir / self._DIM_CACHE_FILENAME
@@ -372,7 +376,7 @@ class OpenAIEmbedder(Embedder):
                 logger.warning(
                     f"Discarding unreadable OpenAI dimension cache before rewrite ({cache_file})"
                 )
-            entries[self.model_name] = {
+            entries[self._dim_cache_key] = {
                 "dimension": dimension,
                 "detected_at": datetime.now(timezone.utc).isoformat(),
             }

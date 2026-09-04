@@ -272,7 +272,7 @@ class TestOpenAIEmbedderDimensionCache:
             OpenAIEmbedder(model_name="m1", embedding_dim=None, cache_dir=str(tmp_path))
 
         data = json.loads((tmp_path / "openai_dim_cache.json").read_text())
-        entry = data["m1"]
+        entry = data["default::m1"]
         assert entry["dimension"] == DIM
         # detected_at must parse as an ISO-8601 timestamp
         datetime.fromisoformat(entry["detected_at"])
@@ -281,7 +281,7 @@ class TestOpenAIEmbedderDimensionCache:
         stale = datetime.now(timezone.utc) - timedelta(days=8)
         cache_file = tmp_path / "openai_dim_cache.json"
         cache_file.write_text(
-            json.dumps({"m1": {"dimension": 999, "detected_at": stale.isoformat()}})
+            json.dumps({"default::m1": {"dimension": 999, "detected_at": stale.isoformat()}})
         )
 
         fake_module, _ctor, create_calls = _make_fake_openai()
@@ -291,7 +291,7 @@ class TestOpenAIEmbedderDimensionCache:
         assert len(create_calls) == 1
         assert embedder.dimension == DIM
         data = json.loads(cache_file.read_text())
-        assert data["m1"]["dimension"] == DIM
+        assert data["default::m1"]["dimension"] == DIM
 
     def test_no_cache_dir_probes_per_instance(self) -> None:
         fake_module, _ctor, create_calls = _make_fake_openai()
@@ -313,9 +313,38 @@ class TestOpenAIEmbedderDimensionCache:
 
         assert len(create_calls) == 1
         data = json.loads((tmp_path / "openai_dim_cache.json").read_text())
-        assert set(data) == {"m1", "m2"}
-        assert data["m1"]["dimension"] == DIM
-        assert data["m2"]["dimension"] == DIM
+        assert set(data) == {"default::m1", "default::m2"}
+        assert data["default::m1"]["dimension"] == DIM
+        assert data["default::m2"]["dimension"] == DIM
+
+    def test_dim_cache_keys_include_endpoint(self, tmp_path: Path) -> None:
+        """Same model name on two endpoints must not share a cache entry."""
+        vec6 = _unit_vector([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        fake_module, _ctor, create_calls = _make_fake_openai(vec6)
+
+        with patch.dict("sys.modules", {"openai": fake_module}):
+            OpenAIEmbedder(
+                model_name="m1",
+                embedding_dim=None,
+                api_base="https://a.example/v1",
+                cache_dir=str(tmp_path),
+            )
+
+            create_calls.clear()
+            second = OpenAIEmbedder(
+                model_name="m1",
+                embedding_dim=None,
+                api_base="https://b.example/v1",
+                cache_dir=str(tmp_path),
+            )
+
+        # Endpoint B probed instead of reusing endpoint A's entry, and both
+        # entries coexist in the cache file.
+        assert second.dimension == 6
+        assert len(create_calls) == 1
+        data = json.loads((tmp_path / "openai_dim_cache.json").read_text())
+        assert "https://a.example/v1::m1" in data
+        assert "https://b.example/v1::m1" in data
 
     def test_dimension_mismatch_fails_fast(self, monkeypatch: pytest.MonkeyPatch) -> None:
         for var in (
@@ -366,7 +395,7 @@ class TestOpenAIEmbedderDimensionCache:
         assert len(create_calls) == 1
         assert "cache" in caplog.text.lower()
         data = json.loads(cache_file.read_text())
-        assert data["m1"]["dimension"] == DIM
+        assert data["default::m1"]["dimension"] == DIM
 
     def test_manager_path_probe_matches_settings_dim(self, monkeypatch: pytest.MonkeyPatch) -> None:
         for var in (
