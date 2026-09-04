@@ -148,9 +148,13 @@ class TestEmbedIdempotency:
         assert result2.exit_code == 0
         emb2, chunks2, emb_ids2, chunk_ids2 = _store_state(db_path)
         assert chunks2 == chunks1
-        assert emb2 == chunks2  # replace, not append
+        assert emb2 == chunks2  # one row per live chunk — never one per historical run
         assert emb_ids2 == chunk_ids2  # every embedding references a live chunk
-        assert emb_ids2.isdisjoint(emb_ids1)  # re-chunked ids replaced the old ones
+        # The completed document is skipped, so the second default run leaves
+        # the store byte-identical (stronger than replace: no mutation at all).
+        # The replace-not-append re-chunk path is covered by --force and the
+        # self-heal tests below, which assert fresh chunk-id sets.
+        assert (emb2, emb_ids2) == (emb1, emb_ids1)
 
     def test_vector_search_returns_each_chunk_once_after_two_runs(
         self,

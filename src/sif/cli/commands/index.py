@@ -172,6 +172,16 @@ def update_cmd(ctx: click.Context, collection: str | None, force: bool) -> None:
         console.print(f"  Removed: {total_removed}")
 
 
+def _needs_embedding(live_chunk_ids: set[str], embedded_chunk_ids: set[str], force: bool) -> bool:
+    """Decide whether a document needs (re-)embedding.
+
+    A document is skipped only when --force is off and its live chunk ids
+    exactly match the stored embedding chunk-id set — complete and orphan-free.
+    Chunkless, partial, or orphaned states all re-embed (self-healing).
+    """
+    return force or not live_chunk_ids or live_chunk_ids != embedded_chunk_ids
+
+
 @index_group.command("embed")
 @click.option("--collection", "-c", help="Embed specific collection only")
 @click.option("--force", "-f", is_flag=True, help="Force re-embed all documents")
@@ -186,7 +196,7 @@ def update_cmd(ctx: click.Context, collection: str | None, force: bool) -> None:
 def embed_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     ctx: click.Context,
     collection: str | None,
-    force: bool,  # noqa: ARG001
+    force: bool,
     chunk_strategy: str,
     model: str | None,
     model_type: str | None = None,
@@ -265,6 +275,13 @@ def embed_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             doc_chunks_map: dict[str, list] = {}
 
             for doc in documents:
+                # Skip documents whose live chunks already have an exact,
+                # complete set of embeddings; --force bypasses the check.
+                existing = chunk_repo.get_by_document(doc.id)
+                embedded = vector_searcher.get_embedded_chunk_ids(doc.id)
+                if not _needs_embedding({c.id for c in existing}, embedded, force):
+                    console.print(f"  [dim]Already embedded: {doc.path}[/dim]")
+                    continue
                 chunk_repo.delete_by_document(doc.id)
                 # Delete-before-insert (G-03-3): re-chunked rows get fresh
                 # uuid4 ids that can never collide with the old embedding
