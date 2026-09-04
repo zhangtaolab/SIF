@@ -147,6 +147,33 @@ def _invoke_update(db_path: Path, settings: Settings, args: list[str]) -> object
         return runner.invoke(update_cmd, args, obj={"index_path": db_path})
 
 
+def _seed_two_collections(db_path: Path, settings: Settings, good_dir: Path, bad_dir: Path) -> None:
+    """Seed two collections ('a-good', 'b-bad') with one document each on disk."""
+    from sif.core.models import Collection, Document
+    from sif.database.database import Database
+    from sif.database.repositories import CollectionRepository, DocumentRepository
+
+    good_dir.mkdir()
+    bad_dir.mkdir()
+    db = Database(db_path)
+    with patch("sif.config.settings.get_settings", return_value=settings):
+        db.init_schema()
+        with db.connection:
+            coll_repo = CollectionRepository(db.connection)
+            doc_repo = DocumentRepository(db.connection)
+            for name, base in (("a-good", good_dir), ("b-bad", bad_dir)):
+                coll = Collection(name=name, path=str(base))
+                coll_repo.create(coll)
+                doc = Document(
+                    path=str(base / "doc.md"),
+                    collection_id=coll.id,
+                    content=f"{name} document text " * 10,
+                    title=name,
+                )
+                doc_repo.create(doc)
+    db.close()
+
+
 class TestEmbedIdempotency:
     """Two consecutive embed runs on one real sqlite-vec database."""
 
@@ -357,3 +384,59 @@ class TestUpdateInvalidatesStaleChunks:
         assert emb2 == chunks2
         assert emb_ids2 == chunk_ids2
         assert chunk_ids2.isdisjoint(chunk_ids1)  # re-chunked ids are fresh uuid4s
+
+
+class TestPerCollectionTransaction:
+    """CR-02: a failing collection must not roll back a successful one.
+
+    The whole-run transaction raised the final ClickException inside its own
+    `with db.connection:` block, discarding every successful collection's
+    committed work after the CLI had already reported it embedded.
+    """
+
+    def test_failed_collection_keeps_successful_collections_work(
+        self,
+        tmp_path: Path,
+        monkeypatch,
+    ) -> None:
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "partial.db"
+        settings = _test_settings()
+        _seed_two_collections(db_path, settings, tmp_path / "good", tmp_path / "bad")
+
+        manager, _vector_log = _make_manager_mock()
+        inner_embed = manager.embed.side_effect
+
+        def fail_on_unembeddable(texts: list[str], **kwargs: object) -> object:
+            if any("b-bad document text" in t for t in texts):
+                raise RuntimeError("simulated backend failure")
+            return inner_embed(texts, **kwargs)
+
+        manager.embed.side_effect = fail_on_unembeddable
+
+        result = _invoke_embed(db_path, manager, settings, [])
+
+        # The command exits non-zero and names the failed collection...
+        assert result.exit_code != 0
+        assert "Error embedding collection b-bad" in result.output
+        assert "Embedding failed for 1 collection(s): b-bad" in result.output
+
+        # ...but the successful collection's work is persisted, not rolled back.
+        emb, chunks, emb_ids, chunk_ids = _store_state(db_path)
+        assert chunks > 0
+        assert emb == chunks
+        assert emb_ids == chunk_ids
+
+        conn = sqlite3.connect(str(db_path))
+        try:
+            doc_collections = conn.execute(
+                "SELECT DISTINCT d.collection_id FROM document_chunks dc "
+                "JOIN documents d ON dc.document_id = d.id"
+            ).fetchall()
+            coll_names = {
+                conn.execute("SELECT name FROM collections WHERE id = ?", (row[0],)).fetchone()[0]
+                for row in doc_collections
+            }
+        finally:
+            conn.close()
+        assert coll_names == {"a-good"}
