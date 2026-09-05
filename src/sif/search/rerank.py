@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -46,6 +47,40 @@ def _sort_and_build_results(
             ),
         )
     return reranked
+
+
+def _resolve_model_dir(downloaded: Path) -> Path:
+    """Pick the directory holding the real model files inside a ModelScope download.
+
+    ModelScope repos may ship model files at the download root alongside aux
+    subdirectories (e.g. Qwen3-Reranker's 1_LogitScore/ holds only a token-id
+    config without model_type). Candidates are checked in deterministic order —
+    the download root first, then each immediate subdirectory sorted by name —
+    preferring a directory whose config.json declares a model_type, then one
+    containing weights files, and finally falling back to the download root so
+    resolution never fails on a genuinely downloaded model (G-04-2).
+    """
+    candidates = [downloaded, *sorted(d for d in downloaded.iterdir() if d.is_dir())]
+
+    # Pass 1: first candidate with a real model config (config.json with model_type).
+    for candidate in candidates:
+        config = candidate / "config.json"
+        if not config.is_file():
+            continue
+        try:
+            with config.open(encoding="utf-8") as fh:
+                parsed = json.load(fh)
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(parsed, dict) and "model_type" in parsed:
+            return candidate
+
+    # Pass 2: first candidate holding weights files.
+    for candidate in candidates:
+        if any(candidate.glob("*.safetensors")) or any(candidate.glob("*.bin")):
+            return candidate
+
+    return downloaded
 
 
 class LlamaCppReranker:
@@ -162,9 +197,7 @@ class CrossEncoderReranker:
 
                 downloader = ModelDownloader(self._cache_dir)
                 downloaded = downloader.download(model_id)
-                # snapshot_download may return a path with subdirectories
-                subdirs = [d for d in downloaded.iterdir() if d.is_dir()]
-                local_path = str(subdirs[0]) if subdirs else str(downloaded)
+                local_path = str(_resolve_model_dir(downloaded))
                 logger.info(f"Loading ModelScope reranker model: {model_id}")
             except Exception:
                 logger.info(f"Loading ST reranker model: {model_id}")
@@ -256,8 +289,7 @@ class Qwen3Reranker:
 
             downloader = ModelDownloader(self._cache_dir)
             downloaded = downloader.download(model_id)
-            subdirs = [d for d in downloaded.iterdir() if d.is_dir()]
-            local_path = str(subdirs[0]) if subdirs else str(downloaded)
+            local_path = str(_resolve_model_dir(downloaded))
 
         logger.info(f"Loading Qwen3 reranker model: {model_id}")
 
