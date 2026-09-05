@@ -8,15 +8,13 @@ updated: 2026-09-05T03:47:00Z
 
 ## Current Test
 
-number: 2
-name: Real-model reranking quality (SC 1)
+number: 3
+name: HyDE end-to-end with a generation-capable model (SC 2)
 expected: |
-  Configure `reranker_model_name` (GGUF cross-encoder or
-  `cross-encoder/ms-marco-MiniLM-L-6-v2`), run `sif search query <terms>`
-  with and without reranking, with `--explain`. Reranked order is more
-  relevant; explain output shows `reranker_score` alongside
-  `bm25_score`/`vector_score`/`rrf_score`.
-awaiting: fix of G-04-2, then re-verification
+  Run `sif search query hyde: <question>` with a generation-capable
+  GGUF embedder. A hypothetical document is generated, embedded,
+  vector-searched; no RuntimeError; snippet populated.
+awaiting: user response
 
 ## Tests
 
@@ -29,10 +27,11 @@ evidence: "Scratch index (23 repo docs, 1003 chunks, Qwen3-Embedding-0.6B, reran
 
 ### 2. Real-model reranking quality (SC 1)
 expected: Configure `reranker_model_name` (GGUF cross-encoder or `cross-encoder/ms-marco-MiniLM-L-6-v2`), run `sif search query <terms>` with and without reranking, with `--explain`. Reranked order is more relevant; explain output shows `reranker_score` alongside `bm25_score`/`vector_score`/`rrf_score`.
-result: issue
+result: pass
 reported: "(executor-observed during user-directed download retry: model downloads OK, then `sif search query` crashes with RuntimeError before any results render)"
 severity: blocker
 evidence: "After successful 1.11GB download of default reranker Qwen/Qwen3-Reranker-0.6B, `sif search query 'RRF fusion ranking' --explain` raises RuntimeError: Reranking failed: stat: path should be string... not NoneType. Root cause verified: rerank.py load() sets local_path=subdirs[0] of the ModelScope download dir; that repo ships an aux subdir 1_LogitScore/ (57-byte config with true/false token ids) alongside root-level model files, so subdirs[0]=1_LogitScore and AutoTokenizer falls back to BertTokenizer with vocab_file=None. Loading from the download ROOT works (Qwen2TokenizerFast, verified). Secondary: the failure surfaces as a raw 60-line traceback, not click.ClickException, violating the CLI error convention."
+resolution: "Fixed during test via quick task 260905-kmv (gap G-04-2, commits ed542f4..0831f41). Re-verified: exit 0, model loads from download root, order reranked with well-separated scores, explain shows reranker_score alongside bm25/vector/rrf for all 5 results. User confirmed: pass."
 
 ### 3. HyDE end-to-end with a generation-capable model (SC 2)
 expected: Run `sif search query hyde: <question>` with a generation-capable GGUF embedder. A hypothetical document is generated, embedded, vector-searched; no RuntimeError; snippet populated.
@@ -45,8 +44,8 @@ result: [pending]
 ## Summary
 
 total: 4
-passed: 0
-issues: 2
+passed: 1
+issues: 1
 pending: 2
 skipped: 0
 blocked: 0
