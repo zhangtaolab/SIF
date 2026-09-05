@@ -195,3 +195,10 @@ Phase 04 is complete (6/6 plans). Ready for `/gsd-execute-phase 04 --gaps-only` 
 expected score 8/8 with no overrides entry for SC 7. The plan's backstop truth (snippet relevance
 judgment on a real personal index, coverage item D4) remains a human-verification item alongside
 the three carried over from 04-VERIFICATION.md.
+
+## Self-Check: PASSED
+
+- SUMMARY file exists at `.planning/phases/04-advanced-search-pipeline/04-06-SUMMARY.md` — FOUND
+- Task commits `2b26138`, `cea6a83`, `12ebda7`, `5eeae8b`, `5d19f74`, `5608cc6` — all FOUND in git log
+- Metadata commit `0df289f` (SUMMARY + STATE + ROADMAP + REQUIREMENTS) — FOUND
+- No file deletions in any task commit; no untracked artifacts left behind
