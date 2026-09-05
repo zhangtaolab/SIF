@@ -467,6 +467,75 @@ class TestLlamaCppEmbedder:
         assert len(result) == 2
         assert mock_model.embed.call_count == 2
 
+    def test_create_completion_forwards_prompt_and_kwargs(self) -> None:
+        """G-04-3: create_completion forwards prompt positionally with kwargs verbatim."""
+        mock_model = MagicMock()
+        mock_model.n_embd.return_value = 512
+
+        modules, _mock_llama = self._make_module(mock_model)
+        with patch.dict("sys.modules", modules), patch("os.cpu_count", return_value=4):
+            embedder = LlamaCppEmbedder(model_path="/model.gguf")
+
+        embedder.create_completion(
+            "Answer the question",
+            max_tokens=128,
+            temperature=0.7,
+            stop=["\n\n"],
+        )
+        mock_model.create_completion.assert_called_once_with(
+            "Answer the question",
+            max_tokens=128,
+            temperature=0.7,
+            stop=["\n\n"],
+        )
+
+    def test_create_completion_defaults_and_stop_normalization(self) -> None:
+        """G-04-3: omitted kwargs default to 256/0.3 and stop=None normalizes to []."""
+        mock_model = MagicMock()
+        mock_model.n_embd.return_value = 512
+
+        modules, _mock_llama = self._make_module(mock_model)
+        with patch.dict("sys.modules", modules), patch("os.cpu_count", return_value=4):
+            embedder = LlamaCppEmbedder(model_path="/model.gguf")
+
+        embedder.create_completion("p")
+        mock_model.create_completion.assert_called_once_with(
+            "p",
+            max_tokens=256,
+            temperature=0.3,
+            stop=[],
+        )
+
+    def test_create_completion_returns_openai_style_dict_unchanged(self) -> None:
+        """G-04-3: the openai-style completion dict propagates unchanged."""
+        mock_model = MagicMock()
+        mock_model.n_embd.return_value = 512
+        mock_model.create_completion.return_value = {
+            "choices": [{"text": "hypothetical doc"}],
+            "id": "cmpl-1",
+        }
+
+        modules, _mock_llama = self._make_module(mock_model)
+        with patch.dict("sys.modules", modules), patch("os.cpu_count", return_value=4):
+            embedder = LlamaCppEmbedder(model_path="/model.gguf")
+
+        result = embedder.create_completion("p")
+        assert result == {"choices": [{"text": "hypothetical doc"}], "id": "cmpl-1"}
+        # Exactly how the HyDE call site in hybrid.py consumes it.
+        assert result["choices"][0]["text"].strip() == "hypothetical doc"
+
+    def test_create_completion_satisfies_hyde_capability_gate(self) -> None:
+        """G-04-3 regression: hasattr(embedder, 'create_completion') must be True."""
+        mock_model = MagicMock()
+        mock_model.n_embd.return_value = 512
+
+        modules, _mock_llama = self._make_module(mock_model)
+        with patch.dict("sys.modules", modules), patch("os.cpu_count", return_value=4):
+            embedder = LlamaCppEmbedder(model_path="/model.gguf")
+
+        # The exact gate SearchPipeline._generate_hypothetical_document checks.
+        assert hasattr(embedder, "create_completion") is True
+
 
 # =============================================================================
 # ModelScopeEmbedder Mocked Tests
