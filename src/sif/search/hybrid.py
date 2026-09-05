@@ -207,18 +207,21 @@ class SearchPipeline:
 
         # Route to appropriate search mode
         if search_type == SearchType.BM25:
-            return self.hybrid.bm25.search(parsed_query, options)
+            results = self.hybrid.bm25.search(parsed_query, options)
+            return self._apply_snippets(results, parsed_query)
         if search_type == SearchType.VECTOR:
             if self.hybrid.embedder is None:
                 raise RuntimeError("Vector search requires an embedder")
             query_embedding = self.hybrid.embedder.embed(parsed_query)
-            return self.hybrid.vector.search(query_embedding, options)
+            results = self.hybrid.vector.search(query_embedding, options)
+            return self._apply_snippets(results, parsed_query)
         if search_type == SearchType.HYDE:
             hyde_doc = self._generate_hypothetical_document(parsed_query)
             if self.hybrid.embedder is None:
                 raise RuntimeError("HyDE search requires an embedder")
             hyde_embedding = self.hybrid.embedder.embed(hyde_doc)
-            return self.hybrid.vector.search(hyde_embedding, options)
+            results = self.hybrid.vector.search(hyde_embedding, options)
+            return self._apply_snippets(results, parsed_query)
 
         # Default: hybrid search with optional expansion
         queries = [parsed_query]
