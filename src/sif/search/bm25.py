@@ -7,6 +7,7 @@ import re
 import sqlite3
 
 from sif.core.models import SearchOptions, SearchResult
+from sif.search.term_match import find_first_match
 
 
 _SNIPPET_MAX_LEN = 200
@@ -204,8 +205,7 @@ class BM25Searcher:
         highlights = []
 
         for chunk in chunks:
-            chunk_lower = chunk.lower()
-            if any(term in chunk_lower for term in query_terms):
+            if find_first_match(chunk, query_terms) is not None:
                 # Extract snippet around the match
                 snippet = self._extract_snippet(chunk, query_terms)
                 if snippet:
@@ -216,23 +216,21 @@ class BM25Searcher:
         return highlights
 
     def _extract_snippet(self, text: str, query_terms: list[str], context: int = 50) -> str:
-        """Extract a snippet around query matches."""
-        text_lower = text.lower()
+        """Extract a snippet around the first query term match."""
+        match = find_first_match(text, query_terms)
+        if match is not None:
+            pos, match_len = match
+            start = max(0, pos - context)
+            end = min(len(text), pos + match_len + context)
+            snippet = text[start:end]
 
-        for term in query_terms:
-            pos = text_lower.find(term)
-            if pos >= 0:
-                start = max(0, pos - context)
-                end = min(len(text), pos + len(term) + context)
-                snippet = text[start:end]
+            # Add ellipsis if truncated
+            if start > 0:
+                snippet = "..." + snippet
+            if end < len(text):
+                snippet = snippet + "..."
 
-                # Add ellipsis if truncated
-                if start > 0:
-                    snippet = "..." + snippet
-                if end < len(text):
-                    snippet = snippet + "..."
-
-                return snippet.strip()
+            return snippet.strip()
 
         # Return first part if no match found
         if len(text) > _SNIPPET_MAX_LEN:

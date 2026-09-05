@@ -323,6 +323,41 @@ class TestBM25Searcher:
             assert rows, f"query {raw!r} -> {fts_query!r} matched nothing"
 
 
+class TestBM25SharedTermMatcherHighlights:
+    """G-04-1 regressions: highlights via the shared stem-tolerant matcher."""
+
+    def _searcher_with_chunks(self, chunks: list[str]) -> BM25Searcher:
+        """Build a BM25Searcher whose document_chunks query returns chunks."""
+        mock_db = MagicMock()
+        chunk_cursor = MagicMock()
+        chunk_cursor.fetchall.return_value = [(c,) for c in chunks]
+        mock_db.execute.return_value = chunk_cursor
+        return BM25Searcher(mock_db)
+
+    def test_stem_variant_document_gets_highlights(self) -> None:
+        """FTS matches stems (rank/token); highlights must too, not come back empty."""
+        searcher = self._searcher_with_chunks(
+            ["The system ranks documents by token frequency"],
+        )
+        highlights = searcher._get_highlights("doc-1", "ranking tokens")
+        assert highlights
+        assert "ranks" in highlights[0]
+        assert "token" in highlights[0]
+
+    def test_substring_false_positive_yields_no_highlights(self) -> None:
+        """Query table must not highlight a chunk containing only notable."""
+        searcher = self._searcher_with_chunks(["...introduced a notable change in..."])
+        highlights = searcher._get_highlights("doc-1", "table")
+        assert highlights == []
+
+    def test_cjk_per_character_fallback_highlight(self) -> None:
+        """CJK query 向量搜索 highlights 向量检索 via shared characters."""
+        searcher = self._searcher_with_chunks(["支持 向量检索 能力"])
+        highlights = searcher._get_highlights("doc-1", "向量搜索")
+        assert highlights
+        assert "向量" in highlights[0]
+
+
 class TestBM25ContextAttachment:
     """Tests for context_description attachment in BM25 search results."""
 

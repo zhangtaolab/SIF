@@ -12,12 +12,12 @@ class TestAsciiStemTolerance:
     """Stem variants of alphabetic terms must match (G-04-1 empty cells)."""
 
     def test_term_ranking_matches_rank_forms(self) -> None:
-        """"ranking" matches rank, ranking, ranked, Rank (case-insensitive)."""
+        """ "ranking" matches rank, ranking, ranked, Rank (case-insensitive)."""
         for text in ("rank", "ranking", "ranked", "Rank"):
             assert term_matches(f"The system {text} documents", "ranking"), text
 
     def test_term_tokens_matches_token_forms(self) -> None:
-        """"tokens" matches both token and tokens."""
+        """ "tokens" matches both token and tokens."""
         assert term_matches("a token here", "tokens")
         assert term_matches("two tokens here", "tokens")
 
@@ -42,7 +42,7 @@ class TestWordBoundaryStrictness:
         assert term_matches("two tables here", "table")
 
     def test_term_table_no_match_inside_notable(self) -> None:
-        """"table" must not match inside the longer word notable (G-04-1)."""
+        """ "table" must not match inside the longer word notable (G-04-1)."""
         for text in ("a notable change", "NOTABLE CHANGE", "Notable: intro"):
             assert not term_matches(text, "table"), text
             assert count_matches(text, "table") == 0
