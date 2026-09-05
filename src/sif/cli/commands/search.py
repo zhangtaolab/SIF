@@ -227,6 +227,7 @@ def search_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
         table.add_column("Score", style="green", justify="right")
         table.add_column("Title", style="yellow")
         table.add_column("Collection", style="blue")
+        table.add_column("Snippet", style="white")
         if line_numbers and any(getattr(r, "content", None) for r in results):
             table.add_column("Content", style="white")
 
@@ -236,6 +237,7 @@ def search_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 f"{r.score:.4f}",
                 r.title[:_TITLE_MAX_LEN] + "..." if len(r.title) > _TITLE_MAX_LEN else r.title,
                 r.collection_name,
+                escape(_display_snippet(r)),
             ]
             if line_numbers and getattr(r, "content", None):
                 content = prepend_line_numbers(r.content)
