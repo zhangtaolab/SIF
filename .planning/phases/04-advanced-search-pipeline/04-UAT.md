@@ -98,7 +98,7 @@ blocked: 0
 
 - gap_id: G-04-3
   truth: "HyDE: a hypothetical document is generated, embedded, vector-searched; no RuntimeError; snippet populated."
-  status: failed
+  status: resolved
   reason: 'User reported: "你能修复问题吗？" (accepting pre-check finding: hyde: queries always raise RuntimeError because no embedder class implements the required generation API)'
   severity: blocker
   test: 3
@@ -109,4 +109,22 @@ blocked: 0
   missing:
     - "LlamaCppEmbedder.create_completion(prompt, max_tokens, temperature, stop) wrapping llama_cpp Llama.create_completion with openai-style {'choices': [{'text': ...}]} return shape matching the HyDE call site"
     - "Unit test with a stubbed llama_cpp Llama verifying the wrapper contract (prompt passthrough, stop/max_tokens, return shape)"
+  debug_session: ""
+  resolved_by: "quick task 260905-sxc (commits 9f079b6, 67c9ecf — LlamaCppEmbedder.create_completion delegation wrapper + 4 contract tests; CreateCompletionResponse subclasses dict so the HyDE subscript contract holds)"
+  resolved_at: 2026-09-05
+  verification: "hasattr(LlamaCppEmbedder, 'create_completion') now True (HyDE gate passes); unit tests verify kwarg forwarding, defaults, openai-dict propagation. Suite 621 passed / 0 failed. End-to-end hyde: run pending G-04-4 fix (GGUF embed shape bug blocks indexing, separate gap)."
+
+- gap_id: G-04-4
+  truth: "HyDE: a hypothetical document is generated, embedded, vector-searched; no RuntimeError; snippet populated."
+  status: failed
+  reason: 'Discovered during test 3 re-verification after G-04-3 fix: `sif index embed` with GGUF embedder reports "Embedding complete: 0 chunks embedded" + pydantic float_type validation errors on EmbeddingResponse.embeddings — GGUF embeddings have never been persistable.'
+  severity: blocker
+  test: 3
+  root_cause: "llama_cpp.Llama.embed() returns a LIST of embeddings ("A list of embeddings" per its docstring) — List[List[float]] for pooled models, and List[List[List[float]]] token-level when pooling_type is NONE (true for decoder-only GGUFs like Qwen2.5-0.5B-Instruct with no pooling layer). LlamaCppEmbedder.embed treats the return as a flat vector: np normalization preserves the nesting and .tolist() returns [[...]] per text, so EmbeddingResponse (embeddings: list[list[float]]) receives a triple-nested payload and pydantic rejects every entry; the embed CLI swallows the exception per collection ("Embedding failed for 1 collection(s)") leaving 0 chunks embedded."
+  artifacts:
+    - path: "src/sif/embedding/embedder.py"
+      issue: "LlamaCppEmbedder.embed does not unwrap llama_cpp's list-of-embeddings return shape nor mean-pool token-level embeddings"
+  missing:
+    - "Shape-aware embed(): unwrap single-sequence List[List[float]]; mean-pool token-level List[List[List[float]]] over axis 0 before normalization"
+    - "Unit tests with stubbed llama_cpp returns covering both shapes (pooled and token-level)"
   debug_session: ""
