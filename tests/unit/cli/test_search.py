@@ -803,3 +803,71 @@ class TestSnippetDisplay:
         assert result.exit_code == 0
         assert "/notes/decorators.md" in result.output
         assert "Score" not in result.output
+
+
+class TestQueryPipelineErrorHandling:
+    """Tests for pipeline.search error surfacing in query_cmd (G-04-2)."""
+
+    def _invoke_query(self, mock_pipeline):
+        """Invoke query_cmd with the standard patch scaffold; return CliRunner result."""
+        runner = CliRunner()
+
+        mock_repo = MagicMock()
+        mock_repo.list_enabled.return_value = []
+
+        mock_manager = MagicMock()
+        mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager._model = MagicMock()
+
+        mock_db = MagicMock()
+
+        with (
+            patch("sif.cli.commands.search.Database", return_value=mock_db),
+            patch(
+                "sif.cli.commands.search.CollectionRepository",
+                return_value=mock_repo,
+            ),
+            patch(
+                "sif.cli.commands.search.SearchPipeline",
+                return_value=mock_pipeline,
+            ),
+            patch(
+                "sif.embedding.manager.EmbeddingManager.from_settings",
+                return_value=mock_manager,
+            ),
+            patch(
+                "sif.config.settings.get_settings",
+                return_value=MagicMock(
+                    model_name="all-MiniLM-L6-v2",
+                    reranker_model_name=None,
+                    reranker_model_path=None,
+                    model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"},
+                ),
+            ),
+        ):
+            return runner.invoke(
+                query_cmd,
+                ["query"],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+    def test_pipeline_runtime_error_becomes_click_exception(self):
+        """A reranker RuntimeError renders as a one-line Error with exit code 1."""
+        mock_pipeline = MagicMock()
+        mock_pipeline.search.side_effect = RuntimeError("Reranking failed: boom")
+
+        result = self._invoke_query(mock_pipeline)
+
+        assert result.exit_code == 1
+        assert "Error:" in result.output
+        assert "Reranking failed" in result.output
+        assert not isinstance(result.exception, RuntimeError)
+
+    def test_other_exceptions_propagate_uncaught(self):
+        """Only RuntimeError is wrapped — a ValueError still escapes the CLI."""
+        mock_pipeline = MagicMock()
+        mock_pipeline.search.side_effect = ValueError("unexpected value")
+
+        result = self._invoke_query(mock_pipeline)
+
+        assert isinstance(result.exception, ValueError)
