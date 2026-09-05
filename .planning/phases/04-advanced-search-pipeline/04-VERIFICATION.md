@@ -1,189 +1,186 @@
 ---
 phase: 04-advanced-search-pipeline
-verified: 2026-09-04T16:12:43Z
-status: gaps_found
-score: 7/8 must-haves verified
-behavior_unverified: 0 # Count of PRESENT_BEHAVIOR_UNVERIFIED truths; real-model reranker/HyDE quality items are routed to human verification in the report body
+verified: 2026-09-05T01:26:04Z
+status: human_needed
+score: 8/9 must-haves verified # 8/8 roadmap SCs verified incl. the previously-gapped SC 7; 1 plan-level backstop truth (04-06: human snippet-relevance judgment on a real personal index) abstained per protocol — routed to human verification, never a silent pass
+behavior_unverified: 0 # No PRESENT_BEHAVIOR_UNVERIFIED truths; the backstop abstention is an insufficient_spec/human-judgment item, not a behavior gap — code is present, wired, and test-exercised
 overrides_applied: 0
-gaps:
-  - truth: "Search results show the most relevant snippet extracted from each chunk"
-    status: partial
-    reason: >-
-      The SmartSnippetExtractor engine is implemented, unit-tested (10 tests), and wired
-      into SearchPipeline's default hybrid path, but the last mile is missing: the CLI
-      never renders r.snippet in any human-facing output (grep of src/sif/cli/ shows the
-      field is only serialized by SearchResult.to_dict() into --json); snippet extraction
-      in the pipeline requires result.content to be populated, which only happens with
-      --full (include_content), so default searches never extract a snippet; and the
-      lex:/vec:/hyde: prefix routes return early before the snippet stage. Empirically
-      verified: hybrid+content yields a correct snippet; hybrid-without-content and
-      lex:-with-content both yield snippet=None. No pipeline, CLI, or integration test
-      asserts snippet extraction or display. 04-UI-REVIEW independently flags the same
-      defect ("snippets are never shown", "SRCH-07 is invisible to table users").
-    artifacts:
-      - path: src/sif/cli/commands/search.py
-        issue: >-
-          query_cmd's rich table (lines 553-575) has no Snippet/Content column except
-          behind --line-numbers; r.snippet is never rendered anywhere in the CLI, only
-          serialized via to_dict() in --json output
-      - path: src/sif/search/hybrid.py
-        issue: >-
-          SearchPipeline.search returns early on the BM25/VECTOR/HYDE routes (lines
-          209-221), skipping the snippet stage; the snippet loop (lines 268-272) requires
-          result.content, which is only fetched when include_content/--full is set
-    missing:
-      - Render a truncated snippet (falling back to highlights) as a default column in the query/search rich tables
-      - Fetch content (or best-chunk content) for snippet extraction when include_content is False so default searches carry snippets
-      - Apply snippet extraction on the lex:/vec:/hyde: routes before returning
-      - Add pipeline/CLI tests asserting snippet extraction and display end to end
+re_verification:
+  previous_status: gaps_found
+  previous_score: 7/8
+  gaps_closed:
+    - "SC 7 / SRCH-07: Search results show the most relevant snippet extracted from each chunk — display half, transient content feed, and prefix-route coverage all delivered by 04-06 (commits 2b26138..5608cc6) and re-verified from scratch below"
+  gaps_remaining: []
+  regressions: [] # Full-suite failure profile identical at pre-04-06 commit (21 failed / 2 collection errors, all in MCP/embedding files, missing pytest-asyncio+httpx in venv); delta vs baseline is exactly +11 passing snippet tests, 0 new failures
+human_verification:
+  - test: "On your real personal index, run `sif search query <terms>` (no --full) and `sif search search <terms>`; read the rendered Snippet column for several queries"
+    expected: "The snippet reads as the most relevant excerpt for its query (the sentence window a human would pick), not an arbitrary lead paragraph"
+    why_human: "04-06 PLAN must_haves backstop truth (verification: backstop): snippet relevance is a human judgment on a real corpus; automated tests prove extraction mechanics (term-frequency window selection) only. Verifier abstained per the backstop protocol — no explicit evidence available (query_cmd additionally cannot load the modelscope embedder in this venv)"
+  - test: "Configure reranker_model_name (GGUF cross-encoder or cross-encoder/ms-marco-MiniLM-L-6-v2), run `sif search query <terms>` with and without reranking, with --explain"
+    expected: "Reranked order is more relevant; explain output shows reranker_score alongside bm25_score/vector_score/rrf_score"
+    why_human: "Real-model download and relevance judgment required; unit tests exercise the pipeline with mocked backends (SC 1 carried over from initial verification)"
+  - test: "Run `sif search query hyde: <question>` with a generation-capable GGUF embedder"
+    expected: "Hypothetical document generated, embedded, vector-searched; no RuntimeError; snippet populated"
+    why_human: "Requires a text-generation-capable model; the no-generate RuntimeError path is unit-tested, the real generation path is not (SC 2 hyde: carried over)"
+  - test: "Author a fixture with real queries and judged relevant docids from your index; run `sif bench fixture.json` and --json"
+    expected: "Table/JSON metrics (precision@k, recall, MRR) consistent with your manual relevance judgments"
+    why_human: "Requires a real index and human relevance judgments (SC 8 carried over)"
 ---
 
 # Phase 4: Advanced Search Pipeline Verification Report
 
 **Phase Goal:** Users can perform high-quality hybrid searches with reranking, query expansion, and diagnostic visibility.
-**Verified:** 2026-09-04T16:12:43Z
-**Status:** gaps_found
-**Re-verification:** No — initial verification
+**Verified:** 2026-09-05T01:26:04Z
+**Status:** human_needed
+**Re-verification:** Yes — after gap closure (prior report 2026-09-04, gaps_found 7/8, SC 7 partial)
 
-**Verification mode note:** Retroactive verification (phase-gate bookkeeping). Phase 04 was executed 2026-04-17 under the package name `docsift`; the project was renamed to `sif` in phase 08. Plan frontmatter paths (`src/docsift/...`) were verified against the current tree (`src/sif/...`), per instruction.
+**Re-verification mode note:** All 8 roadmap truths were re-verified from scratch against the current tree (goal-backward, prior evidence spot-checked rather than inherited). SC 7 — the previously failed truth — received full three-level plus behavioral and live-CLI verification. The 04-06 gap-closure plan's six truth strings, four artifacts, three key links, and three prohibitions were each checked independently; its structured backstop truth ({statement, verification: backstop}) was abstained per protocol (no explicit evidence available) and routes to human verification — no silent pass.
 
 ## Goal Achievement
 
 ### Observable Truths
 
-Roadmap success criteria are the contract; plan-level must_haves were merged in and folded into the evidence column.
+Roadmap success criteria are the contract; the 04-06 backstop truth is merged in as row 9.
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 1 | User can apply LLM reranking to search results for better relevance ranking | ✓ VERIFIED | `src/sif/search/rerank.py`: `LlamaCppReranker` (GGUF via llama-cpp-python, primary per D-04), `CrossEncoderReranker` (sentence-transformers fallback), `Qwen3Reranker` (later addition), `create_reranker(settings)` factory honoring `reranker_model_type` (default `gguf`). Independent settings (`reranker_model_name/path/type/batch_size` in `src/sif/config/settings.py:82-97`). Wired: `query_cmd` builds reranker via `create_reranker` when configured (`src/sif/cli/commands/search.py:464,483-491`); `SearchPipeline.search` applies `reranker.rerank(parsed_query, candidates, top_k=options.limit)` with fail-fast (`src/sif/search/hybrid.py:259-265`). Tests pass: `test_pipeline_with_reranker`, `test_rerank_adds_reranker_score`, `test_create_reranker_gguf_default`, `test_rerank_sorts_by_score`. "Better relevance" with a real model needs human confirmation (see Human Verification). |
-| 2 | User can use query document syntax (`lex:`, `vec:`, `hyde:`, `expand:`) for targeted search modes | ✓ VERIFIED | `_parse_query_prefix` maps all four prefixes (`src/sif/search/hybrid.py:276-287`); routing at lines 209-231. Tests pass: `test_parse_query_prefix_{lex,vec,hyde,expand,default}`, `test_pipeline_prefix_lex_routes_to_bm25`, `test_pipeline_prefix_vec_raises_without_embedder`, `test_pipeline_prefix_hyde_raises_without_generate`. E2E smoke test against a real SQLite FTS5 index confirmed `lex: decorators` routes to BM25 and returns the expected document. Advisory: 04-REVIEW CR-03 — vec:/hyde: and no-BM25 hybrid paths return chunk-level duplicate documents (dedup only runs on the fused path); the modes work, result quality is affected. |
-| 3 | User can see score breakdowns across BM25, RRF, and reranker stages with `--explain` | ✓ VERIFIED | `RRFFusion.fuse`/`fuse_with_weights` preserve `bm25_score`, `vector_score`, `rrf_score` in `SearchResult.scores` (`src/sif/search/rrf.py:45-52,88`); reranker adds `reranker_score` (`rerank.py:29-31`); `query_cmd --explain` prints per-result score breakdowns (`search.py:577-581`). Tests pass: `test_fuse_preserves_bm25_and_vector_scores`, `test_fuse_with_weights_preserves_scores`, `test_explain_preserves_scores`, `test_query_with_explain` (asserts `bm25_score=` in CLI output; passes with `FORCE_COLOR` unset — see Environment note). Advisory: 04-REVIEW WR-09 — multi-list fusion (expanded queries) mislabels later lists' scores as `vector_score`. |
-| 4 | User can filter low-confidence results with `--min-score` and retrieve full document content with `--full` | ✓ VERIFIED | `--min-score` and `--full` present on `search_cmd` (`search.py:92-93`), `vsearch_cmd` (`242-243`), `query_cmd` (`373-374`); wired into `SearchOptions(min_score=..., include_content=full)`. Filtering is real data flow, not cosmetic: `bm25.py:82,158` and `vector.py:92` skip rows below threshold. Tests pass: `test_search_applies_min_score`, `test_vsearch_with_min_score`, `test_vsearch_with_full`. E2E smoke test: `min_score=0.9999` returned 0 results against a real index. |
-| 5 | User can control how many candidates enter the reranker with `--candidate-limit` | ✓ VERIFIED | `query_cmd` `-C/--candidate-limit` with `click.IntRange(1, 200)` (`search.py:376-382`); pipeline caps before reranking: `candidates = results[: options.candidate_limit]` (`hybrid.py:258-262`). Tests pass: `test_pipeline_candidate_limit`, `test_query_with_candidate_limit`, `test_query_candidate_limit_out_of_range`. |
-| 6 | User can pass intent hints through `--intent` to guide search behavior | ✓ VERIFIED | `query_cmd --intent` (`search.py:383`); `SearchOptions.intent` (`models.py:253`); pipeline prepends intent to the parsed query before search (`hybrid.py:204-206`). Test passes: `test_intent_prepended_to_query`, `test_query_with_intent`. Advisory: 04-REVIEW WR-03 — intent is prepended as literal query text (a hard AND term on the lex: route) rather than passed to the expander's dedicated `intent` parameter; the existing test encodes this design. |
-| 7 | Search results show the most relevant snippet extracted from each chunk | ✗ FAILED | Extraction half delivered: `SmartSnippetExtractor` (`src/sif/search/snippets.py`) scores sentences by weighted term frequency and builds a window — 10 unit tests pass (`test_snippets.py`), and an E2E smoke test against a real index produced a correct snippet on the hybrid+content path. Display half missing: the CLI never renders `r.snippet` (only `to_dict()` → `--json`); default searches (no `--full`) never fetch content so never extract; `lex:`/`vec:`/`hyde:` routes return before the snippet stage (empirically: `lex:` with content → `snippet=None`). No pipeline/CLI/integration test asserts snippet flow. 04-UI-REVIEW finding 3 corroborates. See Gaps Summary. |
-| 8 | User can run benchmark fixtures to measure precision@k, recall, and MRR | ✓ VERIFIED | `src/sif/search/benchmark.py`: `precision_at_k`, `recall_at_k`, `reciprocal_rank`, `mean_reciprocal_rank`, `SearchEvaluator.evaluate()` averaging across fixture queries; `bench_cmd` loads JSON fixtures, runs the real `SearchPipeline` per query, outputs rich table or `--json` (`src/sif/cli/commands/bench.py`); registered in `cli/main.py:74,93`. Tests pass (20 total): `test_evaluate_single_query`, `test_evaluate_multiple_queries`, `test_bench_with_valid_fixture`, `test_bench_json_output`. `python -m sif.cli.main bench --help` verified live. Advisory: 04-REVIEW WR-07 (`bench -C` is a dead flag — bench's pipeline has no reranker) and WR-08 (per-query `collections` fixture field silently ignored). |
+| 1 | User can apply LLM reranking to search results for better relevance ranking | ✓ VERIFIED | `src/sif/search/rerank.py`: `LlamaCppReranker` (GGUF primary per D-04), `CrossEncoderReranker`, `Qwen3Reranker`, `create_reranker` factory (lines 51/129/213/359); independent settings `reranker_model_name/path/type/batch_size` (`settings.py:82-97`). Wired: `query_cmd` builds reranker via `create_reranker` when configured (`search.py:501-511`); pipeline applies `reranker.rerank(parsed_query, candidates, top_k=options.limit)` with candidate capping and fail-fast RuntimeError (`hybrid.py:262-268`). Named tests passed this run: `test_create_reranker_gguf_default`, `test_rerank_sorts_by_score`, `test_rerank_adds_reranker_score`, `test_rerank_preserves_result_type`, `test_pipeline_with_reranker`. "Better relevance" with a real model remains human item 2. |
+| 2 | User can use query document syntax (`lex:`, `vec:`, `hyde:`, `expand:`) for targeted search modes | ✓ VERIFIED | `_parse_query_prefix` maps all four prefixes (`hybrid.py:299-310`); routing at 209-224 now returns through `_apply_snippets`. Named tests passed: `test_parse_query_prefix_{lex,vec,hyde,expand,default}`, `test_pipeline_prefix_lex_routes_to_bm25` (8-test batch). Independent E2E this run: `lex: decorators` against a real seeded sqlite index returned a snippet-bearing result. Advisory: CR-03 vec:/hyde: chunk duplicates (see Anti-Patterns). |
+| 3 | User can see score breakdowns across BM25, RRF, and reranker stages with `--explain` | ✓ VERIFIED | `TestRRFScorePreservation` 3/3 passed (incl. `test_fuse_preserves_bm25_and_vector_scores`, `test_fuse_with_weights_preserves_scores`); `test_query_with_explain` passed (7-test batch); `--explain` renders per-result score breakdowns (`search.py:598-602`). Advisory: WR-09 multi-list (expand:) provenance mislabeling. |
+| 4 | User can filter low-confidence results with `--min-score` and retrieve full document content with `--full` | ✓ VERIFIED | `--min-score`/`--full` on `search_cmd` (search.py:109-110), `vsearch_cmd` (261-262), `query_cmd` (392-393); wired into `SearchOptions(min_score=..., include_content=full)`; real filtering in searchers. Named tests passed: `test_search_applies_min_score`, `test_vsearch_with_min_score`, `test_vsearch_with_full`. CLI-07 contract re-proven live this run: without `--full`, `SearchResult.to_dict()["content"]` is None even after the new transient snippet fetch (E2E scenario S4). |
+| 5 | User can control how many candidates enter the reranker with `--candidate-limit` | ✓ VERIFIED | `-C/--candidate-limit` with `click.IntRange(1, 200)` (`search.py:395-401`); pipeline caps candidates before reranking (`hybrid.py:262-263`). Named test passed: `test_pipeline_candidate_limit` (8-test batch). |
+| 6 | User can pass intent hints through `--intent` to guide search behavior | ✓ VERIFIED | `--intent` flag (`search.py:402`); `SearchOptions.intent`; pipeline prepends intent to the parsed query (`hybrid.py:205-206`). Named test passed: `test_intent_prepended_to_query` (8-test batch). Advisory: WR-03 — intent is prepended as literal query text (now also feeding snippet terms, a new 04-06 interaction); the existing test encodes this design. |
+| 7 | Search results show the most relevant snippet extracted from each chunk | ✓ VERIFIED (gap closed) | **Pipeline half:** `SearchPipeline._apply_snippets` (`hybrid.py:275-297`) extracts via transient fetch — `result.content` when truthy, else `self.hybrid._get_document_content(result.document_id)` — feeding `SmartSnippetExtractor.extract(text, query_terms)` into `result.snippet` only; the include_content dependency is gone. All four routes run the stage: BM25/VECTOR/HYDE early returns at `hybrid.py:209-224` and the default-route tail at 271. **Display half:** `_display_snippet(r, max_len=200)` module-level helper with first-highlight fallback (`search.py:28-41`); `Snippet` column in the query_cmd table (`search.py:577, 587`) and search_cmd table (`search.py:230, 240`), both wrapped in `rich.markup.escape`. **Tests:** 11 snippet tests pass (2 real-sqlite integration `TestSnippetExtractionIntegration`, 5 route unit `TestPipelineSnippetRoutes`, 4 CLI display `TestSnippetDisplay`). **Independent E2E this run (real seeded sqlite):** default-no-content → snippet set, content None; lex:-no-content → snippet set, content None; lex:-with-content → snippet set, content populated; to_dict content None. **Live CLI run:** `sif ... search search decorators` rendered a real Snippet column with the correct window; a bracket-heavy doc rendered `[bold]`, `[/dim]`, `[link=foo]` literally (no markup parsing). Advisory: WR-06 extract can exceed max_length on long single sentences — table render is bounded at 200 chars (verified live); overflow reaches --json only. Relevance-quality judgment = backstop truth, row 9. |
+| 8 | User can run benchmark fixtures to measure precision@k, recall, and MRR | ✓ VERIFIED | `benchmark.py`: `precision_at_k`/`recall_at_k`/`reciprocal_rank`/`mean_reciprocal_rank`/`SearchEvaluator` (lines 14-42); `bench_cmd` (148 lines) registered in `cli/main.py:73`; `bench --help` verified live this run (usage + all options). Named tests passed: `test_evaluate_*`, `test_bench_with_valid_fixture`, `test_bench_json_output` (7-test batch). Advisories: WR-07 dead `-C` flag, WR-08 ignored per-query collections field. |
+| 9 | 04-06 backstop: on the maintainer's real personal index, the rendered snippet is judged the most relevant excerpt for its query | ? UNCERTAIN (backstop — abstained) | Plan-declared `verification: backstop`; requires human relevance judgment on the maintainer's real corpus. No explicit evidence available to the verifier (automated tests prove extraction mechanics only; `query_cmd` cannot even load the modelscope embedder in this venv). Abstained per the non-inferable-truth protocol → human verification item 1. Not counted as verified; not a behavior gap. |
 
-**Score:** 7/8 truths verified (0 present, behavior-unverified)
+**Score:** 8/9 truths verified (0 present, behavior-unverified; 1 backstop abstained to human judgment)
 
 ### Required Artifacts
 
-All plan-declared artifacts exist in the current (renamed) tree, are substantive, and are wired. Key ones:
+All plan-declared artifacts exist in the current tree, are substantive, and are wired. 04-06 symbols bolded.
 
 | Artifact | Expected | Status | Details |
 |----------|----------|--------|---------|
-| `src/sif/core/models.py` | SearchResult with scores dict + snippet; SearchOptions with explain/candidate_limit/intent; HYDE/EXPAND SearchTypes | ✓ VERIFIED | `scores: dict[str, float \| None]` (line 219), `snippet` (220), `explain/candidate_limit/intent/snippet_max_length` (251-254), enum values (29-30) |
-| `src/sif/config/settings.py` | Independent reranker settings | ✓ VERIFIED | `reranker_model_name/path/type/batch_size` (lines 82-97) |
-| `src/sif/search/rrf.py` | fuse() preserves bm25/vector/rrf scores | ✓ VERIFIED | Both `fuse` and `fuse_with_weights` |
-| `src/sif/search/rerank.py` | create_reranker factory, LlamaCpp (default) + CrossEncoder fallback | ✓ VERIFIED | 394 lines, three backends + factory + alias |
-| `src/sif/search/expansion.py` | QueryExpansion.expand() -> list[str] with embedding-based PRF | ✓ VERIFIED | Protocol-compliant return; synonym map + cosine-similarity PRF; `expand_batch` dedup |
-| `src/sif/search/snippets.py` | SmartSnippetExtractor.extract(text, query_terms) -> str | ✓ VERIFIED | Sentence scoring, window building, ellipsis, fallback |
-| `src/sif/search/hybrid.py` | SearchPipeline with prefix routing, explainability, candidate capping, intent | ✓ VERIFIED | 330 lines; full pipeline verified above |
-| `src/sif/cli/commands/search.py` | query/search/vsearch with all phase flags | ✓ VERIFIED | All flags present and wired |
-| `src/sif/search/benchmark.py` | Metrics + SearchEvaluator | ✓ VERIFIED | All four metrics + evaluator |
-| `src/sif/cli/commands/bench.py` + `main.py` registration | bench_cmd | ✓ VERIFIED | Registered (main.py:74,93), help verified live |
-| Test files (8 phase-scoped) | Per plan 04-05 | ✓ VERIFIED | All exist; 159 phase-scoped tests pass (see Spot-Checks) |
+| `src/sif/search/hybrid.py` | SearchPipeline with prefix routing, explainability, candidate capping, intent, **_apply_snippets on all four routes** | ✓ VERIFIED | 353 lines; **`_apply_snippets` at 275-297 with `_get_document_content` feed; routes at 209-224 and tail at 271** |
+| `src/sif/cli/commands/search.py` | query/search/vsearch with all phase flags, **Snippet column + _display_snippet + escape** | ✓ VERIFIED | **`_display_snippet` at 28-41; Snippet columns at 230/577; `escape` import at line 9; `SearchResult` import at line 13** |
+| `tests/integration/test_search_pipeline.py` | Real-sqlite snippet integration tests | ✓ VERIFIED | `TestSnippetExtractionIntegration` (2 tests, with/without content, content-None assertion) |
+| `tests/unit/search/test_hybrid.py` | Per-route snippet tests | ✓ VERIFIED | `TestPipelineSnippetRoutes` (5 tests: lex/vec/hyde, idempotent skip, no-extractor no-op) |
+| `tests/unit/cli/test_search.py` | CLI snippet display tests | ✓ VERIFIED | `TestSnippetDisplay` (4 tests: query column, highlight fallback, search_cmd column, --files shape) |
+| `src/sif/core/models.py` | SearchResult scores/snippet/content/highlights; SearchOptions phase fields | ✓ VERIFIED | Fields confirmed via test construction and pipeline usage |
+| `src/sif/config/settings.py` | Independent reranker settings | ✓ VERIFIED | `reranker_model_name/path/type/batch_size` (82-97) |
+| `src/sif/search/rerank.py` | create_reranker factory, GGUF primary + fallbacks | ✓ VERIFIED | 393 lines, three backends + factory + alias |
+| `src/sif/search/expansion.py` | QueryExpansion.expand() -> list[str], PRF | ✓ VERIFIED | `expand` (44) with dedicated `intent` param, `expand_batch` (135) |
+| `src/sif/search/snippets.py` | SmartSnippetExtractor.extract(text, query_terms) | ✓ VERIFIED | 130 lines; live-exercised this run |
+| `src/sif/search/benchmark.py` + `cli/commands/bench.py` | Metrics + evaluator + bench command | ✓ VERIFIED | All four metrics + evaluator; bench registered and live-verified |
 
 ### Key Link Verification
 
+04-06 key links verified first (the gap-closure contract), then phase-wide links re-spot-checked.
+
 | From | To | Via | Status | Details |
 |------|----|----|--------|---------|
-| cli/commands/search.py | search/hybrid.py | `SearchPipeline(...)` + `.search(query, options)` | ✓ WIRED | search.py:497-505 |
-| cli/commands/bench.py | search/hybrid.py | `SearchPipeline(...)` + `.search()` | ✓ WIRED | bench.py:117-122 |
-| search/hybrid.py | search/expansion.py | `query_expander.expand(parsed_query)` | ✓ WIRED | hybrid.py:232 |
-| search/hybrid.py | search/rerank.py | `reranker.rerank(query, candidates)` | ✓ WIRED | hybrid.py:262; CLI factory at search.py:485 |
-| search/hybrid.py | search/snippets.py | `snippet_extractor.extract(content, query_terms)` | ✓ WIRED | hybrid.py:272 (default route only — contributes to Truth 7 gap) |
-| cli/commands/bench.py | search/benchmark.py | `SearchEvaluator(fixture_data).evaluate(search_fn)` | ✓ WIRED | bench.py:125-127 |
-| search/rrf.py | core/models.py | `SearchResult.scores` dict | ✓ WIRED | bm25_score/vector_score/rrf_score keys |
-| search/snippets.py | search/bm25.py | "reuses BM25 highlight logic" (plan 04-02 key link) | ⚠️ DEVIATED | snippets.py does not import bm25.py; it implements its own weighted term-frequency scoring, and the caller computes `query_terms = parsed_query.lower().split()` (hybrid.py:271) — equivalent intent achieved by alternative means. Info-level; roadmap SC does not require the import. |
+| `SearchPipeline._apply_snippets` | `HybridSearcher._get_document_content` → `SmartSnippetExtractor.extract` → `SearchResult.snippet` | transient content feed | ✓ WIRED | hybrid.py:292-296; proven live on real sqlite (S1-S3) |
+| query_cmd + search_cmd tables | `_display_snippet(r)` → `r.snippet` else `r.highlights[0]` | render target | ✓ WIRED | search.py:240, 587; proven live (real CLI table render, both fallback branches unit-tested) |
+| lex:/vec:/hyde: early returns | `_apply_snippets` before return | route coverage | ✓ WIRED | hybrid.py:209-224; unit-tested per route + lex: live |
+| cli/commands/search.py | search/hybrid.py | `SearchPipeline(...)` + `.search(query, options)` | ✓ WIRED | search.py:516-524 (with snippet_extractor at 521) |
+| search/hybrid.py | search/expansion.py | `query_expander.expand(parsed_query)` | ✓ WIRED | hybrid.py:235 |
+| search/hybrid.py | search/rerank.py | `reranker.rerank(query, candidates)` | ✓ WIRED | hybrid.py:265 |
+| search/hybrid.py | search/snippets.py | `snippet_extractor.extract(content, query_terms)` | ✓ WIRED | hybrid.py:296, all four routes |
+| cli/commands/bench.py | search/benchmark.py | `SearchEvaluator(...).evaluate(search_fn)` | ✓ WIRED | bench.py; live --help |
 
 ### Data-Flow Trace (Level 4)
 
 | Artifact | Data Variable | Source | Produces Real Data | Status |
 |----------|---------------|--------|--------------------|--------|
-| bm25.py | results | `documents_fts` FTS5 MATCH query | Yes | ✓ FLOWING |
-| vector.py | results | `document_embeddings` vec search | Yes | ✓ FLOWING |
-| rrf.py | scores | computed from searcher outputs | Yes | ✓ FLOWING |
-| bench.py | metrics | SearchEvaluator over real pipeline per fixture query | Yes | ✓ FLOWING |
-| search.py CLI explain block | `r.scores` | pipeline fusion/reranker stages | Yes | ✓ FLOWING |
-| search.py CLI snippet display | `r.snippet` | pipeline extraction (requires content) | No render target exists | ✗ HOLLOW (Truth 7 gap) |
+| search.py Snippet cells | `r.snippet` / `r.highlights[0]` via `_display_snippet` | pipeline extraction (transient DB fetch) / BM25 highlighter | Yes — rendered live against a real seeded index | ✓ FLOWING |
+| hybrid.py `_apply_snippets` | `text` | `documents.content` SELECT (hybrid.py:148-152) | Yes — live sqlite E2E populated snippets on all tested routes | ✓ FLOWING |
+| bm25.py / vector.py | results | FTS5 MATCH / vec search | Yes | ✓ FLOWING |
+| rrf.py | scores | searcher outputs | Yes | ✓ FLOWING |
+| bench.py | metrics | SearchEvaluator over real pipeline | Yes | ✓ FLOWING |
 
 ### Behavioral Spot-Checks
 
+All commands prefixed `env -u FORCE_COLOR NO_COLOR=1` (documented remedy for this host's FORCE_COLOR=3, which Rich honors over NO_COLOR).
+
 | Behavior | Command | Result | Status |
 |----------|---------|--------|--------|
-| Phase-scoped test suite | `pytest` (10 phase-04 test files, FORCE_COLOR unset) | 159 passed in 0.11s | ✓ PASS |
-| 10 named behavioral tests (routing, candidate limit, explain, RRF preservation, benchmark, min-score, CLI flags, bench) | `pytest <named tests>` | 10 passed with FORCE_COLOR unset | ✓ PASS |
-| lex: prefix routes to BM25 on a real index | E2E smoke (real SQLite + FTS5) | returned expected document | ✓ PASS |
-| min-score filters on a real index | E2E smoke, `min_score=0.9999` | 0 results | ✓ PASS |
-| Snippet extraction (hybrid + content) | E2E smoke | `'Python decorators wrap functions. Decorators use the @ syntax....'` | ✓ PASS |
-| Snippet on lex: route (with content) | E2E smoke | `snippet=None` (early return skips stage) | ✗ FAIL (gap evidence) |
-| Snippet on default hybrid (no --full) | E2E smoke | `snippet=None` (no content fetched) | ✗ FAIL (gap evidence) |
-| bench CLI entry point | `python -m sif.cli.main bench --help` | usage + all options | ✓ PASS |
-| ruff on all phase files | `ruff check <15 paths>` | All checks passed | ✓ PASS |
-| Documented commits exist | `git cat-file -t <hash>` ×9 | 7/9 exist; `4acf4d3`, `6473394` (04-02) missing | ⚠️ WARNING |
-
-**Environment note (test reliability):** this sandbox exports `FORCE_COLOR=3`, which Rich honors *over* `NO_COLOR=1`, injecting ANSI escapes into CliRunner output and failing plain-text assertions (`test_query_with_explain`, `test_bench_json_output`, line-number tests). `env -u FORCE_COLOR NO_COLOR=1 pytest ...` passes cleanly (159/159). The 04-VALIDATION.md guidance ("run with NO_COLOR=1") is insufficient on hosts that set FORCE_COLOR; recommend `env -u FORCE_COLOR` in gate scripts. Not a code regression.
+| All snippet tests (integration + route unit + CLI display) | `pytest <3 files> -k snippet` | 11 passed | ✓ PASS |
+| SC 7 E2E inversion S1: default hybrid, no --full (prior failure) | seeded real sqlite, `pipeline.search("decorators", SearchOptions(limit=5))` | snippet set ("Python decorators wrap functions..."), content None | ✓ PASS |
+| SC 7 E2E inversion S2: lex: route, no --full | `pipeline.search("lex: decorators", ...)` | snippet set, content None | ✓ PASS |
+| SC 7 E2E inversion S3: lex: with content (exact prior failing smoke) | `pipeline.search("lex: decorators", include_content=True)` | snippet set, content populated | ✓ PASS |
+| Prohibition 1: --json shape unchanged (CLI-07) | `results[0].to_dict()["content"]` after default search | None (snippet present) | ✓ PASS |
+| SC 7 display: real CLI table render | `python -m sif.cli.main --index <seeded> search search decorators` | Rich table with Snippet column containing correct window | ✓ PASS |
+| Prohibition 2: bracket text renders literally | seeded doc with `[bold]`/`[/dim]`/`[link=foo]`, real CLI run | literal text in Snippet cell, no markup parse/crash | ✓ PASS |
+| WR-06 severity: table render bounded | `SmartSnippetExtractor(max_length=50)` + `_display_snippet` on oversized extract | extract 673 chars → cell 203 (bounded) | ✓ PASS (overflow reaches --json only — Warning) |
+| Truths 1,2,5,6 named tests | `pytest test_hybrid.py -k "..."` batch | 8 passed | ✓ PASS |
+| Truth 3 named tests | `pytest TestRRFScorePreservation + explain tests` | 3 + explain batch passed | ✓ PASS |
+| Truths 4,8 named tests | `pytest -k "min_score or vsearch_with_full or ... bench_json"` | 7 passed | ✓ PASS |
+| Truth 1 reranker tests | `pytest test_reranker.py -k "gguf_default or sorts_by_score or adds_reranker_score or preserves_result_type"` | 5 passed | ✓ PASS |
+| Phase-04 scoped suite | `pytest tests/unit/search/ tests/unit/cli/test_search.py tests/unit/cli/test_bench.py tests/unit/inference/test_reranker.py tests/integration/test_search_pipeline.py` | 183 passed | ✓ PASS |
+| Full suite (once) | `pytest` (excluding 2 httpx-blocked MCP files) | 540 passed, 21 failed, 11 skipped | ⚠️ WARNING — all 21 failures + 2 collection errors are in MCP/embedding files (missing pytest-asyncio/httpx in current venv), proven pre-existing: identical profile at pre-04-06 commit (529 passed/21 failed; delta = exactly the +11 snippet tests, 0 new failures). SUMMARY's 583/11 claim reflects an environment where those deps were installed; neither is declared in pyproject dev extras and uv.lock is modified in the working tree |
+| ruff on phase files + format repo-wide | `ruff check <5 phase files>` / `ruff format --check src tests` | All checks passed; 125 files formatted | ✓ PASS |
+| 04-06 commits exist | `git cat-file -t` for 2b26138, cea6a83, 12ebda7, 5eeae8b, 5d19f74, 5608cc6, 0df289f, 5a0954d | 8/8 exist | ✓ PASS |
 
 ### Probe Execution
 
-No phase-declared probes and no `scripts/*/tests/probe-*.sh` exist (the single "probe" grep hit in 04-04-PLAN.md is the `embed_single("probe")` warm-up string in bench.py). Step 7c: N/A for this phase type.
+No phase-declared probes and no `scripts/*/tests/probe-*.sh` exist. Step 7c: N/A for this phase type.
 
 ### Requirements Coverage
 
 | Requirement | Source Plan | Description (from REQUIREMENTS.md) | Status | Evidence |
 |-------------|------------|-------------------------------------|--------|----------|
-| SRCH-01 | 01, 05 | Configurable LLM reranker, llama-cpp GGUF cross-encoder | ✓ SATISFIED | rerank.py + settings + factory + CLI wiring |
-| SRCH-02 | 02, 05 | LLM query expansion (lex/vec/hyde variants) | ✓ SATISFIED | expansion.py, wired at hybrid.py:232 |
-| SRCH-03 | 03, 05 | Query document syntax lex:/vec:/hyde:/expand: | ✓ SATISFIED | hybrid.py:276-287 + tests + E2E |
-| SRCH-04 | 01, 03, 05 | `--explain` stage score traces | ✓ SATISFIED | rrf.py score preservation + search.py:577-581 + tests |
-| SRCH-05 | 01, 03, 05 | `--candidate-limit` / `-C` | ✓ SATISFIED | IntRange 1-200 + hybrid.py:258-262 + tests |
-| SRCH-06 | 03, 05 | `--intent` passed through search stages | ✓ SATISFIED | search.py:383 + hybrid.py:204-206 + test (advisory: literal-prepend design, WR-03) |
-| SRCH-07 | 02, 05 | Smart snippet extraction from chunks by weighted term frequency | ✗ PARTIAL | Extractor implemented/tested; never rendered to users; skipped on prefix routes and without --full |
-| SRCH-08 | 04, 05 | `bench` command with fixture JSON, precision@k/recall/MRR | ✓ SATISFIED | benchmark.py + bench.py + main.py registration + 20 tests |
-| CLI-06 | 03, 05 | `--min-score` filters low-confidence results | ✓ SATISFIED | Flags on all three commands; real filtering in searchers |
-| CLI-07 | 03, 05 | `--full` returns full document content | ✓ SATISFIED | include_content wiring + test_vsearch_with_full |
+| SRCH-01 | 01, 05 | Configurable LLM reranker, llama-cpp GGUF cross-encoder | ✓ SATISFIED | rerank.py + settings + factory + CLI wiring + tests |
+| SRCH-02 | 02, 05 | LLM query expansion (lex/vec/hyde variants) | ✓ SATISFIED | expansion.py, wired at hybrid.py:235 |
+| SRCH-03 | 02, 05, 06 | Query document syntax lex:/vec:/hyde:/expand: | ✓ SATISFIED | hybrid.py:299-310 routing + tests + live lex: E2E |
+| SRCH-04 | 01, 03, 05 | --explain stage score traces | ✓ SATISFIED | RRF preservation tests + search.py:598-602 + explain test |
+| SRCH-05 | 01, 03, 05 | --candidate-limit / -C | ✓ SATISFIED | IntRange 1-200 + hybrid.py:262-263 + tests |
+| SRCH-06 | 03, 05 | --intent passed through search stages | ✓ SATISFIED | search.py:402 + hybrid.py:205-206 + test (WR-03 advisory) |
+| SRCH-07 | 02, 05, 06 | Smart snippet extraction from chunks, most relevant excerpt | ✓ SATISFIED | Extraction on all four routes + Snippet column in both tables + 11 tests + live E2E and live CLI render (was PARTIAL at initial verification) |
+| SRCH-08 | 04, 05 | bench command, fixture JSON, precision@k/recall/MRR | ✓ SATISFIED | benchmark.py + bench.py + registration + live --help + tests |
+| CLI-06 | 03, 05 | --min-score filters low-confidence results | ✓ SATISFIED | Flags on all three commands; real filtering in searchers + tests |
+| CLI-07 | 03, 05 | --full returns full document content | ✓ SATISFIED | include_content wiring + test + live to_dict content-None proof (contract preserved through the new transient fetch) |
 
-No orphaned requirements: REQUIREMENTS.md maps exactly these 10 IDs to Phase 4 (traceability lines 107-116), and all 10 appear in plan frontmatters. Note: REQUIREMENTS.md still lists all 10 as "Pending" — stale bookkeeping, not an implementation signal.
+No orphaned requirements: REQUIREMENTS.md maps exactly these 10 IDs to Phase 4 (traceability lines 107-116) and every ID appears in plan frontmatters (01: SRCH-01/04/05; 02: SRCH-02/07; 03: SRCH-03/04/05/06 + CLI-06/07; 04: SRCH-08; 05: SRCH-01..06; 06: SRCH-07). Bookkeeping: SRCH-07 is now marked Complete; the other 9 remain "Pending" despite verified implementations — stale flags, not an implementation signal.
+
+### Decision Coverage
+
+All 4 04-CONTEXT.md `<decisions>` entries are honored in shipped artifacts: (1) GGUF-primary reranker with independent `reranker_*` settings (rerank.py + settings.py:82-97); (2) embedding-based PRF expansion (expansion.py, wired hybrid.py:235); (3) mutually-exclusive prefix mode switches (hybrid.py:299-310); (4) structured scores dict with null-when-skipped, rendered via `--explain` with the `if v is not None` filter (search.py:600). 4/4 honored, none abandoned.
 
 ### Anti-Patterns Found
 
-No debt markers (`TBD`/`FIXME`/`XXX`/`TODO`/`HACK`/`PLACEHOLDER`) and no stub implementations in any phase file.
+No debt markers (TBD/FIXME/XXX/TODO/HACK/PLACEHOLDER) and no stub implementations in any phase-modified file (the one "placeholders" grep hit is SQL `?`-placeholder construction, hybrid.py:117). No disabled/skipped tests in phase files.
 
 | File | Pattern | Severity | Impact |
 |------|---------|----------|--------|
-| 04-REVIEW.md CR-01/CR-02 (cli/search.py --line-numbers formatters; cli/main.py sqlite3 NameError) | Code review findings | ℹ️ Advisory | Both outside phase-04 SCs (`--line-numbers` and `cleanup` are later-phase artifacts); recorded for follow-up, not phase blockers |
-| 04-REVIEW.md CR-03 (vector-only chunk duplicates) | Code review finding | ⚠️ Warning | Degrades vec:/hyde:/vsearch result quality; SC 2 (routing works) still verified |
-| 04-REVIEW.md WR-03/WR-07/WR-08/WR-09 (intent pollution, dead bench flag, ignored fixture field, explain provenance) | Code review findings | ℹ️ Advisory | Truths verified; quality follow-ups recommended |
-| 04-02-SUMMARY commits `4acf4d3`, `6473394` | Commit hashes not in repo history | ⚠️ Warning | History was rewritten (phase-08 era); work demonstrably survives in the tree — expansion.py reimplemented in `ade4bc9` (04-05), snippets.py first appears in current history at `ba8a440`. Bookkeeping discrepancy only |
-| hybrid.py:259 `len(results) > 0` | Redundant truthiness (IN-02) | ℹ️ Info | Cosmetic |
+| 04-REVIEW CR-01: `--line-numbers` + `--csv`/`--md`/`--xml` crashes (AttributeError on dict rows) | Code review finding, re-verified | ⚠️ Warning | Real crash, but `--line-numbers` and the machine-format flags are not among the 10 phase-04 requirement IDs or 8 SCs; quality follow-up |
+| 04-REVIEW CR-03: vec:/hyde:/vsearch return chunk-level duplicate documents (dedup only on fused path) | Code review finding, re-verified | ⚠️ Warning | Degrades vector-route result quality; SC 2's capability truth (targeted modes route and return) still verified; the goal's default hybrid path dedups correctly (hybrid.py:88). Explicitly out of 04-06 scope per its prohibition 3 |
+| 04-REVIEW WR-03: intent literal-prepend pollutes lex: AND-term, expansion input, and (new in 04-06) snippet term list | Design quality | ⚠️ Warning | SC 6 capability holds; the existing test encodes the design. Does not invalidate an SC |
+| 04-REVIEW WR-06: extractor violates max_length on long single sentences (673 chars observed) | Code review finding, verified live | ⚠️ Warning | Table render bounded at 200 (verified); overflow leaks to --json only. SC 7 display truth intact; quality follow-up |
+| 04-REVIEW WR-09: multi-list fusion (expand:) mislabels later lists' scores as vector_score | Code review finding | ⚠️ Warning | Default two-list path preserves provenance correctly (tested); SC 3 holds on the primary path |
+| 04-REVIEW WR-04/07/08: csv/xml escaping, dead bench -C flag, ignored fixture collections field | Code review findings | ℹ️ Advisory | Quality follow-ups outside phase-04 SCs |
+| 04-06-SUMMARY "583 passed/11 skipped" not reproducible in current venv | Environment drift | ⚠️ Warning | Current venv lacks pytest-asyncio + httpx (not in dev extras; uv.lock modified in working tree). Same 21 failures + 2 collection errors exist at the pre-04-06 commit — not a 04-06 regression. Recommend adding the two test deps to dev extras or documenting the gate environment |
+| REQUIREMENTS.md: 9 of 10 phase-4 IDs still "Pending" | Stale bookkeeping | ℹ️ Info | All 10 verified satisfied above |
+
+Advisory assessment per instruction (do the known advisories invalidate a SUCCESS CRITERION?): **No.** CR-01 concerns flags outside the SC set; CR-03 degrades vector-route quality but not routing capability (and the goal's default hybrid path dedups); WR-03 keeps SC 6's capability while polluting quality; WR-06's overflow is masked in the only user-facing render (table) and was verified bounded at 200 live; WR-09 affects the expand: sub-path only while the SC's primary path is proven. Each remains a recommended hardening item, not a failed truth.
 
 ### Human Verification Required
 
-These require a real model download and/or a real personal index; they cannot be verified by grep or mock-based tests.
-
-1. **Real-model reranking quality (SC 1)**
-   - **Test:** Configure `reranker_model_name` (GGUF cross-encoder or `cross-encoder/ms-marco-MiniLM-L-6-v2`), run `sif search query <terms>` on a real index with and without reranking, and with `--explain`.
-   - **Expected:** Reranked order is more relevant; explain output shows `reranker_score` alongside `bm25_score`/`vector_score`/`rrf_score`.
-   - **Why human:** Unit tests exercise the pipeline with mocked backends only; "better relevance" is a real-model judgment.
-2. **HyDE end-to-end (SC 2, hyde: route)**
-   - **Test:** `sif search query hyde: <question>` with a generation-capable GGUF embedder.
-   - **Expected:** A hypothetical document is generated, embedded, and vector-searched; no RuntimeError.
-   - **Why human:** Requires a text-generation-capable model; the no-generate RuntimeError path is unit-tested but the real generation path is not.
-3. **bench on a real corpus (SC 8)**
-   - **Test:** Author a fixture with real queries and judged relevant docids from your own index; run `sif bench fixture.json` and `--json`.
-   - **Expected:** Table/JSON metrics consistent with manual relevance judgments.
-   - **Why human:** Requires a real index and human relevance judgments.
+1. **Snippet relevance on your real index (04-06 backstop truth)**
+   - **Test:** On your real personal index, run `sif search query <terms>` (no --full) and `sif search search <terms>`; read the rendered Snippet column across several queries.
+   - **Expected:** The snippet reads as the most relevant excerpt for its query — the window a human would pick.
+   - **Why human:** Plan-declared `verification: backstop`; relevance is a human judgment on a real corpus. Automated tests prove extraction mechanics only. The verifier abstained (no real personal index available; `query_cmd`'s modelscope embedder cannot load in this venv).
+2. **Real-model reranking quality (SC 1)** — configure a real reranker, compare with/without, check `--explain` shows `reranker_score`.
+3. **HyDE end-to-end with a generation-capable model (SC 2)** — `sif search query hyde: <question>`; generation path is only mock-tested.
+4. **bench on a real corpus (SC 8)** — author a fixture with your own relevance judgments; confirm metric sanity.
 
 ### Gaps Summary
 
-One must-have truth failed (partially): **SC 7 — "Search results show the most relevant snippet extracted from each chunk."** The extraction engine (`SmartSnippetExtractor`) is fully implemented, tested, and wired into the pipeline's default hybrid path, but the user-visible half is missing: the CLI renders `r.snippet` nowhere (only `to_dict()` into `--json`), extraction depends on `--full` for content so default searches carry no snippet, and the `lex:`/`vec:`/`hyde:` routes return before the snippet stage. The gap is corroborated independently by 04-UI-REVIEW finding 3 and by empirical E2E runs (hybrid+content → correct snippet; lex:+content and hybrid-without-content → `None`). Fixing it is a small, focused CLI change (render + content-fetch + route coverage + one test), structured in the frontmatter for `/gsd-plan-phase --gaps`.
+No failed truths; no gaps remain from the initial verification. The single prior gap (SC 7 / SRCH-07) is closed end to end and independently re-proven: extraction now runs on all four pipeline routes via a transient content fetch (never mutating `SearchResult.content`, preserving the CLI-07 `--full` contract — proven live via `to_dict()`), and both human-facing rich tables render a `Snippet` column (live CLI render observed; bracket text escapes literally). The two empirical failures that defined the gap are inverted by automated tests and were independently reproduced as passing by this verifier against a fresh real-sqlite index.
 
-Everything else the phase promised is present and demonstrably working in the current tree: all four prefix routes, reranker stack with GGUF-primary per D-04, score preservation across RRF and reranker stages with `--explain` display, `--min-score`/`--full`/`--candidate-limit`/`--intent` flags wired to real behavior, and the bench/evaluator toolchain — 159 phase-scoped tests pass, ruff is clean, no debt markers.
-
-The 04-REVIEW Critical/Warning findings (CR-01..03, WR-01..12) are real defects in the current tree but map to quality/robustness follow-ups rather than failed phase-04 success criteria; they are catalogued above as advisory and should feed the next hardening pass. If the maintainer judges JSON-only snippet surfacing acceptable for this phase, SC 7 can be closed via an `overrides:` entry in this file's frontmatter instead of a gap plan.
+The phase cannot be marked `passed` solely because four items genuinely require the maintainer: the 04-06 backstop truth (snippet relevance judgment on your real index) plus the three carried real-model confirmations. Automated checks are otherwise green within phase scope: 183 phase-scoped tests pass, all named behavioral tests pass, ruff is clean, all 8 task commits exist, and the full-suite failures observable in this venv (21 + 2 collection errors, all MCP/embedding files) were proven identical at the pre-04-06 commit — an environment-dependency issue (missing pytest-asyncio/httpx, neither declared in dev extras), not a regression.
 
 ---
 
-_Verified: 2026-09-04T16:12:43Z_
+_Verified: 2026-09-05T01:26:04Z_
 _Verifier: Claude (gsd-verifier)_
