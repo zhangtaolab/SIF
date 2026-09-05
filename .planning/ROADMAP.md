@@ -123,13 +123,20 @@ Plans:
 **Plans:** 6 plans (5 original + 1 gap closure)
 
 Plans:
+**Wave 1**
 
 - [x] 04-01-PLAN.md — Extend core models, add reranker settings, implement CrossEncoderReranker, fix RRF score preservation (SRCH-01, SRCH-04, SRCH-05)
 - [x] 04-02-PLAN.md — Implement QueryExpansion with embedding-based PRF and SmartSnippetExtractor (SRCH-02, SRCH-07)
+- [ ] 04-06-PLAN.md — Close SC 7 snippet last mile: pipeline content feed for snippet extraction without --full, lex:/vec:/hyde: route coverage, Snippet column with highlights fallback in query/search tables (gap closure SC7-SRCH-07)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [x] 04-03-PLAN.md — Wire SearchPipeline with prefix routing, explainability, candidate capping; update CLI commands (SRCH-03, SRCH-04, SRCH-05, SRCH-06, CLI-06, CLI-07)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [x] 04-04-PLAN.md — Implement bench command with SearchEvaluator and benchmark metrics (SRCH-08)
 - [x] 04-05-PLAN.md — Fix broken tests and run full quality suite
-- [ ] 04-06-PLAN.md — Close SC 7 snippet last mile: pipeline content feed for snippet extraction without --full, lex:/vec:/hyde: route coverage, Snippet column with highlights fallback in query/search tables (gap closure SC7-SRCH-07)
 
 ### Phase 5: Agent Context Experience
 
