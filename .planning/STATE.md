@@ -136,6 +136,7 @@ Plan: 6 of 6
 | 260905-hc3 | Fix G-04-1 snippet relevance: markdown line-aware SmartSnippetExtractor windows; stem-tolerant word-boundary term matching shared with BM25 highlights | 2026-09-05 | 89a8a5e | [260905-hc3-fix-g-04-1-snippet-relevance-markdown-li](./quick/260905-hc3-fix-g-04-1-snippet-relevance-markdown-li/) |
 | 260905-kmv | Fix G-04-2 reranker load crash: model-dir resolution prefers real model config over aux subdirs; CLI ClickException on reranker failure | 2026-09-05 | 0831f41 | [260905-kmv-fix-g-04-2-reranker-load-crash-model-dir](./quick/260905-kmv-fix-g-04-2-reranker-load-crash-model-dir/) |
 | 260905-sxc | Fix G-04-3 HyDE unreachable: add create_completion to LlamaCppEmbedder wrapping llama_cpp completion with openai-style return shape | 2026-09-05 | 67c9ecf | [260905-sxc-fix-g-04-3-hyde-unreachable-add-create-c](./quick/260905-sxc-fix-g-04-3-hyde-unreachable-add-create-c/) |
+| 260905-tax | Fix G-04-4 GGUF embed shape: unwrap llama_cpp list-of-embeddings, mean-pool token-level output before normalization | 2026-09-05 | 958262b | [260905-tax-fix-g-04-4-gguf-embed-shape-unwrap-llama](./quick/260905-tax-fix-g-04-4-gguf-embed-shape-unwrap-llama/) |
 
 ### Overrides
 
@@ -144,7 +145,7 @@ Plan: 6 of 6
 ## Session Continuity
 
 - **Last session:** 2026-09-05T01:04:30.068Z
-- **Stopped at:** UAT in progress — tests 1–2 issues fixed (G-04-1/G-04-2/G-04-3 resolved); test 3 blocked on G-04-4 (GGUF embed shape bug), fix in flight; test 4 pending
+- **Stopped at:** UAT in progress — tests 1–3 issues fixed (G-04-1..G-04-4 all resolved, hyde: e2e verified on GGUF index); test 3 awaiting user pass; test 4 (bench) pending
 - **Resume file:** .planning/phases/04-advanced-search-pipeline/04-UAT.md
-- **Last action:** /gsd-verify-work 04 → test 3 (HyDE): G-04-3 create_completion fixed via /gsd-quick 260905-sxc; e2e rerun exposed G-04-4 (LlamaCppEmbedder.embed mis-handles llama_cpp list-of-embeddings/token-level shape → 0 chunks persistable)
-- **Next expected action:** G-04-4 quick-task fix, then re-embed GGUF scratch index (896-dim, Qwen2.5-0.5B-Instruct q4_k_m cached at ~/.cache/modelscope) and run hyde: e2e; then test 4 (bench fixture). Phases 05–09 bookkeeping still pending after 04 closes.
+- **Last action:** /gsd-verify-work 04 → test 3 (HyDE): G-04-4 fixed via /gsd-quick 260905-tax; gguf cache bucket purged; 1003 chunks embedded on 896-dim GGUF scratch index; hyde: query e2e pass (generation + vector search + snippets)
+- **Next expected action:** User verdict on test 3, then test 4 (bench fixture with judged docids, sif bench + --json). Two deferred follow-ups recorded in 04-UAT.md (embedding cache key omits model_path; pre-existing caplog test failures). Phases 05–09 bookkeeping still pending after 04 closes.
