@@ -467,6 +467,132 @@ class TestLlamaCppEmbedder:
         assert len(result) == 2
         assert mock_model.embed.call_count == 2
 
+    def test_embed_token_level_shape_mean_pools(self) -> None:
+        """G-04-4: token-level (pooling NONE) output mean-pools to a flat unit vector."""
+        mock_model = MagicMock()
+        mock_model.n_embd.return_value = 2
+        mock_model.embed.return_value = [[3.0, 4.0], [6.0, 8.0]]
+
+        modules, _mock_llama = self._make_module(mock_model)
+        with patch.dict("sys.modules", modules), patch("os.cpu_count", return_value=4):
+            embedder = LlamaCppEmbedder(model_path="/model.gguf")
+
+        result = embedder.embed("hello")
+        # Mean of [[3,4],[6,8]] over the token axis is [4.5, 6.0]; norm 7.5 -> [0.6, 0.8].
+        assert isinstance(result, list)
+        assert len(result) == 2
+        assert all(isinstance(v, float) for v in result)
+        assert abs(result[0] - 0.6) < 1e-6
+        assert abs(result[1] - 0.8) < 1e-6
+        assert abs(math.sqrt(sum(v * v for v in result)) - 1.0) < 1e-6
+
+    def test_embed_wrapped_pooled_shape(self) -> None:
+        """G-04-4: a (1, D) wrapped pooled vector unwraps to exactly its single row."""
+        mock_model = MagicMock()
+        mock_model.n_embd.return_value = 3
+        mock_model.embed.return_value = [[3.0, 4.0, 0.0]]
+
+        modules, _mock_llama = self._make_module(mock_model)
+        with patch.dict("sys.modules", modules), patch("os.cpu_count", return_value=4):
+            embedder = LlamaCppEmbedder(model_path="/model.gguf")
+
+        result = embedder.embed("hello")
+        # Mean over a single row is that row exactly; norm 5 -> [0.6, 0.8, 0.0].
+        assert len(result) == 3
+        assert all(isinstance(v, float) for v in result)
+        assert abs(result[0] - 0.6) < 1e-6
+        assert abs(result[1] - 0.8) < 1e-6
+        assert abs(result[2] - 0.0) < 1e-6
+
+    def test_embed_fully_wrapped_token_level_shape(self) -> None:
+        """G-04-4: a fully-wrapped (1, T, D) token payload unwraps and mean-pools."""
+        mock_model = MagicMock()
+        mock_model.n_embd.return_value = 2
+        mock_model.embed.return_value = [[[3.0, 4.0], [6.0, 8.0]]]
+
+        modules, _mock_llama = self._make_module(mock_model)
+        with patch.dict("sys.modules", modules), patch("os.cpu_count", return_value=4):
+            embedder = LlamaCppEmbedder(model_path="/model.gguf")
+
+        result = embedder.embed("hello")
+        # Unwrap to (T, D)=[[3,4],[6,8]], mean [4.5, 6.0], norm 7.5 -> [0.6, 0.8].
+        assert len(result) == 2
+        assert all(isinstance(v, float) for v in result)
+        assert abs(result[0] - 0.6) < 1e-6
+        assert abs(result[1] - 0.8) < 1e-6
+
+    def test_embed_call_passthrough_preserved(self) -> None:
+        """G-04-4: embed still passes the bare string to model.embed, unchanged."""
+        mock_model = MagicMock()
+        mock_model.n_embd.return_value = 2
+        mock_model.embed.return_value = [[3.0, 4.0], [6.0, 8.0]]
+
+        modules, _mock_llama = self._make_module(mock_model)
+        with patch.dict("sys.modules", modules), patch("os.cpu_count", return_value=4):
+            embedder = LlamaCppEmbedder(model_path="/model.gguf")
+
+        embedder.embed("hello")
+        mock_model.embed.assert_called_once_with("hello")
+
+    def test_embed_empty_payload_raises(self) -> None:
+        """G-04-4: an empty payload raises ValueError instead of returning garbage."""
+        mock_model = MagicMock()
+        mock_model.n_embd.return_value = 3
+        mock_model.embed.return_value = []
+
+        modules, _mock_llama = self._make_module(mock_model)
+        with patch.dict("sys.modules", modules), patch("os.cpu_count", return_value=4):
+            embedder = LlamaCppEmbedder(model_path="/model.gguf")
+
+        with pytest.raises(ValueError, match="empty"):
+            embedder.embed("hello")
+
+    def test_embed_empty_vector_payload_raises(self) -> None:
+        """G-04-4: a [[]] payload (zero-length vector) raises ValueError."""
+        mock_model = MagicMock()
+        mock_model.n_embd.return_value = 3
+        mock_model.embed.return_value = [[]]
+
+        modules, _mock_llama = self._make_module(mock_model)
+        with patch.dict("sys.modules", modules), patch("os.cpu_count", return_value=4):
+            embedder = LlamaCppEmbedder(model_path="/model.gguf")
+
+        with pytest.raises(ValueError, match="empty"):
+            embedder.embed("hello")
+
+    def test_embed_malformed_3d_payload_raises(self) -> None:
+        """G-04-4: outer axis != 1 on a 3-D payload raises ValueError naming the shape."""
+        mock_model = MagicMock()
+        mock_model.n_embd.return_value = 2
+        mock_model.embed.return_value = [[[1.0, 2.0]], [[3.0, 4.0]]]
+
+        modules, _mock_llama = self._make_module(mock_model)
+        with patch.dict("sys.modules", modules), patch("os.cpu_count", return_value=4):
+            embedder = LlamaCppEmbedder(model_path="/model.gguf")
+
+        with pytest.raises(ValueError, match="single text"):
+            embedder.embed("hello")
+
+    def test_embed_batch_rows_are_flat_float_lists(self) -> None:
+        """G-04-4: embed_batch rows are flat float lists (persistence-path contract)."""
+        mock_model = MagicMock()
+        mock_model.n_embd.return_value = 2
+        mock_model.embed.side_effect = [
+            [[3.0, 4.0], [6.0, 8.0]],
+            [[6.0, 8.0], [3.0, 4.0]],
+        ]
+
+        modules, _mock_llama = self._make_module(mock_model)
+        with patch.dict("sys.modules", modules), patch("os.cpu_count", return_value=4):
+            embedder = LlamaCppEmbedder(model_path="/model.gguf")
+
+        rows = embedder.embed_batch(["a", "b"])
+        assert len(rows) == 2
+        for row in rows:
+            assert isinstance(row, list)
+            assert all(isinstance(v, float) for v in row)
+            assert not any(isinstance(v, list) for v in row)
+
     def test_create_completion_forwards_prompt_and_kwargs(self) -> None:
         """G-04-3: create_completion forwards prompt positionally with kwargs verbatim."""
         mock_model = MagicMock()
