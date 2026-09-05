@@ -685,9 +685,11 @@ class TestSnippetDisplay:
         fields.update(overrides)
         return SearchResult(**fields)
 
-    def _invoke_query(self, mock_pipeline):
+    def _invoke_query(self, mock_pipeline, args=None):
         """Invoke query_cmd with the standard patch scaffold; return CliRunner result."""
         runner = CliRunner()
+        if args is None:
+            args = ["query"]
 
         mock_repo = MagicMock()
         mock_repo.list_enabled.return_value = []
@@ -724,7 +726,7 @@ class TestSnippetDisplay:
         ):
             return runner.invoke(
                 query_cmd,
-                ["query"],
+                args,
                 obj={"index_path": MagicMock(exists=lambda: True)},
             )
 
@@ -740,3 +742,64 @@ class TestSnippetDisplay:
         assert result.exit_code == 0
         assert "Snippet" in result.output
         assert "unique snippet marker text" in result.output
+
+    def test_query_table_falls_back_to_first_highlight(self):
+        """With no snippet, the Snippet column shows the first highlight only."""
+        mock_pipeline = MagicMock()
+        mock_pipeline.search.return_value = [
+            self._make_result(highlights=["first highlight text", "second highlight"]),
+        ]
+
+        result = self._invoke_query(mock_pipeline)
+
+        assert result.exit_code == 0
+        assert "first highlight text" in result.output
+        assert "second highlight" not in result.output
+
+    def test_search_table_shows_snippet_column(self):
+        """search_cmd (BM25) table renders the Snippet header with highlight fallback."""
+        runner = CliRunner()
+
+        mock_repo = MagicMock()
+        mock_repo.list_enabled.return_value = []
+
+        mock_searcher = MagicMock()
+        mock_searcher.search.return_value = [
+            self._make_result(highlights=["bm25 highlight marker"]),
+        ]
+
+        mock_db = MagicMock()
+
+        with (
+            patch("sif.cli.commands.search.Database", return_value=mock_db),
+            patch(
+                "sif.cli.commands.search.CollectionRepository",
+                return_value=mock_repo,
+            ),
+            patch(
+                "sif.cli.commands.search.BM25Searcher",
+                return_value=mock_searcher,
+            ),
+        ):
+            result = runner.invoke(
+                search_cmd,
+                ["query"],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code == 0
+        assert "Snippet" in result.output
+        assert "bm25 highlight marker" in result.output
+
+    def test_query_files_output_has_no_table_headers(self):
+        """--files prints paths only, keeping the path-only branch shape."""
+        mock_pipeline = MagicMock()
+        mock_pipeline.search.return_value = [
+            self._make_result(path="/notes/decorators.md"),
+        ]
+
+        result = self._invoke_query(mock_pipeline, args=["query", "--files"])
+
+        assert result.exit_code == 0
+        assert "/notes/decorators.md" in result.output
+        assert "Score" not in result.output
