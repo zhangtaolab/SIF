@@ -135,6 +135,7 @@ Plan: 6 of 6
 |---|-------------|------|--------|-----------|
 | 260905-hc3 | Fix G-04-1 snippet relevance: markdown line-aware SmartSnippetExtractor windows; stem-tolerant word-boundary term matching shared with BM25 highlights | 2026-09-05 | 89a8a5e | [260905-hc3-fix-g-04-1-snippet-relevance-markdown-li](./quick/260905-hc3-fix-g-04-1-snippet-relevance-markdown-li/) |
 | 260905-kmv | Fix G-04-2 reranker load crash: model-dir resolution prefers real model config over aux subdirs; CLI ClickException on reranker failure | 2026-09-05 | 0831f41 | [260905-kmv-fix-g-04-2-reranker-load-crash-model-dir](./quick/260905-kmv-fix-g-04-2-reranker-load-crash-model-dir/) |
+| 260905-sxc | Fix G-04-3 HyDE unreachable: add create_completion to LlamaCppEmbedder wrapping llama_cpp completion with openai-style return shape | 2026-09-05 | 67c9ecf | [260905-sxc-fix-g-04-3-hyde-unreachable-add-create-c](./quick/260905-sxc-fix-g-04-3-hyde-unreachable-add-create-c/) |
 
 ### Overrides
 
@@ -143,7 +144,7 @@ Plan: 6 of 6
 ## Session Continuity
 
 - **Last session:** 2026-09-05T01:04:30.068Z
-- **Stopped at:** UAT in progress — tests 1–2 issues fixed via quick tasks 260905-hc3 + 260905-kmv (gaps G-04-1/G-04-2 resolved); tests 3–4 pending
+- **Stopped at:** UAT in progress — tests 1–2 issues fixed (G-04-1/G-04-2/G-04-3 resolved); test 3 blocked on G-04-4 (GGUF embed shape bug), fix in flight; test 4 pending
 - **Resume file:** .planning/phases/04-advanced-search-pipeline/04-UAT.md
-- **Last action:** /gsd-verify-work 04 → test 2 (reranker) crash fixed via /gsd-quick 260905-kmv; reranked query + --explain verified on scratch index (Qwen3-Reranker-0.6B downloaded and loading)
-- **Next expected action:** Resume /gsd-verify-work 04 at test 3 (HyDE with generation-capable GGUF embedder), then test 4 (bench fixture). Phases 05–09 bookkeeping still pending after 04 closes.
+- **Last action:** /gsd-verify-work 04 → test 3 (HyDE): G-04-3 create_completion fixed via /gsd-quick 260905-sxc; e2e rerun exposed G-04-4 (LlamaCppEmbedder.embed mis-handles llama_cpp list-of-embeddings/token-level shape → 0 chunks persistable)
+- **Next expected action:** G-04-4 quick-task fix, then re-embed GGUF scratch index (896-dim, Qwen2.5-0.5B-Instruct q4_k_m cached at ~/.cache/modelscope) and run hyde: e2e; then test 4 (bench fixture). Phases 05–09 bookkeeping still pending after 04 closes.
