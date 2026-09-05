@@ -14,7 +14,7 @@ expected: |
   Run `sif search query hyde: <question>` with a generation-capable
   GGUF embedder. A hypothetical document is generated, embedded,
   vector-searched; no RuntimeError; snippet populated.
-awaiting: fix of G-04-3, then re-verification
+awaiting: user response (G-04-3/G-04-4 fixed and e2e verified; evidence presented)
 
 ## Tests
 
@@ -38,6 +38,7 @@ expected: Run `sif search query hyde: <question>` with a generation-capable GGUF
 result: issue
 reported: "你能修复问题吗？"
 severity: blocker
+resolution: "Two stacked fixes: G-04-3 via quick task 260905-sxc (create_completion, commits 9f079b6/67c9ecf) and G-04-4 via quick task 260905-tax (embed shape unwrap, commits 4560127/958262b/04f7504). E2E re-verified on GGUF scratch index (896-dim, Qwen2.5-0.5B-Instruct q4_k_m): hyde: query exit 0, no RuntimeError, hypothetical doc generated (direct reproduction shows coherent answer text), embedded + vector-searched (scores 0.78-0.81), snippets populated on all rows."
 evidence: "Pre-check found HyDE unreachable for EVERY shipped embedder: SearchPipeline._generate_hypothetical_document requires the embedder to expose .generate() or .create_completion(), but runtime verification shows none of the 5 embedder classes (SentenceTransformerEmbedder, LlamaCppEmbedder, ModelScopeEmbedder, OpenAIEmbedder, SimpleEmbedder) define either method — LlamaCppEmbedder only has embed/embed_batch/dimension. Any `hyde:` query raises RuntimeError('HyDE search requires a text-generation-capable model (e.g., GGUF)...') before generating anything. SC 2's generation capability was never wired into LlamaCppEmbedder."
 
 ### 4. bench on a real corpus (SC 8)
@@ -116,7 +117,7 @@ blocked: 0
 
 - gap_id: G-04-4
   truth: "HyDE: a hypothetical document is generated, embedded, vector-searched; no RuntimeError; snippet populated."
-  status: failed
+  status: resolved
   reason: 'Discovered during test 3 re-verification after G-04-3 fix: `sif index embed` with GGUF embedder reports "Embedding complete: 0 chunks embedded" + pydantic float_type validation errors on EmbeddingResponse.embeddings — GGUF embeddings have never been persistable.'
   severity: blocker
   test: 3
@@ -128,3 +129,15 @@ blocked: 0
     - "Shape-aware embed(): unwrap single-sequence List[List[float]]; mean-pool token-level List[List[List[float]]] over axis 0 before normalization"
     - "Unit tests with stubbed llama_cpp returns covering both shapes (pooled and token-level)"
   debug_session: ""
+  resolved_by: "quick task 260905-tax (commits 4560127, 958262b, 04f7504 — _unwrap_embedding shape-aware embed: 1-D passthrough, 2-D mean-pool axis 0, 3-D unwrap+mean-pool; 8 new tests)"
+  resolved_at: 2026-09-05
+  verification: "sif index embed with Qwen2.5-0.5B-Instruct q4_k_m: 1003 chunks embedded (was 0). NOTE: pre-fix runs had cached malformed nested vectors under cache bucket gguf:<model_name>; purged gguf:* rows from /Users/forrest/Library/Caches/sif/embeddings_cache.db before re-embed (cache bucket key omits model_path — recorded as deferred follow-up)."
+
+## Deferred Follow-Ups
+
+- test: 3
+  idea: "Embedding cache bucket key (f"{model_type}:{model_name}") omits model_path — switching GGUF files under the same model_name reuses another file's cached vectors; also lets malformed pre-fix vectors resurrect post-fix (bit us during G-04-4 verification, resolved by purging gguf:* rows). Include model_path (or content hash of it) in _cache_model_id."
+  deferred_at: 2026-09-05
+- test: 3
+  idea: "2 pre-existing caplog test failures (setup_logging sets sif logger propagate=False, poisoning caplog after test_docs.py CLI runs) — proven unrelated via minimal repro; suggested conftest logger-state snapshot fixture. Details: .planning/quick/260905-tax-fix-g-04-4-gguf-embed-shape-unwrap-llama/deferred-items.md"
+  deferred_at: 2026-09-05
