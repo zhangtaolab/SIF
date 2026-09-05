@@ -134,6 +134,7 @@ Plan: 6 of 6
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260905-hc3 | Fix G-04-1 snippet relevance: markdown line-aware SmartSnippetExtractor windows; stem-tolerant word-boundary term matching shared with BM25 highlights | 2026-09-05 | 89a8a5e | [260905-hc3-fix-g-04-1-snippet-relevance-markdown-li](./quick/260905-hc3-fix-g-04-1-snippet-relevance-markdown-li/) |
+| 260905-kmv | Fix G-04-2 reranker load crash: model-dir resolution prefers real model config over aux subdirs; CLI ClickException on reranker failure | 2026-09-05 | 0831f41 | [260905-kmv-fix-g-04-2-reranker-load-crash-model-dir](./quick/260905-kmv-fix-g-04-2-reranker-load-crash-model-dir/) |
 
 ### Overrides
 
@@ -142,7 +143,7 @@ Plan: 6 of 6
 ## Session Continuity
 
 - **Last session:** 2026-09-05T01:04:30.068Z
-- **Stopped at:** UAT in progress — test 1 issue fixed via quick task 260905-hc3 (commits a4887de..89a8a5e), gap G-04-1 resolved; tests 2–4 pending
+- **Stopped at:** UAT in progress — tests 1–2 issues fixed via quick tasks 260905-hc3 + 260905-kmv (gaps G-04-1/G-04-2 resolved); tests 3–4 pending
 - **Resume file:** .planning/phases/04-advanced-search-pipeline/04-UAT.md
-- **Last action:** /gsd-verify-work 04 → test 1 (snippet relevance) issue → fixed via /gsd-quick 260905-hc3; rerun of failing queries verified on scratch index
-- **Next expected action:** Resume /gsd-verify-work 04 at test 2 (real-model reranking — Qwen3-Reranker-0.6B ModelScope download stalled at 0 bytes, needs retry or local model), then tests 3–4 (HyDE, bench). Phases 05–09 bookkeeping still pending after 04 closes.
+- **Last action:** /gsd-verify-work 04 → test 2 (reranker) crash fixed via /gsd-quick 260905-kmv; reranked query + --explain verified on scratch index (Qwen3-Reranker-0.6B downloaded and loading)
+- **Next expected action:** Resume /gsd-verify-work 04 at test 3 (HyDE with generation-capable GGUF embedder), then test 4 (bench fixture). Phases 05–09 bookkeeping still pending after 04 closes.
