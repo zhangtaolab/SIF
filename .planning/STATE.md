@@ -129,6 +129,12 @@ Plan: 6 of 6
 
 - None
 
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260905-hc3 | Fix G-04-1 snippet relevance: markdown line-aware SmartSnippetExtractor windows; stem-tolerant word-boundary term matching shared with BM25 highlights | 2026-09-05 | 89a8a5e | [260905-hc3-fix-g-04-1-snippet-relevance-markdown-li](./quick/260905-hc3-fix-g-04-1-snippet-relevance-markdown-li/) |
+
 ### Overrides
 
 - [2026-09-03] Phase 03 decision-coverage gate override (user-approved): D-06/D-07/D-08/D-10 accepted as covered-by-legacy — implemented and behaviorally verified per 03-VERIFICATION.md; legacy plans 03-01…03-06 predate D-ID citation and are read-only in gap-closure mode. Verify-phase should re-surface this.
@@ -136,7 +142,7 @@ Plan: 6 of 6
 ## Session Continuity
 
 - **Last session:** 2026-09-05T01:04:30.068Z
-- **Stopped at:** Completed 04-06-PLAN.md (SC 7 snippet gap closure)
-- **Resume file:** None
-- **Last action:** /gsd-execute-phase 04 → verify_phase_goal = gaps_found; 04-VERIFICATION.md committed (3cfed40)
-- **Next expected action:** `/gsd-plan-phase 04 --gaps` (gap closure for SC 7), then `/gsd-execute-phase 04 --gaps-only`; alternatively verify-work for the 3 human-verification items. Phases 05–09 bookkeeping still pending after 04 closes.
+- **Stopped at:** UAT in progress — test 1 issue fixed via quick task 260905-hc3 (commits a4887de..89a8a5e), gap G-04-1 resolved; tests 2–4 pending
+- **Resume file:** .planning/phases/04-advanced-search-pipeline/04-UAT.md
+- **Last action:** /gsd-verify-work 04 → test 1 (snippet relevance) issue → fixed via /gsd-quick 260905-hc3; rerun of failing queries verified on scratch index
+- **Next expected action:** Resume /gsd-verify-work 04 at test 2 (real-model reranking — Qwen3-Reranker-0.6B ModelScope download stalled at 0 bytes, needs retry or local model), then tests 3–4 (HyDE, bench). Phases 05–09 bookkeeping still pending after 04 closes.
