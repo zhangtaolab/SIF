@@ -176,6 +176,39 @@ class LlamaCppEmbedder(Embedder):
             embeddings.append(embedding)
         return embeddings
 
+    def create_completion(
+        self,
+        prompt: str,
+        max_tokens: int = 256,
+        temperature: float = 0.3,
+        stop: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Generate text with the loaded llama.cpp model.
+
+        This is the text-generation capability HyDE search gates on:
+        SearchPipeline._generate_hypothetical_document checks
+        hasattr(embedder, "create_completion") before generating a
+        hypothetical document. Delegates to the underlying llama_cpp
+        Llama instance, returning its openai-style completion dict
+        ({"choices": [{"text": ...}, ...]}) unchanged.
+
+        Args:
+            prompt: Prompt text to complete.
+            max_tokens: Maximum number of tokens to generate.
+            temperature: Sampling temperature.
+            stop: Stop sequences; None normalizes to the underlying
+                library's own default of an empty list.
+
+        Returns:
+            The openai-style completion dict from llama-cpp-python.
+        """
+        return self.model.create_completion(
+            prompt,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            stop=stop if stop is not None else [],
+        )
+
     @property
     def dimension(self) -> int:
         """Get embedding dimension."""
