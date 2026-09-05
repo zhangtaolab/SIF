@@ -160,13 +160,55 @@ class LlamaCppEmbedder(Embedder):
         logger.info(f"Embedding dimension: {self._dimension}")
 
     def embed(self, text: str) -> list[float]:
-        """Embed a single text."""
-        embedding = self.model.embed(text)
+        """Embed a single text.
+
+        llama_cpp.Llama.embed returns a list-of-embeddings structure whose
+        shape depends on the model's pooling configuration: a flat vector
+        for pooled models, per-token vectors when pooling is NONE
+        (decoder-only GGUFs like Qwen2.5-0.5B-Instruct), or a wrapped
+        variant. The payload is unwrapped/mean-pooled to a flat vector
+        first, then L2-normalized: unit-length when the norm is positive;
+        a zero-norm vector is returned unchanged.
+        """
+        vector = self._unwrap_embedding(self.model.embed(text))
         # Normalize
-        norm = np.linalg.norm(embedding)
+        norm = np.linalg.norm(vector)
         if norm > 0:
-            embedding = embedding / norm
-        return embedding.tolist()
+            vector = vector / norm
+        return vector.tolist()
+
+    @staticmethod
+    def _unwrap_embedding(raw: Any) -> np.ndarray:
+        """Reduce a llama_cpp embed() payload to a single flat 1-D vector.
+
+        Raises:
+            ValueError: If the payload is empty or has an unexpected shape.
+        """
+        arr = np.asarray(raw, dtype=float)
+        if arr.size == 0:
+            raise ValueError(
+                f"Embedding model returned an empty payload (shape {arr.shape}); "
+                "cannot reduce it to a vector."
+            )
+        if arr.ndim == 1:
+            # Flat pooled vector (llama_cpp string-input pooled return).
+            return arr
+        if arr.ndim == 2:
+            # (T, D) token-level output mean-pools the token axis; a (1, D)
+            # wrapped pooled vector mean-pools to exactly its single row.
+            return arr.mean(axis=0)
+        if arr.ndim == 3:
+            # Version-dependent fully-wrapped token-level output.
+            if arr.shape[0] != 1:
+                raise ValueError(
+                    f"Embedding model returned {arr.shape[0]} embeddings for a "
+                    f"single text (shape {arr.shape}); expected exactly 1."
+                )
+            return arr[0].mean(axis=0)
+        raise ValueError(
+            f"Embedding model returned an unexpected payload with {arr.ndim} "
+            "dimensions; expected 1, 2, or 3."
+        )
 
     def embed_batch(self, texts: list[str]) -> list[list[float]]:
         """Embed multiple texts."""
