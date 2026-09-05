@@ -521,7 +521,10 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             snippet_extractor=snippet_extractor,
             embedding_dim=embedding_dim,
         )
-        results = pipeline.search(query, options)
+        try:
+            results = pipeline.search(query, options)
+        except RuntimeError as e:
+            raise click.ClickException(str(e)) from e
 
     # Output results
     quiet = quiet or ctx.obj.get("quiet", False)
