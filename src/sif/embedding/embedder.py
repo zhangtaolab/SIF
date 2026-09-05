@@ -19,6 +19,12 @@ logger = get_logger(__name__)
 
 _PROGRESS_BAR_THRESHOLD = 100
 
+# llama_cpp embed() payload dimensionalities handled by
+# LlamaCppEmbedder._unwrap_embedding: 1-D flat pooled vector, 2-D token-level
+# (or wrapped pooled) matrix, 3-D fully-wrapped token-level tensor.
+_NDIM_TOKEN_LEVEL = 2
+_NDIM_FULLY_WRAPPED_TOKEN_LEVEL = 3
+
 
 class SentenceTransformerEmbedder(Embedder):
     """Embedder using sentence-transformers."""
@@ -193,11 +199,11 @@ class LlamaCppEmbedder(Embedder):
         if arr.ndim == 1:
             # Flat pooled vector (llama_cpp string-input pooled return).
             return arr
-        if arr.ndim == 2:
+        if arr.ndim == _NDIM_TOKEN_LEVEL:
             # (T, D) token-level output mean-pools the token axis; a (1, D)
             # wrapped pooled vector mean-pools to exactly its single row.
             return arr.mean(axis=0)
-        if arr.ndim == 3:
+        if arr.ndim == _NDIM_FULLY_WRAPPED_TOKEN_LEVEL:
             # Version-dependent fully-wrapped token-level output.
             if arr.shape[0] != 1:
                 raise ValueError(
