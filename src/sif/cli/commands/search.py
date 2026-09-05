@@ -6,10 +6,11 @@ import json
 
 import click
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 from sif.cli.formatters import add_line_numbers_to_results, prepend_line_numbers
-from sif.core.models import SearchOptions
+from sif.core.models import SearchOptions, SearchResult
 from sif.database.database import Database
 from sif.database.repositories import CollectionRepository
 from sif.search.bm25 import BM25Searcher
@@ -22,6 +23,22 @@ console = Console()
 # Display truncation constants
 _TITLE_MAX_LEN = 50
 _CONTENT_MAX_LEN = 200
+
+
+def _display_snippet(r: SearchResult, max_len: int = _CONTENT_MAX_LEN) -> str:
+    """Return the display text for the Snippet table column.
+
+    Prefers the pipeline-extracted snippet; falls back to the first BM25
+    highlight when no snippet is present; returns the empty string when
+    neither is available.
+    """
+    text = getattr(r, "snippet", None)
+    if not text:
+        highlights = getattr(r, "highlights", None) or []
+        text = highlights[0] if highlights else ""
+    if not text:
+        return ""
+    return text[:max_len] + "..." if len(text) > max_len else text
 
 
 def format_results_json(results: list) -> str:
@@ -555,6 +572,7 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
         table.add_column("Score", style="green", justify="right")
         table.add_column("Title", style="yellow")
         table.add_column("Collection", style="blue")
+        table.add_column("Snippet", style="white")
         if line_numbers and any(getattr(r, "content", None) for r in results):
             table.add_column("Content", style="white")
 
@@ -564,6 +582,7 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 f"{r.score:.4f}",
                 r.title[:_TITLE_MAX_LEN] + "..." if len(r.title) > _TITLE_MAX_LEN else r.title,
                 r.collection_name,
+                escape(_display_snippet(r)),
             ]
             if line_numbers and getattr(r, "content", None):
                 content = prepend_line_numbers(r.content)

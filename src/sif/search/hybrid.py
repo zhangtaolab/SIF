@@ -265,13 +265,33 @@ class SearchPipeline:
                 raise RuntimeError(f"Reranking failed: {e}") from e
 
         # Extract smart snippets if not already present
-        if self.snippet_extractor is not None:
-            for result in results:
-                if result.snippet is None and result.content:
-                    query_terms = parsed_query.lower().split()
-                    result.snippet = self.snippet_extractor.extract(result.content, query_terms)
+        results = self._apply_snippets(results, parsed_query)
 
         return self.hybrid._attach_contexts(results)  # noqa: SLF001
+
+    def _apply_snippets(
+        self,
+        results: list[SearchResult],
+        parsed_query: str,
+    ) -> list[SearchResult]:
+        """Extract smart snippets for results that do not carry one yet.
+
+        The content fetch is transient: when include_content is False, the
+        document text feeds snippet extraction only and is never written into
+        SearchResult.content (--full stays the only content-returning path).
+        """
+        if self.snippet_extractor is None:
+            return results
+        query_terms = parsed_query.lower().split()
+        for result in results:
+            if result.snippet is not None:
+                continue
+            text = result.content
+            if not text:
+                text = self.hybrid._get_document_content(result.document_id)  # noqa: SLF001
+            if text:
+                result.snippet = self.snippet_extractor.extract(text, query_terms)
+        return results
 
     def _parse_query_prefix(self, query: str) -> tuple[str, SearchType]:
         """Parse query prefix to determine search mode."""
