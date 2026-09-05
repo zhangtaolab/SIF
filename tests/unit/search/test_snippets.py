@@ -88,3 +88,72 @@ class TestSmartSnippetExtractor:
         snippet = extractor.extract(text, query_terms)
         # Should prefer sentence with longer matching term
         assert "terminology" in snippet.lower()
+
+
+class TestMarkdownLineAwareExtraction:
+    """G-04-1 regressions: snippets must center on matched lines, not section starts."""
+
+    def test_table_row_query_returns_row_not_section_heading(self):
+        """Query hitting a markdown table row centers the window on that row."""
+        extractor = SmartSnippetExtractor(max_length=120)
+        text = (
+            "# Changelog\n"
+            "\n"
+            "## Configuration Options\n"
+            "\n"
+            "| Option | Description |\n"
+            "|--------|-------------|\n"
+            "| SIF_CHUNK_OVERLAP | Tokens of overlap between chunks |\n"
+            "| SIF_DB_PATH | Database location |\n"
+            "\n"
+            "Some trailing prose about defaults.\n"
+        )
+        snippet = extractor.extract(text, ["chunk", "overlap", "tokens"])
+        assert "SIF_CHUNK_OVERLAP" in snippet
+        assert "Configuration Options" not in snippet
+
+    def test_code_line_query_never_edges_window_with_fence(self):
+        """Query matching a line inside a fenced block centers on it; fences
+        never start or end the returned window."""
+        extractor = SmartSnippetExtractor(max_length=120)
+        text = (
+            "# Embeddings Storage\n"
+            "\n"
+            "The index uses sqlite-vec for vectors.\n"
+            "\n"
+            "```sql\n"
+            "CREATE TABLE collections (\n"
+            "    id TEXT PRIMARY KEY\n"
+            ");\n"
+            "CREATE VIRTUAL TABLE chunks USING vec0(\n"
+            "    embedding float[384]\n"
+            ");\n"
+            "```\n"
+            "\n"
+            "Done.\n"
+        )
+        snippet = extractor.extract(text, ["sqlite-vec", "virtual", "table"])
+        assert "VIRTUAL TABLE chunks" in snippet
+        assert not snippet.startswith("```")
+        assert not snippet.endswith("```")
+
+    def test_fallback_skips_leading_blank_and_fence_lines(self):
+        """No-match fallback skips leading blanks/fences; headings would stay."""
+        extractor = SmartSnippetExtractor()
+        text = "\n```python\nx = 1\n```\n\nReal content starts here."
+        snippet = extractor.extract(text, ["zzzz"])
+        assert snippet.startswith("x = 1")
+        assert "Real content starts here." in snippet
+        assert not snippet.startswith("```")
+
+    def test_overlong_line_window_centers_on_match(self):
+        """A single line longer than max_length is cut around the match, not
+        the line head."""
+        extractor = SmartSnippetExtractor(max_length=60)
+        text = "H " * 100 + "needle" + " T" * 100  # one 406-char line
+        snippet = extractor.extract(text, ["needle"])
+        assert "needle" in snippet
+        assert snippet.startswith("...")
+        assert snippet.endswith("...")
+        assert len(snippet) <= 66  # window + both ellipses
+        assert snippet.count("H") <= 30  # line head is cut away
