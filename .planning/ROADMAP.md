@@ -120,14 +120,14 @@ Plans:
   7. Search results show the most relevant snippet extracted from each chunk
   8. User can run benchmark fixtures to measure precision@k, recall, and MRR
 
-**Plans:** 6 plans (5 original + 1 gap closure)
+**Plans:** 6/6 plans executed (5 original + 1 gap closure)
 
 Plans:
 **Wave 1**
 
 - [x] 04-01-PLAN.md — Extend core models, add reranker settings, implement CrossEncoderReranker, fix RRF score preservation (SRCH-01, SRCH-04, SRCH-05)
 - [x] 04-02-PLAN.md — Implement QueryExpansion with embedding-based PRF and SmartSnippetExtractor (SRCH-02, SRCH-07)
-- [ ] 04-06-PLAN.md — Close SC 7 snippet last mile: pipeline content feed for snippet extraction without --full, lex:/vec:/hyde: route coverage, Snippet column with highlights fallback in query/search tables (gap closure SC7-SRCH-07)
+- [x] 04-06-PLAN.md — Close SC 7 snippet last mile: pipeline content feed for snippet extraction without --full, lex:/vec:/hyde: route coverage, Snippet column with highlights fallback in query/search tables (gap closure SC7-SRCH-07)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -168,7 +168,7 @@ Plans:
 | 1. Foundation Fix | 6/6 | Complete | 2026-04-14 |
 | 2. CLI Core Completion | 6/6 | Complete | 2026-04-15 |
 | 3. Embedding & Vector Search | 8/8 | Complete    | 2026-09-04 |
-| 4. Advanced Search Pipeline | 5/5 | Complete | 2026-04-17 |
+| 4. Advanced Search Pipeline | 6/6 | In Progress|  |
 | 5. Agent Context Experience | 7/7 | Complete | 2026-04-18 |
 | 6. Documentation Audit & Refresh | 7/7 | Complete | 2026-04-18 |
 | 7. CLI Claude Skill | 2/2 | Complete | 2026-04-20 |

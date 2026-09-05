@@ -41,7 +41,7 @@
 - [ ] **SRCH-04**: 支持 `--explain` 参数，显示 BM25、RRF、reranker 各阶段得分痕迹
 - [ ] **SRCH-05**: 支持 `--candidate-limit` / `-C` 参数，控制进入 reranker 的候选数量
 - [ ] **SRCH-06**: 支持 `--intent` 参数，在查询各阶段传递意图提示
-- [ ] **SRCH-07**: 实现智能 snippet 提取：基于加权词频从 chunk 中提取最相关片段
+- [x] **SRCH-07**: 实现智能 snippet 提取：基于加权词频从 chunk 中提取最相关片段
 - [ ] **SRCH-08**: 实现 `bench` 命令：支持用 fixture JSON 测量 precision@k、recall、MRR
 
 ### Vector Search & Embedding Configurability
@@ -110,7 +110,7 @@
 | SRCH-04 | Phase 4 | Pending |
 | SRCH-05 | Phase 4 | Pending |
 | SRCH-06 | Phase 4 | Pending |
-| SRCH-07 | Phase 4 | Pending |
+| SRCH-07 | Phase 4 | Complete |
 | SRCH-08 | Phase 4 | Pending |
 | CLI-06 | Phase 4 | Pending |
 | CLI-07 | Phase 4 | Pending |

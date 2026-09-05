@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 current_phase: 04
 current_phase_name: Advanced Search Pipeline
-status: executing
-stopped_at: Phase 04 verification found 1 gap (SC 7 snippet display); awaiting /gsd-plan-phase 04 --gaps
-last_updated: "2026-09-05T00:47:16.779Z"
-state_head: 39312b835922ed1e7f1bf4cee1b0c16eaaeeb73d
+status: verifying
+stopped_at: Completed 04-06-PLAN.md (SC 7 snippet gap closure)
+last_updated: "2026-09-05T01:04:30.261Z"
+state_head: 5608cc6d612b29bbbe35a9cde4df0bcc94b928db
 progress:
   total_phases: 9
   completed_phases: 5
   total_plans: 49
-  completed_plans: 48
+  completed_plans: 49
 milestone_name: milestone
 ---
 
@@ -26,12 +26,12 @@ milestone_name: milestone
 
 ## Current Position
 
-Phase: 04 (Advanced Search Pipeline) — READY TO EXECUTE
-Plan: 1 of 5
+Phase: 04 (Advanced Search Pipeline) — EXECUTING
+Plan: 6 of 6
 
 - **Phase:** 04 — Advanced Search Pipeline (historically executed 2026-04-17, 5/5 plans; verification bookkeeping not yet run)
-- **Plan:** Not started
-- **Status:** Ready to execute
+- **Plan:** 6 of 6
+- **Status:** Phase complete — ready for verification
 - **Progress Bar:** `[████████████████████] 100%`
 
 ## Phase History
@@ -61,6 +61,7 @@ Plan: 1 of 5
 |------|----------|-------|-------|
 | Phase 03 P07 | 23min | 3 tasks | 6 files |
 | Phase 03 P08 | 22min | 3 tasks | 5 files |
+| Phase 04 P06 | 9min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -108,6 +109,9 @@ Plan: 1 of 5
 - [Phase 03]: [Phase 03-08] Idempotent embed via delete-before-insert: chunk_repo.delete_by_document -> VectorSearcher.delete_embeddings_by_document -> add_embeddings_batch in one transaction; probe-free dimension from get_model_info() (isinstance-guarded probe fallback)
 - [Phase 03]: [Phase 03-08] --force honored via exact chunk-id-set equality: _needs_embedding(live, embedded, force) module-level helper; default run skips complete documents with zero embed calls, partial/orphaned states self-heal
 - [Phase 03]: [Phase 03-08] VectorSearcher construction failure in embed_cmd surfaces as click.ClickException (D-03 fail-fast extended to the embed path; never swallowed into failed_collections)
+- [Phase 04]: [Phase 04-06]: Pipeline snippet content fetch is transient — fetched text feeds extraction only, never written into SearchResult.content (CLI-07 --full contract preserved)
+- [Phase 04]: [Phase 04-06]: Snippet table cells wrapped in rich.markup.escape so document bracket sequences render literally (threat T-04-06-02 mitigated)
+- [Phase 04]: [Phase 04-06]: _display_snippet guards snippet and highlights with getattr, falling back to the first BM25 highlight when no snippet exists
 
 ### Roadmap Evolution
 
@@ -131,8 +135,8 @@ Plan: 1 of 5
 
 ## Session Continuity
 
-- **Last session:** 2026-09-05T00:00:00Z
-- **Stopped at:** Phase 04 verification bookkeeping ran (/gsd-execute-phase 04): VALIDATION nyquist-compliant 0 gaps, SECURITY 18/18 closed threats_open:0, UI-REVIEW 17/24 advisory, code review 3C/12W/9I advisory, regression gate 572 passed — but goal verification returned gaps_found 7/8 (SC 7 / SRCH-07: snippet display last mile missing). Phase 04 NOT marked complete.
+- **Last session:** 2026-09-05T01:04:30.068Z
+- **Stopped at:** Completed 04-06-PLAN.md (SC 7 snippet gap closure)
 - **Resume file:** None
 - **Last action:** /gsd-execute-phase 04 → verify_phase_goal = gaps_found; 04-VERIFICATION.md committed (3cfed40)
 - **Next expected action:** `/gsd-plan-phase 04 --gaps` (gap closure for SC 7), then `/gsd-execute-phase 04 --gaps-only`; alternatively verify-work for the 3 human-verification items. Phases 05–09 bookkeeping still pending after 04 closes.
