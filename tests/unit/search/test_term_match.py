@@ -102,7 +102,8 @@ class TestCjkFallback:
 
     def test_single_shared_character_fails_gate(self) -> None:
         """One shared term character is not enough credit to match."""
-        assert not term_matches("只有搜索功能", "向量搜索")
+        assert not term_matches("检索功能", "向量搜索")  # shares only 索
+        assert not term_matches("向导手册", "向量搜索")  # shares only 向
 
     def test_count_matches_full_run(self) -> None:
         assert count_matches("向量搜索与向量搜索", "向量搜索") == 2
