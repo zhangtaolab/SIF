@@ -665,3 +665,78 @@ class TestVsearchNewFlags:
         call_args = mock_searcher.search.call_args
         options = call_args[0][1]
         assert options.include_content is True
+
+
+class TestSnippetDisplay:
+    """Tests for Snippet column rendering in query/search rich tables (SRCH-07)."""
+
+    def _make_result(self, **overrides):
+        """Create a SearchResult with snippet/highlights overrides."""
+        from sif.core.models import SearchResult
+
+        fields = {
+            "document_id": "doc1",
+            "rank": 1,
+            "score": 0.95,
+            "title": "Test Doc",
+            "path": "/notes/test.md",
+            "collection_name": "notes",
+        }
+        fields.update(overrides)
+        return SearchResult(**fields)
+
+    def _invoke_query(self, mock_pipeline):
+        """Invoke query_cmd with the standard patch scaffold; return CliRunner result."""
+        runner = CliRunner()
+
+        mock_repo = MagicMock()
+        mock_repo.list_enabled.return_value = []
+
+        mock_manager = MagicMock()
+        mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager._model = MagicMock()
+
+        mock_db = MagicMock()
+
+        with (
+            patch("sif.cli.commands.search.Database", return_value=mock_db),
+            patch(
+                "sif.cli.commands.search.CollectionRepository",
+                return_value=mock_repo,
+            ),
+            patch(
+                "sif.cli.commands.search.SearchPipeline",
+                return_value=mock_pipeline,
+            ),
+            patch(
+                "sif.embedding.manager.EmbeddingManager.from_settings",
+                return_value=mock_manager,
+            ),
+            patch(
+                "sif.config.settings.get_settings",
+                return_value=MagicMock(
+                    model_name="all-MiniLM-L6-v2",
+                    reranker_model_name=None,
+                    reranker_model_path=None,
+                    model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"},
+                ),
+            ),
+        ):
+            return runner.invoke(
+                query_cmd,
+                ["query"],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+    def test_query_table_shows_snippet_column(self):
+        """Default query_cmd table renders the Snippet header and snippet text."""
+        mock_pipeline = MagicMock()
+        mock_pipeline.search.return_value = [
+            self._make_result(snippet="unique snippet marker text"),
+        ]
+
+        result = self._invoke_query(mock_pipeline)
+
+        assert result.exit_code == 0
+        assert "Snippet" in result.output
+        assert "unique snippet marker text" in result.output

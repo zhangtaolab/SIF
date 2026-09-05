@@ -1,5 +1,6 @@
 """Integration tests for the complete search pipeline."""
 
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -8,6 +9,7 @@ from sif.core.models import SearchOptions, SearchResult
 from sif.search.bm25 import BM25Searcher
 from sif.search.hybrid import SearchPipeline
 from sif.search.rrf import RRFFusion
+from sif.search.snippets import SmartSnippetExtractor
 from sif.search.vector import VectorSearcher
 
 
@@ -264,3 +266,76 @@ class TestSearchOptionsIntegration:
         assert options.explain is True
         assert options.candidate_limit == 20
         assert options.intent == "code"
+
+
+class TestSnippetExtractionIntegration:
+    """Real-sqlite snippet extraction on the default hybrid route.
+
+    Inverts the two E2E smoke failures recorded in 04-VERIFICATION.md Truth 7:
+    default hybrid search without --full (include_content False) returned
+    snippet=None because the snippet stage required result.content, and the
+    lex: route returned before the snippet stage. These tests prove the
+    transient content feed: the fetched text feeds extraction only and is
+    never written into SearchResult.content (CLI-07 --full contract).
+    """
+
+    DOC_CONTENT = (
+        "Python decorators wrap functions. Decorators use the @ syntax. "
+        "A decorator takes a callable and returns a callable. "
+        "Common uses include caching, retry logic, and access control."
+    )
+
+    def _seed_db(self, db_path: Path):
+        """Seed one collection and one multi-sentence document; return the Database."""
+        from sif.core.models import Collection, Document
+        from sif.database.database import Database
+        from sif.database.repositories import CollectionRepository, DocumentRepository
+
+        db = Database(db_path)
+        db.init_schema()
+        with db.connection:
+            coll_repo = CollectionRepository(db.connection)
+            doc_repo = DocumentRepository(db.connection)
+            coll = Collection(name="notes", path="/notes", description="snippet test")
+            coll_repo.create(coll)
+            doc = Document(
+                path="/notes/decorators.md",
+                collection_id=coll.id,
+                content=self.DOC_CONTENT,
+                title="Decorators",
+            )
+            doc_repo.create(doc)
+        return db
+
+    def test_default_route_snippet_without_content(self, tmp_path: Path) -> None:
+        """Default hybrid search extracts a snippet with include_content=False."""
+        db = self._seed_db(tmp_path / "index.sqlite")
+        try:
+            pipeline = SearchPipeline(db.connection, snippet_extractor=SmartSnippetExtractor())
+            options = SearchOptions(limit=5)  # include_content defaults to False
+
+            results = pipeline.search("decorators", options)
+
+            assert results, "seeded document should match the query"
+            assert results[0].snippet is not None
+            assert "decorator" in results[0].snippet.lower()
+            # Transient fetch: content must NOT be populated without --full.
+            assert results[0].content is None
+        finally:
+            db.close()
+
+    def test_default_route_snippet_with_content(self, tmp_path: Path) -> None:
+        """include_content=True still extracts a snippet and populates content."""
+        db = self._seed_db(tmp_path / "index.sqlite")
+        try:
+            pipeline = SearchPipeline(db.connection, snippet_extractor=SmartSnippetExtractor())
+            options = SearchOptions(limit=5, include_content=True)
+
+            results = pipeline.search("decorators", options)
+
+            assert results, "seeded document should match the query"
+            assert results[0].snippet is not None
+            assert "decorator" in results[0].snippet.lower()
+            assert results[0].content is not None  # --full behavior preserved
+        finally:
+            db.close()
