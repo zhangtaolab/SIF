@@ -120,7 +120,7 @@ Plans:
   7. Search results show the most relevant snippet extracted from each chunk
   8. User can run benchmark fixtures to measure precision@k, recall, and MRR
 
-**Plans:** 5 plans
+**Plans:** 6 plans (5 original + 1 gap closure)
 
 Plans:
 
@@ -129,6 +129,7 @@ Plans:
 - [x] 04-03-PLAN.md — Wire SearchPipeline with prefix routing, explainability, candidate capping; update CLI commands (SRCH-03, SRCH-04, SRCH-05, SRCH-06, CLI-06, CLI-07)
 - [x] 04-04-PLAN.md — Implement bench command with SearchEvaluator and benchmark metrics (SRCH-08)
 - [x] 04-05-PLAN.md — Fix broken tests and run full quality suite
+- [ ] 04-06-PLAN.md — Close SC 7 snippet last mile: pipeline content feed for snippet extraction without --full, lex:/vec:/hyde: route coverage, Snippet column with highlights fallback in query/search tables (gap closure SC7-SRCH-07)
 
 ### Phase 5: Agent Context Experience
 
