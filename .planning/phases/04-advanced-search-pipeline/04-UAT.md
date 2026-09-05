@@ -14,7 +14,7 @@ expected: |
   Run `sif search query hyde: <question>` with a generation-capable
   GGUF embedder. A hypothetical document is generated, embedded,
   vector-searched; no RuntimeError; snippet populated.
-awaiting: user response
+awaiting: fix of G-04-3, then re-verification
 
 ## Tests
 
@@ -35,7 +35,10 @@ resolution: "Fixed during test via quick task 260905-kmv (gap G-04-2, commits ed
 
 ### 3. HyDE end-to-end with a generation-capable model (SC 2)
 expected: Run `sif search query hyde: <question>` with a generation-capable GGUF embedder. A hypothetical document is generated, embedded, vector-searched; no RuntimeError; snippet populated.
-result: [pending]
+result: issue
+reported: "你能修复问题吗？"
+severity: blocker
+evidence: "Pre-check found HyDE unreachable for EVERY shipped embedder: SearchPipeline._generate_hypothetical_document requires the embedder to expose .generate() or .create_completion(), but runtime verification shows none of the 5 embedder classes (SentenceTransformerEmbedder, LlamaCppEmbedder, ModelScopeEmbedder, OpenAIEmbedder, SimpleEmbedder) define either method — LlamaCppEmbedder only has embed/embed_batch/dimension. Any `hyde:` query raises RuntimeError('HyDE search requires a text-generation-capable model (e.g., GGUF)...') before generating anything. SC 2's generation capability was never wired into LlamaCppEmbedder."
 
 ### 4. bench on a real corpus (SC 8)
 expected: Author a fixture with real queries and judged relevant docids from your index; run `sif bench fixture.json` and `--json`. Table/JSON metrics (precision@k, recall, MRR) are consistent with your manual relevance judgments.
@@ -45,8 +48,8 @@ result: [pending]
 
 total: 4
 passed: 1
-issues: 1
-pending: 2
+issues: 2
+pending: 1
 skipped: 0
 blocked: 0
 
@@ -92,3 +95,18 @@ blocked: 0
   resolved_by: "quick task 260905-kmv (commits ed542f4, bdb4cce, 3e7b9b9, 0831f41 — _resolve_model_dir resolver wired into Qwen3Reranker.load and CrossEncoderReranker.load; query_cmd ClickException wrap; 9 new tests)"
   resolved_at: 2026-09-05
   verification: "Rerun `sif search query 'RRF fusion ranking' -n 5 --explain` with default reranker on scratch index: exit 0, 'Qwen3 reranker model loaded successfully' (loads from download root), results render, order reranked (Changelog 0.3573 > 测试报告 0.0895 > Search Algorithms 0.0802 vs no-reranker order Search Algorithms > API Reference > Changelog), explain prints reranker_score alongside bm25_score/vector_score/rrf_score for all 5 results. Suite: ruff clean, format clean, pytest 617 passed / 11 skipped / 0 failed."
+
+- gap_id: G-04-3
+  truth: "HyDE: a hypothetical document is generated, embedded, vector-searched; no RuntimeError; snippet populated."
+  status: failed
+  reason: 'User reported: "你能修复问题吗？" (accepting pre-check finding: hyde: queries always raise RuntimeError because no embedder class implements the required generation API)'
+  severity: blocker
+  test: 3
+  root_cause: "SearchPipeline._generate_hypothetical_document (hybrid.py ~line 315-350) gates on hasattr(embedder, 'generate') / hasattr(embedder, 'create_completion'), but LlamaCppEmbedder (the only GGUF embedder, the one the feature targets) implements only embed/embed_batch/dimension — the generation methods were specified in the HyDE design but never wired into the embedder. Every shipped embedder class fails the capability check, so `hyde:` queries raise RuntimeError before any generation."
+  artifacts:
+    - path: "src/sif/embedding/embedder.py"
+      issue: "LlamaCppEmbedder lacks create_completion/generate; HyDE contract unimplementable"
+  missing:
+    - "LlamaCppEmbedder.create_completion(prompt, max_tokens, temperature, stop) wrapping llama_cpp Llama.create_completion with openai-style {'choices': [{'text': ...}]} return shape matching the HyDE call site"
+    - "Unit test with a stubbed llama_cpp Llama verifying the wrapper contract (prompt passthrough, stop/max_tokens, return shape)"
+  debug_session: ""
