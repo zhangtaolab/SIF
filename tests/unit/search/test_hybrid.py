@@ -7,6 +7,7 @@ import pytest
 from sif.core.models import SearchOptions, SearchResult, SearchType
 from sif.search.bm25 import BM25Searcher
 from sif.search.hybrid import HybridSearcher, SearchPipeline
+from sif.search.snippets import SmartSnippetExtractor
 from sif.search.vector import VectorSearcher
 
 
@@ -523,3 +524,115 @@ class TestHybridContextAttachment:
 
         assert len(results) == 1
         assert results[0].context_description == "Project notes"
+
+
+class TestPipelineSnippetRoutes:
+    """Snippet extraction on the lex:/vec:/hyde: prefix routes.
+
+    Inverts the 04-VERIFICATION.md E2E failure where lex: with content
+    returned snippet=None because the early-return routes bypassed the
+    snippet stage entirely.
+    """
+
+    CONTENT = (
+        "Python decorators wrap functions. Decorators use the @ syntax. "
+        "A decorator takes a callable and returns a callable."
+    )
+
+    def _stub_content_feed(self, pipeline: SearchPipeline) -> MagicMock:
+        """Stub the transient content feed so no real database is needed."""
+        feed = MagicMock(return_value=self.CONTENT)
+        pipeline.hybrid._get_document_content = feed
+        return feed
+
+    def _result(self) -> SearchResult:
+        """Build a content-less SearchResult as the searchers return it."""
+        return SearchResult(
+            document_id="doc-1",
+            path="/test.md",
+            title="Test",
+            collection_name="default",
+            score=0.9,
+        )
+
+    def test_lex_route_applies_snippets(self, mock_db: MagicMock) -> None:
+        """lex: returns a snippet extracted from the fetched content."""
+        pipeline = SearchPipeline(mock_db, snippet_extractor=SmartSnippetExtractor())
+        self._stub_content_feed(pipeline)
+        pipeline.hybrid.bm25 = create_autospec(BM25Searcher, instance=True)
+        pipeline.hybrid.bm25.search.return_value = [self._result()]
+
+        results = pipeline.search("lex: decorators")
+
+        assert results[0].snippet is not None
+        assert "decorator" in results[0].snippet.lower()
+        assert results[0].content is None  # include_content defaults to False
+
+    def test_vec_route_applies_snippets(
+        self,
+        mock_db: MagicMock,
+        mock_embedder: MagicMock,
+    ) -> None:
+        """vec: returns a snippet extracted from the fetched content."""
+        pipeline = SearchPipeline(
+            mock_db,
+            embedder=mock_embedder,
+            snippet_extractor=SmartSnippetExtractor(),
+        )
+        self._stub_content_feed(pipeline)
+        pipeline.hybrid.vector = create_autospec(VectorSearcher, instance=True)
+        pipeline.hybrid.vector.search.return_value = [self._result()]
+
+        results = pipeline.search("vec: decorators")
+
+        assert results[0].snippet is not None
+        assert "decorator" in results[0].snippet.lower()
+        assert results[0].content is None
+
+    def test_hyde_route_applies_snippets(self, mock_db: MagicMock) -> None:
+        """hyde: returns a snippet extracted from the fetched content."""
+        mock_embedder = MagicMock(spec=["embed", "generate", "dimension"])
+        mock_embedder.embed.return_value = [0.1] * 384
+        mock_embedder.generate.return_value = "Decorators wrap a function call."
+
+        pipeline = SearchPipeline(
+            mock_db,
+            embedder=mock_embedder,
+            snippet_extractor=SmartSnippetExtractor(),
+        )
+        self._stub_content_feed(pipeline)
+        pipeline.hybrid.vector = create_autospec(VectorSearcher, instance=True)
+        pipeline.hybrid.vector.search.return_value = [self._result()]
+
+        results = pipeline.search("hyde: decorators")
+
+        assert results[0].snippet is not None
+        assert "decorator" in results[0].snippet.lower()
+        assert results[0].content is None
+
+    def test_existing_snippet_not_reextracted(self, mock_db: MagicMock) -> None:
+        """A result already carrying a snippet skips extractor invocation."""
+        extractor = MagicMock(spec=SmartSnippetExtractor)
+        pipeline = SearchPipeline(mock_db, snippet_extractor=extractor)
+        self._stub_content_feed(pipeline)
+        pipeline.hybrid.bm25 = create_autospec(BM25Searcher, instance=True)
+        preset = self._result()
+        preset.snippet = "preexisting snippet"
+        pipeline.hybrid.bm25.search.return_value = [preset]
+
+        results = pipeline.search("lex: decorators")
+
+        extractor.extract.assert_not_called()
+        assert results[0].snippet == "preexisting snippet"
+
+    def test_no_extractor_leaves_routes_unchanged(self, mock_db: MagicMock) -> None:
+        """Without an extractor the snippet stage is a no-op on prefix routes."""
+        pipeline = SearchPipeline(mock_db)
+        feed = self._stub_content_feed(pipeline)
+        pipeline.hybrid.bm25 = create_autospec(BM25Searcher, instance=True)
+        pipeline.hybrid.bm25.search.return_value = [self._result()]
+
+        results = pipeline.search("lex: decorators")
+
+        assert results[0].snippet is None
+        feed.assert_not_called()
