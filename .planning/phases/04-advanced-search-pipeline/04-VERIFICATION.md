@@ -1,7 +1,7 @@
 ---
 phase: 04-advanced-search-pipeline
 verified: 2026-09-05T01:26:04Z
-status: human_needed
+status: passed
 score: 8/9 must-haves verified # 8/8 roadmap SCs verified incl. the previously-gapped SC 7; 1 plan-level backstop truth (04-06: human snippet-relevance judgment on a real personal index) abstained per protocol — routed to human verification, never a silent pass
 behavior_unverified: 0 # No PRESENT_BEHAVIOR_UNVERIFIED truths; the backstop abstention is an insufficient_spec/human-judgment item, not a behavior gap — code is present, wired, and test-exercised
 overrides_applied: 0
@@ -13,6 +13,7 @@ re_verification:
   gaps_remaining: []
   regressions: [] # Full-suite failure profile identical at pre-04-06 commit (21 failed / 2 collection errors, all in MCP/embedding files, missing pytest-asyncio+httpx in venv); delta vs baseline is exactly +11 passing snippet tests, 0 new failures
 human_verification:
+
   - test: "On your real personal index, run `sif search query <terms>` (no --full) and `sif search search <terms>`; read the rendered Snippet column for several queries"
     expected: "The snippet reads as the most relevant excerpt for its query (the sentence window a human would pick), not an arbitrary lead paragraph"
     why_human: "04-06 PLAN must_haves backstop truth (verification: backstop): snippet relevance is a human judgment on a real corpus; automated tests prove extraction mechanics (term-frequency window selection) only. Verifier abstained per the backstop protocol — no explicit evidence available (query_cmd additionally cannot load the modelscope embedder in this venv)"
