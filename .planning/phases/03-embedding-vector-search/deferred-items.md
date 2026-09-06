@@ -2,7 +2,7 @@
 
 ## 2026-09-03 — plan 03-07 execution
 
-- ~~**mypy cannot run in this environment (pre-existing).**~~ **RESOLVED 2026-09-04
+- [x] RESOLVED 2026-09-04 — ~~**mypy cannot run in this environment (pre-existing).**~~
   (verify-work close-out follow-up).** Root cause was deeper than the original
   diagnosis: CR-03 (bc441d0) had already bumped `pyproject.toml [tool.mypy]
   python_version` to 3.10, but a legacy `mypy.ini` (phase 08-06) still pinned
