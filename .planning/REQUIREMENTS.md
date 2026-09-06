@@ -23,8 +23,8 @@
 - [ ] **CLI-03**: 实现 `collection update-cmd`：为集合设置/清除索引前执行的 shell 命令（如 `git pull`）
 - [ ] **CLI-04**: 实现 `collection include/exclude`：控制集合是否参与默认查询
 - [x] **CLI-05**: 实现 `pull` 命令：下载/检查本地 GGUF 模型文件
-- [ ] **CLI-06**: 支持 `--min-score` 参数过滤低置信度结果
-- [ ] **CLI-07**: 支持 `--full` 参数返回完整文档内容而非片段
+- [x] **CLI-06**: 支持 `--min-score` 参数过滤低置信度结果
+- [x] **CLI-07**: 支持 `--full` 参数返回完整文档内容而非片段
 - [ ] **CLI-08**: 支持 `--line-numbers` 参数在输出中附加行号
 
 ### Context & Agent Experience
@@ -35,14 +35,14 @@
 
 ### Advanced Search Pipeline
 
-- [ ] **SRCH-01**: 实现可配置的 LLM reranker，支持 llama-cpp-python GGUF cross-encoder 模型
-- [ ] **SRCH-02**: 实现 LLM query expansion：将用户查询扩展为 lex/vec/hyde 变体
-- [ ] **SRCH-03**: 实现 query document 语法：`lex:`、`vec:`、`hyde:`、`expand:` 前缀查询
-- [ ] **SRCH-04**: 支持 `--explain` 参数，显示 BM25、RRF、reranker 各阶段得分痕迹
-- [ ] **SRCH-05**: 支持 `--candidate-limit` / `-C` 参数，控制进入 reranker 的候选数量
-- [ ] **SRCH-06**: 支持 `--intent` 参数，在查询各阶段传递意图提示
+- [x] **SRCH-01**: 实现可配置的 LLM reranker，支持 llama-cpp-python GGUF cross-encoder 模型
+- [x] **SRCH-02**: 实现 LLM query expansion：将用户查询扩展为 lex/vec/hyde 变体
+- [x] **SRCH-03**: 实现 query document 语法：`lex:`、`vec:`、`hyde:`、`expand:` 前缀查询
+- [x] **SRCH-04**: 支持 `--explain` 参数，显示 BM25、RRF、reranker 各阶段得分痕迹
+- [x] **SRCH-05**: 支持 `--candidate-limit` / `-C` 参数，控制进入 reranker 的候选数量
+- [x] **SRCH-06**: 支持 `--intent` 参数，在查询各阶段传递意图提示
 - [x] **SRCH-07**: 实现智能 snippet 提取：基于加权词频从 chunk 中提取最相关片段
-- [ ] **SRCH-08**: 实现 `bench` 命令：支持用 fixture JSON 测量 precision@k、recall、MRR
+- [x] **SRCH-08**: 实现 `bench` 命令：支持用 fixture JSON 测量 precision@k、recall、MRR
 
 ### Vector Search & Embedding Configurability
 
@@ -104,16 +104,16 @@
 | VEC-02 | Phase 3 | Complete |
 | VEC-03 | Phase 3 | Complete |
 | VEC-04 | Phase 3 | Complete |
-| SRCH-01 | Phase 4 | Pending |
-| SRCH-02 | Phase 4 | Pending |
-| SRCH-03 | Phase 4 | Pending |
-| SRCH-04 | Phase 4 | Pending |
-| SRCH-05 | Phase 4 | Pending |
-| SRCH-06 | Phase 4 | Pending |
+| SRCH-01 | Phase 4 | Complete |
+| SRCH-02 | Phase 4 | Complete |
+| SRCH-03 | Phase 4 | Complete |
+| SRCH-04 | Phase 4 | Complete |
+| SRCH-05 | Phase 4 | Complete |
+| SRCH-06 | Phase 4 | Complete |
 | SRCH-07 | Phase 4 | Complete |
-| SRCH-08 | Phase 4 | Pending |
-| CLI-06 | Phase 4 | Pending |
-| CLI-07 | Phase 4 | Pending |
+| SRCH-08 | Phase 4 | Complete |
+| CLI-06 | Phase 4 | Complete |
+| CLI-07 | Phase 4 | Complete |
 | CTX-01 | Phase 5 | Pending |
 | CTX-02 | Phase 5 | Pending |
 | CTX-03 | Phase 5 | Pending |
