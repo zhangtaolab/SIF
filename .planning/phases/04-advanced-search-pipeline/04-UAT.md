@@ -14,7 +14,14 @@ expected: |
   Run `sif search query hyde: <question>` with a generation-capable
   GGUF embedder. A hypothetical document is generated, embedded,
   vector-searched; no RuntimeError; snippet populated.
-awaiting: user response (G-04-3/G-04-4 fixed and e2e verified; evidence presented)
+number: 4
+name: bench on a real corpus (SC 8)
+expected: |
+  Author a fixture with real queries and judged relevant docids from your
+  index; run `sif bench fixture.json` and `--json`. Table/JSON metrics
+  (precision@k, recall, MRR) are consistent with your manual relevance
+  judgments.
+awaiting: user response
 
 ## Tests
 
@@ -35,9 +42,10 @@ resolution: "Fixed during test via quick task 260905-kmv (gap G-04-2, commits ed
 
 ### 3. HyDE end-to-end with a generation-capable model (SC 2)
 expected: Run `sif search query hyde: <question>` with a generation-capable GGUF embedder. A hypothetical document is generated, embedded, vector-searched; no RuntimeError; snippet populated.
-result: issue
+result: pass
 reported: "你能修复问题吗？"
 severity: blocker
+user_verdict: "pass"
 resolution: "Two stacked fixes: G-04-3 via quick task 260905-sxc (create_completion, commits 9f079b6/67c9ecf) and G-04-4 via quick task 260905-tax (embed shape unwrap, commits 4560127/958262b/04f7504). E2E re-verified on GGUF scratch index (896-dim, Qwen2.5-0.5B-Instruct q4_k_m): hyde: query exit 0, no RuntimeError, hypothetical doc generated (direct reproduction shows coherent answer text), embedded + vector-searched (scores 0.78-0.81), snippets populated on all rows."
 evidence: "Pre-check found HyDE unreachable for EVERY shipped embedder: SearchPipeline._generate_hypothetical_document requires the embedder to expose .generate() or .create_completion(), but runtime verification shows none of the 5 embedder classes (SentenceTransformerEmbedder, LlamaCppEmbedder, ModelScopeEmbedder, OpenAIEmbedder, SimpleEmbedder) define either method — LlamaCppEmbedder only has embed/embed_batch/dimension. Any `hyde:` query raises RuntimeError('HyDE search requires a text-generation-capable model (e.g., GGUF)...') before generating anything. SC 2's generation capability was never wired into LlamaCppEmbedder."
 
@@ -48,8 +56,8 @@ result: [pending]
 ## Summary
 
 total: 4
-passed: 1
-issues: 2
+passed: 2
+issues: 1
 pending: 1
 skipped: 0
 blocked: 0
