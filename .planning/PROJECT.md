@@ -80,4 +80,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-09-04 after Phase 03 gap-closure verification (UAT 7/7, security 19/19 closed)*
+*Last updated: 2026-09-06 after Phase 04 UAT (4/4 pass; 4 gaps found and fixed via quick tasks: markdown line-aware snippets + stem-tolerant term matching, reranker model-dir resolution, LlamaCppEmbedder create_completion, GGUF embed shape unwrap)*

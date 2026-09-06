@@ -120,7 +120,7 @@ Plans:
   7. Search results show the most relevant snippet extracted from each chunk
   8. User can run benchmark fixtures to measure precision@k, recall, and MRR
 
-**Plans:** 6/6 plans executed (5 original + 1 gap closure)
+**Plans:** 6/6 plans complete
 
 Plans:
 **Wave 1**
@@ -168,7 +168,7 @@ Plans:
 | 1. Foundation Fix | 6/6 | Complete | 2026-04-14 |
 | 2. CLI Core Completion | 6/6 | Complete | 2026-04-15 |
 | 3. Embedding & Vector Search | 8/8 | Complete    | 2026-09-04 |
-| 4. Advanced Search Pipeline | 6/6 | In Progress|  |
+| 4. Advanced Search Pipeline | 6/6 | Complete    | 2026-09-06 |
 | 5. Agent Context Experience | 7/7 | Complete | 2026-04-18 |
 | 6. Documentation Audit & Refresh | 7/7 | Complete | 2026-04-18 |
 | 7. CLI Claude Skill | 2/2 | Complete | 2026-04-20 |

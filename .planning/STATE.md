@@ -1,15 +1,15 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.0
-current_phase: 04
-current_phase_name: Advanced Search Pipeline
-status: verifying
-stopped_at: Completed 04-06-PLAN.md (SC 7 snippet gap closure)
-last_updated: "2026-09-05T01:04:30.261Z"
-state_head: 5608cc6d612b29bbbe35a9cde4df0bcc94b928db
+current_phase: 05
+current_phase_name: Agent Context Experience
+status: planning
+stopped_at: Phase 04 complete, ready to plan Phase 05
+last_updated: "2026-09-06T03:26:52.485Z"
+state_head: 71bc8f6221b0e2b40bfd86364acd876a00530699
 progress:
   total_phases: 9
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 49
   completed_plans: 49
 milestone_name: milestone
@@ -21,17 +21,17 @@ milestone_name: milestone
 
 - **Name:** DocSift
 - **Core Value:** 用户可以在自己的笔记和文档库中，用自然语言快速、准确地找到需要的信息——无论关键词是否匹配。
-- **Current Focus:** Phase 04 — Advanced Search Pipeline
+- **Current Focus:** Phase 05 — Agent Context Experience (bookkeeping/verification catch-up; phases 05–09 executed per Phase History)
 - **Tech Stack:** Python 3.10+, SQLite (FTS5 + sqlite-vec), Click, Pydantic, sentence-transformers, llama-cpp-python
 
 ## Current Position
 
-Phase: 04 (Advanced Search Pipeline) — EXECUTING
+Phase: 04 (Advanced Search Pipeline) — COMPLETE
 Plan: 6 of 6
 
-- **Phase:** 04 — Advanced Search Pipeline (historically executed 2026-04-17, 5/5 plans; verification bookkeeping not yet run)
-- **Plan:** 6 of 6
-- **Status:** Phase complete — ready for verification
+- **Phase:** 05 — Agent Context Experience
+- **Plan:** Not started
+- **Status:** Ready to plan
 - **Progress Bar:** `[████████████████████] 100%`
 
 ## Phase History
@@ -106,6 +106,11 @@ Plan: 6 of 6
 - [Phase 09]: [Phase 03-07]: Configured embedding_dim disagreeing with API-detected dimension fails fast at load naming both values + SIF_EMBEDDING_DIM (extends D-09 fail-fast philosophy)
 - [Phase 09]: [Phase 03-07]: api_key passes only to the OpenAI client constructor — never logged, interpolated, or embedded in exceptions (threat T-03-01)
 - [Phase 09]: [Phase 03-07]: Factory honest signatures -> Embedder / **kwargs: Any completed the refactor plan 03-02 promised (03-REVIEW WR-01/WR-02)
+- [Phase 04 UAT]: Shared stem-tolerant term matcher (src/sif/search/term_match.py): word-boundary + light-stem for ASCII, substring + per-char fallback for CJK — used by both SmartSnippetExtractor and BM25 highlights
+- [Phase 04 UAT]: Snippets are line-aware: windows center on the matched line (heading/table row/code line), structural lines never anchor
+- [Phase 04 UAT]: Reranker model dirs resolve by config qualification (config.json with model_type, root before aux subdirs like Qwen3-Reranker's 1_LogitScore)
+- [Phase 04 UAT]: LlamaCppEmbedder owns generation (create_completion) + shape-aware embed (unwrap list-of-embeddings, mean-pool token-level); HyDE reachable end-to-end
+- [Phase 04 UAT deferred]: embedding cache bucket key omits model_path — switching GGUF files under one model_name cross-pollutes cache; include path identity in _cache_model_id
 - [Phase 03]: [Phase 03-08] Idempotent embed via delete-before-insert: chunk_repo.delete_by_document -> VectorSearcher.delete_embeddings_by_document -> add_embeddings_batch in one transaction; probe-free dimension from get_model_info() (isinstance-guarded probe fallback)
 - [Phase 03]: [Phase 03-08] --force honored via exact chunk-id-set equality: _needs_embedding(live, embedded, force) module-level helper; default run skips complete documents with zero embed calls, partial/orphaned states self-heal
 - [Phase 03]: [Phase 03-08] VectorSearcher construction failure in embed_cmd surfaces as click.ClickException (D-03 fail-fast extended to the embed path; never swallowed into failed_collections)
@@ -145,7 +150,7 @@ Plan: 6 of 6
 ## Session Continuity
 
 - **Last session:** 2026-09-05T01:04:30.068Z
-- **Stopped at:** UAT in progress — tests 1–3 issues fixed (G-04-1..G-04-4 all resolved, hyde: e2e verified on GGUF index); test 3 awaiting user pass; test 4 (bench) pending
+- **Stopped at:** Phase 04 complete, ready to plan Phase 05
 - **Resume file:** .planning/phases/04-advanced-search-pipeline/04-UAT.md
 - **Last action:** /gsd-verify-work 04 → test 3 (HyDE): G-04-4 fixed via /gsd-quick 260905-tax; gguf cache bucket purged; 1003 chunks embedded on 896-dim GGUF scratch index; hyde: query e2e pass (generation + vector search + snippets)
 - **Next expected action:** User verdict on test 3, then test 4 (bench fixture with judged docids, sif bench + --json). Two deferred follow-ups recorded in 04-UAT.md (embedding cache key omits model_path; pre-existing caplog test failures). Phases 05–09 bookkeeping still pending after 04 closes.
