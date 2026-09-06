@@ -1,28 +1,22 @@
 ---
-status: testing
+status: complete
 phase: 04-advanced-search-pipeline
 source: [04-VERIFICATION.md]
 started: 2026-09-05T01:28:09Z
-updated: 2026-09-05T03:47:00Z
+updated: 2026-09-06T00:00:00Z
 ---
 
 ## Current Test
 
-number: 1
-name: Snippet relevance — final post-fix confirmation
-expected: |
-  G-04-1 was fixed (quick task 260905-hc3) and re-verified with before/after
-  evidence presented; the fix verification was accepted implicitly when the
-  session moved on. Awaiting explicit user pass/issue verdict to close the
-  test record.
-awaiting: user response
+[testing complete]
 
 ## Tests
 
 ### 1. Snippet relevance on your real index (04-06 backstop truth)
 expected: On your real personal index, run `sif search query <terms>` (no --full) and `sif search search <terms>`; read the rendered Snippet column across several queries. The snippet reads as the most relevant excerpt for its query.
-result: issue
+result: pass
 reported: "修复不达标的问题"
+user_verdict: "pass (final post-fix confirmation after quick task 260905-hc3)"
 severity: major
 evidence: "Scratch index (23 repo docs, 1003 chunks, Qwen3-Embedding-0.6B, reranker off). Hybrid 'RRF fusion ranking' top-1 snippet correct. But 'chunk overlap tokens' and 'sqlite-vec virtual table' snippets landed on markdown section starts (## Configuration Options, CREATE TABLE collections) instead of matched rows; BM25 ~1/3 rows rendered empty Snippet cells (FTS5 stems vs literal find); substring false positive (query 'table' matched 'notable' -> changelog lead shown)."
 
@@ -51,8 +45,8 @@ evidence: "Fixture: 5 real queries + 16 manually judged relevant docids (from co
 ## Summary
 
 total: 4
-passed: 3
-issues: 1
+passed: 4
+issues: 0
 pending: 0
 skipped: 0
 blocked: 0
