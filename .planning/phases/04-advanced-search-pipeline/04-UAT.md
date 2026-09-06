@@ -8,13 +8,13 @@ updated: 2026-09-05T03:47:00Z
 
 ## Current Test
 
-number: 4
-name: bench on a real corpus (SC 8)
+number: 1
+name: Snippet relevance — final post-fix confirmation
 expected: |
-  Author a fixture with real queries and judged relevant docids from your
-  index; run `sif bench fixture.json` and `--json`. Table/JSON metrics
-  (precision@k, recall, MRR) are consistent with your manual relevance
-  judgments.
+  G-04-1 was fixed (quick task 260905-hc3) and re-verified with before/after
+  evidence presented; the fix verification was accepted implicitly when the
+  session moved on. Awaiting explicit user pass/issue verdict to close the
+  test record.
 awaiting: user response
 
 ## Tests
@@ -45,14 +45,15 @@ evidence: "Pre-check found HyDE unreachable for EVERY shipped embedder: SearchPi
 
 ### 4. bench on a real corpus (SC 8)
 expected: Author a fixture with real queries and judged relevant docids from your index; run `sif bench fixture.json` and `--json`. Table/JSON metrics (precision@k, recall, MRR) are consistent with your manual relevance judgments.
-result: [pending]
+result: pass
+evidence: "Fixture: 5 real queries + 16 manually judged relevant docids (from corpus knowledge verified doc-by-doc this session) on the 1024-dim scratch index (23 docs / 1003 chunks, default embedder + reranker). sif bench table and --json agree exactly: MRR 0.7667, precision@1 0.60, precision@5 0.52, precision@10 0.26, recall@5=recall@10 0.8333. Consistent with judgments: first relevant at ranks {1,1,1,2,3} (3/5 queries rank-1), 83% of judged docs in top-5, misses are borderline calls (api-reference for RRF query), values plausible rather than suspiciously perfect."
 
 ## Summary
 
 total: 4
-passed: 2
+passed: 3
 issues: 1
-pending: 1
+pending: 0
 skipped: 0
 blocked: 0
 
