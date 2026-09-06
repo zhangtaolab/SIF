@@ -8,12 +8,6 @@ updated: 2026-09-05T03:47:00Z
 
 ## Current Test
 
-number: 3
-name: HyDE end-to-end with a generation-capable model (SC 2)
-expected: |
-  Run `sif search query hyde: <question>` with a generation-capable
-  GGUF embedder. A hypothetical document is generated, embedded,
-  vector-searched; no RuntimeError; snippet populated.
 number: 4
 name: bench on a real corpus (SC 8)
 expected: |
