@@ -152,5 +152,5 @@ Plan: 6 of 6
 - **Last session:** 2026-09-05T01:04:30.068Z
 - **Stopped at:** Phase 04 complete, ready to plan Phase 05
 - **Resume file:** .planning/phases/04-advanced-search-pipeline/04-UAT.md
-- **Last action:** /gsd-verify-work 04 → test 3 (HyDE): G-04-4 fixed via /gsd-quick 260905-tax; gguf cache bucket purged; 1003 chunks embedded on 896-dim GGUF scratch index; hyde: query e2e pass (generation + vector search + snippets)
-- **Next expected action:** User verdict on test 3, then test 4 (bench fixture with judged docids, sif bench + --json). Two deferred follow-ups recorded in 04-UAT.md (embedding cache key omits model_path; pre-existing caplog test failures). Phases 05–09 bookkeeping still pending after 04 closes.
+- **Last action:** /gsd-verify-work 05 → 7 outstanding items re-verified live with sif CLI (context types, filters, search context attach incl. hybrid+reranker, SIF_DB_PATH status) — all pass; /gsd-audit-uat follow-ups done (9-UAT format normalized, 03 deferred marked resolved)
+- **Next expected action:** v1.0 phases all executed and verified. Optional: two deferred follow-ups in 04-UAT.md (embedding cache key omits model_path; caplog test pollution), then /gsd-progress or /gsd-complete-milestone when ready to close v1.0.
