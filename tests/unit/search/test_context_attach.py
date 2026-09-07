@@ -206,6 +206,33 @@ class TestAttachPathContextsRealSQL:
         assert normalized_missing == str((tmp_path / "vault").resolve() / "missing.md")
         assert not Path(normalized_missing).exists()
 
+    def test_normalize_path_unexpandable_tilde_degrades_to_raw_form(self):
+        """REVIEW WR-01: an un-expandable ~user form returns the raw string, never raises.
+
+        Path.expanduser raises RuntimeError for a "~user" prefix whose user
+        does not resolve; normalize_path must be total so a stored row of
+        that shape cannot crash every search over the contexts table.
+        """
+        poison = "~sif-no-such-user-7f3a/notes/doc.md"
+
+        assert normalize_path(poison) == poison
+
+    def test_malformed_tilde_row_does_not_crash_attach(self, db, alias_pair):
+        """REVIEW WR-01: one malformed '~unknownuser/...' row must not break attachment.
+
+        attach_path_contexts normalizes EVERY path-type context row; before
+        the total-form fix a single un-expandable row raised RuntimeError
+        and bricked all three searchers. The malformed row simply matches
+        nothing while healthy rows still attach.
+        """
+        resolved, alias = alias_pair
+        _insert_path_context(db, "ctx-poison", "~sif-no-such-user-7f3a/notes/doc.md", "Poison")
+        _insert_path_context(db, "ctx-1", alias, "Project notes")
+
+        results = attach_path_contexts(db, [_result(resolved)])
+
+        assert results[0].context_description == "Project notes"
+
     def test_empty_results_no_query(self):
         """An empty results list returns unchanged without touching the DB."""
         mock_db = MagicMock()

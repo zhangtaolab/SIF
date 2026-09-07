@@ -9,7 +9,7 @@ from rich.table import Table
 from sif.core.models import PathContext
 from sif.database.database import Database
 from sif.database.repositories import CollectionRepository, ContextRepository
-from sif.utils.paths import normalize_path
+from sif.utils.paths import expand_path, normalize_path
 
 
 console = Console()
@@ -60,6 +60,14 @@ def context_add(
             # Canonical form: the same normalize_path used by search context
             # attachment and prune, so the stored target byte-matches
             # documents.path regardless of ~ or symlink-alias spelling.
+            # normalize_path is total (a stored row must never crash the read
+            # paths), so an un-expandable "~user" typo is probed here and
+            # surfaced as a clean CLI error instead of storing a target that
+            # could never match any document.
+            try:
+                expand_path(target)
+            except (RuntimeError, OSError, ValueError) as e:
+                raise click.ClickException(f"Cannot resolve path '{target}': {e}") from e
             actual_target = normalize_path(target)
 
         # Upsert: update if exists for this target+type, else create

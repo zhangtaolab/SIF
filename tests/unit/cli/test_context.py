@@ -300,6 +300,39 @@ class TestContextAddNormalizedPaths:
         assert "~" not in stored.path
         assert Path(stored.path).is_absolute()
 
+    def test_add_path_unexpandable_tilde_clean_error(self, mock_db) -> None:
+        """REVIEW WR-01: an un-expandable '~user' target exits with a clean error.
+
+        Before the fix the RuntimeError from Path.expanduser escaped as a raw
+        traceback; per project convention the command must raise
+        click.ClickException so the user sees "Error: ..." and nothing is
+        stored.
+        """
+        runner = CliRunner()
+        ctx_obj = {"index_path": MagicMock(exists=lambda: True)}
+        bad_target = "~sif-no-such-user-7f3a/notes/doc.md"
+
+        with patch("sif.cli.commands.context.Database") as mock_db_cls:
+            mock_db_cls.return_value = mock_db
+            mock_repo = MagicMock()
+            mock_repo.get_by_target.return_value = None
+            mock_repo.list_by_type.return_value = []
+            with patch(
+                "sif.cli.commands.context.ContextRepository",
+                return_value=mock_repo,
+            ):
+                result = runner.invoke(
+                    context_add,
+                    ["path", bad_target, "description"],
+                    obj=ctx_obj,
+                )
+
+        assert result.exit_code != 0
+        assert "Cannot resolve path" in result.output
+        assert "~sif-no-such-user-7f3a" in result.output
+        assert not isinstance(result.exception, RuntimeError)
+        mock_repo.create.assert_not_called()
+
     def test_readd_legacy_verbatim_row_self_heals(self, mock_db, alias_pair) -> None:
         """Re-adding over a legacy verbatim row re-points it instead of duplicating.
 

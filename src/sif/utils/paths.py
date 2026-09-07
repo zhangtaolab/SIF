@@ -63,13 +63,23 @@ def normalize_path(path: str | Path) -> str:
     (``Path.resolve`` strict=False semantics) so context targets for
     not-yet-indexed files still normalize.
 
+    Total function: a path that cannot be expanded (e.g. a ``~user`` form
+    whose account no longer resolves, in a row stored before normalization
+    existed or after a DB moved machines) degrades to the raw string instead
+    of raising — a malformed stored row must never crash search or prune; it
+    simply matches nothing, the same effective outcome minus the crash.
+
     Args:
         path: Path to normalize
 
     Returns:
-        Canonical absolute path string
+        Canonical absolute path string, or the raw string form when the
+        path cannot be expanded or resolved.
     """
-    return str(expand_path(path))
+    try:
+        return str(expand_path(path))
+    except (RuntimeError, OSError, ValueError):
+        return str(path)
 
 
 def is_markdown_file(path: Path) -> bool:

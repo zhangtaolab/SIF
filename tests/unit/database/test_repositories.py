@@ -141,6 +141,28 @@ class TestDeleteOrphanedPathsRealSQL:
         assert repo.get_by_target("coll-uuid-1", "collection") is not None
         assert repo.get_by_target("global", "global") is not None
 
+    def test_prune_survives_malformed_tilde_row(self, db, alias_pair):
+        """REVIEW WR-01: one malformed '~unknownuser/...' row must not crash prune.
+
+        delete_orphaned_paths normalizes EVERY path-type context row; before
+        normalize_path became a total function a single un-expandable row
+        raised RuntimeError and crashed the whole prune. The malformed row
+        matches no document under any form, so it is a true orphan and is
+        deleted — the operation completes instead of raising.
+        """
+        resolved, alias = alias_pair
+        poison = "~sif-no-such-user-7f3a/notes/doc.md"
+        _insert_document(db, "doc-1", resolved)
+        _insert_context(db, "ctx-poison", poison, "Poison")
+        _insert_context(db, "ctx-1", alias, "Project notes")
+        repo = ContextRepository(db)
+
+        deleted = repo.delete_orphaned_paths()
+
+        assert deleted == 1
+        assert repo.get_by_target(alias, "path") is not None
+        assert repo.get_by_target(poison, "path") is None
+
 
 class TestUpdateTargetRealSQL:
     """update_target round trip against real SQL."""
