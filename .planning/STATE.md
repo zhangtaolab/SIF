@@ -3,15 +3,16 @@ gsd_state_version: "1.0"
 milestone: v1.0
 current_phase: 05
 current_phase_name: Agent Context Experience
+current_plan: 9
 status: executing
-stopped_at: Phase 04 complete, ready to plan Phase 05
-last_updated: "2026-09-07T03:24:22.348Z"
-state_head: d95d2ac20f0955a10644a1127e54cd3233f7fe77
+stopped_at: Completed 05-08-PLAN.md
+last_updated: "2026-09-07T03:52:49.208Z"
+state_head: 38a43c1728b6f1fce197d1ee5a618774da42bf4d
 progress:
   total_phases: 9
   completed_phases: 6
   total_plans: 51
-  completed_plans: 49
+  completed_plans: 50
 milestone_name: milestone
 ---
 
@@ -26,11 +27,12 @@ milestone_name: milestone
 
 ## Current Position
 
-Phase: 05 (Agent Context Experience) — READY TO EXECUTE
-Plan: 1 of 7
+Phase: 05 (Agent Context Experience) — EXECUTING
+Current Plan: 9
+Total Plans in Phase: 9
 
 - **Phase:** 05 — Agent Context Experience
-- **Plan:** Not started
+- **Plan:** 9 of 9
 - **Status:** Ready to execute
 - **Progress Bar:** `[████████████████████] 100%`
 
@@ -62,6 +64,7 @@ Plan: 1 of 7
 | Phase 03 P07 | 23min | 3 tasks | 6 files |
 | Phase 03 P08 | 22min | 3 tasks | 5 files |
 | Phase 04 P06 | 9min | 3 tasks | 5 files |
+| Phase 05 P08 | 17min | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -117,6 +120,8 @@ Plan: 1 of 7
 - [Phase 04]: [Phase 04-06]: Pipeline snippet content fetch is transient — fetched text feeds extraction only, never written into SearchResult.content (CLI-07 --full contract preserved)
 - [Phase 04]: [Phase 04-06]: Snippet table cells wrapped in rich.markup.escape so document bracket sequences render literally (threat T-04-06-02 mitigated)
 - [Phase 04]: [Phase 04-06]: _display_snippet guards snippet and highlights with getattr, falling back to the first BM25 highlight when no snippet exists
+- [Phase 05]: 05-08: read-side re-normalization replaces the raw-string SQL pre-filter in context attachment — one constant-SQL batch query of all path contexts, both sides normalized in Python via normalize_path (realpath is not invertible, so no SQL path pre-filter can ever match a verbatim legacy row; D-06 batch shape preserved)
+- [Phase 05]: 05-08: legacy verbatim context rows match on read — no contexts-table backfill migration; context_description is set only on match so RRF/rerank-carried descriptions are never clobbered; ORDER BY updated_at gives deterministic newest-wins for duplicate-normalizing targets
 
 ### Roadmap Evolution
 
@@ -149,8 +154,8 @@ Plan: 1 of 7
 
 ## Session Continuity
 
-- **Last session:** 2026-09-05T01:04:30.068Z
-- **Stopped at:** Phase 04 complete, ready to plan Phase 05
-- **Resume file:** .planning/phases/04-advanced-search-pipeline/04-UAT.md
+- **Last session:** 2026-09-07T03:52:48.922Z
+- **Stopped at:** Completed 05-08-PLAN.md
+- **Resume file:** None
 - **Last action:** /gsd-verify-work 05 → 7 outstanding items re-verified live with sif CLI (context types, filters, search context attach incl. hybrid+reranker, SIF_DB_PATH status) — all pass; /gsd-audit-uat follow-ups done (9-UAT format normalized, 03 deferred marked resolved)
 - **Next expected action:** v1.0 phases all executed and verified. Optional: two deferred follow-ups in 04-UAT.md (embedding cache key omits model_path; caplog test pollution), then /gsd-progress or /gsd-complete-milestone when ready to close v1.0.

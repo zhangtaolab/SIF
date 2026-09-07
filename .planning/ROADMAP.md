@@ -149,17 +149,17 @@ Plans:
   2. User can list and remove contextual descriptions via `context list` and `context rm`
   3. Search results include relevant contextual descriptions alongside document content
 
-**Plans:** 9 plans (4 original + 3 gap closure + 2 re-verification gap closure)
+**Plans:** 8/9 plans executed (4 original + 3 gap closure + 2 re-verification gap closure)
 
 Plans:
 **Wave 1**
 
 - [x] 05-01-PLAN.md — Migrate path_contexts to unified contexts table, rename repository, add SearchResult field (CTX-01)
 - [x] 05-02-PLAN.md — Implement context CLI: add (all types), list --type, remove/rm alias, prune (CTX-01, CTX-02)
-- [ ] 05-05-PLAN.md — Fix context_type storage and display (Gaps 1, 2, 3, 6)
-- [ ] 05-06-PLAN.md — Fix path normalization in search context attachment (Gap 4)
-- [ ] 05-07-PLAN.md — Fix status command DB path to respect DOCSIFT_DB_PATH (Gap 5)
-- [ ] 05-08-PLAN.md — Read-side fix: shared normalize_path + attach_path_contexts helper, real-SQL context matching, replace mock-bypassed tests (gap closure, CTX-03)
+- [x] 05-05-PLAN.md — Fix context_type storage and display (Gaps 1, 2, 3, 6)
+- [x] 05-06-PLAN.md — Fix path normalization in search context attachment (Gap 4)
+- [x] 05-07-PLAN.md — Fix status command DB path to respect DOCSIFT_DB_PATH (Gap 5)
+- [x] 05-08-PLAN.md — Read-side fix: shared normalize_path + attach_path_contexts helper, real-SQL context matching, replace mock-bypassed tests (gap closure, CTX-03)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -178,7 +178,7 @@ Plans:
 | 2. CLI Core Completion | 6/6 | Complete | 2026-04-15 |
 | 3. Embedding & Vector Search | 8/8 | Complete    | 2026-09-04 |
 | 4. Advanced Search Pipeline | 6/6 | Complete    | 2026-09-06 |
-| 5. Agent Context Experience | 7/7 | Complete | 2026-04-18 |
+| 5. Agent Context Experience | 8/9 | In Progress|  |
 | 6. Documentation Audit & Refresh | 7/7 | Complete | 2026-04-18 |
 | 7. CLI Claude Skill | 2/2 | Complete | 2026-04-20 |
 | 8. Project rename from DocSift to SIF | 8/8 | Complete | 2026-04-27 |

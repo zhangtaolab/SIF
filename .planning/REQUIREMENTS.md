@@ -31,7 +31,7 @@
 
 - [ ] **CTX-01**: 实现 `context add`：为路径或集合添加人工描述文本，提升检索质量
 - [ ] **CTX-02**: 实现 `context list` 和 `context rm`：查看和删除已添加的上下文
-- [ ] **CTX-03**: 上下文描述应在搜索时被携带回结果中（与 qmd 行为一致）
+- [x] **CTX-03**: 上下文描述应在搜索时被携带回结果中（与 qmd 行为一致）
 
 ### Advanced Search Pipeline
 
@@ -116,7 +116,7 @@
 | CLI-07 | Phase 4 | Complete |
 | CTX-01 | Phase 5 | Pending |
 | CTX-02 | Phase 5 | Pending |
-| CTX-03 | Phase 5 | Pending |
+| CTX-03 | Phase 5 | Complete |
 
 **Coverage:**
 
