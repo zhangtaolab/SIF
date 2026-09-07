@@ -149,7 +149,7 @@ Plans:
   2. User can list and remove contextual descriptions via `context list` and `context rm`
   3. Search results include relevant contextual descriptions alongside document content
 
-**Plans:** 7 plans (4 original + 3 gap closure)
+**Plans:** 9 plans (4 original + 3 gap closure + 2 re-verification gap closure)
 
 Plans:
 
@@ -160,6 +160,8 @@ Plans:
 - [ ] 05-05-PLAN.md — Fix context_type storage and display (Gaps 1, 2, 3, 6)
 - [ ] 05-06-PLAN.md — Fix path normalization in search context attachment (Gap 4)
 - [ ] 05-07-PLAN.md — Fix status command DB path to respect DOCSIFT_DB_PATH (Gap 5)
+- [ ] 05-08-PLAN.md — Read-side fix: shared normalize_path + attach_path_contexts helper, real-SQL context matching, replace mock-bypassed tests (gap closure, CTX-03)
+- [ ] 05-09-PLAN.md — Write-side fix: canonical context add targets, dual-form upsert self-heal, prune normalization with real-SQL tests (gap closure, CTX-01, CTX-02)
 
 ## Progress
 
