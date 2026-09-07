@@ -4,15 +4,15 @@ milestone: v1.0
 current_phase: 05
 current_phase_name: Agent Context Experience
 current_plan: 9
-status: executing
-stopped_at: Completed 05-08-PLAN.md
-last_updated: "2026-09-07T03:52:49.208Z"
-state_head: 38a43c1728b6f1fce197d1ee5a618774da42bf4d
+status: verifying
+stopped_at: Completed 05-09-PLAN.md
+last_updated: "2026-09-07T04:13:46.234Z"
+state_head: 2e25ea17aeb9b3e748cd4ba8c3ed9bedbfee14b9
 progress:
   total_phases: 9
   completed_phases: 6
   total_plans: 51
-  completed_plans: 50
+  completed_plans: 51
 milestone_name: milestone
 ---
 
@@ -33,18 +33,15 @@ Total Plans in Phase: 9
 
 - **Phase:** 05 — Agent Context Experience
 - **Plan:** 9 of 9
-- **Status:** Ready to execute
+- **Status:** Phase complete — ready for verification
 - **Progress Bar:** `[████████████████████] 100%`
 
 ## Phase History
 
 | Phase | Date Started | Date Completed | Outcome |
 |-------|--------------|----------------|---------|
-| 01 — Foundation Fix | 2026-04-14 | 2026-04-14 | All 6 plans passed. Core infrastructure is trustworthy. |
-| 02 — CLI Core Completion | 2026-04-15 | 2026-04-15 | All 6 plans passed. Full CLI surface for collection, search, index, and retrieval. |
-| 03 — Embedding & Vector Search | 2026-04-16 | 2026-04-16 | All 6 plans passed. Configurable backends, sqlite-vec integration, batch embedding. |
-| 04 — Advanced Search Pipeline | 2026-04-17 | 2026-04-17 | All 5 plans passed. BM25, vector, hybrid search, reranking, query expansion, and benchmarking all functional. |
-| 05 — Agent Context Experience | 2026-04-18 | 2026-04-18 | 7/7 plans passed. 3 gap closure fixes committed. Qwen3 models set as default. |
+| 01–04 — Foundation / CLI / Embedding / Pipeline | 2026-04-14 | 2026-04-17 | All 23 plans passed across four phases; trustworthy core, full CLI surface, configurable embeddings, complete search pipeline. |
+| 05 — Agent Context Experience | 2026-04-18 | 2026-09-07 | 9/9 plans passed incl. 05-08 read-side + 05-09 write/prune normalization gap closures. Qwen3 models default. |
 | 06 — Documentation Audit & Refresh | 2026-04-18 | 2026-04-18 | All 7 plans passed. Auto-generated CLI/config references, docs code block validator (12 tests), Makefile target, GitHub Actions CI workflow. |
 | 07 — CLI Claude Skill | 2026-04-20 | 2026-05-30 | 2/2 plans passed. sif-search and sif-get skills created, symlinked to ~/.claude/skills/. |
 | 08 — Project rename from DocSift to SIF | 2026-04-27 | 2026-04-27 | 8/8 plans passed. Complete rename of package, CLI, env vars, docs, tests, and skills. |
@@ -54,17 +51,15 @@ Total Plans in Phase: 9
 
 - **Requirements mapped:** 31/31 v1 + 7 DOC requirements
 - **Phases defined:** 9
-- **Tests passing:** 554 passed, 11 skipped, 0 failed
+- **Tests passing:** 646 passed, 11 skipped, 0 failed (post 05-09)
 - **Known blockers:** 0
 
 **Per-Plan Metrics:**
 
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
-| Phase 03 P07 | 23min | 3 tasks | 6 files |
-| Phase 03 P08 | 22min | 3 tasks | 5 files |
-| Phase 04 P06 | 9min | 3 tasks | 5 files |
 | Phase 05 P08 | 17min | 2 tasks | 9 files |
+| Phase 05 P09 | 12min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -122,12 +117,12 @@ Total Plans in Phase: 9
 - [Phase 04]: [Phase 04-06]: _display_snippet guards snippet and highlights with getattr, falling back to the first BM25 highlight when no snippet exists
 - [Phase 05]: 05-08: read-side re-normalization replaces the raw-string SQL pre-filter in context attachment — one constant-SQL batch query of all path contexts, both sides normalized in Python via normalize_path (realpath is not invertible, so no SQL path pre-filter can ever match a verbatim legacy row; D-06 batch shape preserved)
 - [Phase 05]: 05-08: legacy verbatim context rows match on read — no contexts-table backfill migration; context_description is set only on match so RRF/rerank-carried descriptions are never clobbered; ORDER BY updated_at gives deterministic newest-wins for duplicate-normalizing targets
+- [Phase 05]: 05-09: context add path stores normalize_path(target) canonical form with dual-form upsert — legacy verbatim rows are re-pointed via new ContextRepository.update_target() on explicit re-add; no bulk backfill migration ever runs (re-normalize-on-read + merge-on-re-add closes WR-02/CTX-01)
+- [Phase 05]: 05-09: delete_orphaned_paths compares normalize_path on both sides in a Python set — SQL cannot call realpath so the raw-string NOT IN comparison is gone entirely; count semantics and D-12/D-13 explicit-command contract unchanged (closes CR-02/CTX-02)
 
 ### Roadmap Evolution
 
-- Phase 7 added (2026-04-20): Generate Claude skills for all CLI commands in the project
-- Phase 8 added (2026-04-27): Project rename from DocSift to SIF
-- Phase 9 added (2026-05-08): MCP Server Implementation — unify dual MCP implementations and implement real tool handlers
+- Later-added phases: 07 Claude skills (2026-04-20), 08 rename DocSift→SIF (2026-04-27), 09 MCP server (2026-05-08)
 
 ### TODOs
 
@@ -154,8 +149,8 @@ Total Plans in Phase: 9
 
 ## Session Continuity
 
-- **Last session:** 2026-09-07T03:52:48.922Z
-- **Stopped at:** Completed 05-08-PLAN.md
+- **Last session:** 2026-09-07T04:12:40.202Z
+- **Stopped at:** Completed 05-09-PLAN.md
 - **Resume file:** None
 - **Last action:** /gsd-verify-work 05 → 7 outstanding items re-verified live with sif CLI (context types, filters, search context attach incl. hybrid+reranker, SIF_DB_PATH status) — all pass; /gsd-audit-uat follow-ups done (9-UAT format normalized, 03 deferred marked resolved)
 - **Next expected action:** v1.0 phases all executed and verified. Optional: two deferred follow-ups in 04-UAT.md (embedding cache key omits model_path; caplog test pollution), then /gsd-progress or /gsd-complete-milestone when ready to close v1.0.
