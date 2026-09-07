@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -16,6 +17,7 @@ from sif.cli.commands.context import (
     context_remove,
 )
 from sif.core.models import Collection, PathContext
+from sif.utils.paths import normalize_path
 
 
 class TestContextGroup:
@@ -205,6 +207,208 @@ class TestContextAdd:
         assert result.exit_code == 0
         mock_repo.update.assert_called_once()
         assert existing.context == "new description"
+
+
+class TestContextAddNormalizedPaths:
+    """Write-side normalization for path targets (05-09, REVIEW WR-02).
+
+    ``context add path`` must store the canonical resolved form so new
+    contexts byte-match ``documents.path``; re-adding a path whose legacy
+    verbatim row already exists must merge (self-heal re-point) instead of
+    duplicating; and collection/global targets must stay untouched by path
+    normalization.
+    """
+
+    @pytest.fixture
+    def mock_db(self):
+        """Create a mock Database."""
+        mock = MagicMock()
+        mock.connection = MagicMock()
+        return mock
+
+    @pytest.fixture
+    def alias_pair(self, tmp_path):
+        """Create a real symlink alias over a vault directory.
+
+        Returns ``(resolved_doc_path, alias_doc_path)`` — same construction
+        as tests/unit/search/test_context_attach.py (plan 05-08). The two
+        forms genuinely differ on platforms whose tmp dir is itself
+        symlinked (macOS ``/private/tmp``).
+        """
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        doc = vault / "doc.md"
+        doc.write_text("# Doc\n", encoding="utf-8")
+        alias_dir = tmp_path / "alias"
+        alias_dir.symlink_to(vault)
+        return str(doc), str(alias_dir / "doc.md")
+
+    def test_add_path_symlink_alias_stores_resolved_form(self, mock_db, alias_pair) -> None:
+        """A path added via a symlink alias is stored in resolved form."""
+        resolved, alias = alias_pair
+        canonical = normalize_path(alias)
+        runner = CliRunner()
+        ctx_obj = {"index_path": MagicMock(exists=lambda: True)}
+
+        with patch("sif.cli.commands.context.Database") as mock_db_cls:
+            mock_db_cls.return_value = mock_db
+            mock_repo = MagicMock()
+            mock_repo.get_by_target.return_value = None
+            with patch(
+                "sif.cli.commands.context.ContextRepository",
+                return_value=mock_repo,
+            ):
+                result = runner.invoke(
+                    context_add,
+                    ["path", alias, "description"],
+                    obj=ctx_obj,
+                )
+
+        assert result.exit_code == 0
+        mock_repo.create.assert_called_once()
+        stored = mock_repo.create.call_args[0][0]
+        assert stored.path == canonical
+        assert canonical in result.output
+
+    def test_add_path_home_relative_expands(self, mock_db) -> None:
+        """A ~/-relative path target is stored expanded and absolute."""
+        home_form = "~/sif-ctx-home-probe.md"
+        canonical = normalize_path(home_form)
+        runner = CliRunner()
+        ctx_obj = {"index_path": MagicMock(exists=lambda: True)}
+
+        with patch("sif.cli.commands.context.Database") as mock_db_cls:
+            mock_db_cls.return_value = mock_db
+            mock_repo = MagicMock()
+            mock_repo.get_by_target.return_value = None
+            with patch(
+                "sif.cli.commands.context.ContextRepository",
+                return_value=mock_repo,
+            ):
+                result = runner.invoke(
+                    context_add,
+                    ["path", home_form, "description"],
+                    obj=ctx_obj,
+                )
+
+        assert result.exit_code == 0
+        mock_repo.create.assert_called_once()
+        stored = mock_repo.create.call_args[0][0]
+        assert stored.path == canonical
+        assert "~" not in stored.path
+        assert Path(stored.path).is_absolute()
+
+    def test_readd_legacy_verbatim_row_self_heals(self, mock_db, alias_pair) -> None:
+        """Re-adding over a legacy verbatim row re-points it instead of duplicating.
+
+        CTX-02 adjacency edge: the legacy row (stored verbatim before
+        write-side normalization) is merged into one canonical row via
+        update_target — create must never run.
+        """
+        resolved, alias = alias_pair
+        canonical = normalize_path(alias)
+        legacy = PathContext(path=alias, context="old text")
+        runner = CliRunner()
+        ctx_obj = {"index_path": MagicMock(exists=lambda: True)}
+
+        with patch("sif.cli.commands.context.Database") as mock_db_cls:
+            mock_db_cls.return_value = mock_db
+            mock_repo = MagicMock()
+
+            def lookup(target_id, context_type="path"):
+                return legacy if target_id == alias else None
+
+            mock_repo.get_by_target.side_effect = lookup
+            with patch(
+                "sif.cli.commands.context.ContextRepository",
+                return_value=mock_repo,
+            ):
+                result = runner.invoke(
+                    context_add,
+                    ["path", alias, "new text"],
+                    obj=ctx_obj,
+                )
+
+        assert result.exit_code == 0
+        mock_repo.update_target.assert_called_once_with(legacy.id, canonical)
+        mock_repo.create.assert_not_called()
+        mock_repo.update.assert_called_once()
+        assert legacy.context == "new text"
+        assert canonical in result.output
+
+    def test_readd_canonical_row_updates_without_repoint(self, mock_db, alias_pair) -> None:
+        """Re-adding when the canonical row exists only refreshes content."""
+        resolved, alias = alias_pair
+        canonical = normalize_path(alias)
+        existing = PathContext(path=canonical, context="old text")
+        runner = CliRunner()
+        ctx_obj = {"index_path": MagicMock(exists=lambda: True)}
+
+        with patch("sif.cli.commands.context.Database") as mock_db_cls:
+            mock_db_cls.return_value = mock_db
+            mock_repo = MagicMock()
+
+            def lookup(target_id, context_type="path"):
+                return existing if target_id == canonical else None
+
+            mock_repo.get_by_target.side_effect = lookup
+            with patch(
+                "sif.cli.commands.context.ContextRepository",
+                return_value=mock_repo,
+            ):
+                result = runner.invoke(
+                    context_add,
+                    ["path", alias, "new text"],
+                    obj=ctx_obj,
+                )
+
+        assert result.exit_code == 0
+        mock_repo.update.assert_called_once()
+        mock_repo.update_target.assert_not_called()
+        mock_repo.create.assert_not_called()
+
+    def test_collection_and_global_targets_not_normalized(self, mock_db) -> None:
+        """normalize_path is never applied to collection or global targets.
+
+        Regression guard: collection still resolves name-first to the
+        collection UUID (D-02) and global still stores the literal "global".
+        """
+        runner = CliRunner()
+        ctx_obj = {"index_path": MagicMock(exists=lambda: True)}
+        coll = Collection(name="my-coll", path="/notes")
+
+        with (
+            patch("sif.cli.commands.context.Database") as mock_db_cls,
+            patch("sif.cli.commands.context.CollectionRepository") as mock_coll_cls,
+            patch("sif.cli.commands.context.ContextRepository") as mock_ctx_cls,
+            patch("sif.cli.commands.context.normalize_path", create=True) as mock_norm,
+        ):
+            mock_db_cls.return_value = mock_db
+            mock_coll_cls.return_value.get_by_name.return_value = coll
+            mock_ctx_repo = MagicMock()
+            mock_ctx_repo.get_by_target.return_value = None
+            mock_ctx_cls.return_value = mock_ctx_repo
+
+            coll_result = runner.invoke(
+                context_add,
+                ["collection", "my-coll", "description"],
+                obj=ctx_obj,
+            )
+            global_result = runner.invoke(
+                context_add,
+                ["global", "global", "description"],
+                obj=ctx_obj,
+            )
+
+        assert coll_result.exit_code == 0
+        assert global_result.exit_code == 0
+        mock_norm.assert_not_called()
+        coll_stored = mock_ctx_repo.create.call_args_list[0][0][0]
+        assert coll_stored.path == coll.id
+        assert coll_stored.context_type == "collection"
+        global_stored = mock_ctx_repo.create.call_args_list[1][0][0]
+        assert global_stored.path == "global"
+        assert global_stored.context_type == "global"
 
 
 class TestContextList:
