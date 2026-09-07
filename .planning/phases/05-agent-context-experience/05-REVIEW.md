@@ -1,245 +1,231 @@
 ---
 phase: 05-agent-context-experience
-reviewed: 2026-09-06T00:00:00Z
+reviewed: 2026-09-07T04:31:07Z
 depth: standard
-files_reviewed: 18
+files_reviewed: 14
 files_reviewed_list:
-  - .gitignore
   - src/sif/cli/commands/context.py
-  - src/sif/cli/main.py
-  - src/sif/core/models.py
   - src/sif/database/repositories.py
-  - src/sif/database/schema.py
-  - src/sif/models/search.py
   - src/sif/search/bm25.py
+  - src/sif/search/context_attach.py
   - src/sif/search/hybrid.py
-  - src/sif/search/rerank.py
-  - src/sif/search/rrf.py
   - src/sif/search/vector.py
+  - src/sif/utils/paths.py
   - tests/unit/cli/test_context.py
-  - tests/unit/cli/test_status.py
+  - tests/unit/database/test_repositories.py
   - tests/unit/database/test_schema.py
   - tests/unit/search/test_bm25.py
+  - tests/unit/search/test_context_attach.py
   - tests/unit/search/test_hybrid.py
   - tests/unit/search/test_vector.py
 findings:
-  critical: 2
-  warning: 10
-  info: 14
-  total: 26
+  critical: 0
+  warning: 2
+  info: 3
+  total: 5
 status: issues_found
 ---
 
-# Phase 05: Code Review Report
+# Phase 05: Code Review Report (Incremental — gap-closure changes)
 
-**Reviewed:** 2026-09-06
+**Reviewed:** 2026-09-07T04:31:07Z
 **Depth:** standard
-**Files Reviewed:** 18
+**Files Reviewed:** 14
 **Status:** issues_found
+
+## Scope Note
+
+Incremental review of the Phase 05 gap-closure work (plans 05-08 / 05-09): shared
+`normalize_path()` + `attach_path_contexts()` helper replacing the SQL `IN` pre-filter in
+all three searchers, canonical path targets at `context add` with dual-form upsert
+self-heal, `delete_orphaned_paths()` rewritten to normalized comparison, real-SQL
+regression tests replacing mock-bypassed ones, and the `vec_db` fixture fix.
+
+Note: the `diff_base` full hash supplied by the workflow (`ff10314cc39efea...`) is not a
+valid object name; it was resolved to the intended commit `ff10314cc3c4d82`
+(`docs(05): add code review report`, the prior review commit). The diff over that base
+matches the described scope exactly (14 files, +741/-166).
+
+## Verification of Prior-Review Claims (2026-09-06 report, same path — now overwritten)
+
+- **CR-02 (prune deletes valid mismatched contexts): FIXED — fix is real.**
+  `ContextRepository.delete_orphaned_paths()` (`src/sif/database/repositories.py:463-485`)
+  now normalizes both sides in Python via the shared `normalize_path`, and the regression
+  test `test_prune_preserves_symlink_mismatched_context`
+  (`tests/unit/database/test_repositories.py:86-104`) runs against real SQLite with a
+  genuine symlink alias whose string forms verifiably differ (macOS `/private/var/folders/...`
+  vs `/tmp`-style alias). The test passed in this review's run. The document-side invariant
+  also holds: `src/sif/indexing/parser.py` stores `str(file_path.resolve())`, which equals
+  `normalize_path`'s output for already-absolute spellings.
+- **IN-03 (hybrid MagicMock tuple-row fallback): REMOVED cleanly.** The 24-line
+  duck-typed fallback in `hybrid.py` is gone; `_attach_contexts` now delegates to the
+  shared helper. No production caller relied on the fallback: both `Database.connection`
+  (`src/sif/database/database.py:34`) and `DatabaseConnection` (line 120) set
+  `row_factory = sqlite3.Row`, and the legacy MCP backend routes through
+  `SearchPipeline` (`src/sif/mcp/backend.py:17,94`), so it inherits the helper. Full
+  suite: 657 passed.
+- **CR-01 (FTS5 external-content DELETE triggers): STILL OPEN — carried forward.**
+  `src/sif/database/schema.py:235-241,260-266` still use `DELETE FROM documents_fts WHERE
+  rowid = old.rowid`, and the new `TestFtsUpdateTrigger` class covers only UPDATE
+  triggers, not DELETEs. Out of this diff's file scope (schema.py not in the changed
+  set); must stay on the books.
+
+Quality gates on the changed files: `ruff check` clean, `ruff format --check` clean,
+targeted tests (52) and the full suite (657) pass with `env -u FORCE_COLOR NO_COLOR=1`.
+The `vec_db` fixture fix (`sqlite_vec.load(db)`) is real: schema migration tests now
+execute instead of silently skipping (0 skips in the run).
 
 ## Summary
 
-Phase 05's deliverables (unified `contexts` table, context CLI, context-description attachment in BM25/vector/hybrid searchers, path normalization via `os.path.realpath`) are largely implemented as described, and the migration, FTS-update-trigger fix, and KNN over-fetch work are backed by genuine integration tests. However, the adversarial pass surfaced two Critical defects:
+The architecture of the fix is sound: one shared helper with a constant-SQL batch query
+and Python-side normalization is the correct shape (realpath is not invertible, so any
+exact-match SQL pre-filter on resolved strings can never match verbatim legacy rows),
+and the replacement of mock-bypassed tests with real-SQL suites is a genuine
+improvement — the symlink fixtures create real mismatches rather than asserting on
+mocked cursors. No SQL injection, secret handling, or traversal issues: all new SQL is
+parameterized or constant.
 
-1. The FTS5 **delete** triggers use the plain `DELETE FROM <fts> WHERE rowid = ...` form, which is invalid inside an AFTER DELETE trigger on an external-content FTS5 table (the content row is already gone, so FTS5 cannot fetch the old values to remove from the inverted index). I reproduced this live against SQLite using the exact trigger SQL from `schema.py`: deleted documents' terms remain in the index, and once a new document reuses the freed rowid, searching for a term unique to the *deleted* document returns the *new* document. This is the same defect class as the phase's own FND-06/CR-01 fix, missed for DELETEs.
-2. `sif context prune` compares raw path strings against `documents.path`, while the searchers match contexts via `os.path.realpath` on both sides — the phase's own tests bless storing a user-typed `/tmp/...` path while documents store `/private/tmp/...`. Prune therefore **deletes contexts that search actively matches** (silent loss of user-authored descriptions). The root cause is that `context add` stores the target verbatim with no `expanduser`/`realpath` normalization.
-
-Further warnings cover an undefined `sqlite3` name in `main.py`'s error handler (codified by a `noqa: F821`), pagination inconsistencies between BM25 and vector search, a vector-score formula built on a mislabeled distance metric (empirically verified as L2, not cosine — invalid for non-normalized gguf embeddings), an unused `embedding_dim` parameter that defeats fail-fast dimension validation, a timezone-dependent LLM-cache TTL comparison, RRF score mislabeling in multi-query fusion, and two tests that do not test what their names claim.
-
-No SQL injection, command injection, secret handling, or path-traversal issues were found; all SQL is parameterized and interpolated values are internal constants.
+However, the adversarial pass found that the change widened the blast radius of
+malformed path data. Pre-change, the SQL `IN` pre-filter meant only rows matching
+result paths were ever `realpath`-ed, and prune was pure SQL. Post-change, **every**
+stored path-context row is normalized on **every** search and on prune. A single
+context row whose `target_id` holds an unresolvable `~user` form (an account removed, a
+DB synced/copied to another machine — plausible for a portable personal-KB tool, and
+exactly the class of pre-normalization verbatim rows the self-heal path acknowledges
+exist) raises `RuntimeError` out of `Path.expanduser()` and crashes `sif search` (all
+three searchers), `sif context prune`, and `sif context add` with raw tracebacks.
+Reproduced live against real SQLite (WR-01). Second, the write-side self-heal only
+merges when the user re-types the *exact* historical spelling; re-adding the same file
+via its canonical form leaves the legacy row in place forever, and prune can never
+clean the duplicate because both rows normalize to a live document path (WR-02).
 
 ## Critical Issues
 
-### CR-01: FTS5 delete triggers leave stale index entries; rowid reuse returns wrong search results
-
-**File:** `src/sif/database/schema.py:236-241` (`documents_fts_delete`), `src/sif/database/schema.py:260-266` (`chunks_fts_delete`)
-**Issue:** The delete triggers issue `DELETE FROM documents_fts WHERE rowid = old.rowid;`. For an external-content FTS5 table, the ordinary DELETE form requires the content row to still be present so FTS5 can fetch the old column values to remove from the inverted index. Inside an `AFTER DELETE` trigger the row has already been removed from `documents`, so the terms are never purged. The **update** triggers in the same file (lines 226-234, 251-259) correctly use the documented `'delete'`-command INSERT form — the delete triggers are inconsistent with them.
-
-Reproduced live with the exact trigger SQL from this file: after `DELETE FROM documents WHERE id='d2'`, `MATCH 'zebra'` still returned the deleted row's rowid; after inserting a new document that SQLite assigned the freed rowid (the normal case when the deleted row held the max rowid — i.e., the most recently added file), `MATCH 'zebra'` returned the **new, unrelated document**. Consequences: (a) searches for terms unique to deleted files return wrong documents after rowid reuse, and (b) deleted content accumulates in the FTS index permanently. Document deletion happens on every `sif index update` that removes a synced file, so this is an ordinary-event path, not an edge case. The searchers' JOIN to `documents` masks the ghost rows only until the rowid is reused.
-
-**Fix:**
-```sql
-CREATE TRIGGER IF NOT EXISTS documents_fts_delete
-AFTER DELETE ON documents
-BEGIN
-    INSERT INTO documents_fts(documents_fts, rowid, content)
-    VALUES('delete', old.rowid, old.content);
-END
-```
-Same form for `chunks_fts_delete`. Two migration requirements: (1) `CREATE TRIGGER IF NOT EXISTS` will not replace the already-deployed plain-DELETE trigger, so the existing trigger must be dropped explicitly — mirror the `_fts_update_trigger_is_legacy` detection pattern already present at `schema.py:148-191`; (2) existing databases already carry stale entries, so the fix must also trigger an FTS rebuild (the `needs_rebuild_docs` / re-seed machinery at `schema.py:180-196, 268-278` can be reused). Add a regression test deleting a max-rowid document, inserting a replacement, and asserting the deleted term no longer matches.
-
-### CR-02: `context prune` deletes contexts that search actively matches (data loss)
-
-**File:** `src/sif/database/repositories.py:437-444` (`ContextRepository.delete_orphaned_paths`)
-**Issue:** Prune's orphan test is a raw string comparison: `target_id NOT IN (SELECT path FROM documents)`. The searchers, by contrast, match contexts by normalizing **both** sides with `os.path.realpath` (`src/sif/search/bm25.py:121-125`, `src/sif/search/vector.py:128-132`, `src/sif/search/hybrid.py:142-145`), and the phase's own tests enshrine the mismatch case as valid: a context stored with the user-typed `/tmp/doc.md` while `documents.path` holds the resolved `/private/tmp/doc.md` (`tests/unit/search/test_bm25.py:414-440`, `tests/unit/search/test_vector.py:485-514`). That document is indexed via `Path(file_path).resolve()` (`src/sif/indexing/parser.py:70,105,172`), which resolves symlinks — so the two representations coexist by design, search attaches the description, and then `sif context prune` classifies the same context as orphaned and silently deletes it. Any divergence that `realpath` collapses (`/tmp` vs `/private/tmp`, other symlinked vault roots) is destroyed by prune. This is silent loss of user-authored content.
-
-**Fix:** Make prune use the same matching definition as search. Since SQL cannot call `realpath`, do the comparison in Python:
-```python
-def delete_orphaned_paths(self) -> int:
-    doc_paths = {os.path.realpath(r[0]) for r in self.db.execute("SELECT path FROM documents")}
-    contexts = self.list_by_type("path")
-    orphans = [c for c in contexts if os.path.realpath(c.path) not in doc_paths]
-    for c in orphans:
-        self.delete(c.id)
-    return len(orphans)
-```
-Pair this with WR-02 (normalize at write time) so new contexts are stored already-resolved and the two definitions converge.
+None in this diff's file scope. (CR-01 from the prior review remains open in
+`src/sif/database/schema.py` — carried forward above.)
 
 ## Warnings
 
-### WR-01: Undefined `sqlite3` in cleanup error handler; `noqa: F821` codifies the bug
+### WR-01: One malformed `target_id` crashes all search commands, prune, and add
 
-**File:** `src/sif/cli/main.py:166`
-**Issue:** `cleanup_cmd` catches `sqlite3.OperationalError` but `sqlite3` is never imported in `main.py` (imports end at `sif.utils.logging`). The `# noqa: F821` suppression acknowledges the undefined name rather than fixing it. If `document_embeddings` is missing (e.g., sqlite-vec failed to load, legacy DB), the embeddings DELETE raises `OperationalError`, the handler immediately raises `NameError: name 'sqlite3' is not defined`, and the outer `except Exception` reports the misleading NameError to the user — aborting cleanup before the LLM-cache step runs.
-**Fix:** Add `import sqlite3` at module top and remove the `noqa: F821`. Consider also whether aborting the whole cleanup on a missing embeddings table is intended, versus logging and continuing.
+**File:** `src/sif/search/context_attach.py:56`, `src/sif/database/repositories.py:481`, `src/sif/cli/commands/context.py:63` (root: `src/sif/utils/paths.py:52`)
+**Issue:** `normalize_path()` calls `Path(path).expanduser()`, which raises
+`RuntimeError` ("Could not determine home directory") for `~username` forms whose user
+does not resolve. `attach_path_contexts()` now runs `normalize_path(row["target_id"])`
+over **every** path-type context row on **every** BM25/vector/hybrid search (the old
+SQL `IN` pre-filter only ever normalized rows matching result paths), and
+`delete_orphaned_paths()` normalizes every path-context row. Reproduced against real
+SQLite in this review:
 
-### WR-02: `context add` stores path targets verbatim — no expanduser/realpath
-
-**File:** `src/sif/cli/commands/context.py:45-58`
-**Issue:** For `type == "path"` the target is stored exactly as typed. `sif context add path ~/notes/a.md "desc"` stores the literal `~/notes/a.md` (Click does not expanduser arguments), and relative paths are stored relative. Both never match search results (whose paths are resolved absolutes) and become dead data until prune removes them — and the symlink-alias cases are precisely the ones CR-02 shows prune mishandles. The searchers normalize; the write path does not.
-**Fix:** Normalize before storing:
-```python
-elif type == "path":
-    actual_target = os.path.realpath(os.path.expanduser(target))
 ```
-(keeping collection/global handling unchanged). Optionally offer a one-time re-normalization of existing rows alongside the CR-02 fix.
+attach CRASHED: RuntimeError - Could not determine home directory.   # attach_path_contexts with one '~deleteduser/...' row
+prune CRASHED: RuntimeError - Could not determine home directory.    # delete_orphaned_paths, documents table present
+```
 
-### WR-03: BM25 applies LIMIT/OFFSET before the `min_score` filter; limit clamping inconsistent
+The same exception escapes `context_add` (line 63) as a raw traceback instead of a
+`click.ClickException`, violating the project's stated error-handling convention
+(CLAUDE.md). Trigger plausibility: a pre-fix verbatim row (the dual-form self-heal in
+the same diff acknowledges such rows exist), or a DB whose `~user` targets stop
+resolving after the account is removed or the DB file is copied to another machine.
+Until the row is removed (only discoverable via `sif context list` + manual
+`context remove`), every search command is bricked. This exposure did not exist
+pre-change.
 
-**File:** `src/sif/search/bm25.py:60-84`
-**Issue:** `LIMIT ? OFFSET ?` is applied in SQL, then rows are filtered by `min_score` in Python (line 83-84). With `min_score > 0` a requested page of 10 can return fewer than 10 rows even when more qualifying rows exist — the SQL page consumed the budget on filtered rows. Ranks are also assigned per returned page, so `offset` pagination restarts ranks at 1. Additionally, a non-positive `limit` reaches SQLite as `LIMIT -1` (unlimited), while `VectorSearcher` clamps to 1 — the two searchers disagree on the same `SearchOptions` input.
-**Fix:** Filter by `rank` in SQL (FTS5 `rank <= :max_rank` derived from `min_score`: `rank <= 1/min_score - 1` for `min_score > 0`), or over-fetch and trim after the Python filter. Clamp `limit` in one shared place.
+**Fix:** Make normalization total — never let a stored row raise:
 
-### WR-04: Vector search ignores `options.offset`
+```python
+# src/sif/utils/paths.py
+def normalize_path(path: str | Path) -> str:
+    """..."""
+    try:
+        return str(expand_path(path))
+    except (RuntimeError, OSError, ValueError):
+        # e.g. "~removeduser/..." after an account no longer resolves. A stored
+        # context row must never crash search/prune — degrade to the raw form
+        # (it simply matches nothing, same effective outcome as today minus the crash).
+        return str(path)
+```
 
-**File:** `src/sif/search/vector.py:70-110`
-**Issue:** The BM25 SQL honors `OFFSET`; the vector KNN query has no offset and the Python slice (`results[: max(1, options.limit)]`) never applies one. `SearchOptions.offset` is part of the shared options contract, so vector and hybrid search return the same first page for any offset — pagination silently broken for those search types.
-**Fix:** Either slice `results[offset : offset + limit]` after fetching `fetch_k = max((offset + limit) * 4, 50)` rows, or raise/document that offset is unsupported for vector search instead of silently ignoring it.
+Additionally, wrap the `context add` path resolution in a `click.ClickException` so a
+bad `~user` typo at the CLI produces a user-facing error, not a traceback, and add a
+regression test inserting a `~unknownuser/...` row before calling
+`attach_path_contexts` / `delete_orphaned_paths`.
 
-### WR-05: Vector score assumes cosine distance; sqlite-vec returns L2 — invalid for non-normalized embeddings
+### WR-02: Self-heal merge only fires on exact historical re-typing — duplicate rows accumulate and prune cannot clean them
 
-**File:** `src/sif/search/vector.py:87-93`
-**Issue:** `score = 1.0 - (row["score"] / 2.0)` with the comment "Cosine distance is 0-2". Empirically verified: with the schema's vec0 declaration (no `distance_metric`), sqlite-vec returns **L2** distance (orthogonal unit vectors -> 1.4142, same-direction magnitude-3 vector -> 2.0). L2 is unbounded, so for embeddings not unit-normalized, `score` goes negative and the default `min_score=0.0` silently filters **all** results — vector search returns nothing. This is reachable through the supported `model_type: "gguf"` path (llama.cpp embeddings are not normalized by default); it only works today because the default sentence-transformers path normalizes.
-**Fix:** Declare `distance_metric=cosine` on the vec0 column (requires table migration/rebuild), or normalize the query embedding (and enforce stored-vector norms) before MATCH. At minimum, correct the comment and fail fast (per project convention) when the query embedding's norm deviates from 1.0, instead of silently returning an empty result set.
+**File:** `src/sif/cli/commands/context.py:66-74`
+**Issue:** The dual-form upsert looks up only two spellings: the canonical form and the
+exact verbatim string typed now. If a legacy row exists under spelling *A* (e.g.
+`/tmp/vault/doc.md`) and the user re-adds the same file under spelling *B* (most
+commonly the canonical `/private/tmp/vault/doc.md`, or any other alias), neither lookup
+finds the legacy row, so a second row is created and the legacy row survives forever.
+`delete_orphaned_paths()` cannot clean it: both rows normalize to a live document path,
+so neither is an orphan. Result: permanent duplicate rows visible in `sif context list`,
+with no automated cleanup path. Read behavior stays correct (newest `updated_at` wins
+deterministically in `attach_path_contexts`), so this is data hygiene / user-facing
+duplication rather than wrong results — but the merge the feature promises ("instead of
+creating a duplicate row") silently fails on the most likely re-add path.
 
-### WR-06: `VectorSearcher.embedding_dim` accepted, stored, never used — dimension mismatch fails late and opaquely
+**Fix:** On the explicit re-add miss, resolve by normalized key over all path rows
+instead of by exact string:
 
-**File:** `src/sif/search/vector.py:15-19`; `src/sif/search/hybrid.py:31`
-**Issue:** The constructor stores `embedding_dim` but nothing in the class reads it, so `HybridSearcher.__init__(embedding_dim=768)` gives callers false confidence. Defaults are also inconsistent: `HybridSearcher`/`VectorSearcher` default to 768, `SchemaManager` to 384, and `Settings.embedding_dim` to 1024 (which is what `Database.init_schema()` actually creates the table with). A mismatch surfaces only as a raw `sqlite3.OperationalError` from inside the vec0 MATCH at query time, violating the project's fail-fast convention that `SchemaManager._create_vector_tables` itself implements.
-**Fix:** Validate in `VectorSearcher.__init__`: read the actual `FLOAT[n]` from `sqlite_master` (the regex logic already exists in `schema.py:291-304`) and raise a descriptive RuntimeError on mismatch with the passed `embedding_dim`; then delete or honor the parameter consistently.
+```python
+if not existing and type == "path":
+    # Merge ANY historical spelling of the same file, not just the exact
+    # verbatim re-type. Explicit re-add only — never a bulk migration.
+    candidates = [
+        c for c in repo.list_by_type("path")
+        if c.id != existing_id_marker and normalize_path(c.path) == actual_target
+    ]
+    if candidates:
+        candidates.sort(key=lambda c: c.updated_at, reverse=True)
+        winner = candidates[0]
+        if repo.update_target(winner.id, actual_target):
+            existing = winner
+        for loser in candidates[1:]:
+            repo.delete(loser.id)   # collapse duplicates left by old spellings
+```
 
-### WR-07: LLM cache TTL mixes naive-local and aware-UTC timestamps
-
-**File:** `src/sif/database/repositories.py:492-495`
-**Issue:** `LLMCacheRepository.set` computes `datetime.fromtimestamp(expires_at)` (naive **local** time) and stores its ISO string, while `get`/`clear_expired` compare against `datetime.now(timezone.utc).isoformat()` (aware UTC). The TEXT comparison is therefore wrong for any machine not on UTC: on UTC+2, entries live ~2 hours past their TTL; on UTC-8, they are treated as expired ~8 hours early. Likely pre-existing code, but it lives in a file this phase reworked.
-**Fix:** `datetime.fromtimestamp(expires_at, tz=timezone.utc).isoformat()` (and use `ttl_seconds > 0`, since `ttl_seconds=0` currently means "no expiry" via the truthiness check).
-
-### WR-08: RRF labels every non-first result list's score as `vector_score`
-
-**File:** `src/sif/search/rrf.py:50` and `src/sif/search/rrf.py:134`
-**Issue:** `score_key = "bm25_score" if list_idx == 0 else "vector_score"` is correct for the two-list BM25+vector case, but `SearchPipeline.search` also calls `self.hybrid.rrf.fuse(all_results, ...)` across N query-variant lists (`src/sif/search/hybrid.py:259`), where every list after the first holds hybrid results whose scores are written into `scores["vector_score"]`. The explain output (`result.scores`) then reports a hybrid score under a vector label.
-**Fix:** Pass an explicit per-list key (e.g., `fuse(results_lists, limit, score_keys=[...])`) or have the multi-query fusion path skip per-source score labeling.
-
-### WR-09: "rm alias" test never exercises the alias
-
-**File:** `tests/unit/cli/test_context.py:354-375`
-**Issue:** `TestContextRmAlias.test_rm_alias_works` invokes `context_remove` directly — the same call the `TestContextRemove` test makes — and never touches `context_group`'s registered `rm` name. The alias registration at `src/sif/cli/commands/context.py:157` is untested; if it regressed (`sif context rm <id>` -> "No such command"), this test would still pass.
-**Fix:** Invoke through the group: `runner.invoke(context_group, ["rm", context_id], obj=ctx_obj)` and assert exit code 0.
-
-### WR-10: SIF_DB_PATH test patches Settings, so the env var is never consumed
-
-**File:** `tests/unit/cli/test_status.py:47-76`
-**Issue:** `test_status_respects_env_var` passes `SIF_DB_PATH` to `CliRunner(env=...)` but then patches `sif.cli.main.get_settings` with a `MagicMock` whose `get_db_path` returns a mock pre-configured to `/tmp/test-sif.db`. The assertion passes because of the mock's configured value, not because `Settings` parsed the env var; if env parsing in `Settings`/pydantic broke, this test — named after exactly that behavior — would still pass. (The sibling test has the same structure but does not claim env-var coverage.)
-**Fix:** Build a real `Settings(db_path="/tmp/test-sif.db")` (or assert on `mock_settings` construction inputs) so the fallback path is exercised against actual Settings behavior.
+Guard the `normalize_path` comparison with the WR-01 total-form fallback so a poison
+row cannot crash the merge either.
 
 ## Info
 
-### IN-01: `DEFAULT_INDEX_PATH` is dead
+### IN-01: Duplicate-key winner chosen by TEXT ordering of mixed ISO-8601 formats
 
-**File:** `src/sif/cli/main.py:22`
-**Issue:** The constant is defined but never used; the `--index` default comes from `_get_default_db_path()` (line 26-28). It also encodes a stale path (repo docs claim `~/.sif/index.sqlite`, settings use platformdirs).
-**Fix:** Delete the constant.
+**File:** `src/sif/search/context_attach.py:53-56`
+**Issue:** `ORDER BY updated_at` relies on SQLite TEXT comparison. Rows written today
+carry `+00:00` and microseconds (`datetime.now(timezone.utc).isoformat()`), but rows
+migrated from the legacy `path_contexts` table can carry offset-less or local-time
+forms (the migration copies timestamps verbatim — see `schema.py:118-122` and the
+`'2024-01-01T00:00:00'` fixtures). Across mixed formats/timezones the text sort can
+rank a legacy row as "newest" when its instant is older, so duplicate normalized keys
+can resolve to stale content.
+**Fix:** Resolve duplicates in Python with parsed datetimes (or normalize timestamp
+format during the `path_contexts` migration), e.g. keep the ORDER BY for determinism
+but build the map via `datetime.fromisoformat` comparison on collision.
 
-### IN-02: `context add global` silently ignores its TARGET argument
+### IN-02: Tests call `SchemaManager` private methods to build fixtures
 
-**File:** `src/sif/cli/commands/context.py:56-57`
-**Issue:** For `global`, `target` is required by the command signature but overwritten with `"global"`. `sif context add global anything "desc"` succeeds while `anything` is discarded without warning.
-**Fix:** Either make TARGET optional/ignored with an explicit message, or reject non-"global" targets for the global type.
+**File:** `tests/unit/database/test_repositories.py:31-32`, `tests/unit/search/test_context_attach.py:52`
+**Issue:** `manager._create_documents_table()` / `manager._create_contexts_table()`
+couple the new suites to private schema internals; a refactor of those methods breaks
+tests for repositories and context attachment.
+**Fix:** Use `SchemaManager(conn).create_all()` on a plain connection (vector tables
+are skipped gracefully without sqlite-vec) or add a small public fixture-builder.
 
-### IN-03: `_attach_contexts` triplicated; hybrid copy contains test-coupled fallback
+### IN-03: `update_target` return value ignored at the self-heal call site
 
-**File:** `src/sif/search/bm25.py:109-126`, `src/sif/search/vector.py:116-133`, `src/sif/search/hybrid.py:112-146`
-**Issue:** Three near-identical implementations. The hybrid variant additionally carries a `hasattr(row, "keys")`/tuple fallback whose comment says it exists to "skip MagicMock rows in tests" (`hybrid.py:133`) — production code shaped by test doubles; the real `Database` connection always returns `sqlite3.Row` (`src/sif/database/database.py:39`), and the simple form in bm25/vector suffices. The hybrid path also re-queries contexts that bm25/vector already attached (redundant round trip).
-**Fix:** Extract one shared helper (module-level function or mixin) used by all three searchers; delete the MagicMock fallback and rely on real-connection tests.
-
-### IN-04: `fuse` / `fuse_with_weights` are ~50-line duplicates; all-zero weights crash
-
-**File:** `src/sif/search/rrf.py:20-91, 93-175`
-**Issue:** The two methods differ only in the weight multiplier. Additionally `normalized_weights = [w / total_weight ...]` raises `ZeroDivisionError` when all weights are 0, despite the docstring contract "must sum to 1.0" that the code then normalizes anyway.
-**Fix:** Implement `fuse` as `fuse_with_weights(lists, [1.0] * len(lists), limit)`; validate `total_weight > 0`.
-
-### IN-05: `Qwen3Reranker.load` duplicates ~30 lines across quiet branches
-
-**File:** `src/sif/search/rerank.py:296-327`
-**Issue:** The entire tokenizer/model load and device placement is duplicated under `if is_quiet():` / `else:`; only the `suppress_output()` wrapper differs.
-**Fix:** Wrap the single load body in `with suppress_output():` conditionally: `load_ctx = suppress_output() if is_quiet() else contextlib.nullcontext()`.
-
-### IN-06: `create_reranker(settings)` parameter is untyped
-
-**File:** `src/sif/search/rerank.py:391-394`
-**Issue:** `def create_reranker(settings) -> ...` lacks a parameter annotation, violating the project's strict typing convention (`disallow_untyped_defs = true`, per CLAUDE.md).
-**Fix:** Annotate with `settings: Settings` (or a narrow Protocol exposing the reranker attributes it reads).
-
-### IN-07: `DocumentRepository` imports from its own module
-
-**File:** `src/sif/database/repositories.py:226`, `src/sif/database/repositories.py:244`
-**Issue:** `from sif.database.repositories import DocumentChunkRepository` inside `repositories.py` — a pointless self-import (works only because the module is already in `sys.modules`).
-**Fix:** Reference `DocumentChunkRepository(self.db)` directly; remove both local imports.
-
-### IN-08: `PathContext.collection_id` is a dead field
-
-**File:** `src/sif/core/models.py:189`; `src/sif/database/repositories.py:451`
-**Issue:** The field is always reconstructed as `None` ("No longer stored; acceptable for transition" — comment at repositories.py:451) and is not persisted in the unified schema. Any consumer reading it gets a constant `None`.
-**Fix:** Remove the field and the `collection_id` plumbing, or document it as deprecated-if-set.
-
-### IN-09: Dimension-mismatch error advises a command that cannot fix it
-
-**File:** `src/sif/database/schema.py:300-304`
-**Issue:** The RuntimeError says "Rebuild the index with 'sif cleanup' or delete the database file", but `cleanup_cmd` only deletes orphan rows — it never drops/recreates `document_embeddings`, so it cannot resolve a `FLOAT[384]` vs `FLOAT[768]` mismatch. Users will run it and hit the same error.
-**Fix:** Change the message to the action that works (delete the DB file / run a full re-index), or teach `cleanup` a `--rebuild` mode that drops and recreates the vec table.
-
-### IN-10: ModelScope download failure swallowed at info level without the error
-
-**File:** `src/sif/search/rerank.py:202-203`
-**Issue:** `except Exception: logger.info(f"Loading ST reranker model: {model_id}")` discards the download exception entirely; a network failure is indistinguishable from a deliberate fallback and the log level understates it.
-**Fix:** `logger.warning(f"ModelScope download failed, falling back to ST hub: {e}")`.
-
-### IN-11: docsift migration message overstates what moved
-
-**File:** `src/sif/cli/main.py:197-199`
-**Issue:** Only `~/.local/share/docsift/models` is renamed, but the message prints "Migrated: ~/.local/share/docsift -> ~/.local/share/sif", implying the whole directory moved.
-**Fix:** Print the actual paths moved (`.models -> sif/models`).
-
-### IN-12: `intent` is concatenated into the search query and becomes required FTS terms
-
-**File:** `src/sif/search/hybrid.py:205-206` (codified by `tests/unit/search/test_hybrid.py:411-428`)
-**Issue:** `parsed_query = f"{options.intent}: {parsed_query}"` — because prefix parsing already ran, the intent text flows into `_build_fts_query`, which AND-joins tokens: searching `lex:test` with `intent="code"` requires the term "code" to appear, cutting recall instead of biasing ranking. The test pins the current behavior, so this is flagged as a design observation, not a regression.
-**Fix:** If intent is meant to bias rather than filter, pass it to the embedder prompt/expansion stages only, or OR-join intent terms.
-
-### IN-13: Reranker path silently drops results beyond `candidate_limit`
-
-**File:** `src/sif/search/hybrid.py:262-268`
-**Issue:** `candidates = results[: options.candidate_limit]; results = reranked` discards everything past `candidate_limit` even when `options.limit > candidate_limit` (core `SearchOptions.limit` is unbounded; e.g., limit=50 with the default candidate_limit=20 returns at most 20 results).
-**Fix:** Clamp `limit = min(options.limit, options.candidate_limit)` up front, or set `candidate_limit`'s floor to `options.limit`.
-
-### IN-14: Parallel `SearchOptions`/`SearchResult` model hierarchies
-
-**File:** `src/sif/core/models.py:207-254` (dataclasses) vs `src/sif/models/search.py:17-92` (pydantic)
-**Issue:** Two independent definitions of `SearchOptions` and `SearchResult` coexist: the dataclass pair drives bm25/vector/hybrid, while the pydantic pair drives `sif/search/strategy.py`. Both now carry `context_description`, doubling the maintenance of every future result field (this phase had to add it twice).
-**Fix:** Track consolidation under the existing legacy-consolidation effort noted in CLAUDE.md; until then, add a comment cross-referencing the twin definitions so field additions stay synchronized.
+**File:** `src/sif/cli/commands/context.py:74`
+**Issue:** If `update_target` returns `False` (row vanished mid-transaction, or a
+future subclass override), the code proceeds to `repo.update(existing)` and reports
+"Context updated" while the row still holds the verbatim target. Harmless today in the
+single-process CLI, but it is an unchecked error return on a data-mutating path.
+**Fix:** `if not repo.update_target(existing.id, actual_target): raise
+click.ClickException(...)` (or log a warning and continue).
 
 ---
 
-_Reviewed: 2026-09-06T00:00:00Z_
+_Reviewed: 2026-09-07T04:31:07Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
