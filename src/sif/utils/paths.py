@@ -52,6 +52,26 @@ def expand_path(path: str | Path) -> Path:
     return Path(path).expanduser().resolve()
 
 
+def normalize_path(path: str | Path) -> str:
+    """Normalize a path to its canonical string form.
+
+    This is the single canonical definition of "same file" shared by search
+    context attachment, ``context add``, and prune: two paths denote the same
+    document iff ``normalize_path`` maps them to the same string. It expands
+    ``~`` and resolves symlinks (e.g. ``/tmp`` -> ``/private/tmp`` on macOS)
+    via :func:`expand_path`, while preserving non-existent tail components
+    (``Path.resolve`` strict=False semantics) so context targets for
+    not-yet-indexed files still normalize.
+
+    Args:
+        path: Path to normalize
+
+    Returns:
+        Canonical absolute path string
+    """
+    return str(expand_path(path))
+
+
 def is_markdown_file(path: Path) -> bool:
     """Check if a file is a markdown file.
 

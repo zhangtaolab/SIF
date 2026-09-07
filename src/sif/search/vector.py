@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import json
-import os
 import sqlite3
 
 from sif.core.models import SearchOptions, SearchResult
+from sif.search.context_attach import attach_path_contexts
 
 
 class VectorSearcher:
@@ -115,22 +115,7 @@ class VectorSearcher:
 
     def _attach_contexts(self, results: list[SearchResult]) -> list[SearchResult]:
         """Attach path context descriptions to search results via batch query."""
-        if not results:
-            return results
-        paths = list({r.path for r in results})
-        placeholders = ", ".join(["?"] * len(paths))
-        sql = f"""
-            SELECT target_id, content FROM contexts
-            WHERE context_type = 'path' AND target_id IN ({placeholders})
-        """
-        cursor = self.db.execute(sql, paths)
-        # Normalize keys for cross-platform matching (macOS /private/tmp, etc.)
-        context_map = {
-            os.path.realpath(row["target_id"]): row["content"] for row in cursor.fetchall()
-        }
-        for result in results:
-            result.context_description = context_map.get(os.path.realpath(result.path))
-        return results
+        return attach_path_contexts(self.db, results)
 
     def _embedding_to_vec(self, embedding: list[float]) -> str:
         """Convert embedding to sqlite-vec format."""

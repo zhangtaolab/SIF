@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import os
 import sqlite3
 from typing import TYPE_CHECKING
 
 from sif.core.models import Embedder, SearchOptions, SearchResult, SearchType
 from sif.search.bm25 import BM25Searcher
+from sif.search.context_attach import attach_path_contexts
 from sif.search.rrf import RRFFusion
 from sif.search.vector import VectorSearcher
 from sif.utils.logging import get_logger
@@ -111,39 +111,7 @@ class HybridSearcher:
 
     def _attach_contexts(self, results: list[SearchResult]) -> list[SearchResult]:
         """Attach path context descriptions to search results via batch query."""
-        if not results:
-            return results
-        paths = list({r.path for r in results})
-        placeholders = ", ".join(["?"] * len(paths))
-        sql = f"""
-            SELECT target_id, content FROM contexts
-            WHERE context_type = 'path' AND target_id IN ({placeholders})
-        """
-        cursor = self.db.execute(sql, paths)
-        rows = cursor.fetchall()
-        # Handle both sqlite3.Row (dict-like) and plain tuple rows
-        context_map: dict[str, str] = {}
-        for row in rows:
-            if hasattr(row, "keys") and callable(getattr(row, "keys", None)):
-                try:
-                    context_map[os.path.realpath(row["target_id"])] = row["content"]
-                    continue
-                except (KeyError, TypeError):
-                    pass
-            # Fallback: assume tuple-like access (skip MagicMock rows in tests)
-            try:
-                key = row[0]
-                val = row[1]
-                if not isinstance(key, str):
-                    continue
-                context_map[os.path.realpath(key)] = val
-            except (KeyError, IndexError, TypeError):
-                continue
-        for result in results:
-            normalized_path = os.path.realpath(result.path)
-            if normalized_path in context_map:
-                result.context_description = context_map[normalized_path]
-        return results
+        return attach_path_contexts(self.db, results)
 
     def _get_document_content(self, document_id: str) -> str | None:
         """Get document content."""
