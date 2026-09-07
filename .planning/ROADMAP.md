@@ -152,16 +152,23 @@ Plans:
 **Plans:** 9 plans (4 original + 3 gap closure + 2 re-verification gap closure)
 
 Plans:
+**Wave 1**
 
 - [x] 05-01-PLAN.md — Migrate path_contexts to unified contexts table, rename repository, add SearchResult field (CTX-01)
 - [x] 05-02-PLAN.md — Implement context CLI: add (all types), list --type, remove/rm alias, prune (CTX-01, CTX-02)
-- [x] 05-03-PLAN.md — Attach path context descriptions to BM25, vector, and hybrid search results (CTX-03)
-- [x] 05-04-PLAN.md — Write unit tests for migration, repository, CLI, and search integration
 - [ ] 05-05-PLAN.md — Fix context_type storage and display (Gaps 1, 2, 3, 6)
 - [ ] 05-06-PLAN.md — Fix path normalization in search context attachment (Gap 4)
 - [ ] 05-07-PLAN.md — Fix status command DB path to respect DOCSIFT_DB_PATH (Gap 5)
 - [ ] 05-08-PLAN.md — Read-side fix: shared normalize_path + attach_path_contexts helper, real-SQL context matching, replace mock-bypassed tests (gap closure, CTX-03)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 05-03-PLAN.md — Attach path context descriptions to BM25, vector, and hybrid search results (CTX-03)
 - [ ] 05-09-PLAN.md — Write-side fix: canonical context add targets, dual-form upsert self-heal, prune normalization with real-SQL tests (gap closure, CTX-01, CTX-02)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 05-04-PLAN.md — Write unit tests for migration, repository, CLI, and search integration
 
 ## Progress
 
