@@ -11,8 +11,11 @@ from sif.database.schema import SchemaManager
 
 def _load_vec(db: sqlite3.Connection) -> bool:
     try:
+        import sqlite_vec
+
         db.enable_load_extension(True)
-        db.load_extension("vec0")
+        sqlite_vec.load(db)
+        db.enable_load_extension(False)
         return True
     except Exception:
         return False
