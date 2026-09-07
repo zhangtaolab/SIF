@@ -12,6 +12,7 @@ from sif.core.models import (
     DocumentChunk,
     PathContext,
 )
+from sif.utils.paths import normalize_path
 
 
 class CollectionRepository:
@@ -460,13 +461,28 @@ class ContextRepository:
         return cursor.rowcount > 0
 
     def delete_orphaned_paths(self) -> int:
-        """Delete path contexts whose target_id no longer exists in documents table."""
-        cursor = self.db.execute("""
-            DELETE FROM contexts
-            WHERE context_type = 'path'
-            AND target_id NOT IN (SELECT path FROM documents)
-        """)
-        return cursor.rowcount
+        """Delete path contexts whose normalized target matches no document path.
+
+        Both sides go through :func:`sif.utils.paths.normalize_path` — the
+        single canonical definition of "same file" shared with search context
+        attachment and ``context add`` — so a context stored under a
+        symlink-alias or ``~`` form of an existing document survives. SQL
+        cannot call realpath, so any SQL-set comparison would reintroduce the
+        CR-02 data loss; the comparison happens in Python. Count semantics
+        (number of deleted contexts) and the explicit-command-only contract
+        (D-12/D-13) are unchanged.
+        """
+        doc_paths = {
+            normalize_path(row[0]) for row in self.db.execute("SELECT path FROM documents")
+        }
+        orphans = [
+            context
+            for context in self.list_by_type("path")
+            if normalize_path(context.path) not in doc_paths
+        ]
+        for orphan in orphans:
+            self.delete(orphan.id)
+        return len(orphans)
 
     def _row_to_context(self, row: sqlite3.Row) -> PathContext:
         """Convert database row to PathContext."""
