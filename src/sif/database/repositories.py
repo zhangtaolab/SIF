@@ -429,6 +429,31 @@ class ContextRepository:
         )
         return context
 
+    def update_target(self, context_id: str, target_id: str) -> bool:
+        """Re-point a context's target_id to a new value.
+
+        Used by the ``context add`` self-heal path: when the user re-adds a
+        path whose legacy row still holds the verbatim (pre-normalization)
+        spelling, the row is merged into one canonical row instead of
+        duplicating. Fires only on explicit re-add — never a bulk migration.
+
+        Args:
+            context_id: Primary key of the context row.
+            target_id: New canonical target value.
+
+        Returns:
+            True if a row was updated, False if the id is unknown.
+        """
+        cursor = self.db.execute(
+            """
+            UPDATE contexts
+            SET target_id = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (target_id, datetime.now(timezone.utc).isoformat(), context_id),
+        )
+        return cursor.rowcount > 0
+
     def delete(self, context_id: str) -> bool:
         """Delete a context."""
         cursor = self.db.execute("DELETE FROM contexts WHERE id = ?", (context_id,))

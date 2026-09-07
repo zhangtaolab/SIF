@@ -9,6 +9,7 @@ from rich.table import Table
 from sif.core.models import PathContext
 from sif.database.database import Database
 from sif.database.repositories import CollectionRepository, ContextRepository
+from sif.utils.paths import normalize_path
 
 
 console = Console()
@@ -55,14 +56,27 @@ def context_add(
             actual_target = coll.id
         elif type == "global":
             actual_target = "global"
-        # For path type, actual_target = target (the path string)
+        elif type == "path":
+            # Canonical form: the same normalize_path used by search context
+            # attachment and prune, so the stored target byte-matches
+            # documents.path regardless of ~ or symlink-alias spelling.
+            actual_target = normalize_path(target)
 
         # Upsert: update if exists for this target+type, else create
         existing = repo.get_by_target(actual_target, type)
+        if not existing and type == "path":
+            # Dual-form lookup: a legacy row may still hold the verbatim
+            # spelling the user typed before write-side normalization
+            # existed. Re-point it to the canonical form (self-heal merge)
+            # instead of creating a duplicate row.
+            existing = repo.get_by_target(target, type)
+            if existing:
+                repo.update_target(existing.id, actual_target)
         if existing:
             existing.context = content
             repo.update(existing)
-            console.print(f"[green]Context updated for {type} '{target}'[/green]")
+            display_target = actual_target if type == "path" else target
+            console.print(f"[green]Context updated for {type} '{display_target}'[/green]")
         else:
             path_context = PathContext(
                 path=actual_target,
@@ -70,7 +84,8 @@ def context_add(
                 context_type=type,
             )
             repo.create(path_context)
-            console.print(f"[green]Context added for {type} '{target}'[/green]")
+            display_target = actual_target if type == "path" else target
+            console.print(f"[green]Context added for {type} '{display_target}'[/green]")
 
 
 @context_group.command("remove")

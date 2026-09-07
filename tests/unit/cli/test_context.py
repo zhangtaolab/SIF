@@ -245,7 +245,7 @@ class TestContextAddNormalizedPaths:
 
     def test_add_path_symlink_alias_stores_resolved_form(self, mock_db, alias_pair) -> None:
         """A path added via a symlink alias is stored in resolved form."""
-        resolved, alias = alias_pair
+        _, alias = alias_pair
         canonical = normalize_path(alias)
         runner = CliRunner()
         ctx_obj = {"index_path": MagicMock(exists=lambda: True)}
@@ -268,7 +268,9 @@ class TestContextAddNormalizedPaths:
         mock_repo.create.assert_called_once()
         stored = mock_repo.create.call_args[0][0]
         assert stored.path == canonical
-        assert canonical in result.output
+        # rich wraps long paths across lines in captured output; compare the
+        # newline-stripped rendering so the assertion is width-independent
+        assert canonical in result.output.replace("\n", "")
 
     def test_add_path_home_relative_expands(self, mock_db) -> None:
         """A ~/-relative path target is stored expanded and absolute."""
@@ -305,7 +307,7 @@ class TestContextAddNormalizedPaths:
         write-side normalization) is merged into one canonical row via
         update_target — create must never run.
         """
-        resolved, alias = alias_pair
+        _, alias = alias_pair
         canonical = normalize_path(alias)
         legacy = PathContext(path=alias, context="old text")
         runner = CliRunner()
@@ -315,7 +317,7 @@ class TestContextAddNormalizedPaths:
             mock_db_cls.return_value = mock_db
             mock_repo = MagicMock()
 
-            def lookup(target_id, context_type="path"):
+            def lookup(target_id, _context_type="path"):
                 return legacy if target_id == alias else None
 
             mock_repo.get_by_target.side_effect = lookup
@@ -334,11 +336,11 @@ class TestContextAddNormalizedPaths:
         mock_repo.create.assert_not_called()
         mock_repo.update.assert_called_once()
         assert legacy.context == "new text"
-        assert canonical in result.output
+        assert canonical in result.output.replace("\n", "")
 
     def test_readd_canonical_row_updates_without_repoint(self, mock_db, alias_pair) -> None:
         """Re-adding when the canonical row exists only refreshes content."""
-        resolved, alias = alias_pair
+        _, alias = alias_pair
         canonical = normalize_path(alias)
         existing = PathContext(path=canonical, context="old text")
         runner = CliRunner()
@@ -348,7 +350,7 @@ class TestContextAddNormalizedPaths:
             mock_db_cls.return_value = mock_db
             mock_repo = MagicMock()
 
-            def lookup(target_id, context_type="path"):
+            def lookup(target_id, _context_type="path"):
                 return existing if target_id == canonical else None
 
             mock_repo.get_by_target.side_effect = lookup
