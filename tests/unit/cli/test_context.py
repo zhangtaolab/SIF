@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
@@ -51,6 +52,7 @@ class TestContextAdd:
             mock_db_cls.return_value = mock_db
             mock_repo = MagicMock()
             mock_repo.get_by_target.return_value = None
+            mock_repo.list_by_type.return_value = []
             with patch(
                 "sif.cli.commands.context.ContextRepository",
                 return_value=mock_repo,
@@ -254,6 +256,7 @@ class TestContextAddNormalizedPaths:
             mock_db_cls.return_value = mock_db
             mock_repo = MagicMock()
             mock_repo.get_by_target.return_value = None
+            mock_repo.list_by_type.return_value = []
             with patch(
                 "sif.cli.commands.context.ContextRepository",
                 return_value=mock_repo,
@@ -283,6 +286,7 @@ class TestContextAddNormalizedPaths:
             mock_db_cls.return_value = mock_db
             mock_repo = MagicMock()
             mock_repo.get_by_target.return_value = None
+            mock_repo.list_by_type.return_value = []
             with patch(
                 "sif.cli.commands.context.ContextRepository",
                 return_value=mock_repo,
@@ -401,6 +405,61 @@ class TestContextAddNormalizedPaths:
         mock_repo.update.assert_called_once()
         mock_repo.update_target.assert_not_called()
         mock_repo.create.assert_not_called()
+
+    def test_readd_via_canonical_merges_legacy_alias_rows(
+        self, mock_db, alias_pair, tmp_path
+    ) -> None:
+        """REVIEW WR-02: re-adding a legacy-aliased file via canonical spelling merges.
+
+        The exact dual-form lookups both miss — the typed spelling is the
+        canonical form while the legacy rows hold symlink-alias spellings —
+        so the merge must fall back to normalized-key resolution: the newest
+        legacy row is re-pointed to canonical, the older duplicate spelling
+        is deleted, and no second row is created. The pre-fix code created a
+        duplicate the prune could never remove.
+        """
+        resolved, alias = alias_pair
+        canonical = normalize_path(resolved)
+        alias2_dir = tmp_path / "alias2"
+        alias2_dir.symlink_to(tmp_path / "vault")
+        alias2 = str(alias2_dir / "doc.md")
+        assert normalize_path(alias2) == canonical
+        legacy_old = PathContext(
+            path=alias2,
+            context="older text",
+            updated_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        )
+        legacy_new = PathContext(
+            path=alias,
+            context="old text",
+            # naive on purpose: migrated rows carry offset-less timestamps
+            updated_at=datetime(2026, 8, 1),
+        )
+        runner = CliRunner()
+        ctx_obj = {"index_path": MagicMock(exists=lambda: True)}
+
+        with patch("sif.cli.commands.context.Database") as mock_db_cls:
+            mock_db_cls.return_value = mock_db
+            mock_repo = MagicMock()
+            mock_repo.get_by_target.return_value = None
+            mock_repo.list_by_type.return_value = [legacy_old, legacy_new]
+            with patch(
+                "sif.cli.commands.context.ContextRepository",
+                return_value=mock_repo,
+            ):
+                result = runner.invoke(
+                    context_add,
+                    ["path", resolved, "new text"],
+                    obj=ctx_obj,
+                )
+
+        assert result.exit_code == 0
+        mock_repo.update_target.assert_called_once_with(legacy_new.id, canonical)
+        mock_repo.delete.assert_called_once_with(legacy_old.id)
+        mock_repo.create.assert_not_called()
+        mock_repo.update.assert_called_once()
+        assert legacy_new.context == "new text"
+        assert "Context updated" in result.output
 
     def test_collection_and_global_targets_not_normalized(self, mock_db) -> None:
         """normalize_path is never applied to collection or global targets.

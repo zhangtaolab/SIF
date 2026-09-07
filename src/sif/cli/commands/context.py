@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import timezone
+
 import click
 from rich.console import Console
 from rich.table import Table
@@ -16,6 +18,79 @@ console = Console()
 
 # Display truncation constant
 _CONTEXT_TRUNCATE_LEN = 50
+
+
+def _merge_key(context: PathContext) -> float:
+    """Tz-safe epoch-seconds sort key over ``updated_at`` for the self-heal merge.
+
+    Rows migrated from the legacy ``path_contexts`` table can carry
+    offset-less timestamps (naive datetimes); treating those as UTC keeps the
+    sort total over mixed naive/aware values instead of raising TypeError on
+    exactly the legacy rows the merge exists to collapse.
+    """
+    updated = context.updated_at
+    if updated.tzinfo is None:
+        updated = updated.replace(tzinfo=timezone.utc)
+    return updated.timestamp()
+
+
+def _resolve_path_target(target: str) -> str:
+    """Canonicalize a path target, raising a clean CLI error when un-expandable.
+
+    normalize_path is total (a stored row must never crash the read paths,
+    REVIEW WR-01), so an un-expandable ``~user`` typo is probed here and
+    surfaced as a ``click.ClickException`` instead of storing a target that
+    could never match any document — or leaking a raw traceback.
+    """
+    try:
+        expand_path(target)
+    except (RuntimeError, OSError, ValueError) as e:
+        raise click.ClickException(f"Cannot resolve path '{target}': {e}") from e
+    return normalize_path(target)
+
+
+def _self_heal_path_row(
+    repo: ContextRepository,
+    typed_target: str,
+    actual_target: str,
+) -> PathContext | None:
+    """Resolve a legacy path-context row for an explicit re-add (self-heal merge).
+
+    Exact dual-form lookup first (the verbatim spelling the user typed
+    before write-side normalization existed), then — REVIEW WR-02 —
+    normalized-key resolution over all path rows, because the exact
+    spellings miss the most likely re-add path: a legacy row stored under
+    ANY other alias of the same file (typically re-adding via the canonical
+    spelling while the legacy row holds the symlink-alias form). Every
+    historical spelling is merged into one canonical row: newest
+    updated_at wins, older duplicates are deleted, and no second row is
+    created. normalize_path is total (WR-01), so a malformed row cannot
+    crash the merge. Explicit re-add only — never a bulk migration.
+
+    Returns:
+        The merged row re-pointed to ``actual_target``, or None when no
+        historical spelling exists.
+    """
+    existing = repo.get_by_target(typed_target, "path")
+    if existing:
+        repo.update_target(existing.id, actual_target)
+        return existing
+    candidates = sorted(
+        (c for c in repo.list_by_type("path") if normalize_path(c.path) == actual_target),
+        key=_merge_key,
+        reverse=True,
+    )
+    if not candidates:
+        return None
+    winner, losers = candidates[0], candidates[1:]
+    # Collapse duplicates only when the re-point actually landed; otherwise
+    # signal "no merge" so the caller creates a fresh row rather than
+    # deleting rows whose content would be lost.
+    if not repo.update_target(winner.id, actual_target):
+        return None
+    for loser in losers:
+        repo.delete(loser.id)
+    return winner
 
 
 @click.group("context")
@@ -60,26 +135,17 @@ def context_add(
             # Canonical form: the same normalize_path used by search context
             # attachment and prune, so the stored target byte-matches
             # documents.path regardless of ~ or symlink-alias spelling.
-            # normalize_path is total (a stored row must never crash the read
-            # paths), so an un-expandable "~user" typo is probed here and
-            # surfaced as a clean CLI error instead of storing a target that
-            # could never match any document.
-            try:
-                expand_path(target)
-            except (RuntimeError, OSError, ValueError) as e:
-                raise click.ClickException(f"Cannot resolve path '{target}': {e}") from e
-            actual_target = normalize_path(target)
+            # Clean ClickException for an un-expandable "~user" typo
+            # (REVIEW WR-01).
+            actual_target = _resolve_path_target(target)
 
         # Upsert: update if exists for this target+type, else create
         existing = repo.get_by_target(actual_target, type)
         if not existing and type == "path":
-            # Dual-form lookup: a legacy row may still hold the verbatim
-            # spelling the user typed before write-side normalization
-            # existed. Re-point it to the canonical form (self-heal merge)
-            # instead of creating a duplicate row.
-            existing = repo.get_by_target(target, type)
-            if existing:
-                repo.update_target(existing.id, actual_target)
+            # Re-point a legacy row holding any historical spelling of the
+            # same file instead of creating a duplicate (self-heal merge,
+            # REVIEW WR-02).
+            existing = _self_heal_path_row(repo, target, actual_target)
         if existing:
             existing.context = content
             repo.update(existing)
