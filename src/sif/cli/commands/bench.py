@@ -130,7 +130,7 @@ def bench_cmd(  # noqa: C901, PLR0913, PLR0915
 
     # Output results
     if output_json:
-        console.print(json.dumps(metrics, indent=2))
+        click.echo(json.dumps(metrics, indent=2))
     else:
         table = Table(title=f"Benchmark Results: {fixture.name}")
         table.add_column("Metric", style="cyan")

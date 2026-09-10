@@ -180,9 +180,9 @@ def search_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     quiet = quiet or ctx.obj.get("quiet", False)
     if output_files or (quiet and not any([output_json, output_csv, output_md, output_xml])):
         for r in results:
-            console.print(r.path)
+            click.echo(r.path)
     elif output_json:
-        console.print(
+        click.echo(
             format_results_json(
                 add_line_numbers_to_results([r.to_dict() for r in results])
                 if line_numbers
@@ -190,7 +190,7 @@ def search_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             ),
         )
     elif output_csv:
-        console.print(
+        click.echo(
             format_results_csv(
                 add_line_numbers_to_results([r.to_dict() for r in results])
                 if line_numbers
@@ -198,7 +198,7 @@ def search_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             ),
         )
     elif output_md:
-        console.print(
+        click.echo(
             format_results_md(
                 add_line_numbers_to_results([r.to_dict() for r in results])
                 if line_numbers
@@ -207,7 +207,7 @@ def search_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             ),
         )
     elif output_xml:
-        console.print(
+        click.echo(
             format_results_xml(
                 add_line_numbers_to_results([r.to_dict() for r in results])
                 if line_numbers
@@ -344,9 +344,9 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     quiet = quiet or ctx.obj.get("quiet", False)
     if quiet and not output_json:
         for r in results:
-            console.print(r.path)
+            click.echo(r.path)
     elif output_json:
-        console.print(
+        click.echo(
             format_results_json(
                 add_line_numbers_to_results([r.to_dict() for r in results])
                 if line_numbers
@@ -530,9 +530,9 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     quiet = quiet or ctx.obj.get("quiet", False)
     if output_files or (quiet and not any([output_json, output_csv, output_md, output_xml])):
         for r in results:
-            console.print(r.path)
+            click.echo(r.path)
     elif output_json:
-        console.print(
+        click.echo(
             format_results_json(
                 add_line_numbers_to_results([r.to_dict() for r in results])
                 if line_numbers
@@ -540,7 +540,7 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             ),
         )
     elif output_csv:
-        console.print(
+        click.echo(
             format_results_csv(
                 add_line_numbers_to_results([r.to_dict() for r in results])
                 if line_numbers
@@ -548,7 +548,7 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             ),
         )
     elif output_md:
-        console.print(
+        click.echo(
             format_results_md(
                 add_line_numbers_to_results([r.to_dict() for r in results])
                 if line_numbers
@@ -557,7 +557,7 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             ),
         )
     elif output_xml:
-        console.print(
+        click.echo(
             format_results_xml(
                 add_line_numbers_to_results([r.to_dict() for r in results])
                 if line_numbers
