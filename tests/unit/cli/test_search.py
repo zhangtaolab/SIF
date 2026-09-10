@@ -1,5 +1,6 @@
 """Tests for search CLI commands."""
 
+import json
 from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
@@ -871,3 +872,197 @@ class TestQueryPipelineErrorHandling:
         result = self._invoke_query(mock_pipeline)
 
         assert isinstance(result.exception, ValueError)
+
+
+class TestMachineOutputNoWrap:
+    """Machine-format output must be byte-faithful regardless of width (CLI-JSON-WRAP).
+
+    Rich console.print word-wraps at the terminal width and inserts REAL newline
+    characters inside JSON string values, and interprets Rich markup, so bracket
+    sequences in document text can be swallowed. Machine formats are consumed by
+    scripts/agents/jq and must strict-parse under any COLUMNS width.
+    """
+
+    # 120 chars with spaces so Rich word-wrapping bites pre-fix
+    LONG_TEXT = "lorem ipsum " * 10
+    # 145-char path with spaces, like macOS "Application Support" paths
+    LONG_PATH = "/Users/forrest/notes archive/" * 5 + "deeply nested doc.md"
+
+    def _make_result(self, **overrides):
+        """Create a SearchResult with field overrides."""
+        from sif.core.models import SearchResult
+
+        fields = {
+            "document_id": "doc1",
+            "rank": 1,
+            "score": 0.95,
+            "title": "Test Doc",
+            "path": "/notes/test.md",
+            "collection_name": "notes",
+        }
+        fields.update(overrides)
+        return SearchResult(**fields)
+
+    def _invoke_query(self, mock_pipeline, args):
+        """Invoke query_cmd with the standard patch scaffold; return CliRunner result."""
+        runner = CliRunner()
+
+        mock_repo = MagicMock()
+        mock_repo.list_enabled.return_value = []
+
+        mock_manager = MagicMock()
+        mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager._model = MagicMock()
+
+        mock_db = MagicMock()
+
+        with (
+            patch("sif.cli.commands.search.Database", return_value=mock_db),
+            patch(
+                "sif.cli.commands.search.CollectionRepository",
+                return_value=mock_repo,
+            ),
+            patch(
+                "sif.cli.commands.search.SearchPipeline",
+                return_value=mock_pipeline,
+            ),
+            patch(
+                "sif.embedding.manager.EmbeddingManager.from_settings",
+                return_value=mock_manager,
+            ),
+            patch(
+                "sif.config.settings.get_settings",
+                return_value=MagicMock(
+                    model_name="all-MiniLM-L6-v2",
+                    reranker_model_name=None,
+                    reranker_model_path=None,
+                    model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"},
+                ),
+            ),
+        ):
+            return runner.invoke(
+                query_cmd,
+                args,
+                env={"COLUMNS": "80"},
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+    def test_search_json_parses_at_narrow_width(self):
+        """search_cmd --json strict-parses even when a highlight exceeds the width."""
+        runner = CliRunner()
+        highlight = self.LONG_TEXT
+
+        mock_repo = MagicMock()
+        mock_repo.list_enabled.return_value = []
+
+        mock_searcher = MagicMock()
+        mock_searcher.search.return_value = [self._make_result(highlights=[highlight])]
+
+        mock_db = MagicMock()
+
+        with (
+            patch("sif.cli.commands.search.Database", return_value=mock_db),
+            patch(
+                "sif.cli.commands.search.CollectionRepository",
+                return_value=mock_repo,
+            ),
+            patch(
+                "sif.cli.commands.search.BM25Searcher",
+                return_value=mock_searcher,
+            ),
+        ):
+            result = runner.invoke(
+                search_cmd,
+                ["query", "--json"],
+                env={"COLUMNS": "80"},
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data[0]["highlights"][0] == highlight
+
+    def test_query_json_parses_at_narrow_width(self):
+        """query_cmd --json strict-parses and round-trips a long snippet value."""
+        snippet = self.LONG_TEXT
+
+        mock_pipeline = MagicMock()
+        mock_pipeline.search.return_value = [self._make_result(snippet=snippet)]
+
+        result = self._invoke_query(mock_pipeline, ["query", "--json"])
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data[0]["snippet"] == snippet
+
+    def test_search_files_long_path_single_line(self):
+        """search_cmd --files emits each path as one unbroken line."""
+        runner = CliRunner()
+        long_path = self.LONG_PATH
+
+        mock_repo = MagicMock()
+        mock_repo.list_enabled.return_value = []
+
+        mock_searcher = MagicMock()
+        mock_searcher.search.return_value = [self._make_result(path=long_path)]
+
+        mock_db = MagicMock()
+
+        with (
+            patch("sif.cli.commands.search.Database", return_value=mock_db),
+            patch(
+                "sif.cli.commands.search.CollectionRepository",
+                return_value=mock_repo,
+            ),
+            patch(
+                "sif.cli.commands.search.BM25Searcher",
+                return_value=mock_searcher,
+            ),
+        ):
+            result = runner.invoke(
+                search_cmd,
+                ["query", "--files"],
+                env={"COLUMNS": "80"},
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code == 0
+        lines = result.output.splitlines()
+        assert long_path in lines
+
+    def test_search_csv_rows_single_line(self):
+        """search_cmd --csv keeps every result row on exactly one line."""
+        runner = CliRunner()
+        long_title = " ".join(["document title that keeps going and going"] * 3)
+        long_path = self.LONG_PATH
+
+        mock_repo = MagicMock()
+        mock_repo.list_enabled.return_value = []
+
+        mock_searcher = MagicMock()
+        mock_searcher.search.return_value = [self._make_result(title=long_title, path=long_path)]
+
+        mock_db = MagicMock()
+
+        with (
+            patch("sif.cli.commands.search.Database", return_value=mock_db),
+            patch(
+                "sif.cli.commands.search.CollectionRepository",
+                return_value=mock_repo,
+            ),
+            patch(
+                "sif.cli.commands.search.BM25Searcher",
+                return_value=mock_searcher,
+            ),
+        ):
+            result = runner.invoke(
+                search_cmd,
+                ["query", "--csv"],
+                env={"COLUMNS": "80"},
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code == 0
+        lines = result.output.splitlines()
+        assert lines[0] == "rank,score,title,path,collection"
+        assert lines[1:] == [f'"1","0.9500","{long_title}","{long_path}","notes"']
