@@ -161,6 +161,30 @@ note: |
   base_url::model key (dim cache keyed by base URL — confirmed by
   openai_dim_cache.json).
 
+## Supplement — 2026-09-11 independent re-confirmation (ModelScope backend)
+
+Re-ran tests 3, 6, 7 live from a fresh session against a different backend than
+the 2026-09-04 round (ModelScope Qwen3-Embedding-0.6B from local cache, vs LM
+Studio openai), fresh DB /tmp/sif-uat03-idem, 2 collections / 5 docs. All three
+passed again; evidence complements the 09-04 round rather than replacing it.
+
+- Test 3 (idempotency): 5 embed runs (4 default + 1 --force) -> runs 2-4
+  "Already embedded" / 0 chunks; final chunks=embeddings, orphan embeddings=0,
+  duplicate chunk_ids=0; vsearch returned each doc once at distinct scores
+  (0.4553/0.4419/0.4132).
+- Test 6 (CR-01 edit path): medium+ append to a note -> index update no crash,
+  default embed re-chunked + re-embedded (not skipped), vsearch "交叉编码器重排序
+  怎么工作" hit only-in-new-content rank1 0.6334; counts stayed 1:1.
+- Test 7 (CR-02 isolation): real CLI run with EmbeddingManager.embed patched to
+  fail on marker texts only — failing collection processed FIRST, successful
+  collection's commit still survived exit=1 ("Embedding failed for 1
+  collection(s)"); failed collection 0/0, clean retry skipped the success
+  ("Already embedded", no re-billing) and recovered the failure; orphans 0.
+
+Note: this session initially saw a stale pre-226f9ae copy of this file (tests
+3/6/7 pending); canonical state was restored mid-session. Canonical verdict was
+and remains: 7/7 pass, G-03-3 resolved.
+
 ## Summary
 
 total: 7
