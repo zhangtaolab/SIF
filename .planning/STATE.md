@@ -146,6 +146,7 @@ Total Plans in Phase: 9
 | 260914-g63 | Audit follow-up: fix deferred-items doc formats (05 resolved, 03 split), add missing sqlite3 import in cli/main.py, re-file mypy typing debt as open deferred item | 2026-09-14 | ae2cb6d | [260914-g63-audit-follow-up-fix-deferred-items-doc-f](./quick/260914-g63-audit-follow-up-fix-deferred-items-doc-f/) |
 | 260914-v5f | Fix exclude-all collection leak (audit BLOCKER 1): [] filters everything / None unfiltered sentinel guards in BM25+Vector searchers; 3 RED regression tests + 5 controls, suite 675 green | 2026-09-14 | b7381d6 | [260914-v5f-fix-exclude-all-collection-leak-empty-co](./quick/260914-v5f-fix-exclude-all-collection-leak-empty-co/) |
 | 260914-vyr | Rename distribution docsif→sif (audit BLOCKER 2): pyproject name/script/keywords, README installs, uv.lock root entry; new mcp/http extras (uvicorn only) so sif[mcp]/sif[http]/sif[embed] hints resolve; suite 675 green | 2026-09-14 | 4657ea8 | [260914-vyr-rename-distribution-docsif-to-sif-pyproj](./quick/260914-vyr-rename-distribution-docsif-to-sif-pyproj/) |
+| 260914-wxv | Fix stale command references (DOC-02/04): 5 CLI 'sif update' hints → real index-group commands, development.md 2 blocks + both live skills corrected; --help existence proofs + live hint verification, suite 675 green | 2026-09-14 | 484b82c | [260914-wxv-fix-stale-command-references-nonexistent](./quick/260914-wxv-fix-stale-command-references-nonexistent/) |
 
 ### Overrides
 
@@ -154,7 +155,7 @@ Total Plans in Phase: 9
 ## Session Continuity
 
 - **Last session:** 2026-09-14T15:11:42Z
-- **Stopped at:** Quick task 260914-vyr complete (audit BLOCKER 2: docsif→sif distribution rename)
+- **Stopped at:** Quick task 260914-wxv complete (stale command references, DOC-02/04)
 - **Resume file:** None
-- **Last action:** /gsd-quick 260914-vyr → distribution renamed to sif (pyproject name/scripts/keywords, new mcp/http extras, README install hints, uv.lock regen via `uv lock`, zero package churn); suite 675 passed / 0 failed; v1.0 audit BLOCKER 2 closed
+- **Last action:** /gsd-quick 260914-wxv → all 5 'sif update' hints point at real index-group commands (live-verified per command), development.md both blocks + both live skills corrected, repo sweep zero hits; suite 675 passed / 0 failed
 - **Next expected action:** Pre-close closure set from v1.0-MILESTONE-AUDIT.md: phases 06/07 verification + stale command hints (DOC-02/04), typing debt (139 mypy errors), then /gsd-complete-milestone
