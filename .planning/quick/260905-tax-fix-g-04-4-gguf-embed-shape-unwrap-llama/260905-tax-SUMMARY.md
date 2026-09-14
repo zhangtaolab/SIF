@@ -4,7 +4,7 @@ plan: 01
 subsystem: embedding
 tags: [embedding, llama-cpp, gguf, g-04-4, uat-gap, shape-handling]
 requires: [G-04-4 open, llama-cpp-python 0.3.20]
-provides: [shape-aware LlamaCppEmbedder.embed, flat list[float] GGUF embeddings, fail-fast shape validation]
+provides: [shape-aware LlamaCppEmbedder.embed, "flat list[float] GGUF embeddings", fail-fast shape validation]
 affects: [src/sif/embedding/embedder.py, tests/unit/embedding/test_embedder_impl.py]
 tech-stack:
   added: []
