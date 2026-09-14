@@ -143,6 +143,7 @@ Total Plans in Phase: 9
 | 260905-sxc | Fix G-04-3 HyDE unreachable: add create_completion to LlamaCppEmbedder wrapping llama_cpp completion with openai-style return shape | 2026-09-05 | 67c9ecf | [260905-sxc-fix-g-04-3-hyde-unreachable-add-create-c](./quick/260905-sxc-fix-g-04-3-hyde-unreachable-add-create-c/) |
 | 260905-tax | Fix G-04-4 GGUF embed shape: unwrap llama_cpp list-of-embeddings, mean-pool token-level output before normalization | 2026-09-05 | 958262b | [260905-tax-fix-g-04-4-gguf-embed-shape-unwrap-llama](./quick/260905-tax-fix-g-04-4-gguf-embed-shape-unwrap-llama/) |
 | 260910-kps | Fix CLI machine-output corruption: emit --json/--csv/--md/--xml/--files via click.echo so Rich neither word-wraps nor markup-interprets; regression tests under forced COLUMNS=80 | 2026-09-10 | 4d4bb02 | [260910-kps-fix-json-output-emit-via-click-echo-no-w](./quick/260910-kps-fix-json-output-emit-via-click-echo-no-w/) |
+| 260914-g63 | Audit follow-up: fix deferred-items doc formats (05 resolved, 03 split), add missing sqlite3 import in cli/main.py, re-file mypy typing debt as open deferred item | 2026-09-14 | ae2cb6d | [260914-g63-audit-follow-up-fix-deferred-items-doc-f](./quick/260914-g63-audit-follow-up-fix-deferred-items-doc-f/) |
 
 ### Overrides
 
@@ -150,8 +151,8 @@ Total Plans in Phase: 9
 
 ## Session Continuity
 
-- **Last session:** 2026-09-10T07:13:06Z
-- **Stopped at:** Quick task 260910-kps complete (machine-format output via click.echo)
+- **Last session:** 2026-09-14T03:38:30Z
+- **Stopped at:** Quick task 260914-g63 complete (audit follow-up: deferred-items doc formats + sqlite3 import)
 - **Resume file:** None
-- **Last action:** /gsd-quick 260910-kps → search/bench machine formats (--json/--csv/--md/--xml/--files) emit via click.echo; TestMachineOutputNoWrap locks strict json.loads under COLUMNS=80; suite 667 passed 0 failed
-- **Next expected action:** v1.0 phases all executed and verified. Optional: two deferred follow-ups in 04-UAT.md (embedding cache key omits model_path; caplog test pollution), then /gsd-progress or /gsd-complete-milestone when ready to close v1.0.
+- **Last action:** /gsd-quick 260914-g63 → audit-uat now reports exactly 1 open deferred item (phase-03 mypy strict-mode typing debt, re-filed 2026-09-14); cli/main.py sqlite3 NameError fixed (mypy 140→139); suite 665 passed / 2 failed (pre-existing caplog pollution, WINDOWS.md #4)
+- **Next expected action:** v1.0 phases all executed and verified. Optional: typing-hardening /gsd-phase for the 139-error mypy debt (open deferred item in phase 03); two deferred follow-ups in 04-UAT.md (embedding cache key omits model_path; caplog test pollution), then /gsd-progress or /gsd-complete-milestone when ready to close v1.0.
