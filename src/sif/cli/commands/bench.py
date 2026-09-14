@@ -61,7 +61,7 @@ def bench_cmd(  # noqa: C901, PLR0913, PLR0915
     index_path = ctx.obj["index_path"]
 
     if not index_path.exists():
-        console.print("[yellow]No index found. Run 'sif update' first.[/yellow]")
+        console.print("[yellow]No index found. Run 'sif index update' first.[/yellow]")
         return
 
     # Load fixture

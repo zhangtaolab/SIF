@@ -104,7 +104,7 @@ def status_cmd(ctx: click.Context) -> None:
         index_path = get_settings().get_db_path()
 
     if not index_path.exists():
-        console.print("[yellow]No index found. Run 'sif update' to create one.[/yellow]")
+        console.print("[yellow]No index found. Run 'sif index update' to create one.[/yellow]")
         return
 
     try:
