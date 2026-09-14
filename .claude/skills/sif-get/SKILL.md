@@ -68,7 +68,7 @@ Requires sif CLI to be installed and available in PATH.
 5. **Error handling**
    - If return code != 0: return stderr content to LLM for interpretation
    - If document not found: stderr will indicate — let LLM explain to user
-   - If no index exists: note user needs to run `sif update` first
+   - If no index exists: note user needs to run `sif index update` first
 
 </process>
 

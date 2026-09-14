@@ -355,7 +355,7 @@ Or via environment variable:
 
 ```bash
 export SIF_LOG_LEVEL=DEBUG
-sif search "query"
+sif search search "query"
 ```
 
 ### IDE Setup
@@ -437,12 +437,13 @@ def migrate_v2_to_v3(conn: sqlite3.Connection) -> None:
 # Use test database
 export SIF_DB_PATH=./test.db
 
-# Index test data
-sif collection create test
-sif index add test ./test-data
+# Add test data as a collection, then index and embed it
+sif collection add ./test-data --name test
+sif index update
+sif index embed
 
 # Run queries
-sif search "test query"
+sif search search "test query"
 ```
 
 ## Adding New Features
