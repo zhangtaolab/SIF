@@ -144,6 +144,7 @@ Total Plans in Phase: 9
 | 260905-tax | Fix G-04-4 GGUF embed shape: unwrap llama_cpp list-of-embeddings, mean-pool token-level output before normalization | 2026-09-05 | 958262b | [260905-tax-fix-g-04-4-gguf-embed-shape-unwrap-llama](./quick/260905-tax-fix-g-04-4-gguf-embed-shape-unwrap-llama/) |
 | 260910-kps | Fix CLI machine-output corruption: emit --json/--csv/--md/--xml/--files via click.echo so Rich neither word-wraps nor markup-interprets; regression tests under forced COLUMNS=80 | 2026-09-10 | 4d4bb02 | [260910-kps-fix-json-output-emit-via-click-echo-no-w](./quick/260910-kps-fix-json-output-emit-via-click-echo-no-w/) |
 | 260914-g63 | Audit follow-up: fix deferred-items doc formats (05 resolved, 03 split), add missing sqlite3 import in cli/main.py, re-file mypy typing debt as open deferred item | 2026-09-14 | ae2cb6d | [260914-g63-audit-follow-up-fix-deferred-items-doc-f](./quick/260914-g63-audit-follow-up-fix-deferred-items-doc-f/) |
+| 260914-v5f | Fix exclude-all collection leak (audit BLOCKER 1): [] filters everything / None unfiltered sentinel guards in BM25+Vector searchers; 3 RED regression tests + 5 controls, suite 675 green | 2026-09-14 | b7381d6 | [260914-v5f-fix-exclude-all-collection-leak-empty-co](./quick/260914-v5f-fix-exclude-all-collection-leak-empty-co/) |
 
 ### Overrides
 
@@ -151,8 +152,8 @@ Total Plans in Phase: 9
 
 ## Session Continuity
 
-- **Last session:** 2026-09-14T03:38:30Z
-- **Stopped at:** Quick task 260914-g63 complete (audit follow-up: deferred-items doc formats + sqlite3 import)
+- **Last session:** 2026-09-14T14:25:43Z
+- **Stopped at:** Quick task 260914-v5f complete (audit BLOCKER 1: exclude-all collection leak)
 - **Resume file:** None
-- **Last action:** /gsd-quick 260914-g63 → audit-uat now reports exactly 1 open deferred item (phase-03 mypy strict-mode typing debt, re-filed 2026-09-14); cli/main.py sqlite3 NameError fixed (mypy 140→139); suite 665 passed / 2 failed (pre-existing caplog pollution, WINDOWS.md #4)
-- **Next expected action:** v1.0 phases all executed and verified. Optional: typing-hardening /gsd-phase for the 139-error mypy debt (open deferred item in phase 03); two deferred follow-ups in 04-UAT.md (embedding cache key omits model_path; caplog test pollution), then /gsd-progress or /gsd-complete-milestone when ready to close v1.0.
+- **Last action:** /gsd-quick 260914-v5f → exclude-all sentinel guards in BM25Searcher/VectorSearcher ([] filters everything, None unfiltered); suite 675 passed / 0 failed; v1.0 audit BLOCKER 1 closed
+- **Next expected action:** Pre-close closure set from v1.0-MILESTONE-AUDIT.md: BLOCKER 2 (docsif→sif distribution rename), phases 06/07 verification + stale command hints (DOC-02/04), typing debt (139 mypy errors), then /gsd-complete-milestone
