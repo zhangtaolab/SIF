@@ -44,6 +44,16 @@ class BM25Searcher:
         if options is None:
             options = SearchOptions()
 
+        # Exclude-all sentinel: an empty list means every collection is
+        # excluded (the CLI emits [] when its enabled-collections resolution
+        # comes back empty — search.py ~163/329/468, bench.py ~105) and must
+        # return zero results; None means unfiltered. The truthiness check
+        # below would otherwise treat [] as "no filter" and leak all
+        # documents, and an empty list must never reach the placeholder
+        # builder because IN () is invalid SQLite syntax.
+        if options.collection_ids is not None and not options.collection_ids:
+            return []
+
         # Build the FTS query
         fts_query = self._build_fts_query(query)
 

@@ -38,6 +38,15 @@ class VectorSearcher:
         """Search documents by vector similarity."""
         if options is None:
             options = SearchOptions()
+
+        # Exclude-all sentinel: an empty list means every collection is
+        # excluded (the CLI emits [] when its enabled-collections resolution
+        # comes back empty) and must return zero results; None means
+        # unfiltered. Without this guard the truthiness check in
+        # _search_with_vec treats [] as "no filter" and leaks all documents.
+        if options.collection_ids is not None and not options.collection_ids:
+            return []
+
         return self._search_with_vec(query_embedding, options)
 
     def _search_with_vec(

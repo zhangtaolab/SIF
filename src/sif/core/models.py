@@ -243,6 +243,8 @@ class SearchOptions:
 
     limit: int = 10
     offset: int = 0
+    # Sentinel contract: None = no collection filter (unfiltered, incl. --all);
+    # [] = exclude-all — every collection excluded, searchers return zero results.
     collection_ids: list[str] | None = None
     min_score: float = 0.0
     include_content: bool = False
