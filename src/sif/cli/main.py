@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 import click
@@ -163,7 +164,7 @@ def cleanup_cmd(ctx: click.Context) -> None:
                     WHERE document_id NOT IN (SELECT id FROM documents)
                 """)
                 embeddings_removed = cursor.rowcount
-            except sqlite3.OperationalError:  # noqa: F821
+            except sqlite3.OperationalError:
                 embeddings_removed = 0
 
             # Clean up expired LLM cache
