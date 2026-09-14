@@ -5,8 +5,8 @@ current_phase: 06
 current_phase_name: Documentation Audit & Refresh
 current_plan: Not started
 status: planning
-stopped_at: Phase 05 complete, ready to plan Phase 06
-last_updated: "2026-09-07T04:59:35.958Z"
+stopped_at: Quick task 260914-vyr complete (audit BLOCKER 2 closed)
+last_updated: "2026-09-14T15:11:42Z"
 state_head: c2a5302c16a03d11a6596f20cfd3529c907098d5
 progress:
   total_phases: 9
@@ -51,7 +51,7 @@ Total Plans in Phase: 9
 
 - **Requirements mapped:** 31/31 v1 + 7 DOC requirements
 - **Phases defined:** 9
-- **Tests passing:** 667 passed, 0 failed (post 260910-kps; suite's 5 conditional skips inactive in sqlite-vec-equipped env)
+- **Tests passing:** 675 passed, 0 failed (post 260914-vyr; suite's 5 conditional skips inactive in sqlite-vec-equipped env)
 - **Known blockers:** 0
 
 **Per-Plan Metrics:**
@@ -145,6 +145,7 @@ Total Plans in Phase: 9
 | 260910-kps | Fix CLI machine-output corruption: emit --json/--csv/--md/--xml/--files via click.echo so Rich neither word-wraps nor markup-interprets; regression tests under forced COLUMNS=80 | 2026-09-10 | 4d4bb02 | [260910-kps-fix-json-output-emit-via-click-echo-no-w](./quick/260910-kps-fix-json-output-emit-via-click-echo-no-w/) |
 | 260914-g63 | Audit follow-up: fix deferred-items doc formats (05 resolved, 03 split), add missing sqlite3 import in cli/main.py, re-file mypy typing debt as open deferred item | 2026-09-14 | ae2cb6d | [260914-g63-audit-follow-up-fix-deferred-items-doc-f](./quick/260914-g63-audit-follow-up-fix-deferred-items-doc-f/) |
 | 260914-v5f | Fix exclude-all collection leak (audit BLOCKER 1): [] filters everything / None unfiltered sentinel guards in BM25+Vector searchers; 3 RED regression tests + 5 controls, suite 675 green | 2026-09-14 | b7381d6 | [260914-v5f-fix-exclude-all-collection-leak-empty-co](./quick/260914-v5f-fix-exclude-all-collection-leak-empty-co/) |
+| 260914-vyr | Rename distribution docsif→sif (audit BLOCKER 2): pyproject name/script/keywords, README installs, uv.lock root entry; new mcp/http extras (uvicorn only) so sif[mcp]/sif[http]/sif[embed] hints resolve; suite 675 green | 2026-09-14 | 4657ea8 | [260914-vyr-rename-distribution-docsif-to-sif-pyproj](./quick/260914-vyr-rename-distribution-docsif-to-sif-pyproj/) |
 
 ### Overrides
 
@@ -152,8 +153,8 @@ Total Plans in Phase: 9
 
 ## Session Continuity
 
-- **Last session:** 2026-09-14T14:25:43Z
-- **Stopped at:** Quick task 260914-v5f complete (audit BLOCKER 1: exclude-all collection leak)
+- **Last session:** 2026-09-14T15:11:42Z
+- **Stopped at:** Quick task 260914-vyr complete (audit BLOCKER 2: docsif→sif distribution rename)
 - **Resume file:** None
-- **Last action:** /gsd-quick 260914-v5f → exclude-all sentinel guards in BM25Searcher/VectorSearcher ([] filters everything, None unfiltered); suite 675 passed / 0 failed; v1.0 audit BLOCKER 1 closed
-- **Next expected action:** Pre-close closure set from v1.0-MILESTONE-AUDIT.md: BLOCKER 2 (docsif→sif distribution rename), phases 06/07 verification + stale command hints (DOC-02/04), typing debt (139 mypy errors), then /gsd-complete-milestone
+- **Last action:** /gsd-quick 260914-vyr → distribution renamed to sif (pyproject name/scripts/keywords, new mcp/http extras, README install hints, uv.lock regen via `uv lock`, zero package churn); suite 675 passed / 0 failed; v1.0 audit BLOCKER 2 closed
+- **Next expected action:** Pre-close closure set from v1.0-MILESTONE-AUDIT.md: phases 06/07 verification + stale command hints (DOC-02/04), typing debt (139 mypy errors), then /gsd-complete-milestone
