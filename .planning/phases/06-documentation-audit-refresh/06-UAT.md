@@ -166,8 +166,10 @@ skipped: 0
 
 ```yaml
 - gap_id: G-06-1
+  resolved_by: 06-08-PLAN.md
+  resolved_at: 2026-09-15
   truth: "docs/cli-reference.md option tables match the live Click CLI params for every command"
-  status: failed
+  status: resolved
   reason: >-
     docs-generate diff (restored after capture) proves drift: search query/search/vsearch tables
     (docs/cli-reference.md:434-450, 468-481, 499-508) omit -q/--quiet added in 2f7cbb4;
@@ -189,8 +191,10 @@ skipped: 0
     - "Regenerate/resync option tables; fix generator's --config default sourcing"
   debug_session: ""
 - gap_id: G-06-2
+  resolved_by: 06-08-PLAN.md
+  resolved_at: 2026-09-15
   truth: "docs/configuration.md defaults and validation rules match live Settings (model_type=modelscope, reranker_model_type=sentence_transformers, huggingface rejected, no phantom env vars)"
-  status: failed
+  status: resolved
   reason: >-
     SIF_MODEL_TYPE default documented sentence_transformers (configuration.md:59,:130) vs live
     modelscope (settings.py:61-64); SIF_RERANKER_MODEL_TYPE documented transformers (:75,:135) vs
@@ -212,8 +216,10 @@ skipped: 0
     - "Sync defaults + validation table to settings.py; delete SIF_ENV_FILE row"
   debug_session: ""
 - gap_id: G-06-3
+  resolved_by: 06-09-PLAN.md
+  resolved_at: 2026-09-15
   truth: "docs/quickstart.md JSON-piping example matches the CLI's actual --json output shape"
-  status: failed
+  status: resolved
   reason: >-
     quickstart.md:359 uses jq '.results[].document_path' but the CLI emits a top-level array with
     key 'path' (search.py:44-48; SearchResult.to_dict core/models.py:223-228). Correct filter is
@@ -230,8 +236,10 @@ skipped: 0
     - "Change example to jq '.[].path'"
   debug_session: ""
 - gap_id: G-06-4
+  resolved_by: 06-09-PLAN.md
+  resolved_at: 2026-09-15
   truth: "README.md example flags exist on the live CLI"
-  status: failed
+  status: resolved
   reason: >-
     README.md:89 uses `sif collection remove old-collection --force`; live command has no --force
     — confirmation skip flag is --yes (sif collection remove --help; cli-reference.md:201-205).
@@ -247,8 +255,10 @@ skipped: 0
     - "Replace --force with --yes"
   debug_session: ""
 - gap_id: G-06-5
+  resolved_by: 06-10-PLAN.md
+  resolved_at: 2026-09-15
   truth: "docs/architecture.md module structure and diagrams match the current src/sif/ tree (unified mcp/, no mcp_server/)"
-  status: failed
+  status: resolved
   reason: >-
     architecture.md:276-281 documents mcp_server/ deleted in phase 09 (ls src/sif/mcp_server fails);
     :282-290 lists mcp/ as 'Legacy functional' with nonexistent server_http.py/transport_stdio.py/
@@ -274,8 +284,10 @@ skipped: 0
     - "Rewrite module tree + Mermaid against live src/sif/; fix collection add arg order; drop HuggingFace factory row; move implemented items out of 'future'"
   debug_session: ""
 - gap_id: G-06-6
+  resolved_by: 06-09-PLAN.md
+  resolved_at: 2026-09-15
   truth: "docs/models.md EmbeddingConfig default model_type matches src/sif/models/embedding.py"
-  status: failed
+  status: resolved
   reason: >-
     models.md:283 shows model_type default ModelType.SENTENCE_TRANSFORMERS; live default is
     ModelType.MODELSCOPE (src/sif/models/embedding.py:21). All other dataclass field listings
@@ -292,8 +304,10 @@ skipped: 0
     - "Sync :283 default to ModelType.MODELSCOPE"
   debug_session: ""
 - gap_id: G-06-7
+  resolved_by: 06-09-PLAN.md
+  resolved_at: 2026-09-15
   truth: "docs/mcp-server.md documents all three mcp subcommands and the real default db path"
-  status: failed
+  status: resolved
   reason: >-
     daemon subcommand (live: sif mcp daemon) is undocumented — Transport Types section
     (mcp-server.md:30-64) covers stdio/http only; SIF_DB_PATH default stated ~/.sif/index.sqlite
@@ -313,8 +327,10 @@ skipped: 0
     - "Document sif mcp daemon; fix SIF_DB_PATH default to ~/.local/share/sif/sif.db"
   debug_session: ""
 - gap_id: G-06-8
+  resolved_by: 06-08-PLAN.md
+  resolved_at: 2026-09-15
   truth: "make docs-generate produces docs that pass the project's own docs validator (make docs-test)"
-  status: failed
+  status: resolved
   reason: >-
     Generator scripts emit invalid commands: generate_config_ref.py:294-297 emits nonexistent
     `sif config show [--with-defaults]`; generate_cli_ref.py:260 emits positional `sif index update
