@@ -35,4 +35,4 @@ jobs:
         run: |
           python scripts/generate_cli_ref.py
           python scripts/generate_config_ref.py
-          git diff --exit-code docs/cli-reference.md docs/configuration.md || true
+          git diff --exit-code docs/cli-reference.md docs/configuration.md

@@ -11,8 +11,10 @@ from typing import Any, ClassVar
 import click
 import pytest
 from click.testing import CliRunner
+from pydantic import ValidationError
 
 from sif.cli.main import cli
+from sif.config.settings import Settings
 
 
 # Files to validate
@@ -392,10 +394,27 @@ class TestDocsCodeBlocks:
             "SIF_BM25_K1",
             "SIF_BM25_B",
             "SIF_RRF_K",
+            "SIF_ENV_FILE",
         ]
         found = [p for p in phantoms if p in content]
         if found:
             pytest.fail(f"Phantom env vars found in configuration.md: {found}")
+
+    def test_configuration_model_type_validation_is_truthful(self) -> None:
+        """configuration.md must match the live model_type validator (WR-07)."""
+        # Direction 1: the backend removed by WR-07 is rejected by live Settings
+        with pytest.raises(ValidationError):
+            Settings.model_validate({"model_type": "huggingface"})
+
+        # Direction 2: the regenerated doc never lists it as valid
+        config_file = Path("docs/configuration.md")
+        if not config_file.exists():
+            pytest.skip("configuration.md not found")
+        content = config_file.read_text()
+        assert "huggingface" not in content.lower(), (
+            "docs/configuration.md lists 'huggingface' as a valid model_type, "
+            "but Settings.validate_model_type rejects it (WR-07)"
+        )
 
     def test_cli_reference_has_all_commands(self) -> None:
         """Verify cli-reference.md has all commands from Click tree."""

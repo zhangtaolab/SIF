@@ -15,10 +15,10 @@ export SIF_LOG_LEVEL=DEBUG
 
 ### .env File
 
-Create a `.env` file in your working directory or home directory:
+Create a `.env` file in your working directory:
 
 ```bash
-# ~/.env or ./.env
+# ./.env — read from the directory where you invoke sif
 SIF_DB_PATH=~/.local/share/sif/sif.db
 SIF_MODEL_NAME=Qwen/Qwen3-Embedding-0.6B
 SIF_LOG_LEVEL=INFO
@@ -27,9 +27,8 @@ SIF_LOG_LEVEL=INFO
 ### Configuration Precedence
 
 1. Environment variables (highest priority)
-2. `.env` file in current directory
-3. `.env` file in home directory
-4. Default values (lowest priority)
+2. `.env` file in the working directory where you invoke `sif`
+3. Default values (lowest priority)
 
 ## Configuration Options
 
@@ -56,7 +55,7 @@ SIF_LOG_LEVEL=INFO
 | `SIF_EMBEDDING_DIM` | int | `1024` | Embedding dimension |
 | `SIF_MAX_TOKENS` | int | `512` | Maximum tokens per input |
 | `SIF_BATCH_SIZE` | int | `32` | Batch size for inference |
-| `SIF_MODEL_TYPE` | str | `sentence_transformers` | Embedding model type (gguf, sentence_transformers, openai, modelscope) (validated by `validate_model_type`) |
+| `SIF_MODEL_TYPE` | str | `modelscope` | Embedding model type (gguf, sentence_transformers, openai, modelscope) (validated by `validate_model_type`) |
 | `SIF_N_GPU_LAYERS` | int | `0` | Number of GPU layers for GGUF models |
 
 ### API Settings
@@ -72,7 +71,7 @@ SIF_LOG_LEVEL=INFO
 |----------|------|---------|-------------|
 | `SIF_RERANKER_MODEL_NAME` | str | `Qwen/Qwen3-Reranker-0.6B` | Reranker model name |
 | `SIF_RERANKER_MODEL_PATH` | pathlib._local.Path | None | `None` | Path to local reranker model file |
-| `SIF_RERANKER_MODEL_TYPE` | str | `transformers` | Reranker model type (gguf, sentence_transformers, transformers) |
+| `SIF_RERANKER_MODEL_TYPE` | str | `sentence_transformers` | Reranker model type (gguf, sentence_transformers) |
 | `SIF_RERANKER_BATCH_SIZE` | int | `32` | Batch size for reranker inference |
 
 ### Chunking Settings
@@ -110,7 +109,7 @@ SIF validates configuration on startup. Invalid values will raise errors:
 
 | Field | Rule | Error Example |
 |-------|------|---------------|
-| `model_type` | Must be one of: `sentence_transformers`, `gguf`, `openai`, `modelscope`, `huggingface` | `Invalid model_type: xyz` |
+| `model_type` | Must be one of: `gguf`, `modelscope`, `openai`, `sentence_transformers` | `Invalid model_type: xyz. Must be one of ['gguf', 'modelscope', 'openai', 'sentence_transformers']` |
 | `api_base` | Must start with `http://` or `https://` | `api_base must be an HTTP or HTTPS URL` |
 | `log_level` | Must be one of: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` | `Invalid log level: TRACE` |
 | `chunk_size` | Minimum 100 | `ensure this value is greater than or equal to 100` |
@@ -127,12 +126,12 @@ SIF_DB_PATH=~/.local/share/sif/sif.db
 # Embedding Model
 SIF_MODEL_NAME=Qwen/Qwen3-Embedding-0.6B
 SIF_EMBEDDING_DIM=1024
-SIF_MODEL_TYPE=sentence_transformers
+SIF_MODEL_TYPE=modelscope
 SIF_BATCH_SIZE=32
 
 # Reranker
 SIF_RERANKER_MODEL_NAME=Qwen/Qwen3-Reranker-0.6B
-SIF_RERANKER_MODEL_TYPE=transformers
+SIF_RERANKER_MODEL_TYPE=sentence_transformers
 SIF_RERANKER_BATCH_SIZE=32
 
 # API (for OpenAI-compatible backends)
@@ -166,7 +165,7 @@ SIF validates configuration on startup. Invalid configurations will produce erro
 ```bash
 $ export SIF_MODEL_TYPE=invalid
 sif collection list
-Error: Invalid model_type: invalid. Must be one of ['gguf', 'huggingface', 'modelscope', 'openai', 'sentence_transformers']
+Error: Invalid model_type: invalid. Must be one of ['gguf', 'modelscope', 'openai', 'sentence_transformers']
 ```
 
 ## Viewing Current Configuration
@@ -176,9 +175,6 @@ To see your current configuration:
 ```bash
 # View effective configuration
 sif status
-
-# View with verbose output
-sif status --verbose
 ```
 
 ## Best Practices
@@ -193,17 +189,14 @@ sif status --verbose
 
 ### Configuration Not Loading
 
-Check if the `.env` file is being read:
+SIF reads a file named exactly `.env` from the working directory where you invoke `sif`; no path override variable is supported:
 
 ```bash
-# Check file location
-ls -la .env ~/.env
+# Check the file is named .env in the working directory
+ls -la .env
 
 # Verify file permissions
 chmod 644 .env
-
-# Test with explicit path
-export SIF_ENV_FILE=/path/to/.env
 ```
 
 ### Environment Variables Not Applied

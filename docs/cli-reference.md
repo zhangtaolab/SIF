@@ -10,7 +10,7 @@ These options can be used with any command:
 |--------|-------|------|---------|-------------|
 | `--version` | `` | flag | `false` | Show the version and exit. |
 | `--index` | `-i` | path | — | Path to the index database |
-| `--config` | `-c` | path | `/Users/forrest/.sif/config.yaml` | Path to the configuration file |
+| `--config` | `-c` | path | `~/.config/sif` | Path to the configuration file |
 | `--verbose` | `-v` | flag | `false` | Enable verbose output |
 | `--quiet` | `-q` | flag | `false` | Suppress non-error output |
 
@@ -284,7 +284,7 @@ sif context list [OPTIONS]
 
 | Option | Short | Type | Default | Description |
 |--------|-------|------|---------|-------------|
-| `--type` | `—` | choice | — | Filter by context type |
+| `--type` | `—` | choice [path|collection|global] | — | Filter by context type |
 
 ### `context prune`
 
@@ -383,9 +383,9 @@ sif index embed [OPTIONS]
 |--------|-------|------|---------|-------------|
 | `--collection` | `-c` | text | — | Embed specific collection only |
 | `--force` | `-f` | flag | `false` | Force re-embed all documents |
-| `--chunk-strategy` | `—` | text | `auto` | Chunking strategy |
+| `--chunk-strategy` | `—` | choice [auto|fixed|markdown|code] | `auto` | Chunking strategy |
 | `--model` | `-m` | text | — | Embedding model name |
-| `--model-type` | `—` | choice | — | Embedding model type override |
+| `--model-type` | `—` | choice [sentence_transformers|gguf|openai|modelscope] | — | Embedding model type override |
 
 ### `index status`
 
@@ -447,7 +447,8 @@ sif search query [OPTIONS]
 | `--md` | `—` | flag | `false` | Output as Markdown |
 | `--xml` | `—` | flag | `false` | Output as XML |
 | `--files` | `—` | flag | `false` | Output file paths only |
-| `--model-type` | `—` | choice | — | Embedding model type override |
+| `--model-type` | `—` | choice [sentence_transformers|gguf|openai|modelscope] | — | Embedding model type override |
+| `--quiet` | `-q` | flag | `false` | Suppress non-error output |
 
 ### `search search`
 
@@ -479,6 +480,7 @@ sif search search [OPTIONS]
 | `--md` | `—` | flag | `false` | Output as Markdown |
 | `--xml` | `—` | flag | `false` | Output as XML |
 | `--files` | `—` | flag | `false` | Output file paths only |
+| `--quiet` | `-q` | flag | `false` | Suppress non-error output |
 
 ### `search vsearch`
 
@@ -505,7 +507,8 @@ sif search vsearch [OPTIONS]
 | `--full` | `—` | flag | `false` | Include full content |
 | `--line-numbers` | `—` | flag | `false` | Show line numbers in content |
 | `--json` | `—` | flag | `false` | Output as JSON |
-| `--model-type` | `—` | choice | — | Embedding model type override |
+| `--model-type` | `—` | choice [sentence_transformers|gguf|openai|modelscope] | — | Embedding model type override |
+| `--quiet` | `-q` | flag | `false` | Suppress non-error output |
 
 ## MCP Commands
 
@@ -542,6 +545,7 @@ sif mcp http [OPTIONS]
 | `--host` | `-h` | text | `127.0.0.1` | Host to bind to |
 | `--port` | `-p` | integer | `3000` | Port to listen on |
 | `--reload` | `—` | flag | `false` | Enable auto-reload |
+| `--cors-origins` | `—` | text[] | — | CORS allowed origins |
 
 ### `mcp stdio`
 
@@ -587,7 +591,7 @@ sif bench [OPTIONS]
 | `--candidate-limit` | `-C` | integer | `20` | Reranker candidate pool size |
 | `--collection` | `-c` | text[] | — | Collection to search |
 | `--all` | `—` | flag | `false` | Search all collections |
-| `--model-type` | `—` | choice | — | Embedding model type override |
+| `--model-type` | `—` | choice [sentence_transformers|gguf|openai|modelscope] | — | Embedding model type override |
 | `--json` | `—` | flag | `false` | Output as JSON |
 
 ### `cleanup`
