@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
-from typing import Dict, List, Set
+
 
 SRC_DIR = Path("src/sif")
 
@@ -21,15 +21,13 @@ def extract_imports(file_path: Path) -> list[str]:
             if node.module and node.module.startswith("sif."):
                 imports.append(node.module)
         elif isinstance(node, ast.Import):
-            for alias in node.names:
-                if alias.name.startswith("sif."):
-                    imports.append(alias.name)
+            imports.extend(alias.name for alias in node.names if alias.name.startswith("sif."))
     return imports
 
 
-def scan_modules(src_dir: Path) -> Dict[str, List[str]]:
+def scan_modules(src_dir: Path) -> dict[str, list[str]]:
     """Scan source tree and build module-to-imports mapping."""
-    modules: Dict[str, List[str]] = {}
+    modules: dict[str, list[str]] = {}
     for py_file in src_dir.rglob("*.py"):
         if py_file.name == "__init__.py":
             continue
@@ -39,18 +37,21 @@ def scan_modules(src_dir: Path) -> Dict[str, List[str]]:
     return modules
 
 
-def build_dependency_graph(modules: Dict[str, List[str]]) -> Dict[str, Set[str]]:
-    """Build a dependency graph from module imports."""
-    # Group modules by package
-    packages: Dict[str, Set[str]] = {}
-    for mod in modules:
-        pkg = mod.split("/")[0]
-        packages.setdefault(pkg, set()).add(mod)
+def package_of_module(module_name: str) -> str:
+    """Return the top-level sif package a scanned module belongs to."""
+    parts = module_name.split("/", 1)[0].split(".", 2)
+    return parts[1] if len(parts) > 1 else ""
 
-    # Compute package-level dependencies
-    pkg_deps: Dict[str, Set[str]] = {}
+
+def build_dependency_graph(modules: dict[str, list[str]]) -> dict[str, set[str]]:
+    """Build a dependency graph from module imports."""
+    # Compute package-level dependencies (top-level package under sif on both
+    # sides so intra-package imports are filtered and keys match targets)
+    pkg_deps: dict[str, set[str]] = {}
     for mod, imports in modules.items():
-        src_pkg = mod.split("/")[0]
+        src_pkg = package_of_module(mod)
+        if not src_pkg:
+            continue
         for imp in imports:
             imp_pkg = imp.split(".")[1]  # sif.PKG.mod -> PKG
             if imp_pkg != src_pkg:
@@ -64,58 +65,40 @@ def generate_mermaid() -> str:
     modules = scan_modules(SRC_DIR)
     pkg_deps = build_dependency_graph(modules)
 
+    # Friendly display names; a discovered package without an entry falls back
+    # to the bare package name.
+    pkg_labels = {
+        "cli": "CLI<br/>(Click)",
+        "config": "Config<br/>(Settings)",
+        "core": "Core<br/>(Domain Models)",
+        "database": "Database<br/>(SQLite)",
+        "embedding": "Embedding<br/>(Models)",
+        "indexing": "Indexing<br/>(Pipeline)",
+        "mcp": "MCP<br/>(Server)",
+        "models": "Models<br/>(Pydantic)",
+        "search": "Search<br/>(Strategies)",
+        "utils": "Utils<br/>(Helpers)",
+    }
+
     lines: list[str] = []
     lines.append("```mermaid")
     lines.append("graph TD")
     lines.append("")
 
-    # Define nodes for each package
-    pkg_labels = {
-        "cli": "CLI<br/>(Click)",
-        "core": "Core<br/>(Domain Models)",
-        "database": "Database<br/>(SQLite)",
-        "embedding": "Embedding<br/>(Models)",
-        "indexing": "Indexing<br/>(Pipeline)",
-        "mcp": "MCP<br/>(Legacy)",
-        "mcp_server": "MCP Server<br/>(Refactored)",
-        "models": "Models<br/>(Pydantic)",
-        "search": "Search<br/>(Strategies)",
-        "utils": "Utils<br/>(Helpers)",
-        "config": "Config<br/>(Settings)",
-    }
-
-    for pkg, label in pkg_labels.items():
-        lines.append(f"    {pkg}[{label}]")
+    # One node per package present in the computed graph (sources and targets)
+    packages = sorted(set(pkg_deps) | {dep for deps in pkg_deps.values() for dep in deps})
+    lines.extend(f"    {pkg}[{pkg_labels.get(pkg, pkg)}]" for pkg in packages)
 
     lines.append("")
 
-    # Define edges
-    edge_defs = [
-        ("cli", "core"),
-        ("cli", "database"),
-        ("cli", "search"),
-        ("cli", "mcp"),
-        ("mcp", "database"),
-        ("mcp_server", "utils"),
-        ("search", "core"),
-        ("search", "database"),
-        ("indexing", "core"),
-        ("indexing", "database"),
-        ("indexing", "embedding"),
-        ("embedding", "models"),
-        ("embedding", "utils"),
-        ("database", "core"),
-        ("database", "models"),
-        ("models", "core"),
-        ("config", "utils"),
-    ]
-
-    for src, dst in edge_defs:
-        lines.append(f"    {src} --> {dst}")
+    # Edges straight from the computed package dependencies
+    lines.extend(
+        f"    {src} --> {dst}" for src in sorted(pkg_deps) for dst in sorted(pkg_deps[src])
+    )
 
     lines.append("```")
     return "\n".join(lines)
 
 
 if __name__ == "__main__":
-    print(generate_mermaid())
+    print(generate_mermaid())  # noqa: T201
