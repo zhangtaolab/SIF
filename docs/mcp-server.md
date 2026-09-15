@@ -63,6 +63,19 @@ sif mcp http --host 127.0.0.1 --port 8080
 | `/mcp` | POST | JSON-RPC message endpoint |
 | `/mcp` | GET | Server-Sent Events (SSE) stream |
 
+### daemon Transport (Not Yet Implemented)
+
+Reserved for running the server as a persistent background daemon. The subcommand
+is defined but not yet functional — it currently exits immediately with an error
+directing you to the HTTP transport:
+
+```bash
+sif mcp daemon
+# Error: Daemon mode is not yet implemented. Use 'mcp http' instead.
+```
+
+For a long-running server today, use `sif mcp http`.
+
 ## Available Tools
 
 ### query
@@ -182,9 +195,14 @@ Get indexing status for all collections.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SIF_DB_PATH` | `~/.sif/index.sqlite` | Path to SQLite database |
+| `SIF_DB_PATH` | `~/.local/share/sif/sif.db` | Path to SQLite database |
 | `SIF_MCP_HOST` | `127.0.0.1` | HTTP server host |
 | `SIF_MCP_PORT` | `8080` | HTTP server port |
+
+When `SIF_DB_PATH` is not set, the database path is computed in the platform data
+directory (via platformdirs) and the directory is created on first run —
+`~/.local/share/sif/sif.db` on Linux, `~/Library/Application Support/sif/sif.db`
+on macOS.
 
 ### .env File Example
 
@@ -194,7 +212,7 @@ SIF_MCP_HOST=127.0.0.1
 SIF_MCP_PORT=8080
 
 # Database
-SIF_DB_PATH=~/.sif/index.sqlite
+SIF_DB_PATH=~/.local/share/sif/sif.db
 
 # Model
 SIF_MODEL_NAME=Qwen/Qwen3-Embedding-0.6B
@@ -213,7 +231,7 @@ Add to Claude Desktop configuration:
       "command": "sif",
       "args": ["mcp", "stdio"],
       "env": {
-        "SIF_DB_PATH": "/Users/forrest/.sif/index.sqlite"
+        "SIF_DB_PATH": "/Users/forrest/Library/Application Support/sif/sif.db"
       }
     }
   }
@@ -299,7 +317,7 @@ class PingToolHandler(ToolHandler):
         )
 
 
-backend = SearchBackend("/Users/forrest/.sif/index.sqlite")
+backend = SearchBackend("/Users/forrest/Library/Application Support/sif/sif.db")
 server = MCPServer(backend)
 server.register_tools(create_default_tools() + [PingToolHandler()])
 ```
