@@ -11,7 +11,8 @@ Retrieve document content from the user's SIF index.
 
 Supports single document by path or document ID.
 Supports batch retrieval via glob patterns or comma-separated paths.
-Returns document content as plain text (first line is the path, followed by content).
+Returns document content as plain text, preceded by a short header block
+(title line, `Path: ...`, `Collection: ...`, blank line), then the content.
 
 Requires sif CLI to be installed and available in PATH.
 </objective>
@@ -61,14 +62,14 @@ Requires sif CLI to be installed and available in PATH.
    ```
 
 4. **Return output to LLM**
-   - Single get: returns path (first line) + content (remaining lines)
+   - Single get: header block (title, `Path:`, `Collection:`, blank line) then content
    - Multi-get: returns multiple documents separated by headers
    - LLM formats the results for the user
 
 5. **Error handling**
    - If return code != 0: return stderr content to LLM for interpretation
-   - If document not found: stderr will indicate — let LLM explain to user
-   - If no index exists: note user needs to run `sif index update` first
+   - If document not found: stderr will indicate (ClickException, exit 1) — let LLM explain to user
+   - If no index exists: stdout prints "No index found." with exit 0 (not stderr) — note user needs to run `sif index update` first
 
 </process>
 

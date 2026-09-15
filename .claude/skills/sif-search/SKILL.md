@@ -63,7 +63,7 @@ Requires sif CLI to be installed and available in PATH.
 5. **Error handling**
    - If return code != 0: return stderr content to LLM for interpretation
    - If output is `[]`: report "No results found"
-   - If stderr contains "No index found": note user needs to run `sif index update` first
+   - If output is EMPTY (no `[]`, exit 0): no index exists — under `-q` the CLI is silent on a missing index; note user needs to run `sif index update` first
 
 </process>
 
