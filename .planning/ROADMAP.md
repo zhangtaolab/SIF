@@ -199,7 +199,7 @@ Plans:
   6. All code examples in docs are executed or syntax-checked
   7. Docs test infrastructure exists (`tests/test_docs.py`, `make docs-test`, GitHub Actions CI)
 
-**Plans:** 7 plans
+**Plans:** 10 plans (7 original + 3 gap closure)
 
 Plans:
 
@@ -210,6 +210,12 @@ Plans:
 - [x] 06-05-PLAN.md — Review technical docs for discrepancies
 - [x] 06-06-PLAN.md — Create docs code block validator with pytest
 - [x] 06-07-PLAN.md — Add Makefile target and GitHub Actions CI workflow
+
+Gap closure (2026-09-15, UAT-diagnosed gaps G-06-1..G-06-8):
+
+- [ ] 06-08-PLAN.md — Fix docs generators, regenerate reference docs, make CI drift gate blocking (G-06-1, G-06-2, G-06-8)
+- [ ] 06-09-PLAN.md — Hand-sync quickstart/README/models/mcp-server docs to live code (G-06-3, G-06-4, G-06-6, G-06-7)
+- [ ] 06-10-PLAN.md — Rewrite architecture.md against the live tree with genuinely generated Mermaid (G-06-5)
 
 ### Phase 7: CLI Claude Skill
 
