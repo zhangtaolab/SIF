@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import inspect
+import re
 import sys
 from pathlib import Path
 
@@ -30,9 +31,7 @@ def get_type_name(annotation: object) -> str:
         else:
             origin_name = getattr(origin, "__name__", str(origin))
             if args:
-                arg_names = [
-                    get_type_name(a) for a in args if a is not type(None)
-                ]
+                arg_names = [get_type_name(a) for a in args if a is not type(None)]
                 result = f"{origin_name}[{' | '.join(arg_names)}]" if arg_names else origin_name
             else:
                 result = origin_name
@@ -54,10 +53,38 @@ def get_validators() -> dict[str, str]:
             inner = inner.strip().strip("\"'").strip()
             current_field = inner.split(",")[0].strip().strip("\"'")
         elif current_field and stripped.startswith("def "):
-            method_name = stripped[4:stripped.find("(")]
+            method_name = stripped[4 : stripped.find("(")]
             validators[current_field] = method_name
             current_field = None
     return validators
+
+
+def get_valid_model_types() -> list[str]:
+    """Extract the valid model_type set from the live validator source.
+
+    The Validation Rules table and error example must reflect what
+    ``Settings.validate_model_type`` actually enforces (WR-07 keeps
+    ``huggingface`` out of the set), not a stale copy.
+    """
+    source = inspect.getsource(Settings)
+    match = re.search(
+        r"def validate_model_type\b.*?valid_types\s*=\s*\{(.*?)\}",
+        source,
+        re.DOTALL,
+    )
+    if match is None:
+        raise RuntimeError(
+            "Could not locate the valid_types set inside "
+            "Settings.validate_model_type; refusing to emit a stale "
+            "validation table"
+        )
+    entries = re.findall(r"[\"']([^\"']+)[\"']", match.group(1))
+    if not entries:
+        raise RuntimeError(
+            "The valid_types set inside Settings.validate_model_type "
+            "contains no quoted members; refusing to emit an empty list"
+        )
+    return sorted(entries)
 
 
 def get_computed_default(field_name: str) -> str | None:
@@ -123,12 +150,10 @@ def _append_header(lines: list[str]) -> None:
     lines.append("")
     lines.append("### .env File")
     lines.append("")
-    lines.append(
-        "Create a `.env` file in your working directory or home directory:"
-    )
+    lines.append("Create a `.env` file in your working directory:")
     lines.append("")
     lines.append("```bash")
-    lines.append("# ~/.env or ./.env")
+    lines.append("# ./.env — read from the directory where you invoke sif")
     lines.append("SIF_DB_PATH=~/.local/share/sif/sif.db")
     lines.append("SIF_MODEL_NAME=Qwen/Qwen3-Embedding-0.6B")
     lines.append("SIF_LOG_LEVEL=INFO")
@@ -137,9 +162,8 @@ def _append_header(lines: list[str]) -> None:
     lines.append("### Configuration Precedence")
     lines.append("")
     lines.append("1. Environment variables (highest priority)")
-    lines.append("2. `.env` file in current directory")
-    lines.append("3. `.env` file in home directory")
-    lines.append("4. Default values (lowest priority)")
+    lines.append("2. `.env` file in the working directory where you invoke `sif`")
+    lines.append("3. Default values (lowest priority)")
     lines.append("")
     lines.append("## Configuration Options")
     lines.append("")
@@ -169,28 +193,22 @@ def _append_options_tables(lines: list[str]) -> None:
             description = field_info.description or ""
             if field_name in validators:
                 description += f" (validated by `{validators[field_name]}`)"
-            lines.append(
-                f"| {env_var} | {type_name} | {default_str} | {description} |"
-            )
+            lines.append(f"| {env_var} | {type_name} | {default_str} | {description} |")
 
         lines.append("")
 
 
-def _append_validation_rules(lines: list[str]) -> None:
+def _append_validation_rules(lines: list[str], valid_model_types: list[str]) -> None:
     """Append validation rules section."""
     lines.append("## Validation Rules")
     lines.append("")
-    lines.append(
-        "SIF validates configuration on startup. "
-        "Invalid values will raise errors:"
-    )
+    lines.append("SIF validates configuration on startup. Invalid values will raise errors:")
     lines.append("")
     lines.append("| Field | Rule | Error Example |")
     lines.append("|-------|------|---------------|")
-    lines.append(
-        "| `model_type` | Must be one of: `sentence_transformers`, `gguf`, "
-        "`openai`, `modelscope`, `huggingface` | `Invalid model_type: xyz` |"
-    )
+    choices = ", ".join(f"`{t}`" for t in valid_model_types)
+    error = f"Invalid model_type: xyz. Must be one of {valid_model_types}"
+    lines.append(f"| `model_type` | Must be one of: {choices} | `{error}` |")
     lines.append(
         "| `api_base` | Must start with `http://` or `https://` | "
         "`api_base must be an HTTP or HTTPS URL` |"
@@ -200,26 +218,22 @@ def _append_validation_rules(lines: list[str]) -> None:
         "`ERROR`, `CRITICAL` | `Invalid log level: TRACE` |"
     )
     lines.append(
-        "| `chunk_size` | Minimum 100 | "
-        "`ensure this value is greater than or equal to 100` |"
+        "| `chunk_size` | Minimum 100 | `ensure this value is greater than or equal to 100` |"
     )
     lines.append(
-        "| `chunk_overlap` | Minimum 0 | "
-        "`ensure this value is greater than or equal to 0` |"
+        "| `chunk_overlap` | Minimum 0 | `ensure this value is greater than or equal to 0` |"
     )
     lines.append(
-        "| `default_limit` | 1 to 100 | "
-        "`ensure this value is less than or equal to 100` |"
+        "| `default_limit` | 1 to 100 | `ensure this value is less than or equal to 100` |"
     )
-    lines.append(
-        "| `mcp_port` | 1 to 65535 | "
-        "`ensure this value is less than or equal to 65535` |"
-    )
+    lines.append("| `mcp_port` | 1 to 65535 | `ensure this value is less than or equal to 65535` |")
     lines.append("")
 
 
 def _append_env_example(lines: list[str]) -> None:
     """Append complete .env example section."""
+    model_type_default = Settings.model_fields["model_type"].default
+    reranker_type_default = Settings.model_fields["reranker_model_type"].default
     lines.append("## Complete .env Example")
     lines.append("")
     lines.append("```bash")
@@ -229,12 +243,12 @@ def _append_env_example(lines: list[str]) -> None:
     lines.append("# Embedding Model")
     lines.append("SIF_MODEL_NAME=Qwen/Qwen3-Embedding-0.6B")
     lines.append("SIF_EMBEDDING_DIM=1024")
-    lines.append("SIF_MODEL_TYPE=sentence_transformers")
+    lines.append(f"SIF_MODEL_TYPE={model_type_default}")
     lines.append("SIF_BATCH_SIZE=32")
     lines.append("")
     lines.append("# Reranker")
     lines.append("SIF_RERANKER_MODEL_NAME=Qwen/Qwen3-Reranker-0.6B")
-    lines.append("SIF_RERANKER_MODEL_TYPE=transformers")
+    lines.append(f"SIF_RERANKER_MODEL_TYPE={reranker_type_default}")
     lines.append("SIF_RERANKER_BATCH_SIZE=32")
     lines.append("")
     lines.append("# API (for OpenAI-compatible backends)")
@@ -263,22 +277,18 @@ def _append_env_example(lines: list[str]) -> None:
     lines.append("")
 
 
-def _append_validation_example(lines: list[str]) -> None:
+def _append_validation_example(lines: list[str], valid_model_types: list[str]) -> None:
     """Append configuration validation example section."""
     lines.append("## Configuration Validation")
     lines.append("")
     lines.append(
-        "SIF validates configuration on startup. "
-        "Invalid configurations will produce errors:"
+        "SIF validates configuration on startup. Invalid configurations will produce errors:"
     )
     lines.append("")
     lines.append("```bash")
     lines.append("$ export SIF_MODEL_TYPE=invalid")
     lines.append("sif collection list")
-    lines.append(
-        "Error: Invalid model_type: invalid. Must be one of "
-        "['gguf', 'huggingface', 'modelscope', 'openai', 'sentence_transformers']"
-    )
+    lines.append(f"Error: Invalid model_type: invalid. Must be one of {valid_model_types}")
     lines.append("```")
     lines.append("")
 
@@ -291,10 +301,7 @@ def _append_viewing_config(lines: list[str]) -> None:
     lines.append("")
     lines.append("```bash")
     lines.append("# View effective configuration")
-    lines.append("sif config show")
-    lines.append("")
-    lines.append("# View with defaults")
-    lines.append("sif config show --with-defaults")
+    lines.append("sif status")
     lines.append("```")
     lines.append("")
 
@@ -304,23 +311,12 @@ def _append_best_practices(lines: list[str]) -> None:
     lines.append("## Best Practices")
     lines.append("")
     lines.append(
-        "1. **Use .env files**: Keep configuration in "
-        "version-controlled `.env.example` files"
+        "1. **Use .env files**: Keep configuration in version-controlled `.env.example` files"
     )
-    lines.append(
-        "2. **Separate environments**: Use different databases "
-        "for dev/staging/production"
-    )
-    lines.append(
-        "3. **Monitor logs**: Set appropriate log levels for your environment"
-    )
-    lines.append(
-        "4. **Tune chunk size**: Adjust based on your document characteristics"
-    )
-    lines.append(
-        "5. **Cache embeddings**: Enable `SIF_CACHE_EMBEDDINGS` "
-        "for repeated indexing"
-    )
+    lines.append("2. **Separate environments**: Use different databases for dev/staging/production")
+    lines.append("3. **Monitor logs**: Set appropriate log levels for your environment")
+    lines.append("4. **Tune chunk size**: Adjust based on your document characteristics")
+    lines.append("5. **Cache embeddings**: Enable `SIF_CACHE_EMBEDDINGS` for repeated indexing")
     lines.append("")
 
 
@@ -330,17 +326,17 @@ def _append_troubleshooting(lines: list[str]) -> None:
     lines.append("")
     lines.append("### Configuration Not Loading")
     lines.append("")
-    lines.append("Check if the `.env` file is being read:")
+    lines.append(
+        "SIF reads a file named exactly `.env` from the working directory "
+        "where you invoke `sif`; no path override variable is supported:"
+    )
     lines.append("")
     lines.append("```bash")
-    lines.append("# Check file location")
-    lines.append("ls -la .env ~/.env")
+    lines.append("# Check the file is named .env in the working directory")
+    lines.append("ls -la .env")
     lines.append("")
     lines.append("# Verify file permissions")
     lines.append("chmod 644 .env")
-    lines.append("")
-    lines.append("# Test with explicit path")
-    lines.append("export SIF_ENV_FILE=/path/to/.env")
     lines.append("```")
     lines.append("")
     lines.append("### Environment Variables Not Applied")
@@ -350,9 +346,7 @@ def _append_troubleshooting(lines: list[str]) -> None:
     lines.append("echo $SIF_LOG_LEVEL")
     lines.append("")
     lines.append("# Check in Python")
-    lines.append(
-        'python -c "import os; print(os.getenv(\'SIF_LOG_LEVEL\'))"'
-    )
+    lines.append("python -c \"import os; print(os.getenv('SIF_LOG_LEVEL'))\"")
     lines.append("```")
     lines.append("")
 
@@ -369,12 +363,13 @@ def _append_related_docs(lines: list[str]) -> None:
 
 def generate_markdown() -> str:
     """Generate the full configuration reference markdown."""
+    valid_model_types = get_valid_model_types()
     lines: list[str] = []
     _append_header(lines)
     _append_options_tables(lines)
-    _append_validation_rules(lines)
+    _append_validation_rules(lines, valid_model_types)
     _append_env_example(lines)
-    _append_validation_example(lines)
+    _append_validation_example(lines, valid_model_types)
     _append_viewing_config(lines)
     _append_best_practices(lines)
     _append_troubleshooting(lines)
