@@ -280,7 +280,7 @@ from sif.models.embedding import EmbeddingConfig
 from pydantic import BaseModel, Field
 
 class EmbeddingConfig(BaseModel):
-    model_type: ModelType = Field(ModelType.SENTENCE_TRANSFORMERS, description="Model type")
+    model_type: ModelType = Field(ModelType.MODELSCOPE, description="Model type")
     model_path: str | None = Field(None, description="Path to model file")
     model_name: str = Field("Qwen/Qwen3-Embedding-0.6B", description="Model name or identifier")
 

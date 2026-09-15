@@ -356,7 +356,7 @@ sif search query "" | tee -a ~/.sif_searches
 sif search query "python" --json > results.json
 
 # Process with jq
-sif search query "python" --json | jq '.results[].document_path'
+sif search query "python" --json | jq '.[].path'
 ```
 
 ### Batch Document Retrieval

@@ -86,7 +86,7 @@ sif collection show my-notes
 sif collection rename my-notes personal-notes
 
 # Delete a collection
-sif collection remove old-collection --force
+sif collection remove old-collection --yes
 ```
 
 ### Context Management
