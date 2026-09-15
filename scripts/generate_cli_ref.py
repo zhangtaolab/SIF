@@ -23,7 +23,12 @@ def _is_sentinel(value: Any) -> bool:
 
 
 def _format_default(value: Any) -> str | None:
-    """Format a default value for display, skipping sentinels and callables."""
+    """Format a default value for display, skipping sentinels and callables.
+
+    Path defaults that embed the current user's home directory are rewritten
+    to a ``~`` prefix so the generated doc is machine-independent (and the
+    CI drift check cannot produce false positives from user-specific paths).
+    """
     if _is_sentinel(value):
         return None
     if value is None:
@@ -34,20 +39,29 @@ def _format_default(value: Any) -> str | None:
         return "true" if value else "false"
     if isinstance(value, (list, tuple)) and not value:
         return None
-    return str(value)
+    rendered = str(value)
+    home = str(Path.home())
+    if rendered.startswith(home):
+        rendered = "~" + rendered[len(home) :]
+    return rendered
 
 
 def _format_type(param: click.Parameter) -> str:
     """Format the type of a parameter for display."""
     if param.is_flag:
         return "flag"
+    type_str = param.type.name
+    if isinstance(param.type, click.Choice):
+        choices = "|".join(str(c) for c in param.type.choices)
+        type_str = f"choice [{choices}]"
     if param.multiple:
-        return f"{param.type.name}[]"
-    return param.type.name
+        type_str += "[]"
+    return type_str
 
 
 def traverse_commands(
-    cmd: click.Command, path: str = "",
+    cmd: click.Command,
+    path: str = "",
 ) -> list[tuple[str, click.Command]]:
     """Recursively traverse the Click command tree."""
     results: list[tuple[str, click.Command]] = []
@@ -68,9 +82,7 @@ def _build_tree_lines(cmd: click.Command, prefix: str = "") -> list[str]:
         for i, (name, subcmd) in enumerate(items):
             is_last = i == len(items) - 1
             connector = "└──" if is_last else "├──"
-            tree_lines.append(
-                f"{prefix}{connector} {name:<15} {subcmd.help or ''}"
-            )
+            tree_lines.append(f"{prefix}{connector} {name:<15} {subcmd.help or ''}")
             if isinstance(subcmd, click.Group):
                 extension = "    " if is_last else "│   "
                 tree_lines.extend(_build_tree_lines(subcmd, prefix + extension))
@@ -98,9 +110,7 @@ def _format_command_section(path: str, cmd: click.Command) -> list[str]:
         for arg in args:
             required = "Yes" if arg.required else "No"
             help_text = getattr(arg, "help", "") or ""
-            section.append(
-                f"| `{arg.name}` | {arg.type.name} | {required} | {help_text} |"
-            )
+            section.append(f"| `{arg.name}` | {arg.type.name} | {required} | {help_text} |")
         section.append("")
 
     opts = [p for p in cmd.params if isinstance(p, click.Option)]
@@ -110,35 +120,38 @@ def _format_command_section(path: str, cmd: click.Command) -> list[str]:
         section.append("| Option | Short | Type | Default | Description |")
         section.append("|--------|-------|------|---------|-------------|")
         for opt in opts:
-            long_opt = next(
-                (o for o in opt.opts if o.startswith("--")), opt.opts[0]
-            )
-            short_opt = next(
-                (o for o in opt.opts if not o.startswith("--")), "—"
-            )
+            long_opt = next((o for o in opt.opts if o.startswith("--")), opt.opts[0])
+            short_opt = next((o for o in opt.opts if not o.startswith("--")), "—")
             ptype = _format_type(opt)
             default = _format_default(opt.default)
             default_str = f"`{default}`" if default else "—"
             help_text = opt.help or ""
             section.append(
-                f"| `{long_opt}` | `{short_opt}` | {ptype} | "
-                f"{default_str} | {help_text} |"
+                f"| `{long_opt}` | `{short_opt}` | {ptype} | {default_str} | {help_text} |"
             )
         section.append("")
 
     return section
 
 
-def generate_cli_reference() -> str:
-    """Generate markdown CLI reference from Click introspection."""
-    lines: list[str] = []
+# Top-level command grouping: (group key, section title)
+GROUP_ORDER: list[tuple[str, str]] = [
+    ("collection", "Collection Commands"),
+    ("context", "Context Commands"),
+    ("get", "Get Commands"),
+    ("index", "Index Commands"),
+    ("search", "Search Commands"),
+    ("mcp", "MCP Commands"),
+    ("bench", "Other Commands"),
+    ("pull", "Other Commands"),
+    ("ls", "Other Commands"),
+    ("status", "Other Commands"),
+    ("cleanup", "Other Commands"),
+]
 
-    lines.append("# CLI Reference")
-    lines.append("")
-    lines.append("Complete reference for all SIF CLI commands.")
-    lines.append("")
 
-    # Global options
+def _append_global_options(lines: list[str]) -> None:
+    """Append the global options table."""
     lines.append("## Global Options")
     lines.append("")
     lines.append("These options can be used with any command:")
@@ -153,14 +166,13 @@ def generate_cli_reference() -> str:
             ptype = _format_type(param)
             default = _format_default(param.default)
             default_str = f"`{default}`" if default else "—"
-            lines.append(
-                f"| `{long}` | `{short}` | {ptype} | "
-                f"{default_str} | {param.help or ''} |"
-            )
+            lines.append(f"| `{long}` | `{short}` | {ptype} | {default_str} | {param.help or ''} |")
 
     lines.append("")
 
-    # Command overview tree
+
+def _append_command_overview(lines: list[str]) -> None:
+    """Append the ASCII command overview tree."""
     lines.append("## Command Overview")
     lines.append("")
     lines.append("```")
@@ -169,6 +181,9 @@ def generate_cli_reference() -> str:
     lines.append("```")
     lines.append("")
 
+
+def _append_command_sections(lines: list[str]) -> None:
+    """Append per-command sections, grouped by top-level command."""
     # Collect all leaf commands
     all_commands = traverse_commands(cli)
 
@@ -178,24 +193,9 @@ def generate_cli_reference() -> str:
         top = path.split()[0]
         groups.setdefault(top, []).append((path, cmd))
 
-    # Define group order and names
-    group_order = [
-        ("collection", "Collection Commands"),
-        ("context", "Context Commands"),
-        ("get", "Get Commands"),
-        ("index", "Index Commands"),
-        ("search", "Search Commands"),
-        ("mcp", "MCP Commands"),
-        ("bench", "Other Commands"),
-        ("pull", "Other Commands"),
-        ("ls", "Other Commands"),
-        ("status", "Other Commands"),
-        ("cleanup", "Other Commands"),
-    ]
-
     other_commands: list[tuple[str, click.Command]] = []
 
-    for group_key, group_title in group_order:
+    for group_key, group_title in GROUP_ORDER:
         if group_key not in groups:
             continue
 
@@ -219,7 +219,9 @@ def generate_cli_reference() -> str:
         for path, cmd in sorted(other_commands, key=lambda x: x[0]):
             lines.extend(_format_command_section(path, cmd))
 
-    # Output formats section
+
+def _append_output_formats(lines: list[str]) -> None:
+    """Append the output formats section."""
     lines.append("## Output Formats")
     lines.append("")
     lines.append("Several commands support multiple output formats via flags:")
@@ -234,7 +236,9 @@ def generate_cli_reference() -> str:
     lines.append("| Files | `--files` | Plain file paths, one per line |")
     lines.append("")
 
-    # Exit codes
+
+def _append_exit_codes(lines: list[str]) -> None:
+    """Append the exit codes section."""
     lines.append("## Exit Codes")
     lines.append("")
     lines.append("| Code | Meaning |")
@@ -244,7 +248,14 @@ def generate_cli_reference() -> str:
     lines.append("| 2 | Invalid arguments |")
     lines.append("")
 
-    # Common workflows
+
+def _append_common_workflows(lines: list[str]) -> None:
+    """Append the common workflows section.
+
+    Every example must be a command the docs validator accepts: leaf
+    subcommands only (never a bare group) and no positional args on
+    commands that take options only.
+    """
     lines.append("## Common Workflows")
     lines.append("")
 
@@ -252,15 +263,14 @@ def generate_cli_reference() -> str:
     lines.append("```bash")
     lines.append("# Add a collection")
     lines.append(
-        'sif collection add ~/Documents/notes '
-        '--name my-notes --description "Personal notes"'
+        'sif collection add ~/Documents/notes --name my-notes --description "Personal notes"'
     )
     lines.append("")
     lines.append("# Update index")
-    lines.append("sif index update my-notes")
+    lines.append("sif index update --collection my-notes")
     lines.append("")
     lines.append("# Search")
-    lines.append('sif search "python tips"')
+    lines.append('sif search query "python tips"')
     lines.append("```")
     lines.append("")
 
@@ -280,15 +290,10 @@ def generate_cli_reference() -> str:
     lines.append("**Adding context:**")
     lines.append("```bash")
     lines.append("# Add global context")
-    lines.append(
-        'sif context add global global "I am a software engineer."'
-    )
+    lines.append('sif context add global global "I am a software engineer."')
     lines.append("")
     lines.append("# Add collection context")
-    lines.append(
-        'sif context add collection my-notes '
-        '"These are my programming notes."'
-    )
+    lines.append('sif context add collection my-notes "These are my programming notes."')
     lines.append("")
     lines.append("# List contexts")
     lines.append("sif context list")
@@ -300,12 +305,26 @@ def generate_cli_reference() -> str:
 
     lines.append("**Hybrid search with options:**")
     lines.append("```bash")
-    lines.append(
-        'sif search query "python decorators" '
-        "--explain --candidate-limit 30 --limit 10"
-    )
+    lines.append('sif search query "python decorators" --explain --candidate-limit 30 --limit 10')
     lines.append("```")
     lines.append("")
+
+
+def generate_cli_reference() -> str:
+    """Generate markdown CLI reference from Click introspection."""
+    lines: list[str] = []
+
+    lines.append("# CLI Reference")
+    lines.append("")
+    lines.append("Complete reference for all SIF CLI commands.")
+    lines.append("")
+
+    _append_global_options(lines)
+    _append_command_overview(lines)
+    _append_command_sections(lines)
+    _append_output_formats(lines)
+    _append_exit_codes(lines)
+    _append_common_workflows(lines)
 
     return "\n".join(lines)
 
