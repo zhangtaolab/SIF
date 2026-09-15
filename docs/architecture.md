@@ -133,7 +133,6 @@ class EmbeddingModelFactory:
 - GGUF models via llama-cpp-python
 - Sentence Transformers
 - OpenAI-compatible API
-- HuggingFace models
 - ModelScope models
 
 ### Dependency Injection
@@ -158,7 +157,7 @@ class CollectionManager:
 ### Indexing Flow
 
 ```
-1. User: sif collection add my-collection ~/notes
+1. User: sif collection add ~/notes --name my-collection
    │
    ▼
 2. CLI: Parse command, validate inputs
@@ -242,13 +241,14 @@ sif/
 │   ├── document.py          # Document request/response models
 │   ├── context.py           # Context request/response models
 │   ├── search.py            # Search query and result models
-│   └── embedding.py         # Embedding configuration models
+│   ├── embedding.py         # Embedding configuration models
+│   └── download.py          # Model download from ModelScope
 ├── database/                # Data access layer
 │   ├── __init__.py
 │   ├── database.py          # Database class with schema init
 │   ├── schema.py            # SchemaManager
 │   ├── repositories.py      # Repository implementations
-│   ├── repository.py        # Legacy repository (deprecated)
+│   ├── repository.py        # Abstract repository interfaces
 │   ├── connection.py        # DatabaseConnection
 │   └── migrations.py        # Database migrations
 ├── search/                  # Search functionality
@@ -261,52 +261,60 @@ sif/
 │   ├── expansion.py         # QueryExpansion
 │   ├── rerank.py            # Reranker implementations
 │   ├── snippets.py          # SmartSnippetExtractor
+│   ├── context_attach.py    # Path-context attachment for search results
+│   ├── term_match.py        # Shared stem-tolerant term matching
 │   └── benchmark.py         # SearchEvaluator
 ├── indexing/                # Document indexing
 │   ├── __init__.py
 │   ├── scanner.py           # File system scanning
 │   ├── parser.py            # Markdown parsing
 │   ├── chunker.py           # Document chunking
-│   └── indexer.py           # Index orchestration
+│   ├── indexer.py           # Index orchestration
+│   └── watcher.py           # File system watcher for auto-indexing
 ├── embedding/               # Embedding generation
 │   ├── __init__.py
 │   ├── manager.py           # EmbeddingManager
 │   ├── factory.py           # EmbeddingModelFactory
-│   └── models.py            # Download helpers
-├── mcp_server/              # Refactored OOP MCP server
+│   ├── model.py             # Embedding model interface
+│   ├── embedder.py          # Embedding model implementations
+│   └── cache.py             # Embedding cache
+├── mcp/                     # Unified MCP server
 │   ├── __init__.py
 │   ├── server.py            # MCPServer
-│   ├── transport.py         # Transport ABC (StdioTransport, HTTPTransport)
-│   ├── handlers.py          # ToolHandler, ResourceHandler ABCs
-│   └── tools.py             # MCP tool definitions
-├── mcp/                     # Legacy functional MCP server
-│   ├── __init__.py
-│   ├── server.py            # Legacy stdio server
-│   ├── server_http.py       # Legacy HTTP server
-│   ├── transport_stdio.py   # Legacy stdio transport
-│   ├── transport_http.py    # Legacy HTTP transport
-│   ├── cli.py               # Legacy CLI helpers
-│   ├── protocol.py          # MCP protocol implementation
-│   └── tools.py             # Legacy tool definitions
+│   ├── backend.py           # SearchBackend for tool handlers
+│   ├── handlers.py          # ToolHandler implementations
+│   ├── protocol.py          # MCP protocol (JSON-RPC 2.0) definitions
+│   ├── cli.py               # MCP server CLI helpers
+│   └── transports/          # Transport implementations
+│       ├── __init__.py
+│       ├── stdio.py         # StdioTransport
+│       └── http.py          # HTTPTransport (streamable HTTP)
 ├── cli/                     # Command-line interface
 │   ├── __init__.py
 │   ├── main.py              # CLI entry point
+│   ├── config.py            # CLI configuration management
 │   ├── formatters.py        # Output formatters
 │   └── commands/            # CLI command implementations
 │       ├── __init__.py
 │       ├── collection.py    # Collection commands
 │       ├── context.py       # Context commands
-│       ├── get.py           # Multi-get command
+│       ├── get.py           # get group (get, multi-get)
 │       ├── index.py         # Index commands
 │       ├── search.py        # Search commands
 │       ├── mcp.py           # MCP commands
 │       ├── ls.py            # List command
 │       ├── bench.py         # Benchmark command
 │       └── pull.py          # Pull command
+├── config/                  # Application configuration
+│   ├── __init__.py
+│   ├── constants.py         # Application constants and defaults
+│   └── settings.py          # Pydantic Settings
 └── utils/                   # Utilities
     ├── __init__.py
     ├── logging.py           # Logging setup
-    └── paths.py             # Path utilities
+    ├── paths.py             # Path utilities
+    ├── progress.py          # Progress tracking
+    └── text.py              # Text processing utilities
 ```
 
 ## Module Dependency Graph
@@ -315,34 +323,47 @@ sif/
 graph TD
 
     cli[CLI<br/>(Click)]
+    config[Config<br/>(Settings)]
     core[Core<br/>(Domain Models)]
     database[Database<br/>(SQLite)]
     embedding[Embedding<br/>(Models)]
     indexing[Indexing<br/>(Pipeline)]
-    mcp[MCP<br/>(Legacy)]
-    mcp_server[MCP Server<br/>(Refactored)]
+    mcp[MCP<br/>(Server)]
     models[Models<br/>(Pydantic)]
     search[Search<br/>(Strategies)]
     utils[Utils<br/>(Helpers)]
-    config[Config<br/>(Settings)]
 
+    cli --> config
     cli --> core
     cli --> database
-    cli --> search
+    cli --> embedding
+    cli --> indexing
     cli --> mcp
-    mcp --> database
-    mcp_server --> utils
-    search --> core
-    search --> database
+    cli --> search
+    cli --> utils
+    database --> config
+    database --> core
+    database --> utils
+    embedding --> config
+    embedding --> core
+    embedding --> models
+    embedding --> utils
     indexing --> core
     indexing --> database
     indexing --> embedding
-    embedding --> models
-    embedding --> utils
-    database --> core
-    database --> models
-    models --> core
-    config --> utils
+    indexing --> utils
+    mcp --> config
+    mcp --> core
+    mcp --> database
+    mcp --> embedding
+    mcp --> search
+    mcp --> utils
+    models --> utils
+    search --> core
+    search --> embedding
+    search --> models
+    search --> utils
+    utils --> config
 ```
 
 _Generated by `scripts/generate_arch_diagram.py` from actual source imports._
@@ -511,10 +532,7 @@ class CollectionRepository(Protocol):
 
 ## Future Enhancements
 
-1. **Incremental Indexing**: Only index changed documents
-2. **Real-time Watching**: File system watcher for auto-indexing
-3. **Plugin System**: Custom parsers and search strategies
-4. **Web UI**: Browser-based search interface
-5. **Multi-language Support**: Non-English document support
-6. **Advanced Reranking**: Cross-encoder reranking
-7. **Query Suggestions**: Auto-complete and related queries
+1. **Real-time Watching**: File system watcher for auto-indexing (watcher.py exists but is not yet wired to any CLI/MCP surface)
+2. **Plugin System**: Custom parsers and search strategies
+3. **Web UI**: Browser-based search interface
+4. **Query Suggestions**: Auto-complete and related queries
