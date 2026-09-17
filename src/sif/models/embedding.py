@@ -18,25 +18,27 @@ class ModelType(str, Enum):
 class EmbeddingConfig(BaseModel):
     """Configuration for embedding models."""
 
-    model_type: ModelType = Field(ModelType.MODELSCOPE, description="Model type")
-    model_path: str | None = Field(None, description="Path to model file")
-    model_name: str = Field("Qwen/Qwen3-Embedding-0.6B", description="Model name or identifier")
+    model_type: ModelType = Field(default=ModelType.MODELSCOPE, description="Model type")
+    model_path: str | None = Field(default=None, description="Path to model file")
+    model_name: str = Field(
+        default="Qwen/Qwen3-Embedding-0.6B", description="Model name or identifier"
+    )
 
     # Model parameters
-    embedding_dim: int = Field(1024, ge=1, description="Embedding dimension")
-    max_tokens: int = Field(512, ge=1, description="Maximum tokens per input")
-    batch_size: int = Field(32, ge=1, description="Batch size for inference")
+    embedding_dim: int = Field(default=1024, ge=1, description="Embedding dimension")
+    max_tokens: int = Field(default=512, ge=1, description="Maximum tokens per input")
+    batch_size: int = Field(default=32, ge=1, description="Batch size for inference")
 
     # GGUF specific
-    n_gpu_layers: int = Field(0, ge=0, description="Number of GPU layers")
-    n_ctx: int = Field(2048, ge=512, description="Context size")
+    n_gpu_layers: int = Field(default=0, ge=0, description="Number of GPU layers")
+    n_ctx: int = Field(default=2048, ge=512, description="Context size")
 
     # API keys (for remote models)
-    api_key: str | None = Field(None, exclude=True, repr=False)
+    api_key: str | None = Field(default=None, exclude=True, repr=False)
     api_base: str | None = None
 
     # Caching
-    cache_embeddings: bool = Field(True, description="Cache embeddings")
+    cache_embeddings: bool = Field(default=True, description="Cache embeddings")
     cache_dir: str | None = None
 
 

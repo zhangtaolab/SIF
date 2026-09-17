@@ -1,6 +1,7 @@
 """Embedding manager for model lifecycle and embedding generation."""
 
 import time
+from typing import Any
 
 from sif.config.settings import Settings
 from sif.core.models import Embedder
@@ -227,7 +228,7 @@ class EmbeddingManager:
         response = self.embed([text], normalize=normalize, use_cache=use_cache)
         return response.embeddings[0]
 
-    def get_model_info(self) -> dict:
+    def get_model_info(self) -> dict[str, Any]:
         """Get information about the loaded model.
 
         Returns:
