@@ -147,6 +147,7 @@ Total Plans in Phase: 9
 | 260914-v5f | Fix exclude-all collection leak (audit BLOCKER 1): [] filters everything / None unfiltered sentinel guards in BM25+Vector searchers; 3 RED regression tests + 5 controls, suite 675 green | 2026-09-14 | b7381d6 | [260914-v5f-fix-exclude-all-collection-leak-empty-co](./quick/260914-v5f-fix-exclude-all-collection-leak-empty-co/) |
 | 260914-vyr | Rename distribution docsif→sif (audit BLOCKER 2): pyproject name/script/keywords, README installs, uv.lock root entry; new mcp/http extras (uvicorn only) so sif[mcp]/sif[http]/sif[embed] hints resolve; suite 675 green | 2026-09-14 | 4657ea8 | [260914-vyr-rename-distribution-docsif-to-sif-pyproj](./quick/260914-vyr-rename-distribution-docsif-to-sif-pyproj/) |
 | 260914-wxv | Fix stale command references (DOC-02/04): 5 CLI 'sif update' hints → real index-group commands, development.md 2 blocks + both live skills corrected; --help existence proofs + live hint verification, suite 675 green | 2026-09-14 | 484b82c | [260914-wxv-fix-stale-command-references-nonexistent](./quick/260914-wxv-fix-stale-command-references-nonexistent/) |
+| 260917-bo2 | Typing debt batch 1: search/rerank.py mypy strict-clean (22→0; TYPE_CHECKING imports, Optional annotations, narrowing asserts, 4 stale ignores removed) — zero behavior change, suite 676 green | 2026-09-17 | 1c1bec2 | [260917-bo2-typing-debt-batch-1-clear-search-rerank-](./quick/260917-bo2-typing-debt-batch-1-clear-search-rerank-/) |
 
 ### Overrides
 
@@ -155,7 +156,7 @@ Total Plans in Phase: 9
 ## Session Continuity
 
 - **Last session:** 2026-09-15T09:00:00Z
-- **Stopped at:** Phases 06/07 verified (audit "unverified phases" blocker closed)
+- **Stopped at:** Typing debt batch 1 complete (rerank.py mypy-clean)
 - **Resume file:** None
-- **Last action:** Phase 06 gap closure (plans 06-08..06-10, all 8 UAT gaps resolved, VERIFICATION passed 2d088f9) + Phase 07 UAT/verification (G-07-1 symlinks restored, G-07-2 skill prose fixed fb1ecff, VERIFICATION passed fd82d60); suite 676 green
-- **Next expected action:** Typing debt (139 mypy errors, open deferred item in phase 03) via /gsd-quick batches or /gsd-phase, then /gsd-complete-milestone for v1.0
+- **Last action:** /gsd-quick 260917-bo2 → search/rerank.py mypy strict-clean (22→0, zero behavior change); full-project mypy now 117 errors in 34 files; suite 676 green
+- **Next expected action:** Typing debt batches 2..N (next hottest: indexing/watcher.py 14, embedding/manager.py 14, embedding/embedder.py 14, mcp/handlers.py 12) or /gsd-complete-milestone accepting remaining debt
