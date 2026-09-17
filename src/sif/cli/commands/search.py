@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 
 import click
 from rich.console import Console
@@ -41,7 +42,7 @@ def _display_snippet(r: SearchResult, max_len: int = _CONTENT_MAX_LEN) -> str:
     return text[:max_len] + "..." if len(text) > max_len else text
 
 
-def format_results_json(results: list) -> str:
+def format_results_json(results: list[Any]) -> str:
     """Format results as JSON."""
     return json.dumps(
         [r.to_dict() if hasattr(r, "to_dict") else r for r in results],
@@ -50,7 +51,7 @@ def format_results_json(results: list) -> str:
     )
 
 
-def format_results_csv(results: list) -> str:
+def format_results_csv(results: list[Any]) -> str:
     """Format results as CSV."""
     lines = ["rank,score,title,path,collection"]
     lines.extend(
@@ -59,7 +60,7 @@ def format_results_csv(results: list) -> str:
     return "\n".join(lines)
 
 
-def format_results_md(results: list, query: str) -> str:
+def format_results_md(results: list[Any], query: str) -> str:
     """Format results as Markdown."""
     lines = [f"# Search Results: {query}", ""]
     for r in results:
@@ -78,7 +79,7 @@ def format_results_md(results: list, query: str) -> str:
     return "\n".join(lines)
 
 
-def format_results_xml(results: list, query: str) -> str:
+def format_results_xml(results: list[Any], query: str) -> str:
     """Format results as XML."""
     lines = ['<?xml version="1.0" encoding="UTF-8"?>', f'<search query="{query}">']
     for r in results:
@@ -121,7 +122,7 @@ def search_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     ctx: click.Context,
     query: str,
     limit: int,
-    collection: tuple,
+    collection: tuple[str, ...],
     search_all: bool,
     min_score: float,
     full: bool,
@@ -239,8 +240,8 @@ def search_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 r.collection_name,
                 escape(_display_snippet(r)),
             ]
-            if line_numbers and getattr(r, "content", None):
-                content = prepend_line_numbers(r.content)
+            if line_numbers and (content := getattr(r, "content", None)):
+                content = prepend_line_numbers(content)
                 if len(content) > _CONTENT_MAX_LEN:
                     content = content[:_CONTENT_MAX_LEN] + "..."
                 row.append(content)
@@ -273,7 +274,7 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     ctx: click.Context,
     query: str,
     limit: int,
-    collection: tuple,
+    collection: tuple[str, ...],
     search_all: bool,
     min_score: float,
     full: bool,
@@ -375,8 +376,8 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 r.title[:_TITLE_MAX_LEN] + "..." if len(r.title) > _TITLE_MAX_LEN else r.title,
                 r.collection_name,
             ]
-            if line_numbers and getattr(r, "content", None):
-                content = prepend_line_numbers(r.content)
+            if line_numbers and (content := getattr(r, "content", None)):
+                content = prepend_line_numbers(content)
                 if len(content) > _CONTENT_MAX_LEN:
                     content = content[:_CONTENT_MAX_LEN] + "..."
                 row.append(content)
@@ -418,7 +419,7 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     ctx: click.Context,
     query: str,
     limit: int,
-    collection: tuple,
+    collection: tuple[str, ...],
     search_all: bool,
     min_score: float,
     full: bool,
@@ -590,8 +591,8 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 r.collection_name,
                 escape(_display_snippet(r)),
             ]
-            if line_numbers and getattr(r, "content", None):
-                content = prepend_line_numbers(r.content)
+            if line_numbers and (content := getattr(r, "content", None)):
+                content = prepend_line_numbers(content)
                 if len(content) > _CONTENT_MAX_LEN:
                     content = content[:_CONTENT_MAX_LEN] + "..."
                 row.append(content)

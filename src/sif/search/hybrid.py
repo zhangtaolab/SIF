@@ -15,7 +15,7 @@ from sif.utils.logging import get_logger
 
 if TYPE_CHECKING:
     from sif.search.expansion import QueryExpansion
-    from sif.search.rerank import CrossEncoderReranker, LlamaCppReranker
+    from sif.search.rerank import CrossEncoderReranker, LlamaCppReranker, Qwen3Reranker
     from sif.search.snippets import SmartSnippetExtractor
 
 logger = get_logger(__name__)
@@ -137,7 +137,7 @@ class SearchPipeline:
         db: sqlite3.Connection,
         embedder: Embedder | None = None,
         query_expander: QueryExpansion | None = None,
-        reranker: LlamaCppReranker | CrossEncoderReranker | None = None,
+        reranker: LlamaCppReranker | CrossEncoderReranker | Qwen3Reranker | None = None,
         snippet_extractor: SmartSnippetExtractor | None = None,
         embedding_dim: int = 768,
     ) -> None:
