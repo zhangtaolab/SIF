@@ -149,6 +149,7 @@ Total Plans in Phase: 9
 | 260914-wxv | Fix stale command references (DOC-02/04): 5 CLI 'sif update' hints → real index-group commands, development.md 2 blocks + both live skills corrected; --help existence proofs + live hint verification, suite 675 green | 2026-09-14 | 484b82c | [260914-wxv-fix-stale-command-references-nonexistent](./quick/260914-wxv-fix-stale-command-references-nonexistent/) |
 | 260917-bo2 | Typing debt batch 1: search/rerank.py mypy strict-clean (22→0; TYPE_CHECKING imports, Optional annotations, narrowing asserts, 4 stale ignores removed) — zero behavior change, suite 676 green | 2026-09-17 | 1c1bec2 | [260917-bo2-typing-debt-batch-1-clear-search-rerank-](./quick/260917-bo2-typing-debt-batch-1-clear-search-rerank-/) |
 | 260917-dkf | Typing debt batch 2: watcher.py/manager.py/embedder.py mypy-clean (39→0; EmbeddingConfig Field defaults → keyword syntax, typed locals, os.fsdecode) — full-project 117→78, zero behavior change, suite 676 green | 2026-09-17 | e39d092 | [260917-dkf-typing-debt-batch-2-clear-indexing-watch](./quick/260917-dkf-typing-debt-batch-2-clear-indexing-watch/) |
+| 260917-kav | Typing debt batch 3: mcp/handlers.py + cli/commands/search.py + database/connection.py mypy-clean (32→0; ClassVar base attrs, generics, walrus narrowing, SearchPipeline reranker union widened) — full-project 78→46, zero behavior change, suite 676 green | 2026-09-17 | 4f24682 | [260917-kav-typing-debt-batch-3-clear-mcp-handlers-p](./quick/260917-kav-typing-debt-batch-3-clear-mcp-handlers-p/) |
 
 ### Overrides
 
@@ -157,7 +158,7 @@ Total Plans in Phase: 9
 ## Session Continuity
 
 - **Last session:** 2026-09-15T09:00:00Z
-- **Stopped at:** Typing debt batch 2 complete (watcher/manager/embedder mypy-clean)
+- **Stopped at:** Typing debt batch 3 complete (handlers/search/connection mypy-clean)
 - **Resume file:** None
-- **Last action:** /gsd-quick 260917-dkf → three hottest files mypy-clean (39→0); full-project mypy 117→78 errors in 31 files; suite 676 green
-- **Next expected action:** Typing debt batches 3..N (next hottest: mcp/handlers.py 12, cli/commands/search.py 11, database/connection.py 9) or /gsd-complete-milestone accepting remaining debt
+- **Last action:** /gsd-quick 260917-kav → mcp/handlers.py + cli/commands/search.py + database/connection.py mypy-clean (32→0); full-project mypy 78→46 errors in 28 files; suite 676 green
+- **Next expected action:** Typing debt batches 4..N (~46 errors left across 28 files) or /gsd-complete-milestone accepting remaining debt
