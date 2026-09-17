@@ -14,6 +14,9 @@ from sif.utils.logging import get_logger, is_quiet, suppress_output
 if TYPE_CHECKING:
     from llama_cpp import Llama
     from sentence_transformers import CrossEncoder
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+
+    from sif.config.settings import Settings
 
 logger = get_logger(__name__)
 
@@ -270,8 +273,8 @@ class Qwen3Reranker:
         self._batch_size = batch_size
         self._cache_dir = cache_dir
         self._max_length = max_length
-        self._model = None
-        self._tokenizer = None
+        self._model: AutoModelForCausalLM | None = None
+        self._tokenizer: AutoTokenizer | None = None
         self._token_true_id: int | None = None
         self._token_false_id: int | None = None
 
@@ -350,6 +353,8 @@ class Qwen3Reranker:
 
         if self._model is None:
             self.load()
+        assert self._model is not None
+        assert self._tokenizer is not None
 
         import torch  # noqa: PLC0415
 
@@ -374,13 +379,13 @@ class Qwen3Reranker:
                 max_length=self._max_length,
                 return_tensors="pt",
             )
-            inputs = {k: v.to(self._model.device) for k, v in inputs.items()}  # type: ignore[union-attr]
+            inputs = {k: v.to(self._model.device) for k, v in inputs.items()}
 
             with torch.no_grad():
-                outputs = self._model(**inputs)  # type: ignore[operator]
+                outputs = self._model(**inputs)
 
             # Last token logits -> yes/no probabilities
-            logits = outputs.logits[:, -1, :]  # type: ignore[union-attr]
+            logits = outputs.logits[:, -1, :]
             true_scores = logits[:, self._token_true_id]
             false_scores = logits[:, self._token_false_id]
             batch_logits = torch.stack([false_scores, true_scores], dim=1)
@@ -392,7 +397,7 @@ class Qwen3Reranker:
 
 
 def create_reranker(
-    settings,
+    settings: Settings,
 ) -> LlamaCppReranker | CrossEncoderReranker | Qwen3Reranker:
     """Factory: create a reranker based on settings."""
     model_type = getattr(settings, "reranker_model_type", "gguf")
