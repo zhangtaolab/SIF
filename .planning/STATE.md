@@ -148,6 +148,7 @@ Total Plans in Phase: 9
 | 260914-vyr | Rename distribution docsif→sif (audit BLOCKER 2): pyproject name/script/keywords, README installs, uv.lock root entry; new mcp/http extras (uvicorn only) so sif[mcp]/sif[http]/sif[embed] hints resolve; suite 675 green | 2026-09-14 | 4657ea8 | [260914-vyr-rename-distribution-docsif-to-sif-pyproj](./quick/260914-vyr-rename-distribution-docsif-to-sif-pyproj/) |
 | 260914-wxv | Fix stale command references (DOC-02/04): 5 CLI 'sif update' hints → real index-group commands, development.md 2 blocks + both live skills corrected; --help existence proofs + live hint verification, suite 675 green | 2026-09-14 | 484b82c | [260914-wxv-fix-stale-command-references-nonexistent](./quick/260914-wxv-fix-stale-command-references-nonexistent/) |
 | 260917-bo2 | Typing debt batch 1: search/rerank.py mypy strict-clean (22→0; TYPE_CHECKING imports, Optional annotations, narrowing asserts, 4 stale ignores removed) — zero behavior change, suite 676 green | 2026-09-17 | 1c1bec2 | [260917-bo2-typing-debt-batch-1-clear-search-rerank-](./quick/260917-bo2-typing-debt-batch-1-clear-search-rerank-/) |
+| 260917-dkf | Typing debt batch 2: watcher.py/manager.py/embedder.py mypy-clean (39→0; EmbeddingConfig Field defaults → keyword syntax, typed locals, os.fsdecode) — full-project 117→78, zero behavior change, suite 676 green | 2026-09-17 | e39d092 | [260917-dkf-typing-debt-batch-2-clear-indexing-watch](./quick/260917-dkf-typing-debt-batch-2-clear-indexing-watch/) |
 
 ### Overrides
 
@@ -156,7 +157,7 @@ Total Plans in Phase: 9
 ## Session Continuity
 
 - **Last session:** 2026-09-15T09:00:00Z
-- **Stopped at:** Typing debt batch 1 complete (rerank.py mypy-clean)
+- **Stopped at:** Typing debt batch 2 complete (watcher/manager/embedder mypy-clean)
 - **Resume file:** None
-- **Last action:** /gsd-quick 260917-bo2 → search/rerank.py mypy strict-clean (22→0, zero behavior change); full-project mypy now 117 errors in 34 files; suite 676 green
-- **Next expected action:** Typing debt batches 2..N (next hottest: indexing/watcher.py 14, embedding/manager.py 14, embedding/embedder.py 14, mcp/handlers.py 12) or /gsd-complete-milestone accepting remaining debt
+- **Last action:** /gsd-quick 260917-dkf → three hottest files mypy-clean (39→0); full-project mypy 117→78 errors in 31 files; suite 676 green
+- **Next expected action:** Typing debt batches 3..N (next hottest: mcp/handlers.py 12, cli/commands/search.py 11, database/connection.py 9) or /gsd-complete-milestone accepting remaining debt
