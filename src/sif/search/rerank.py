@@ -12,7 +12,8 @@ from sif.utils.logging import get_logger, is_quiet, suppress_output
 
 
 if TYPE_CHECKING:
-    from sentence_transformers import CrossEncoder  # noqa: F401
+    from llama_cpp import Llama
+    from sentence_transformers import CrossEncoder
 
 logger = get_logger(__name__)
 
@@ -100,7 +101,7 @@ class LlamaCppReranker:
         self._n_ctx = n_ctx
         self._n_threads = n_threads
         self._batch_size = batch_size
-        self._model = None
+        self._model: Llama | None = None
 
     def load(self) -> None:
         """Load the GGUF model."""
@@ -133,6 +134,7 @@ class LlamaCppReranker:
 
         if self._model is None:
             self.load()
+        assert self._model is not None
 
         import numpy as np  # noqa: PLC0415
 
@@ -178,7 +180,7 @@ class CrossEncoderReranker:
         self._device = device
         self._batch_size = batch_size
         self._cache_dir = cache_dir
-        self._model = None
+        self._model: CrossEncoder | None = None
 
     def load(self) -> None:
         """Load the cross-encoder model."""
@@ -223,6 +225,7 @@ class CrossEncoderReranker:
 
         if self._model is None:
             self.load()
+        assert self._model is not None
 
         # Build query-document pairs
         pairs: list[tuple[str, str]] = []
@@ -235,7 +238,7 @@ class CrossEncoderReranker:
             pairs.append((query, text))
 
         # Score all pairs
-        raw_scores = self._model.predict(pairs, batch_size=self._batch_size)  # type: ignore[union-attr]
+        raw_scores = self._model.predict(pairs, batch_size=self._batch_size)
 
         # Normalize scores to [0, 1] using sigmoid
         normalized = [1.0 / (1.0 + math.exp(-float(s))) for s in raw_scores]
