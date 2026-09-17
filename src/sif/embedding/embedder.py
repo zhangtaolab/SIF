@@ -79,7 +79,7 @@ class SentenceTransformerEmbedder(Embedder):
                 cache_folder=cache_dir,
             )
 
-        self._dimension = self.model.get_sentence_embedding_dimension()
+        self._dimension: int = self.model.get_sentence_embedding_dimension()
         logger.info(f"Embedding dimension: {self._dimension}")
 
     def embed(self, text: str) -> list[float]:
@@ -92,7 +92,8 @@ class SentenceTransformerEmbedder(Embedder):
             Embedding vector
         """
         embedding = self.model.encode(text, normalize_embeddings=True)
-        return embedding.tolist()
+        result: list[float] = embedding.tolist()
+        return result
 
     def embed_batch(self, texts: list[str]) -> list[list[float]]:
         """Embed multiple texts.
@@ -108,7 +109,8 @@ class SentenceTransformerEmbedder(Embedder):
             normalize_embeddings=True,
             show_progress_bar=len(texts) > _PROGRESS_BAR_THRESHOLD,
         )
-        return embeddings.tolist()
+        result: list[list[float]] = embeddings.tolist()
+        return result
 
     @property
     def dimension(self) -> int:
@@ -162,7 +164,7 @@ class LlamaCppEmbedder(Embedder):
             verbose=verbose,
         )
 
-        self._dimension = self.model.n_embd()
+        self._dimension: int = self.model.n_embd()
         logger.info(f"Embedding dimension: {self._dimension}")
 
     def embed(self, text: str) -> list[float]:
@@ -181,7 +183,8 @@ class LlamaCppEmbedder(Embedder):
         norm = np.linalg.norm(vector)
         if norm > 0:
             vector = vector / norm
-        return vector.tolist()
+        result: list[float] = vector.tolist()
+        return result
 
     @staticmethod
     def _unwrap_embedding(raw: Any) -> np.ndarray:
@@ -190,7 +193,7 @@ class LlamaCppEmbedder(Embedder):
         Raises:
             ValueError: If the payload is empty or has an unexpected shape.
         """
-        arr = np.asarray(raw, dtype=float)
+        arr: np.ndarray = np.asarray(raw, dtype=float)
         if arr.size == 0:
             raise ValueError(
                 f"Embedding model returned an empty payload (shape {arr.shape}); "
@@ -202,7 +205,8 @@ class LlamaCppEmbedder(Embedder):
         if arr.ndim == _NDIM_TOKEN_LEVEL:
             # (T, D) token-level output mean-pools the token axis; a (1, D)
             # wrapped pooled vector mean-pools to exactly its single row.
-            return arr.mean(axis=0)
+            result: np.ndarray = arr.mean(axis=0)
+            return result
         if arr.ndim == _NDIM_FULLY_WRAPPED_TOKEN_LEVEL:
             # Version-dependent fully-wrapped token-level output.
             if arr.shape[0] != 1:
@@ -210,7 +214,8 @@ class LlamaCppEmbedder(Embedder):
                     f"Embedding model returned {arr.shape[0]} embeddings for a "
                     f"single text (shape {arr.shape}); expected exactly 1."
                 )
-            return arr[0].mean(axis=0)
+            pooled: np.ndarray = arr[0].mean(axis=0)
+            return pooled
         raise ValueError(
             f"Embedding model returned an unexpected payload with {arr.ndim} "
             "dimensions; expected 1, 2, or 3."
@@ -250,12 +255,13 @@ class LlamaCppEmbedder(Embedder):
         Returns:
             The openai-style completion dict from llama-cpp-python.
         """
-        return self.model.create_completion(
+        result: dict[str, Any] = self.model.create_completion(
             prompt,
             max_tokens=max_tokens,
             temperature=temperature,
             stop=stop if stop is not None else [],
         )
+        return result
 
     @property
     def dimension(self) -> int:
@@ -324,14 +330,15 @@ class ModelScopeEmbedder(Embedder):
                 device=device,
             )
 
-        self._dimension = self.model.get_sentence_embedding_dimension()
+        self._dimension: int = self.model.get_sentence_embedding_dimension()
         self.model_id = model_id
         logger.info(f"Embedding dimension: {self._dimension}")
 
     def embed(self, text: str) -> list[float]:
         """Embed a single text."""
         embedding = self.model.encode(text, normalize_embeddings=True)
-        return embedding.tolist()
+        result: list[float] = embedding.tolist()
+        return result
 
     def embed_batch(self, texts: list[str]) -> list[list[float]]:
         """Embed multiple texts."""
@@ -340,7 +347,8 @@ class ModelScopeEmbedder(Embedder):
             normalize_embeddings=True,
             show_progress_bar=len(texts) > _PROGRESS_BAR_THRESHOLD,
         )
-        return embeddings.tolist()
+        result: list[list[float]] = embeddings.tolist()
+        return result
 
     @property
     def dimension(self) -> int:
@@ -511,7 +519,8 @@ class OpenAIEmbedder(Embedder):
         norm = np.linalg.norm(arr)
         if norm > 0:
             arr = arr / norm
-        return arr.tolist()
+        result: list[float] = arr.tolist()
+        return result
 
     @property
     def dimension(self) -> int:
@@ -529,7 +538,7 @@ class SimpleEmbedder(Embedder):
             dimension: Embedding dimension
         """
         self._dimension = dimension
-        self.vocabulary: dict = {}
+        self.vocabulary: dict[str, int] = {}
         self._doc_count = 0
 
     def embed(self, text: str) -> list[float]:
@@ -566,7 +575,7 @@ class SimpleEmbedder(Embedder):
 
 def create_embedder(
     embedder_type: str = "sentence_transformer",
-    **kwargs,
+    **kwargs: Any,
 ) -> Embedder:
     """Factory function to create embedders.
 
