@@ -1,14 +1,25 @@
 """File system watcher for auto-indexing."""
 
+import os
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
+from watchdog.observers.api import BaseObserver
 
 from sif.utils.logging import get_logger
 
 
+if TYPE_CHECKING:
+    from sif.indexing.indexer import DocumentIndexer
+
 logger = get_logger(__name__)
+
+
+def _event_path(path: bytes | str) -> str:
+    """Normalize a watchdog event path to str."""
+    return os.fsdecode(path)
 
 
 class IndexingEventHandler(FileSystemEventHandler):
@@ -17,7 +28,7 @@ class IndexingEventHandler(FileSystemEventHandler):
     def __init__(
         self,
         collection_id: str,
-        indexer: "DocumentIndexer",  # noqa: F821
+        indexer: "DocumentIndexer",
         extensions: set[str] | None = None,
     ) -> None:
         """Initialize event handler.
@@ -36,8 +47,9 @@ class IndexingEventHandler(FileSystemEventHandler):
         if event.is_directory:
             return
 
-        if self._should_handle(event.src_path):
-            logger.info(f"File created: {event.src_path}")
+        src_path = _event_path(event.src_path)
+        if self._should_handle(src_path):
+            logger.info(f"File created: {src_path}")
             # Trigger incremental index
 
     def on_modified(self, event: FileSystemEvent) -> None:
@@ -45,8 +57,9 @@ class IndexingEventHandler(FileSystemEventHandler):
         if event.is_directory:
             return
 
-        if self._should_handle(event.src_path):
-            logger.info(f"File modified: {event.src_path}")
+        src_path = _event_path(event.src_path)
+        if self._should_handle(src_path):
+            logger.info(f"File modified: {src_path}")
             # Trigger incremental index
 
     def on_deleted(self, event: FileSystemEvent) -> None:
@@ -54,8 +67,9 @@ class IndexingEventHandler(FileSystemEventHandler):
         if event.is_directory:
             return
 
-        if self._should_handle(event.src_path):
-            logger.info(f"File deleted: {event.src_path}")
+        src_path = _event_path(event.src_path)
+        if self._should_handle(src_path):
+            logger.info(f"File deleted: {src_path}")
             # Trigger removal from index
 
     def on_moved(self, event: FileSystemEvent) -> None:
@@ -63,8 +77,9 @@ class IndexingEventHandler(FileSystemEventHandler):
         if event.is_directory:
             return
 
-        if self._should_handle(event.src_path):
-            logger.info(f"File moved: {event.src_path} -> {event.dest_path}")
+        src_path = _event_path(event.src_path)
+        if self._should_handle(src_path):
+            logger.info(f"File moved: {src_path} -> {_event_path(event.dest_path)}")
             # Trigger update
 
     def _should_handle(self, path: str) -> bool:
@@ -88,7 +103,7 @@ class FileWatcher:
 
     def __init__(
         self,
-        indexer: "DocumentIndexer",  # noqa: F821
+        indexer: "DocumentIndexer",
         extensions: set[str] | None = None,
     ) -> None:
         """Initialize file watcher.
@@ -99,7 +114,7 @@ class FileWatcher:
         """
         self._indexer = indexer
         self._extensions = extensions or {".md", ".markdown"}
-        self._observer: Observer | None = None
+        self._observer: BaseObserver | None = None
         self._handlers: dict[str, IndexingEventHandler] = {}
 
     def start(self, collection_id: str, paths: list[str]) -> None:
