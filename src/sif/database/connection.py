@@ -4,6 +4,7 @@ import sqlite3
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 
 import sqlite_vec
 
@@ -60,7 +61,7 @@ class DatabaseConnection:
     def execute(
         self,
         query: str,
-        parameters: tuple | dict | None = None,
+        parameters: tuple[Any, ...] | dict[str, Any] | None = None,
     ) -> sqlite3.Cursor:
         """Execute a query and return the cursor."""
         with self.connect() as conn:
@@ -71,7 +72,7 @@ class DatabaseConnection:
     def executemany(
         self,
         query: str,
-        parameters: list[tuple | dict],
+        parameters: list[tuple[Any, ...] | dict[str, Any]],
     ) -> sqlite3.Cursor:
         """Execute a query multiple times."""
         with self.connect() as conn:
@@ -82,17 +83,18 @@ class DatabaseConnection:
     def fetchone(
         self,
         query: str,
-        parameters: tuple | dict | None = None,
+        parameters: tuple[Any, ...] | dict[str, Any] | None = None,
     ) -> sqlite3.Row | None:
         """Fetch a single row."""
         with self.connect() as conn:
             cursor = conn.execute(query, parameters or ())
-            return cursor.fetchone()
+            row: sqlite3.Row | None = cursor.fetchone()
+            return row
 
     def fetchall(
         self,
         query: str,
-        parameters: tuple | dict | None = None,
+        parameters: tuple[Any, ...] | dict[str, Any] | None = None,
     ) -> list[sqlite3.Row]:
         """Fetch all rows."""
         with self.connect() as conn:
