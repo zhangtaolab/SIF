@@ -1,16 +1,16 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: 6
+current_plan: 7
 status: executing
-stopped_at: Completed 10-05-PLAN.md
-last_updated: "2026-11-05T19:48:59.044Z"
-state_head: eae592bb4aa2edcfb710cce8c218f833a84ebce1
+stopped_at: Completed 10-06-PLAN.md
+last_updated: "2026-11-05T20:15:59.060Z"
+state_head: 5bbdacd07a0935a65724f0a8b76be50fdf3e5e75
 progress:
   total_phases: 10
   completed_phases: 9
   total_plans: 61
-  completed_plans: 59
+  completed_plans: 60
 milestone_name: milestone
 current_phase: 10
 current_phase_name: Raise pytest coverage to 90%
@@ -22,21 +22,21 @@ current_phase_name: Raise pytest coverage to 90%
 
 - **Name:** DocSift
 - **Core Value:** 用户可以在自己的笔记和文档库中，用自然语言快速、准确地找到需要的信息——无论关键词是否匹配。
-- **Current Focus:** Phase 10 coverage campaign — plan 10-05 complete at 93.48%; ready for 10-06.
+- **Current Focus:** Phase 10 coverage campaign — plan 10-06 complete at 96.16%; ready for 10-07.
 - **Tech Stack:** Python 3.10+, SQLite (FTS5 + sqlite-vec), Click, Pydantic, sentence-transformers, llama-cpp-python
 
 ## Current Position
 
-Current Plan: 6
+Current Plan: 7
 Total Plans in Phase: 7
 
 - **Phases:** 9/10 complete (01–09); Phase 10 in progress
-- **Plans:** 59/61 complete
-- **Status:** Completed 10-05; ready for 10-06
-- **Progress Bar:** `[███████████████████░] 97%`
-- **Coverage baseline:** 93.48% (5340 statements, 348 missed); 875 passed, 0 failed
+- **Plans:** 60/61 complete
+- **Status:** Completed 10-06; ready for 10-07
+- **Progress Bar:** `[████████████████████] 98%`
+- **Coverage baseline:** 96.16% (5341 statements, 205 missed); 958 passed, 0 failed
 
-Phase 10-01 deleted the approved dead-code cluster; 10-02/10-03 expanded CLI and reranker coverage; 10-04 closed the real-SQLite database layer; 10-05 covered core services, downloader, and utilities.
+Phase 10-01 deleted the approved dead-code cluster; 10-02/10-03 expanded CLI and reranker coverage; 10-04 closed the real-SQLite database layer; 10-05 covered core services, downloader, and utilities; 10-06 covered indexing and MCP behavior.
 
 ## Phase History
 
@@ -53,7 +53,7 @@ Phase 10-01 deleted the approved dead-code cluster; 10-02/10-03 expanded CLI and
 
 - **Requirements mapped:** 31/31 v1 + 7 DOC requirements
 - **Phases defined:** 10
-- **Tests passing:** 875 passed, 0 failed (post 10-05)
+- **Tests passing:** 958 passed, 0 failed (post 10-06)
 - **Known blockers:** 0
 
 **Per-Plan Metrics:**
@@ -67,6 +67,7 @@ Phase 10-01 deleted the approved dead-code cluster; 10-02/10-03 expanded CLI and
 | Phase 10 P03 | 19min | 2 tasks | 4 files |
 | Phase 10 P04 | 30min | 3 tasks | 10 files |
 | Phase 10 P05 | 11min | 3 tasks | 12 files |
+| Phase 10 P06 | 20min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -135,6 +136,8 @@ Phase 10-01 deleted the approved dead-code cluster; 10-02/10-03 expanded CLI and
 - [Phase 10]: 10-04: Real SQLite exposed and repaired stale external-content FTS delete triggers, lazy stats initialization, and multi-statement migration execution; repositories/schema/database/cache reached 100% and migrations 92%.
 - [Phase 10]: 10-05: Used real domain entities with repository Protocol doubles and scoped ModelScope/process-state isolation; all seven target files reached 100%.
 - [Phase 10]: 10-05: Behavior tests exposed and repaired custom logging formatter and indeterminate Rich progress defects; TOTAL coverage reached 93.48%.
+- [Phase 10]: 10-06: Real-file Unicode parsing, exact code-point chunk boundaries, and isolated MCP protocol tests raised TOTAL coverage to 96.16%.
+- [Phase 10]: 10-06: Behavior tests repaired fixed-size chunker forward progress and post-insertion MCP session LRU bounds.
 
 ### Roadmap Evolution
 
@@ -178,9 +181,9 @@ Phase 10-01 deleted the approved dead-code cluster; 10-02/10-03 expanded CLI and
 
 ## Session Continuity
 
-**Last session:** 2026-11-05T19:48:58.590Z
-**Stopped at:** Completed 10-05-PLAN.md
+**Last session:** 2026-11-05T20:15:58.570Z
+**Stopped at:** Completed 10-06-PLAN.md
 **Resume file:** None
 
-- **Last action:** `/gsd-execute-phase 10` — plan 10-05 covered core services, ModelDownloader, and utility helpers and repaired two exposed defects; 875 passed, coverage 93.48%.
-- **Next expected action:** `/gsd-execute-phase 10` — continue with plan 10-06. `T-10-1` remains held until all seven plans complete.
+- **Last action:** `/gsd-execute-phase 10` — plan 10-06 covered indexing and MCP behavior and repaired chunker progress/session bounds; 958 passed, coverage 96.16%.
+- **Next expected action:** `/gsd-execute-phase 10` — continue with plan 10-07. `T-10-1` remains held until all seven plans complete.
