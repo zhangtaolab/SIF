@@ -422,6 +422,74 @@ class TestVectorEmbeddingDeletion:
         finally:
             conn.close()
 
+    def test_get_all_embedded_chunk_ids_groups_and_skips_none(self) -> None:
+        """Batch read: one unfiltered SELECT grouped by document, NULL chunk ids skipped."""
+        mock_db = MagicMock()
+        cursor = MagicMock()
+        cursor.__iter__.return_value = iter(
+            [("d1", "c1"), ("d1", "c2"), ("d1", None), ("d2", "c3")]
+        )
+        mock_db.execute.return_value = cursor
+
+        searcher = VectorSearcher(mock_db)
+        searcher._vec_available = True
+        # Drop the constructor's vec_version probe so the call history below
+        # is the batch method's alone.
+        mock_db.execute.reset_mock()
+        mock_db.execute.return_value = cursor
+
+        result = searcher.get_all_embedded_chunk_ids()
+
+        call = mock_db.execute.call_args
+        sql = call[0][0]
+        assert "SELECT document_id, chunk_id FROM document_embeddings" in sql
+        assert "WHERE" not in sql
+        assert call[0][1:] == ()
+        mock_db.execute.assert_called_once()
+        assert result == {"d1": {"c1", "c2"}, "d2": {"c3"}}
+
+    def test_get_all_embedded_chunk_ids_matches_per_document_lookup_on_real_vec0(self) -> None:
+        """On a real vec0 table the batch map equals the per-document lookup."""
+        import sqlite_vec
+
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            try:
+                conn.enable_load_extension(True)
+                sqlite_vec.load(conn)
+                conn.enable_load_extension(False)
+            except Exception:
+                pytest.skip("sqlite-vec not available")
+            conn.execute(
+                """
+                CREATE VIRTUAL TABLE document_embeddings USING vec0(
+                    embedding_id TEXT PRIMARY KEY,
+                    document_id TEXT NOT NULL,
+                    chunk_id TEXT,
+                    embedding FLOAT[2]
+                )
+                """,
+            )
+            searcher = VectorSearcher(conn, embedding_dim=2)
+            searcher.add_embeddings_batch(
+                [
+                    ("e1", "d1", "c1", [1.0, 0.0]),
+                    ("e2", "d1", "c2", [0.0, 1.0]),
+                    ("e3", "d1", None, [1.0, 1.0]),
+                    ("e4", "d2", "c3", [0.0, 0.0]),
+                ],
+            )
+
+            batch_result = searcher.get_all_embedded_chunk_ids()
+
+            # The NULL chunk_id row is skipped by both lookup forms.
+            assert batch_result == {"d1": {"c1", "c2"}, "d2": {"c3"}}
+            for doc_id in ("d1", "d2"):
+                assert batch_result[doc_id] == searcher.get_embedded_chunk_ids(doc_id)
+        finally:
+            conn.close()
+
 
 class TestVectorContextAttachment:
     """Tests for context_description attachment in vector search results."""
