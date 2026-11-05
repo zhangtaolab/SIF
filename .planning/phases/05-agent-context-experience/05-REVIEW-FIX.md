@@ -59,7 +59,7 @@ report for the earlier review iteration.
   rendering identically to object rows). Confirmed it fails on pre-fix code
   with exactly the reviewed `AttributeError` and passes post-fix.
 
-### WR-01: `vsearch_cmd` calls `get_settings()` unguarded — raw pydantic traceback with explicit `--index` and invalid config
+### WR-01: `vsearch_cmd` calls `get_settings()` unguarded — raw pydantic traceback with explicit `--index` and invalid config (WR-09 fix incomplete in same file)
 
 **Files modified:** `src/sif/cli/commands/search.py`, `tests/unit/cli/test_search.py`
 **Commit:** 7170c08
