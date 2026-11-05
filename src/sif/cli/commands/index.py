@@ -350,12 +350,16 @@ def embed_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
         all_chunks = []  # (chunk, document_id)
         doc_chunks_map: dict[str, list] = {}
         try:
+            # One unindexed metadata scan per document made the completeness
+            # check quadratic; prefetch the whole map once per collection and
+            # judge each document against it.
+            embedded_by_doc = vector_searcher.get_all_embedded_chunk_ids()
             with db.connection:
                 for doc in documents:
                     # Skip documents whose live chunks already have an exact,
                     # complete set of embeddings; --force bypasses the check.
                     existing = chunk_repo.get_by_document(doc.id)
-                    embedded = vector_searcher.get_embedded_chunk_ids(doc.id)
+                    embedded = embedded_by_doc.get(doc.id, set())
                     if not _needs_embedding({c.id for c in existing}, embedded, force):
                         console.print(f"  [dim]Already embedded: {doc.path}[/dim]")
                         continue
