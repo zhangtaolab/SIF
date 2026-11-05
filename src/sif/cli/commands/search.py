@@ -479,13 +479,21 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             options.collection_ids = [c.id for c in enabled]
 
     # Load embedder for hybrid search
+    from pydantic import ValidationError  # noqa: PLC0415
+
     from sif.config.settings import get_settings  # noqa: PLC0415
     from sif.embedding.manager import EmbeddingManager  # noqa: PLC0415
     from sif.search.expansion import QueryExpansion  # noqa: PLC0415
     from sif.search.rerank import create_reranker  # noqa: PLC0415
     from sif.search.snippets import SmartSnippetExtractor  # noqa: PLC0415
 
-    settings = get_settings()
+    # When --index IS passed the group default never runs, so this is the
+    # first settings touchpoint and must convert invalid config itself
+    # (REVIEW WR-09).
+    try:
+        settings = get_settings()
+    except ValidationError as e:
+        raise click.ClickException(str(e)) from e
     if model_type:
         settings = settings.model_copy(update={"model_type": model_type})
 
@@ -510,6 +518,10 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                     "[yellow]Reranker not available. "
                     "Install with: pip install -e '.[embed]'[/yellow]",
                 )
+        # Defense in depth (REVIEW WR-09): a factory ValueError for an
+        # unknown model_type must not escape as a raw traceback.
+        except ValueError as e:
+            raise click.ClickException(str(e)) from e
 
     snippet_extractor = SmartSnippetExtractor(max_length=options.snippet_max_length)
 

@@ -1,11 +1,13 @@
 """Tests for search CLI commands."""
 
 import json
+from contextlib import ExitStack
 from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 
 from sif.cli.commands.search import query_cmd, search_cmd, vsearch_cmd
+from sif.config.settings import get_settings
 from sif.core.models import Collection
 
 
@@ -872,6 +874,88 @@ class TestQueryPipelineErrorHandling:
         result = self._invoke_query(mock_pipeline)
 
         assert isinstance(result.exception, ValueError)
+
+
+class TestQueryRerankerConfigError:
+    """WR-09: invalid reranker config surfaces as a clean ClickException."""
+
+    def _scaffold_patches(self):
+        """Standard query_cmd patch scaffold: DB, repo, pipeline, embedder."""
+        mock_repo = MagicMock()
+        mock_repo.list_enabled.return_value = []
+        mock_manager = MagicMock()
+        mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager._model = MagicMock()
+        mock_db = MagicMock()
+        return [
+            patch("sif.cli.commands.search.Database", return_value=mock_db),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=mock_repo),
+            patch("sif.cli.commands.search.SearchPipeline", return_value=MagicMock()),
+            patch(
+                "sif.embedding.manager.EmbeddingManager.from_settings",
+                return_value=mock_manager,
+            ),
+        ]
+
+    def test_env_invalid_reranker_type_clean_error(self, monkeypatch) -> None:
+        """Real get_settings + bad env renders a one-line error, no traceback.
+
+        The env var must reach an uncached Settings() call: cache_clear after
+        setenv, and again in finally (lru_cache does not cache raising calls,
+        so no poisoned entry persists).
+        """
+        runner = CliRunner()
+        monkeypatch.setenv("SIF_RERANKER_MODEL_TYPE", "cross-encoder")
+        get_settings.cache_clear()
+        try:
+            with ExitStack() as stack:
+                for p in self._scaffold_patches():
+                    stack.enter_context(p)
+                result = runner.invoke(
+                    query_cmd,
+                    ["query"],
+                    obj={"index_path": MagicMock(exists=lambda: True)},
+                )
+        finally:
+            get_settings.cache_clear()
+
+        assert result.exit_code == 1
+        assert "Error:" in result.output
+        assert "reranker_model_type" in result.output
+        assert "Traceback" not in result.output
+
+    def test_factory_value_error_becomes_click_exception(self):
+        """Defense in depth: a create_reranker ValueError renders as a clean error."""
+        runner = CliRunner()
+        mock_settings = MagicMock(
+            model_name="all-MiniLM-L6-v2",
+            reranker_model_name="q-reranker",
+            reranker_model_path=None,
+        )
+        # create_reranker is imported inside query_cmd's body, so patch the
+        # module attribute — the function-local import resolves it at call time.
+        with ExitStack() as stack:
+            for p in self._scaffold_patches():
+                stack.enter_context(p)
+            stack.enter_context(
+                patch("sif.config.settings.get_settings", return_value=mock_settings)
+            )
+            stack.enter_context(
+                patch(
+                    "sif.search.rerank.create_reranker",
+                    side_effect=ValueError("Unknown reranker model_type: cross-encoder"),
+                )
+            )
+            result = runner.invoke(
+                query_cmd,
+                ["query"],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code == 1
+        assert "Error:" in result.output
+        assert "Unknown reranker model_type" in result.output
+        assert not isinstance(result.exception, ValueError)
 
 
 class TestMachineOutputNoWrap:

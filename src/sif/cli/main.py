@@ -7,6 +7,7 @@ import sqlite3
 from pathlib import Path
 
 import click
+from pydantic import ValidationError
 from rich.console import Console
 from rich.table import Table
 
@@ -25,8 +26,17 @@ DEFAULT_CONFIG_PATH = Path.home() / ".config" / "sif"
 
 
 def _get_default_db_path() -> str:
-    """Get default database path from Settings."""
-    return str(get_settings().get_db_path())
+    """Get default database path from Settings.
+
+    Click evaluates this callable on every invocation that omits --index, so
+    invalid config must be converted here (REVIEW WR-09) — otherwise the
+    Settings validator would escape group-level option parsing as a raw
+    pydantic traceback for every command.
+    """
+    try:
+        return str(get_settings().get_db_path())
+    except ValidationError as e:
+        raise click.ClickException(str(e)) from e
 
 
 @click.group()
