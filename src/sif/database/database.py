@@ -88,6 +88,7 @@ class Database:
 
             settings = get_settings()
             self._schema = SchemaManager(self.connection, embedding_dim=settings.embedding_dim)
+            self._schema.create_all()
         return self._schema.get_stats()
 
     def reset(self) -> None:

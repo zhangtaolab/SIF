@@ -1,6 +1,9 @@
 """Database migration management."""
 
 import contextlib
+import sqlite3
+from collections.abc import Callable
+from contextlib import AbstractContextManager
 
 from sif.config.constants import CURRENT_SCHEMA_VERSION
 from sif.utils.logging import get_logger
@@ -158,14 +161,43 @@ class MigrationManager:
     def _apply_schema(self, embedding_dim: int) -> None:
         """Apply the database schema."""
         # Apply main schema
-        self._connection.execute(SCHEMA_SQL)
+        self._execute_script(SCHEMA_SQL)
 
         # Apply FTS schema
-        self._connection.execute(FTS_SQL)
+        self._execute_script(FTS_SQL)
 
         # Apply vector schema
         vector_sql = VECTOR_SQL_TEMPLATE.format(dim=embedding_dim)
         self._connection.execute(vector_sql)
+
+    def _execute_script(self, script: str) -> None:
+        """Execute a multi-statement SQL script on the configured connection.
+
+        Production ``DatabaseConnection`` opens a real SQLite connection per
+        operation, so use its connection context directly. The narrower
+        ``executescript`` capability keeps lightweight real-SQL adapters
+        compatible without replacing normal SQL behavior with mocks.
+        """
+        connection_context: Callable[[], AbstractContextManager[sqlite3.Connection]] | None = (
+            getattr(
+                self._connection,
+                "connect",
+                None,
+            )
+        )
+        if callable(connection_context):
+            with connection_context() as connection:
+                connection.executescript(script)
+            return
+
+        executescript: Callable[[str], sqlite3.Cursor] | None = getattr(
+            self._connection,
+            "executescript",
+            None,
+        )
+        if not callable(executescript):
+            raise TypeError("Migration connection must support executescript for SQL scripts")
+        executescript(script)
 
     def reset(self) -> None:
         """Reset the database (drop all tables)."""
