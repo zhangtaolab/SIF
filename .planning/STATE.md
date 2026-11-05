@@ -2,8 +2,8 @@
 gsd_state_version: "1.0"
 milestone: v1.0
 status: planning
-last_updated: "2026-11-05T15:39:24.380Z"
-state_head: 16b7b25aedd2ef543b44fef85e0aad0cdb676601
+last_updated: "2026-11-05T16:04:41.409Z"
+state_head: 751a0c38b4a1792c12cf96402a38b4ad2c6e541c
 progress:
   total_phases: 10
   completed_phases: 9
@@ -154,6 +154,7 @@ Phase 05 was re-verified 2026-11-05 (stale report regenerated after the Phase 08
 | 261105-eev | Document embedding hardware/device selection (MPS/GPU/CPU): generator Device Selection note under Embedding Model Settings + hardware-acceleration notes in installation.md; suite 676 green | 2026-11-05 | e3f7e2d | [261105-eev-document-embedding-hardware-device-selec](./quick/261105-eev-document-embedding-hardware-device-selec/) |
 | 261105-g1u | Fix 05-REVIEW WR-03/WR-09: guard context add/remove against missing index (no silent empty-DB creation); validate reranker_model_type + ClickException surface for bad SIF_RERANKER_MODEL_TYPE | 2026-11-05 | b8a81e1 | [261105-g1u-fix-05-review-wr-03-and-wr-09-context-ad](./quick/261105-g1u-fix-05-review-wr-03-and-wr-09-context-ad/) |
 | 261105-wbj | 修复 embed 完整性检查 O(N²) 性能 bug:vector.py 新增 get_all_embedded_chunk_ids() 批量预取,index.py 主循环改查 dict(vec0 全表扫 4 万次 → 一次全量) | 2026-11-05 | 16b7b25 | [261105-wbj-embed-o-n-bug-src-sif-search-vector-py-2](./quick/261105-wbj-embed-o-n-bug-src-sif-search-vector-py-2/) |
+| 261105-wwz | 排查搜索路径 vec0 metadata 过滤同类问题:结论无需改动——KNN 查询无 metadata WHERE,EQP 实测虚拟表扫一次且最外层,计时平坦(0.24-0.27ms),每用户查询调用一次;仅加 7 行审计注释(vector.py:79-86) | 2026-11-06 | 751a0c3 | [261105-wwz-vec0-metadata-src-sif-search-vector-py-8](./quick/261105-wwz-vec0-metadata-src-sif-search-vector-py-8/) |
 
 ### Overrides
 
