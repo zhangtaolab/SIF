@@ -41,12 +41,12 @@ class RichProgressTracker:
             description: Task description
             total: Total items (None for indeterminate)
         """
-        self._progress = RichProgress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn() if total else None,
-            TextColumn("[progress.percentage]{task.percentage:>3.0f}%") if total else None,
-        )
+        columns = [SpinnerColumn(), TextColumn("[progress.description]{task.description}")]
+        if total:
+            columns.extend(
+                [BarColumn(), TextColumn("[progress.percentage]{task.percentage:>3.0f}%")]
+            )
+        self._progress = RichProgress(*columns)
         self._progress.start()
         self._task_id = self._progress.add_task(description, total=total)
 
