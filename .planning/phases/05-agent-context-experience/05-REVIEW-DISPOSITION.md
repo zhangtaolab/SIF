@@ -47,6 +47,18 @@ findings:
     severity: warning
     disposition: open
     title: "docs CI job has no `timeout-minutes`"
+  - id: IN-01
+    severity: info
+    disposition: open
+    title: "attach \"newest wins\" uses SQLite TEXT ordering over mixed ISO-8601 formats"
+  - id: IN-02
+    severity: info
+    disposition: open
+    title: "tests build fixtures via `SchemaManager` private methods"
+  - id: IN-03
+    severity: info
+    disposition: open
+    title: "`update_target` return ignored in the exact-spelling branch"
   - id: IN-04
     severity: info
     disposition: open
@@ -91,10 +103,9 @@ findings:
     severity: info
     disposition: open
     title: "`Qwen3Reranker.load()` duplicates the entire loading block for quiet/non-quiet"
-open: 22
-total: 22
-unparsed: 3
-recorded: 2026-11-05T03:14:45.745Z
+open: 25
+total: 25
+recorded: 2026-11-05T03:15:22.090Z
 ---
 
 # Phase 05: Code Review Disposition
@@ -112,6 +123,9 @@ recorded: 2026-11-05T03:14:45.745Z
 | WR-09 | warning | open | - |
 | WR-10 | warning | open | - |
 | WR-11 | warning | open | - |
+| IN-01 | info | open | - |
+| IN-02 | info | open | - |
+| IN-03 | info | open | - |
 | IN-04 | info | open | - |
 | IN-05 | info | open | - |
 | IN-06 | info | open | - |

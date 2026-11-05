@@ -311,19 +311,19 @@ jobs:
 
 ## Info
 
-### IN-01 (carried forward): attach "newest wins" uses SQLite TEXT ordering over mixed ISO-8601 formats
+### IN-01: attach "newest wins" uses SQLite TEXT ordering over mixed ISO-8601 formats
 
 **File:** `src/sif/search/context_attach.py:53-56`
 **Issue:** Carried forward from the prior review (its IN-01), still unfixed. `ORDER BY updated_at` compares strings; rows written today carry `+00:00` and microseconds while migrated rows can carry offset-less (or, theoretically, non-UTC-offset) forms. I probed this live: for naive-treated-as-UTC rows the text sort agrees with `_merge_key`'s parsed comparison, so the two "newest" definitions diverge only when a legacy row carries a non-`+00:00` offset (possible only via verbatim migration copies) — narrow, but the deterministic-newest invariant documented in the docstring is then violated and duplicate normalized keys can resolve to stale content. Equal timestamps also tie-break arbitrarily (SQL order among ties is unspecified).
 **Fix:** Keep the ORDER BY for determinism but resolve collisions with parsed datetimes: build `context_map` via `dict` and on duplicate keys keep the row whose `datetime.fromisoformat(updated_at)` (naive→UTC) is newer.
 
-### IN-02 (carried forward): tests build fixtures via `SchemaManager` private methods
+### IN-02: tests build fixtures via `SchemaManager` private methods
 
 **File:** `tests/unit/search/test_context_attach.py:52`, `tests/unit/database/test_repositories.py:31-32`
 **Issue:** `manager._create_documents_table()` / `manager._create_contexts_table()` couple the suites to private schema internals; renaming those methods breaks repository/attachment tests that don't otherwise care.
 **Fix:** Add a small public fixture-builder (e.g. `SchemaManager.create_core_tables()`) or use `create_all()` on a plain connection.
 
-### IN-03 (carried forward, partially fixed): `update_target` return ignored in the exact-spelling branch
+### IN-03: `update_target` return ignored in the exact-spelling branch
 
 **File:** `src/sif/cli/commands/context.py:76`
 **Issue:** The candidates branch now checks the return (`context.py:89-90`), but the exact dual-form branch still discards it; a `False` return (row vanished mid-transaction, subclass override) proceeds to `repo.update` and prints "Context updated" while the row keeps the verbatim target.
