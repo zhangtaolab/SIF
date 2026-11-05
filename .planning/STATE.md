@@ -23,19 +23,19 @@ stopped_at: Quick task 261105-eev complete (embedding hardware/device selection 
 
 - **Name:** DocSift
 - **Core Value:** 用户可以在自己的笔记和文档库中，用自然语言快速、准确地找到需要的信息——无论关键词是否匹配。
-- **Current Focus:** Phase 05 — Agent Context Experience
+- **Current Focus:** Milestone v1.0 complete — all 9 phases done (54/54 plans); next: `/gsd-complete-milestone v1.0`
 - **Tech Stack:** Python 3.10+, SQLite (FTS5 + sqlite-vec), Click, Pydantic, sentence-transformers, llama-cpp-python
 
 ## Current Position
 
-Phase: 05 (Agent Context Experience) — EXECUTING
-Current Plan: 1
-Total Plans in Phase: 9
+Milestone: v1.0 — 100% COMPLETE
 
-- **Phase:** 06 — Documentation Audit & Refresh
-- **Plan:** 9 of 9
-- **Status:** Ready to plan
+- **Phases:** 9/9 complete (01–09)
+- **Plans:** 54/54 complete
+- **Status:** Milestone ready to archive
 - **Progress Bar:** `[████████████████████] 100%`
+
+Phase 05 was re-verified 2026-11-05 (stale report regenerated after the Phase 08 `src/docsift` → `src/sif` rename; 24/24 must-haves, fingerprint fresh) and marked complete — it was the last phase with an unrefreshed verification report.
 
 ## Phase History
 
@@ -159,8 +159,8 @@ Total Plans in Phase: 9
 
 ## Session Continuity
 
-- **Last session:** 2026-09-15T09:00:00Z
-- **Stopped at:** Typing debt batch 3 complete (handlers/search/connection mypy-clean)
+- **Last session:** 2026-11-05
+- **Stopped at:** Milestone v1.0 100% — Phase 05 re-verified (24/24) and marked complete; all 9 phases done
 - **Resume file:** None
-- **Last action:** /gsd-quick 260917-kav → mcp/handlers.py + cli/commands/search.py + database/connection.py mypy-clean (32→0); full-project mypy 78→46 errors in 28 files; suite 676 green
-- **Next expected action:** Typing debt batches 4..N (~46 errors left across 28 files) or /gsd-complete-milestone accepting remaining debt
+- **Last action:** /gsd-execute-phase 05 → stale-verification resume (#4682): Nyquist re-audit 121 green, regression 206 green, incremental code review (25 advisory findings dispositioned), VERIFICATION.md regenerated fresh
+- **Next expected action:** `/gsd-complete-milestone v1.0` (accept typing debt + WR-07 docs-accuracy items or file follow-ups)

@@ -21,14 +21,15 @@ DocSift 是 [qmd](https://github.com/tobi/qmd) 的 Python 重构版本，一个�
 - ✓ 文档片段（chunk）和嵌入存储 — 现有
 - ✓ 修复现有 bug 和占位实现（stub）：硬编码模型路径、随机 embedding fallback、MCP 连接安全等 — Validated in Phase 01
 - ✓ 依赖声明完整性：补全 `pyproject.toml` 中缺失的运行时依赖 — Validated in Phase 01
+- ✓ 补齐缺失的 CLI 命令：multi-get、ls、update-cmd、pull、bench — Validated in Phase 02/04
+- ✓ 嵌入模型灵活可配置：本地 GGUF（llama-cpp-python）、sentence-transformers、ModelScope，及可选 OpenAI 兼容 API（默认 Qwen3 系列） — Validated in Phase 03
+- ✓ LLM 重排序（Qwen3-Reranker）和查询扩展（SearchPipeline），`query` 搜索质量达标 — Validated in Phase 04/05
+- ✓ 统一 MCP 服务器实现（`src/sif/mcp/`，stdio + Streamable HTTP） — Validated in Phase 09
+- ✓ 上下文描述：path/collection/global 三种作用域，context CLI 全命令集，搜索结果自动附加描述 — Validated in Phase 05（2026-11-05 重新验证 24/24 通过）
 
 ### Active
 
-- ✓ 补齐缺失的 CLI 命令：multi-get、ls、update-cmd、pull — Validated in Phase 02
-- [ ] 补齐缺失的 CLI 命令：bench
-- [ ] 实现 LLM 重排序（rerank）和查询扩展（query expansion），达到 qmd `query` 命令的搜索质量
-- [ ] 统一 MCP 服务器实现：整合 legacy `mcp/` 和 refactored `mcp_server/`
-- [ ] 嵌入模型灵活可配置：支持本地 GGUF（llama-cpp-python）、sentence-transformers，以及可选的 OpenAI 兼容 API
+（无 — v1.0 全部需求已交付，待 milestone 归档时全面复核）
 
 ### Out of Scope
 
@@ -55,8 +56,10 @@ DocSift 是 [qmd](https://github.com/tobi/qmd) 的 Python 重构版本，一个�
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| 完全复刻 qmd 功能 | 用户明确要求功能对等 | — In Progress |
-| 本地模型 + API 切换双支持 | 提升灵活性和可访问性 | — In Progress |
+| 远端维度探测 probe-free，缓存键 `base_url::model_name` | 避免对远端后端产生计费探测请求 | Phase 03 Complete |
+| 上下文规范化：写入时存 `normalize_path` 规范形，读取时双侧重规范化匹配，显式 re-add 时合并旧 verbatim 行；永不批量回填迁移 | realpath 不可逆，SQL 预过滤永远无法匹配 verbatim 旧数据行（05-08/05-09，WR-01/WR-02/CR-02 根因） | Phase 05 Complete |
+| 完全复刻 qmd 功能 | 用户明确要求功能对等 | — Complete (v1.0) |
+| 本地模型 + API 切换双支持 | 提升灵活性和可访问性 | — Complete (v1.0) |
 | 优先修复 bug/stub，再补 CLI，再做 rerank/MCP | 先让现有代码可用，再扩展功能 | Phase 01 Complete |
 | 向量库幂等：re-chunk 事务内 delete-before-insert + 精确 chunk-id 集合跳过，`--force` 才全量重嵌 | G-03-3：重复 embed 不再产生孤儿向量/重复计费 | Phase 03 Complete (UAT 7/7) |
 | embed_cmd 每集合一个事务，失败报告在事务外抛出 | CR-02：单集合失败不回滚已成功集合、退出码如实非零 | Phase 03 Complete (live-verified) |
@@ -80,4 +83,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-09-06 after Phase 04 UAT (4/4 pass; 4 gaps found and fixed via quick tasks: markdown line-aware snippets + stem-tolerant term matching, reranker model-dir resolution, LlamaCppEmbedder create_completion, GGUF embed shape unwrap)*
+*Last updated: 2026-11-05 after Phase 05 transition (stale verification regenerated post docsift→sif rename, 24/24 must-haves re-verified; milestone v1.0 100% — 9/9 phases, 54/54 plans)*
