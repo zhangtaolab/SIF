@@ -331,6 +331,86 @@ class TestSearchLineNumbers:
         # One line per result: dict rows must render identically to object rows
         assert lines[1:] == ['"1","0.9500","Test Doc","/notes/test.md","notes"'] * 2
 
+    def test_search_line_numbers_md(self):
+        """CR-02 regression: --line-numbers --md exits 0.
+
+        The --line-numbers path feeds dict rows (from SearchResult.to_dict via
+        add_line_numbers_to_results) into format_results_md, which previously
+        did bare attribute access and crashed with AttributeError.
+        """
+        runner = CliRunner()
+
+        mock_repo = MagicMock()
+        mock_repo.list_enabled.return_value = []
+
+        mock_searcher = MagicMock()
+        mock_searcher.search.return_value = [self._make_search_result()]
+
+        mock_db = MagicMock()
+
+        with (
+            patch("sif.cli.commands.search.Database", return_value=mock_db),
+            patch(
+                "sif.cli.commands.search.CollectionRepository",
+                return_value=mock_repo,
+            ),
+            patch(
+                "sif.cli.commands.search.BM25Searcher",
+                return_value=mock_searcher,
+            ),
+        ):
+            result = runner.invoke(
+                search_cmd,
+                ["query", "--line-numbers", "--md"],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code == 0
+        assert "## 1. Test Doc" in result.output
+        assert "- **Score:** 0.9500" in result.output
+        assert "- **Path:** `/notes/test.md`" in result.output
+        assert "- **Collection:** notes" in result.output
+
+    def test_search_line_numbers_xml(self):
+        """CR-02 regression: --line-numbers --xml exits 0.
+
+        The --line-numbers path feeds dict rows (from SearchResult.to_dict via
+        add_line_numbers_to_results) into format_results_xml, which previously
+        did bare attribute access and crashed with AttributeError.
+        """
+        runner = CliRunner()
+
+        mock_repo = MagicMock()
+        mock_repo.list_enabled.return_value = []
+
+        mock_searcher = MagicMock()
+        mock_searcher.search.return_value = [self._make_search_result()]
+
+        mock_db = MagicMock()
+
+        with (
+            patch("sif.cli.commands.search.Database", return_value=mock_db),
+            patch(
+                "sif.cli.commands.search.CollectionRepository",
+                return_value=mock_repo,
+            ),
+            patch(
+                "sif.cli.commands.search.BM25Searcher",
+                return_value=mock_searcher,
+            ),
+        ):
+            result = runner.invoke(
+                search_cmd,
+                ["query", "--line-numbers", "--xml"],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code == 0
+        assert '  <result rank="1" score="0.9500">' in result.output
+        assert "<title>Test Doc</title>" in result.output
+        assert "<path>/notes/test.md</path>" in result.output
+        assert "<collection>notes</collection>" in result.output
+
     def test_query_line_numbers_flag(self):
         """Test query_cmd --line-numbers in table output."""
         runner = CliRunner()

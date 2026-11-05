@@ -53,7 +53,7 @@ def format_results_json(results: list[Any]) -> str:
     )
 
 
-def _csv_field(r: Any, name: str) -> Any:
+def _field(r: Any, name: str) -> Any:
     """Read a result field from a dict (--line-numbers path) or object row."""
     return r.get(name, "") if isinstance(r, dict) else getattr(r, name, "")
 
@@ -71,11 +71,11 @@ def format_results_csv(results: list[Any]) -> str:
     for r in results:
         writer.writerow(
             [
-                _csv_field(r, "rank"),
-                f"{float(_csv_field(r, 'score')):.4f}",
-                _csv_field(r, "title"),
-                _csv_field(r, "path"),
-                _csv_field(r, "collection_name"),
+                _field(r, "rank"),
+                f"{float(_field(r, 'score')):.4f}",
+                _field(r, "title"),
+                _field(r, "path"),
+                _field(r, "collection_name"),
             ],
         )
     return buf.getvalue().rstrip("\n")
@@ -85,10 +85,10 @@ def format_results_md(results: list[Any], query: str) -> str:
     """Format results as Markdown."""
     lines = [f"# Search Results: {query}", ""]
     for r in results:
-        lines.append(f"## {r.rank}. {r.title}")
-        lines.append(f"- **Score:** {r.score:.4f}")
-        lines.append(f"- **Path:** `{r.path}`")
-        lines.append(f"- **Collection:** {r.collection_name}")
+        lines.append(f"## {_field(r, 'rank')}. {_field(r, 'title')}")
+        lines.append(f"- **Score:** {float(_field(r, 'score')):.4f}")
+        lines.append(f"- **Path:** `{_field(r, 'path')}`")
+        lines.append(f"- **Collection:** {_field(r, 'collection_name')}")
         if hasattr(r, "get") and r.get("line_numbers"):
             lines.append(f"- **Line Numbers:** `{r.get('line_numbers')}`")
         elif hasattr(r, "line_numbers") and r.line_numbers:
@@ -104,10 +104,11 @@ def format_results_xml(results: list[Any], query: str) -> str:
     """Format results as XML."""
     lines = ['<?xml version="1.0" encoding="UTF-8"?>', f'<search query="{query}">']
     for r in results:
-        lines.append(f'  <result rank="{r.rank}" score="{r.score:.4f}">')
-        lines.append(f"    <title>{r.title}</title>")
-        lines.append(f"    <path>{r.path}</path>")
-        lines.append(f"    <collection>{r.collection_name}</collection>")
+        score = f"{float(_field(r, 'score')):.4f}"
+        lines.append(f'  <result rank="{_field(r, "rank")}" score="{score}">')
+        lines.append(f"    <title>{_field(r, 'title')}</title>")
+        lines.append(f"    <path>{_field(r, 'path')}</path>")
+        lines.append(f"    <collection>{_field(r, 'collection_name')}</collection>")
         if hasattr(r, "get") and r.get("line_numbers"):
             lines.append(f"    <line_numbers>{r.get('line_numbers')}</line_numbers>")
         elif hasattr(r, "line_numbers") and r.line_numbers:
