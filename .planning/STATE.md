@@ -2,8 +2,8 @@
 gsd_state_version: "1.0"
 milestone: v1.0
 status: planning
-last_updated: "2026-11-05T09:30:59.327Z"
-state_head: fec524a7aa91fa7122f95d08e64769c68ef385a9
+last_updated: "2026-11-05T09:38:00.000Z"
+state_head: fcb9d651a69cf9ee5bc98cba627456ce2196f1a6
 progress:
   total_phases: 9
   completed_phases: 9
@@ -14,7 +14,7 @@ milestone_name: milestone
 current_phase: 06
 current_phase_name: Agent Context Experience
 current_plan: 1
-stopped_at: /gsd-execute-phase 05 — stale verification regenerated after quick task 261105-g1u; 24/24 must-haves, milestone 100%
+stopped_at: /gsd-execute-phase 05 — third stale-verification regeneration (trigger: post-verification CR-01/WR-01 fixes); 24/24 must-haves, milestone 100%
 ---
 
 # DocSift — Project State
@@ -161,7 +161,7 @@ Phase 05 was re-verified 2026-11-05 (stale report regenerated after the Phase 08
 ## Session Continuity
 
 - **Last session:** 2026-11-05
-- **Stopped at:** Milestone v1.0 100% — Phase 05 re-verified (second stale-report regeneration, trigger quick-task 261105-g1u; 24/24 must-haves, fingerprint fresh); all 9 phases verified
+- **Stopped at:** Milestone v1.0 100% — Phase 05 re-verified (third stale-report regeneration, trigger the post-verification CR-01/WR-01 review fixes; 24/24 must-haves, fingerprint fresh); all 9 phases verified
 - **Resume file:** None
-- **Last action:** /gsd-execute-phase 05 → verification gates re-run (security audit appended 09c8262; UI re-audit 11/16 → 9c6804d; incremental code review 6 findings + disposition ledger 97c9862/39744bc; regression 684 green); verifier passed 24/24 → e40795b
-- **Next expected action:** `/gsd-complete-milestone v1.0` (accept typing debt + remaining WR/CR advisories or file follow-ups; CR-01 `--line-numbers --csv` crash + WR-01 vsearch guard are the top open review findings)
+- **Last action:** /gsd-execute-phase 05 → verification gates re-run (nyquist compliant, mapped set 151 green; security 23/23 closed threats_open 0; UI re-audit 11/16 → 3e0df3a; incremental code review verified CR-01/WR-01 fixed, found new CR-02 → disposition 22/27 open → fec524a; regression 210 scoped green; verifier passed 24/24 → fcb9d65)
+- **Next expected action:** `/gsd-complete-milestone v1.0` (accept typing debt + remaining advisories or file follow-ups; CR-02 `--line-numbers --md/--xml` formatter crash is the top open review finding — CR-01/WR-01 are fixed and verified)
