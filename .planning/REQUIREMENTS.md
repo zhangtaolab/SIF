@@ -121,7 +121,7 @@
 | CTX-01 | Phase 5 | Complete |
 | CTX-02 | Phase 5 | Complete |
 | CTX-03 | Phase 5 | Complete |
-| T-10-1 | Phase 10 | Pending |
+| T-10-1 | Phase 10 | Complete |
 
 **Coverage:**
 

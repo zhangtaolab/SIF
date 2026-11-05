@@ -3,14 +3,14 @@ gsd_state_version: "1.0"
 milestone: v1.0
 current_plan: 7
 status: executing
-stopped_at: Completed 10-06-PLAN.md
-last_updated: "2026-11-05T20:15:59.060Z"
-state_head: 5bbdacd07a0935a65724f0a8b76be50fdf3e5e75
+stopped_at: Completed 10-07-PLAN.md
+last_updated: "2026-11-05T20:27:59.967Z"
+state_head: 3867b87cb28402be869fb515b6b4f50ab2c37bf9
 progress:
   total_phases: 10
   completed_phases: 9
   total_plans: 61
-  completed_plans: 60
+  completed_plans: 61
 milestone_name: milestone
 current_phase: 10
 current_phase_name: Raise pytest coverage to 90%
@@ -68,6 +68,7 @@ Phase 10-01 deleted the approved dead-code cluster; 10-02/10-03 expanded CLI and
 | Phase 10 P04 | 30min | 3 tasks | 10 files |
 | Phase 10 P05 | 11min | 3 tasks | 12 files |
 | Phase 10 P06 | 20min | 3 tasks | 9 files |
+| Phase 10 P07 | 198s | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -138,6 +139,8 @@ Phase 10-01 deleted the approved dead-code cluster; 10-02/10-03 expanded CLI and
 - [Phase 10]: 10-05: Behavior tests exposed and repaired custom logging formatter and indeterminate Rich progress defects; TOTAL coverage reached 93.48%.
 - [Phase 10]: 10-06: Real-file Unicode parsing, exact code-point chunk boundaries, and isolated MCP protocol tests raised TOTAL coverage to 96.16%.
 - [Phase 10]: 10-06: Behavior tests repaired fixed-size chunker forward progress and post-insertion MCP session LRU bounds.
+- [Phase 10]: 10-07: Zero long-tail tests required; Wave-2 combined TOTAL already 96.16% (>=90%). D-05 did not trigger; no candidate test file was modified.
+- [Phase 10]: 10-07: Landed [tool.coverage.report] fail_under=90 LAST per D-04/Pattern 6; no exclude_lines/exclude_also/--cov-branch, no business-logic pragma. Canonical suite green under active gate (958 passed, 96.16%).
 
 ### Roadmap Evolution
 
@@ -181,8 +184,8 @@ Phase 10-01 deleted the approved dead-code cluster; 10-02/10-03 expanded CLI and
 
 ## Session Continuity
 
-**Last session:** 2026-11-05T20:15:58.570Z
-**Stopped at:** Completed 10-06-PLAN.md
+**Last session:** 2026-11-05T20:27:59.466Z
+**Stopped at:** Completed 10-07-PLAN.md
 **Resume file:** None
 
 - **Last action:** `/gsd-execute-phase 10` — plan 10-06 covered indexing and MCP behavior and repaired chunker progress/session bounds; 958 passed, coverage 96.16%.
