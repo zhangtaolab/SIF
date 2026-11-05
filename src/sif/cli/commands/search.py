@@ -318,13 +318,21 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             )
         return
 
+    from pydantic import ValidationError  # noqa: PLC0415
+
     from sif.config.settings import get_settings  # noqa: PLC0415
     from sif.database.database import Database  # noqa: PLC0415
     from sif.database.repositories import CollectionRepository  # noqa: PLC0415
     from sif.embedding.manager import EmbeddingManager  # noqa: PLC0415
     from sif.search.vector import VectorSearcher  # noqa: PLC0415
 
-    settings = get_settings()
+    # Same guard as query_cmd: when --index IS passed the group default
+    # never runs, so this command must convert invalid config into a
+    # clean ClickException itself.
+    try:
+        settings = get_settings()
+    except ValidationError as e:
+        raise click.ClickException(str(e)) from e
     if model_type:
         settings = settings.model_copy(update={"model_type": model_type})
 

@@ -967,6 +967,31 @@ class TestQueryRerankerConfigError:
         assert "reranker_model_type" in result.output
         assert "Traceback" not in result.output
 
+    def test_vsearch_env_invalid_reranker_type_clean_error(self, monkeypatch) -> None:
+        """vsearch_cmd: same bad env renders a one-line error, no traceback.
+
+        vsearch_cmd calls get_settings() itself (the group default never runs
+        with an explicit --index), so it needs its own ValidationError guard.
+        get_settings() raises before any embedding/DB work, so no scaffolding
+        patches are needed.
+        """
+        runner = CliRunner()
+        monkeypatch.setenv("SIF_RERANKER_MODEL_TYPE", "cross-encoder")
+        get_settings.cache_clear()
+        try:
+            result = runner.invoke(
+                vsearch_cmd,
+                ["query"],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+        finally:
+            get_settings.cache_clear()
+
+        assert result.exit_code == 1
+        assert "Error:" in result.output
+        assert "reranker_model_type" in result.output
+        assert "Traceback" not in result.output
+
     def test_factory_value_error_becomes_click_exception(self):
         """Defense in depth: a create_reranker ValueError renders as a clean error."""
         runner = CliRunner()
