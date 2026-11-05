@@ -1,6 +1,6 @@
 ---
 phase: 05-agent-context-experience
-fixed_at: 2026-09-07T04:47:02Z
+fixed_at: 2026-11-05T08:27:16Z
 review_path: .planning/phases/05-agent-context-experience/05-REVIEW.md
 iteration: 1
 findings_in_scope: 2
@@ -11,125 +11,106 @@ status: all_fixed
 
 # Phase 05: Code Review Fix Report
 
-**Fixed at:** 2026-09-07T04:47:02Z
+**Fixed at:** 2026-11-05T08:27:16Z
 **Source review:** .planning/phases/05-agent-context-experience/05-REVIEW.md
 **Iteration:** 1
 
 **Summary:**
-- Findings in scope: 2 (WR-01, WR-02; critical = 0, fix_scope = critical_warning)
+- Findings in scope: 2 (CR-01, WR-01; fix_scope = critical_warning)
 - Fixed: 2
 - Skipped: 0
 
 **Environment note:** `workflow.use_worktrees = false` — fixes were applied and
-committed directly in the main checkout (`main`). All verification below ran in
+committed directly in the main checkout (`dev`). All verification below ran in
 the main checkout with `env -u FORCE_COLOR NO_COLOR=1` (FORCE_COLOR breaks CLI
-output assertions on this machine).
-
-**History note:** during this fix run the `main` branch was rewritten by a
-concurrent session (commits `d5c202f`/`4c10993`/`ff10314` replaced by
-`e3aad7b` and the phase 05-08/05-09 implementation line). Both fix commits
-landed on top of the new `e3aad7b` base; the baseline experiment for the
-pre-existing test failures (see Verification) was re-run against `e3aad7b`
-after the rewrite was discovered.
+output assertions on this machine), so the numbers are reproducible from the
+tree a reader is looking at. This report replaces the September fix-round
+report for the earlier review iteration.
 
 ## Fixed Issues
 
-### WR-01: One malformed `target_id` crashes all search commands, prune, and add
+### CR-01: `--line-numbers --csv` crashes with `AttributeError: 'dict' object has no attribute 'rank'`
 
-**Files modified:** `src/sif/utils/paths.py`, `src/sif/cli/commands/context.py`,
-`tests/unit/search/test_context_attach.py`, `tests/unit/database/test_repositories.py`,
-`tests/unit/cli/test_context.py`
-**Commit:** 98dc8fc
+**Files modified:** `src/sif/cli/commands/search.py`, `tests/unit/cli/test_search.py`
+**Commit:** e78fa96
 **Applied fix:**
-- `normalize_path()` is now a total function: `expand_path()` failures
-  (`RuntimeError` / `OSError` / `ValueError`, e.g. `~removeduser/...` whose
-  account no longer resolves) degrade to `str(path)` instead of raising, so a
-  single malformed stored row can no longer crash `attach_path_contexts()`
-  (all three searchers), `delete_orphaned_paths()` (prune), or the WR-02 merge
-  scan. The degraded row simply matches nothing — the same effective outcome
-  as before, minus the crash.
-- `context add path` now probes expandability via `expand_path()` and raises a
-  clean `click.ClickException("Cannot resolve path '...': ...")` for an
-  un-expandable `~user` typo (project convention), instead of storing a
-  never-matching target or leaking a raw traceback.
-- Regression tests (all real SQL where applicable):
-  - `test_normalize_path_unexpandable_tilde_degrades_to_raw_form`
-  - `test_malformed_tilde_row_does_not_crash_attach` (malformed
-    `~sif-no-such-user-7f3a/...` row inserted; healthy contexts still attach)
-  - `test_prune_survives_malformed_tilde_row` (prune completes; the malformed
-    row is correctly classified as an orphan and deleted, no crash)
-  - `test_add_path_unexpandable_tilde_clean_error` (exit != 0, clean
-    "Error: Cannot resolve path ..." output, nothing stored)
-
-### WR-02: Self-heal merge only fires on exact historical re-typing — duplicate rows accumulate and prune cannot clean them
-
-**Files modified:** `src/sif/cli/commands/context.py`, `tests/unit/cli/test_context.py`
-**Commit:** 5aeea94
-**Applied fix:**
-- On the dual-form exact-lookup miss, `context add path` now resolves by
-  normalized key over `repo.list_by_type("path")`: all historical spellings of
-  the same file are merged into one canonical row (newest `updated_at` wins
-  via `repo.update_target`, older duplicate spellings are deleted via
-  `repo.delete`). Re-adding a legacy-aliased file via its canonical spelling
-  now merges instead of creating a duplicate row that prune could never
-  remove. Explicit re-add only — never a bulk migration.
+- Rewrote `format_results_csv` over `csv.writer` with a dict-or-object field
+  accessor (`_csv_field`): dict rows come from `add_line_numbers_to_results`
+  (`--line-numbers`), object rows are raw `SearchResult`s. The
+  `--line-numbers --csv` path (both `search_cmd` and `query_cmd`) no longer
+  crashes.
 - Adaptations to the reviewer's snippet (guidance, applied to actual code):
-  - `context_add` sits exactly at the ruff C901 limit (10), so the merge lives
-    in module-level helpers (`_self_heal_path_row`, `_merge_key`,
-    `_resolve_path_target`) rather than inline; behavior matches the
-    suggestion.
-  - The `updated_at` sort uses a tz-safe epoch key: rows migrated from the
-    legacy `path_contexts` table carry offset-less timestamps (the IN-01
-    `'2024-01-01T00:00:00'` forms), and sorting a naive/aware mix would raise
-    `TypeError` on exactly the legacy rows this merge targets.
-  - Loser rows are deleted only when `update_target` actually returned `True`;
-    a vanished-winner `False` falls through to create instead of risking
-    content loss.
-  - The comparison `normalize_path(c.path) == actual_target` is guarded by the
-    WR-01 total-form fallback, so a poison row cannot crash the merge.
-- Regression test: `test_readd_via_canonical_merges_legacy_alias_rows` — two
-  legacy rows under two real symlink-alias spellings (one with a deliberately
-  naive timestamp), re-add via the canonical spelling: newest row re-pointed,
-  older duplicate deleted, no create. Three existing mock tests
-  (`test_add_path_context`, `test_add_path_symlink_alias_stores_resolved_form`,
-  `test_add_path_home_relative_expands`) updated to stub
-  `list_by_type` since the new scan path is now reached on a total miss.
+  - Kept the existing output contract — **unquoted** header
+    `rank,score,title,path,collection` with `QUOTE_ALL` data rows — instead of
+    the suggested `QUOTE_ALL` header. The reviewer's exact snippet would have
+    changed the header format and broken the existing
+    `TestMachineOutputNoWrap::test_search_csv_rows_single_line` assertion; the
+    object-path output is byte-identical to the old formatter (verified).
+  - Pinned `lineterminator="\n"` so output stays platform-independent (the
+    csv module default is `"\r\n"`, which would have leaked `\r` through
+    `rstrip("\n")`).
+  - Helper named `_csv_field` (not `_field`) for module-level clarity; imports
+    (`csv`, `io`) hoisted to the top per project isort style.
+- This also closes the open ledger item WR-10 (quote-escaping defect): a title
+  like `say "hi", ok` now round-trips through `csv.reader`
+  (`"say ""hi"", ok"` → `say "hi", ok`), verified directly.
+- Regression test `TestSearchLineNumbers::test_search_line_numbers_csv`
+  (two results, asserts exit 0, exact header, one line per result, dict rows
+  rendering identically to object rows). Confirmed it fails on pre-fix code
+  with exactly the reviewed `AttributeError` and passes post-fix.
+
+### WR-01: `vsearch_cmd` calls `get_settings()` unguarded — raw pydantic traceback with explicit `--index` and invalid config
+
+**Files modified:** `src/sif/cli/commands/search.py`, `tests/unit/cli/test_search.py`
+**Commit:** 7170c08
+**Applied fix:**
+- Added the identical `try/except ValidationError -> click.ClickException`
+  guard that `query_cmd` already has, around `vsearch_cmd`'s
+  `get_settings()` call, including the function-local
+  `from pydantic import ValidationError` import matching `query_cmd`'s
+  pattern. The comment explains the why (explicit `--index` bypasses the
+  group-default settings touchpoint) without citing a mutable review-finding
+  ID, per the IN-03 advisory.
+- Out-of-scope same-pattern sites (`index.py:269`, `bench.py:75`) were NOT
+  touched, per the reviewer's scoping note for this increment.
+- Regression test
+  `TestQueryRerankerConfigError::test_vsearch_env_invalid_reranker_type_clean_error`
+  (invalid `SIF_RERANKER_MODEL_TYPE`, real `get_settings` with
+  `cache_clear` bracketing; asserts exit 1, `Error:` + `reranker_model_type`
+  in output, no traceback). Confirmed it fails on pre-fix code (unguarded
+  `ValidationError`) and passes post-fix; also verified empirically at the
+  CLI level (`Error: 1 validation error for Settings`, clean exit 1).
 
 ## Skipped Issues
 
 None — both in-scope findings were fixed.
 
-Out-of-scope info findings (IN-01, IN-02, IN-03) were not attempted, per
-`fix_scope: critical_warning`. Note IN-03's call-site return check remains as
-reviewed (the new WR-02 merge path does check its `update_target` return).
+Out-of-scope info findings (IN-01 validator reach decision, IN-02 dead
+fallback, IN-03 stale review-ID comments, IN-04 untested `rm` alias) were not
+attempted, per `fix_scope: critical_warning`. The CR-01 fix deliberately did
+not add new review-ID citations to code comments (IN-03 advisory).
 
 ## Verification
 
 - Tier 1 (per fix): modified sections re-read; fix text present, surrounding
   code intact.
-- Tier 2 (per fix): `ast.parse` on every edited file; `ruff check src tests`
-  and `ruff format --check src tests` clean (first WR-02 draft was rejected by
-  C901/PLR0912 and refactored into helpers before commit).
-- Targeted tests: `tests/unit/cli/test_context.py` +
-  `tests/unit/database/test_repositories.py` +
-  `tests/unit/search/test_context_attach.py` = 41 passed (36 baseline + 5 new).
-- Full suite (main checkout, `env -u FORCE_COLOR NO_COLOR=1`):
-  **660 passed, 2 failed** — the 2 failures
-  (`tests/unit/embedding/test_openai_embedder.py::
-  TestOpenAIEmbedderBehavior::test_import_error_logs_install_hint`,
-  `...::TestOpenAIEmbedderDimensionCache::test_corrupt_cache_treated_as_miss`)
-  are **pre-existing and unrelated**: both fail with `caplog.text == ''` (a
-  logging-propagation/isolation interference from other suite tests) and were
-  proven present at the pre-fix base `e3aad7b` (655 passed / 2 failed there,
-  660 passed / same 2 failed with this fix's 5 new tests; they pass when the
-  file runs alone). No new failures introduced; all 5 new tests pass.
+- Tier 2 (per fix): `ast.parse` on both edited files; `ruff check` and
+  `ruff format --check` clean on both files before each commit.
+- Both regression tests were run in both directions (pre-fix via
+  `git stash push -- src/...`, post-fix restored) to prove they actually
+  detect the reviewed defects.
+- Targeted: `tests/unit/cli/test_search.py` — 28 passed (26 baseline + 2 new).
+- Full quality suite (main checkout, `env -u FORCE_COLOR NO_COLOR=1`):
+  `ruff check src tests` — all checks passed; `ruff format --check src tests`
+  — 133 files already formatted; `pytest` — **686 passed, 20 warnings**, no
+  failures (the 2 pre-existing failures noted in the September report are no
+  longer present).
 - Commits are pathspec-limited; the unrelated pre-existing working-tree state
-  (staged `mypy.ini` deletion; unstaged `.planning/WINDOWS.md`,
-  `.planning/config.json`, `uv.lock`, `.planning/phases/03-.../.continue-here.md`)
-  was left exactly as found.
+  (modified `.planning/WINDOWS.md`; untracked `.planning/state.json`,
+  `.planning/tmp/`, `.planning/ui-reviews/`) was left exactly as found.
 
 ---
 
-_Fixed: 2026-09-07T04:47:02Z_
+_Fixed: 2026-11-05T08:27:16Z_
 _Fixer: Claude (gsd-code-fixer)_
 _Iteration: 1_
