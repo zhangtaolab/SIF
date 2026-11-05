@@ -2,8 +2,8 @@
 gsd_state_version: "1.0"
 milestone: v1.0
 status: planning
-last_updated: "2026-11-05T11:21:11.222Z"
-state_head: e35c4e847afdbff6a7ff2d35e2d84935cefa7941
+last_updated: "2026-11-05T11:22:41.071Z"
+state_head: 56853c518e332b90c9d0b588aec948302e577a53
 progress:
   total_phases: 9
   completed_phases: 9
@@ -11,10 +11,10 @@ progress:
   completed_plans: 54
   percent: 100
 milestone_name: milestone
+stopped_at: /gsd-execute-phase 05 (4th stale regeneration) complete — gates green, verification passed 24/24 fresh fingerprint; next /gsd-complete-milestone v1.0
 current_phase: 06
 current_phase_name: Agent Context Experience
 current_plan: 1
-stopped_at: /gsd-code-review 05 --fix — CR-02 fixed (0be16d4); verification re-staled by the fix; type checker switched mypy→ty (d86ccf4)
 ---
 
 # DocSift — Project State
@@ -161,7 +161,7 @@ Phase 05 was re-verified 2026-11-05 (stale report regenerated after the Phase 08
 ## Session Continuity
 
 - **Last session:** 2026-11-05
-- **Stopped at:** Milestone v1.0 100% — CR-02 (line-numbers md/xml formatter crash) fixed via /gsd-code-review 05 --fix (0be16d4, all_fixed 1/1, REVIEW-FIX 2ca3caa, disposition 21/27 open 9eb4f6a); the fix re-staled 05-VERIFICATION (same covered files). Toolchain: type checker switched mypy→ty (d86ccf4, `ty check src/sif`, 19-diagnostic baseline).
+- **Stopped at:** Milestone v1.0 100% — Phase 05 fourth stale regeneration complete (`/gsd-execute-phase 05`): all verify:post gates re-run over the CR-02 fix (0be16d4) — validation 123/123 green 0 gaps, security 23/23 closed, UI re-audit 11/16 with CR-02 RESOLVED (1810499), incremental code review 0 critical / 7 warning / 2 info (0058fb7, ledger e35c4e8: 29/35 open), regression gate 688 passed / 0 failed, verifier 24/24 must-haves PASSED with fresh fingerprint (56853c5). No phase remains unverified.
 - **Resume file:** None
-- **Last action:** /gsd-code-review 05 --fix (fixer subagent: _field accessor in md/xml formatters + 2 regression tests, 30/30 targeted, full suite 686 passed + 2 pre-existing order-dependent failures in test_openai_embedder.py unrelated to the fix); then chore: replace mypy with ty (pytool/Makefile/CLAUDE.md/README/docs/uv.lock).
-- **Next expected action:** `/gsd-execute-phase 05` (fourth stale regeneration — re-runs gates + verifier over the CR-02 fix), then `/gsd-complete-milestone v1.0`. Open follow-ups: 2 order-dependent embedding tests; 19 ty diagnostics (was 46 under mypy).
+- **Last action:** `/gsd-execute-phase 05` fourth stale regeneration — verifier re-ran over the CR-02 fix (`_field` accessor in md/xml formatters + 2 regression tests); 05-VERIFICATION.md regenerated with fresh covered digest; phase re-marked complete (idempotent).
+- **Next expected action:** `/gsd-complete-milestone v1.0` — milestone is 100% (9/9 phases, 54/54 plans), all phases verified fresh. Open follow-ups (non-blocking): review ledger 29/35 open (WR-10 XML escaping, WR-12 ty baseline red gate, WR-13 md highlights for dict rows, WR-14 stale --no-cache doc, WR-15 mcp stderr print, WR-16 stale INTEGRATION_STATUS.md, WR-17 dead defaults); 2 order-dependent test_openai_embedder.py failures (passed in make-test order this run); 19 ty diagnostics.
