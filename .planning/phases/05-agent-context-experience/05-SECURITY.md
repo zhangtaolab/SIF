@@ -92,3 +92,11 @@ Audit method: register authored at plan time (all 9 plans contained `<threat_mod
 - [x] `status: verified` set in frontmatter
 
 **Approval:** verified 2026-09-08
+
+## Security Audit 2026-11-05
+
+| Metric | Count |
+|---|---|
+| Threats found | 23 |
+| Closed | 23 |
+| Open | 0 |
