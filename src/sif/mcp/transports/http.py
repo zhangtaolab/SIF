@@ -54,15 +54,15 @@ def _get_session_id(request_headers: dict[str, str]) -> str:
     """Get or create session ID from request headers."""
     session_id = request_headers.get("mcp-session-id")
     now = time.time()
-    # Enforce max session count (LRU eviction)
-    while _sessions and len(_sessions) > SESSION_MAX_COUNT:
-        _sessions.popitem(last=False)
     if session_id and session_id in _sessions:
         _sessions[session_id]["last_accessed"] = now
         _sessions.move_to_end(session_id)
         return session_id
     new_id = _generate_session_id()
     _sessions[new_id] = {"created": now, "last_accessed": now}
+    # Enforce max session count after insertion so the bound is never exceeded.
+    while len(_sessions) > SESSION_MAX_COUNT:
+        _sessions.popitem(last=False)
     return new_id
 
 

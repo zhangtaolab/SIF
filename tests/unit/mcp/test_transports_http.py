@@ -2,16 +2,25 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
+from sif.mcp.transports import http
 from sif.mcp.transports.http import (
     DEFAULT_CORS_ORIGINS,
     DEFAULT_HOST,
     create_app,
 )
+
+
+@pytest.fixture(autouse=True)
+def clear_http_sessions():
+    """Restore the process-global session registry around every HTTP test."""
+    http._sessions.clear()
+    yield
+    http._sessions.clear()
 
 
 @pytest.fixture
@@ -200,3 +209,170 @@ def test_health_endpoint(client) -> None:
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+class TestHTTPTransportBranches:
+    """Session, protocol error, SSE, and startup branches stay in memory."""
+
+    def test_session_reuse_updates_lru_access_and_evicts_oldest(self) -> None:
+        """A small session limit evicts the least recently reused session."""
+        with (
+            patch.object(http, "SESSION_MAX_COUNT", 1),
+            patch.object(http.time, "time", side_effect=[1.0, 2.0, 3.0]),
+            patch.object(http, "_generate_session_id", side_effect=["new-a", "new-b"]),
+        ):
+            first = http._get_session_id({})
+            reused = http._get_session_id({"mcp-session-id": first})
+            second = http._get_session_id({})
+
+        assert first == "new-a"
+        assert reused == first
+        assert second == "new-b"
+        assert list(http._sessions) == ["new-b"]
+        assert http._sessions["new-b"] == {"created": 3.0, "last_accessed": 3.0}
+
+    @pytest.mark.asyncio
+    async def test_invalid_json_returns_session_aware_bad_request(self) -> None:
+        """A request JSON decoding failure is a 400 invalid-request response."""
+        request = MagicMock()
+        request.headers = {"mcp-session-id": "existing"}
+        request.json = AsyncMock(side_effect=ValueError("malformed"))
+        http._sessions["existing"] = {"created": 1.0, "last_accessed": 1.0}
+
+        response = await http._mcp_post_handler(request, MagicMock())
+        payload = response.body.decode()
+
+        assert response.status_code == 400
+        assert response.headers["mcp-session-id"] == "existing"
+        assert '"code":-32600' in payload
+        assert "Invalid request: malformed" in payload
+
+    @pytest.mark.asyncio
+    async def test_notification_error_is_contained_and_accepted(self) -> None:
+        """Notification failures do not become JSON-RPC responses."""
+        request = MagicMock()
+        request.headers = {}
+        request.json = AsyncMock(return_value={"jsonrpc": "2.0", "method": "bad"})
+        server = MagicMock()
+        server.handle_notification = AsyncMock(side_effect=RuntimeError("notification failed"))
+
+        response = await http._mcp_post_handler(request, server)
+
+        assert response.status_code == 202
+        assert response.body == b"{}"
+
+    @pytest.mark.asyncio
+    async def test_request_exception_becomes_internal_error(self) -> None:
+        """Server dispatch exceptions use the original request ID in an error."""
+        request = MagicMock()
+        request.headers = {}
+        request.json = AsyncMock(return_value={"jsonrpc": "2.0", "id": 42, "method": "initialize"})
+        server = MagicMock()
+        server.handle_request = AsyncMock(side_effect=RuntimeError("dispatch failed"))
+
+        response = await http._mcp_post_handler(request, server)
+        payload = response.body.decode()
+
+        assert response.status_code == 200
+        assert '"id":42' in payload
+        assert '"code":-32603' in payload
+        assert "Internal error: dispatch failed" in payload
+
+    @pytest.mark.asyncio
+    async def test_sse_generator_stops_at_max_events(self) -> None:
+        """The direct SSE helper yields only its configured number of pings."""
+        request = MagicMock()
+        request.headers = {}
+        request.is_disconnected = AsyncMock(return_value=False)
+
+        with patch.object(http.asyncio, "sleep", new=AsyncMock()) as sleep:
+            response = await http._mcp_get_handler(request, ping_interval=0, max_events=2)
+            events = [event async for event in response.body_iterator]
+
+        assert events == [
+            'event: ping\ndata: {"ping": true}\n\n',
+            'event: ping\ndata: {"ping": true}\n\n',
+        ]
+        assert sleep.await_count == 2
+        assert response.media_type == "text/event-stream"
+
+    @pytest.mark.asyncio
+    async def test_sse_generator_stops_when_disconnected(self) -> None:
+        """A disconnected request ends the stream before emitting an event."""
+        request = MagicMock()
+        request.headers = {}
+        request.is_disconnected = AsyncMock(return_value=True)
+
+        response = await http._mcp_get_handler(request, max_events=2)
+
+        assert [event async for event in response.body_iterator] == []
+
+    def test_missing_fastapi_raises_helpful_import_error(self) -> None:
+        """The optional-dependency guard names the required HTTP dependency."""
+        with patch.object(http, "FastAPI", None):
+            with pytest.raises(ImportError, match="FastAPI is required for HTTP transport"):
+                http.create_app(MagicMock())
+
+    def test_custom_cors_origins_allow_only_configured_origin(self) -> None:
+        """Custom origins replace defaults for both middleware and preflight."""
+        app = http.create_app(MagicMock(), cors_origins=["https://allowed.example"])
+
+        with TestClient(app) as client:
+            allowed = client.get("/health", headers={"Origin": "https://allowed.example"})
+            rejected = client.get("/health", headers={"Origin": "http://localhost:3000"})
+
+        assert allowed.status_code == 200
+        assert allowed.headers["access-control-allow-origin"] == "https://allowed.example"
+        assert rejected.status_code == 403
+        assert rejected.json() == {"error": "Origin not allowed"}
+
+    def test_transport_run_constructs_app_and_calls_uvicorn_without_listener(self) -> None:
+        """Transport composition delegates to a patched uvicorn entry point."""
+        server = MagicMock()
+        app = MagicMock()
+        transport = http.HTTPTransport(
+            server,
+            host="0.0.0.0",
+            port=8765,
+            cors_origins=["https://allowed.example"],
+        )
+        uvicorn = MagicMock()
+
+        with (
+            patch.dict("sys.modules", {"uvicorn": uvicorn}),
+            patch.object(http, "create_app", return_value=app) as create,
+        ):
+            transport.run()
+
+        create.assert_called_once_with(server, ["https://allowed.example"])
+        uvicorn.run.assert_called_once_with(app, host="0.0.0.0", port=8765, log_level="info")
+
+    def test_run_http_server_composes_backend_tools_and_transport(self) -> None:
+        """The HTTP convenience entry point wires all collaborators without running."""
+        server = MagicMock()
+        transport = MagicMock()
+        tools = [MagicMock()]
+
+        with (
+            patch.object(http, "SearchBackend", return_value="backend") as backend,
+            patch.object(http, "MCPServer", return_value=server) as server_type,
+            patch.object(http, "create_default_tools", return_value=tools),
+            patch.object(http, "HTTPTransport", return_value=transport) as transport_type,
+        ):
+            http.run_http_server(
+                "/tmp/sif-test.db",
+                host="localhost",
+                port=9999,
+                cors_origins=["https://allowed.example"],
+            )
+
+        backend.assert_called_once_with("/tmp/sif-test.db")
+        server_type.assert_called_once_with("backend")
+        server.register_tools.assert_called_once_with(tools)
+        transport_type.assert_called_once_with(
+            server,
+            host="localhost",
+            port=9999,
+            cors_origins=["https://allowed.example"],
+        )
+        transport.run.assert_called_once_with()
