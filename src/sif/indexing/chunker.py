@@ -66,9 +66,11 @@ class FixedSizeChunker(Chunker):
                 )
                 sequence += 1
 
-            # Move start with overlap
-            start = end - self.overlap
-            start = min(end, start)
+            # Move start with overlap. Consume the final window instead of
+            # reprocessing a suffix that is entirely within the last chunk.
+            if end >= len(text):
+                break
+            start = max(start + 1, end - self.overlap)
 
         return chunks
 
@@ -105,7 +107,7 @@ class MarkdownChunker(Chunker):
 
             # If chunk is too large, split it further
             if len(chunk_text) > self.max_chunk_size:
-                sub_chunks = FixedSizeChunker(self.max_chunk_size, 100).chunk(chunk_text)
+                sub_chunks = FixedSizeChunker(self.max_chunk_size, overlap=0).chunk(chunk_text)
                 for sub_chunk in sub_chunks:
                     sub_chunk.sequence = sequence
                     chunks.append(sub_chunk)
@@ -161,7 +163,7 @@ class CodeChunker(Chunker):
             chunk_text = text[start:end].strip()
 
             if len(chunk_text) > self.max_chunk_size:
-                sub_chunks = FixedSizeChunker(self.max_chunk_size, 100).chunk(chunk_text)
+                sub_chunks = FixedSizeChunker(self.max_chunk_size, overlap=0).chunk(chunk_text)
                 for sub_chunk in sub_chunks:
                     sub_chunk.sequence = sequence
                     chunks.append(sub_chunk)
