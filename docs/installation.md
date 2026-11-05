@@ -79,7 +79,7 @@ This installs:
 - `pytest-cov>=4.0.0`
 - `black>=23.0.0`
 - `ruff>=0.1.0`
-- `mypy>=1.0.0`
+- `ty>=0.0.1`
 
 ### All Dependencies
 

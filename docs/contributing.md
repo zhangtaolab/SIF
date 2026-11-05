@@ -75,7 +75,7 @@ Feature requests are welcome! Include:
 - [ ] Tests pass (`pytest`)
 - [ ] Code is formatted (`ruff format .`)
 - [ ] Code passes linting (`ruff check .`)
-- [ ] Type checking passes (`mypy src/sif`)
+- [ ] Type checking passes (`ty check src/sif`)
 - [ ] Documentation updated
 - [ ] CHANGELOG.md updated
 - [ ] Commit messages follow conventions
@@ -147,7 +147,7 @@ ruff check --fix .
 ### Type Checking
 
 ```bash
-mypy src/sif
+ty check src/sif
 ```
 
 ### Testing

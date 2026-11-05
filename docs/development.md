@@ -117,7 +117,7 @@ ruff format .
 ruff check .
 
 # Type checking
-mypy src/sif
+ty check src/sif
 ```
 
 ### 5. Commit Changes
@@ -573,8 +573,8 @@ pytest
 
 **Type checking errors:**
 ```bash
-# Update mypy cache
-mypy --clear-cache src/sif
+# Bypass ty's cache and re-check from scratch
+ty check --no-cache src/sif
 ```
 
 ## Resources

@@ -38,7 +38,7 @@ ruff check --fix src tests
 
 Type check:
 ```bash
-mypy src/sif
+ty check src/sif
 ```
 
 Run the CLI locally:
@@ -108,8 +108,8 @@ Settings are defined in `src/sif/config/settings.py` using Pydantic Settings. En
 - Ruff isort with `combine-as-imports = true`.
 - Order: stdlib, third-party, first-party (`sif`).
 - Two blank lines after imports.
-- Type annotations are strict (`disallow_untyped_defs = true`).
-- CLI modules relax `disallow_untyped_decorators` for Click decorators.
+- Type annotations are checked with ty (`ty check src/sif`); new code should be fully annotated (functions take and return typed values).
+- CLI modules keep Click decorators as-is; ty does not require decorator typing relaxations.
 
 ### Logging
 

@@ -307,7 +307,7 @@ ruff format .
 ruff check .
 
 # Type checking
-mypy src/sif
+ty check src/sif
 ```
 
 ## Roadmap
