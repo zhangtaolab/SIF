@@ -114,13 +114,13 @@ recorded: 2026-11-05T03:15:22.090Z
 |---------|----------|-------------|--------|
 | WR-01 | warning | open | - |
 | WR-02 | warning | open | - |
-| WR-03 | warning | open | - |
+| WR-03 | warning | fixed | quick 261105-g1u (25481d8) |
 | WR-04 | warning | open | - |
 | WR-05 | warning | open | - |
 | WR-06 | warning | open | - |
 | WR-07 | warning | open | - |
 | WR-08 | warning | open | - |
-| WR-09 | warning | open | - |
+| WR-09 | warning | fixed | quick 261105-g1u (b8a81e1) |
 | WR-10 | warning | open | - |
 | WR-11 | warning | open | - |
 | IN-01 | info | open | - |

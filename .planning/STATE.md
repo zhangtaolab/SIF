@@ -1,12 +1,9 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_phase: 06
-current_phase_name: Agent Context Experience
-current_plan: 1
 status: planning
-last_updated: "2026-11-05T03:23:51.162Z"
-state_head: b2812e538c64454bee9aed0b4beee8c6b532d916
+last_updated: "2026-11-05T03:55:34.332Z"
+state_head: b8a81e183259d64d1f065289697ee701a4389df4
 progress:
   total_phases: 9
   completed_phases: 9
@@ -14,6 +11,9 @@ progress:
   completed_plans: 54
   percent: 100
 milestone_name: milestone
+current_phase: 06
+current_phase_name: Agent Context Experience
+current_plan: 1
 stopped_at: Quick task 261105-eev complete (embedding hardware/device selection documented)
 ---
 
@@ -152,6 +152,7 @@ Phase 05 was re-verified 2026-11-05 (stale report regenerated after the Phase 08
 | 260917-dkf | Typing debt batch 2: watcher.py/manager.py/embedder.py mypy-clean (39→0; EmbeddingConfig Field defaults → keyword syntax, typed locals, os.fsdecode) — full-project 117→78, zero behavior change, suite 676 green | 2026-09-17 | e39d092 | [260917-dkf-typing-debt-batch-2-clear-indexing-watch](./quick/260917-dkf-typing-debt-batch-2-clear-indexing-watch/) |
 | 260917-kav | Typing debt batch 3: mcp/handlers.py + cli/commands/search.py + database/connection.py mypy-clean (32→0; ClassVar base attrs, generics, walrus narrowing, SearchPipeline reranker union widened) — full-project 78→46, zero behavior change, suite 676 green | 2026-09-17 | 4f24682 | [260917-kav-typing-debt-batch-3-clear-mcp-handlers-p](./quick/260917-kav-typing-debt-batch-3-clear-mcp-handlers-p/) |
 | 261105-eev | Document embedding hardware/device selection (MPS/GPU/CPU): generator Device Selection note under Embedding Model Settings + hardware-acceleration notes in installation.md; suite 676 green | 2026-11-05 | e3f7e2d | [261105-eev-document-embedding-hardware-device-selec](./quick/261105-eev-document-embedding-hardware-device-selec/) |
+| 261105-g1u | Fix 05-REVIEW WR-03/WR-09: guard context add/remove against missing index (no silent empty-DB creation); validate reranker_model_type + ClickException surface for bad SIF_RERANKER_MODEL_TYPE | 2026-11-05 | b8a81e1 | [261105-g1u-fix-05-review-wr-03-and-wr-09-context-ad](./quick/261105-g1u-fix-05-review-wr-03-and-wr-09-context-ad/) |
 
 ### Overrides
 
@@ -162,5 +163,5 @@ Phase 05 was re-verified 2026-11-05 (stale report regenerated after the Phase 08
 - **Last session:** 2026-11-05
 - **Stopped at:** Milestone v1.0 100% — Phase 05 re-verified (24/24) and marked complete; all 9 phases done
 - **Resume file:** None
-- **Last action:** /gsd-execute-phase 05 → stale-verification resume (#4682): Nyquist re-audit 121 green, regression 206 green, incremental code review (25 advisory findings dispositioned), VERIFICATION.md regenerated fresh
-- **Next expected action:** `/gsd-complete-milestone v1.0` (accept typing debt + WR-07 docs-accuracy items or file follow-ups)
+- **Last action:** /gsd-quick 261105-g1u → WR-03/WR-09 fixes (context missing-index guard; reranker_model_type validator + clean ClickException); suite 684 green
+- **Next expected action:** `/gsd-complete-milestone v1.0` (accept typing debt + remaining WR advisories or file follow-ups)
