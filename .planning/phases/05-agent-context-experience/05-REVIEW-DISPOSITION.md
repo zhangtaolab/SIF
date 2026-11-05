@@ -5,7 +5,7 @@ titles: json
 findings:
   - id: CR-02
     severity: critical
-    disposition: open
+    disposition: fixed
     title: "`--line-numbers --md` and `--line-numbers --xml` crash with `AttributeError: 'dict' object has no attribute 'rank'`"
   - id: CR-01
     severity: critical
@@ -111,16 +111,16 @@ findings:
     severity: info
     disposition: open
     title: "`Qwen3Reranker.load()` duplicates the entire loading block for quiet/non-quiet"
-open: 22
+open: 21
 total: 27
-recorded: 2026-11-05T09:20:50.944Z
+recorded: 2026-11-05T10:03:14.525Z
 ---
 
 # Phase 05: Code Review Disposition
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| CR-02 | critical | open | - |
+| CR-02 | critical | fixed | 05-REVIEW-FIX.md |
 | CR-01 | critical | fixed | 05-REVIEW-FIX.md (not in the current review) |
 | WR-01 | warning | fixed | 05-REVIEW-FIX.md (not in the current review) |
 | IN-01 | info | open | - (not in the current review) |
