@@ -167,6 +167,10 @@ def update_cmd(ctx: click.Context, collection: str | None, force: bool) -> None:
                             existing.title = parsed.title
                             existing.metadata = parsed.metadata
                             existing.mtime = parsed.mtime
+                            # Persist the fresh checksum, or the next update run
+                            # compares the new content against the pre-edit hash
+                            # and rewrites this document again every run.
+                            existing.checksum = parsed.checksum
                             doc_repo.update(existing)
                             total_updated += 1
                         else:

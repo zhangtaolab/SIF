@@ -8,6 +8,7 @@ historical run (the observed 21-rows-vs-3-chunks, document-times-7 symptom).
 
 from __future__ import annotations
 
+import hashlib
 import sqlite3
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -514,3 +515,91 @@ class TestPerCollectionTransaction:
         finally:
             conn.close()
         assert coll_names == {"a-good"}
+
+
+class TestUpdateChecksumIdempotency:
+    """Zero-change `sif index update` must report 0 updated (t_66218b67).
+
+    Before the fix the update path compared stored checksums (sha256 of the
+    body) against whole-file hashes, so every existing document was rewritten
+    every run (chunks/embeddings dropped + FTS rebuild). Persisting the fresh
+    checksum on the update branch is equally load-bearing: without it a
+    changed document would oscillate as "updated" on every later run.
+    """
+
+    BODY = "# Note\n\n" + ("Stable paragraph text. " * 100)
+
+    def _seed_note(self, db_path: Path, settings: Settings, notes_dir: Path) -> Path:
+        from sif.core.models import Collection, Document
+        from sif.database.database import Database
+        from sif.database.repositories import CollectionRepository, DocumentRepository
+
+        notes_dir.mkdir(parents=True, exist_ok=True)
+        doc_file = notes_dir / "a.md"
+        doc_file.write_text(self.BODY, encoding="utf-8")
+        db = Database(db_path)
+        with patch("sif.config.settings.get_settings", return_value=settings):
+            db.init_schema()
+            with db.connection:
+                coll_repo = CollectionRepository(db.connection)
+                doc_repo = DocumentRepository(db.connection)
+                coll = Collection(name="notes", path=str(notes_dir))
+                coll_repo.create(coll)
+                doc_repo.create(
+                    Document(
+                        path=str(doc_file),
+                        collection_id=coll.id,
+                        content=self.BODY,
+                        title="A",
+                    )
+                )
+        db.close()
+        return doc_file
+
+    def test_zero_change_rerun_reports_zero_updated(
+        self,
+        tmp_path: Path,
+        monkeypatch,
+    ) -> None:
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "update.db"
+        settings = _test_settings()
+        notes = tmp_path / "notes"
+        self._seed_note(db_path, settings, notes)
+
+        # Cycle 1: index the note, then embed to fill chunks/embeddings.
+        assert _invoke_update(db_path, settings, []).exit_code == 0
+        manager, _vector_log = _make_manager_mock()
+        assert _invoke_embed(db_path, manager, settings, []).exit_code == 0
+        emb1, chunks1, emb_ids1, chunk_ids1 = _store_state(db_path)
+        assert emb1 == chunks1
+        assert emb1 > 0
+
+        # Cycle 2: files untouched -> the unchanged short-circuit fires:
+        # nothing is rewritten and no chunks/embeddings are destroyed.
+        result = _invoke_update(db_path, settings, [])
+        assert result.exit_code == 0
+        assert "Updated: 0" in result.output
+        assert _store_state(db_path) == (emb1, chunks1, emb_ids1, chunk_ids1)
+
+        # Cycle 3: a real edit is still detected...
+        doc_file = notes / "a.md"
+        doc_file.write_text(self.BODY.replace("Stable", "Edited"), encoding="utf-8")
+        result = _invoke_update(db_path, settings, [])
+        assert result.exit_code == 0
+        assert "Updated: 1" in result.output
+
+        # ...and the fresh checksum is persisted, so the next run converges
+        # instead of rewriting the same document again.
+        conn = sqlite3.connect(str(db_path))
+        try:
+            stored_cs, stored_content = conn.execute(
+                "SELECT checksum, content FROM documents"
+            ).fetchone()
+        finally:
+            conn.close()
+        assert stored_cs == hashlib.sha256(stored_content.encode()).hexdigest()
+        assert "Edited paragraph text" in stored_content
+        result = _invoke_update(db_path, settings, [])
+        assert result.exit_code == 0
+        assert "Updated: 0" in result.output
