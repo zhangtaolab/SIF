@@ -64,6 +64,8 @@ This installs:
 - `sentence-transformers>=2.2.0`
 - `numpy>=1.24.0`
 
+With this extra installed, the local embedding backends pick their compute device automatically at model load — CUDA GPU where torch has it, Apple Metal (MPS) on arm64 macOS, otherwise CPU. No extra setup or configuration is needed; see [Configuration](configuration.md) for per-backend details.
+
 ### Development Dependencies
 
 For contributing to SIF:
@@ -116,6 +118,8 @@ brew install python@3.11
 # Install SIF
 pip3 install sif
 ```
+
+**Hardware acceleration**: on Apple Silicon Macs the modelscope and sentence_transformers backends automatically use the GPU via Metal (MPS). GGUF (llama.cpp) models run on CPU only unless `SIF_N_GPU_LAYERS` is set above 0, which enables llama.cpp Metal offload (distinct from MPS). See [Configuration](configuration.md) for the full device-selection behavior.
 
 ### Windows
 
