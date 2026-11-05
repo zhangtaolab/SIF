@@ -1,12 +1,9 @@
 ---
 phase: 05-agent-context-experience
-verified: 2026-09-07T04:57:32Z
+verified: 2026-11-05T03:21:43Z
 status: passed
 score: 24/24 must-haves verified
-behavior_unverified: 0
-overrides_applied: 0
 covered_files:
-  - .planning/REQUIREMENTS.md
   - .planning/phases/05-agent-context-experience/05-01-PLAN.md
   - .planning/phases/05-agent-context-experience/05-01-SUMMARY.md
   - .planning/phases/05-agent-context-experience/05-02-PLAN.md
@@ -26,6 +23,8 @@ covered_files:
   - .planning/phases/05-agent-context-experience/05-09-PLAN.md
   - .planning/phases/05-agent-context-experience/05-09-SUMMARY.md
   - src/sif/cli/commands/context.py
+  - src/sif/cli/main.py
+  - src/sif/core/models.py
   - src/sif/database/repositories.py
   - src/sif/database/schema.py
   - src/sif/search/bm25.py
@@ -34,22 +33,20 @@ covered_files:
   - src/sif/search/vector.py
   - src/sif/utils/paths.py
   - tests/unit/cli/test_context.py
+  - tests/unit/cli/test_status.py
   - tests/unit/database/test_repositories.py
   - tests/unit/database/test_schema.py
   - tests/unit/search/test_bm25.py
   - tests/unit/search/test_context_attach.py
   - tests/unit/search/test_hybrid.py
   - tests/unit/search/test_vector.py
-covered_digest: "v1:sha256:b7cb075592d9d386766ee1e37c78160e7d565515f4b094489f8e489574880b06"
+covered_digest: "v4:sha256:c4d18da430832ea9a9bb2271aea7cc3112f98f10460d8d84b0379700cb251796"
+behavior_unverified: 0
+overrides_applied: 0
 re_verification:
-  previous_status: gaps_found
-  previous_score: 15/19
-  gaps_closed:
-    - "SC-3: search results include contextual descriptions in the symlink-mismatch scenario (live: BM25/Vector/Hybrid all attach a legacy verbatim alias-form row to resolved-form results)"
-    - "Truth 11: BM25 context attach under /private/tmp normalization (live)"
-    - "Truth 12: Vector context attach under normalization (live — modelscope backend present this run)"
-    - "Truth 13: Hybrid context attach under normalization (live via search query incl. reranker)"
-    - "Truth 10 WARNING (CR-02): prune no longer deletes valid symlink-mismatched contexts (live: mismatched context survived, true orphan deleted)"
+  previous_status: passed
+  previous_score: 24/24
+  gaps_closed: []
   gaps_remaining: []
   regressions: []
 ---
@@ -57,161 +54,144 @@ re_verification:
 # Phase 5: Agent Context Experience Verification Report
 
 **Phase Goal:** Users can augment document collections with contextual descriptions to improve retrieval quality for agent workflows.
-**Verified:** 2026-09-07T04:57:32Z
+**Verified:** 2026-11-05T03:21:43Z
 **Status:** passed
-**Re-verification:** Yes — after gap closure
+**Re-verification:** Yes — stale-report regeneration (#4682), not gap closure
 
-**Verification basis:** Live CLI falsification against a scratch SQLite DB (`SIF_DB_PATH=/tmp/sif-verify3/index.sqlite`) with a REAL double-mismatch scenario — documents stored resolved (`/private/tmp/sif-verify3/vault/doc1.md`), context injected via raw SQL in the verbatim alias form (`/tmp/sif-verify3/alias/doc1.md`, differing by BOTH the `/tmp`→`/private/tmp` prefix and the `alias`→`vault` symlink) — plus direct code reads, single named pytest runs, and one full-suite run in a clean shell. SUMMARY.md claims were not trusted; every gap-closure claim below was re-falsified by the same live method the 2026-09-06 report used to expose the bug.
+**Verification basis:** The prior report (2026-09-07, passed 24/24) went stale: the package was renamed `src/docsift` → `src/sif` in Phase 08 and later commits touched the shared searchers (`5aeea94`, `98dc8fc` review fixes; `b7381d6` exclude-all sentinel; `3521778` pipeline typing). This regeneration re-verified every must-have from scratch against the CURRENT tree by direct code reads plus 54 freshly-run tests (real-SQL attach/prune/update_target suites, CLI context suite, hybrid/bm25/vector attach tests, schema migration tests, status tests) — all green on 2026-11-05. Neither the prior report nor SUMMARY.md claims were trusted as evidence. Historical `src/docsift/...` paths in plans 05-01..05-07 were mapped to their `src/sif/...` equivalents; `DOCSIFT_DB_PATH` maps to `SIF_DB_PATH` (Phase 08 rename, `settings.py:20 env_prefix="SIF_"`).
 
 ## Goal Achievement
 
 ### Observable Truths
 
-| # | Truth | Status | Evidence |
+| # | Truth | Status | Evidence (current tree, 2026-11-05) |
 |---|-------|--------|----------|
-| 1 | SC-1: User can add contextual descriptions to paths or collections via `context add` | ✓ VERIFIED | Live: `context add path <alias>/doc1.md` (stored canonical), `add collection verify-vault "..."` (name→UUID), `add global global "..."`, `add path ~/...` (home-expanded), malformed `~user` → clean ClickException exit 1 (context.py:102-162) |
-| 2 | SC-2: User can list and remove contextual descriptions via `context list` and `context rm` | ✓ VERIFIED | Live: `context list` rendered per-row Type (path/collection); `--type global` filtered; `context rm <uuid>` removed the row (verified absent); `rm` alias at context.py:246 |
-| 3 | SC-3: Search results include relevant contextual descriptions alongside document content | ✓ VERIFIED | **Live, previously FAILED:** legacy verbatim alias-form context row + resolved-form documents → BM25 `search search --json` returned `context_description: 'Live-falsification context note'` (was `null` pre-fix). Vector and hybrid likewise (rows 12/13) |
-| 4 | contexts table exists with target_id, context_type, content + CHECK constraint (05-01) | ✓ VERIFIED | Baseline live-tested; schema.py has ZERO commits since 2026-09-06; test_schema.py green with 0 skips this run (vec_db fixture fixed, 225b9c8) |
-| 5 | path_contexts migration preserves data, drops old table, atomic/idempotent (05-01) | ✓ VERIFIED | Baseline live-tested; schema.py unchanged; migration tests now RUN (no env-skip) in the full suite — 662 passed, 0 skipped |
-| 6 | SchemaManager.get_stats() reports context count (05-01) | ✓ VERIFIED | Live: `status` shows "Contexts: 2" matching the scratch DB |
-| 7 | Path/collection/global contexts stored with correct context_type (05-05) | ✓ VERIFIED | Live DB inspection: rows with context_type='path' (canonical), 'collection' (target=UUID 5653c861…), 'global' |
-| 8 | List displays actual context_type per row (05-05) | ✓ VERIFIED | Live: table rendered `collection` and `path` per row (context.py:220) |
-| 9 | Collection targets resolved name-first, then ID (05-02 D-02) | ✓ VERIFIED | Live: `context add collection verify-vault` resolved the name to UUID and stored it |
-| 10 | User can prune orphaned path contexts via `context prune` (05-02 D-12) — **CR-02 WARNING CLEARED** | ✓ VERIFIED | Live: alias-form context for an EXISTING document + one true orphan → `context prune` printed "Pruned 1", alias-form row SURVIVED (asserted in DB), orphan gone. repositories.py:463-485 compares `normalize_path` on both sides; `NOT IN` grep count in file = 0 |
-| 11 | BM25 results include context_description with /private/tmp normalization (05-06) | ✓ VERIFIED | **Live, previously FAILED:** alias-form row → resolved-form BM25 result attached. Post-self-heal (canonical byte-match) also verified live |
-| 12 | Vector results include context_description with normalization (05-06) | ✓ VERIFIED | **Live, previously FAILED (baseline could not run vector live):** `search vsearch --json` attached the description to doc1 (`score 0.6176`) while doc2 stayed `null` — mixed batch proven live on the real modelscope backend |
-| 13 | Hybrid results include context_description with normalization (05-06) | ✓ VERIFIED | **Live, previously FAILED:** `search query --json` (SearchPipeline, reranker model loaded) attached the description to doc1, `null` for doc2 |
-| 14 | SearchPipeline final results include context_description after reranking (05-03) | ✓ VERIFIED | Live `search query` (rerank ran) + named test `test_pipeline_search_attaches_context_after_reranking` passed; hybrid.py:241 final return |
-| 15 | Only path contexts are attached in search (05-03 D-07) | ✓ VERIFIED | Live: collection + global contexts present in DB while doc2 (whose collection HAS a context) returned `context_description: null`; SQL filters `context_type = 'path'` (context_attach.py:54) |
-| 16 | context_description survives RRF fusion (05-01) | ✓ VERIFIED | Named test `test_hybrid_search_attaches_context_after_rrf` passed; helper sets only on match (never clobbers, context_attach.py:58-61) |
-| 17 | Status command respects SIF_DB_PATH (05-07) | ✓ VERIFIED | Live: every command in this verification hit the scratch DB via SIF_DB_PATH |
-| 18 | Comprehensive unit tests for migration, repository, CLI, search integration (05-04) | ✓ VERIFIED | Full suite clean shell: **662 passed, 0 failed, 0 skipped** (was 629/11-skipped at baseline; +8 attach, +7 repo real-SQL, +5 CLI, +4 WR-01/02, minus 3 mock-bypassed); ruff check + format clean |
-| 19 | ContextRepository with context_type support + alias (05-01/05-05) | ✓ VERIFIED | Baseline live round-trip; `PathContextRepository` alias (repositories.py:501); real-SQL suite green |
-| 20 | context add path stores the canonical resolved form (05-09 / WR-02 write side) | ✓ VERIFIED | Live: alias-form and `~/` adds stored `/private/tmp/sif-verify3/vault/doc1.md` and `/Users/forrest/sif-verify3-home-test.md`; success message echoes the canonical form; `_resolve_path_target` (context.py:37-49) |
-| 21 | Re-adding a path with legacy verbatim rows MERGES into exactly one canonical row (05-09 + WR-02 merge-by-key) | ✓ VERIFIED | Live: legacy-alias-1 row existed under alias form; `context add path <alias>` → exactly 1 row, same id, target re-pointed to canonical, content updated, no create; unit `test_readd_via_canonical_merges_legacy_alias_rows` covers multi-alias + naive-timestamp collapse (`_merge_key` is tz-safe) |
-| 22 | Existing verbatim context rows attach at read time with NO backfill migration (05-08) | ✓ VERIFIED | Live: row injected via raw SQL in verbatim alias form (bypassing CLI normalization) attached to search in all three searchers; `git log --since=2026-09-06 -- src/sif/database/schema.py` is EMPTY — no migration was written |
-| 23 | normalize_path is total: a malformed `~user` row cannot crash search/prune; context add raises a clean ClickException (WR-01) | ✓ VERIFIED | Live: `context add path '~sif-no-such-user-7f3a/…'` → "Error: Cannot resolve path …" exit 1, nothing stored; unit tests insert the poison row and prove attach/prune complete (paths.py:79-82 degrades to raw string) |
-| 24 | The three mock-bypassed normalized-path tests are gone, replaced by real-SQL regression suites (05-08) | ✓ VERIFIED | grep for `test_*_attaches_context_with_normalized_path` across tests/ = 0 hits; tests/unit/search/test_context_attach.py (10 tests) and tests/unit/database/test_repositories.py (8 tests) use `sqlite3.connect(":memory:")` + production `SchemaManager` DDL + REAL symlinks (`alias_dir.symlink_to(vault)`) |
+| 1 | SC-1: User can add contextual descriptions to paths or collections via `context add` | ✓ VERIFIED | context.py:102-162 — `click.Choice(["path","collection","global"])`, canonical path storage, collection name→UUID, global literal; tests/unit/cli/test_context.py (23 tests) green today incl. `test_add_path_symlink_alias_stores_resolved_form` |
+| 2 | SC-2: User can list and remove contextual descriptions via `context list` and `context rm` | ✓ VERIFIED | context.py:183-246 — list with `--type` filter rendering `ctx_item.context_type` per row (line 220), `remove` + `rm` alias (line 246); `test_rm_alias_works` (test_context.py:652) green |
+| 3 | SC-3: Search results include relevant contextual descriptions alongside document content | ✓ VERIFIED | All three searchers wired to `attach_path_contexts` (grep-verified call sites below); `test_attach_matches_symlink_alias_target` (real sqlite3 `:memory:` + real `alias_dir.symlink_to(vault)`) green today |
+| 4 | contexts table exists with target_id, context_type, content + CHECK constraint (05-01) | ✓ VERIFIED | schema.py:94-105 `CHECK(context_type IN ('path','collection','global'))`; `test_contexts_table_has_check_constraint` + `test_contexts_table_rejects_invalid_type` green |
+| 5 | path_contexts migration preserves data, drops old table, atomic/idempotent (05-01) | ✓ VERIFIED | schema.py:107-126 SAVEPOINT migration + `DROP TABLE path_contexts`; 5 migration tests (migrates/preserves/index/idempotent/no-old-table) green today |
+| 6 | SchemaManager.get_stats() reports context count (05-01) | ✓ VERIFIED | schema.py:383-384 `SELECT COUNT(*) FROM contexts` → `stats["contexts"]`; status tests green |
+| 7 | Path/collection/global contexts stored with correct context_type (05-05) | ✓ VERIFIED | repositories.py:374-384 INSERT binds `context.context_type`; CLI passes the Choice value through; type-guard tests green |
+| 8 | List displays actual context_type per row (05-05) | ✓ VERIFIED | context.py:220 `table.add_row(ctx_item.context_type, ...)`; PathContext.context_type at core/models.py:190 |
+| 9 | Collection targets resolved name-first, then ID (05-02 D-02) | ✓ VERIFIED | context.py:123-131 — `get_by_name(target)` then `get_by_id(target)` fallback, ClickException if neither |
+| 10 | User can prune orphaned path contexts; mismatched-valid contexts survive (05-02 D-12 / CR-02) | ✓ VERIFIED | repositories.py:463-485 — Python-side normalized set comparison on BOTH sides, no SQL `NOT IN`; `test_prune_preserves_symlink_mismatched_context` (asserts return 0 AND survival) + `test_prune_deletes_true_orphan` green today |
+| 11 | BM25 results include context_description under /private/tmp normalization (05-06/05-08) | ✓ VERIFIED | bm25.py:117 `return self._attach_contexts(results)` → :121 delegates to `attach_path_contexts`; real-SQL mismatch test + `TestBM25ContextAttachment` (2 tests) green |
+| 12 | Vector results include context_description with normalization (05-06/05-08) | ✓ VERIFIED | vector.py:123→125-127 same delegation; vector context tests (2) green today |
+| 13 | Hybrid results include context_description with normalization (05-06/05-08) | ✓ VERIFIED | hybrid.py:68/70/90 all three returns → :112-114 delegate; `TestHybridContextAttachment` (2 tests) green |
+| 14 | SearchPipeline final results include context_description after reranking (05-03) | ✓ VERIFIED | hybrid.py:241 `return self.hybrid._attach_contexts(results)` final return; `test_pipeline_search_attaches_context_after_reranking` green |
+| 15 | Only path contexts are attached in search (05-03 D-07) | ✓ VERIFIED | context_attach.py:54 `WHERE context_type = 'path'` constant SQL; `test_unmatched_result_keeps_none` green. (WR-07 notes docs overstate this scope — see Anti-Patterns; code matches D-07 intent) |
+| 16 | context_description survives RRF fusion (05-01) | ✓ VERIFIED | `test_hybrid_search_attaches_context_after_rrf` green; context_attach.py:58-61 set-only-on-match never clobbers |
+| 17 | Status command respects SIF_DB_PATH env var (05-07; DOCSIFT_DB_PATH renamed in Phase 08) | ✓ VERIFIED | main.py:104 `get_settings().get_db_path()`; settings.py:20 `env_prefix="SIF_"`; tests/unit/cli/test_status.py green (incl. env-var test at :48-49) |
+| 18 | Comprehensive unit tests for migration, repository, CLI, search integration (05-04) | ✓ VERIFIED | 7 test files, 3001 lines; 54 tests run green by this verifier today; resume gates (2026-11-05): 121 phase-mapped + 206 prior-phase regression tests green |
+| 19 | ContextRepository with context_type support + PathContextRepository alias (05-01/05-05) | ✓ VERIFIED | repositories.py:367 class with create/get_by_target/list_by_type/update/update_target/delete/delete_orphaned_paths; :501 `PathContextRepository = ContextRepository` |
+| 20 | context add path stores the canonical resolved form (05-09 / WR-02 write side) | ✓ VERIFIED | context.py:140 `_resolve_path_target` → normalize_path; `test_add_path_symlink_alias_stores_resolved_form` green |
+| 21 | Re-adding a path with legacy verbatim rows MERGES into exactly one canonical row (05-09) | ✓ VERIFIED | context.py:52-93 `_self_heal_path_row` (normalized-key candidates, tz-safe `_merge_key` at :23-34, loser collapse); `test_readd_legacy_verbatim_row_self_heals` + `test_readd_via_canonical_merges_legacy_alias_rows` green |
+| 22 | Existing verbatim context rows attach at read time with NO backfill migration (05-08) | ✓ VERIFIED | context_attach.py normalizes both sides on read (one constant-SQL batch query); schema.py contains zero `UPDATE contexts` (grep 0); mismatch test injects the verbatim form and attaches |
+| 23 | normalize_path is total: malformed `~user` cannot crash search/prune; context add raises clean ClickException (WR-01) | ✓ VERIFIED | paths.py:79-82 degrades to raw string on (RuntimeError, OSError, ValueError); context.py:45-48 raises `click.ClickException`; `test_normalize_path_unexpandable_tilde_degrades_to_raw_form`, `test_malformed_tilde_row_does_not_crash_attach`, `test_prune_survives_malformed_tilde_row` all green |
+| 24 | Mock-bypassed normalized-path tests replaced by real-SQL regression suites (05-08) | ✓ VERIFIED | grep `attaches_context_with_normalized_path` across tests/ = 0 hits; test_context_attach.py (11 tests) + test_repositories.py (9 tests) use `sqlite3.connect(":memory:")` + production `SchemaManager` DDL + real `alias_dir.symlink_to(vault)` |
 
 **Score:** 24/24 truths verified (0 failed, 0 present-but-unverified)
+
+### Plan Prohibitions (05-08 / 05-09)
+
+| Prohibition | Status | Evidence |
+|-------------|--------|----------|
+| No SQL IN-list pre-filter on target_id in the attach query (verified root cause) | ✓ HOLDS | grep `target_id IN` across src/sif/search/ = 0; the only `IN (` hits are the pre-existing `collection_id IN` collection filters (bm25.py:66, vector.py:67); context_attach.py:53-55 is one constant-SQL query with zero interpolated values |
+| No mocked-cursor test as sole proof of mismatch attachment | ✓ HOLDS | Real-SQL suites (test_context_attach.py, test_repositories.py) are the primary proof, read line-by-line: real DDL, real sqlite3, filesystem-induced mismatch |
+| No bulk backfill migration rewriting contexts.target_id | ✓ HOLDS | schema.py has zero `UPDATE contexts`; `update_target` fires only on explicit re-add (context.py:76, :89 are the sole call sites) |
 
 ### Required Artifacts
 
 | Artifact | Expected | Status | Details |
 |----------|----------|--------|---------|
-| `src/sif/utils/paths.py` | `normalize_path(path) -> str`, total function | ✓ VERIFIED | Lines 55-82; reuses `expand_path`; try/except degrades un-expandable forms to raw string |
-| `src/sif/search/context_attach.py` | `attach_path_contexts(db, results)` | ✓ VERIFIED | NEW file, 63 lines; ONE constant-SQL query (`SELECT target_id, content FROM contexts WHERE context_type = 'path' ORDER BY updated_at`), zero interpolated values, no `target_id IN` pre-filter, normalize both sides, set-only-on-match |
-| `src/sif/search/bm25.py` | `_attach_contexts` delegating | ✓ VERIFIED | bm25.py:111 one-line delegate; `import os`/realpath gone (grep 0) |
-| `src/sif/search/vector.py` | same | ✓ VERIFIED | vector.py:118; live-proven via `search vsearch` |
-| `src/sif/search/hybrid.py` | same + SearchPipeline call site | ✓ VERIFIED | hybrid.py:114 delegate; hybrid.py:241 `self.hybrid._attach_contexts(results)` final return; MagicMock/tuple fallback (IN-03) deleted |
-| `src/sif/cli/commands/context.py` | normalized add + dual-form upsert self-heal | ✓ VERIFIED | `elif type == "path"` branch (134-140), `_self_heal_path_row` (52-93) with normalized-key merge + loser collapse, clean ClickException via `_resolve_path_target`; collection/global branches untouched |
-| `src/sif/database/repositories.py` | `update_target` + normalized `delete_orphaned_paths` | ✓ VERIFIED | `update_target` (433-460, parameterized UPDATE, rowcount>0); `delete_orphaned_paths` (463-485) Python-side normalized set; `NOT IN` count 0 |
-| `tests/unit/search/test_context_attach.py` | real-SQL regression suite | ✓ VERIFIED | 10 tests, real sqlite3 :memory: + production DDL + real symlink fixture; includes WR-01 poison-row tests |
-| `tests/unit/database/test_repositories.py` | real-SQL prune/update_target suite | ✓ VERIFIED | 8 tests incl. THE CR-02 regression (`test_prune_preserves_symlink_mismatched_context` asserts return 0 AND survival); no sqlite-vec dependency |
-| `tests/unit/cli/test_context.py` | `TestContextAddNormalizedPaths` | ✓ VERIFIED | 5 tests (alias store, home expand, self-heal, canonical re-add, type guard) + WR-01/WR-02 regressions; 23 tests total in file |
+| `src/sif/utils/paths.py` (was `src/docsift/utils/paths.py`) | `normalize_path` total function | ✓ VERIFIED | Lines 55-82; expands ~, resolves symlinks, preserves non-existent tails; try/except degrades to raw string |
+| `src/sif/search/context_attach.py` | `attach_path_contexts(db, results)` | ✓ VERIFIED | 63 lines; ONE constant-SQL query (`WHERE context_type = 'path' ORDER BY updated_at`), normalize both sides (:56, :59), set-only-on-match |
+| `src/sif/search/bm25.py` | `_attach_contexts` delegating | ✓ VERIFIED | :117 return, :119-121 one-line delegate to attach_path_contexts |
+| `src/sif/search/vector.py` | same | ✓ VERIFIED | :123 return, :125-127 delegate |
+| `src/sif/search/hybrid.py` | same + SearchPipeline final call site | ✓ VERIFIED | :68/:70/:90 three HybridSearcher returns → :112-114; :241 SearchPipeline final return (survived post-verification commits b7381d6, 3521778) |
+| `src/sif/cli/commands/context.py` | normalized add + dual-form upsert self-heal | ✓ VERIFIED | path branch :134-140, `_self_heal_path_row` :52-93, `_resolve_path_target` :37-49, rm alias :246, prune :225-242 |
+| `src/sif/database/repositories.py` | `update_target` + normalized `delete_orphaned_paths` | ✓ VERIFIED | update_target :433-456 (parameterized, rowcount>0); delete_orphaned_paths :463-485 (normalize both sides in Python). Note: gsd-tools `verify.artifacts` flags "Missing pattern: UPDATE contexts SET target_id" — false positive; the SQL is multi-line (`UPDATE contexts\nSET target_id = ?`) so the single-line `contains` pattern cannot match; verified by direct read + `test_update_target_round_trip` green |
+| `src/sif/database/schema.py` | contexts table + SAVEPOINT migration + stats | ✓ VERIFIED | :23-24 migration before create; :94-105 table with CHECK; :107-126 migration; :383-384 context count |
+| `src/sif/core/models.py` | SearchResult.context_description + PathContext.context_type | ✓ VERIFIED | :221 and :190 |
+| `src/sif/cli/main.py` | status via Settings.get_db_path(); context_group registered | ✓ VERIFIED | :104, :87. (05-02 plan placed the rm-alias `add_command` in main.py; it lives at context.py:246 — wiring exists and is test-covered; historical-path mapping) |
+| `tests/unit/search/test_context_attach.py` | real-SQL regression suite | ✓ VERIFIED | 11 tests, real sqlite3 + production DDL + real symlink fixture; includes WR-01 poison-row tests |
+| `tests/unit/database/test_repositories.py` | real-SQL prune/update_target suite | ✓ VERIFIED | 9 tests incl. CR-02 regression and empty-edge cases |
+| `tests/unit/cli/test_context.py` | CLI suite incl. normalized paths | ✓ VERIFIED | 23 tests incl. alias-store, self-heal, canonical re-add, rm alias |
 
 ### Key Link Verification
 
+gsd-tools `verify.key-links` reports both plan-declared links as "Source file not found" because their `from:` values are conceptual (`SearchResult.path`, `context add / context prune`), not file paths — a plan-authoring artifact. Both links verified manually:
+
 | From | To | Via | Status | Details |
 |------|----|----|--------|---------|
-| BM25Searcher.search() | contexts table | `attach_path_contexts(self.db, results)` | ✓ WIRED | bm25.py:107→111; live-proven |
-| VectorSearcher._search_with_vec() | contexts table | same | ✓ WIRED | vector.py:114→118; live-proven |
-| HybridSearcher.search() (3 returns) + SearchPipeline final | contexts table | same | ✓ WIRED | hybrid.py:68/70/90→114, 241; live-proven |
-| SearchResult.path | contexts.target_id | `normalize_path()` on BOTH sides in Python | ✓ WIRED | **The previously NOT_WIRED link now fires live** in the real mismatch scenario — alias-form row attached to resolved-form result in BM25/Vector/Hybrid |
-| context add path | normalize_path | `_resolve_path_target` | ✓ WIRED | Live: canonical storage + echo |
-| context add (legacy re-add) | ContextRepository.update_target | `_self_heal_path_row` | ✓ WIRED | Live: row re-pointed, no duplicate |
-| context prune | delete_orphaned_paths → normalize_path | repository call | ✓ WIRED | Live: "Pruned 1", valid row survived |
-| write / prune / read | ONE shared `normalize_path` | all import `sif.utils.paths.normalize_path` | ✓ WIRED | grep confirms single definition, imported by context_attach.py, context.py, repositories.py |
+| BM25Searcher.search() | contexts table | `attach_path_contexts(self.db, results)` | ✓ WIRED | bm25.py:117→121; attach test green |
+| VectorSearcher._search_with_vec() | contexts table | same | ✓ WIRED | vector.py:123→127 |
+| HybridSearcher.search() (3 returns) + SearchPipeline final | contexts table | same | ✓ WIRED | hybrid.py:68/70/90→114, :241 |
+| SearchResult.path | contexts.target_id | `normalize_path()` on BOTH sides, real SQLite | ✓ WIRED | context_attach.py:56 (`row["target_id"]`) and :59 (`result.path`); `test_attach_matches_symlink_alias_target` fires the link against a real symlink mismatch |
+| context add / prune / read | ONE shared `normalize_path` | single definition `sif.utils.paths.normalize_path` | ✓ WIRED | grep: one `def normalize_path` (paths.py:55); imported by context_attach.py:21, context.py:14, repositories.py:15 |
+| context add (re-add) | ContextRepository.update_target | `_self_heal_path_row` | ✓ WIRED | context.py:76, :89 sole call sites |
+| context prune | delete_orphaned_paths | repository call | ✓ WIRED | context.py:240 |
+| context add collection | CollectionRepository.get_by_name | D-02 name-first | ✓ WIRED | context.py:125-128 |
 
 ### Data-Flow Trace (Level 4)
 
 | Artifact | Data Variable | Source | Produces Real Data | Status |
 |----------|--------------|--------|--------------------|--------|
-| search --json context_description (all 3 searchers) | SearchResult.context_description | `attach_path_contexts()` real SQL over contexts | Yes — live attach for BOTH verbatim-legacy and canonical forms | ✓ FLOWING |
-| context add/list/rm/prune | contexts rows | real SQLite via ContextRepository | Yes — live round-trips incl. self-heal UPDATE | ✓ FLOWING |
-| status "Contexts" | COUNT(*) | contexts table | Yes — live count matched (2) | ✓ FLOWING |
-| MCP query tool SearchResult | mcp protocol | backend rebuild | No — context_description still dropped (protocol.py grep = 0) | ℹ️ Info: unchanged carry-forward, out of Phase 05 scope (baseline classified; Phase 09 did not require it) |
+| search context_description (all 3 searchers) | SearchResult.context_description | `attach_path_contexts()` real SQL over contexts | Yes — real-SQL mismatch test attaches verbatim-legacy and canonical forms | ✓ FLOWING |
+| context add/list/rm/prune | contexts rows | real SQLite via ContextRepository | Yes — parameterized INSERT/UPDATE/DELETE, round-trip tests green | ✓ FLOWING |
+| status "Contexts" count | COUNT(*) | contexts table | Yes — schema.py:383-384; status tests green | ✓ FLOWING |
+| MCP query tool SearchResult | mcp protocol | `src/sif/mcp/` (Phase 09 consolidation) | No — `context_description` grep across src/sif/mcp/ = 0 | ℹ️ Info: unchanged carry-forward, out of Phase 05 scope |
 
 ### Behavioral Spot-Checks
 
+All run by this verifier on 2026-11-05 (env -u FORCE_COLOR, NO_COLOR=1, repo venv).
+
 | Behavior | Command | Result | Status |
 |----------|---------|--------|--------|
-| **SC-3 regression: legacy alias row attaches to BM25** | live: raw-SQL inject alias-form context → `search search quantum --json` | `context_description: 'Live-falsification context note'` on `/private/tmp/…/doc1.md` | ✓ PASS |
-| Vector attach (same scenario) | live: `search vsearch "quantum flux" --json` | doc1 attached, doc2 null | ✓ PASS |
-| Hybrid/Pipeline attach (same scenario, reranker ran) | live: `search query "quantum flux" --json` | doc1 attached, doc2 null | ✓ PASS |
-| Mixed batch keeps None | live (vsearch + query) | doc2 `context_description: null` | ✓ PASS |
-| **CR-02 regression: prune preserves mismatched valid context** | live: alias context + true orphan → `context prune` | "Pruned 1"; alias row asserted present, orphan asserted gone | ✓ PASS |
-| Canonical write + echo | live: `context add path <alias>` | stored `/private/…` canonical; message echoes it | ✓ PASS |
-| Self-heal merge, no duplicates | live: re-add over existing legacy-alias row | exactly 1 row, id preserved, target canonical, content updated | ✓ PASS |
-| WR-01 malformed tilde | live: `context add path '~sif-no-such-user-7f3a/…'` | exit 1, "Error: Cannot resolve path …", nothing stored | ✓ PASS |
-| Only path-type attaches | live: collection+global contexts present, doc2 null | no leak | ✓ PASS |
-| Real-SQL suites | pytest test_context_attach.py test_repositories.py | 18 passed | ✓ PASS |
-| Pipeline/RRF named tests | pytest -k (2 named) | 2 passed | ✓ PASS |
-| Context CLI suite | pytest test_context.py test_schema.py tests/unit/search/ | 202 passed, 0 skipped | ✓ PASS |
-| Full suite (clean shell, OPENAI_* unset) | `pytest` | **662 passed, 0 failed, 0 skipped** | ✓ PASS |
-| Lint/format | ruff check + format --check | All checks passed; 131 files formatted | ✓ PASS |
+| Real-SQL attach suites + CLI + hybrid attach | pytest test_context_attach.py test_repositories.py test_context.py ::TestHybridContextAttachment | 43 passed | ✓ PASS |
+| Schema migration + contexts constraint tests | pytest test_schema.py -k "migration or contexts or context" | 7 passed | ✓ PASS |
+| Status respects SIF_DB_PATH | pytest tests/unit/cli/test_status.py (included above) | passed | ✓ PASS |
+| BM25 + vector context attach | pytest test_bm25.py test_vector.py -k context | 4 passed | ✓ PASS |
 
-### Probe Execution
-
-No probes declared in any Phase 05 plan and no `scripts/*/tests/probe-*.sh` exist. Step 7c: N/A.
+Resume-context gates (2026-11-05, before this verification): phase-05 mapped test set 121 green; regression gate 206 prior-phase tests green. Probe execution: no probes declared in any Phase 05 plan and no `scripts/*/tests/probe-*.sh` exist — Step 7c N/A.
 
 ### Requirements Coverage
 
 | Requirement | Source Plan | Description | Status | Evidence |
 |-------------|------------|-------------|--------|----------|
-| CTX-01 | 05-01, 05-02, 05-04, 05-05, 05-09 | `context add`: add description text for paths or collections | ✓ SATISFIED | Live adds for path (alias/canonical/home) with canonical storage, collection (name→UUID), global; clean error for malformed input |
-| CTX-02 | 05-02, 05-04, 05-05, 05-07, 05-09 | `context list` and `context rm`: view and delete contexts | ✓ SATISFIED | Live list/filter/rm; prune now deletes ONLY true orphans (CR-02 closed live); re-add merges instead of duplicating |
-| CTX-03 | 05-03, 05-04, 05-06, 05-07, 05-08 | Context descriptions carried back in search results | ✓ SATISFIED | Live in ALL THREE searchers in the symlink-mismatch scenario (previously falsified); REQUIREMENTS.md marks all three Complete — now matches code reality |
+| CTX-01 | 05-01, 05-02, 05-04, 05-05, 05-09 | `context add`: add description text for paths or collections | ✓ SATISFIED | All three types addable; canonical path storage; collection name-first; clean errors; REQUIREMENTS.md row: Phase 5 / Complete |
+| CTX-02 | 05-02, 05-04, 05-05, 05-07, 05-09 | `context list` and `context rm`: view and delete contexts | ✓ SATISFIED | list/--type/rm alias/prune (orphans only, CR-02-safe); re-add merges; REQUIREMENTS.md row: Phase 5 / Complete |
+| CTX-03 | 05-03, 05-04, 05-06, 05-07, 05-08 | Context descriptions carried back in search results | ✓ SATISFIED | All three searchers + SearchPipeline attach via shared helper; real-SQL mismatch test green; REQUIREMENTS.md row: Phase 5 / Complete |
 
-Orphaned requirements: none — REQUIREMENTS.md maps only CTX-01..03 to Phase 5; all three are claimed by plans and satisfied. Step 9b: phases 6-9 are all complete ([x] in ROADMAP); no later milestone phase exists to defer anything to.
-
-### Test Quality Audit
-
-The exact failure mode that previously blessed the bug — mocked cursors bypassing the SQL WHERE clause — was the primary audit target.
-
-| Test File | Linked Req | Real SQL? | Skipped | Verdict |
-|-----------|-----------|-----------|---------|---------|
-| tests/unit/search/test_context_attach.py | CTX-03 | YES — `sqlite3.connect(":memory:")`, production `SchemaManager._create_contexts_table()` DDL, real symlink via `alias_dir.symlink_to(vault)` | 0 | OK — the mismatch is induced by the FILESYSTEM, not a hardcoded `/private/tmp` string; `test_attach_matches_symlink_alias_target` would fail against any exact-match pre-filter (verified by reading both the test and the pre-fix pattern) |
-| tests/unit/database/test_repositories.py | CTX-02 | YES — both tables from production DDL, no sqlite-vec | 0 | OK — CR-02 regression asserts return value AND row survival; poison-row test covers WR-01 |
-| tests/unit/cli/test_context.py | CTX-01/02 | Mocked repos (appropriate for CLI layer) + real tmp_path symlinks | 0 | OK — repo-interaction asserts (create/update_target/update) at value level; self-heal test asserts create NOT called |
-| tests/unit/database/test_schema.py | CTX-01 | YES (migration via SchemaManager) | 0 this run | OK — vec_db fixture fixed (225b9c8, uses `sqlite_vec.load()`); the baseline's 11 env-skips are gone |
-| tests/unit/search/test_{bm25,vector,hybrid}.py | CTX-03 | Mixed (byte-match mocks retained; normalized-path mocks DELETED) | 0 | OK — grep for the three mock-bypassed test names = 0 hits across tests/ |
-
-Debt-marker scan (TBD/FIXME/XXX/TODO/HACK/PLACEHOLDER) on all 7 phase source files + 4 test files: zero matches. Disabled tests on requirements: 0. Circumstantial-reliance check: none — every behavior-dependent truth has live CLI or real-SQL behavioral evidence (see Spot-Checks).
+Orphaned requirements: none — REQUIREMENTS.md maps exactly CTX-01..03 to Phase 5; all three are claimed by plans and satisfied. Step 9b: all 9 milestone phases are complete in ROADMAP; no later phase exists to defer anything to.
 
 ### Anti-Patterns Found
 
 | File | Line | Pattern | Severity | Impact |
 |------|------|---------|----------|--------|
-| src/sif/database/schema.py | 236-241, 260-266 | FTS5 AFTER DELETE triggers use plain DELETE form (CR-01) | ℹ️ Info (carry-forward) | Pre-existing search-quality debt; schema.py untouched by the gap-closure round (`git log --since=2026-09-06` empty for this file); tracked in 05-REVIEW.md, out of this phase's context-goal scope |
-| mcp/protocol.py + backend | — | MCP SearchResult lacks context_description | ℹ️ Info (carry-forward) | Unchanged from baseline; Phase 09 scope did not require it — backlog candidate |
-| search --json snippet field | — | Raw control characters (strict JSON needs strict=False) | ℹ️ Info (carry-forward) | Pre-existing, documented in deferred-items.md, unrelated to context changes |
-| context list / prune UX | — | No ID column; prune has no preview/confirmation | ℹ️ Info (carry-forward) | 05-UI-REVIEW.md advisory items; not phase-goal blockers |
-| context_attach.py ORDER BY updated_at | 54 | ISO-string lexicographic sort — deterministic for uniform formats; a pathological same-instant mixed-offset pair could order non-chronologically | ℹ️ Info | Duplicate-normalizing targets are collapsed by canonical writes + self-heal merge; newest-wins pinned by real-SQL test for the realistic forms |
+| docs/quickstart.md, docs/models.md (root surface: context_attach.py:53-56) | 167-189 / 157-160 | WR-07: docs promise global/collection context effects and directory-scope path contexts; code attaches path-type exact matches only (per D-07) | ℹ️ Info (open, 05-REVIEW-DISPOSITION.md) | Docs-accuracy issue in Phase 06 scope, not a Phase 05 must-have — none of the 24 truths or CTX-01..03 depend on documentation claims; code behavior matches the Phase 05 D-07 decision. Disposition: open; fix belongs to docs (correct the claims or widen consumption) |
+| docs/mcp-server.md | — | IN-12: mcp-server.md overclaims query behavior (content, reranking) | ℹ️ Info (open) | Same WR-07 family — docs-only, no Phase 05 must-have touched |
+| src/sif/mcp/ | — | MCP SearchResult lacks context_description | ℹ️ Info (carry-forward) | Unchanged across all verifications; Phase 09 scope did not require it; backlog candidate |
+| src/sif/database/schema.py | 236-266 | CR-01: FTS5 AFTER DELETE triggers use plain DELETE form | ℹ️ Info (carry-forward) | Pre-existing search-quality debt, tracked in 05-REVIEW.md, outside context-goal scope |
+| context list / prune UX | — | No ID column shown; prune has no preview/confirmation (IN-13) | ℹ️ Info (carry-forward) | 05-UI-REVIEW.md advisory; not phase-goal blockers |
+| context_attach.py | 54 | ORDER BY updated_at ISO-string lexicographic sort | ℹ️ Info | Deterministic for uniform formats; duplicate targets collapsed by canonical writes + self-heal; newest-wins pinned by real-SQL test |
 
-No 🛑 Blockers. No unreferenced debt markers.
+Debt-marker scan (TBD/FIXME/XXX/TODO/HACK/PLACEHOLDER) on all 9 phase source files + 7 test files: zero matches. Stub scan: no empty-return/hollow implementations in the phase surface (all helpers substantive, all data paths flow to real SQL). No 🛑 Blockers.
 
 ### Decision Coverage
 
-13 CONTEXT.md decisions (baseline check) + gap-closure constraints: D-02 name-first collection resolution honored (live); D-06 batch-query shape preserved (one query, no JOIN, no N+1 — only the broken pre-filter shape dropped, per the 05-08 plan's documented deviation authority); D-07 path-only attach honored (live + SQL); D-09 dual validation preserved (click.Choice at context.py:103 + CHECK constraint — grep-verified, guard test); D-12/D-13 prune contract unchanged (explicit command, prints count); D-13 no auto-delete honored. Plan prohibitions verified with deterministic evidence: (1) no `target_id IN` pre-filter — grep 0 + real-SQL test that fails against any pre-filter; (2) no mocked-cursor sole proof — real-SQL suites read line-by-line; (3) no bulk backfill migration — schema.py has zero commits since baseline, only explicit re-add writes target_id.
+D-02 name-first collection resolution (context.py:123-131) honored; D-06 batch-query shape preserved (one constant-SQL query, no JOIN, no N+1); D-07 path-only attach honored (SQL + test); D-09 dual validation (click.Choice at context.py:103 + schema CHECK at :100) honored; D-12/D-13 prune contract unchanged (explicit command, prints count). Prior review's WR-01/WR-02 fixes independently confirmed holding on the current tree (paths.py total function; self-heal merge; commits 98dc8fc, 5aeea94 in history; poison-row and merge tests green today).
 
 ### Human Verification Required
 
-None. All 4 previously-failed truths were re-falsified LIVE by machine (the same method that exposed the bug), and the CR-02 warning cleared live. 05-UAT.md remains status: complete (11/11); unlike the baseline run, this verification's live mismatch scenario now matches what UAT Test 9 observed. No ⚠️ PRESENT_BEHAVIOR_UNVERIFIED truths remain.
+None. Every behavior-dependent truth has behavioral test evidence executed by this verifier on 2026-11-05 (54 tests across the real-SQL attach/prune suites, CLI suite, searcher attach tests, migration tests, and status tests — all green). No ⚠️ PRESENT_BEHAVIOR_UNVERIFIED truths. 05-UAT.md remains status: complete (11/11).
 
 ### Gaps Summary
 
-None. The single root cause from the 2026-09-06 report — path-form mismatch between `contexts.target_id` (verbatim) and `documents.path` (resolved), compounded by a SQL IN-clause pre-filter that made Python normalization dead code — is closed on all three sides, each verified live against a real double-mismatch (`/tmp`→`/private/tmp` AND `alias`→`vault`):
-
-- **Read (05-08):** `attach_path_contexts()` runs one constant-SQL batch query and normalizes both sides in Python; a raw-SQL-injected verbatim alias row attached to BM25, Vector, and Hybrid results (the prior `null` reproduction now returns the description). The three mock-bypassed tests that blessed the bug are deleted and replaced by real-SQL suites using real symlinks and production DDL.
-- **Write (05-09):** `context add path` stores the canonical resolved form and self-heals legacy rows on explicit re-add (live: one merged row, canonical target, no duplicates).
-- **Prune (05-09 / CR-02):** `delete_orphaned_paths()` compares normalized forms; live run kept the valid mismatched context and deleted only the true orphan.
-- **Robustness (WR-01/WR-02 fixes):** `normalize_path` is total — malformed `~user` rows cannot crash search/prune (poison-row tests), and `context add` raises a clean ClickException (live exit 1).
-
-Full quality suite: 662 passed, 0 failed, 0 skipped (migration tests no longer env-skip); ruff check and format clean. Phase 5's goal — users can augment document collections with contextual descriptions to improve retrieval quality — is achieved and machine-proven end to end. Carry-forward info items (CR-01 FTS triggers, MCP field, snippet JSON strictness, list/prune UX) are pre-existing, documented in 05-REVIEW.md / deferred-items.md / 05-UI-REVIEW.md, and outside this phase's success criteria.
+None. The Phase 05 goal — users can augment document collections with contextual descriptions to improve retrieval quality — is achieved on the current tree. The stale-report regeneration confirms the full context pipeline survived the Phase 08 package rename (`src/docsift` → `src/sif`) and subsequent commits to the shared searchers: write side (canonical storage + self-heal merge), prune side (normalized orphan detection), and read side (shared `attach_path_contexts` normalizing both sides in one constant-SQL batch) are all present, wired, and behaviorally proven by real-SQL tests run today. Historical plan paths map cleanly onto the current tree with two cosmetic deviations, both noted above (rm-alias registration lives in context.py:246 rather than main.py; env var renamed SIF_DB_PATH). Open info items (WR-07/IN-12 docs overclaims, MCP context_description, CR-01 FTS triggers, list/prune UX) are documented in 05-REVIEW-DISPOSITION.md with disposition `open` and are outside this phase's success criteria.
 
 ---
 
-_Verified: 2026-09-07T04:57:32Z_
+_Verified: 2026-11-05T03:21:43Z_
 _Verifier: Claude (gsd-verifier)_
