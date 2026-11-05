@@ -83,7 +83,7 @@ BM25/FTS5 keyword search and sqlite-vec vector search always run on CPU regardle
 |----------|------|---------|-------------|
 | `SIF_RERANKER_MODEL_NAME` | str | `Qwen/Qwen3-Reranker-0.6B` | Reranker model name |
 | `SIF_RERANKER_MODEL_PATH` | pathlib._local.Path | None | `None` | Path to local reranker model file |
-| `SIF_RERANKER_MODEL_TYPE` | str | `sentence_transformers` | Reranker model type (gguf, sentence_transformers) |
+| `SIF_RERANKER_MODEL_TYPE` | str | `sentence_transformers` | Reranker model type (gguf, sentence_transformers) (validated by `validate_reranker_model_type`) |
 | `SIF_RERANKER_BATCH_SIZE` | int | `32` | Batch size for reranker inference |
 
 ### Chunking Settings
@@ -220,52 +220,6 @@ echo $SIF_LOG_LEVEL
 # Check in Python
 python -c "import os; print(os.getenv('SIF_LOG_LEVEL'))"
 ```
-
-## Required vs Optional Settings
-
-No `SIF_` variable is required. Every field in `Settings` (`src/sif/config/settings.py`) declares a default value, so SIF starts with zero configuration and only fails when a validator rejects an invalid value (see [Validation Rules](#validation-rules)) — never because a variable is missing.
-
-A few settings are optional at settings-load time but become required by a specific backend later, at model load:
-
-| Variable | Needed for | Behavior when unset |
-|----------|-----------|---------------------|
-| `SIF_MODEL_PATH` | `SIF_MODEL_TYPE=gguf` | `EmbeddingModelFactory` raises `ValueError: model_path is required for GGUF models` at model load |
-| `SIF_API_KEY` | `SIF_MODEL_TYPE=openai` | No SIF-level error; the value is passed to the OpenAI client constructor, and the SDK's own default key resolution applies. `SIF_API_KEY` is declared with `repr=False` and `exclude=True`, so it never appears in printed or serialized settings |
-| `SIF_API_BASE` | Optional even for `openai` | `None` uses the SDK default endpoint; when set it must start with `http://` or `https://` |
-
-### Computed Defaults
-
-Two settings have no static default — their effective values are computed on first use, and the target directory is created if missing:
-
-| Variable | Resolution when unset | Examples (platformdirs convention) |
-|----------|----------------------|-----------------------------------|
-| `SIF_DB_PATH` | `Settings.get_db_path()` returns `platformdirs.user_data_dir("sif") / "sif.db"` | `~/.local/share/sif/sif.db` on Linux, `~/Library/Application Support/sif/sif.db` on macOS |
-| `SIF_CACHE_DIR` | `Settings.get_cache_dir()` returns `platformdirs.user_cache_dir("sif")` | `~/.cache/sif` on Linux, `~/Library/Caches/sif` on macOS |
-
-The remaining defaults come from the `Settings` field definitions and `src/sif/config/constants.py` (`APP_NAME = "sif"`, `DEFAULT_CHUNK_SIZE = 512`, `DEFAULT_CHUNK_OVERLAP = 128`) and are listed per variable in the tables under [Configuration Options](#configuration-options).
-
-## Per-Environment Overrides
-
-SIF has a single `.env` mechanism: `SettingsConfigDict` in `src/sif/config/settings.py` configures `env_file=".env"` only, so there is no built-in `.env.development` / `.env.production` loading and no variable that points `sif` at a different env-file path. Per-environment configuration is achieved by choosing where values come from — environment variables (highest priority, per shell or service), a `.env` in the working directory you invoke `sif` from, or the defaults (lowest priority).
-
-Practical patterns:
-
-```bash
-# 1. Per-project .env: keep a .env in each project directory and run sif there
-cd ~/projects/notes && sif search query "docker"
-
-# 2. Per-shell override (beats .env)
-export SIF_DB_PATH=~/experiments/sif-dev.db
-
-# 3. Wrapper alias for a dev configuration
-alias sif-dev='SIF_DB_PATH=~/experiments/sif-dev.db SIF_LOG_LEVEL=DEBUG sif'
-```
-
-Behavior details that affect per-environment setups:
-
-- **Settings are read once per process.** `get_settings()` is decorated with `@lru_cache`, so configuration is loaded a single time per process. Editing `.env` or changing variables affects the next invocation — long-running processes such as `sif mcp http` or `sif mcp daemon` must be restarted to pick up changes.
-- **Unknown variables are ignored silently.** `SettingsConfigDict(extra="ignore")` means unrecognized `SIF_`-prefixed entries in the environment or `.env` are dropped without an error, so a typo'd variable name produces no warning.
-- **`.env` is UTF-8** and resolved relative to the current working directory at process start (`env_file=".env"`, `env_file_encoding="utf-8"`).
 
 ## Related Documentation
 

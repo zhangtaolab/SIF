@@ -24,8 +24,8 @@ class Collection:
     document_count: int = 0
     chunk_count: int = 0
     metadata: dict[str, Any] = field(default_factory=dict)
-    created_at: datetime = field(default_factory=datetime.utcnow)
-    updated_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     last_indexed_at: datetime | None = None
 ```
 
@@ -171,9 +171,10 @@ class Document:
     content: str
     checksum: str
     file_size: int
-    metadata: dict[str, Any] = field(default_factory=dict)
-    created_at: datetime = field(default_factory=datetime.utcnow)
-    updated_at: datetime = field(default_factory=datetime.utcnow)
+    metadata: DocumentMetadata = field(default_factory=DocumentMetadata)
+    chunks: list[DocumentChunk] = field(default_factory=list)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     indexed_at: datetime | None = None
 ```
 
@@ -197,6 +198,7 @@ class DocumentChunk:
     end_line: int
     token_count: int
     embedding_id: str | None = None
+    embedding: list[float] | None = None
 ```
 
 ### Context
@@ -214,10 +216,10 @@ from sif.core.context import Context, ContextManager
 class Context:
     id: str
     content: str
-    context_type: str  # 'collection', 'path', 'document', 'global'
+    context_type: ContextType
     target_id: str
-    created_at: datetime = field(default_factory=datetime.utcnow)
-    updated_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 ```
 
 ## Models Module
@@ -338,8 +340,8 @@ from sif.models.collection import CollectionCreate, CollectionUpdate, Collection
 
 ```python
 class CollectionCreate(BaseModel):
-    name: str = Field(..., min_length=1, max_length=100)
-    description: str | None = Field(None, max_length=500)
+    name: str = Field(..., min_length=1, max_length=255)
+    description: str | None = Field(None)
     paths: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
 ```
@@ -348,8 +350,8 @@ class CollectionCreate(BaseModel):
 
 ```python
 class CollectionUpdate(BaseModel):
-    name: str | None = Field(None, min_length=1, max_length=100)
-    description: str | None = Field(None, max_length=500)
+    name: str | None = Field(None, min_length=1, max_length=255)
+    description: str | None = None
     paths: list[str] | None = None
     metadata: dict[str, Any] | None = None
 ```
