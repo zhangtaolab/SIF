@@ -1,16 +1,16 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: 5
+current_plan: 6
 status: executing
-stopped_at: Completed 10-04-PLAN.md
-last_updated: "2026-11-05T19:25:35.816Z"
-state_head: 4b74482b1aa544e7afa545810fcc8b6b4bdfe707
+stopped_at: Completed 10-05-PLAN.md
+last_updated: "2026-11-05T19:48:59.044Z"
+state_head: eae592bb4aa2edcfb710cce8c218f833a84ebce1
 progress:
   total_phases: 10
   completed_phases: 9
   total_plans: 61
-  completed_plans: 57
+  completed_plans: 59
 milestone_name: milestone
 current_phase: 10
 current_phase_name: Raise pytest coverage to 90%
@@ -22,21 +22,21 @@ current_phase_name: Raise pytest coverage to 90%
 
 - **Name:** DocSift
 - **Core Value:** 用户可以在自己的笔记和文档库中，用自然语言快速、准确地找到需要的信息——无论关键词是否匹配。
-- **Current Focus:** Phase 10 coverage campaign — plan 10-04 complete at 90.89%; ready for 10-05.
+- **Current Focus:** Phase 10 coverage campaign — plan 10-05 complete at 93.48%; ready for 10-06.
 - **Tech Stack:** Python 3.10+, SQLite (FTS5 + sqlite-vec), Click, Pydantic, sentence-transformers, llama-cpp-python
 
 ## Current Position
 
-Current Plan: 5
+Current Plan: 6
 Total Plans in Phase: 7
 
 - **Phases:** 9/10 complete (01–09); Phase 10 in progress
-- **Plans:** 57/61 complete
-- **Status:** Completed 10-04; ready for 10-05
-- **Progress Bar:** `[██████████████████░░] 93%`
-- **Coverage baseline:** 90.89% (5337 statements, 486 missed); 797 passed, 0 failed
+- **Plans:** 59/61 complete
+- **Status:** Completed 10-05; ready for 10-06
+- **Progress Bar:** `[███████████████████░] 97%`
+- **Coverage baseline:** 93.48% (5340 statements, 348 missed); 875 passed, 0 failed
 
-Phase 10-01 deleted the approved dead-code cluster; 10-02/10-03 expanded CLI and reranker coverage; 10-04 closed the real-SQLite database layer.
+Phase 10-01 deleted the approved dead-code cluster; 10-02/10-03 expanded CLI and reranker coverage; 10-04 closed the real-SQLite database layer; 10-05 covered core services, downloader, and utilities.
 
 ## Phase History
 
@@ -53,7 +53,7 @@ Phase 10-01 deleted the approved dead-code cluster; 10-02/10-03 expanded CLI and
 
 - **Requirements mapped:** 31/31 v1 + 7 DOC requirements
 - **Phases defined:** 10
-- **Tests passing:** 797 passed, 0 failed (post 10-04)
+- **Tests passing:** 875 passed, 0 failed (post 10-05)
 - **Known blockers:** 0
 
 **Per-Plan Metrics:**
@@ -66,6 +66,7 @@ Phase 10-01 deleted the approved dead-code cluster; 10-02/10-03 expanded CLI and
 | Phase 10 P02 | 13min | 3 tasks | 3 files |
 | Phase 10 P03 | 19min | 2 tasks | 4 files |
 | Phase 10 P04 | 30min | 3 tasks | 10 files |
+| Phase 10 P05 | 11min | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -132,6 +133,8 @@ Phase 10-01 deleted the approved dead-code cluster; 10-02/10-03 expanded CLI and
 - [Phase 10]: 10-03: Used real torch tensor math with constructor/downloader mocks for deterministic Qwen3 yes/no scoring; scoped ML module injection under D-07.
 - [Phase 10]: 10-03: Escaped XML query attributes and result fields so machine output strict-parses markup-sensitive content; search command reached 99.44% coverage.
 - [Phase 10]: 10-04: Real SQLite exposed and repaired stale external-content FTS delete triggers, lazy stats initialization, and multi-statement migration execution; repositories/schema/database/cache reached 100% and migrations 92%.
+- [Phase 10]: 10-05: Used real domain entities with repository Protocol doubles and scoped ModelScope/process-state isolation; all seven target files reached 100%.
+- [Phase 10]: 10-05: Behavior tests exposed and repaired custom logging formatter and indeterminate Rich progress defects; TOTAL coverage reached 93.48%.
 
 ### Roadmap Evolution
 
@@ -175,9 +178,9 @@ Phase 10-01 deleted the approved dead-code cluster; 10-02/10-03 expanded CLI and
 
 ## Session Continuity
 
-**Last session:** 2026-11-05T19:25:35.372Z
-**Stopped at:** Completed 10-04-PLAN.md
+**Last session:** 2026-11-05T19:48:58.590Z
+**Stopped at:** Completed 10-05-PLAN.md
 **Resume file:** None
 
-- **Last action:** `/gsd-execute-phase 10` — plan 10-04 added real-SQLite repository/database/migration/schema/cache tests and repaired three exposed defects; 797 passed, coverage 90.89%.
-- **Next expected action:** `/gsd-execute-phase 10` — continue with plan 10-05. `T-10-1` remains held until all seven plans complete.
+- **Last action:** `/gsd-execute-phase 10` — plan 10-05 covered core services, ModelDownloader, and utility helpers and repaired two exposed defects; 875 passed, coverage 93.48%.
+- **Next expected action:** `/gsd-execute-phase 10` — continue with plan 10-06. `T-10-1` remains held until all seven plans complete.
