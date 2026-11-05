@@ -42,13 +42,13 @@ All environment variables changed prefix from `DOCSIFT_` to `SIF_`:
 | `DOCSIFT_LOG_LEVEL` | `SIF_LOG_LEVEL` |
 | `DOCSIFT_DEBUG` | `SIF_DEBUG` |
 | `DOCSIFT_APP_NAME` | `SIF_APP_NAME` |
-| `DOCSIFT_DEVICE` | `SIF_DEVICE` |
+| `DOCSIFT_DEVICE` | No equivalent — device is auto-detected (CUDA → MPS → CPU) at model load; no `device` field exists in Settings |
 
 ### Data Paths
 
 - **Old**: `~/.docsift/`
 - **New**: `~/.local/share/sif/`
-- **Database**: Must re-run `sif index` to rebuild (no automatic DB migration)
+- **Database**: Must re-run `sif index update` to rebuild (no automatic DB migration)
 - **Model cache**: Auto-migrates on first `sif` run if old directory exists
 
 ### Python Package
@@ -88,7 +88,7 @@ All environment variables changed prefix from `DOCSIFT_` to `SIF_`:
 
 4. **Rebuild your index**:
    ```bash
-   sif index
+   sif index update
    ```
 
 5. **Update any scripts or aliases** using `docsift`:

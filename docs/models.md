@@ -74,8 +74,8 @@ class Document:
     title: str | None = None   # Document title (defaults to filename)
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     filename: str = field(init=False)   # Computed from path
-    checksum: str = field(init=False)   # SHA-256 of content
-    file_size: int = field(init=False)  # Content size in bytes
+    checksum: str | None = None   # SHA-256 of content (computed in __post_init__ if not set)
+    file_size: int | None = None  # Content size in bytes (computed in __post_init__ if not set)
     mtime: float = field(default_factory=lambda: datetime.utcnow().timestamp())
     created_at: datetime = field(default_factory=datetime.utcnow)
     updated_at: datetime = field(default_factory=datetime.utcnow)
@@ -178,7 +178,7 @@ path_ctx = PathContext(
 from sif.core.models import SearchType
 from enum import Enum
 
-class SearchType(str, Enum):
+class SearchType(Enum):
     BM25 = "bm25"       # Full-text search
     VECTOR = "vector"   # Semantic search
     HYBRID = "hybrid"   # Combined search
@@ -451,28 +451,32 @@ CREATE TABLE contexts (
 
 ## Validation Rules
 
+The domain dataclasses in `sif.core.models` perform no field validation. The limits below are conventions only — none of these length or range constraints are enforced anywhere in `src/sif`:
+
 ### Collection
-- `name`: Unique, 1-100 characters
-- `description`: Max 500 characters
-- `path`: Must be a valid directory path
+- `name`: 1-100 characters (convention, not enforced); uniqueness is enforced at the database level (`collections.name` UNIQUE)
+- `description`: Max 500 characters (convention, not enforced)
+- `path`: Expected to be a valid directory path (not validated)
 
 ### Document
-- `path`: Must be valid file path
-- `content`: Non-empty string
-- `checksum`: Valid SHA-256 hash (computed automatically)
+- `path`: Expected to be a valid file path (not validated)
+- `content`: Expected to be non-empty (not validated)
+- `checksum`: SHA-256 hash, computed automatically in `__post_init__` when not supplied
 
 ### Search
-- `query`: 1-1000 characters
-- `limit`: 1-100
-- `min_score`: 0.0-1.0
+- `query`: 1-1000 characters (convention, not enforced)
+- `limit`: 1-100 (convention, not enforced in the dataclass; defaults to 10)
+- `min_score`: 0.0-1.0 (convention, not enforced; defaults to 0.0)
 
 ### Context
-- `content`: 1-5000 characters
-- `context_type`: Must be one of defined types
+- `content`: 1-5000 characters (convention, not enforced)
+- `context_type`: Restricted to `path`, `collection`, `global` by a database CHECK constraint
+
+Validation that does exist lives elsewhere: the Pydantic API models in `sif.models` enforce their own limits (`CollectionBase.name` is 1-255 characters; `SearchQuery.query` and `ContextBase.content` require at least 1 character with no upper bound; `sif.models.search.SearchOptions` bounds `limit` to 1-100 and `threshold` to 0.0-1.0).
 
 ## Serialization
 
-All domain models support JSON serialization via `to_dict()` and `from_dict()`:
+All domain models support JSON serialization via `to_dict()`. Deserialization via `from_dict()` is available on `Collection` only; `Document`, `DocumentChunk`, `PathContext`, and `SearchResult` have `to_dict()` but no `from_dict()`:
 
 ```python
 from sif.core.models import Collection, SearchResult

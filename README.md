@@ -278,9 +278,6 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 # Install in development mode
 pip install -e ".[dev]"
-
-# Install pre-commit hooks
-pre-commit install
 ```
 
 ### Running Tests
@@ -293,8 +290,8 @@ pytest
 pytest --cov=sif
 
 # Run specific test category
-pytest -m unit
-pytest -m integration
+pytest tests/unit/
+pytest tests/integration/
 ```
 
 ### Code Quality
@@ -341,6 +338,68 @@ SIF is a Python reimplementation of the original TypeScript QMD (Query Markup Do
 
 - GitHub Issues: [github.com/zhangtaolab/sif/issues](https://github.com/zhangtaolab/sif/issues)
 - GitHub Discussions: [github.com/zhangtaolab/sif/discussions](https://github.com/zhangtaolab/sif/discussions)
+
+## More CLI Commands
+
+Beyond the commands shown above, the `sif` CLI also provides:
+
+```bash
+# Vector similarity search
+sif search vsearch "similar documents" -c my-notes
+
+# Generate embeddings for vector search (needed before vsearch works)
+sif index embed --collection my-notes
+sif index embed --collection my-notes --model-type gguf --model Qwen/Qwen3-Embedding-0.6B
+
+# Fetch a document by path or document ID, with an optional line range
+sif get notes/python_guide.md --lines 50 --line-numbers
+
+# Fetch multiple documents via a glob pattern or comma-separated IDs/paths
+sif get multi-get "docs/*.md"
+sif get multi-get "doc-id-1,notes/python_guide.md"
+
+# Browse indexed documents as a virtual file tree
+sif ls
+sif ls my-notes subfolder
+
+# Download a GGUF embedding model (owner/repo/filename.gguf or a direct URL;
+# tries HuggingFace first, falls back to ModelScope; caches in ~/.sif/models)
+sif pull owner/repo/model.gguf
+sif pull https://example.com/model.gguf --cache-dir ~/models
+
+# Benchmark search quality against a JSON fixture of queries and relevant doc IDs
+sif bench fixture.json --all --json
+
+# Remove orphaned chunks/embeddings and expired cache entries (asks for confirmation)
+sif cleanup
+```
+
+## Python API
+
+SIF can also be used as a Python library. The top-level package exports the core data models
+(`Collection`, `Document`, `DocumentChunk`, `PathContext`, `SearchOptions`, `SearchResult`), and
+search strategies live in `sif.search` (`BM25Searcher`, `VectorSearcher`, `HybridSearcher`,
+`SearchPipeline`, `RRRFusion`):
+
+```python
+from pathlib import Path
+
+from sif import SearchResult
+from sif.database.database import Database
+from sif.search import BM25Searcher
+
+db = Database(Path.home() / ".local" / "share" / "sif" / "sif.db")
+db.init_schema()
+
+with db.connection:
+    searcher = BM25Searcher(db.connection)
+    results: list[SearchResult] = searcher.search("python decorators")
+
+for result in results:
+    print(f"{result.score:.3f}  {result.path}")
+```
+
+See the [API Reference](docs/api-reference.md) for the full library API.
 
 ---
 

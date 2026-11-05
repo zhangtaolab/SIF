@@ -122,11 +122,13 @@ class Repository(ABC, Generic[T]):
 
 ```python
 class EmbeddingModelFactory:
-    @staticmethod
     def create_model(
+        self,
         model_type: ModelType,
-        config: ModelConfig,
-    ) -> EmbeddingModel: ...
+        model_path: str | None,
+        model_name: str,
+        **kwargs: Any,
+    ) -> Embedder: ...
 ```
 
 **Supported Models**:
@@ -536,3 +538,18 @@ class CollectionRepository(Protocol):
 2. **Plugin System**: Custom parsers and search strategies
 3. **Web UI**: Browser-based search interface
 4. **Query Suggestions**: Auto-complete and related queries
+
+## Directory Structure Rationale
+
+The package layout under `src/sif/` maps one-to-one onto the layers: every layer is a top-level package, and the import direction follows the layering — entry points (`cli/`, `mcp/`) may import anything below them, infrastructure (`database/`, `embedding/`) may import the domain, and the domain (`core/`) imports nothing from other SIF layers. The rationale for each package:
+
+- **`core/` — dependency-free domain.** Plain `@dataclass` entities (`Collection`, `Document`, `DocumentChunk`) and `Protocol` interfaces (`Embedder`, `Reranker`, `QueryExpander` in `core/models.py`; repository protocols in `core/collection.py` and `core/document.py`) with no imports from any other SIF layer. This keeps domain logic free of I/O and framework coupling, so search and indexing code can be exercised without a database or a loaded model.
+- **`config/` and `utils/` — cross-cutting foundation.** `config/` holds Pydantic `Settings` (environment variables prefixed `SIF_`, cached via `get_settings()`) and constants; `utils/` provides logging, path, progress, and text helpers and depends only on `config/`. Every other layer may use both.
+- **`models/` — Pydantic boundary schemas.** Validation and serialization models (`ModelType`, `EmbeddingConfig`, request/response models, `ModelDownloader`) live apart from `core/` so domain entities stay plain dataclasses while Pydantic handles input arriving at the edges: CLI arguments, MCP tool payloads, and model configuration. This package depends only on `utils/`.
+- **`database/` — infrastructure behind the repository protocols.** SQLite connection management, `SchemaManager`, migrations, and the concrete repositories. It depends on `core/` (entity types), `config/`, and `utils/` — never on `search/` or `indexing/`.
+- **`embedding/` — provider isolation.** Two abstractions split the concern: the `Embedder` protocol from `core/` is what callers use, and the `EmbeddingModel` ABC in `embedding/model.py` is what providers implement. `EmbeddingModelFactory` builds instances from `ModelType` and `EmbeddingManager` loads and caches them, so switching GGUF, Sentence Transformers, OpenAI-compatible, or ModelScope backends touches only this package.
+- **`search/` — strategies over the indices.** Strategies query SQLite directly (e.g., `bm25.py` uses the stdlib `sqlite3` module and imports nothing from `embedding/` or `database/` at module level). Embedding dependencies are deliberately lazy: `expansion.py` imports `EmbeddingManager` only under `TYPE_CHECKING`, and `rerank.py` defers `ModelDownloader` and its ML-library imports to call time, so BM25 search works without an embedding stack present.
+- **`indexing/` — pipeline orchestration.** scanner → parser → chunker → indexer (plus `watcher.py`, reserved for auto-indexing). Besides the two entry points, it is the only layer that combines `database/` and `embedding/` in a single flow, which is why it sits above both.
+- **`cli/` and `mcp/` — the two entry points.** Both sit at the top of the dependency graph: they may import every layer below them, and nothing imports them. `mcp/` is self-contained by design: `MCPServer` plus JSON-RPC 2.0 protocol handling (`server.py`, `protocol.py`), a `SearchBackend` that wires the database, repositories, embedding factory, and `SearchPipeline` together (`backend.py`), one `ToolHandler` subclass per tool (`handlers.py`), and a `transports/` subpackage (`StdioTransport`, `HTTPTransport`) so a new transport can be added without touching server logic.
+
+Two conventions reinforce the layout. Deferred imports (marked `# noqa: PLC0415`, e.g. `get_settings()` inside `database/database.py` or `ModelDownloader` inside `search/rerank.py`) keep heavy or cycle-prone dependencies out of module import time. And sibling layers never import each other sideways — `search/` does not import `indexing/`, `database/` does not import `embedding/` — so each layer can be understood and replaced in isolation.

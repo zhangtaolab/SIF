@@ -59,10 +59,12 @@ Where:
 
 ### Parameters
 
-| Parameter | Default | Range | Description |
-|-----------|---------|-------|-------------|
-| `k1` | 1.5 | 0.1 - 3.0 | Controls term frequency saturation |
-| `b` | 0.75 | 0.1 - 1.0 | Controls length normalization |
+SIF does not expose k1/b configuration; BM25 ranking uses SQLite FTS5's built-in defaults via the `rank` column:
+
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| `k1` | 1.2 (FTS5 built-in default) | Controls term frequency saturation |
+| `b` | 0.75 (FTS5 built-in default) | Controls length normalization |
 
 ### Tuning Guidelines
 
@@ -145,7 +147,6 @@ results = searcher.search(query_embedding, options)
 |-------|------------|----------|
 | Qwen/Qwen3-Embedding-0.6B | 1024 | Default, high quality |
 | sentence-transformers/all-MiniLM-L6-v2 | 384 | Fast, general purpose |
-| sentence-transformers/all-mpnet-base-v2 | 768 | Higher quality |
 
 **Model Sources:**
 - HuggingFace Hub
@@ -226,7 +227,7 @@ results = hybrid.search("python decorators", options)
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `rrf_k` | 60 | Fusion constant |
+| `k` | 60 | Fusion constant |
 
 **Tuning k:**
 - Lower k (20-40): Emphasizes top ranks
@@ -291,7 +292,8 @@ reranker = create_reranker(settings)
 # Rerank top-k results
 reranked = reranker.rerank(
     query="python decorators",
-    documents=[r.content for r in initial_results],
+    results=initial_results,
+    top_k=10,
 )
 ```
 

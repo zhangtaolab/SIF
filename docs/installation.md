@@ -145,18 +145,18 @@ sif --help
 
 Expected output:
 ```
-SIF version 0.1.0
+sif, version 0.2.1
 
 Usage: sif [OPTIONS] COMMAND [ARGS]...
 
-  SIF - Document indexing and search tool.
+  SIF - Search / Index / Find - Local document search engine.
 
 Options:
   --version         Show version and exit.
   --index PATH      Path to the index database file.
   -v, --verbose     Enable verbose output.
   -q, --quiet       Suppress non-error output.
-  --format FORMAT   Output format.
+  --config PATH     Path to the configuration file
   --help            Show this message and exit.
 
 Commands:
@@ -230,7 +230,7 @@ If you encounter issues not covered here:
 
 1. Check the [GitHub Issues](https://github.com/zhangtaolab/sif/issues)
 2. Run with verbose mode: `sif -v <command>`
-3. Check logs: `~/.local/share/sif/logs/sif.log`
+3. Logs are written to stderr; SIF does not create a log file
 
 ## Uninstallation
 

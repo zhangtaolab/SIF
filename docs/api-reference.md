@@ -70,11 +70,9 @@ collection.mark_indexed()
 High-level manager for collection operations.
 
 ```python
-from sif import CollectionManager
-from sif.database.repository import SQLiteCollectionRepository
+from sif.core.collection import CollectionManager
 
-# Create manager with repository
-repository = SQLiteCollectionRepository(db_connection)
+# Create manager with a CollectionRepository implementation
 manager = CollectionManager(repository)
 ```
 
@@ -206,7 +204,7 @@ class DocumentChunk:
 Domain entity representing search context.
 
 ```python
-from sif import Context, ContextManager
+from sif.core.context import Context, ContextManager
 ```
 
 #### Class: `Context`
@@ -378,9 +376,9 @@ class CollectionResponse(BaseModel):
 
 ```python
 from sif.search.strategy import SearchStrategy, SearchContext
-from sif.search.bm25 import BM25SearchStrategy
-from sif.search.vector import VectorSearchStrategy
-from sif.search.hybrid import HybridSearchStrategy
+from sif.search.bm25 import BM25Searcher
+from sif.search.vector import VectorSearcher
+from sif.search.hybrid import HybridSearcher
 ```
 
 #### Class: `SearchContext`
@@ -415,83 +413,80 @@ class SearchStrategy(ABC):
     ) -> list[list[SearchResult]]: ...
 ```
 
-#### Class: `BM25SearchStrategy`
+#### Class: `BM25Searcher`
 
-BM25 full-text search implementation.
+BM25 full-text search implementation using SQLite FTS5. Takes a `sqlite3.Connection`.
 
 ```python
-strategy = BM25SearchStrategy(repository)
+searcher = BM25Searcher(conn)
 
-context = SearchContext(query="python decorators")
 options = SearchOptions(limit=10)
 
-results = strategy.search(context, options)
+results = searcher.search("python decorators", options)
 ```
 
-#### Class: `VectorSearchStrategy`
+#### Class: `VectorSearcher`
 
-Vector similarity search implementation.
+Vector similarity search implementation using sqlite-vec. Takes a `sqlite3.Connection` and the embedding dimension; raises `RuntimeError` when the sqlite-vec extension is unavailable.
 
 ```python
-strategy = VectorSearchStrategy(repository, embedding_model)
+searcher = VectorSearcher(conn, embedding_dim)
 
-# Query embedding must be provided
-context = SearchContext(
-    query="python decorators",
-    query_embedding=embedding_model.embed(["python decorators"])[0]
-)
+# Query embedding must be provided (embedder implements the Embedder protocol)
+query_embedding = embedder.embed("python decorators")
 
-results = strategy.search(context, options)
+results = searcher.search(query_embedding, options)
 ```
 
-#### Class: `HybridSearchStrategy`
+#### Class: `HybridSearcher`
 
-Combined BM25 and vector search with RRF fusion.
+Combined BM25 and vector search with RRF fusion. Constructs its own `BM25Searcher` and `VectorSearcher` from the shared connection and fuses them with `RRFFusion(k=60)`.
 
 ```python
-strategy = HybridSearchStrategy(
-    bm25_strategy=BM25SearchStrategy(repository),
-    vector_strategy=VectorSearchStrategy(repository, embedding_model),
-    rrf_k=60
-)
+searcher = HybridSearcher(conn, embedder=embedder, embedding_dim=384)
 
-results = strategy.search(context, options)
+results = searcher.search("python decorators", options)
 ```
 
 ### RRF (Reciprocal Rank Fusion)
 
 ```python
-from sif.search.rrf import reciprocal_rank_fusion
+from sif.search.rrf import RRFFusion, compute_rrf_score
 ```
 
-#### Function: `reciprocal_rank_fusion`
+#### Class: `RRFFusion`
 
 ```python
-def reciprocal_rank_fusion(
-    results_list: list[list[tuple[str, float]]],
-    k: int = 60,
-) -> list[tuple[str, float]]:
-    """Fuse multiple ranked lists using RRF.
-    
-    Args:
-        results_list: List of ranked result lists, each containing
-                     (document_id, score) tuples
-        k: RRF constant (default: 60)
-    
-    Returns:
-        Fused and sorted results
-    """
+class RRFFusion:
+    def __init__(self, k: int = 60) -> None: ...
+
+    def fuse(
+        self,
+        results_lists: list[list[SearchResult]],
+        limit: int = 10,
+    ) -> list[SearchResult]: ...
+
+    def fuse_with_weights(
+        self,
+        results_lists: list[list[SearchResult]],
+        weights: list[float],
+        limit: int = 10,
+    ) -> list[SearchResult]: ...
+```
+
+#### Function: `compute_rrf_score`
+
+```python
+def compute_rrf_score(rank: int, k: int = 60) -> float:
+    """Compute the RRF score 1 / (k + rank) for a single 1-indexed rank."""
 ```
 
 **Usage:**
 ```python
-from sif.search.rrf import reciprocal_rank_fusion
+from sif.search.rrf import RRFFusion
 
-bm25_results = [("doc1", 0.9), ("doc2", 0.8)]
-vector_results = [("doc2", 0.95), ("doc1", 0.85)]
-
-fused = reciprocal_rank_fusion([bm25_results, vector_results], k=60)
-# Result: [("doc2", 0.0325), ("doc1", 0.0321)]
+rrf = RRFFusion(k=60)
+fused = rrf.fuse([bm25_results, vector_results], limit=10)
 ```
 
 ## Database Module
@@ -499,21 +494,34 @@ fused = reciprocal_rank_fusion([bm25_results, vector_results], k=60)
 ### Repository
 
 ```python
-from sif.database.repository import SQLiteCollectionRepository
+from sif.database.repository import CollectionRepository
 ```
 
-#### Class: `SQLiteCollectionRepository`
+#### Class: `CollectionRepository` (Abstract)
+
+Abstract base class. Concrete SQLite implementations live in `sif.database.repositories` and take a `sqlite3.Connection`.
 
 ```python
-class SQLiteCollectionRepository:
-    def __init__(self, connection: DatabaseConnection) -> None: ...
-    
-    def get_by_id(self, collection_id: str) -> Collection | None: ...
+class CollectionRepository(Repository[Collection], ABC):
+    @abstractmethod
+    def get_by_id(self, entity_id: str) -> Collection | None: ...
+
+    @abstractmethod
     def get_by_name(self, name: str) -> Collection | None: ...
+
+    @abstractmethod
     def list_all(self) -> list[Collection]: ...
-    def create(self, collection: Collection) -> Collection: ...
-    def update(self, collection: Collection) -> Collection: ...
-    def delete(self, collection_id: str) -> bool: ...
+
+    @abstractmethod
+    def create(self, entity: Collection) -> Collection: ...
+
+    @abstractmethod
+    def update(self, entity: Collection) -> Collection: ...
+
+    @abstractmethod
+    def delete(self, entity_id: str) -> bool: ...
+
+    @abstractmethod
     def exists(self, name: str) -> bool: ...
 ```
 
@@ -527,26 +535,42 @@ from sif.database.connection import DatabaseConnection
 
 ```python
 class DatabaseConnection:
-    def __init__(self, db_path: str) -> None: ...
-    
-    def connect(self) -> None: ...
-    def close(self) -> None: ...
-    def execute(self, query: str, parameters: tuple = ()) -> sqlite3.Cursor: ...
-    def executemany(self, query: str, parameters: list) -> sqlite3.Cursor: ...
-    def commit(self) -> None: ...
+    def __init__(self, db_path: Path | str) -> None: ...
+
+    @contextmanager
+    def connect(self) -> Generator[sqlite3.Connection, None, None]: ...
+
+    @contextmanager
+    def transaction(self) -> Generator[sqlite3.Connection, None, None]: ...
+
+    def execute(
+        self, query: str, parameters: tuple | dict | None = None
+    ) -> sqlite3.Cursor: ...
+
+    def executemany(
+        self, query: str, parameters: list[tuple | dict]
+    ) -> sqlite3.Cursor: ...
+
+    def fetchone(
+        self, query: str, parameters: tuple | dict | None = None
+    ) -> sqlite3.Row | None: ...
+
+    def fetchall(
+        self, query: str, parameters: tuple | dict | None = None
+    ) -> list[sqlite3.Row]: ...
 ```
+
+`connect()` and `transaction()` are context managers. There are no `close()` or `commit()` methods: a connection is opened and closed per call, and `transaction()` commits on success and rolls back on exception.
 
 **Usage:**
 ```python
 from sif.database.connection import DatabaseConnection
 
 conn = DatabaseConnection("~/.local/share/sif/sif.db")
-conn.connect()
 
-cursor = conn.execute("SELECT * FROM collections WHERE name = ?", ("my-notes",))
-rows = cursor.fetchall()
-
-conn.close()
+with conn.connect() as db:
+    cursor = db.execute("SELECT * FROM collections WHERE name = ?", ("my-notes",))
+    rows = cursor.fetchall()
 ```
 
 ## Embedding Module
@@ -573,35 +597,42 @@ class EmbeddingModel(ABC):
     ) -> list[list[float]]: ...
     
     @property
-    @abstractmethod
-    def dimension(self) -> int: ...
+    def embedding_dim(self) -> int: ...
 ```
 
 #### Class: `EmbeddingModelFactory`
 
 ```python
 class EmbeddingModelFactory:
-    @staticmethod
-    def create_sentence_transformer(model_name: str) -> EmbeddingModel: ...
-    
-    @staticmethod
-    def create_gguf(model_path: str) -> EmbeddingModel: ...
+    def create_model(
+        self,
+        model_type: ModelType,
+        model_path: str | None,
+        model_name: str,
+        **kwargs: Any,
+    ) -> Embedder: ...
 ```
+
+Supported `ModelType` values: `SENTENCE_TRANSFORMERS`, `GGUF`, `OPENAI`, `MODELSCOPE` (`HUGGINGFACE` raises `NotImplementedError`). GGUF models require `model_path`.
 
 **Usage:**
 ```python
 from sif.embedding.factory import EmbeddingModelFactory
+from sif.models.embedding import ModelType
 
-# Sentence Transformer
-model = EmbeddingModelFactory.create_sentence_transformer("all-MiniLM-L6-v2")
-model.load()
+factory = EmbeddingModelFactory()
+embedder = factory.create_model(
+    model_type=ModelType.SENTENCE_TRANSFORMERS,
+    model_path=None,
+    model_name="all-MiniLM-L6-v2",
+)
 
-embeddings = model.embed([
+embeddings = embedder.embed_batch([
     "First document",
     "Second document"
 ])
 
-print(f"Dimension: {model.dimension}")  # 384
+print(f"Dimension: {embedder.dimension}")  # 384
 ```
 
 ### Embedding Manager
@@ -614,15 +645,33 @@ from sif.embedding.manager import EmbeddingManager
 
 ```python
 class EmbeddingManager:
-    def __init__(self, model: EmbeddingModel, cache: EmbeddingCache | None = None) -> None: ...
-    
-    def embed_documents(
+    def __init__(
         self,
-        documents: list[Document],
-        batch_size: int = 32,
-    ) -> dict[str, list[float]]: ...
-    
-    def embed_query(self, query: str) -> list[float]: ...
+        config: EmbeddingConfig | None = None,
+        factory: EmbeddingModelFactory | None = None,
+        cache: EmbeddingCache | None = None,
+    ) -> None: ...
+
+    @classmethod
+    def from_settings(cls, settings: Settings) -> EmbeddingManager: ...
+
+    def load_model(self) -> None: ...
+
+    def unload_model(self) -> None: ...
+
+    def embed(
+        self,
+        texts: list[str],
+        normalize: bool = True,
+        use_cache: bool = True,
+    ) -> EmbeddingResponse: ...
+
+    def embed_single(
+        self,
+        text: str,
+        normalize: bool = True,
+        use_cache: bool = True,
+    ) -> list[float]: ...
 ```
 
 ## MCP Server Module
@@ -630,98 +679,82 @@ class EmbeddingManager:
 ### MCPServer
 
 ```python
-from sif.mcp_server.server import MCPServer
-from sif.mcp_server.transport import StdioTransport, HttpTransport
+from sif.mcp.server import MCPServer
+from sif.mcp.transports.stdio import StdioTransport
+from sif.mcp.transports.http import HTTPTransport
 ```
 
 #### Class: `MCPServer`
 
 ```python
 class MCPServer:
-    def __init__(self, transport: Transport) -> None: ...
-    def start(self) -> None: ...
-    def stop(self) -> None: ...
-    @property
-    def is_running(self) -> bool: ...
+    def __init__(self, backend: SearchBackend) -> None: ...
+
+    def register_tools(self, tools: list[ToolHandler]) -> None: ...
+
+    async def handle_request(self, request: JsonRpcRequest) -> JsonRpcResponse: ...
+
+    async def handle_notification(self, notification: JsonRpcNotification) -> None: ...
 ```
+
+Transports wrap a server: `StdioTransport(server, stdin=None, stdout=None)` runs a stdin/stdout loop via `await transport.run()`, and `HTTPTransport(server, host="127.0.0.1", port=3000, cors_origins=None)` serves it with FastAPI via `transport.run()`.
 
 **Usage:**
 ```python
-from sif.mcp_server.server import MCPServer
-from sif.mcp_server.transport import StdioTransport
+from sif.mcp.backend import SearchBackend
+from sif.mcp.handlers import create_default_tools
+from sif.mcp.server import MCPServer
+from sif.mcp.transports.stdio import StdioTransport
 
-transport = StdioTransport()
-server = MCPServer(transport)
-server.start()
+server = MCPServer(SearchBackend("~/.local/share/sif/sif.db"))
+server.register_tools(create_default_tools())
+
+transport = StdioTransport(server)
 ```
+
+Module-level runners wire everything together: `run_stdio_server_sync(db_path)` (also `run_stdio_server`) and `run_http_server(db_path, host, port, cors_origins)`.
 
 ## Examples
 
 ### Complete Search Example
 
 ```python
-from sif.database.connection import DatabaseConnection
-from sif.database.repository import SQLiteCollectionRepository
+import sqlite3
+
+from sif.core.models import SearchOptions
 from sif.embedding.factory import EmbeddingModelFactory
-from sif.search.bm25 import BM25SearchStrategy
-from sif.search.vector import VectorSearchStrategy
-from sif.search.hybrid import HybridSearchStrategy
-from sif.search.strategy import SearchContext
-from sif.models.search import SearchQuery, SearchOptions, SearchType
+from sif.models.embedding import ModelType
+from sif.search.hybrid import HybridSearcher
 
-# Setup
-conn = DatabaseConnection("~/.local/share/sif/sif.db")
-conn.connect()
-
-repository = SQLiteCollectionRepository(conn)
-
-# Create embedding model
-model = EmbeddingModelFactory.create_sentence_transformer("all-MiniLM-L6-v2")
-model.load()
-
-# Create search strategies
-bm25 = BM25SearchStrategy(repository)
-vector = VectorSearchStrategy(repository, model)
-hybrid = HybridSearchStrategy(bm25, vector, rrf_k=60)
-
-# Search
-query_text = "python decorators"
-query_embedding = model.embed([query_text])[0]
-
-context = SearchContext(
-    query=query_text,
-    query_embedding=query_embedding,
-    collection_ids=None  # Search all collections
+# Create embedding model (implements the Embedder protocol)
+factory = EmbeddingModelFactory()
+embedder = factory.create_model(
+    model_type=ModelType.SENTENCE_TRANSFORMERS,
+    model_path=None,
+    model_name="all-MiniLM-L6-v2",
 )
 
-options = SearchOptions(
-    limit=10,
-    threshold=0.3,
-    expand_query=True
-)
+with sqlite3.connect("~/.local/share/sif/sif.db") as db:
+    # HybridSearcher builds BM25Searcher + VectorSearcher and fuses via RRF
+    searcher = HybridSearcher(db, embedder=embedder, embedding_dim=384)
 
-results = hybrid.search(context, options)
+    # Search
+    options = SearchOptions(limit=10, include_content=True)
+    results = searcher.search("python decorators", options)
 
-# Display results
-for result in results:
-    print(f"[{result.score:.2f}] {result.document_path}")
-    print(f"    {result.content_preview[:100]}...")
-
-conn.close()
+    # Display results
+    for result in results:
+        print(f"[{result.score:.2f}] {result.path}")
+        if result.content:
+            print(f"    {result.content[:100]}...")
 ```
 
 ### Collection Management Example
 
 ```python
-from sif import CollectionManager
-from sif.database.connection import DatabaseConnection
-from sif.database.repository import SQLiteCollectionRepository
+from sif.core.collection import CollectionManager
 
-# Setup
-conn = DatabaseConnection("~/.local/share/sif/sif.db")
-conn.connect()
-
-repository = SQLiteCollectionRepository(conn)
+# repository is any CollectionRepository implementation
 manager = CollectionManager(repository)
 
 # Create collection
@@ -747,8 +780,6 @@ manager.add_path(collection.id, "~/Documents/ideas")
 
 # Delete collection
 manager.delete_collection(collection.id)
-
-conn.close()
 ```
 
 ### Custom Search Strategy Example
@@ -785,57 +816,22 @@ class CustomSearchStrategy(SearchStrategy):
 
 ## Type Hints
 
-SIF uses full type hints throughout. Key types:
-
-```python
-from typing import Any, Protocol
-from datetime import datetime
-
-# Entity IDs
-CollectionId = str
-DocumentId = str
-ChunkId = str
-ContextId = str
-
-# Embeddings
-Embedding = list[float]
-EmbeddingBatch = list[Embedding]
-
-# Search results
-RawResult = tuple[str, float]  # (document_id, score)
-RawResults = list[RawResult]
-```
+SIF uses full type hints throughout. Entity IDs are plain `str` values, embeddings are `list[float]`, and search methods return `list[SearchResult]`; the codebase defines no type aliases for these. Extensibility is provided by `Protocol` types such as `Embedder`, `Reranker`, and `QueryExpander` in `sif.core.models`.
 
 ## Error Handling
 
-SIF uses exceptions for error handling:
+SIF defines no custom exception hierarchy; it raises built-in exceptions:
 
-```python
-class SIFError(Exception):
-    """Base exception for SIF."""
-    pass
-
-class CollectionNotFoundError(SIFError):
-    """Raised when a collection is not found."""
-    pass
-
-class DocumentNotFoundError(SIFError):
-    """Raised when a document is not found."""
-    pass
-
-class IndexError(SIFError):
-    """Raised when an indexing operation fails."""
-    pass
-```
+- `CollectionManager.create_collection` raises `ValueError` when a collection name already exists.
+- `CollectionManager.update_collection`, `add_path`, and `remove_path` raise `ValueError` when the collection ID is not found; `get_collection` returns `None` instead of raising.
+- `VectorSearcher.__init__` raises `RuntimeError` when the sqlite-vec extension is unavailable.
 
 **Usage:**
 ```python
 from sif.core.collection import CollectionManager
 
 try:
-    collection = manager.get_collection("non-existent-id")
-    if not collection:
-        raise CollectionNotFoundError(f"Collection not found")
+    collection = manager.create_collection(name="my-notes")
 except ValueError as e:
-    print(f"Error: {e}")
+    print(f"Error: {e}")  # e.g. "Collection 'my-notes' already exists"
 ```

@@ -447,3 +447,35 @@ sif cleanup
 - Check the [FAQ](#) (coming soon)
 
 - Open an issue on [GitHub](https://github.com/zhangtaolab/sif/issues)
+
+## Prerequisites
+
+Before installing SIF, make sure your system meets these requirements:
+
+- **Python `>= 3.10`** — check your version with `python3 --version`
+- **pip** — included with Python; any recent version works
+- **SQLite** — nothing to install separately. SIF stores all data locally in a
+  SQLite database via Python's built-in `sqlite3` module; the `sqlite-vec`
+  dependency for vector tables is installed automatically
+
+Optional, depending on which features you plan to use:
+
+- **Vector and hybrid search** — requires an embedding backend that is not
+  installed by default. BM25 keyword search works out of the box; for vector
+  search, install one of the extras:
+
+  ```bash
+  pip install "sif[embed]"   # sentence-transformers and modelscope backends
+  # or
+  pip install "sif[all]"     # adds GGUF (llama-cpp-python) and OpenAI API support
+  ```
+
+  The first `sif index embed` run downloads the default embedding model
+  (`Qwen/Qwen3-Embedding-0.6B`), so it needs network access and may take a
+  while on first use.
+
+If `sif index embed` exits with `sentence-transformers not installed`, install
+the `embed` (or `all`) extra as shown above and retry.
+
+For platform-specific setup (Linux, macOS, Windows) and deeper install
+troubleshooting, see the [Installation Guide](installation.md).

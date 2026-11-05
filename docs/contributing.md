@@ -77,7 +77,7 @@ Feature requests are welcome! Include:
 - [ ] Code passes linting (`ruff check .`)
 - [ ] Type checking passes (`ty check src/sif`)
 - [ ] Documentation updated
-- [ ] CHANGELOG.md updated
+- [ ] Changelog updated (docs/changelog.md)
 - [ ] Commit messages follow conventions
 
 #### PR Template
@@ -333,7 +333,7 @@ For significant documentation changes:
 Maintainers follow this process:
 
 1. Update version in `_version.py`
-2. Update CHANGELOG.md
+2. Update docs/changelog.md
 3. Create git tag
 4. Build and upload to PyPI
 5. Create GitHub release
@@ -355,6 +355,43 @@ Look for issues labeled:
 - **MCP Server**: New tools, transports
 - **Documentation**: Tutorials, examples
 
+## Continuous Integration
+
+The repository has one GitHub Actions workflow, `.github/workflows/docs.yml` ("Docs Validation"). It is triggered:
+
+- **On pull requests** that touch `docs/**`, `README.md`, `src/sif/cli/**`, `src/sif/config/**`, `scripts/generate_cli_ref.py`, `scripts/generate_config_ref.py`, or `tests/test_docs.py`
+- **On pushes** to `main`
+
+The workflow installs the package with `pip install -e ".[dev]"` on Python 3.11, runs `pytest tests/test_docs.py -v`, then regenerates the reference docs via `scripts/generate_cli_ref.py` and `scripts/generate_config_ref.py` and fails if `git diff --exit-code docs/cli-reference.md docs/configuration.md` detects drift. In practice:
+
+> If you change CLI commands or configuration settings, regenerate the reference docs and commit the result, or CI will fail:
+>
+> ```bash
+> make docs-generate
+> ```
+
+Note: CI does **not** currently run the lint, format, type-check, or test suite — those checks are enforced locally only. Run the full quality suite before opening a PR (see [Coding Standards](#coding-standards) and the Makefile targets below).
+
+## Makefile Targets
+
+The `Makefile` wraps the common development commands:
+
+| Target | What it runs | Notes |
+|--------|--------------|-------|
+| `make install-dev` | `pip install -e ".[dev]"` + `pre-commit install` | See pre-commit caveat below |
+| `make test` | `pytest --cov=src/sif ...` | Coverage is also on by default via `pyproject.toml` `addopts` |
+| `make test-fast` | `pytest -x -q` | No coverage, stops at first failure |
+| `make docs-test` | `pytest tests/test_docs.py -v` | Same docs validation CI runs |
+| `make docs-generate` | `scripts/generate_cli_ref.py` + `scripts/generate_config_ref.py` | Regenerate reference docs before committing CLI/config changes |
+| `make lint` / `make lint-fix` | `ruff check .` / `ruff check --fix .` | |
+| `make format` / `make format-check` | `ruff format .` / `ruff format --check .` | |
+| `make typecheck` | `ty check src/sif` | ty is configured in `pyproject.toml` (`[tool.ty]`) |
+| `make security` | `bandit -r src/sif -c pyproject.toml` | bandit is not in the `[dev]` extras; install it separately |
+| `make all` | lint + typecheck + test | Quick combined check |
+| `make ci` | format-check + lint + typecheck + security + test | Full local CI-equivalent run |
+
+`make install-dev`, `make install-all`, and `make pre-commit` invoke the `pre-commit` tool, but no `.pre-commit-config.yaml` is committed to the repository. <!-- VERIFY: make install-dev/install-all/pre-commit reference .pre-commit-config.yaml, which is not in the repository -->
+
 ## Questions?
 
 - GitHub Discussions: [github.com/zhangtaolab/sif/discussions](https://github.com/zhangtaolab/sif/discussions)
@@ -364,7 +401,6 @@ Look for issues labeled:
 
 Contributors will be:
 
-- Listed in CONTRIBUTORS.md
 - Mentioned in release notes
 - Credited in documentation
 

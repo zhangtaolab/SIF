@@ -83,7 +83,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - HTTP transport for remote access
 - Search tool
 - Document retrieval tool
-- Collection listing tool
+- Multi-document retrieval tool
 - Status tool
 
 #### Configuration
@@ -115,7 +115,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - rich >= 13.0.0
 - pydantic >= 2.0.0
 - sentence-transformers >= 2.2.0 (optional)
-- numpy >= 1.24.0 (optional)
+- numpy >= 1.24.0
 
 ### Documentation
 - README with quick start
@@ -190,7 +190,7 @@ cp ~/.local/share/sif/sif.db ~/.local/share/sif/sif.db.backup
 pip install --upgrade sif
 
 # Reindex if needed
-sif index rebuild --all
+sif index update
 ```
 
 ## Future Roadmap
