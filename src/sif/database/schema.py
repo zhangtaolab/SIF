@@ -236,7 +236,8 @@ class SchemaManager:
             CREATE TRIGGER IF NOT EXISTS documents_fts_delete
             AFTER DELETE ON documents
             BEGIN
-                DELETE FROM documents_fts WHERE rowid = old.rowid;
+                INSERT INTO documents_fts(documents_fts, rowid, content)
+                VALUES('delete', old.rowid, old.content);
             END
         """)
 
@@ -261,7 +262,8 @@ class SchemaManager:
             CREATE TRIGGER IF NOT EXISTS chunks_fts_delete
             AFTER DELETE ON document_chunks
             BEGIN
-                DELETE FROM chunks_fts WHERE rowid = old.rowid;
+                INSERT INTO chunks_fts(chunks_fts, rowid, content)
+                VALUES('delete', old.rowid, old.content);
             END
         """)
 
