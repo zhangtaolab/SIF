@@ -5,15 +5,15 @@ current_phase: 06
 current_phase_name: Documentation Audit & Refresh
 current_plan: Not started
 status: planning
-stopped_at: Quick task 260914-vyr complete (audit BLOCKER 2 closed)
-last_updated: "2026-09-14T15:11:42Z"
-state_head: c2a5302c16a03d11a6596f20cfd3529c907098d5
+last_updated: "2026-11-05T02:40:12.018Z"
+state_head: e3f7e2d6f49b7c16ecf6a20b90c84e91636aa03a
 progress:
   total_phases: 9
   completed_phases: 7
   total_plans: 51
   completed_plans: 51
 milestone_name: milestone
+stopped_at: Quick task 261105-eev complete (embedding hardware/device selection documented)
 ---
 
 # DocSift — Project State
@@ -150,6 +150,7 @@ Total Plans in Phase: 9
 | 260917-bo2 | Typing debt batch 1: search/rerank.py mypy strict-clean (22→0; TYPE_CHECKING imports, Optional annotations, narrowing asserts, 4 stale ignores removed) — zero behavior change, suite 676 green | 2026-09-17 | 1c1bec2 | [260917-bo2-typing-debt-batch-1-clear-search-rerank-](./quick/260917-bo2-typing-debt-batch-1-clear-search-rerank-/) |
 | 260917-dkf | Typing debt batch 2: watcher.py/manager.py/embedder.py mypy-clean (39→0; EmbeddingConfig Field defaults → keyword syntax, typed locals, os.fsdecode) — full-project 117→78, zero behavior change, suite 676 green | 2026-09-17 | e39d092 | [260917-dkf-typing-debt-batch-2-clear-indexing-watch](./quick/260917-dkf-typing-debt-batch-2-clear-indexing-watch/) |
 | 260917-kav | Typing debt batch 3: mcp/handlers.py + cli/commands/search.py + database/connection.py mypy-clean (32→0; ClassVar base attrs, generics, walrus narrowing, SearchPipeline reranker union widened) — full-project 78→46, zero behavior change, suite 676 green | 2026-09-17 | 4f24682 | [260917-kav-typing-debt-batch-3-clear-mcp-handlers-p](./quick/260917-kav-typing-debt-batch-3-clear-mcp-handlers-p/) |
+| 261105-eev | Document embedding hardware/device selection (MPS/GPU/CPU): generator Device Selection note under Embedding Model Settings + hardware-acceleration notes in installation.md; suite 676 green | 2026-11-05 | e3f7e2d | [261105-eev-document-embedding-hardware-device-selec](./quick/261105-eev-document-embedding-hardware-device-selec/) |
 
 ### Overrides
 
