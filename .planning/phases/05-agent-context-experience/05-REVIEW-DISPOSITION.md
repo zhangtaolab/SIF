@@ -3,6 +3,10 @@ phase: 05
 review: 05-REVIEW.md
 titles: json
 findings:
+  - id: CR-02
+    severity: critical
+    disposition: open
+    title: "`--line-numbers --md` and `--line-numbers --xml` crash with `AttributeError: 'dict' object has no attribute 'rank'`"
   - id: CR-01
     severity: critical
     disposition: fixed
@@ -107,21 +111,22 @@ findings:
     severity: info
     disposition: open
     title: "`Qwen3Reranker.load()` duplicates the entire loading block for quiet/non-quiet"
-open: 21
-total: 26
-recorded: 2026-11-05T08:29:04.203Z
+open: 22
+total: 27
+recorded: 2026-11-05T09:20:50.944Z
 ---
 
 # Phase 05: Code Review Disposition
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| CR-01 | critical | fixed | 05-REVIEW-FIX.md |
-| WR-01 | warning | fixed | 05-REVIEW-FIX.md |
-| IN-01 | info | open | - |
-| IN-02 | info | open | - |
-| IN-03 | info | open | - |
-| IN-04 | info | open | - |
+| CR-02 | critical | open | - |
+| CR-01 | critical | fixed | 05-REVIEW-FIX.md (not in the current review) |
+| WR-01 | warning | fixed | 05-REVIEW-FIX.md (not in the current review) |
+| IN-01 | info | open | - (not in the current review) |
+| IN-02 | info | open | - (not in the current review) |
+| IN-03 | info | open | - (not in the current review) |
+| IN-04 | info | open | - (not in the current review) |
 | WR-02 | warning | fixed | 05-REVIEW-FIX.md (not in the current review) |
 | WR-03 | warning | fixed | quick 261105-g1u (25481d8) (not in the current review) |
 | WR-04 | warning | open | - (not in the current review) |
