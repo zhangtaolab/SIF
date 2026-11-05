@@ -14,7 +14,7 @@ milestone_name: milestone
 current_phase: 06
 current_phase_name: Agent Context Experience
 current_plan: 1
-stopped_at: Quick task 261105-eev complete (embedding hardware/device selection documented)
+stopped_at: /gsd-execute-phase 05 — stale verification regenerated after quick task 261105-g1u; 24/24 must-haves, milestone 100%
 ---
 
 # DocSift — Project State
@@ -161,7 +161,7 @@ Phase 05 was re-verified 2026-11-05 (stale report regenerated after the Phase 08
 ## Session Continuity
 
 - **Last session:** 2026-11-05
-- **Stopped at:** Milestone v1.0 100% — Phase 05 re-verified (24/24) and marked complete; all 9 phases done
+- **Stopped at:** Milestone v1.0 100% — Phase 05 re-verified (second stale-report regeneration, trigger quick-task 261105-g1u; 24/24 must-haves, fingerprint fresh); all 9 phases verified
 - **Resume file:** None
-- **Last action:** /gsd-quick 261105-g1u → WR-03/WR-09 fixes (context missing-index guard; reranker_model_type validator + clean ClickException); suite 684 green
-- **Next expected action:** `/gsd-complete-milestone v1.0` (accept typing debt + remaining WR advisories or file follow-ups)
+- **Last action:** /gsd-execute-phase 05 → verification gates re-run (security audit appended 09c8262; UI re-audit 11/16 → 9c6804d; incremental code review 6 findings + disposition ledger 97c9862/39744bc; regression 684 green); verifier passed 24/24 → e40795b
+- **Next expected action:** `/gsd-complete-milestone v1.0` (accept typing debt + remaining WR/CR advisories or file follow-ups; CR-01 `--line-numbers --csv` crash + WR-01 vsearch guard are the top open review findings)
