@@ -367,19 +367,21 @@ Realistic yield on targeted files is 75-85% of their missed lines, so targeting 
 | A4 | Per-file yield of 75-85% of missed lines is achievable for targeted files | Scope math | Low-medium — if yield is lower, long-tail files must be pulled in; tollgate check catches it early |
 | A5 | `utils/text.py` dead-function deletion is in scope (phase description names `utils/text.py` but as a coverage target, not explicitly as deletion) | Pattern 4, Open Q2 | Low — covering dead functions instead would waste effort; planner should confirm scope |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Delete vs. cover the dead cluster (~244 stmts)?**
+All four questions were resolved at phase planning (2026-11-05); each resolution is implemented in a committed plan.
+
+1. **Delete vs. cover the dead cluster (~244 stmts)?** — RESOLVED: DELETE. Implemented in 10-01 (config.py deleted wholesale; formatters.py reduced to its two live helpers; utils/text.py dead functions removed; A5 scope question settled as in-scope, no objection surfaced).
    - What we know: phase description says "cover or delete"; evidence for deletion is strong (zero usages, full-suite-missed bodies, project precedent D-02).
    - What's unclear: whether the user considers `formatters.format_*` part of a public API surface worth keeping (A3).
    - Recommendation: delete `cli/config.py` and formatters dead symbols (explicitly sanctioned); treat `utils/text.py` dead functions as included unless the user objects in planning.
-2. **Where do new repository/DB tests live — `tests/unit/database/` or `tests/unit/db/`?**
+2. **Where do new repository/DB tests live — `tests/unit/database/` or `tests/unit/db/`?** — RESOLVED: `tests/unit/database/` for all new DB-layer tests, `__init__.py` added first; `db/` left untouched. Implemented in 10-04 Task 1.
    - What we know: both exist with a duplicate `test_repositories.py`; `database/` is the newer real-SQL home (05-09) but lacks `__init__.py`.
    - Recommendation: `tests/unit/database/` for all new DB-layer tests; add its `__init__.py`; leave `db/` untouched (or note consolidation as out of scope).
-3. **Should the 90% gate also gate CI?**
+3. **Should the 90% gate also gate CI?** — RESOLVED: out of scope for this phase. `fail_under = 90` in pyproject.toml (10-07 Task 2) already enforces the gate on every pytest run anywhere; a full CI workflow is a separate initiative.
    - What we know: CI (`.github/workflows/docs.yml`) only runs docs tests; there is no full-suite CI workflow; the gate is local via Makefile.
    - Recommendation: out of scope for this phase beyond `fail_under` (any pytest run anywhere now enforces it); a full CI workflow is a separate initiative.
-4. **T-10-1 requirement mapping** — planner must create it in REQUIREMENTS.md traceability per the phase description's "TBD" note.
+4. **T-10-1 requirement mapping** — RESOLVED: T-10-1 created in `.planning/REQUIREMENTS.md` (traceability table, Phase 10, Pending) and mapped to the ROADMAP phase entry; all seven plans carry `requirements: [T-10-1]` in frontmatter.
 
 ## Environment Availability
 
