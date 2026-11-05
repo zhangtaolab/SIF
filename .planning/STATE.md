@@ -2,16 +2,16 @@
 gsd_state_version: "1.0"
 milestone: v1.0
 status: planning
-last_updated: "2026-11-05T15:14:46.767Z"
-state_head: 3f60246f51d6861016792bda171acedbe9334c31
+last_updated: "2026-11-05T15:39:24.380Z"
+state_head: 16b7b25aedd2ef543b44fef85e0aad0cdb676601
 progress:
   total_phases: 10
   completed_phases: 9
   total_plans: 61
   completed_plans: 54
 milestone_name: milestone
-current_phase_name: Raise pytest coverage to 90%
 current_phase: 06
+current_phase_name: Raise pytest coverage to 90%
 current_plan: 1
 stopped_at: /gsd-execute-phase 05 (4th stale regeneration) complete — gates green, verification passed 24/24 fresh fingerprint; next /gsd-complete-milestone v1.0
 ---
@@ -153,6 +153,7 @@ Phase 05 was re-verified 2026-11-05 (stale report regenerated after the Phase 08
 | 260917-kav | Typing debt batch 3: mcp/handlers.py + cli/commands/search.py + database/connection.py mypy-clean (32→0; ClassVar base attrs, generics, walrus narrowing, SearchPipeline reranker union widened) — full-project 78→46, zero behavior change, suite 676 green | 2026-09-17 | 4f24682 | [260917-kav-typing-debt-batch-3-clear-mcp-handlers-p](./quick/260917-kav-typing-debt-batch-3-clear-mcp-handlers-p/) |
 | 261105-eev | Document embedding hardware/device selection (MPS/GPU/CPU): generator Device Selection note under Embedding Model Settings + hardware-acceleration notes in installation.md; suite 676 green | 2026-11-05 | e3f7e2d | [261105-eev-document-embedding-hardware-device-selec](./quick/261105-eev-document-embedding-hardware-device-selec/) |
 | 261105-g1u | Fix 05-REVIEW WR-03/WR-09: guard context add/remove against missing index (no silent empty-DB creation); validate reranker_model_type + ClickException surface for bad SIF_RERANKER_MODEL_TYPE | 2026-11-05 | b8a81e1 | [261105-g1u-fix-05-review-wr-03-and-wr-09-context-ad](./quick/261105-g1u-fix-05-review-wr-03-and-wr-09-context-ad/) |
+| 261105-wbj | 修复 embed 完整性检查 O(N²) 性能 bug:vector.py 新增 get_all_embedded_chunk_ids() 批量预取,index.py 主循环改查 dict(vec0 全表扫 4 万次 → 一次全量) | 2026-11-05 | 16b7b25 | [261105-wbj-embed-o-n-bug-src-sif-search-vector-py-2](./quick/261105-wbj-embed-o-n-bug-src-sif-search-vector-py-2/) |
 
 ### Overrides
 
