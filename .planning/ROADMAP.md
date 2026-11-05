@@ -306,12 +306,12 @@ Plans:
 **Goal:** Raise total pytest line coverage of `src/sif` from 78% (5587 stmts / 1220 missed, measured 2026-11-05, suite 688 passed) to ≥90%, closing the largest gaps: `cli/config.py` (109 stmts, 0% — likely dead code superseded by `cli/formatters.py`, 157 stmts / 29%: together ~266 stmts; cover or delete), `cli/commands/collection.py` (234 / 44%), `search/rerank.py` (214 / 62%), `database/repositories.py` (173 / 73%), `database/migrations.py` (37 / 35%), `models/download.py` (69 / 49%), `core/context.py` (73 / 49%), `indexing/parser.py` (78 / 51%), plus `utils/{text,paths,logging,progress}.py`. Gate: `env -u FORCE_COLOR NO_COLOR=1 pytest --cov=src/sif` reports TOTAL ≥90% with the full suite green.
 **Requirements:** T-10-1
 **Depends on:** Phase 9
-**Plans:** 7 plans
+**Plans:** 1/7 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 10-01-PLAN.md — Delete the verified dead-code cluster (cli/config.py, formatters.py dead symbols, text.py dead functions); re-baseline coverage 78% → ≥81% (tracer)
+- [x] 10-01-PLAN.md — Delete the verified dead-code cluster (cli/config.py, formatters.py dead symbols, text.py dead functions); re-baseline coverage 78% → ≥81% (tracer)
 
 **Wave 2** *(blocked on Wave 1 — tests target post-deletion code)*
 

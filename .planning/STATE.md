@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-status: planning
-stopped_at: Phase 10 context gathered (replan chosen over 7 agent-created plans)
-last_updated: "2026-11-05T17:43:07.946Z"
-state_head: e2b5f00416a905f27e11387a2bd45c30fdd61a07
+current_plan: 2
+status: executing
+stopped_at: Completed 10-01-PLAN.md
+last_updated: "2026-11-05T18:02:02.334Z"
+state_head: ed4ad73156931b71526da60d851f1e97ec4f0183
 progress:
   total_phases: 10
   completed_phases: 9
   total_plans: 61
-  completed_plans: 54
+  completed_plans: 55
 milestone_name: milestone
+current_phase: 10
 current_phase_name: Raise pytest coverage to 90%
-current_phase: 06
-current_plan: 1
 ---
 
 # DocSift — Project State
@@ -22,19 +22,21 @@ current_plan: 1
 
 - **Name:** DocSift
 - **Core Value:** 用户可以在自己的笔记和文档库中，用自然语言快速、准确地找到需要的信息——无论关键词是否匹配。
-- **Current Focus:** Milestone v1.0 complete — all 9 phases done (54/54 plans); next: `/gsd-complete-milestone v1.0`
+- **Current Focus:** Phase 10 coverage campaign — plan 10-01 complete at 81.48%; ready for 10-02.
 - **Tech Stack:** Python 3.10+, SQLite (FTS5 + sqlite-vec), Click, Pydantic, sentence-transformers, llama-cpp-python
 
 ## Current Position
 
-Milestone: v1.0 — 100% COMPLETE
+Current Plan: 2
+Total Plans in Phase: 7
 
-- **Phases:** 9/9 complete (01–09)
-- **Plans:** 54/54 complete
-- **Status:** Milestone ready to archive
-- **Progress Bar:** `[████████████████████] 100%`
+- **Phases:** 9/10 complete (01–09); Phase 10 in progress
+- **Plans:** 55/61 complete
+- **Status:** Completed 10-01; ready for 10-02
+- **Progress Bar:** `[██████████████████░░] 90%`
+- **Coverage baseline:** 81.48% (5320 statements, 985 missed); 690 passed, 0 failed
 
-Phase 05 was re-verified 2026-11-05 (stale report regenerated after the Phase 08 `src/docsift` → `src/sif` rename; 24/24 must-haves, fingerprint fresh) and marked complete — it was the last phase with an unrefreshed verification report.
+Phase 05 was re-verified 2026-11-05 after the Phase 08 rename; Phase 10-01 deleted the approved dead-code cluster and preserved the full green suite.
 
 ## Phase History
 
@@ -50,8 +52,8 @@ Phase 05 was re-verified 2026-11-05 (stale report regenerated after the Phase 08
 ## Performance Metrics
 
 - **Requirements mapped:** 31/31 v1 + 7 DOC requirements
-- **Phases defined:** 9
-- **Tests passing:** 675 passed, 0 failed (post 260914-vyr; suite's 5 conditional skips inactive in sqlite-vec-equipped env)
+- **Phases defined:** 10
+- **Tests passing:** 690 passed, 0 failed (post 10-01)
 - **Known blockers:** 0
 
 **Per-Plan Metrics:**
@@ -60,6 +62,7 @@ Phase 05 was re-verified 2026-11-05 (stale report regenerated after the Phase 08
 |------|----------|-------|-------|
 | Phase 05 P08 | 17min | 2 tasks | 9 files |
 | Phase 05 P09 | 12min | 2 tasks | 5 files |
+| Phase 10 P01 | 6min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -119,6 +122,8 @@ Phase 05 was re-verified 2026-11-05 (stale report regenerated after the Phase 08
 - [Phase 05]: 05-08: legacy verbatim context rows match on read — no contexts-table backfill migration; context_description is set only on match so RRF/rerank-carried descriptions are never clobbered; ORDER BY updated_at gives deterministic newest-wins for duplicate-normalizing targets
 - [Phase 05]: 05-09: context add path stores normalize_path(target) canonical form with dual-form upsert — legacy verbatim rows are re-pointed via new ContextRepository.update_target() on explicit re-add; no bulk backfill migration ever runs (re-normalize-on-read + merge-on-re-add closes WR-02/CTX-01)
 - [Phase 05]: 05-09: delete_orphaned_paths compares normalize_path on both sides in a Python set — SQL cannot call realpath so the raw-string NOT IN comparison is gone entirely; count semantics and D-12/D-13 explicit-command contract unchanged (closes CR-02/CTX-02)
+- [Phase 10]: 10-01: Applied D-01 exactly, deleting the approved dead-code cluster while preserving live CLI imports; measured post-deletion coverage at 81.48% (5320 statements, 985 missed).
+- [Phase 10]: 10-01: Kept pyproject.toml free of fail_under and coverage exclusions under D-04; final gate remains reserved for plan 10-07.
 
 ### Roadmap Evolution
 
@@ -162,9 +167,9 @@ Phase 05 was re-verified 2026-11-05 (stale report regenerated after the Phase 08
 
 ## Session Continuity
 
-**Last session:** 2026-11-05T16:27:24.767Z
-**Stopped at:** Phase 10 context gathered (replan chosen over 7 agent-created plans)
-**Resume file:** /Users/forrest/GitHub/SIF/.planning/phases/10-raise-pytest-coverage-to-90/10-CONTEXT.md
+**Last session:** 2026-11-05T18:02:01.856Z
+**Stopped at:** Completed 10-01-PLAN.md
+**Resume file:** None
 
 - **Last session:** 2026-11-05
 - **Stopped at:** Milestone v1.0 100% — Phase 05 fourth stale regeneration complete (`/gsd-execute-phase 05`): all verify:post gates re-run over the CR-02 fix (0be16d4) — validation 123/123 green 0 gaps, security 23/23 closed, UI re-audit 11/16 with CR-02 RESOLVED (1810499), incremental code review 0 critical / 7 warning / 2 info (0058fb7, ledger e35c4e8: 29/35 open), regression gate 688 passed / 0 failed, verifier 24/24 must-haves PASSED with fresh fingerprint (56853c5). No phase remains unverified.
