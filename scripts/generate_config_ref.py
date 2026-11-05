@@ -169,6 +169,41 @@ def _append_header(lines: list[str]) -> None:
     lines.append("")
 
 
+def _append_device_selection_note(lines: list[str]) -> None:
+    """Append the Device Selection note under the Embedding Model Settings table."""
+    lines.append("")
+    lines.append("#### Device Selection (CPU / GPU / MPS)")
+    lines.append("")
+    lines.append(
+        "SIF exposes no device setting — each embedding backend picks its "
+        "compute device automatically."
+    )
+    lines.append("")
+    lines.append("| Backend | Device behavior |")
+    lines.append("|---------|-----------------|")
+    lines.append(
+        "| `modelscope` (default), `sentence_transformers` | Device auto-detected "
+        "at model load via torch: CUDA GPU if available, else Apple Metal (MPS) "
+        "on arm64 macOS, else CPU. No configuration needed. |"
+    )
+    lines.append(
+        "| `gguf` | CPU only by default. `SIF_N_GPU_LAYERS` defaults to `0` "
+        "(all layers on CPU); values greater than `0` offload that many layers "
+        "via llama.cpp's GPU support (Metal on Apple Silicon — llama.cpp's own "
+        "path, not torch MPS). |"
+    )
+    lines.append(
+        "| `openai` | Embeddings are computed by the remote API; local hardware is unused. |"
+    )
+    lines.append("")
+    lines.append(
+        "BM25/FTS5 keyword search and sqlite-vec vector search always run on CPU "
+        "regardless of backend. MPS support ships in the torch wheel installed "
+        'by the `embed` extra (`pip install "sif[embed]"`); Apple\'s Neural '
+        "Engine (ANE/NPU) is not used by any backend."
+    )
+
+
 def _append_options_tables(lines: list[str]) -> None:
     """Append configuration options tables grouped by section."""
     validators = get_validators()
@@ -194,6 +229,9 @@ def _append_options_tables(lines: list[str]) -> None:
             if field_name in validators:
                 description += f" (validated by `{validators[field_name]}`)"
             lines.append(f"| {env_var} | {type_name} | {default_str} | {description} |")
+
+        if section_name == "Embedding Model Settings":
+            _append_device_selection_note(lines)
 
         lines.append("")
 
