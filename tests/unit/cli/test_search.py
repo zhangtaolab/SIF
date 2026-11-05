@@ -1,14 +1,27 @@
 """Tests for search CLI commands."""
 
+import csv
+import io
 import json
+import xml.etree.ElementTree as ET
 from contextlib import ExitStack
+from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
 from click.testing import CliRunner
+from pydantic import ValidationError
 
-from sif.cli.commands.search import query_cmd, search_cmd, vsearch_cmd
+from sif.cli.commands.search import (
+    format_results_md,
+    format_results_xml,
+    query_cmd,
+    search_cmd,
+    vsearch_cmd,
+)
 from sif.config.settings import get_settings
-from sif.core.models import Collection
+from sif.core.models import Collection, SearchResult
 
 
 class TestSearchFiltering:
@@ -1298,3 +1311,510 @@ class TestMachineOutputNoWrap:
         lines = result.output.splitlines()
         assert lines[0] == "rank,score,title,path,collection"
         assert lines[1:] == [f'"1","0.9500","{long_title}","{long_path}","notes"']
+
+
+class TestSearchOutputBranches:
+    """Output formats, diagnostics, and clean errors use isolated temp indexes."""
+
+    @pytest.fixture(autouse=True)
+    def isolate_quiet_state(self):
+        """Do not leak the CLI's process-global quiet mode between tests."""
+        from sif.utils.logging import set_quiet
+
+        set_quiet(False)
+        yield
+        set_quiet(False)
+
+    @staticmethod
+    def _result(**overrides: object) -> SearchResult:
+        fields = {
+            "document_id": "doc-1",
+            "rank": 1,
+            "score": 0.5,
+            "title": "知识 <笔记> & notes",
+            "path": "/notes/知识 & more.md",
+            "collection_name": "研究 & notes",
+            "content": "第一行\nsecond line",
+            "highlights": ["匹配 <高亮>"],
+            "snippet": "中文检索摘要",
+            "scores": {
+                "bm25_score": 2.5,
+                "vector_score": 0.75,
+                "rrf_score": 0.033,
+                "reranker_score": 0.5,
+                "unused": None,
+            },
+        }
+        fields.update(overrides)
+        return SearchResult(**fields)
+
+    @staticmethod
+    def _index(tmp_path: Path) -> Path:
+        index = tmp_path / "index.db"
+        index.touch()
+        return index
+
+    def _invoke_bm25(
+        self,
+        tmp_path: Path,
+        args: list[str],
+        results: list[SearchResult] | None = None,
+    ) -> tuple[object, MagicMock]:
+        searcher = MagicMock()
+        searcher.search.return_value = results if results is not None else [self._result()]
+        repo = MagicMock()
+        repo.list_enabled.return_value = []
+        with (
+            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
+            patch("sif.cli.commands.search.BM25Searcher", return_value=searcher),
+        ):
+            result = CliRunner().invoke(
+                search_cmd,
+                args,
+                env={"COLUMNS": "80"},
+                obj={"index_path": self._index(tmp_path)},
+            )
+        return result, searcher
+
+    def _invoke_query(
+        self,
+        tmp_path: Path,
+        args: list[str],
+        results: list[SearchResult] | None = None,
+        *,
+        manager: MagicMock | None = None,
+        settings: MagicMock | None = None,
+        pipeline: MagicMock | None = None,
+        reranker_error: Exception | None = None,
+        settings_error: Exception | None = None,
+    ) -> tuple[object, MagicMock]:
+        repo = MagicMock()
+        repo.list_enabled.return_value = []
+        manager = manager or MagicMock()
+        manager.embed_single.return_value = [0.0] * 4
+        manager._model = MagicMock()
+        pipeline = pipeline or MagicMock()
+        if results is not None:
+            pipeline.search.return_value = results
+        elif not pipeline.search.side_effect:
+            pipeline.search.return_value = [self._result()]
+        settings = settings or MagicMock(
+            reranker_model_name=None,
+            reranker_model_path=None,
+        )
+        patches = [
+            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
+            patch("sif.cli.commands.search.SearchPipeline", return_value=pipeline),
+            patch("sif.embedding.manager.EmbeddingManager.from_settings", return_value=manager),
+            patch(
+                "sif.config.settings.get_settings",
+                return_value=settings,
+                side_effect=settings_error,
+            ),
+        ]
+        if reranker_error is not None:
+            patches.append(patch("sif.search.rerank.create_reranker", side_effect=reranker_error))
+        with ExitStack() as stack:
+            for patcher in patches:
+                stack.enter_context(patcher)
+            result = CliRunner().invoke(
+                query_cmd,
+                args,
+                env={"COLUMNS": "80"},
+                obj={"index_path": self._index(tmp_path)},
+            )
+        return result, pipeline
+
+    def _invoke_vsearch(
+        self,
+        tmp_path: Path,
+        args: list[str],
+        results: list[SearchResult] | None = None,
+        *,
+        manager: MagicMock | None = None,
+        settings: MagicMock | None = None,
+        settings_error: Exception | None = None,
+    ) -> tuple[object, MagicMock]:
+        searcher = MagicMock()
+        searcher.search.return_value = results if results is not None else [self._result()]
+        repo = MagicMock()
+        repo.list_enabled.return_value = []
+        manager = manager or MagicMock()
+        manager.embed_single.return_value = [0.0] * 4
+        settings = settings or MagicMock()
+        with (
+            patch("sif.database.database.Database", return_value=MagicMock()),
+            patch("sif.database.repositories.CollectionRepository", return_value=repo),
+            patch("sif.search.vector.VectorSearcher", return_value=searcher),
+            patch("sif.embedding.manager.EmbeddingManager.from_settings", return_value=manager),
+            patch(
+                "sif.config.settings.get_settings",
+                return_value=settings,
+                side_effect=settings_error,
+            ),
+        ):
+            result = CliRunner().invoke(
+                vsearch_cmd,
+                args,
+                env={"COLUMNS": "80"},
+                obj={"index_path": self._index(tmp_path)},
+            )
+        return result, searcher
+
+    def test_query_json_cjk_and_score_traces_parse(self, tmp_path: Path) -> None:
+        result, pipeline = self._invoke_query(tmp_path, ["知识 检索", "--json"])
+
+        assert result.exit_code == 0
+        payload = json.loads(result.output)[0]
+        assert payload["title"] == "知识 <笔记> & notes"
+        assert payload["scores"]["rrf_score"] == pytest.approx(0.033)
+        assert pipeline.search.call_args.args[0] == "知识 检索"
+
+    @pytest.mark.parametrize("command", ["search", "query"])
+    def test_csv_escapes_content_fields(self, command: str, tmp_path: Path) -> None:
+        if command == "search":
+            result, _ = self._invoke_bm25(tmp_path, ["query", "--csv"])
+        else:
+            result, _ = self._invoke_query(tmp_path, ["query", "--csv"])
+
+        assert result.exit_code == 0
+        rows = list(csv.DictReader(io.StringIO(result.output)))
+        assert rows == [
+            {
+                "rank": "1",
+                "score": "0.5000",
+                "title": "知识 <笔记> & notes",
+                "path": "/notes/知识 & more.md",
+                "collection": "研究 & notes",
+            },
+        ]
+
+    @pytest.mark.parametrize("command", ["search", "query"])
+    def test_markdown_delimiters_and_query_heading(self, command: str, tmp_path: Path) -> None:
+        if command == "search":
+            result, _ = self._invoke_bm25(tmp_path, ["知识", "--md"])
+        else:
+            result, _ = self._invoke_query(tmp_path, ["知识", "--md"])
+
+        assert result.exit_code == 0
+        assert result.output.startswith("# Search Results: 知识\n\n## 1. 知识 <笔记> & notes")
+        assert "- **Score:** 0.5000" in result.output
+        assert "> 匹配 <高亮>" in result.output
+
+    @pytest.mark.parametrize("command", ["search", "query"])
+    def test_xml_escapes_markup_sensitive_text(self, command: str, tmp_path: Path) -> None:
+        if command == "search":
+            result, _ = self._invoke_bm25(tmp_path, ['知识 "检索" & <xml>', "--xml"])
+        else:
+            result, _ = self._invoke_query(tmp_path, ['知识 "检索" & <xml>', "--xml"])
+
+        assert result.exit_code == 0
+        root = ET.fromstring(result.output)
+        assert root.attrib["query"] == '知识 "检索" & <xml>'
+        assert root.findtext("result/title") == "知识 <笔记> & notes"
+        assert root.findtext("result/path") == "/notes/知识 & more.md"
+        assert root.findtext("result/collection") == "研究 & notes"
+
+    @pytest.mark.parametrize("command", ["search", "query"])
+    def test_files_output_is_one_path_per_line(self, command: str, tmp_path: Path) -> None:
+        if command == "search":
+            result, _ = self._invoke_bm25(tmp_path, ["query", "--files"])
+        else:
+            result, _ = self._invoke_query(tmp_path, ["query", "--files"])
+
+        assert result.exit_code == 0
+        assert result.output.splitlines() == ["/notes/知识 & more.md"]
+
+    def test_query_markdown_dict_line_numbers(self) -> None:
+        rendered = format_results_md(
+            [{"rank": 1, "score": 0.5, "title": "T", "path": "p", "line_numbers": "1\n2"}],
+            "query",
+        )
+
+        assert "- **Line Numbers:** `1\n2`" in rendered
+
+    def test_query_xml_object_line_numbers(self) -> None:
+        row = SimpleNamespace(
+            rank=1,
+            score=0.5,
+            title="T",
+            path="p",
+            collection_name="c",
+            line_numbers="1\n2",
+        )
+
+        root = ET.fromstring(format_results_xml([row], "query"))
+
+        assert root.findtext("result/line_numbers") == "1\n2"
+
+    def test_search_explicit_collection_and_min_score_boundary(self, tmp_path: Path) -> None:
+        repo = MagicMock()
+        repo.get_by_name.side_effect = [Collection(id="c1", name="known", path="notes"), None]
+        searcher = MagicMock()
+        searcher.search.return_value = []
+        with (
+            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
+            patch("sif.cli.commands.search.BM25Searcher", return_value=searcher),
+        ):
+            result = CliRunner().invoke(
+                search_cmd,
+                ["query", "--collection", "known", "--collection", "missing", "--min-score", "0.5"],
+                obj={"index_path": self._index(tmp_path)},
+            )
+
+        assert result.exit_code == 0
+        options = searcher.search.call_args.args[1]
+        assert options.collection_ids == ["c1"]
+        assert options.min_score == 0.5
+
+    @pytest.mark.parametrize("command", ["search", "query"])
+    def test_explain_and_line_numbers_render_diagnostics(
+        self,
+        command: str,
+        tmp_path: Path,
+    ) -> None:
+        if command == "search":
+            result, _ = self._invoke_bm25(
+                tmp_path,
+                ["知识", "--explain", "--line-numbers"],
+            )
+        else:
+            result, _ = self._invoke_query(
+                tmp_path,
+                ["知识", "--explain", "--line-numbers"],
+            )
+
+        assert result.exit_code == 0
+        assert "Content" in result.output
+        assert "1: 第一行" in result.output
+        assert "Results: 1" in result.output or "bm25_score=" in result.output
+        assert "reranker_score=" in result.output or command == "search"
+        assert "unused=" not in result.output
+
+    def test_search_snippet_fallback_and_truncation(self, tmp_path: Path) -> None:
+        row = self._result(
+            title="A" * 55,
+            content="line\n" * 100,
+            snippet=None,
+            highlights=["x" * 205],
+        )
+
+        result, _ = self._invoke_bm25(tmp_path, ["query", "--line-numbers"], [row])
+
+        assert result.exit_code == 0
+        assert "A" * 15 in result.output
+        assert "A" * 55 not in result.output
+        assert "..." in result.output
+        assert "Content" in result.output
+
+    def test_empty_query_is_accepted_and_empty_results_are_rendered(self, tmp_path: Path) -> None:
+        result, pipeline = self._invoke_query(tmp_path, ["", "--explain"], [])
+
+        assert result.exit_code == 0
+        assert pipeline.search.call_args.args[0] == ""
+        assert "No results found" in result.output
+
+    def test_quiet_empty_results_emit_nothing(self, tmp_path: Path) -> None:
+        result, _ = self._invoke_bm25(tmp_path, ["query", "--quiet"], [])
+
+        assert result.exit_code == 0
+        assert result.output == ""
+
+    @pytest.mark.parametrize("command", ["search", "vsearch", "query"])
+    def test_missing_index_does_not_open_database(self, command: str, tmp_path: Path) -> None:
+        cli_command = {"search": search_cmd, "vsearch": vsearch_cmd, "query": query_cmd}[command]
+        with patch("sif.cli.commands.search.Database") as database:
+            result = CliRunner().invoke(
+                cli_command,
+                ["query"],
+                obj={"index_path": tmp_path / "missing.db"},
+            )
+
+        assert result.exit_code == 0
+        assert "No index found" in result.output
+        database.assert_not_called()
+
+    @pytest.mark.parametrize("command", ["search", "vsearch", "query"])
+    def test_missing_index_quiet_is_silent(self, command: str, tmp_path: Path) -> None:
+        cli_command = {"search": search_cmd, "vsearch": vsearch_cmd, "query": query_cmd}[command]
+
+        result = CliRunner().invoke(
+            cli_command,
+            ["query", "--quiet"],
+            obj={"index_path": tmp_path / "missing.db"},
+        )
+
+        assert result.exit_code == 0
+        assert result.output == ""
+
+    def test_query_explicit_collection_and_model_override(self, tmp_path: Path) -> None:
+        settings = MagicMock(reranker_model_name=None, reranker_model_path=None)
+        settings.model_copy.return_value = settings
+        repo = MagicMock()
+        repo.get_by_name.side_effect = [Collection(id="c1", name="known", path="notes"), None]
+        pipeline = MagicMock()
+        pipeline.search.return_value = []
+        manager = MagicMock()
+        manager.embed_single.return_value = [0.0] * 4
+        with (
+            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
+            patch("sif.cli.commands.search.SearchPipeline", return_value=pipeline),
+            patch("sif.embedding.manager.EmbeddingManager.from_settings", return_value=manager),
+            patch("sif.config.settings.get_settings", return_value=settings),
+        ):
+            result = CliRunner().invoke(
+                query_cmd,
+                [
+                    "query",
+                    "--collection",
+                    "known",
+                    "--collection",
+                    "missing",
+                    "--model-type",
+                    "openai",
+                ],
+                obj={"index_path": self._index(tmp_path)},
+            )
+
+        assert result.exit_code == 0
+        assert pipeline.search.call_args.args[1].collection_ids == ["c1"]
+        settings.model_copy.assert_called_once_with(update={"model_type": "openai"})
+
+    def test_query_optional_reranker_import_error_warns(self, tmp_path: Path) -> None:
+        settings = MagicMock(reranker_model_name="reranker", reranker_model_path=None)
+
+        result, _ = self._invoke_query(
+            tmp_path,
+            ["query"],
+            [],
+            settings=settings,
+            reranker_error=ImportError("missing ML extra"),
+        )
+
+        assert result.exit_code == 0
+        assert "Reranker not available" in result.output
+
+    @pytest.mark.parametrize(
+        ("error", "expected"),
+        [
+            (ImportError("not installed"), "Embedding backend not installed"),
+            (RuntimeError("bad weights"), "Failed to load embedding model"),
+        ],
+    )
+    def test_query_embedder_errors_are_clean(
+        self,
+        error: Exception,
+        expected: str,
+        tmp_path: Path,
+    ) -> None:
+        manager = MagicMock()
+        manager.load_model.side_effect = error
+
+        result, _ = self._invoke_query(tmp_path, ["query"], manager=manager)
+
+        assert result.exit_code == 1
+        assert expected in result.stderr
+        assert "Traceback" not in result.output
+
+    @pytest.mark.parametrize(
+        ("error", "expected"),
+        [
+            (ImportError("not installed"), "Embedding backend not installed"),
+            (RuntimeError("bad weights"), "Failed to load embedding model"),
+        ],
+    )
+    def test_vsearch_embedder_errors_are_clean(
+        self,
+        error: Exception,
+        expected: str,
+        tmp_path: Path,
+    ) -> None:
+        manager = MagicMock()
+        manager.embed_single.side_effect = error
+
+        result, _ = self._invoke_vsearch(tmp_path, ["query"], manager=manager)
+
+        assert result.exit_code == 1
+        assert expected in result.stderr
+        assert "Traceback" not in result.output
+
+    @pytest.mark.parametrize("command", ["vsearch", "query"])
+    def test_settings_validation_errors_are_clean(self, command: str, tmp_path: Path) -> None:
+        error = ValidationError.from_exception_data("Settings", [])
+        try:
+            get_settings.cache_clear()
+            if command == "query":
+                result, _ = self._invoke_query(tmp_path, ["query"], settings_error=error)
+            else:
+                result, _ = self._invoke_vsearch(tmp_path, ["query"], settings_error=error)
+        finally:
+            get_settings.cache_clear()
+
+        assert result.exit_code == 1
+        assert "Error:" in result.stderr or "Error:" in result.output
+        assert "Traceback" not in result.output
+
+    def test_vsearch_json_collection_model_override_and_boundary(self, tmp_path: Path) -> None:
+        settings = MagicMock()
+        settings.model_copy.return_value = settings
+        repo = MagicMock()
+        repo.get_by_name.return_value = Collection(id="c1", name="known", path="notes")
+        searcher = MagicMock()
+        searcher.search.return_value = [self._result()]
+        manager = MagicMock()
+        manager.embed_single.return_value = [0.0] * 4
+        with (
+            patch("sif.database.database.Database", return_value=MagicMock()),
+            patch("sif.database.repositories.CollectionRepository", return_value=repo),
+            patch("sif.search.vector.VectorSearcher", return_value=searcher),
+            patch("sif.embedding.manager.EmbeddingManager.from_settings", return_value=manager),
+            patch("sif.config.settings.get_settings", return_value=settings),
+        ):
+            result = CliRunner().invoke(
+                vsearch_cmd,
+                [
+                    "query",
+                    "--collection",
+                    "known",
+                    "--model-type",
+                    "openai",
+                    "--min-score",
+                    "0.5",
+                    "--json",
+                ],
+                obj={"index_path": self._index(tmp_path)},
+            )
+
+        assert result.exit_code == 0
+        assert json.loads(result.output)[0]["document_id"] == "doc-1"
+        options = searcher.search.call_args.args[1]
+        assert options.collection_ids == ["c1"]
+        assert options.min_score == 0.5
+        settings.model_copy.assert_called_once_with(update={"model_type": "openai"})
+
+    def test_vsearch_quiet_files_and_empty_results(self, tmp_path: Path) -> None:
+        result, _ = self._invoke_vsearch(tmp_path, ["query", "--quiet"])
+
+        assert result.exit_code == 0
+        assert result.output.splitlines() == ["/notes/知识 & more.md"]
+
+        empty, _ = self._invoke_vsearch(tmp_path, ["query"], [])
+
+        assert empty.exit_code == 0
+        assert "No results found" in empty.output
+
+    def test_vsearch_table_line_numbers_and_truncation(self, tmp_path: Path) -> None:
+        row = self._result(title="B" * 55, content="line\n" * 100)
+
+        result, _ = self._invoke_vsearch(tmp_path, ["query", "--line-numbers"], [row])
+
+        assert result.exit_code == 0
+        assert "Vector Search Results" in result.output
+        assert "Content" in result.output
+        assert "B" * 34 in result.output
+        assert "B" * 55 not in result.output
+        assert "..." in result.output

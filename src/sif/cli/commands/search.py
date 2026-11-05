@@ -6,6 +6,7 @@ import csv
 import io
 import json
 from typing import Any
+from xml.sax.saxutils import escape as xml_escape, quoteattr
 
 import click
 from rich.console import Console
@@ -102,17 +103,19 @@ def format_results_md(results: list[Any], query: str) -> str:
 
 def format_results_xml(results: list[Any], query: str) -> str:
     """Format results as XML."""
-    lines = ['<?xml version="1.0" encoding="UTF-8"?>', f'<search query="{query}">']
+    lines = ['<?xml version="1.0" encoding="UTF-8"?>', f"<search query={quoteattr(query)}>"]
     for r in results:
         score = f"{float(_field(r, 'score')):.4f}"
         lines.append(f'  <result rank="{_field(r, "rank")}" score="{score}">')
-        lines.append(f"    <title>{_field(r, 'title')}</title>")
-        lines.append(f"    <path>{_field(r, 'path')}</path>")
-        lines.append(f"    <collection>{_field(r, 'collection_name')}</collection>")
+        lines.append(f"    <title>{xml_escape(str(_field(r, 'title')))}</title>")
+        lines.append(f"    <path>{xml_escape(str(_field(r, 'path')))}</path>")
+        lines.append(
+            f"    <collection>{xml_escape(str(_field(r, 'collection_name')))}</collection>"
+        )
         if hasattr(r, "get") and r.get("line_numbers"):
-            lines.append(f"    <line_numbers>{r.get('line_numbers')}</line_numbers>")
+            lines.append(f"    <line_numbers>{xml_escape(r.get('line_numbers'))}</line_numbers>")
         elif hasattr(r, "line_numbers") and r.line_numbers:
-            lines.append(f"    <line_numbers>{r.line_numbers}</line_numbers>")
+            lines.append(f"    <line_numbers>{xml_escape(r.line_numbers)}</line_numbers>")
         lines.append("  </result>")
     lines.append("</search>")
     return "\n".join(lines)
