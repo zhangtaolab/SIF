@@ -2,8 +2,8 @@
 gsd_state_version: "1.0"
 milestone: v1.0
 status: planning
-last_updated: "2026-11-05T09:38:00.000Z"
-state_head: fcb9d651a69cf9ee5bc98cba627456ce2196f1a6
+last_updated: "2026-11-05T10:15:00.000Z"
+state_head: d86ccf4a0f9bdccb9781de35e46bd06b0c9d34c9
 progress:
   total_phases: 9
   completed_phases: 9
@@ -14,7 +14,7 @@ milestone_name: milestone
 current_phase: 06
 current_phase_name: Agent Context Experience
 current_plan: 1
-stopped_at: /gsd-execute-phase 05 — third stale-verification regeneration (trigger: post-verification CR-01/WR-01 fixes); 24/24 must-haves, milestone 100%
+stopped_at: /gsd-code-review 05 --fix — CR-02 fixed (0be16d4); verification re-staled by the fix; type checker switched mypy→ty (d86ccf4)
 ---
 
 # DocSift — Project State
@@ -161,7 +161,7 @@ Phase 05 was re-verified 2026-11-05 (stale report regenerated after the Phase 08
 ## Session Continuity
 
 - **Last session:** 2026-11-05
-- **Stopped at:** Milestone v1.0 100% — Phase 05 re-verified (third stale-report regeneration, trigger the post-verification CR-01/WR-01 review fixes; 24/24 must-haves, fingerprint fresh); all 9 phases verified
+- **Stopped at:** Milestone v1.0 100% — CR-02 (line-numbers md/xml formatter crash) fixed via /gsd-code-review 05 --fix (0be16d4, all_fixed 1/1, REVIEW-FIX 2ca3caa, disposition 21/27 open 9eb4f6a); the fix re-staled 05-VERIFICATION (same covered files). Toolchain: type checker switched mypy→ty (d86ccf4, `ty check src/sif`, 19-diagnostic baseline).
 - **Resume file:** None
-- **Last action:** /gsd-execute-phase 05 → verification gates re-run (nyquist compliant, mapped set 151 green; security 23/23 closed threats_open 0; UI re-audit 11/16 → 3e0df3a; incremental code review verified CR-01/WR-01 fixed, found new CR-02 → disposition 22/27 open → fec524a; regression 210 scoped green; verifier passed 24/24 → fcb9d65)
-- **Next expected action:** `/gsd-complete-milestone v1.0` (accept typing debt + remaining advisories or file follow-ups; CR-02 `--line-numbers --md/--xml` formatter crash is the top open review finding — CR-01/WR-01 are fixed and verified)
+- **Last action:** /gsd-code-review 05 --fix (fixer subagent: _field accessor in md/xml formatters + 2 regression tests, 30/30 targeted, full suite 686 passed + 2 pre-existing order-dependent failures in test_openai_embedder.py unrelated to the fix); then chore: replace mypy with ty (pytool/Makefile/CLAUDE.md/README/docs/uv.lock).
+- **Next expected action:** `/gsd-execute-phase 05` (fourth stale regeneration — re-runs gates + verifier over the CR-02 fix), then `/gsd-complete-milestone v1.0`. Open follow-ups: 2 order-dependent embedding tests; 19 ty diagnostics (was 46 under mypy).
