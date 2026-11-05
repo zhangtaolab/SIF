@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import csv
+import io
 import json
 from typing import Any
 
@@ -51,13 +53,32 @@ def format_results_json(results: list[Any]) -> str:
     )
 
 
+def _csv_field(r: Any, name: str) -> Any:
+    """Read a result field from a dict (--line-numbers path) or object row."""
+    return r.get(name, "") if isinstance(r, dict) else getattr(r, name, "")
+
+
 def format_results_csv(results: list[Any]) -> str:
-    """Format results as CSV."""
-    lines = ["rank,score,title,path,collection"]
-    lines.extend(
-        f'"{r.rank}","{r.score:.4f}","{r.title}","{r.path}","{r.collection_name}"' for r in results
-    )
-    return "\n".join(lines)
+    """Format results as CSV.
+
+    Accepts raw SearchResult objects and the dict rows produced by
+    add_line_numbers_to_results (--line-numbers). Uses csv.writer so
+    embedded quotes and commas are escaped correctly.
+    """
+    buf = io.StringIO()
+    buf.write("rank,score,title,path,collection\n")
+    writer = csv.writer(buf, quoting=csv.QUOTE_ALL, lineterminator="\n")
+    for r in results:
+        writer.writerow(
+            [
+                _csv_field(r, "rank"),
+                f"{float(_csv_field(r, 'score')):.4f}",
+                _csv_field(r, "title"),
+                _csv_field(r, "path"),
+                _csv_field(r, "collection_name"),
+            ],
+        )
+    return buf.getvalue().rstrip("\n")
 
 
 def format_results_md(results: list[Any], query: str) -> str:
