@@ -315,7 +315,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 — tests target post-deletion code)*
 
-- [ ] 10-02-PLAN.md — Real-DB CliRunner tests: collection/main/get CLI commands (~203 missed)
+- [ ] 10-02-PLAN.md — D-06 order-isolation probe + real-DB CliRunner tests: collection/main/get CLI commands (~203 missed)
 - [ ] 10-03-PLAN.md — Mocked-ML reranker tests + search command format branches (~158 missed)
 - [ ] 10-04-PLAN.md — Real-SQLite database layer: repositories/database/migrations/cache (~146 missed)
 - [ ] 10-05-PLAN.md — Core services, ModelDownloader (mocked network), utils (~148 missed)
