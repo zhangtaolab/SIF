@@ -63,8 +63,12 @@ class MarkdownParser:
             match = self.title_pattern.search(body)
             title = match.group(1).strip() if match else file_path.stem
 
-        # Calculate checksum
-        checksum = hashlib.sha256(content.encode()).hexdigest()
+        # Calculate checksum over the body (frontmatter stripped), matching the
+        # storage convention: the create path stores sha256 of Document.content
+        # (the body, see core.models.Document.__post_init__), so comparing
+        # against a whole-file hash never matches and every document is
+        # misreported as changed on `index update`.
+        checksum = hashlib.sha256(body.encode()).hexdigest()
 
         return ParsedDocument(
             path=str(file_path.resolve()),
