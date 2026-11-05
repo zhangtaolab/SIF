@@ -208,3 +208,24 @@ class VectorSearcher:
             (document_id,),
         )
         return {row[0] for row in cursor.fetchall() if row[0] is not None}
+
+    def get_all_embedded_chunk_ids(self) -> dict[str, set[str]]:
+        """Get every document's stored-embedding chunk-id set in one table read.
+
+        The vec0 virtual table has no index on its metadata columns, so each
+        per-document filtered lookup costs a full table scan; callers judging
+        every document must batch. Rows are iterated one at a time (never
+        fetchall) so peak memory is the resulting map, not a row buffer.
+        NULL chunk_id rows are skipped with the same contract as the
+        single-document lookup directly above: NULL can never equal a live
+        chunk id, so documents carrying such rows re-embed and self-heal.
+        """
+        result: dict[str, set[str]] = {}
+        cursor = self.db.execute(
+            "SELECT document_id, chunk_id FROM document_embeddings",
+        )
+        for document_id, chunk_id in cursor:
+            if chunk_id is None:
+                continue
+            result.setdefault(document_id, set()).add(chunk_id)
+        return result

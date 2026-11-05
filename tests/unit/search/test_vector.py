@@ -472,18 +472,20 @@ class TestVectorEmbeddingDeletion:
                 """,
             )
             searcher = VectorSearcher(conn, embedding_dim=2)
+            # No NULL chunk_id row here: sqlite-vec v0.1.9 rejects NULL for a
+            # TEXT metadata column on both INSERT and UPDATE, so such rows
+            # cannot exist in a production table on this version. The NULL-skip
+            # contract of both lookup forms is pinned by the mock tests above.
             searcher.add_embeddings_batch(
                 [
                     ("e1", "d1", "c1", [1.0, 0.0]),
                     ("e2", "d1", "c2", [0.0, 1.0]),
-                    ("e3", "d1", None, [1.0, 1.0]),
-                    ("e4", "d2", "c3", [0.0, 0.0]),
+                    ("e3", "d2", "c3", [0.0, 0.0]),
                 ],
             )
 
             batch_result = searcher.get_all_embedded_chunk_ids()
 
-            # The NULL chunk_id row is skipped by both lookup forms.
             assert batch_result == {"d1": {"c1", "c2"}, "d2": {"c3"}}
             for doc_id in ("d1", "d2"):
                 assert batch_result[doc_id] == searcher.get_embedded_chunk_ids(doc_id)
