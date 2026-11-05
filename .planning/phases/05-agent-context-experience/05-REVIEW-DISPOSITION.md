@@ -3,17 +3,37 @@ phase: 05
 review: 05-REVIEW.md
 titles: json
 findings:
+  - id: CR-01
+    severity: critical
+    disposition: open
+    title: "`--line-numbers --csv` crashes with `AttributeError: 'dict' object has no attribute 'rank'`"
   - id: WR-01
     severity: warning
     disposition: open
-    title: "`--intent` is prepended into the literal query — becomes a hard AND term in BM25 and pollutes the vector embedding"
+    title: "`vsearch_cmd` calls `get_settings()` unguarded — raw pydantic traceback with explicit `--index` and invalid config (WR-09 fix incomplete in same file)"
+  - id: IN-01
+    severity: info
+    disposition: open
+    title: "New validator blocks all default-`--index` commands when `SIF_RERANKER_MODEL_TYPE` is invalid"
+  - id: IN-02
+    severity: info
+    disposition: open
+    title: "Dead fallback in `status_cmd` calls `get_settings()` unguarded"
+  - id: IN-03
+    severity: info
+    disposition: open
+    title: "Code comments cite review-finding IDs that no longer match the disposition ledger"
+  - id: IN-04
+    severity: info
+    disposition: open
+    title: "`TestContextRmAlias` never tests the `rm` alias"
   - id: WR-02
     severity: warning
-    disposition: open
-    title: "Unknown `-c/--collection` names are silently dropped; all-miss resolves to the exclude-all sentinel with no error"
+    disposition: fixed
+    title: "Self-heal merge only fires on exact historical re-typing — duplicate rows accumulate and prune cannot clean them"
   - id: WR-03
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "`context add` / `context remove` silently create an empty index database when no index exists"
   - id: WR-04
     severity: warning
@@ -37,7 +57,7 @@ findings:
     title: "`docs/architecture.md` dependency graph is stale relative to its own generator"
   - id: WR-09
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "Reranker construction catches only `ImportError`; an unvalidated `SIF_RERANKER_MODEL_TYPE` crashes `query` with a raw traceback"
   - id: WR-10
     severity: warning
@@ -47,22 +67,6 @@ findings:
     severity: warning
     disposition: open
     title: "docs CI job has no `timeout-minutes`"
-  - id: IN-01
-    severity: info
-    disposition: open
-    title: "attach \"newest wins\" uses SQLite TEXT ordering over mixed ISO-8601 formats"
-  - id: IN-02
-    severity: info
-    disposition: open
-    title: "tests build fixtures via `SchemaManager` private methods"
-  - id: IN-03
-    severity: info
-    disposition: open
-    title: "`update_target` return ignored in the exact-spelling branch"
-  - id: IN-04
-    severity: info
-    disposition: open
-    title: "limit/rank inconsistencies between the BM25 and vector paths"
   - id: IN-05
     severity: info
     disposition: open
@@ -103,40 +107,41 @@ findings:
     severity: info
     disposition: open
     title: "`Qwen3Reranker.load()` duplicates the entire loading block for quiet/non-quiet"
-open: 25
-total: 25
-recorded: 2026-11-05T03:15:22.090Z
+open: 23
+total: 26
+recorded: 2026-11-05T08:08:39.596Z
 ---
 
 # Phase 05: Code Review Disposition
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
+| CR-01 | critical | open | - |
 | WR-01 | warning | open | - |
-| WR-02 | warning | open | - |
-| WR-03 | warning | fixed | quick 261105-g1u (25481d8) |
-| WR-04 | warning | open | - |
-| WR-05 | warning | open | - |
-| WR-06 | warning | open | - |
-| WR-07 | warning | open | - |
-| WR-08 | warning | open | - |
-| WR-09 | warning | fixed | quick 261105-g1u (b8a81e1) |
-| WR-10 | warning | open | - |
-| WR-11 | warning | open | - |
 | IN-01 | info | open | - |
 | IN-02 | info | open | - |
 | IN-03 | info | open | - |
 | IN-04 | info | open | - |
-| IN-05 | info | open | - |
-| IN-06 | info | open | - |
-| IN-07 | info | open | - |
-| IN-08 | info | open | - |
-| IN-09 | info | open | - |
-| IN-10 | info | open | - |
-| IN-11 | info | open | - |
-| IN-12 | info | open | - |
-| IN-13 | info | open | - |
-| IN-14 | info | open | - |
+| WR-02 | warning | fixed | 05-REVIEW-FIX.md (not in the current review) |
+| WR-03 | warning | fixed | quick 261105-g1u (25481d8) (not in the current review) |
+| WR-04 | warning | open | - (not in the current review) |
+| WR-05 | warning | open | - (not in the current review) |
+| WR-06 | warning | open | - (not in the current review) |
+| WR-07 | warning | open | - (not in the current review) |
+| WR-08 | warning | open | - (not in the current review) |
+| WR-09 | warning | fixed | quick 261105-g1u (b8a81e1) (not in the current review) |
+| WR-10 | warning | open | - (not in the current review) |
+| WR-11 | warning | open | - (not in the current review) |
+| IN-05 | info | open | - (not in the current review) |
+| IN-06 | info | open | - (not in the current review) |
+| IN-07 | info | open | - (not in the current review) |
+| IN-08 | info | open | - (not in the current review) |
+| IN-09 | info | open | - (not in the current review) |
+| IN-10 | info | open | - (not in the current review) |
+| IN-11 | info | open | - (not in the current review) |
+| IN-12 | info | open | - (not in the current review) |
+| IN-13 | info | open | - (not in the current review) |
+| IN-14 | info | open | - (not in the current review) |
 
 Dispositions: `open` (recorded, not yet triaged), `fixed`, `skipped`, `deferred`.
 Set `deferred` by hand and put the reason in the Source cell; both are preserved. A `|` in the reason is kept as prose and escaped on the next run.
