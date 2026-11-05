@@ -67,6 +67,10 @@
 - **POL-03**: 实现 docid 检索（`#abc123`）的快捷方式
 - **POL-04**: 支持 Windows 平台下 sqlite-vec 的兼容性验证和安装引导
 
+### Test Infrastructure
+
+- **T-10-1**: 将 `src/sif` 的 pytest 行覆盖率提升至 >= 90%（门禁：`env -u FORCE_COLOR NO_COLOR=1 pytest --cov=src/sif` 报告 TOTAL >= 90% 且全量测试通过；基线 2026-11-05 为 78%，5587 语句 / 1220 未覆盖 / 688 通过）。先删除已证实的死代码簇（`cli/config.py`、`cli/formatters.py` 死符号、`utils/text.py` 死函数），再按文件缺口补测试，最后在 `pyproject.toml` 落地 `[tool.coverage.report] fail_under = 90` 使门禁永久生效（Phase 10，2026-11-05 由 Phase 10 研究确认）
+
 ## Out of Scope
 
 | Feature | Reason |
@@ -117,6 +121,7 @@
 | CTX-01 | Phase 5 | Complete |
 | CTX-02 | Phase 5 | Complete |
 | CTX-03 | Phase 5 | Complete |
+| T-10-1 | Phase 10 | Pending |
 
 **Coverage:**
 

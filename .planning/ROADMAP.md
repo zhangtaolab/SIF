@@ -1,7 +1,7 @@
 # DocSift Roadmap
 
 **Granularity:** Standard
-**Phases:** 9
+**Phases:** 10
 **Coverage:** 31/31 v1 requirements mapped
 
 ## Phases
@@ -304,9 +304,23 @@ Plans:
 ### Phase 10: Raise pytest coverage to 90%
 
 **Goal:** Raise total pytest line coverage of `src/sif` from 78% (5587 stmts / 1220 missed, measured 2026-11-05, suite 688 passed) to ≥90%, closing the largest gaps: `cli/config.py` (109 stmts, 0% — likely dead code superseded by `cli/formatters.py`, 157 stmts / 29%: together ~266 stmts; cover or delete), `cli/commands/collection.py` (234 / 44%), `search/rerank.py` (214 / 62%), `database/repositories.py` (173 / 73%), `database/migrations.py` (37 / 35%), `models/download.py` (69 / 49%), `core/context.py` (73 / 49%), `indexing/parser.py` (78 / 51%), plus `utils/{text,paths,logging,progress}.py`. Gate: `env -u FORCE_COLOR NO_COLOR=1 pytest --cov=src/sif` reports TOTAL ≥90% with the full suite green.
-**Requirements:** TBD (coverage target T-10-1 to be mapped at planning)
+**Requirements:** T-10-1
 **Depends on:** Phase 9
-**Plans:** 0 plans
+**Plans:** 7 plans
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 10 to break down)
+**Wave 1**
+
+- [ ] 10-01-PLAN.md — Delete the verified dead-code cluster (cli/config.py, formatters.py dead symbols, text.py dead functions); re-baseline coverage 78% → ≥81% (tracer)
+
+**Wave 2** *(blocked on Wave 1 — tests target post-deletion code)*
+
+- [ ] 10-02-PLAN.md — Real-DB CliRunner tests: collection/main/get CLI commands (~203 missed)
+- [ ] 10-03-PLAN.md — Mocked-ML reranker tests + search command format branches (~158 missed)
+- [ ] 10-04-PLAN.md — Real-SQLite database layer: repositories/database/migrations/cache (~146 missed)
+- [ ] 10-05-PLAN.md — Core services, ModelDownloader (mocked network), utils (~148 missed)
+- [ ] 10-06-PLAN.md — Indexing parser/chunker/scanner + MCP remainder (~152 missed)
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 10-07-PLAN.md — Tollgate: top up long tail until TOTAL ≥90%, then land `[tool.coverage.report] fail_under = 90` LAST
