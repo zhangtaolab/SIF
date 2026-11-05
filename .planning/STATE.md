@@ -124,6 +124,7 @@ Phase 05 was re-verified 2026-11-05 (stale report regenerated after the Phase 08
 ### Roadmap Evolution
 
 - Later-added phases: 07 Claude skills (2026-04-20), 08 rename DocSift→SIF (2026-04-27), 09 MCP server (2026-05-08)
+- Phase 10 added: Raise pytest coverage to 90% (2026-11-05; baseline 78% / 5587 stmts / 1220 missed — lowest: cli/config.py 0%, formatters 29%, collection 44%)
 
 ### TODOs
 
