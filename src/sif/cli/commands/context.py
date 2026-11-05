@@ -112,6 +112,12 @@ def context_add(
 ) -> None:
     """Add context for a path, collection, or global scope."""
     index_path = ctx.obj["index_path"]
+    # Missing-index guard matching list/prune semantics (REVIEW WR-03):
+    # never materialize a fresh empty DB for a write command.
+    if not index_path.exists():
+        console.print("[yellow]No index found.[/yellow]")
+        return
+
     db = Database(index_path)
     db.init_schema()
 
@@ -168,6 +174,12 @@ def context_add(
 def context_remove(ctx: click.Context, context_id: str) -> None:
     """Remove a context by its ID."""
     index_path = ctx.obj["index_path"]
+    # Missing-index guard matching list/prune semantics (REVIEW WR-03):
+    # never materialize a fresh empty DB for a write command.
+    if not index_path.exists():
+        console.print("[yellow]No index found.[/yellow]")
+        return
+
     db = Database(index_path)
     db.init_schema()
 

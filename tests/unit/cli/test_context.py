@@ -639,6 +639,51 @@ class TestContextRemove:
         assert result.exit_code != 0
 
 
+class TestContextNoIndexGuard:
+    """Missing-index guard for context add/remove (REVIEW WR-03).
+
+    Unlike list/prune, add/remove used to construct Database + init_schema
+    without an existence check, materializing a brand-new empty index DB as
+    a side effect and reporting success for a context that can never attach.
+    These tests use a real tmp_path and patch NOTHING so DB-file
+    materialization is directly observable; the guard must match the sibling
+    list/prune exit semantics (message + bare return, exit code 0).
+    """
+
+    def test_add_missing_index_creates_no_db(self, tmp_path) -> None:
+        """context add on a nonexistent index warns and materializes no DB file."""
+        runner = CliRunner()
+        missing = tmp_path / "missing.db"
+
+        result = runner.invoke(
+            context_add,
+            ["path", str(tmp_path / "a.md"), "note"],
+            obj={"index_path": missing},
+        )
+
+        assert result.exit_code == 0
+        assert "No index found" in result.output
+        assert "Context added" not in result.output
+        assert "Context updated" not in result.output
+        assert not missing.exists()
+
+    def test_remove_missing_index_creates_no_db(self, tmp_path) -> None:
+        """context remove on a nonexistent index warns and materializes no DB file."""
+        runner = CliRunner()
+        missing = tmp_path / "missing.db"
+
+        result = runner.invoke(
+            context_remove,
+            ["some-id"],
+            obj={"index_path": missing},
+        )
+
+        assert result.exit_code == 0
+        assert "No index found" in result.output
+        assert "No context found" not in result.output
+        assert not missing.exists()
+
+
 class TestContextRmAlias:
     """Tests for context rm alias."""
 
