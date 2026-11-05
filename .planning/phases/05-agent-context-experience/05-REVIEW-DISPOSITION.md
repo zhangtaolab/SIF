@@ -5,11 +5,11 @@ titles: json
 findings:
   - id: CR-01
     severity: critical
-    disposition: open
+    disposition: fixed
     title: "`--line-numbers --csv` crashes with `AttributeError: 'dict' object has no attribute 'rank'`"
   - id: WR-01
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "`vsearch_cmd` calls `get_settings()` unguarded — raw pydantic traceback with explicit `--index` and invalid config (WR-09 fix incomplete in same file)"
   - id: IN-01
     severity: info
@@ -107,17 +107,17 @@ findings:
     severity: info
     disposition: open
     title: "`Qwen3Reranker.load()` duplicates the entire loading block for quiet/non-quiet"
-open: 23
+open: 21
 total: 26
-recorded: 2026-11-05T08:08:39.596Z
+recorded: 2026-11-05T08:29:04.203Z
 ---
 
 # Phase 05: Code Review Disposition
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| CR-01 | critical | open | - |
-| WR-01 | warning | open | - |
+| CR-01 | critical | fixed | 05-REVIEW-FIX.md |
+| WR-01 | warning | fixed | 05-REVIEW-FIX.md |
 | IN-01 | info | open | - |
 | IN-02 | info | open | - |
 | IN-03 | info | open | - |
