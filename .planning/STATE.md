@@ -1,16 +1,16 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: 2
+current_plan: 3
 status: executing
-stopped_at: Completed 10-01-PLAN.md
-last_updated: "2026-11-05T18:02:02.334Z"
-state_head: ed4ad73156931b71526da60d851f1e97ec4f0183
+stopped_at: Completed 10-02-PLAN.md
+last_updated: "2026-11-05T18:26:14.271Z"
+state_head: 556a8badbf61b4edc042ca14d44a7b7f1282489e
 progress:
   total_phases: 10
   completed_phases: 9
   total_plans: 61
-  completed_plans: 55
+  completed_plans: 56
 milestone_name: milestone
 current_phase: 10
 current_phase_name: Raise pytest coverage to 90%
@@ -22,21 +22,21 @@ current_phase_name: Raise pytest coverage to 90%
 
 - **Name:** DocSift
 - **Core Value:** 用户可以在自己的笔记和文档库中，用自然语言快速、准确地找到需要的信息——无论关键词是否匹配。
-- **Current Focus:** Phase 10 coverage campaign — plan 10-01 complete at 81.48%; ready for 10-02.
+- **Current Focus:** Phase 10 coverage campaign — plan 10-02 complete at 85.34%; ready for 10-03.
 - **Tech Stack:** Python 3.10+, SQLite (FTS5 + sqlite-vec), Click, Pydantic, sentence-transformers, llama-cpp-python
 
 ## Current Position
 
-Current Plan: 2
+Current Plan: 3
 Total Plans in Phase: 7
 
 - **Phases:** 9/10 complete (01–09); Phase 10 in progress
-- **Plans:** 55/61 complete
-- **Status:** Completed 10-01; ready for 10-02
-- **Progress Bar:** `[██████████████████░░] 90%`
-- **Coverage baseline:** 81.48% (5320 statements, 985 missed); 690 passed, 0 failed
+- **Plans:** 56/61 complete
+- **Status:** Completed 10-02; ready for 10-03
+- **Progress Bar:** `[██████████████████░░] 92%`
+- **Coverage baseline:** 85.34% (5320 statements, 780 missed); 714 passed, 0 failed
 
-Phase 05 was re-verified 2026-11-05 after the Phase 08 rename; Phase 10-01 deleted the approved dead-code cluster and preserved the full green suite.
+Phase 10-01 deleted the approved dead-code cluster; 10-02 added real-DB CLI coverage and green D-06 both-order evidence.
 
 ## Phase History
 
@@ -53,7 +53,7 @@ Phase 05 was re-verified 2026-11-05 after the Phase 08 rename; Phase 10-01 delet
 
 - **Requirements mapped:** 31/31 v1 + 7 DOC requirements
 - **Phases defined:** 10
-- **Tests passing:** 690 passed, 0 failed (post 10-01)
+- **Tests passing:** 714 passed, 0 failed (post 10-02)
 - **Known blockers:** 0
 
 **Per-Plan Metrics:**
@@ -63,6 +63,7 @@ Phase 05 was re-verified 2026-11-05 after the Phase 08 rename; Phase 10-01 delet
 | Phase 05 P08 | 17min | 2 tasks | 9 files |
 | Phase 05 P09 | 12min | 2 tasks | 5 files |
 | Phase 10 P01 | 6min | 2 tasks | 5 files |
+| Phase 10 P02 | 13min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -124,6 +125,8 @@ Phase 05 was re-verified 2026-11-05 after the Phase 08 rename; Phase 10-01 delet
 - [Phase 05]: 05-09: delete_orphaned_paths compares normalize_path on both sides in a Python set — SQL cannot call realpath so the raw-string NOT IN comparison is gone entirely; count semantics and D-12/D-13 explicit-command contract unchanged (closes CR-02/CTX-02)
 - [Phase 10]: 10-01: Applied D-01 exactly, deleting the approved dead-code cluster while preserving live CLI imports; measured post-deletion coverage at 81.48% (5320 statements, 985 missed).
 - [Phase 10]: 10-01: Kept pyproject.toml free of fail_under and coverage exclusions under D-04; final gate remains reserved for plan 10-07.
+- [Phase 10]: 10-02: D-06 isolated, both-order, and full-suite probes were green; no speculative repair or production change was made.
+- [Phase 10]: 10-02: Real-temp-DB CLI tests raised TOTAL coverage from 81.48% to 85.34%; collection 99.15%, main 86.99%, get 100%.
 
 ### Roadmap Evolution
 
@@ -167,12 +170,9 @@ Phase 05 was re-verified 2026-11-05 after the Phase 08 rename; Phase 10-01 delet
 
 ## Session Continuity
 
-**Last session:** 2026-11-05T18:02:01.856Z
-**Stopped at:** Completed 10-01-PLAN.md
+**Last session:** 2026-11-05T18:26:13.824Z
+**Stopped at:** Completed 10-02-PLAN.md
 **Resume file:** None
 
-- **Last session:** 2026-11-05
-- **Stopped at:** Milestone v1.0 100% — Phase 05 fourth stale regeneration complete (`/gsd-execute-phase 05`): all verify:post gates re-run over the CR-02 fix (0be16d4) — validation 123/123 green 0 gaps, security 23/23 closed, UI re-audit 11/16 with CR-02 RESOLVED (1810499), incremental code review 0 critical / 7 warning / 2 info (0058fb7, ledger e35c4e8: 29/35 open), regression gate 688 passed / 0 failed, verifier 24/24 must-haves PASSED with fresh fingerprint (56853c5). No phase remains unverified.
-- **Resume file:** None
-- **Last action:** `/gsd-execute-phase 05` fourth stale regeneration — verifier re-ran over the CR-02 fix (`_field` accessor in md/xml formatters + 2 regression tests); 05-VERIFICATION.md regenerated with fresh covered digest; phase re-marked complete (idempotent).
-- **Next expected action:** `/gsd-complete-milestone v1.0` — milestone is 100% (9/9 phases, 54/54 plans), all phases verified fresh. Open follow-ups (non-blocking): review ledger 29/35 open (WR-10 XML escaping, WR-12 ty baseline red gate, WR-13 md highlights for dict rows, WR-14 stale --no-cache doc, WR-15 mcp stderr print, WR-16 stale INTEGRATION_STATUS.md, WR-17 dead defaults); 2 order-dependent test_openai_embedder.py failures (passed in make-test order this run); 19 ty diagnostics.
+- **Last action:** `/gsd-execute-phase 10` — plan 10-02 added real-DB collection/main/get tests; 714 passed, coverage 85.34%; D-06 isolated and both-order probes green.
+- **Next expected action:** `/gsd-execute-phase 10` — continue with plan 10-03 reranker/search coverage. `T-10-1` remains held until all seven plans complete.
