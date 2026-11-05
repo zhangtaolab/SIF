@@ -3,6 +3,42 @@ phase: 05
 review: 05-REVIEW.md
 titles: json
 findings:
+  - id: WR-10
+    severity: warning
+    disposition: open
+    title: "XML formatter emits unescaped field values and query attribute — malformed XML for `&`, `<`, `\"` (ledger WR-10 carried into the rewritten lines; CSV half now fixed)"
+  - id: WR-12
+    severity: warning
+    disposition: open
+    title: "Type-check gate ships red — `make typecheck` / `make all` / `make ci` exit 1 with 19 diagnostics and no baseline mechanism"
+  - id: WR-13
+    severity: warning
+    disposition: open
+    title: "md formatter silently drops `highlights` for dict rows — same query renders differently with and without `--line-numbers`"
+  - id: WR-14
+    severity: warning
+    disposition: open
+    title: "`docs/development.md` troubleshooting documents a nonexistent ty flag — `ty check --no-cache` exits 2"
+  - id: WR-15
+    severity: warning
+    disposition: open
+    title: "`sif mcp stdio` with a missing index crashes — `console.print(..., file=sys.stderr)` is not a valid rich signature (out-of-scope file; verified runtime bug surfaced by the in-scope ty switch)"
+  - id: WR-16
+    severity: warning
+    disposition: open
+    title: "`INTEGRATION_STATUS.md` is a stale DocSift artifact whose dependency guidance is now wrong — this delta edited it instead of retiring it"
+  - id: WR-17
+    severity: warning
+    disposition: open
+    title: "Impossible-state guard — `_field`'s `\"\"` fallback defaults can never fire"
+  - id: IN-15
+    severity: info
+    disposition: open
+    title: "Redundant black configuration survives the tooling-consolidation delta that removed mypy"
+  - id: IN-16
+    severity: info
+    disposition: open
+    title: "`docs/development.md` ruff config snippet says `py39`; actual config is `py310`"
   - id: CR-02
     severity: critical
     disposition: fixed
@@ -63,10 +99,6 @@ findings:
     severity: warning
     disposition: fixed
     title: "Reranker construction catches only `ImportError`; an unvalidated `SIF_RERANKER_MODEL_TYPE` crashes `query` with a raw traceback"
-  - id: WR-10
-    severity: warning
-    disposition: open
-    title: "CSV and XML formatters do not escape field values — filenames with `\"`, `,`, `<`, `&` produce malformed output"
   - id: WR-11
     severity: warning
     disposition: open
@@ -111,16 +143,25 @@ findings:
     severity: info
     disposition: open
     title: "`Qwen3Reranker.load()` duplicates the entire loading block for quiet/non-quiet"
-open: 21
-total: 27
-recorded: 2026-11-05T10:03:14.525Z
+open: 29
+total: 35
+recorded: 2026-11-05T11:13:29.676Z
 ---
 
 # Phase 05: Code Review Disposition
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| CR-02 | critical | fixed | 05-REVIEW-FIX.md |
+| WR-10 | warning | open | - |
+| WR-12 | warning | open | - |
+| WR-13 | warning | open | - |
+| WR-14 | warning | open | - |
+| WR-15 | warning | open | - |
+| WR-16 | warning | open | - |
+| WR-17 | warning | open | - |
+| IN-15 | info | open | - |
+| IN-16 | info | open | - |
+| CR-02 | critical | fixed | 05-REVIEW-FIX.md (not in the current review) |
 | CR-01 | critical | fixed | 05-REVIEW-FIX.md (not in the current review) |
 | WR-01 | warning | fixed | 05-REVIEW-FIX.md (not in the current review) |
 | IN-01 | info | open | - (not in the current review) |
@@ -135,7 +176,6 @@ recorded: 2026-11-05T10:03:14.525Z
 | WR-07 | warning | open | - (not in the current review) |
 | WR-08 | warning | open | - (not in the current review) |
 | WR-09 | warning | fixed | quick 261105-g1u (b8a81e1) (not in the current review) |
-| WR-10 | warning | open | - (not in the current review) |
 | WR-11 | warning | open | - (not in the current review) |
 | IN-05 | info | open | - (not in the current review) |
 | IN-06 | info | open | - (not in the current review) |
