@@ -3,6 +3,50 @@ phase: 05
 review: 05-REVIEW.md
 titles: json
 findings:
+  - id: CR-01
+    severity: critical
+    disposition: open
+    title: "Rich markup injection — unescaped query/title/content crash or silently vanish in all three search commands"
+  - id: CR-02
+    severity: critical
+    disposition: open
+    title: "Rich markup injection in `context list` — stored context content crashes or silently loses text"
+  - id: WR-01
+    severity: warning
+    disposition: open
+    title: "LLM cache TTL writes naive local-time expiry compared against aware UTC strings — cache broken west of UTC; in-scope test fails"
+  - id: WR-02
+    severity: warning
+    disposition: open
+    title: "Unknown `-c/--collection` names silently resolve to exclude-all — typo returns \"No results found\" instead of an error"
+  - id: WR-03
+    severity: warning
+    disposition: open
+    title: "`vsearch` surfaces embedding-dimension mismatch as a raw sqlite3 traceback"
+  - id: WR-04
+    severity: warning
+    disposition: open
+    title: "Self-heal merge skips duplicate collapsing in the exact-match branch, contradicting its documented contract"
+  - id: IN-01
+    severity: info
+    disposition: open
+    title: "Dimension-mismatch error message points users at `sif cleanup`, which cannot fix the problem"
+  - id: IN-02
+    severity: info
+    disposition: open
+    title: "Dead `DEFAULT_INDEX_PATH` constant that also disagrees with the real default"
+  - id: IN-03
+    severity: info
+    disposition: open
+    title: "Unused module logger in `cli/main.py`"
+  - id: IN-04
+    severity: info
+    disposition: open
+    title: "`test_status_respects_env_var` does not exercise the env var"
+  - id: IN-05
+    severity: info
+    disposition: open
+    title: "Output cascade and table rendering triplicated across the three search commands"
   - id: WR-10
     severity: warning
     disposition: open
@@ -39,46 +83,6 @@ findings:
     severity: info
     disposition: open
     title: "`docs/development.md` ruff config snippet says `py39`; actual config is `py310`"
-  - id: CR-02
-    severity: critical
-    disposition: fixed
-    title: "`--line-numbers --md` and `--line-numbers --xml` crash with `AttributeError: 'dict' object has no attribute 'rank'`"
-  - id: CR-01
-    severity: critical
-    disposition: fixed
-    title: "`--line-numbers --csv` crashes with `AttributeError: 'dict' object has no attribute 'rank'`"
-  - id: WR-01
-    severity: warning
-    disposition: fixed
-    title: "`vsearch_cmd` calls `get_settings()` unguarded — raw pydantic traceback with explicit `--index` and invalid config (WR-09 fix incomplete in same file)"
-  - id: IN-01
-    severity: info
-    disposition: open
-    title: "New validator blocks all default-`--index` commands when `SIF_RERANKER_MODEL_TYPE` is invalid"
-  - id: IN-02
-    severity: info
-    disposition: open
-    title: "Dead fallback in `status_cmd` calls `get_settings()` unguarded"
-  - id: IN-03
-    severity: info
-    disposition: open
-    title: "Code comments cite review-finding IDs that no longer match the disposition ledger"
-  - id: IN-04
-    severity: info
-    disposition: open
-    title: "`TestContextRmAlias` never tests the `rm` alias"
-  - id: WR-02
-    severity: warning
-    disposition: fixed
-    title: "Self-heal merge only fires on exact historical re-typing — duplicate rows accumulate and prune cannot clean them"
-  - id: WR-03
-    severity: warning
-    disposition: fixed
-    title: "`context add` / `context remove` silently create an empty index database when no index exists"
-  - id: WR-04
-    severity: warning
-    disposition: open
-    title: "`DatabaseConnection.execute()/executemany()` return a cursor whose connection is already closed"
   - id: WR-05
     severity: warning
     disposition: open
@@ -103,10 +107,6 @@ findings:
     severity: warning
     disposition: open
     title: "docs CI job has no `timeout-minutes`"
-  - id: IN-05
-    severity: info
-    disposition: open
-    title: "`EmbeddingManager.embed/embed_single` accept a `normalize` parameter that is silently ignored"
   - id: IN-06
     severity: info
     disposition: open
@@ -143,41 +143,41 @@ findings:
     severity: info
     disposition: open
     title: "`Qwen3Reranker.load()` duplicates the entire loading block for quiet/non-quiet"
-open: 29
+open: 34
 total: 35
-recorded: 2026-11-05T11:13:29.676Z
+recorded: 2026-11-06T06:48:20.422Z
 ---
 
 # Phase 05: Code Review Disposition
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| WR-10 | warning | open | - |
-| WR-12 | warning | open | - |
-| WR-13 | warning | open | - |
-| WR-14 | warning | open | - |
-| WR-15 | warning | open | - |
-| WR-16 | warning | open | - |
-| WR-17 | warning | open | - |
-| IN-15 | info | open | - |
-| IN-16 | info | open | - |
-| CR-02 | critical | fixed | 05-REVIEW-FIX.md (not in the current review) |
-| CR-01 | critical | fixed | 05-REVIEW-FIX.md (not in the current review) |
-| WR-01 | warning | fixed | 05-REVIEW-FIX.md (not in the current review) |
-| IN-01 | info | open | - (not in the current review) |
-| IN-02 | info | open | - (not in the current review) |
-| IN-03 | info | open | - (not in the current review) |
-| IN-04 | info | open | - (not in the current review) |
-| WR-02 | warning | fixed | 05-REVIEW-FIX.md (not in the current review) |
-| WR-03 | warning | fixed | quick 261105-g1u (25481d8) (not in the current review) |
-| WR-04 | warning | open | - (not in the current review) |
+| CR-01 | critical | open | - |
+| CR-02 | critical | open | - |
+| WR-01 | warning | open | - |
+| WR-02 | warning | open | - |
+| WR-03 | warning | open | - |
+| WR-04 | warning | open | - |
+| IN-01 | info | open | - |
+| IN-02 | info | open | - |
+| IN-03 | info | open | - |
+| IN-04 | info | open | - |
+| IN-05 | info | open | - |
+| WR-10 | warning | open | - (not in the current review) |
+| WR-12 | warning | open | - (not in the current review) |
+| WR-13 | warning | open | - (not in the current review) |
+| WR-14 | warning | open | - (not in the current review) |
+| WR-15 | warning | open | - (not in the current review) |
+| WR-16 | warning | open | - (not in the current review) |
+| WR-17 | warning | open | - (not in the current review) |
+| IN-15 | info | open | - (not in the current review) |
+| IN-16 | info | open | - (not in the current review) |
 | WR-05 | warning | open | - (not in the current review) |
 | WR-06 | warning | open | - (not in the current review) |
 | WR-07 | warning | open | - (not in the current review) |
 | WR-08 | warning | open | - (not in the current review) |
 | WR-09 | warning | fixed | quick 261105-g1u (b8a81e1) (not in the current review) |
 | WR-11 | warning | open | - (not in the current review) |
-| IN-05 | info | open | - (not in the current review) |
 | IN-06 | info | open | - (not in the current review) |
 | IN-07 | info | open | - (not in the current review) |
 | IN-08 | info | open | - (not in the current review) |
