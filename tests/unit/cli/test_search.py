@@ -1954,7 +1954,13 @@ class TestDatabaseClosure:
         manager = MagicMock()
         manager.embed_single.return_value = [0.0] * 4
         manager._model = MagicMock()
-        settings = MagicMock(reranker_model_name=None, reranker_model_path=None)
+        # embedding_dim must be a real int: init_schema() resolves get_settings
+        # lazily per call, so this mock feeds the real SchemaManager's vec0 DDL.
+        settings = MagicMock(
+            reranker_model_name=None,
+            reranker_model_path=None,
+            embedding_dim=4,
+        )
         with (
             patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
             patch("sif.cli.commands.search.SearchPipeline", return_value=pipeline),
@@ -1964,6 +1970,43 @@ class TestDatabaseClosure:
             result = CliRunner().invoke(query_cmd, ["query"], obj={"index_path": index})
 
         assert result.exit_code != 0
+        assert "boom" in result.output, result.output
         assert TrackingDatabase.created, "query must construct its Database"
+        for instance in TrackingDatabase.created:
+            assert instance._connection is None
+
+    def test_vsearch_closes_database_on_success(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Every Database constructed by vsearch is closed after a successful run.
+
+        vsearch_cmd imports Database inside its function body, so the double
+        must be installed on sif.database.database (the import source), not
+        on the sif.cli.commands.search namespace the other closure tests patch.
+        """
+        index = tmp_path / "index.db"
+        index.touch()
+        TrackingDatabase.created.clear()
+        monkeypatch.setattr("sif.database.database.Database", TrackingDatabase)
+        searcher = MagicMock()
+        searcher.search.return_value = []
+        repo = MagicMock()
+        repo.list_enabled.return_value = []
+        manager = MagicMock()
+        manager.embed_single.return_value = [0.0] * 4
+        # embedding_dim must be a real int (see query closure test note).
+        settings = MagicMock(embedding_dim=4)
+        with (
+            patch("sif.database.repositories.CollectionRepository", return_value=repo),
+            patch("sif.search.vector.VectorSearcher", return_value=searcher),
+            patch("sif.embedding.manager.EmbeddingManager.from_settings", return_value=manager),
+            patch("sif.config.settings.get_settings", return_value=settings),
+        ):
+            result = CliRunner().invoke(vsearch_cmd, ["query"], obj={"index_path": index})
+
+        assert result.exit_code == 0, result.output
+        assert TrackingDatabase.created, "vsearch must construct its Database"
         for instance in TrackingDatabase.created:
             assert instance._connection is None
