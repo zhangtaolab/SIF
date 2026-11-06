@@ -1,7 +1,7 @@
 ## Deferred Items
 
 - Pre-existing `ty check src/sif` diagnostics (17) in files untouched by plan 10.1-01
-  status: open
+  status: resolved
   **What:** `ty check src/sif` reports 17 diagnostics (call-non-callable on optional
   ML imports, `Connection | None` union attribute access in database/connection.py,
   http transport Request/State unions, one `any` annotation in a parameter). None are
@@ -11,6 +11,7 @@
   **Disposition:** Out of scope per deviation scope boundary (pre-existing, unrelated
   files); recorded here for a future typing-debt pass. Project CLAUDE.md's mandatory
   quality suite (ruff check, ruff format --check, pytest) is green.
+  **Resolution:** Resolved by quick task 261106-u7d (ty exits 0, all 17 cleared).
 
 - Test-side raw `sqlite3.connect` handles leak ResourceWarnings (13 remain after WR-01)
   status: open
