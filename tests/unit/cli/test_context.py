@@ -652,6 +652,39 @@ class TestContextList:
         assert "collection" in result.output
         assert "global" in result.output
 
+    def test_list_renders_markup_bearing_cells_literally(self, mock_db) -> None:
+        """CR-02: markup-bearing stored content lists literally instead of crashing.
+
+        Rich interprets square-bracket sequences as markup tags, so a stored
+        context like "see section [/3] for caveats" raised
+        rich.errors.MarkupError (exit 1) and everyday bracket text like
+        "[WIP]" was silently swallowed. Every table cell must be escaped at
+        render time — display-only; stored bytes are unchanged.
+        """
+        runner = CliRunner()
+        ctx_obj = {"index_path": MagicMock(exists=lambda: True)}
+
+        contexts = [
+            PathContext(
+                path="/notes/[WIP] a.md",
+                context="see section [/3] for caveats",
+                context_type="path",
+            ),
+        ]
+        with patch("sif.cli.commands.context.Database") as mock_db_cls:
+            mock_db_cls.return_value = mock_db
+            mock_repo = MagicMock()
+            mock_repo.list_all.return_value = contexts
+            with patch(
+                "sif.cli.commands.context.ContextRepository",
+                return_value=mock_repo,
+            ):
+                result = runner.invoke(context_list, obj=ctx_obj)
+
+        assert result.exit_code == 0
+        assert "[/3]" in result.output
+        assert "[WIP]" in result.output
+
     def test_list_filter_by_type(self, mock_db) -> None:
         """Test listing contexts filtered by type."""
         runner = CliRunner()
