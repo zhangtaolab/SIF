@@ -190,12 +190,12 @@ Last activity: 2026-11-07 — Milestone v1.0 completed and archived
 
 ## Session Continuity
 
-**Last session:** 2026-11-06 (quick task 261106-u7d)
-**Stopped at:** Phase 10.1 complete — all phases complete
+**Last session:** 2026-11-07 (milestone v1.0 close)
+**Stopped at:** v1.0 shipped and archived — verified_closeout, zero overrides; 11/11 phases fresh-verified, 31/31 requirements, suite 1015 @ 96.20%
 **Resume file:** None
 
-- **Last action:** Quick task 261106-u7d (typing debt batch 4): commits e0d9596 + 3fc5908; 10.1 deferred-items.md item 1 flipped to resolved.
-- **Next expected action:** `/gsd-complete-milestone v1.0` — all quality gates green (ty, ruff, format, pytest).
+- **Last action:** /gsd-complete-milestone v1.0 — four stale verifications regenerated (05/06/07/10.1) with 5 review criticals fixed along the way; archives at .planning/milestones/v1.0-*; tag v1.0.
+- **Next expected action:** `/gsd-new-milestone` — v1.0 已归档，规划下一版本。
 
 ## Operator Next Steps
 
