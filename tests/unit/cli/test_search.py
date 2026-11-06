@@ -4,9 +4,11 @@ import csv
 import io
 import json
 import xml.etree.ElementTree as ET
+from collections.abc import Generator
 from contextlib import ExitStack
 from pathlib import Path
 from types import SimpleNamespace
+from typing import ClassVar
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -23,6 +25,7 @@ from sif.cli.commands.search import (
 )
 from sif.config.settings import get_settings
 from sif.core.models import Collection, SearchResult
+from sif.database.database import Database
 
 
 class TestSearchFiltering:
@@ -1886,3 +1889,81 @@ class TestSearchOutputBranches:
         assert "B" * 34 in result.output
         assert "B" * 55 not in result.output
         assert "..." in result.output
+
+
+class TrackingDatabase(Database):
+    """Database double recording constructed instances for closure assertions."""
+
+    created: ClassVar[list[Database]] = []
+
+    def __init__(self, db_path: str | Path) -> None:
+        """Record each construction so tests can assert every handle closed."""
+        super().__init__(db_path)
+        TrackingDatabase.created.append(self)
+
+
+class TestDatabaseClosure:
+    """search and query own their Database lifecycle end to end."""
+
+    @pytest.fixture(autouse=True)
+    def isolated_settings(self) -> Generator[None, None, None]:
+        """Real schema creation never inherits cached Settings."""
+        get_settings.cache_clear()
+        yield
+        get_settings.cache_clear()
+
+    def test_search_closes_database_on_success(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Every Database constructed by search is closed after a successful run."""
+        index = tmp_path / "index.db"
+        index.touch()
+        TrackingDatabase.created.clear()
+        monkeypatch.setattr("sif.cli.commands.search.Database", TrackingDatabase)
+        searcher = MagicMock()
+        searcher.search.return_value = []
+        repo = MagicMock()
+        repo.list_enabled.return_value = []
+        with (
+            patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
+            patch("sif.cli.commands.search.BM25Searcher", return_value=searcher),
+        ):
+            result = CliRunner().invoke(search_cmd, ["query"], obj={"index_path": index})
+
+        assert result.exit_code == 0, result.output
+        assert TrackingDatabase.created, "search must construct its Database"
+        for instance in TrackingDatabase.created:
+            assert instance._connection is None
+
+    def test_query_closes_database_on_pipeline_error(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A pipeline failure still closes every Database query constructed."""
+        index = tmp_path / "index.db"
+        index.touch()
+        TrackingDatabase.created.clear()
+        monkeypatch.setattr("sif.cli.commands.search.Database", TrackingDatabase)
+        pipeline = MagicMock()
+        pipeline.search.side_effect = RuntimeError("boom")
+        repo = MagicMock()
+        repo.list_enabled.return_value = []
+        manager = MagicMock()
+        manager.embed_single.return_value = [0.0] * 4
+        manager._model = MagicMock()
+        settings = MagicMock(reranker_model_name=None, reranker_model_path=None)
+        with (
+            patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
+            patch("sif.cli.commands.search.SearchPipeline", return_value=pipeline),
+            patch("sif.embedding.manager.EmbeddingManager.from_settings", return_value=manager),
+            patch("sif.config.settings.get_settings", return_value=settings),
+        ):
+            result = CliRunner().invoke(query_cmd, ["query"], obj={"index_path": index})
+
+        assert result.exit_code != 0
+        assert TrackingDatabase.created, "query must construct its Database"
+        for instance in TrackingDatabase.created:
+            assert instance._connection is None
