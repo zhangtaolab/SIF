@@ -1936,8 +1936,13 @@ class TestSearchOutputBranches:
         result, _ = self._invoke_query(tmp_path, ["[/3]-notes", "--explain"], [row])
 
         assert result.exit_code == 0
-        assert "Query: [/3]-notes" in result.output
         assert "[/3]" in result.output
+        assert "notes [/3] review: bm25_score=" in result.output
+
+        plain, _ = self._invoke_bm25(tmp_path, ["[/3]-notes", "--explain"], [row])
+
+        assert plain.exit_code == 0
+        assert "Query: [/3]-notes" in plain.output
 
 
 class TrackingDatabase(Database):

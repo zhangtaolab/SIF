@@ -272,7 +272,7 @@ def search_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                     console.print("[yellow]No results found.[/yellow]")
                 return
 
-            table = Table(title=f'Search Results: "{query}"')
+            table = Table(title=f'Search Results: "{escape(query)}"')
             table.add_column("#", style="cyan", justify="right")
             table.add_column("Score", style="green", justify="right")
             table.add_column("Title", style="yellow")
@@ -285,21 +285,25 @@ def search_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 row = [
                     str(r.rank),
                     f"{r.score:.4f}",
-                    r.title[:_TITLE_MAX_LEN] + "..." if len(r.title) > _TITLE_MAX_LEN else r.title,
-                    r.collection_name,
+                    escape(
+                        r.title[:_TITLE_MAX_LEN] + "..."
+                        if len(r.title) > _TITLE_MAX_LEN
+                        else r.title
+                    ),
+                    escape(r.collection_name),
                     escape(_display_snippet(r)),
                 ]
                 if line_numbers and (content := getattr(r, "content", None)):
                     content = prepend_line_numbers(content)
                     if len(content) > _CONTENT_MAX_LEN:
                         content = content[:_CONTENT_MAX_LEN] + "..."
-                    row.append(content)
+                    row.append(escape(content))
                 table.add_row(*row)
 
             console.print(table)
 
             if explain:
-                console.print(f"\n[dim]Query: {query}[/dim]")
+                console.print(f"\n[dim]Query: {escape(query)}[/dim]")
                 console.print(f"[dim]Results: {len(results)}[/dim]")
 
 
@@ -418,7 +422,7 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                     console.print("[yellow]No results found.[/yellow]")
                 return
 
-            table = Table(title=f'Vector Search Results: "{query}"')
+            table = Table(title=f'Vector Search Results: "{escape(query)}"')
             table.add_column("#", style="cyan", justify="right")
             table.add_column("Score", style="green", justify="right")
             table.add_column("Title", style="yellow")
@@ -430,14 +434,18 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 row = [
                     str(r.rank),
                     f"{r.score:.4f}",
-                    r.title[:_TITLE_MAX_LEN] + "..." if len(r.title) > _TITLE_MAX_LEN else r.title,
-                    r.collection_name,
+                    escape(
+                        r.title[:_TITLE_MAX_LEN] + "..."
+                        if len(r.title) > _TITLE_MAX_LEN
+                        else r.title
+                    ),
+                    escape(r.collection_name),
                 ]
                 if line_numbers and (content := getattr(r, "content", None)):
                     content = prepend_line_numbers(content)
                     if len(content) > _CONTENT_MAX_LEN:
                         content = content[:_CONTENT_MAX_LEN] + "..."
-                    row.append(content)
+                    row.append(escape(content))
                 table.add_row(*row)
 
             console.print(table)
@@ -643,7 +651,7 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                     console.print("[yellow]No results found.[/yellow]")
                 return
 
-            table = Table(title=f'Hybrid Search Results: "{query}"')
+            table = Table(title=f'Hybrid Search Results: "{escape(query)}"')
             table.add_column("#", style="cyan", justify="right")
             table.add_column("Score", style="green", justify="right")
             table.add_column("Title", style="yellow")
@@ -656,15 +664,19 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 row = [
                     str(r.rank),
                     f"{r.score:.4f}",
-                    r.title[:_TITLE_MAX_LEN] + "..." if len(r.title) > _TITLE_MAX_LEN else r.title,
-                    r.collection_name,
+                    escape(
+                        r.title[:_TITLE_MAX_LEN] + "..."
+                        if len(r.title) > _TITLE_MAX_LEN
+                        else r.title
+                    ),
+                    escape(r.collection_name),
                     escape(_display_snippet(r)),
                 ]
                 if line_numbers and (content := getattr(r, "content", None)):
                     content = prepend_line_numbers(content)
                     if len(content) > _CONTENT_MAX_LEN:
                         content = content[:_CONTENT_MAX_LEN] + "..."
-                    row.append(content)
+                    row.append(escape(content))
                 table.add_row(*row)
 
             console.print(table)
@@ -675,4 +687,4 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                         f"{k}={v:.4f}" for k, v in r.scores.items() if v is not None
                     )
                     if scores_str:
-                        console.print(f"[dim]{r.title}: {scores_str}[/dim]")
+                        console.print(f"[dim]{escape(r.title)}: {scores_str}[/dim]")
