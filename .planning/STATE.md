@@ -3,14 +3,14 @@ gsd_state_version: "1.0"
 milestone: v1.0
 current_plan: 11
 status: executing
-stopped_at: Completed 05-10-PLAN.md
-last_updated: "2026-11-06T08:17:08.387Z"
-state_head: ba7e0e4a514491385f5145a05cb2c342a72921f3
+stopped_at: Completed 05-11-PLAN.md
+last_updated: "2026-11-06T08:35:03.183Z"
+state_head: 63bca7e432ec30568f40e4f85201bea2d364bdd4
 progress:
   total_phases: 11
   completed_phases: 9
   total_plans: 67
-  completed_plans: 66
+  completed_plans: 67
 milestone_name: milestone
 current_phase: 10
 current_phase_name: Agent Context Experience
@@ -74,6 +74,7 @@ Phase 10-01 deleted the approved dead-code cluster; 10-02/10-03 expanded CLI and
 | Phase 10.1 P03 | 13min | 3 tasks | 2 files |
 | Phase 10.1 P04 | 16min | 3 tasks | 8 files |
 | Phase 05 P10 | 8min | 3 tasks | 2 files |
+| Phase 05 P11 | 12min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -160,6 +161,8 @@ Phase 10-01 deleted the approved dead-code cluster; 10-02/10-03 expanded CLI and
 - [Phase 10.1]: 10.1-04: lifecycle harness asserts non-vacuous closure (every test asserts >=1 TrackingDatabase captured) and covers index update (not index status, which delegates to main's status_cmd and would not exercise index.py's scope)
 - [Phase 05]: 05-10: truth-21 duplicate collapse centralized in _collapse_duplicate_path_rows — shared by exact-match branch, normalized branch, and upsert-hit path; exact-match branch gains the same landed-guard (update_target True before any deletion) as the normalized branch (T-05-16)
 - [Phase 05]: 05-10: CR-02 closed — context list wraps all three Rich table cells in rich.markup.escape AFTER truncation so the 50-char display cap applies to raw text; display-only, stored bytes untouched (mirrors 04-06 snippet precedent)
+- [Phase 05]: 05-11: CR-01 closed — rich.markup.escape at all 12 display sites (3 titles, 3 title cells, 3 collection cells, 3 content appends, 2 explain prints); display-layer only, machine outputs byte-unchanged
+- [Phase 05]: 05-11: escape-after-truncation ordering (truncate raw text, then escape the whole displayed expression incl. ellipsis) — mirrors the 05-10 context-list precedent; tests renamed to *_renders_markup_literally so -k markup_literal selects all five
 
 ### Roadmap Evolution
 
@@ -204,8 +207,8 @@ Phase 10-01 deleted the approved dead-code cluster; 10-02/10-03 expanded CLI and
 
 ## Session Continuity
 
-**Last session:** 2026-11-06T08:17:07.636Z
-**Stopped at:** Completed 05-10-PLAN.md
+**Last session:** 2026-11-06T08:35:02.432Z
+**Stopped at:** Completed 05-11-PLAN.md
 **Resume file:** None
 
 - **Last action:** `/gsd-execute-phase 10` — plan 10-06 covered indexing and MCP behavior and repaired chunker progress/session bounds; 958 passed, coverage 96.16%.
