@@ -1,5 +1,6 @@
 """Tests for collection update-cmd and index pre-update hook."""
 
+import contextlib
 import sqlite3
 import subprocess
 from collections.abc import Generator
@@ -59,7 +60,7 @@ class TestCollectionRealDatabase:
 
     def _read_collection(self, db_path: Path, name: str) -> sqlite3.Row | None:
         """Read persisted state independently of the command's repository instance."""
-        with sqlite3.connect(db_path) as conn:
+        with contextlib.closing(sqlite3.connect(db_path)) as conn:
             conn.row_factory = sqlite3.Row
             return conn.execute("SELECT * FROM collections WHERE name = ?", (name,)).fetchone()
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -550,7 +551,7 @@ class TestContextAddMultiAliasSelfHeal:
 
     def _path_rows(self, db_path: Path) -> list[tuple[str, str]]:
         """Read persisted path contexts independently of the command's repo instance."""
-        with sqlite3.connect(db_path) as conn:
+        with contextlib.closing(sqlite3.connect(db_path)) as conn:
             rows = conn.execute(
                 "SELECT target_id, content FROM contexts WHERE context_type = 'path'"
             ).fetchall()
@@ -942,7 +943,7 @@ class TestContextConfirmationMarkupLiteral:
 
     def _path_rows(self, db_path: Path) -> list[tuple[str, str]]:
         """Read persisted path contexts independently of the command's repo instance."""
-        with sqlite3.connect(db_path) as conn:
+        with contextlib.closing(sqlite3.connect(db_path)) as conn:
             rows = conn.execute(
                 "SELECT target_id, content FROM contexts WHERE context_type = 'path'"
             ).fetchall()

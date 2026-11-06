@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import sqlite3
 from collections.abc import Generator
 from datetime import datetime, timedelta, timezone
@@ -160,7 +161,7 @@ class TestCleanupRealDatabase(RealDatabaseTestCase):
         assert result.exit_code == 0, result.output
         assert "Removed 1 orphaned chunks" in result.output
         assert "Removed 1 expired cache entries" in result.output
-        with sqlite3.connect(db_path) as conn:
+        with contextlib.closing(sqlite3.connect(db_path)) as conn:
             assert conn.execute("SELECT COUNT(*) FROM document_chunks").fetchone()[0] == 1
             assert (
                 conn.execute(
