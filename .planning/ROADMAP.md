@@ -235,7 +235,7 @@ Gap closure (2026-09-15, UAT-diagnosed gaps G-06-1..G-06-8):
   1. `docsift-search` skill allows Claude to search the user's document index
   2. `docsift-get` skill allows Claude to retrieve document content by path or pattern
 
-**Plans:** 2 plans
+**Plans:** 2/2 plans complete
 
 Plans:
 
