@@ -1,0 +1,37 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-11-06T23:17:56.807Z",
+  "phase": null,
+  "phase_name": null,
+  "phase_dir": null,
+  "plan": null,
+  "task": null,
+  "total_tasks": 0,
+  "status": "paused",
+  "completed_tasks": [
+    {"id": 1, "name": "Milestone v1.0 close — verified_closeout (11/11 phases fresh-verified, 31/31 requirements, zero overrides)", "status": "done", "commit": "b63eca1"},
+    {"id": 2, "name": "Four stale-verification regenerations (05/06/07/10.1) incl. 5 review criticals fixed along the way", "status": "done", "commit": "92e0150"},
+    {"id": 3, "name": "Version 1.0.0 bump + tag v1.0 + archives (milestones/v1.0-*) + RETROSPECTIVE", "status": "done", "commit": "11b8640"},
+    {"id": 4, "name": "Push dev + tag; PR #1 dev→main", "status": "done", "commit": "1115409"},
+    {"id": 5, "name": "CI Docs Validation fixed (Click 8.5 vs 8.3 generator divergence normalized) — run 42310044731 green", "status": "done", "commit": "1115409"},
+    {"id": 6, "name": "PyPI release: docsif 1.0.0 published (sif name taken; docsif is the project's own registered name)", "status": "done"},
+    {"id": 7, "name": "numpy>=2 verification: canonical suite 1015 green on numpy 2.3.5; fresh install of PUBLISHED wheel on numpy 2.5.4 → CLI smoke + 974/974 (torch-only module excluded)", "status": "done", "commit": "d0682ba"},
+    {"id": 8, "name": "pytest-asyncio declared in dev extras (fresh-install 56-failure root cause; ships next release)", "status": "done", "commit": "d0682ba"}
+  ],
+  "remaining_tasks": [],
+  "blockers": [],
+  "async_jobs": [],
+  "human_actions_pending": [
+    {"action": "Merge PR #1 (dev → main)", "context": "CI green, v1.0 tagged and published; merge completes the release flow", "blocking": false},
+    {"action": "Optionally remove stale pre-rename skill dirs: rm -rf ~/.claude/skills/docsift-get ~/.claude/skills/docsift-search", "context": "P07-T05: they teach the nonexistent docsift CLI; repo-side sif-* symlinks are correct. Agent home-dir deletion was permission-blocked by design", "blocking": false}
+  ],
+  "decisions": [
+    {"decision": "Distribution name = docsif on PyPI", "rationale": "'sif' taken by an unrelated project; docsif is this account's own registered name (0.1.x-0.2.0). Import name and sif console script unchanged", "phase": "release"},
+    {"decision": "verified_closeout with zero overrides", "rationale": "User chose 'resolve everything': UAT gap live-verified, ResourceWarnings fixed (17→0 warnings), mypy ledger resolved, then 4 stale phases regenerated to fresh fingerprints", "phase": "close"},
+    {"decision": "CLI-reference generator normalized against Click version drift", "rationale": "CI installs unpinned Click (8.5) vs local 8.3: flag defaults (None vs False) and help indentation diverged, failing the drift gate. cleandoc + flag-default canonicalization make output version-insensitive", "phase": "release"},
+    {"decision": "pytest-asyncio added to dev extras rather than republishing 1.0.0", "rationale": "dev extras do not affect runtime installs; the gap only breaks fresh contributor envs; ships with the next version", "phase": "release"}
+  ],
+  "uncommitted_files": ["?? .planning/state.json", "?? .planning/tmp/"],
+  "next_action": "/gsd-new-milestone to plan the next version (v1.1 candidates: LLM query expansion backlog item, open review ledgers WR-01..10/IN-10..13, version-sync mechanism, arch-generator CI wiring). Or merge PR #1 first.",
+  "context_notes": "Milestone v1.0 fully shipped: 11/11 phases verified-closeout, archived under .planning/milestones/v1.0-*, tag v1.0 pushed, docsif 1.0.0 live on PyPI (verified installable with numpy 2.5 + click 8.5 + latest starlette). Known follow-ups live in the phase REVIEW-DISPOSITION ledgers (now in milestones/v1.0-phases/). KNOWN QUIRKS: STATE.md frontmatter progress fields undercount by tool accounting — body is authoritative, do not hand-fix. Fresh-install dev envs now get pytest-asyncio via extras; torch is only in 'all' extras and tests/unit/inference/test_reranker.py needs it directly (skip with --ignore on minimal envs)."
+}
