@@ -35,7 +35,9 @@ class TestStatusCommand:
                 "contexts": 0,
                 "total_size_bytes": 1024,
             }
-            mock_db_cls.return_value = mock_db
+            # status_cmd owns the Database via `with Database(...) as db:`, so
+            # the instance bound in the scope is the __enter__ result.
+            mock_db_cls.return_value.__enter__.return_value = mock_db
             result = runner.invoke(status_cmd)
 
         assert result.exit_code == 0
@@ -66,7 +68,8 @@ class TestStatusCommand:
                 "contexts": 0,
                 "total_size_bytes": 0,
             }
-            mock_db_cls.return_value = mock_db
+            # Ownership scope binds the __enter__ result (see test above).
+            mock_db_cls.return_value.__enter__.return_value = mock_db
             result = runner.invoke(status_cmd)
 
         # The command should use the env var path

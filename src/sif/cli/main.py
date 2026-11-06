@@ -118,26 +118,26 @@ def status_cmd(ctx: click.Context) -> None:
         return
 
     try:
-        db = Database(index_path)
-        db.init_schema()
-        stats = db.get_stats()
+        with Database(index_path) as db:
+            db.init_schema()
+            stats = db.get_stats()
 
-        table = Table(title="Index Status")
-        table.add_column("Metric", style="cyan")
-        table.add_column("Value", style="green")
+            table = Table(title="Index Status")
+            table.add_column("Metric", style="cyan")
+            table.add_column("Value", style="green")
 
-        table.add_row("Index Path", str(index_path))
-        table.add_row("Collections", str(stats.get("collections", 0)))
-        table.add_row("Documents", str(stats.get("documents", 0)))
-        table.add_row("Chunks", str(stats.get("chunks", 0)))
-        table.add_row("Contexts", str(stats.get("contexts", 0)))
+            table.add_row("Index Path", str(index_path))
+            table.add_row("Collections", str(stats.get("collections", 0)))
+            table.add_row("Documents", str(stats.get("documents", 0)))
+            table.add_row("Chunks", str(stats.get("chunks", 0)))
+            table.add_row("Contexts", str(stats.get("contexts", 0)))
 
-        total_size = stats.get("total_size_bytes", 0)
-        if total_size > 0:
-            size_mb = total_size / (1024 * 1024)
-            table.add_row("Total Size", f"{size_mb:.2f} MB")
+            total_size = stats.get("total_size_bytes", 0)
+            if total_size > 0:
+                size_mb = total_size / (1024 * 1024)
+                table.add_row("Total Size", f"{size_mb:.2f} MB")
 
-        console.print(table)
+            console.print(table)
 
     except Exception as e:
         console.print(f"[red]Error reading index: {e}[/red]")
@@ -156,43 +156,43 @@ def cleanup_cmd(ctx: click.Context) -> None:
         return
 
     try:
-        db = Database(index_path)
-        db.init_schema()
+        with Database(index_path) as db:
+            db.init_schema()
 
-        with db.transaction() as conn:
-            # Clean up orphaned chunks
-            cursor = conn.execute("""
-                DELETE FROM document_chunks
-                WHERE document_id NOT IN (SELECT id FROM documents)
-            """)
-            chunks_removed = cursor.rowcount
-
-            # Clean up orphaned embeddings
-            try:
+            with db.transaction() as conn:
+                # Clean up orphaned chunks
                 cursor = conn.execute("""
-                    DELETE FROM document_embeddings
+                    DELETE FROM document_chunks
                     WHERE document_id NOT IN (SELECT id FROM documents)
                 """)
-                embeddings_removed = cursor.rowcount
-            except sqlite3.OperationalError:
-                embeddings_removed = 0
+                chunks_removed = cursor.rowcount
 
-            # Clean up expired LLM cache
-            from datetime import datetime, timezone  # noqa: PLC0415
+                # Clean up orphaned embeddings
+                try:
+                    cursor = conn.execute("""
+                        DELETE FROM document_embeddings
+                        WHERE document_id NOT IN (SELECT id FROM documents)
+                    """)
+                    embeddings_removed = cursor.rowcount
+                except sqlite3.OperationalError:
+                    embeddings_removed = 0
 
-            cursor = conn.execute(
-                """
-                DELETE FROM llm_cache
-                WHERE expires_at IS NOT NULL AND expires_at <= ?
-            """,
-                (datetime.now(timezone.utc).isoformat(),),
-            )
-            cache_removed = cursor.rowcount
+                # Clean up expired LLM cache
+                from datetime import datetime, timezone  # noqa: PLC0415
 
-        console.print("[green]Cleanup complete:[/green]")
-        console.print(f"  - Removed {chunks_removed} orphaned chunks")
-        console.print(f"  - Removed {embeddings_removed} orphaned embeddings")
-        console.print(f"  - Removed {cache_removed} expired cache entries")
+                cursor = conn.execute(
+                    """
+                    DELETE FROM llm_cache
+                    WHERE expires_at IS NOT NULL AND expires_at <= ?
+                """,
+                    (datetime.now(timezone.utc).isoformat(),),
+                )
+                cache_removed = cursor.rowcount
+
+            console.print("[green]Cleanup complete:[/green]")
+            console.print(f"  - Removed {chunks_removed} orphaned chunks")
+            console.print(f"  - Removed {embeddings_removed} orphaned embeddings")
+            console.print(f"  - Removed {cache_removed} expired cache entries")
 
     except Exception as e:
         console.print(f"[red]Error during cleanup: {e}[/red]")
