@@ -36,7 +36,14 @@ def get_cmd(  # noqa: C901, PLR0912
     lines: int | None,
     line_numbers: bool,
 ) -> None:
-    """Get a document by path or document ID."""
+    """Get a document by path or document ID.
+
+    Path arguments are canonicalized (~ expansion and symlink resolution)
+    before lookup, so alias paths that resolve to the same file as the
+    indexed path also match. If no indexed document matches, the argument
+    is treated as a filesystem path: a readable file is printed directly
+    from disk even if it was never indexed.
+    """
     index_path = ctx.obj["index_path"]
 
     if not index_path.exists():
@@ -128,7 +135,12 @@ def multi_get_cmd(  # noqa: C901
     max_bytes: int,
     line_numbers: bool,
 ) -> None:
-    """Get multiple documents matching a pattern."""
+    """Get multiple documents matching a pattern.
+
+    Absolute glob patterns are canonicalized before path matching, so
+    symlinked directory prefixes match indexed paths; bare filenames always
+    match raw.
+    """
     index_path = ctx.obj["index_path"]
 
     if not index_path.exists():

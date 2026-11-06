@@ -9,6 +9,11 @@ allowed-tools:
 <objective>
 Retrieve document content from the user's SIF index.
 
+Path arguments are canonicalized (~ and symlinks resolved) before lookup; a
+symlinked alias of an indexed path resolves to the same document. `get` falls
+back to reading the argument as a file on disk when it is not in the index —
+that content may never have been indexed.
+
 Supports single document by path or document ID.
 Supports batch retrieval via glob patterns or comma-separated paths.
 Returns document content as plain text, preceded by a short header block
