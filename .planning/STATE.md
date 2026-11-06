@@ -3,18 +3,17 @@ gsd_state_version: "1.0"
 milestone: v1.0
 current_plan: Not started
 status: executing
-stopped_at: Phase 10 complete — all phases complete
-last_updated: "2026-11-05T20:56:47.052Z"
-state_head: e97ebd58ec6bab3ebf105229c81f77b1d2b83b62
+stopped_at: Phase 10 complete; Phase 10.1 (URGENT) inserted after Phase 10 — not planned yet
+last_updated: "2026-11-06T00:42:01.735Z"
+state_head: 9adfe46edd204090e594b0b15b0b3a64dc925476
 progress:
-  total_phases: 10
+  total_phases: 11
   completed_phases: 9
-  total_plans: 61
+  total_plans: 65
   completed_plans: 61
-  percent: 90
 milestone_name: milestone
+current_phase_name: "Address tech debt: path normalization + review findings CR-01/CR-02/WR-01"
 current_phase: 10
-current_phase_name: Raise pytest coverage to 90%
 ---
 
 # DocSift — Project State
@@ -29,7 +28,7 @@ current_phase_name: Raise pytest coverage to 90%
 ## Current Position
 
 Current Plan: Not started
-Total Plans in Phase: 7
+Total Plans in Phase: 4
 
 - **Phases:** 9/10 complete (01–09); Phase 10 in progress
 - **Plans:** 60/61 complete
@@ -147,6 +146,7 @@ Phase 10-01 deleted the approved dead-code cluster; 10-02/10-03 expanded CLI and
 
 - Later-added phases: 07 Claude skills (2026-04-20), 08 rename DocSift→SIF (2026-04-27), 09 MCP server (2026-05-08)
 - Phase 10 added: Raise pytest coverage to 90% (2026-11-05; baseline 78% / 5587 stmts / 1220 missed — lowest: cli/config.py 0%, formatters 29%, collection 44%)
+- Phase 10.1 inserted after Phase 10: Address tech debt: path normalization + review findings CR-01/CR-02/WR-01 (URGENT)
 
 ### TODOs
 
@@ -186,7 +186,7 @@ Phase 10-01 deleted the approved dead-code cluster; 10-02/10-03 expanded CLI and
 ## Session Continuity
 
 **Last session:** 2026-11-05T20:27:59.466Z
-**Stopped at:** Phase 10 complete — all phases complete
+**Stopped at:** Phase 10 complete; Phase 10.1 (URGENT) inserted after Phase 10 — not planned yet
 **Resume file:** None
 
 - **Last action:** `/gsd-execute-phase 10` — plan 10-06 covered indexing and MCP behavior and repaired chunker progress/session bounds; 958 passed, coverage 96.16%.
