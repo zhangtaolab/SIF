@@ -151,7 +151,7 @@ Plans:
   2. User can list and remove contextual descriptions via `context list` and `context rm`
   3. Search results include relevant contextual descriptions alongside document content
 
-**Plans:** 9/9 plans complete
+**Plans:** 11 plans (9 complete + 2 gap closure)
 
 Plans:
 **Wave 1**
@@ -171,6 +171,11 @@ Plans:
 **Wave 3** *(blocked on Wave 2 completion)*
 
 - [x] 05-04-PLAN.md — Write unit tests for migration, repository, CLI, and search integration
+
+Gap closure (2026-11-06, 05-VERIFICATION gap 1 / truth 21 + review criticals CR-01/CR-02):
+
+- [ ] 05-10-PLAN.md — Truth-21: collapse ALL same-file rows on every context-add re-add path (exact-match branch + upsert-hit path, real-SQL regression tests) + CR-02 context list markup escaping (CTX-01, CTX-02)
+- [ ] 05-11-PLAN.md — CR-01: escape query/title/collection/content/explain in all three search tables' Rich output (CTX-03)
 
 ## Progress
 
