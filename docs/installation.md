@@ -14,13 +14,13 @@
 The easiest way to install SIF is from PyPI:
 
 ```bash
-pip install sif
+pip install docsif
 ```
 
 For full functionality including embeddings:
 
 ```bash
-pip install "sif[all]"
+pip install "docdocsif[all]"
 ```
 
 ### Method 2: Install from Source
@@ -45,7 +45,7 @@ pip install -e ".[dev]"
 For an isolated installation:
 
 ```bash
-pipx install sif
+pipx install docsif
 ```
 
 ## Optional Dependencies
@@ -57,7 +57,7 @@ SIF has several optional dependency groups:
 For vector search functionality:
 
 ```bash
-pip install "sif[embed]"
+pip install "docdocsif[embed]"
 ```
 
 This installs:
@@ -71,7 +71,7 @@ With this extra installed, the local embedding backends pick their compute devic
 For contributing to SIF:
 
 ```bash
-pip install "sif[dev]"
+pip install "docdocsif[dev]"
 ```
 
 This installs:
@@ -86,7 +86,7 @@ This installs:
 To install everything:
 
 ```bash
-pip install "sif[all]"
+pip install "docdocsif[all]"
 ```
 
 ## Platform-Specific Instructions
@@ -128,7 +128,7 @@ Using PowerShell:
 ```powershell
 # Install Python from python.org or Microsoft Store
 # Then install SIF
-pip install sif
+pip install docsif
 ```
 
 ## Verifying Installation

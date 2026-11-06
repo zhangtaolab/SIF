@@ -7,13 +7,13 @@ Get up and running with SIF in minutes.
 Install SIF from PyPI:
 
 ```bash
-pip install sif
+pip install docsif
 ```
 
 For full functionality including embeddings:
 
 ```bash
-pip install "sif[all]"
+pip install "docdocsif[all]"
 ```
 
 Verify installation:
@@ -465,9 +465,9 @@ Optional, depending on which features you plan to use:
   search, install one of the extras:
 
   ```bash
-  pip install "sif[embed]"   # sentence-transformers and modelscope backends
+  pip install "docdocsif[embed]"   # sentence-transformers and modelscope backends
   # or
-  pip install "sif[all]"     # adds GGUF (llama-cpp-python) and OpenAI API support
+  pip install "docdocsif[all]"     # adds GGUF (llama-cpp-python) and OpenAI API support
   ```
 
   The first `sif index embed` run downloads the default embedding model
@@ -485,7 +485,7 @@ troubleshooting, see the [Installation Guide](installation.md).
 The [Your First Collection](#your-first-collection) walkthrough above sets up a
 real collection. To confirm a fresh install works end to end first, run this
 self-contained smoke test. It uses BM25 keyword search only, so it works with
-the base `pip install sif` — no embedding extras, no model downloads.
+the base `pip install docsif` — no embedding extras, no model downloads.
 
 ```bash
 # 1. Create a tiny test corpus

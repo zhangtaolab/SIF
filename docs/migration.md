@@ -55,7 +55,7 @@ All environment variables changed prefix from `DOCSIFT_` to `SIF_`:
 ### Python Package
 
 - **Old**: `pip install docsift`
-- **New**: `pip install sif`
+- **New**: `pip install docsif`
 - **Imports**: `from docsift...` -> `from sif...`
 
 ### GitHub Repository
@@ -77,7 +77,7 @@ All environment variables changed prefix from `DOCSIFT_` to `SIF_`:
 
 2. **Install new package**:
    ```bash
-   pip install sif
+   pip install docsif
    ```
 
 3. **Update environment variables** in your shell profile:
