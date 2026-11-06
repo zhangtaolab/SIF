@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: 11
+current_plan: 12
 status: executing
-stopped_at: Completed 05-11-PLAN.md
-last_updated: "2026-11-06T10:32:59.165Z"
-state_head: 8951315003d5d2863c96838d501dd8a1df53a349
+stopped_at: Completed 05-12-PLAN.md
+last_updated: "2026-11-06T10:50:06.191Z"
+state_head: d3479745c67735f969b9867a06c072549dc529f2
 progress:
   total_phases: 11
   completed_phases: 9
   total_plans: 68
-  completed_plans: 67
+  completed_plans: 68
 milestone_name: milestone
-current_phase_name: Agent Context Experience
 current_phase: 10
+current_phase_name: Agent Context Experience
 ---
 
 # DocSift — Project State
@@ -27,7 +27,7 @@ current_phase: 10
 
 ## Current Position
 
-Current Plan: 11
+Current Plan: 12
 Total Plans in Phase: 12
 
 - **Phases:** 9/10 complete (01–09); Phase 10 in progress
@@ -75,6 +75,7 @@ Phase 10-01 deleted the approved dead-code cluster; 10-02/10-03 expanded CLI and
 | Phase 10.1 P04 | 16min | 3 tasks | 8 files |
 | Phase 05 P10 | 8min | 3 tasks | 2 files |
 | Phase 05 P11 | 12min | 2 tasks | 2 files |
+| Phase 05 P12 | 8min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -163,6 +164,7 @@ Phase 10-01 deleted the approved dead-code cluster; 10-02/10-03 expanded CLI and
 - [Phase 05]: 05-10: CR-02 closed — context list wraps all three Rich table cells in rich.markup.escape AFTER truncation so the 50-char display cap applies to raw text; display-only, stored bytes untouched (mirrors 04-06 snippet precedent)
 - [Phase 05]: 05-11: CR-01 closed — rich.markup.escape at all 12 display sites (3 titles, 3 title cells, 3 collection cells, 3 content appends, 2 explain prints); display-layer only, machine outputs byte-unchanged
 - [Phase 05]: 05-11: escape-after-truncation ordering (truncate raw text, then escape the whole displayed expression incl. ellipsis) — mirrors the 05-10 context-list precedent; tests renamed to *_renders_markup_literally so -k markup_literal selects all five
+- [Phase 05]: 05-12: CR-03 closed — rich.markup.escape wraps display_target at both context add confirmation prints and context_id at the remove print; display-layer only, print placement inside the transaction and stored bytes unchanged (mirrors 05-10/05-11 precedents; 05-10-P3 now HOLDS at all three sites) — Bracket-named targets were permanently unaddable because the MarkupError from the confirmation print rolled back the open transaction; escaping removes the raising path while both write branches stay inside with db.transaction()
 
 ### Roadmap Evolution
 
@@ -207,8 +209,8 @@ Phase 10-01 deleted the approved dead-code cluster; 10-02/10-03 expanded CLI and
 
 ## Session Continuity
 
-**Last session:** 2026-11-06T08:35:02.432Z
-**Stopped at:** Completed 05-11-PLAN.md
+**Last session:** 2026-11-06T10:50:05.316Z
+**Stopped at:** Completed 05-12-PLAN.md
 **Resume file:** None
 
 - **Last action:** `/gsd-execute-phase 10` — plan 10-06 covered indexing and MCP behavior and repaired chunker progress/session bounds; 958 passed, coverage 96.16%.

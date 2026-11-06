@@ -151,7 +151,7 @@ Plans:
   2. User can list and remove contextual descriptions via `context list` and `context rm`
   3. Search results include relevant contextual descriptions alongside document content
 
-**Plans:** 12 plans (9 complete + 3 gap closure)
+**Plans:** 12/12 plans executed (9 complete + 3 gap closure)
 
 Plans:
 **Wave 1**
@@ -176,7 +176,7 @@ Gap closure (2026-11-06, 05-VERIFICATION gap 1 / truth 21 + review criticals CR-
 
 Gap closure (2026-11-06, 05-VERIFICATION human-verification item CR-03 / 05-UAT Test 1 — fix-now disposition):
 
-- [ ] 05-12-PLAN.md — CR-03: escape user-derived target/id in the context add/remove confirmation prints; real-SQL regression tests locking both write branches (CTX-01, CTX-02)
+- [x] 05-12-PLAN.md — CR-03: escape user-derived target/id in the context add/remove confirmation prints; real-SQL regression tests locking both write branches (CTX-01, CTX-02)
 
 ## Progress
 
@@ -186,7 +186,7 @@ Gap closure (2026-11-06, 05-VERIFICATION human-verification item CR-03 / 05-UAT 
 | 2. CLI Core Completion | 6/6 | Complete | 2026-04-15 |
 | 3. Embedding & Vector Search | 8/8 | Complete    | 2026-09-04 |
 | 4. Advanced Search Pipeline | 6/6 | Complete    | 2026-09-06 |
-| 5. Agent Context Experience | 11/12 | In Progress |  |
+| 5. Agent Context Experience | 12/12 | In Progress |  |
 | 6. Documentation Audit & Refresh | 7/7 | Complete | 2026-04-18 |
 | 7. CLI Claude Skill | 2/2 | Complete | 2026-04-20 |
 | 8. Project rename from DocSift to SIF | 8/8 | Complete | 2026-04-27 |
