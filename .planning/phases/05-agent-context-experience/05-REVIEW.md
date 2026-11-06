@@ -1,96 +1,87 @@
 ---
 phase: 05-agent-context-experience
-reviewed: 2026-11-06T06:46:04Z
+reviewed: 2026-11-06T08:53:20Z
 depth: standard
-files_reviewed: 11
+files_reviewed: 4
 files_reviewed_list:
   - src/sif/cli/commands/context.py
   - src/sif/cli/commands/search.py
-  - src/sif/cli/main.py
-  - src/sif/database/schema.py
-  - src/sif/search/vector.py
-  - tests/unit/cli/test_main.py
+  - tests/unit/cli/test_context.py
   - tests/unit/cli/test_search.py
-  - tests/unit/cli/test_status.py
-  - tests/unit/database/test_repositories.py
-  - tests/unit/database/test_schema.py
-  - tests/unit/search/test_vector.py
 findings:
-  critical: 2
-  warning: 4
-  info: 5
-  total: 11
+  critical: 1
+  warning: 2
+  info: 3
+  total: 6
   necessity: 0
 status: issues_found
 ---
 
-# Phase 5: Code Review Report
+# Phase 05: Code Review Report
 
-**Reviewed:** 2026-11-06T06:46:04Z
+**Reviewed:** 2026-11-06T08:53:20Z
 **Depth:** standard
-**Files Reviewed:** 11
+**Files Reviewed:** 4
 **Status:** issues_found
 
 ## Summary
 
-Staleness-refresh review of the phase-05-covered files (context CLI, context repository/schema, search result context attachment, vector search) against their current post-rename state. The core phase-05 mechanics — `normalize_path`-based context matching, the self-heal merge, the exclude-all collection sentinel, the FTS trigger migration with gated rebuild — are sound and well tested (151 tests in the scoped files pass locally). However, the review surfaced two crash-class defects in the Rich-rendered output paths, a proven timezone-dependent cache bug (an in-scope test fails under `TZ=America/Los_Angeles`), and several robustness gaps where foreseeable user input escapes as raw tracebacks or silently degrades to empty results. All findings were verified empirically against the project venv (Python 3.13, click 8.3.2), not inferred from reading alone.
+Gap-closure review of the phase-05 delta since 75f5e49: the `_collapse_duplicate_path_rows` helper unifying all three re-add paths (truth 21), the `rich.markup.escape` rollout over the search tables and `context list` cells, and the real-SQL regression tests.
 
-Necessity (#4100) was assessed per `$HOME/.claude/gsd-core/references/necessity-review.md`; the candidate guards examined (the `update_target` rowcount check in `context.py`, the NULL-`chunk_id` skips in `vector.py`, the exclude-all sentinel) all defend states at a persisted-database trust boundary or are deliberate defense-in-depth, so none qualify. `necessity: 0`.
+**Prior findings verified fixed (not re-reported):**
 
-## Critical Issues
+- **CR-01 (search tables) — fixed and complete.** All three table titles (`search.py:275, 425, 654`), the title/collection/snippet cells, the `--line-numbers` content cell, and both explain prints (`search.py:306, 690`) now escape user-derived strings. The truncate-then-escape ordering is correct everywhere, so a truncation cut can never bisect an escape sequence and re-expose a bracket. Regression tests cover all three commands plus the line-numbers cell and explain output.
+- **CR-02 (context list cells) — fixed.** All three cells are escaped after truncation (`context.py:281-285`); stored bytes untouched, with a literal-rendering regression test.
+- **WR-04 (exact-branch collapse) — fixed.** The exact-match branch, the normalized branch, and the previously short-circuiting upsert-hit path all funnel through `_collapse_duplicate_path_rows`, and the `update_target` landed-guards prevent deletes when the re-point did not land. The two real-SQL tests (`TestContextAddMultiAliasSelfHeal`) genuinely reproduce both legacy states (alias+canonical, two-alias) through the production DDL and repositories and assert the exactly-one-row end state.
 
-### CR-01: Rich markup injection — unescaped query/title/content crash or silently vanish in all three search commands
+**New finding:** CR-03 — the round escaped the *read* path (`context list`) but left the *write-confirmation* prints in the same command interpolating the user-derived target into Rich markup inside the open transaction. A path or collection name containing an unmatched closing tag (e.g. `notes [/3].md`) raises `MarkupError`, the transaction rolls back, and the context can never be stored. Proven empirically against rich 14.3.3 with a real index DB (exit 1, `MarkupError`, zero rows persisted).
 
-**File:** `src/sif/cli/commands/search.py:275` (also 421, 646, 288-289, 292-296, 433-434, 436-439, 659-660, 663-666)
-**Issue:** Rich parses console markup in `Table` titles and cell strings by default. The user's query is interpolated raw into the table title in all three commands (`Table(title=f'Search Results: "{query}"')` at line 275, `vsearch` line 421, `query` line 646). A query (or indexed document title/content) containing an unmatched closing tag — e.g. `sif search '[/]'` or `[/bold]`, entirely plausible when searching notes about coding/markup — raises `rich.errors.MarkupError` and kills the command with a raw traceback. Verified empirically: `Console().print(Table(title='Search Results: "[/]"'))` raises `MarkupError: closing tag '[/]' at position 17 has nothing to open`. Matched-but-unknown tags are silently swallowed instead: a title cell `todo [wip] note` renders as `todo  note` (verified). Only the Snippet column is escaped (`escape(_display_snippet(r))` at lines 290, 661) — the fix was applied to one column of five and to neither of the other two commands' tables.
-**Fix:** Escape every user-derived string crossing a Rich API: wrap the query in `Table(title=...)` with `escape(query)` (or pass `rich.text.Text(query)`), and apply `escape()` to `r.title`, `r.collection_name`, and the `prepend_line_numbers(content)` cell in all three table blocks — i.e. extend the existing snippet-column treatment to the remaining columns and titles:
+**Re-reported (still open in these files, IDs preserved for the disposition ledger):** WR-02 (unknown `-c` names silently exclude-all), WR-03 (`vsearch` leaks raw sqlite3 traceback on dimension mismatch), IN-05 (triplicated output cascade). Line numbers updated to the current file state.
 
-```python
-table = Table(title=f'Search Results: "{escape(query)}"')
-...
-row = [
-    str(r.rank),
-    f"{r.score:.4f}",
-    escape(r.title[:_TITLE_MAX_LEN] + "..." if len(r.title) > _TITLE_MAX_LEN else r.title),
-    escape(r.collection_name),
-    escape(_display_snippet(r)),
-]
-if line_numbers and (content := getattr(r, "content", None)):
-    ...
-    row.append(escape(content))
-```
+**Tests:** all 118 tests in the two scoped test files pass locally (`env -u FORCE_COLOR NO_COLOR=1 pytest tests/unit/cli/test_context.py tests/unit/cli/test_search.py`). The "required coverage not reached" line is an artifact of running only the scoped files, not a regression.
 
-### CR-02: Rich markup injection in `context list` — stored context content crashes or silently loses text
+**Necessity (#4100):** assessed per `$HOME/.claude/gsd-core/references/necessity-review.md`. Candidates examined — the `_merge_key` naive-timezone guard (the legacy `path_contexts` migration in `schema.py:119-123` copies `updated_at` verbatim, so offset-less values cross a persisted-DB trust boundary), the `update_target` landed-guards (reachable under concurrent CLI processes deleting the row between fetch and update), and `escape(ctx_item.context_type)` (a stored DB value) — all fall inside the rubric's negative space (trust boundary / defense in depth). `necessity: 0`.
 
-**File:** `src/sif/cli/commands/context.py:232`
-**Issue:** `table.add_row(ctx_item.context_type, ctx_item.path, content_text)` passes user-authored context content and the stored target path into a Rich table without `escape()`. Context content is arbitrary user text: `sif context add path ~/notes/a.md "[/]"` followed by `sif context list` raises `rich.errors.MarkupError` (same mechanism as CR-01, verified — cells are markup-parsed), and everyday bracket text like `[WIP] draft` loses `[WIP]` from the display. The context rows also include verbatim legacy spellings, so content stored before this review is equally affected.
-**Fix:** Apply the same treatment as the search snippet column:
+## Narrative Findings (AI reviewer)
+
+### CR-03: `context add` confirmation prints interpolate the user-derived target into Rich markup unescaped — MarkupError rolls back the write, so bracket-named targets can never be added
+
+**File:** `src/sif/cli/commands/context.py:202-203` (update path) and `211-212` (create path); same pattern at `236` (`context remove`)
+
+**Issue:** The success messages interpolate `display_target` raw into markup-parsed `console.print` strings:
 
 ```python
-from rich.markup import escape
-...
-table.add_row(escape(ctx_item.context_type), escape(ctx_item.path), escape(content_text))
+display_target = actual_target if type == "path" else target
+console.print(f"[green]Context updated for {type} '{display_target}'[/green]")
 ```
 
-## Warnings
+For `path`, `display_target` is the normalized absolute path of a user file; for `collection`, it is the user-typed collection name (collection creation applies no name validation, so `[/...]`-bearing names are storable). Rich parses these strings as markup: a target containing an unmatched closing tag — `notes [/3].md` or a Tasklist-marker `[/]`, the exact motivating examples of CR-01/CR-02 — raises `rich.errors.MarkupError`. Both prints sit **inside** `with db.transaction() as conn:`, and `Database.transaction()` (`database.py:60-68`) rolls back on exception, so the crash also discards the write. Verified empirically against rich 14.3.3 with a real index DB and the real CLI:
 
-### WR-01: LLM cache TTL writes naive local-time expiry compared against aware UTC strings — cache broken west of UTC; in-scope test fails
+- `context add path '/tmp/.../notes [/3].md' 'my note'` → exit 1, `MarkupError`, **zero rows persisted** (rolled back). Every retry fails identically — the context is unaddable and unupdatable.
+- A `[WIP]`-style name renders literally on rich 14.3.3 but was silently swallowed on earlier rich versions (the behavior CR-02 was filed against); real-tag names (e.g. `[red]`) consume the brackets.
 
-**File:** `src/sif/database/repositories.py:534-535` (cross-ref: in-scope `tests/unit/database/test_repositories.py:475-476`, `src/sif/cli/main.py:183-189`)
-**Issue:** `LLMCacheRepository.set` computes `expires_at` as `datetime.fromtimestamp(ts).isoformat()` — a naive **local**-time string — while `get`/`clear_expired` and `cleanup_cmd` compare against `datetime.now(timezone.utc).isoformat()` (aware, `+00:00` suffix) via lexicographic SQL string comparison. On any machine west of UTC, a freshly cached entry with a TTL is immediately "expired": `get` returns `None` and `cleanup` purges it. East of UTC, entries linger past expiry and cleanup misses them. Proven: running the in-scope test under `TZ=America/Los_Angeles` fails (`assert repo.get("model", "short-lived") == "future response"` → `None`), while it passes under the local `Asia/Shanghai`. The test suite is therefore timezone-flaky and the TTL feature is incorrect for roughly half the planet.
+`context.py:236` (`Context '{context_id}' removed`) carries the identical defect but is currently unreachable as a crash because context ids are uuid4 strings; if ever reached it would print the traceback **after** the delete committed (exit 1 despite success). This is the same bug class this round closes — the read path (`context list`) was escaped, the write path in the same file was not, and no test covers a markup-bearing target on `add`.
+
 **Fix:**
+
 ```python
-if ttl_seconds:
-    expires_at = datetime.fromtimestamp(
-        datetime.now(timezone.utc).timestamp() + ttl_seconds, timezone.utc
-    ).isoformat()
+display_target = actual_target if type == "path" else target
+console.print(f"[green]Context updated for {type} '{escape(display_target)}'[/green]")
+...
+console.print(f"[green]Context added for {type} '{escape(display_target)}'[/green]")
+...
+console.print(f"[green]Context '{escape(context_id)}' removed[/green]")
 ```
+
+(`escape` is already imported at `context.py:9`; `type` is `click.Choice`-constrained and safe.) Add a regression test mirroring `test_list_renders_markup_bearing_cells_literally`: invoke `context add` with a `[/3]`-bearing path against a real seeded DB and assert exit 0 plus exactly one persisted row.
 
 ### WR-02: Unknown `-c/--collection` names silently resolve to exclude-all — typo returns "No results found" instead of an error
 
-**File:** `src/sif/cli/commands/search.py:214-217` (also 390-392, 528-531)
-**Issue:** In all three commands the explicit-collection loop is `for name in collection: coll = repo.get_by_name(name); if coll: options.collection_ids.append(coll.id)`. Unknown names are skipped without any signal. When none resolve, `collection_ids == []`, which the searcher exclude-all sentinel (`vector.py:47`, `bm25.py:54`) defines as "zero results" — so `sif search foo -c notes-typo` prints "No results found." with exit code 0, indistinguishable from a genuine empty result. This contradicts the project's own convention of raising `click.ClickException` for unknown collection targets (`context add` does exactly that at `context.py:136`).
-**Fix:** Collect unresolved names and fail loudly (or at minimum warn):
+**File:** `src/sif/cli/commands/search.py:214-217` (also `394-397`, `536-539`) — re-reported, unchanged since the prior round
+
+**Issue:** In all three commands the explicit-collection loop is `for name in collection: coll = repo.get_by_name(name); if coll: options.collection_ids.append(coll.id)`. Unknown names are skipped without any signal. When none resolve, `collection_ids == []`, which the searchers define as the exclude-all sentinel — so `sif search foo -c notes-typo` prints "No results found." with exit code 0, indistinguishable from a genuine empty result, contradicting the project's own convention for unknown collection targets (`context add` raises `ClickException` at `context.py:172`).
+
+**Fix:**
 
 ```python
 options.collection_ids = []
@@ -107,9 +98,12 @@ if missing:
 
 ### WR-03: `vsearch` surfaces embedding-dimension mismatch as a raw sqlite3 traceback
 
-**File:** `src/sif/cli/commands/search.py:399-401`
-**Issue:** `results = searcher.search(query_embedding, options)` is not wrapped in any handler. Verified against real sqlite-vec: querying a `FLOAT[384]` table with a mismatched vector raises `sqlite3.OperationalError: Dimension mismatch for query vector for the "embedding" column. Expected 4 dimensions but received 8.` This is reachable via the supported `--model-type` override (`settings.model_copy(update={...})` at line 365 bypasses validation, and `init_schema` checked the *settings* dim, not the override's), or simply after the user changes `SIF_MODEL_NAME` without re-embedding. Every other failure path in this file converts to `click.ClickException` (lines 361-373; the embedder loaders) per the CLAUDE.md convention "CLI commands raise `click.ClickException(str(e))` for user-facing errors" — this one leaks a traceback.
+**File:** `src/sif/cli/commands/search.py:404-405` — re-reported, unchanged since the prior round
+
+**Issue:** `results = searcher.search(query_embedding, options)` is still not wrapped. A dimension mismatch (verified in the prior round against real sqlite-vec: `sqlite3.OperationalError: Dimension mismatch for query vector...`) is reachable via the supported `--model-type` override — `settings.model_copy(update={"model_type": model_type})` at line 369 bypasses settings validation while `init_schema` checked the *settings* dimension — or simply after changing `SIF_MODEL_NAME` without re-embedding. Every other failure path in this command converts to `click.ClickException` (lines 364-377) per the CLAUDE.md convention; this one leaks a traceback.
+
 **Fix:**
+
 ```python
 with db.connection:
     searcher = VectorSearcher(db.connection, len(query_embedding))
@@ -120,69 +114,35 @@ with db.connection:
             f"Vector search failed (embedding/model dimension mismatch?): {e}"
         ) from e
 ```
-(needs `import sqlite3` at module top.)
 
-### WR-04: Self-heal merge skips duplicate collapsing in the exact-match branch, contradicting its documented contract
-
-**File:** `src/sif/cli/commands/context.py:74-77`
-**Issue:** `_self_heal_path_row` documents "Every historical spelling is merged into one canonical row: newest updated_at wins, older duplicates are deleted, and no second row is created." The exact-spelling branch (`existing = repo.get_by_target(typed_target, "path"); if existing: repo.update_target(...); return existing`) re-points the typed row but never deletes other alias rows of the same file — the collapse loop only runs in the normalized-key branch below. With legacy rows under spellings A and B of one file, re-adding via spelling A leaves B in place forever: `context list` shows a stale duplicate, `prune` keeps it (the document exists), and the duplicate is only shadowed (not removed) in search attachment. The just-updated row wins the `ORDER BY updated_at` dict-later-wins race in `attach_path_contexts`, so no wrong content surfaces, but the merge invariant the function promises is violated.
-**Fix:** Collapse duplicates in the exact branch too:
-
-```python
-existing = repo.get_by_target(typed_target, "path")
-if existing:
-    if repo.update_target(existing.id, actual_target):
-        for dup in repo.list_by_type("path"):
-            if dup.id != existing.id and normalize_path(dup.path) == actual_target:
-                repo.delete(dup.id)
-    return existing
-```
-
-## Info
-
-### IN-01: Dimension-mismatch error message points users at `sif cleanup`, which cannot fix the problem
-
-**File:** `src/sif/database/schema.py:337-338`
-**Issue:** The RuntimeError text says "Rebuild the index with 'sif cleanup' or delete the database file." `cleanup_cmd` (`main.py:158-195`) only deletes orphaned chunks/embeddings and expired cache rows — it never recreates or resizes the vec0 table, so the mismatch persists and the user is sent in a circle. Only deleting the DB file (and re-indexing/re-embedding) actually resolves it.
-**Fix:** Reword to actionable guidance, e.g. "Delete the database file (or drop `document_embeddings`) and re-run 'sif index update && sif index embed' with the new model."
-
-### IN-02: Dead `DEFAULT_INDEX_PATH` constant that also disagrees with the real default
-
-**File:** `src/sif/cli/main.py:24`
-**Issue:** `DEFAULT_INDEX_PATH = Path.home() / ".local" / "share" / "sif" / "sif.db"` is referenced nowhere (the actual `--index` default comes from `_get_default_db_path()` → `Settings.get_db_path()`, which on macOS resolves to `~/Library/Application Support/sif/sif.db` per platformdirs). The constant is dead code and, if ever copied, would encode the wrong Linux-only path on other platforms.
-**Fix:** Delete the constant (or define it as `str(get_settings().get_db_path())` if a module-level fallback is ever needed).
-
-### IN-03: Unused module logger in `cli/main.py`
-
-**File:** `src/sif/cli/main.py:20`
-**Issue:** `logger = get_logger(__name__)` is assigned and never used in this module (error paths use `console.print` / `ClickException`). Ruff does not flag it, but it is dead per the module's actual behavior.
-**Fix:** Remove the assignment, or route the `status`/`cleanup` exception paths through `logger.exception(...)` before re-raising as `ClickException` so failures land in the log, not just the terminal.
-
-### IN-04: `test_status_respects_env_var` does not exercise the env var
-
-**File:** `tests/unit/cli/test_status.py:49-79`
-**Issue:** The test passes `env={"SIF_DB_PATH": "/tmp/test-sif.db"}` to CliRunner but immediately patches `sif.cli.main.get_settings` with a MagicMock whose `get_db_path` returns the asserted path — the env var never flows through real Settings, so the test asserts nothing about `SIF_DB_PATH` and is a near-duplicate of `test_status_uses_settings_db_path`. Any regression that stops honoring the env var (e.g. dropping the env prefix) would still pass.
-**Fix:** Use real settings with cache hygiene, as `test_main.py` already models:
-
-```python
-monkeypatch.setenv("SIF_DB_PATH", "/tmp/test-sif.db")
-get_settings.cache_clear()
-try:
-    with patch("sif.cli.main.Database") as mock_db_cls:
-        ...
-        assert str(mock_db_cls.call_args[0][0]) == "/tmp/test-sif.db"
-finally:
-    get_settings.cache_clear()
-```
+(with `import sqlite3` at module top.)
 
 ### IN-05: Output cascade and table rendering triplicated across the three search commands
 
-**File:** `src/sif/cli/commands/search.py:229-303, 403-443, 600-678`
-**Issue:** The ~40-line dispatch (`--files/--json/--csv/--md/--xml`/table) and the Rich table construction are copy-pasted three times with only cosmetic differences (title, snippet column). CR-01 had to be fixed in principle at 9 distinct sites for exactly this reason — the snippet `escape()` exists in two of three tables because the blocks drifted. The redundant `quiet = quiet or ctx.obj.get("quiet", False)` re-read at lines 230, 403, 601 (already computed at 189, 337, 500) is the same drift symptom.
+**File:** `src/sif/cli/commands/search.py:229-303, 407-451, 608-690` — re-reported, unchanged since the prior round
+
+**Issue:** The ~40-line output dispatch (`--files/--json/--csv/--md/--xml`/table) and the Rich table construction are copy-pasted three times. The escape work of this delta had to be applied at many mirrored sites, and CR-03 (context.py confirmation prints missed while `context list` was fixed) is exactly the drift this triplication predicts — the next escaping/format change will again have to land in three (or, with context.py, more) places in lockstep. The duplicated `quiet = quiet or ctx.obj.get("quiet", False)` re-read at lines 230, 407, 609 (already computed at 189, 341, 508) is the same symptom.
+
 **Fix:** Extract a shared `_render_results(results, *, query, title_prefix, mode_flags, has_snippet_column)` helper used by all three commands; the per-command body collapses to option plumbing.
+
+### IN-17: `vsearch_cmd` re-imports `Database`/`CollectionRepository` inside the function, shadowing the module-level imports and splitting the patch surface
+
+**File:** `src/sif/cli/commands/search.py:356-357` (module-level imports at `19-20`)
+
+**Issue:** `from sif.database.database import Database` and `from sif.database.repositories import CollectionRepository` inside `vsearch_cmd` duplicate imports already bound at module scope, so `search_cmd`/`query_cmd` resolve the names from `sif.cli.commands.search`'s namespace while `vsearch_cmd` resolves them from the source modules at call time. The test suite itself has to work around the divergence — `TestDatabaseClosure` documents that vsearch "must be installed on `sif.database.database` (the import source), not on the `sif.cli.commands.search` namespace the other closure tests patch" (`tests/unit/cli/test_search.py:2040-2046`). The genuinely lazy heavy imports (`EmbeddingManager`, `VectorSearcher`, `get_settings`) are fine; these two are pure shadowing.
+
+**Fix:** Delete the two function-local imports and update the vsearch tests to patch the consuming namespace (`sif.cli.commands.search.Database`), making all three commands patch-consistent.
+
+### IN-18: `format_results_md` interpolates field values raw into Markdown structure — backticks/newlines/# corrupt the output
+
+**File:** `src/sif/cli/commands/search.py:100-116`
+
+**Issue:** Titles, paths, collection names, and the query are interpolated directly into Markdown headings, bold labels, and inline code spans. A title or path containing a backtick terminates the code span early; a filename containing a newline (legal on macOS) breaks the list structure; a `#`-bearing query alters the heading level. This phase hardened the sibling machine formats (CSV via `csv.writer`, XML via `xml_escape` + `_xml_sanitize`) but the Markdown formatter received no equivalent treatment, so a `--md` consumer can receive malformed Markdown from otherwise-legal document names.
+
+**Fix:** Route values through a small `md_code()` helper that wraps in double-backtick fences when the value contains a backtick and replaces newlines with spaces (or apply `xml-style` character escaping appropriate to Markdown), at minimum for the `**Path:**`/`**Line Numbers:**` code spans and the `# Search Results:` heading.
 
 ---
 
-_Reviewed: 2026-11-06T06:46:04Z_
+_Reviewed: 2026-11-06T08:53:20Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
