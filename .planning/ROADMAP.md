@@ -187,7 +187,7 @@ Gap closure (2026-11-06, 05-VERIFICATION human-verification item CR-03 / 05-UAT 
 | 3. Embedding & Vector Search | 8/8 | Complete    | 2026-09-04 |
 | 4. Advanced Search Pipeline | 6/6 | Complete    | 2026-09-06 |
 | 5. Agent Context Experience | 12/12 | Complete    | 2026-11-06 |
-| 6. Documentation Audit & Refresh | 7/7 | Complete | 2026-04-18 |
+| 6. Documentation Audit & Refresh | 10/3 | Complete | 2026-04-18 |
 | 7. CLI Claude Skill | 2/2 | Complete | 2026-04-20 |
 | 8. Project rename from DocSift to SIF | 8/8 | Complete | 2026-04-27 |
 | 9. MCP Server Implementation | 6/6 | Complete | 2026-05-12 |
@@ -207,7 +207,7 @@ Gap closure (2026-11-06, 05-VERIFICATION human-verification item CR-03 / 05-UAT 
   6. All code examples in docs are executed or syntax-checked
   7. Docs test infrastructure exists (`tests/test_docs.py`, `make docs-test`, GitHub Actions CI)
 
-**Plans:** 10 plans (7 original + 3 gap closure)
+**Plans:** 10/3 plans complete (7 original + 3 gap closure)
 
 Plans:
 
@@ -221,9 +221,9 @@ Plans:
 
 Gap closure (2026-09-15, UAT-diagnosed gaps G-06-1..G-06-8):
 
-- [ ] 06-08-PLAN.md — Fix docs generators, regenerate reference docs, make CI drift gate blocking (G-06-1, G-06-2, G-06-8)
-- [ ] 06-09-PLAN.md — Hand-sync quickstart/README/models/mcp-server docs to live code (G-06-3, G-06-4, G-06-6, G-06-7)
-- [ ] 06-10-PLAN.md — Rewrite architecture.md against the live tree with genuinely generated Mermaid (G-06-5)
+- [x] 06-08-PLAN.md — Fix docs generators, regenerate reference docs, make CI drift gate blocking (G-06-1, G-06-2, G-06-8)
+- [x] 06-09-PLAN.md — Hand-sync quickstart/README/models/mcp-server docs to live code (G-06-3, G-06-4, G-06-6, G-06-7)
+- [x] 06-10-PLAN.md — Rewrite architecture.md against the live tree with genuinely generated Mermaid (G-06-5)
 
 ### Phase 7: CLI Claude Skill
 

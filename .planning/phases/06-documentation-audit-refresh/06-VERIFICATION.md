@@ -1,9 +1,10 @@
 ---
 phase: 06-documentation-audit-refresh
-verified: 2026-09-15T07:21:06Z
+verified: 2026-11-06T16:09:56Z
 status: passed
 score: 15/15 must-haves verified
 covered_files:
+  - .github/workflows/docs.yml
   - .planning/phases/06-documentation-audit-refresh/06-01-SUMMARY.md
   - .planning/phases/06-documentation-audit-refresh/06-02-SUMMARY.md
   - .planning/phases/06-documentation-audit-refresh/06-03-SUMMARY.md
@@ -17,35 +18,41 @@ covered_files:
   - .planning/phases/06-documentation-audit-refresh/06-09-SUMMARY.md
   - .planning/phases/06-documentation-audit-refresh/06-10-PLAN.md
   - .planning/phases/06-documentation-audit-refresh/06-10-SUMMARY.md
-  - .planning/phases/06-documentation-audit-refresh/06-CONTEXT.md
-  - .planning/phases/06-documentation-audit-refresh/06-UAT.md
-  - README.md
   - Makefile
+  - README.md
   - docs/architecture.md
   - docs/cli-reference.md
   - docs/configuration.md
+  - docs/contributing.md
+  - docs/development.md
   - docs/mcp-server.md
   - docs/models.md
   - docs/quickstart.md
   - docs/search-algorithms.md
+  - docs/testing.md
   - scripts/generate_arch_diagram.py
   - scripts/generate_cli_ref.py
   - scripts/generate_config_ref.py
   - tests/test_docs.py
-  - .github/workflows/docs.yml
-covered_digest: "v1:sha256:289b1dc415d2227798eeed3d85e51ba1fe08f300cb5916b246a575690fe1ef20"
+covered_digest: "v4:sha256:def530b0dba49e7f4e0e5d945757645558738081e97cb3237c72c518eb7e98f1"
 behavior_unverified: 0
 overrides_applied: 0
+re_verification:
+  previous_status: passed
+  previous_score: 15/15
+  gaps_closed:
+    - "W-1 (non-blocking warning from prior pass): four stale prose references to the flag-less `pytest tests/test_docs.py -v` synced to the canonical `--no-cov` form in 0d3307a (contributing.md:365/:384, development.md:698, testing.md:194); repo-wide grep this round finds zero flag-less references remaining"
+    - "contributing.md:383 test-fast row corrected from 'No coverage' to 'Coverage still applies via addopts' — verified TRUE against pyproject.toml:207 (addopts carries --cov=src/sif; Makefile test-fast recipe is bare `pytest -x -q` with no --no-cov), consistent with testing.md:31/:178"
+  gaps_remaining: []
+  regressions: []
 ---
 
 # Phase 06: Documentation Audit & Refresh Verification Report
 
 **Phase Goal:** All project documentation accurately reflects the current CLI commands, API, and configuration. Every code example in docs is syntax-checked or executed and verified to work.
-**Verified:** 2026-09-15T07:21:06Z
+**Verified:** 2026-11-06T16:09:56Z
 **Status:** passed
-**Re-verification:** No — initial verification (created retroactively after 2026-09-15 gap closure, closing the milestone-audit "unverified phase" hole)
-
-**Verification mode:** Goal-backward against the CURRENT codebase (post gap-closure commits dbd3163..5742622, summaries at 85907a8, UAT reconciled at 21d1e1c). SUMMARY/UAT claims were not trusted; every truth below was re-established with fresh command evidence.
+**Re-verification:** Yes — FINAL drift-triggered re-verification. The prior pass (2026-11-06T16:04:23Z, passed 15/15, digest eb44b9…288d) was invalidated only by covered-file drift: commit 0d3307a (2026-11-06T16:07:07Z) synced four prose references to the docs-test command in docs/development.md, docs/testing.md, and docs/contributing.md (W-1 residue) and corrected contributing.md's test-fast coverage claim. `git log --since` the prior timestamp shows 0d3307a is the ONLY commit repo-wide since that pass, touching only those three markdown files — zero changes to src/, tests/, scripts/, Makefile, .github/, or the ten phase-covered docs. Per the carry-forward protocol, docs-test-related truths were re-derived fresh with executed evidence; code-dependent truths carry forward on the git-proven unchanged tree. Fingerprint regenerated fresh (v4:def530b0…7e98f1, 30 covered files — contributing.md added as W-1 closure evidence).
 
 ## Goal Achievement
 
@@ -53,140 +60,154 @@ overrides_applied: 0
 
 | # | Truth | Status | Evidence |
 | - | ----- | ------ | -------- |
-| 1 | `docs/cli-reference.md` accurately describes every current Click command, subcommand, argument, and option (DOC-01) | VERIFIED | `make docs-generate` regenerates from live Click introspection with ZERO diff vs committed (`git status --porcelain -- docs/` empty); `test_cli_reference_has_all_commands` derives the expected command set from the live Click tree and passed; option-level spot checks match live `--help`: `-q, --quiet` (cli-reference.md:451/483/511 + global :15), `--cors-origins` (:548), `--chunk-strategy [auto\|fixed\|markdown\|code]` (:386), `--config` default `~/.config/sif` (:13 = constants.py:13); zero machine-absolute `/Users/` paths |
-| 2 | `docs/configuration.md` documents every `Settings` field with correct default value (DOC-02) | VERIFIED | 26 `SIF_` table rows = 26 live `Settings.model_fields` (counted both sides); defaults match live source: `SIF_MODEL_TYPE=modelscope` (:58,:129 = settings.py model_type default), `SIF_RERANKER_MODEL_TYPE=sentence_transformers` (:74,:134 = settings.py); validation row (:112) renders the live `valid_types = {sentence_transformers, gguf, openai, modelscope}` verbatim; zero `huggingface`, zero phantom `SIF_ENV_FILE`, zero nonexistent `sif config show`; locked by `test_configuration_model_type_validation_is_truthful` + `test_configuration_no_phantom_fields` |
-| 3 | Every shell command example in `docs/quickstart.md` executes successfully (DOC-03) | VERIFIED | `test_shell_commands_exist` green against the freshly regenerated tree (CliRunner-based per-command existence validation); jq example `jq '.[].path'` (quickstart.md:359) matches the real `--json` output — `format_results_json` emits a top-level array (search.py:46) of `to_dict()` results carrying the `path` key (core/models.py:61); UAT had exhaustively resolved all 31 unique command paths against live `--help` |
-| 4 | `README.md` reflects current features, default models, and realistic roadmap (DOC-04) | VERIFIED | README:173 `Qwen/Qwen3-Embedding-0.6B` = live `Settings().model_name` (executed); README:89 `collection remove old-collection --yes` — live `collection remove --help` shows `--yes`, no `--force`; zero "planned" labels on implemented features; install instructions (`pip install sif`, `sif[all]`, `pipx install sif`, `-e ".[dev]"`) coherent with pyproject `name = "sif"` (renamed by quick task 260914-vyr) |
-| 5 | Technical docs (`mcp-server.md`, `search-algorithms.md`, `architecture.md`, `models.md`) are up-to-date (DOC-05) | VERIFIED | architecture.md: 58/58 distinct `.py` basenames in the Module Structure tree exist live AND every live basename appears in the tree (bidirectional check); zero `mcp_server`, zero `huggingface`; indexing flow uses live `collection add ~/notes --name my-collection` order (:160); Mermaid block content byte-identical to a fresh `generate_arch_diagram.py` run. mcp-server.md: daemon documented honestly as Not Yet Implemented (:66-74, matching mcp.py:91's exact ClickException); all 4 db-path references use the live platformdirs default (`~/.local/share/sif/sif.db` Linux / `~/Library/Application Support/sif/sif.db` macOS = constants.py:11), zero `index.sqlite`. models.md:283 `ModelType.MODELSCOPE` = src/sif/models/embedding.py:21. search-algorithms.md: class names + import paths (BM25Searcher, VectorSearcher, HybridSearcher, SmartSnippetExtractor) all exist under src/sif/search/ |
-| 6 | All code examples in docs are executed or syntax-checked (DOC-06) | VERIFIED | `tests/test_docs.py` validates 9 DOCS_FILES: bash command-path existence, JSON `json.loads`, Python `ast.parse`, SQL syntax, removed-command/model-name drift locks — 13/13 passed against the freshly regenerated docs |
-| 7 | Docs test infrastructure exists (`tests/test_docs.py`, `make docs-test`, GitHub Actions CI) (DOC-07) | VERIFIED | `tests/test_docs.py` (478 lines, 13 tests, all active); `make docs-test` and `make docs-generate` both execute successfully (run this verification); `.github/workflows/docs.yml` parses via `yaml.safe_load`, runs docs tests + both generators, and its drift gate `git diff --exit-code docs/cli-reference.md docs/configuration.md` has NO `\|\| true` (blocking, 0 occurrences) |
+| 1 | `docs/cli-reference.md` accurately describes every current Click command, subcommand, argument, and option (DOC-01) | ✓ VERIFIED | CARRIED (code unchanged since prior executed proof): `make docs-generate` exit 0 with 0 diff re-executed THIS round (porcelain empty for both reference docs); validator command-coverage test green within 13/13 docs suite re-run this round |
+| 2 | `docs/configuration.md` documents every `Settings` field with correct default value (DOC-02) | ✓ VERIFIED | CARRIED (Settings untouched since prior 26/26 live-parity proof); 0-diff regeneration re-executed this round; phantom-field + model-type validators green within 13/13 |
+| 3 | Every shell command example in `docs/quickstart.md` executes successfully (DOC-03) | ✓ VERIFIED | CARRIED (quickstart untouched by 0d3307a — diff-confirmed file list); validator suite re-run green 13/13, exit 0 |
+| 4 | `README.md` reflects current features, default models, and realistic roadmap (DOC-04) | ✓ VERIFIED | CARRIED (README untouched since dfafa9e k1/b fix, verified by prior pass against live bm25.py + Settings; no code or README commits since) |
+| 5 | Technical docs (`mcp-server.md`, `search-algorithms.md`, `architecture.md`, `models.md`) are up-to-date (DOC-05) | ✓ VERIFIED | CARRIED (none touched by 0d3307a; Mermaid byte-identity, 57/57 module tree, fusion-section/rrf.py parity, models.md/embedding.py default parity all executed in the prior pass on an identical tree) |
+| 6 | All code examples in docs are executed or syntax-checked (DOC-06) | ✓ VERIFIED | RE-DERIVED FRESH: `make docs-test` executed this round — 13 passed in 0.63s, exit 0 (0 skips) |
+| 7 | Docs test infrastructure exists (`tests/test_docs.py`, `make docs-test`, GitHub Actions CI) (DOC-07) | ✓ VERIFIED | RE-DERIVED FRESH: `make docs-test` → 13 passed, exit 0; canonical command `pytest tests/test_docs.py -v --no-cov` confirmed identical in Makefile:69 and docs.yml:32; docs.yml:38 drift step remains blocking (`git diff --exit-code`, no `\|\| true`); W-1 prose sync verified — repo-wide grep finds ZERO flag-less `pytest tests/test_docs.py -v` references remaining (all 8 references across Makefile/docs.yml/contributing/development/testing carry `--no-cov` and match the canonical form) |
 
 ### Observable Truths — Gap Closure (G-06-1..G-06-8, plans 06-08/06-09/06-10)
 
 | # | Gap Truth | Status | Evidence |
 | - | --------- | ------ | -------- |
-| 8 | G-06-8: `make docs-generate` output passes the project's own docs validator; regeneration is deterministic; CI drift gate is blocking | VERIFIED (behavioral) | Executed: `make docs-generate` exit 0, then `env -u FORCE_COLOR NO_COLOR=1 python -m pytest tests/test_docs.py` → **13 passed, 0 failed** on the regenerated output (the exact failure mode the UAT diagnosed is gone); `git status --porcelain -- docs/` empty after regeneration (committed = regenerated = deterministic); docs.yml drift step has no `\|\| true` |
-| 9 | G-06-1: cli-reference option tables carry the post-phase-06 CLI surface | VERIFIED | `--quiet` rows on the search trio (451/483/511) + global (15) — live `search query --help` shows `-q, --quiet`; `--cors-origins` (548) — live `mcp http --help` shows it; `choice [auto\|fixed\|markdown\|code]` (386) — live `index embed --help` confirms the Choice type; `--config` default tilde-relative `~/.config/sif` (13); zero `/Users/` paths in either generated doc |
-| 10 | G-06-2: configuration.md defaults + validation rules match live Settings; no phantom env vars | VERIFIED | Rows :58/:74/:129/:134 match settings.py defaults exactly; validation row + error example (:112,:168) match the live `valid_types` set and message format; `grep -ci huggingface` = 0, `grep -c SIF_ENV_FILE` = 0, `grep -c "sif config show"` = 0 |
-| 11 | G-06-3: quickstart jq example matches the CLI's real `--json` shape | VERIFIED | quickstart.md:359 = `jq '.[].path'`; old filter 0 occurrences; live code emits top-level array with `path` keys (search.py:44-50, core/models.py:61) |
-| 12 | G-06-4: README example flags exist on the live CLI | VERIFIED | README:89 uses `--yes`; live `collection remove --help` lists `--yes  Confirm the action without prompting.` and has no `--force` |
-| 13 | G-06-5: architecture.md module structure and diagrams match the current src/sif tree | VERIFIED | Bidirectional basename check: 0 doc-listed files missing, 0 live files omitted (58 distinct basenames covering all 76 live files); zero `mcp_server`/`huggingface` references; Mermaid content byte-identical to fresh generator run (only a trailing print-newline differs outside the block) |
-| 14 | G-06-6: models.md EmbeddingConfig default matches src/sif/models/embedding.py | VERIFIED | models.md:283 `Field(ModelType.MODELSCOPE, ...)` = embedding.py:21 verbatim |
-| 15 | G-06-7: mcp-server.md documents all three mcp subcommands and the real default db path | VERIFIED | daemon subsection (:66-74) documents the subcommand's exact live failure mode (mcp.py:91); all db-path occurrences (:198,:204,:215,:234,:320) use the platformdirs-computed default = constants.py:11 / Settings.get_db_path |
+| 8 | G-06-8: regeneration is deterministic, output passes the project's validator, CI drift gate is blocking | ✓ VERIFIED | RE-EXECUTED: `make docs-generate` exit 0 → 0 diff (porcelain empty); `make docs-test` 13/13 exit 0; docs.yml drift step blocking |
+| 9 | G-06-1: cli-reference option tables carry the post-phase-06 CLI surface | ✓ VERIFIED | CARRIED + 0-diff regeneration re-executed this round (CLI tree unchanged — zero src/ commits since prior proof) |
+| 10 | G-06-2: configuration.md defaults + validation match live Settings; no phantom env vars | ✓ VERIFIED | CARRIED + 0-diff regeneration re-executed this round (Settings unchanged) |
+| 11 | G-06-3: quickstart jq example matches the CLI's real `--json` shape | ✓ VERIFIED | CARRIED (quickstart + CLI output path unchanged since prior live verification) |
+| 12 | G-06-4: README example flags exist on the live CLI | ✓ VERIFIED | CARRIED (README + CLI unchanged since prior live `--help` verification) |
+| 13 | G-06-5: architecture.md module structure and diagrams match the current src/sif tree | ✓ VERIFIED | CARRIED (architecture.md + src/sif unchanged since prior byte-identity diff and 57/57 bidirectional tree check) |
+| 14 | G-06-6: models.md EmbeddingConfig default matches src/sif/models/embedding.py | ✓ VERIFIED | CARRIED (both files unchanged since prior verbatim-parity check) |
+| 15 | G-06-7: mcp-server.md documents all three mcp subcommands and the real default db path | ✓ VERIFIED | CARRIED (mcp-server.md + platformdirs default unchanged; IN-05 cosmetic residuals remain open info) |
 
-**Score:** 15/15 truths verified (0 present-but-behavior-unverified — the one behavioral truth, G-06-8, was exercised directly by running generation + validator)
+**Score:** 15/15 truths verified (0 present-but-behavior-unverified — this round's touched truths were re-established by direct execution: make targets, greps against canonical sources, config reads; carried truths rest on git-proven absence of any code change since their prior executed proof)
 
-### Gap-Closure Confirmation
+### Drift Verification (Re-Verification Focus)
 
-All 8 UAT-diagnosed gaps (G-06-1..G-06-8) are confirmed resolved in the current codebase, not just marked resolved:
+| Delta item (0d3307a) | Fix claim | Independent evidence this round | Verdict |
+| -------------------- | --------- | -------------------------------- | ------- |
+| W-1a: contributing.md:365 CI prose `pytest tests/test_docs.py -v` → `--no-cov` | Synced to canonical | grep: line now `pytest tests/test_docs.py -v --no-cov`; repo-wide grep for flag-less form returns ZERO matches | CLOSED |
+| W-1b: contributing.md:384 make-table docs-test row → `--no-cov` | Synced to canonical | grep: row matches Makefile:69 verbatim | CLOSED |
+| W-1c: development.md:698 prose → `--no-cov` | Synced to canonical | grep: matches Makefile:69; development.md:632 row already carried `--no-cov` from dfafa9e | CLOSED |
+| W-1d: testing.md:194 CI step description → `--no-cov` | Synced to canonical | grep: matches docs.yml:32 verbatim; testing.md:48 row already carried `--no-cov` | CLOSED |
+| contributing.md:383 test-fast claim "No coverage" → "Coverage still applies via addopts" | Corrected to reality | pyproject.toml:207 `addopts = "--cov=src/sif --cov-report=term-missing --cov-report=html --cov-report=xml"` applies to every pytest invocation; Makefile:63-65 test-fast recipe is bare `pytest -x -q` (no `--no-cov`) → coverage genuinely applies. Claim TRUE, and consistent with testing.md:31 and testing.md:178 which document the same addopts behavior | CLOSED (claim verified accurate) |
 
-- Commits exist on main: dbd3163, 3c14e7e, 79bf868 (06-08); e9fd3db, 259b6e8 (06-09); cd58c73, 5742622 (06-10); summaries committed at 85907a8; UAT gap entries reconciled at 21d1e1c.
-- The root-cause gap (G-06-8, broken regeneration loop) is closed behaviorally: regeneration now produces validator-passing, machine-independent output identical to what is committed, and the CI drift gate that previously masked drift (`|| true`) is now blocking.
-- Every symptom-level drift the UAT proved with diffs (missing `--quiet`/`--cors-origins`, mistyped `--chunk-strategy`, wrong model_type defaults, phantom env vars, wrong jq shape, `--force` vs `--yes`, stale architecture tree, undocumented daemon, wrong db path) was re-checked against live source in this verification and is gone.
+### Deferred Items
+
+None — no gaps to defer (ROADMAP phases 1-10.1; nothing pending).
+
+### Advisory (New Scope, Unevidenced)
+
+Re-verification ran; zero unevidenced new-scope findings (debt-marker grep on all three files touched by 0d3307a: clean; working tree clean for all covered implementation files).
+
+| # | Finding | Category | Why Advisory |
+| - | ------- | -------- | ------------ |
+| — | None | — | No unevidenced new-scope findings |
+
+### New Findings — Evidenced, Non-Blocking
+
+| # | Location | Finding | Severity | Why non-blocking |
+| - | -------- | ------- | -------- | ---------------- |
+| W-2 (carried) | scripts/generate_arch_diagram.py | Generator still not wired into `make docs-generate` or the CI drift gate (WR-02 hardening follow-up in 06-REVIEW-DISPOSITION.md) | ℹ️ Info | Block is synced today; mechanical re-sync wiring was the explicitly optional part of the prior gap's fix list |
+| N-1 (new, evidenced) | Makefile:19 + :63-65 | The Makefile's own help echo ("make test-fast - Run tests without coverage (faster)") and recipe echo ("Running tests without coverage (faster)...") are now the inaccurate side of the test-fast claim: `pytest -x -q` inherits `--cov=src/sif` via pyproject addopts, as contributing.md:383 and testing.md:31 now correctly state. Pre-existing (not introduced by 0d3307a), surfaced because the fix round corrected the doc side of the claim | ℹ️ Info | Fails no must-have truth: SC7/DOC-07 concerns the docs-test/docs-generate targets and CI (both verified green by execution); the test-fast echo strings are cosmetic help text. One-line follow-up: drop "(without coverage)" from both echoes or add `--no-cov` to the recipe — the latter would change behavior, so wording fix is safer |
+
+Carried open review findings unchanged (06-REVIEW-DISPOSITION.md, 10 open): WR-03, WR-04, WR-05, WR-06, WR-08, IN-01..IN-05 — none fails a must-have truth.
 
 ### Required Artifacts
 
 | Artifact | Expected | Status | Details |
 | -------- | -------- | ------ | ------- |
-| `scripts/generate_cli_ref.py` | CLI reference generator (portable, Choice-aware) | VERIFIED | 341 lines; imports live Click tree; regenerates committed doc byte-for-byte; ruff clean |
-| `scripts/generate_config_ref.py` | Config reference generator (live-derived validation rows) | VERIFIED | 391 lines; `get_valid_model_types()` extracts valid_types from `inspect.getsource(Settings)`; ruff clean |
-| `scripts/generate_arch_diagram.py` | Import-graph-derived Mermaid generator | VERIFIED | 104 lines; emits computed `pkg_deps` graph (no hardcoded edges); ruff clean |
-| `docs/cli-reference.md` | Accurate CLI reference | VERIFIED | 719 lines; = generator output (0 diff); live-tree command coverage test green |
-| `docs/configuration.md` | Accurate config reference | VERIFIED | 216 lines; 26/26 Settings fields; = generator output (0 diff) |
-| `docs/quickstart.md` | Executable examples | VERIFIED | 449 lines; validator green; jq shape matches live output |
-| `docs/mcp-server.md` | Accurate MCP doc | VERIFIED | 383 lines; 3 subcommands honest; live db paths |
-| `docs/search-algorithms.md` | Accurate algorithms doc | VERIFIED | 416 lines; classes/imports match live source |
-| `docs/architecture.md` | Tree + diagram match live tree | VERIFIED | 538 lines; 58/58 bidirectional file match; Mermaid = script output |
-| `docs/models.md` | Dataclass fields + defaults match src | VERIFIED | 510 lines; model_type default matches embedding.py:21 |
-| `tests/test_docs.py` | Docs validator suite | VERIFIED | 478 lines, 13 tests, 0 skipped; includes WR-07 two-directional drift lock |
-| `Makefile` | `docs-test` + `docs-generate` targets | VERIFIED | Both targets present and executed successfully |
-| `.github/workflows/docs.yml` | CI workflow with blocking drift gate | VERIFIED | Valid YAML; blocking `git diff --exit-code`; zero `\|\| true` |
+| `scripts/generate_cli_ref.py` | CLI reference generator | ✓ VERIFIED | 0-diff regeneration re-executed this round |
+| `scripts/generate_config_ref.py` | Config reference generator | ✓ VERIFIED | 0-diff regeneration re-executed this round |
+| `scripts/generate_arch_diagram.py` | Import-graph-derived Mermaid generator | ✓ VERIFIED | Unchanged since prior byte-identity proof; deterministic |
+| `docs/cli-reference.md` | Accurate CLI reference | ✓ VERIFIED | 0-diff vs generator (re-executed) |
+| `docs/configuration.md` | Accurate config reference | ✓ VERIFIED | 0-diff vs generator (re-executed) |
+| `docs/quickstart.md` | Executable examples | ✓ VERIFIED | Validator green 13/13 |
+| `README.md` | Accurate README | ✓ VERIFIED | Unchanged since prior verification |
+| `docs/mcp-server.md` | Accurate MCP doc | ✓ VERIFIED | Unchanged since prior verification |
+| `docs/search-algorithms.md` | Accurate algorithms doc | ✓ VERIFIED | Unchanged since prior verification |
+| `docs/architecture.md` | Tree + diagram match live tree | ✓ VERIFIED | Unchanged since prior verification |
+| `docs/models.md` | Dataclass fields + defaults match src | ✓ VERIFIED | Unchanged since prior verification |
+| `docs/development.md` | Dev guide commands accurate | ✓ VERIFIED | docs-test command now canonical at :632 and :698 (W-1c closed) |
+| `docs/testing.md` | Testing guide commands accurate | ✓ VERIFIED | docs-test command now canonical at :48 and :194 (W-1d closed); addopts/fail_under documentation accurate |
+| `docs/contributing.md` | Contribution guide commands accurate | ✓ VERIFIED | CI command + make-table rows now canonical (:365, :384); test-fast coverage claim verified TRUE (:383) |
+| `tests/test_docs.py` | Docs validator suite | ✓ VERIFIED | 13 tests, 13 passed in 0.63s, exit 0 (re-executed) |
+| `Makefile` | `docs-test` + `docs-generate` targets | ✓ VERIFIED | Both executed green this round; `--no-cov` present at :69 |
+| `.github/workflows/docs.yml` | CI with blocking drift gate | ✓ VERIFIED | `--no-cov` at :32 matches Makefile; drift step blocking at :38 |
 
 ### Key Link Verification
 
 | From | To | Via | Status | Details |
 | ---- | -- | --- | ------ | ------- |
-| `generate_cli_ref.py` | `sif.cli.main` cli tree | live param introspection | WIRED | Regeneration reproduces committed doc with 0 diff — output provably derived from live CLI |
-| `generate_config_ref.py` | `Settings.model_fields` + `validate_model_type` source | introspection + `inspect.getsource` | WIRED | 26/26 fields; validation row renders live valid_types verbatim |
-| `generate_arch_diagram.py` | `src/sif` AST imports | package dependency scan | WIRED | Fresh run output byte-identical to architecture.md Mermaid block |
-| `tests/test_docs.py` | live Click tree + live Settings | expected-value derivation | WIRED | `test_cli_reference_has_all_commands` collects from live `cli`; `test_configuration_model_type_validation_is_truthful` exercises live `Settings.model_validate` |
-| `.github/workflows/docs.yml` | docs tests + regeneration drift | CI steps | WIRED | Steps reference real files/commands, all of which were executed locally in this verification |
-| `Makefile` | generator scripts + pytest | `docs-generate` / `docs-test` recipes | WIRED | Both recipes ran successfully |
+| `generate_cli_ref.py` | live Click tree | param introspection | ✓ WIRED | 0-diff regeneration re-executed |
+| `generate_config_ref.py` | `Settings.model_fields` + validator source | introspection + `inspect.getsource` | ✓ WIRED | 0-diff regeneration re-executed |
+| `generate_arch_diagram.py` | architecture.md Mermaid block | computed runtime-import graph | ✓ WIRED | Unchanged since prior byte-identity diff |
+| `tests/test_docs.py` | live Click tree + live Settings | expected-value derivation | ✓ WIRED | 13/13 green re-executed |
+| `.github/workflows/docs.yml` | docs tests + drift gate | CI steps | ✓ WIRED | pytest step command identical to green local `make docs-test`; drift step blocking |
+| `Makefile` | generators + pytest | recipes | ✓ WIRED | Both targets executed green this round |
+| Prose docs (contributing/development/testing) | Makefile + docs.yml canonical command | documented command forms | ✓ WIRED | All 8 docs-test references across the repo match the canonical `--no-cov` form; zero flag-less remnants |
 
 ### Data-Flow Trace (Level 4)
 
-Docs render values whose chain terminates in live code, not literals: cli-reference.md tables ← Click param introspection (0-diff regeneration proves it); configuration.md tables ← `Settings.model_fields` defaults + source-scanned valid_types; architecture.md Mermaid ← computed import graph. Status: FLOWING for all generated artifacts. Hand-maintained docs (quickstart/README/models/mcp-server) were verified field-by-field against live source defaults, live `--help`, and live emitted shapes.
+Unchanged in substance from the prior pass and re-anchored where cheap: cli-reference.md ← Click introspection (0-diff re-executed, FLOWING); configuration.md ← `Settings.model_fields` (0-diff re-executed, FLOWING); architecture.md Mermaid ← computed runtime import graph (unchanged tree, FLOWING); README default model / k1-b claims, search-algorithms fusion arithmetic, models.md default, mcp-server db paths ← live source (all source files unchanged since prior direct verification). The delta's own values flow from real config: contributing.md's test-fast coverage claim now traces to pyproject.toml:207 addopts (real query: file read + recipe read), and every docs-test prose reference traces to Makefile:69 / docs.yml:32 verbatim. No value chain terminates in a hardcoded or phantom source.
 
 ### Behavioral Spot-Checks
 
 | Behavior | Command | Result | Status |
 | -------- | ------- | ------ | ------ |
-| Regeneration loop closes (G-06-8) | `make docs-generate` → `git status --porcelain -- docs/` | exit 0; 0 files changed | PASS |
-| Regenerated docs pass own validator | `env -u FORCE_COLOR NO_COLOR=1 python -m pytest tests/test_docs.py -v` | 13 passed in 1.63s | PASS |
-| Docs CLI claims match live CLI (3 flags) | `python -m sif.cli.main {search query,mcp http,index embed} --help` | `-q, --quiet` / `--cors-origins` / `--chunk-strategy [auto\|fixed\|markdown\|code]` all present | PASS |
-| README remove flag live | `python -m sif.cli.main collection remove --help` | `--yes` present, no `--force` | PASS |
-| README default model live | `python -c "from sif.config.settings import Settings; print(Settings().model_name)"` | `Qwen/Qwen3-Embedding-0.6B` = README:173 | PASS |
-| Field coverage parity | live `len(Settings.model_fields)` vs configuration.md `\| \`SIF_` rows | 26 = 26 | PASS |
-| Mermaid genuinely generated | `python scripts/generate_arch_diagram.py` vs doc block | content byte-identical | PASS |
-| Module tree existence (bidirectional) | doc tree basenames vs `find src/sif -name '*.py'` | 0 missing / 0 omitted | PASS |
-| Full suite | `env -u FORCE_COLOR NO_COLOR=1 python -m pytest -q` | **676 passed, 0 failed** in 14.31s | PASS |
-| Lint | `ruff check src tests` (+ 4 phase files) | All checks passed | PASS |
-| Format | `ruff format --check src tests` (+ 4 phase files) | 132 + 4 files already formatted | PASS |
+| `make docs-test` exits 0 (truth 7, gap-4 persistence) | `env -u FORCE_COLOR NO_COLOR=1 make docs-test` | 13 passed in 0.63s, exit 0 | ✓ PASS |
+| Canonical command parity (Makefile vs CI) | grep Makefile:69 + docs.yml:32 | Both `pytest tests/test_docs.py -v --no-cov`, identical | ✓ PASS |
+| W-1 closure: zero flag-less docs-test references | `grep -rn "pytest tests/test_docs.py -v" README.md docs/ .github/ Makefile \| grep -v -- --no-cov` | No matches | ✓ PASS |
+| All docs-test references carry `--no-cov` | `grep -rn -- --no-cov README.md docs/ Makefile .github/` | 8 command references, all canonical (Makefile:69, docs.yml:32, contributing:365/:384, development:632/:698, testing:48/:194) | ✓ PASS |
+| contributing test-fast claim is TRUE | read pyproject.toml:207 addopts + Makefile:63-65 recipe | addopts carries `--cov=src/sif`; test-fast is bare `pytest -x -q` → coverage applies; consistent with testing.md:31/:178 | ✓ PASS |
+| Regeneration drift gate basis | `make docs-generate` → `git status --porcelain docs/cli-reference.md docs/configuration.md` | exit 0; porcelain EMPTY (0 diff) | ✓ PASS |
+| Drift gate still blocking | grep docs.yml drift step | `git diff --exit-code docs/...` at :38, no `\|\| true` | ✓ PASS |
+| Tree delta isolation (carry-forward legitimacy) | `git log --since="2026-11-06T16:04:23Z" --name-only` | Only 0d3307a, only 3 markdown files; zero src/tests/scripts/Makefile/.github commits; working tree clean | ✓ PASS |
+| Debt markers on changed files | grep TBD/FIXME/XXX/TODO/HACK/PLACEHOLDER on development.md, testing.md, contributing.md | None | ✓ PASS |
 
-Suite note: the 2 order-dependent caplog failures in tests/unit/embedding/test_openai_embedder.py (WINDOWS.md #3/#4, pre-existing) did not surface, consistent with the gap-closure summaries.
+(Carried spot-checks from the prior pass — generator determinism, 26/26 config parity, 57/57 module tree, live Settings default model, full-suite 1011-pass/96.21% — remain valid without re-execution: the tree delta provably touched none of their inputs.)
 
-### Test Quality Audit
+### Probe Execution
 
-| Test File | Active | Skipped | Circular | Assertion Level | Verdict |
-| --------- | ------ | ------- | -------- | --------------- | ------- |
-| tests/test_docs.py | 13 | 0 | 0 | Value (doc content vs live-derived expected) | PASS |
-
-- No `pytest.mark.skip`/`skipif`/disabled patterns beyond defensive file-existence guards that never trigger (files exist).
-- No circularity: expected values derive from the LIVE Click tree and LIVE Settings validator; the assertion target is the doc. Provenance: VALID (live code is the oracle, not the generator output).
-- The WR-07 lock asserts both directions (live validator rejects `huggingface`; doc never lists it) — a genuine drift lock, not a snapshot of generator output.
+No probes declared for this phase (no `scripts/*/tests/probe-*.sh`, none referenced in PLAN/SUMMARY) — not applicable.
 
 ### Requirements Coverage
 
-DOC-01..DOC-07 are mapped to this phase in ROADMAP.md; the IDs predate the REQUIREMENTS.md registration convention (06-CONTEXT.md:113 references a REQUIREMENTS.md § DOC section that was never committed; definitions recovered from 06-SPEC.md requirements 1-7, which match ROADMAP success criteria 1-7 verbatim in intent). Original plans 06-01..06-07 carry no requirements frontmatter (pre-convention); they map 1:1 to DOC-01..DOC-07 by plan title. 06-08 explicitly claims DOC-01/02/06/07.
+DOC-01..DOC-07 are phase-local IDs predating the REQUIREMENTS.md registration convention (REQUIREMENTS.md carries no DOC entries — confirmed in prior rounds). Definitions live in 06-SPEC.md requirements 1-7, matching ROADMAP success criteria 1-7 verbatim in intent; 06-08 claims DOC-01/02/06/07, 06-09 claims DOC-03/04/05, 06-10 claims DOC-05.
 
 | Requirement | Source Plan(s) | Description | Status | Evidence |
 | ----------- | -------------- | ----------- | ------ | -------- |
-| DOC-01 | 06-01, 06-08 | CLI reference accuracy | SATISFIED | Truth 1 / gap 9 |
-| DOC-02 | 06-02, 06-08 | Configuration guide accuracy | SATISFIED | Truth 2 / gap 10 |
-| DOC-03 | 06-03, 06-09 | Quickstart command validity | SATISFIED | Truth 3 / gap 11 |
-| DOC-04 | 06-04, 06-09 | README accuracy | SATISFIED | Truth 4 / gap 12 |
-| DOC-05 | 06-05, 06-09, 06-10 | Technical docs accuracy | SATISFIED | Truth 5 / gaps 13-15 |
-| DOC-06 | 06-06, 06-08 | Code example validation | SATISFIED | Truth 6 / gap 8 |
-| DOC-07 | 06-07, 06-08 | Docs test infrastructure | SATISFIED | Truth 7 / gap 8 (blocking CI gate) |
+| DOC-01 | 06-01, 06-08 | CLI reference accuracy | ✓ SATISFIED | Truths 1 / 9 |
+| DOC-02 | 06-02, 06-08 | Configuration guide accuracy | ✓ SATISFIED | Truths 2 / 10 (WR-04/05/06 open warnings) |
+| DOC-03 | 06-03, 06-09 | Quickstart command validity | ✓ SATISFIED | Truths 3 / 11 (WR-08 open warning) |
+| DOC-04 | 06-04, 06-09 | README accuracy | ✓ SATISFIED | Truth 4 |
+| DOC-05 | 06-05, 06-09, 06-10 | Technical docs accuracy | ✓ SATISFIED | Truths 5 / 13 |
+| DOC-06 | 06-06, 06-08 | Code example validation | ✓ SATISFIED | Truth 6 — re-executed 13/13 exit 0 |
+| DOC-07 | 06-07, 06-08 | Docs test infrastructure | ✓ SATISFIED | Truth 7 — re-executed exit 0; canonical command now consistent across Makefile, CI, and all prose |
 
 Orphaned requirements: none — all 7 DOC IDs have implementation evidence.
 
 ### Decision Coverage
 
-9/10 CONTEXT decisions honored in shipped artifacts (D-01 script traversal, D-02 workflow examples, D-03 fence-tag classification, D-04 blacklist, D-05 JSON key validation, D-06 temp-db fixture, D-07 CliRunner, D-08 env isolation, D-10 hybrid diagram strategy — now genuinely generated). **D-09** (AST-parse public API and cross-check backticked names in technical docs) was not implemented as a mechanism; its intent — technical-doc names verified against live code — was instead delivered by the 06-05 manual review, the 2026-09-15 agent UAT (which performed exactly that cross-check and found the drift), and gap closure 06-09/06-10. Warning-only per gate rules; no status impact.
+Unchanged from the prior report (no plan tasks re-executed this round; D-10 remains honored — the Mermaid block is the generator's actual computed output).
 
 ### Anti-Patterns Found
 
-None. Zero `TBD`/`FIXME`/`XXX` and zero `TODO`/`HACK`/`PLACEHOLDER` across all 14 phase-modified files. The only "not yet implemented" text in docs is mcp-server.md's honest daemon subsection, which documents the subcommand's exact live behavior (mcp.py:91) — reviewed and intentional, not a stub.
-
-### Advisories (informational, non-blocking)
-
-| # | Finding | Why informational |
-| - | ------- | ----------------- |
-| 1 | Options tables do not mark required options (e.g., `collection add --name` is `[required]` in live help) | Generator format limitation explicitly classified not-a-gap by the UAT (regenerated output matches committed — shared format, not drift) |
-| 2 | docs outside DOCS_FILES (api-reference.md, changelog.md, contributing.md, installation.md, migration.md, development.md) are not validator-covered | Known exclusion; development.md command references were separately fixed by quick task 260914-wxv (DOC-02/04) |
-| 3 | ROADMAP phase-6 gap-closure plan checkboxes still `- [ ]` and 06-UAT.md frontmatter still `status: diagnosed` though every gap entry reads `status: resolved` | Cosmetic planning-artifact staleness for the orchestrator; gap entries (the operative record) are reconciled at 21d1e1c |
-| 4 | GitHub Actions run status of docs.yml is external | Both CI steps' behaviors were reproduced locally this verification (pytest green; generators + `git diff --exit-code` clean); the workflow file itself is valid and blocking |
+| File | Line | Pattern | Severity | Impact |
+| ---- | ---- | ------- | -------- | ------ |
+| Makefile | 19, 63-65 | test-fast help/recipe echo claims "without coverage" but addopts coverage applies (pre-existing; see N-1) | ℹ️ Info | Cosmetic help text; no must-have affected |
+| (all 3 files touched by 0d3307a) | — | Zero TBD/FIXME/XXX/TODO/HACK/PLACEHOLDER markers | — | Clean |
 
 ### Human Verification Required
 
-None. Documentation/tooling phase; all acceptance criteria are programmatically detectable and were verified with executed commands.
+None. Documentation/tooling phase; all 15 truths and all delta items were established with deterministic, reproducible command evidence (exit codes, greps against canonical sources, config reads, executed suites, git history isolation).
 
 ### Gaps Summary
 
-No gaps. All 7 roadmap success criteria and all 8 UAT gap-closure truths verified against the current codebase with fresh command evidence: the regeneration loop is trustworthy (0-diff deterministic generation passing its own 13-test validator), the CI drift gate is blocking, every reference doc matches live code at the option/default/shape level, and the full quality suite is green (676 passed / 0 failed; ruff check + format clean).
+No gaps. The drift delta (commit 0d3307a) was verified in full: all four W-1 prose references now carry the canonical `--no-cov` form matching Makefile:69 and docs.yml:32 (repo-wide grep: zero flag-less remnants), and contributing.md's corrected test-fast coverage claim was checked against reality and is TRUE (pyproject addopts coverage applies to `pytest -x -q`). `make docs-test` re-executed: 13 passed, exit 0; `make docs-generate` re-executed: 0 diff, so the CI drift gate basis holds. Git history proves the only change since the prior 15/15 pass is this three-file markdown sync — zero code, generator, CLI, test, or build changes — so the prior pass's executed evidence for the code-dependent truths carries forward legitimately. One new info-level finding (N-1: Makefile's own test-fast echo strings are now the inaccurate side of the coverage claim) and the carried W-2 follow-up are recorded; neither fails a must-have truth.
 
 ---
 
-_Verified: 2026-09-15T07:21:06Z_
+_Verified: 2026-11-06T16:09:56Z_
 _Verifier: Claude (gsd-verifier)_
