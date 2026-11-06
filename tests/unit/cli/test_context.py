@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -18,6 +19,8 @@ from sif.cli.commands.context import (
     context_remove,
 )
 from sif.core.models import Collection, PathContext
+from sif.database.database import Database
+from sif.database.repositories import ContextRepository
 from sif.utils.paths import normalize_path
 
 
@@ -503,6 +506,107 @@ class TestContextAddNormalizedPaths:
         global_stored = mock_ctx_repo.create.call_args_list[1][0][0]
         assert global_stored.path == "global"
         assert global_stored.context_type == "global"
+
+
+class TestContextAddMultiAliasSelfHeal:
+    """Real-SQL regression: multi-alias legacy states collapse to one row (05-10, truth 21).
+
+    05-VERIFICATION gap 1: two reachable legacy states left a duplicate
+    same-file row surviving EVERY re-add — (a) rows under BOTH an alias and
+    the canonical spelling (the ``context_add`` upsert pre-check
+    short-circuits before ``_self_heal_path_row`` runs) and (b) rows under
+    TWO alias spellings (the exact-match branch re-pointed only the typed
+    row and never ran the duplicate-collapse loop). Every test seeds a real
+    database file through the production DDL and repository code, invokes
+    the real CLI against that file (no mocks on Database or
+    ContextRepository), and asserts the exactly-one-row end state.
+    """
+
+    def _seed(self, db_path: Path, spellings: list[str]) -> None:
+        """Create a real index DB and seed one legacy path row per spelling.
+
+        ``ContextRepository.create`` stores ``context.path`` verbatim into
+        ``contexts.target_id`` — exactly how a legacy row looks.
+        """
+        db = Database(db_path)
+        db.init_schema()
+        with db.transaction() as conn:
+            repo = ContextRepository(conn)
+            for spelling in spellings:
+                repo.create(
+                    PathContext(path=spelling, context="old text", context_type="path")
+                )
+        db.close()
+
+    def _path_rows(self, db_path: Path) -> list[tuple[str, str]]:
+        """Read persisted path contexts independently of the command's repo instance."""
+        with sqlite3.connect(db_path) as conn:
+            rows = conn.execute(
+                "SELECT target_id, content FROM contexts WHERE context_type = 'path'"
+            ).fetchall()
+        return [(row[0], row[1]) for row in rows]
+
+    def test_readd_via_alias_with_alias_and_canonical_legacy_rows_ends_with_one_row(
+        self, tmp_path
+    ) -> None:
+        """Repro (a): alias + canonical legacy rows collapse to one row on re-add."""
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        doc = vault / "doc.md"
+        doc.write_text("# Doc\n", encoding="utf-8")
+        alias_dir = tmp_path / "alias"
+        alias_dir.symlink_to(vault)
+        alias = str(alias_dir / "doc.md")
+        canonical = normalize_path(str(doc))
+        assert normalize_path(alias) == canonical
+
+        db_path = tmp_path / "index.db"
+        self._seed(db_path, [alias, canonical])
+
+        result = CliRunner().invoke(
+            context_add,
+            ["path", alias, "new text"],
+            obj={"index_path": db_path},
+        )
+
+        assert result.exit_code == 0
+        assert "Context updated" in result.output
+        rows = self._path_rows(db_path)
+        assert len(rows) == 1
+        assert rows[0] == (canonical, "new text")
+
+    def test_readd_via_alias_with_two_alias_legacy_rows_ends_with_one_row(
+        self, tmp_path
+    ) -> None:
+        """Repro (b): two alias legacy rows collapse to one row on re-add."""
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        doc = vault / "doc.md"
+        doc.write_text("# Doc\n", encoding="utf-8")
+        alias1_dir = tmp_path / "alias1"
+        alias1_dir.symlink_to(vault)
+        alias2_dir = tmp_path / "alias2"
+        alias2_dir.symlink_to(vault)
+        alias1 = str(alias1_dir / "doc.md")
+        alias2 = str(alias2_dir / "doc.md")
+        canonical = normalize_path(str(doc))
+        assert normalize_path(alias1) == canonical
+        assert normalize_path(alias2) == canonical
+
+        db_path = tmp_path / "index.db"
+        self._seed(db_path, [alias1, alias2])
+
+        result = CliRunner().invoke(
+            context_add,
+            ["path", alias1, "new text"],
+            obj={"index_path": db_path},
+        )
+
+        assert result.exit_code == 0
+        assert "Context updated" in result.output
+        rows = self._path_rows(db_path)
+        assert len(rows) == 1
+        assert rows[0] == (canonical, "new text")
 
 
 class TestContextList:
