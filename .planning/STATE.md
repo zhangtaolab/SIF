@@ -4,7 +4,7 @@ milestone: v1.0
 current_plan: Not started
 status: executing
 stopped_at: Phase 10.1 complete — all phases complete
-last_updated: "2026-11-06T13:26:52.486Z"
+last_updated: "2026-11-06T14:05:00.000Z"
 state_head: e11f28a3805fb619a2e3577ab39ae3412c7ec905
 progress:
   total_phases: 11
@@ -205,6 +205,7 @@ Phase 10-01 deleted the approved dead-code cluster; 10-02/10-03 expanded CLI and
 | 261105-g1u | Fix 05-REVIEW WR-03/WR-09: guard context add/remove against missing index (no silent empty-DB creation); validate reranker_model_type + ClickException surface for bad SIF_RERANKER_MODEL_TYPE | 2026-11-05 | b8a81e1 | [261105-g1u-fix-05-review-wr-03-and-wr-09-context-ad](./quick/261105-g1u-fix-05-review-wr-03-and-wr-09-context-ad/) |
 | 261105-wbj | 修复 embed 完整性检查 O(N²) 性能 bug:vector.py 新增 get_all_embedded_chunk_ids() 批量预取,index.py 主循环改查 dict(vec0 全表扫 4 万次 → 一次全量) | 2026-11-05 | 16b7b25 | [261105-wbj-embed-o-n-bug-src-sif-search-vector-py-2](./quick/261105-wbj-embed-o-n-bug-src-sif-search-vector-py-2/) |
 | 261105-wwz | 排查搜索路径 vec0 metadata 过滤同类问题:结论无需改动——KNN 查询无 metadata WHERE,EQP 实测虚拟表扫一次且最外层,计时平坦(0.24-0.27ms),每用户查询调用一次;仅加 7 行审计注释(vector.py:79-86) | 2026-11-06 | 751a0c3 | [261105-wwz-vec0-metadata-src-sif-search-vector-py-8](./quick/261105-wwz-vec0-metadata-src-sif-search-vector-py-8/) |
+| 261106-u7d | Typing debt batch 4: clear all 17 ledgered ty diagnostics (assert-narrowing, Protocol, cast; mcp.py stderr console replaces latent Console.print TypeError) + drop residual mypy refs — ty sole type checker; 17→0, suite 1011 @ 96.21% | 2026-11-06 | 3fc5908 | [261106-u7d-typing-debt-batch-4-clear-all-17-ledgere](./quick/261106-u7d-typing-debt-batch-4-clear-all-17-ledgere/) |
 
 ### Overrides
 
@@ -212,9 +213,9 @@ Phase 10-01 deleted the approved dead-code cluster; 10-02/10-03 expanded CLI and
 
 ## Session Continuity
 
-**Last session:** 2026-11-06 (phase 10.1 stale-verification regeneration)
-**Stopped at:** Phase 10.1 re-verified (16/16, fresh fingerprint) — milestone v1.0 fully complete, ready for `/gsd-complete-milestone v1.0`
+**Last session:** 2026-11-06 (quick task 261106-u7d)
+**Stopped at:** Quick task 261106-u7d complete — ty typing-debt pass cleared all 17 ledgered diagnostics (ty exits 0) and dropped residual mypy references; full suite green (ruff/format clean, pytest 1011 @ 96.21%, mypy grep empty)
 **Resume file:** None
 
-- **Last action:** `/gsd-execute-phase 10.1` — all gates green (validation 10/10 map 0 gaps, security 12/12 closed, UI null-surface, code review 0c/0w/4i ledgered, regression 1011 passed @ 96.22%), verifier regenerated VERIFICATION.md with fresh fingerprint.
-- **Next expected action:** `/gsd-complete-milestone v1.0` — archive milestone and prepare for next version.
+- **Last action:** Quick task 261106-u7d (typing debt batch 4): commits e0d9596 + 3fc5908; 10.1 deferred-items.md item 1 flipped to resolved.
+- **Next expected action:** `/gsd-complete-milestone v1.0` — all quality gates green (ty, ruff, format, pytest).
