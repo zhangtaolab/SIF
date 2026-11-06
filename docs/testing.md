@@ -30,11 +30,7 @@ Pytest is configured in the `[tool.pytest.ini_options]` section of `pyproject.to
 
 Because coverage flags are in `addopts`, they apply to every `pytest` invocation — including `make test-fast` (see below). Append `--no-cov` to any command to skip coverage.
 
-**Async tests:** the MCP tests in `tests/unit/mcp/` use `@pytest.mark.asyncio` and require the `pytest-asyncio` plugin. The plugin is not currently listed in the `dev` extras, so if those tests fail with "async def functions are not natively supported", install it explicitly:
-
-```bash
-pip install pytest-asyncio
-```
+**Async tests:** the MCP tests in `tests/unit/mcp/` use `@pytest.mark.asyncio` and require the `pytest-asyncio` plugin, which is included in the `dev` extras (`pip install -e ".[dev]"` covers it).
 
 ## Running tests
 
