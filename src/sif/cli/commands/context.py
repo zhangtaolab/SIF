@@ -118,54 +118,54 @@ def context_add(
         console.print("[yellow]No index found.[/yellow]")
         return
 
-    db = Database(index_path)
-    db.init_schema()
+    with Database(index_path) as db:
+        db.init_schema()
 
-    with db.transaction() as conn:
-        repo = ContextRepository(conn)
+        with db.transaction() as conn:
+            repo = ContextRepository(conn)
 
-        # Resolve target based on type
-        actual_target = target
-        if type == "collection":
-            coll_repo = CollectionRepository(conn)
-            coll = coll_repo.get_by_name(target)
-            if not coll:
-                # Fallback: treat target as collection ID
-                coll = coll_repo.get_by_id(target)
-            if not coll:
-                raise click.ClickException(f"Collection '{target}' not found")
-            actual_target = coll.id
-        elif type == "global":
-            actual_target = "global"
-        elif type == "path":
-            # Canonical form: the same normalize_path used by search context
-            # attachment and prune, so the stored target byte-matches
-            # documents.path regardless of ~ or symlink-alias spelling.
-            # Clean ClickException for an un-expandable "~user" typo
-            # (REVIEW WR-01).
-            actual_target = _resolve_path_target(target)
+            # Resolve target based on type
+            actual_target = target
+            if type == "collection":
+                coll_repo = CollectionRepository(conn)
+                coll = coll_repo.get_by_name(target)
+                if not coll:
+                    # Fallback: treat target as collection ID
+                    coll = coll_repo.get_by_id(target)
+                if not coll:
+                    raise click.ClickException(f"Collection '{target}' not found")
+                actual_target = coll.id
+            elif type == "global":
+                actual_target = "global"
+            elif type == "path":
+                # Canonical form: the same normalize_path used by search context
+                # attachment and prune, so the stored target byte-matches
+                # documents.path regardless of ~ or symlink-alias spelling.
+                # Clean ClickException for an un-expandable "~user" typo
+                # (REVIEW WR-01).
+                actual_target = _resolve_path_target(target)
 
-        # Upsert: update if exists for this target+type, else create
-        existing = repo.get_by_target(actual_target, type)
-        if not existing and type == "path":
-            # Re-point a legacy row holding any historical spelling of the
-            # same file instead of creating a duplicate (self-heal merge,
-            # REVIEW WR-02).
-            existing = _self_heal_path_row(repo, target, actual_target)
-        if existing:
-            existing.context = content
-            repo.update(existing)
-            display_target = actual_target if type == "path" else target
-            console.print(f"[green]Context updated for {type} '{display_target}'[/green]")
-        else:
-            path_context = PathContext(
-                path=actual_target,
-                context=content,
-                context_type=type,
-            )
-            repo.create(path_context)
-            display_target = actual_target if type == "path" else target
-            console.print(f"[green]Context added for {type} '{display_target}'[/green]")
+            # Upsert: update if exists for this target+type, else create
+            existing = repo.get_by_target(actual_target, type)
+            if not existing and type == "path":
+                # Re-point a legacy row holding any historical spelling of the
+                # same file instead of creating a duplicate (self-heal merge,
+                # REVIEW WR-02).
+                existing = _self_heal_path_row(repo, target, actual_target)
+            if existing:
+                existing.context = content
+                repo.update(existing)
+                display_target = actual_target if type == "path" else target
+                console.print(f"[green]Context updated for {type} '{display_target}'[/green]")
+            else:
+                path_context = PathContext(
+                    path=actual_target,
+                    context=content,
+                    context_type=type,
+                )
+                repo.create(path_context)
+                display_target = actual_target if type == "path" else target
+                console.print(f"[green]Context added for {type} '{display_target}'[/green]")
 
 
 @context_group.command("remove")
@@ -180,16 +180,16 @@ def context_remove(ctx: click.Context, context_id: str) -> None:
         console.print("[yellow]No index found.[/yellow]")
         return
 
-    db = Database(index_path)
-    db.init_schema()
+    with Database(index_path) as db:
+        db.init_schema()
 
-    with db.transaction() as conn:
-        repo = ContextRepository(conn)
-        deleted = repo.delete(context_id)
-        if not deleted:
-            raise click.ClickException(f"No context found with ID '{context_id}'")
+        with db.transaction() as conn:
+            repo = ContextRepository(conn)
+            deleted = repo.delete(context_id)
+            if not deleted:
+                raise click.ClickException(f"No context found with ID '{context_id}'")
 
-    console.print(f"[green]Context '{context_id}' removed[/green]")
+        console.print(f"[green]Context '{context_id}' removed[/green]")
 
 
 @context_group.command("list")
@@ -208,30 +208,30 @@ def context_list(ctx: click.Context, context_type: str | None) -> None:
         console.print("[yellow]No index found.[/yellow]")
         return
 
-    db = Database(index_path)
-    db.init_schema()
+    with Database(index_path) as db:
+        db.init_schema()
 
-    with db.connection:
-        repo = ContextRepository(db.connection)
-        contexts = repo.list_by_type(context_type) if context_type else repo.list_all()
+        with db.connection:
+            repo = ContextRepository(db.connection)
+            contexts = repo.list_by_type(context_type) if context_type else repo.list_all()
 
-    if not contexts:
-        console.print("[yellow]No contexts found.[/yellow]")
-        return
+        if not contexts:
+            console.print("[yellow]No contexts found.[/yellow]")
+            return
 
-    table = Table(title="Contexts")
-    table.add_column("Type", style="magenta")
-    table.add_column("Target", style="cyan")
-    table.add_column("Content", style="green")
+        table = Table(title="Contexts")
+        table.add_column("Type", style="magenta")
+        table.add_column("Target", style="cyan")
+        table.add_column("Content", style="green")
 
-    for ctx_item in contexts:
-        # Truncate long contexts for display
-        content_text = ctx_item.context
-        if len(content_text) > _CONTEXT_TRUNCATE_LEN:
-            content_text = content_text[: _CONTEXT_TRUNCATE_LEN - 3] + "..."
-        table.add_row(ctx_item.context_type, ctx_item.path, content_text)
+        for ctx_item in contexts:
+            # Truncate long contexts for display
+            content_text = ctx_item.context
+            if len(content_text) > _CONTEXT_TRUNCATE_LEN:
+                content_text = content_text[: _CONTEXT_TRUNCATE_LEN - 3] + "..."
+            table.add_row(ctx_item.context_type, ctx_item.path, content_text)
 
-    console.print(table)
+        console.print(table)
 
 
 @context_group.command("prune")
@@ -244,14 +244,14 @@ def context_prune(ctx: click.Context) -> None:
         console.print("[yellow]No index found.[/yellow]")
         return
 
-    db = Database(index_path)
-    db.init_schema()
+    with Database(index_path) as db:
+        db.init_schema()
 
-    with db.transaction() as conn:
-        repo = ContextRepository(conn)
-        count = repo.delete_orphaned_paths()
+        with db.transaction() as conn:
+            repo = ContextRepository(conn)
+            count = repo.delete_orphaned_paths()
 
-    console.print(f"[green]Pruned {count} orphaned path context(s).[/green]")
+        console.print(f"[green]Pruned {count} orphaned path context(s).[/green]")
 
 
 # Register 'rm' as an alias for 'remove'
