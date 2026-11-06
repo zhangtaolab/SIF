@@ -108,3 +108,11 @@ Audit method: register authored at plan time (all 9 plans contained `<threat_mod
 | Threats found | 23 |
 | Closed | 23 |
 | Open | 0 |
+
+## Security Audit 2026-11-06
+
+| Metric | Count |
+|---|---|
+| Threats found | 15 |
+| Closed | 15 |
+| Open | 0 |
