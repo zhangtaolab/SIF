@@ -14,6 +14,7 @@ from click.testing import CliRunner
 from pydantic import ValidationError
 
 from sif.cli.commands.search import (
+    _xml_sanitize,
     format_results_md,
     format_results_xml,
     query_cmd,
@@ -1516,6 +1517,73 @@ class TestSearchOutputBranches:
         assert root.findtext("result/title") == "知识 <笔记> & notes"
         assert root.findtext("result/path") == "/notes/知识 & more.md"
         assert root.findtext("result/collection") == "研究 & notes"
+
+    def test_format_results_xml_strips_forbidden_control_characters(self) -> None:
+        row = SimpleNamespace(
+            rank=1,
+            score=0.5,
+            title="ti\x0btle\x00",
+            path="/pa\x0cth\x1f",
+            collection_name="co\x0bl\x00ection",
+            line_numbers="1\x0b2\x003",
+        )
+
+        output = format_results_xml([row], "qu\x0bery\x00")
+
+        root = ET.fromstring(output)
+        for code_point in ("\x0b", "\x00", "\x1f", "\x0c"):
+            assert code_point not in output
+        assert root.attrib["query"] == "query"
+        assert root.findtext("result/title") == "title"
+        assert root.findtext("result/path") == "/path"
+        assert root.findtext("result/collection") == "colection"
+        assert root.findtext("result/line_numbers") == "123"
+
+    def test_format_results_xml_strips_dict_row_control_characters(self) -> None:
+        row = {
+            "rank": 2,
+            "score": 0.25,
+            "title": "dt\x0b",
+            "path": "/d\x00",
+            "collection_name": "dc\x1f",
+            "line_numbers": "4\x0c5",
+        }
+
+        output = format_results_xml([row], "q\x0b")
+
+        ET.fromstring(output)
+        for code_point in ("\x0b", "\x00", "\x1f", "\x0c"):
+            assert code_point not in output
+
+    @pytest.mark.parametrize(
+        "forbidden",
+        ["\x00", "\x08", "\x0b", "\x0c", "\x0e", "\x1f", "\ufffe", "\uffff", "\ud800"],
+    )
+    def test_xml_sanitize_removes_forbidden_code_points(self, forbidden: str) -> None:
+        assert _xml_sanitize(f"a{forbidden}b") == "ab"
+
+    @pytest.mark.parametrize("legal", ["\x09", "\x0a", "\x0d", "\x7f", "知识检索"])
+    def test_xml_sanitize_preserves_legal_code_points(self, legal: str) -> None:
+        assert _xml_sanitize(f"a{legal}b") == f"a{legal}b"
+
+    @pytest.mark.parametrize("command", ["search", "query"])
+    def test_xml_strips_forbidden_control_characters(self, command: str, tmp_path: Path) -> None:
+        row = self._result(
+            title="bad\x0btitle\x00",
+            path="/notes/bad\x0bpath\x00.md",
+            collection_name="co\x0bllection\x00",
+        )
+        if command == "search":
+            result, _ = self._invoke_bm25(tmp_path, ["bad\x0bquery", "--xml"], [row])
+        else:
+            result, _ = self._invoke_query(tmp_path, ["bad\x0bquery", "--xml"], [row])
+
+        assert result.exit_code == 0
+        root = ET.fromstring(result.output)
+        assert "\x0b" not in result.output
+        assert "\x00" not in result.output
+        assert root.attrib["query"] == "badquery"
+        assert root.findtext("result/title") == "badtitle"
 
     @pytest.mark.parametrize("command", ["search", "query"])
     def test_files_output_is_one_path_per_line(self, command: str, tmp_path: Path) -> None:
