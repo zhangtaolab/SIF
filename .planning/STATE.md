@@ -23,7 +23,7 @@ current_phase_name: "Address tech debt: path normalization + review findings CR-
 
 - **Name:** DocSift
 - **Core Value:** 用户可以在自己的笔记和文档库中，用自然语言快速、准确地找到需要的信息——无论关键词是否匹配。
-- **Current Focus:** Milestone v1.0 roadmap-complete (all phases); Phase 10 verification regenerated 2026-11-06 — phase 10.1 verification refresh pending, then milestone close.
+- **Current Focus:** Milestone v1.0 complete (all 11 phases; 10.1 verification regenerated 2026-11-06, 16/16, fresh fingerprint) — ready for milestone close/archive.
 - **Tech Stack:** Python 3.10+, SQLite (FTS5 + sqlite-vec), Click, Pydantic, sentence-transformers, llama-cpp-python
 
 ## Current Position
@@ -33,7 +33,7 @@ Total Plans in Phase: 4
 
 - **Phases:** 11/11 complete (01–10.1); milestone v1.0 roadmap-complete
 - **Plans:** 68/68 complete
-- **Status:** Phase 10 re-verified 2026-11-06 (stale-verification regeneration, fresh fingerprint, 35/35); phase 10.1 verification stale — regenerate before milestone close
+- **Status:** Phase 10.1 re-verified 2026-11-06 (stale-verification regeneration, fresh fingerprint, 16/16; gates: validation 10/10, security 12/12 closed, review 0c/0w/4i, regression 1011 @ 96.22%) — milestone v1.0 ready to close
 - **Progress Bar:** `[████████████████████] 68/68 plans`
 - **Coverage baseline:** 96.22% (5375 statements, 203 missed); 1011 passed, 0 failed
 
@@ -179,6 +179,7 @@ Phase 10-01 deleted the approved dead-code cluster; 10-02/10-03 expanded CLI and
 - [x] Phase 7: CLI Claude Skill — sif-search and sif-get skills created, symlinked, and committed
 - [ ] (Backlog) Phase 8: LLM-based query expansion — model tested (Qwen3.5-2B), awaiting v1.0 ship
 - [ ] (Backlog) Phase 10 regen code review: 10 warnings open (WR-01..WR-10, 0 critical) — ledger in 10-REVIEW-DISPOSITION.md; candidates for a future debt phase (precedent: 10.1 arose from 10's original review)
+- [ ] (Backlog) Phase 10.1 regen code review: 4 info findings open (IN-10..IN-13: stale test-count claims in docs/testing.md, invalid bare `sif search` in DESIGN.md, discarded `_collapse_duplicate_path_rows` return, duplicated test helpers) — ledger in 10.1-REVIEW-DISPOSITION.md
 
 ### Blockers
 
@@ -211,9 +212,9 @@ Phase 10-01 deleted the approved dead-code cluster; 10-02/10-03 expanded CLI and
 
 ## Session Continuity
 
-**Last session:** 2026-11-06 (phase 10 gates + regeneration)
-**Stopped at:** Phase 10.1 complete — all phases complete
+**Last session:** 2026-11-06 (phase 10.1 stale-verification regeneration)
+**Stopped at:** Phase 10.1 re-verified (16/16, fresh fingerprint) — milestone v1.0 fully complete, ready for `/gsd-complete-milestone v1.0`
 **Resume file:** None
 
-- **Last action:** `/gsd-execute-phase 10` — all gates green (validation 0 gaps / 17-17 map, code review 0c/10w ledgered, regression 1011 passed @ 96.22%), verifier regenerated VERIFICATION.md.
-- **Next expected action:** `/gsd-execute-phase 10.1` (verification reads `stale`, routes to the same gate-regeneration path); then `/gsd-complete-milestone v1.0`.
+- **Last action:** `/gsd-execute-phase 10.1` — all gates green (validation 10/10 map 0 gaps, security 12/12 closed, UI null-surface, code review 0c/0w/4i ledgered, regression 1011 passed @ 96.22%), verifier regenerated VERIFICATION.md with fresh fingerprint.
+- **Next expected action:** `/gsd-complete-milestone v1.0` — archive milestone and prepare for next version.
