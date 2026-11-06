@@ -1,7 +1,7 @@
 <!-- generated-by: gsd-doc-writer -->
 # Testing
 
-SIF's test suite is built on [pytest](https://docs.pytest.org/) with coverage collected by pytest-cov. Tests live in `tests/` and are organized into unit, integration, and e2e tiers. This guide covers how to run the suite, how the tiers are laid out, and how to write new tests using the shared fixtures and factories.
+SIF's test suite is built on [pytest](https://docs.pytest.org/) with coverage collected by pytest-cov. Tests live in `tests/` and are organized into unit, integration, and e2e tiers — 1000 tests in total, running in well under a minute. This guide covers how to run the suite, how the tiers are laid out, and how to write new tests using the shared fixtures and factories.
 
 ## Test framework and setup
 
@@ -46,6 +46,7 @@ pip install pytest-asyncio
 | `make test-verbose` | Full suite with verbose output: `pytest -vvs --tb=short --cov=src/sif --cov-report=term-missing` |
 | `make test-fast` | Quiet run that stops at the first failure: `pytest -x -q` (coverage still applies via `addopts`) |
 | `make docs-test` | Documentation validation only: `pytest tests/test_docs.py -v` |
+| `make docs-generate` | Regenerates the CLI and configuration reference docs (`scripts/generate_cli_ref.py`, `scripts/generate_config_ref.py`) |
 | `make coverage` | Full suite with coverage, then prints the HTML report location (`htmlcov/index.html`) |
 
 ### Direct pytest invocations
@@ -87,18 +88,21 @@ env -u FORCE_COLOR NO_COLOR=1 pytest
 tests/
 ├── conftest.py              # Shared pytest fixtures (see below)
 ├── factories.py             # Test data factories
-├── test_docs.py             # Validates code blocks in documentation
-├── test_sif_complete.py     # End-to-end smoke tests over the installed package
-├── unit/                    # 648 tests — module-level tests with mocks/temp databases
-│   ├── cli/                 #   CLI commands (index, search, get, pull, bench, ...)
+├── test_docs.py             # Validates code blocks in documentation (13 tests)
+├── test_sif_complete.py     # End-to-end smoke tests over the installed package (9 tests)
+├── unit/                    # 960 tests — module-level tests with mocks/temp databases
+│   ├── cli/                 #   CLI commands (index, search, get, pull, bench, ls, status, ...)
 │   ├── config/              #   Settings loading and validation
-│   ├── database/            #   SchemaManager and repository tests (sif.database.*)
+│   ├── core/                #   Core domain entities (Collection, Context)
+│   ├── database/            #   Schema, migrations, and repository tests (sif.database package)
 │   ├── db/                  #   DatabaseConnection / ConnectionPool tests
-│   ├── embedding/           #   Embedder implementations, factory, manager
-│   ├── indexing/            #   Indexer and file watcher
+│   ├── embedding/           #   Embedder implementations, cache, factory, manager
+│   ├── indexing/            #   Chunker, indexer, parser, scanner, file watcher
 │   ├── inference/           #   Embedder, query expander, reranker
-│   ├── mcp/                 #   MCP backend and transports (async tests)
-│   ├── search/              #   BM25, vector, hybrid, RRF, rerank, snippets
+│   ├── mcp/                 #   MCP backend, server, and transports (async tests)
+│   ├── models/              #   Model download helpers
+│   ├── search/              #   BM25, vector, hybrid, RRF, rerank, snippets, collection filters
+│   ├── utils/               #   Logging, paths, progress, text helpers
 │   ├── test_collection.py   #   CollectionManager
 │   └── test_search.py       #   Search strategy and response models
 ├── integration/             # 18 tests — cross-component pipelines
@@ -107,10 +111,10 @@ tests/
 └── e2e/                     # Reserved tier; currently empty
 ```
 
-- **unit/** tests a single module in isolation, using mocks (`MagicMock`) or the temporary-database fixtures.
+- **unit/** tests a single module in isolation, using mocks (`MagicMock`) or the temporary-database fixtures. `database/` mirrors the `sif.database` package (schema, migrations, repositories), while `db/` covers connection management (`DatabaseConnection`, `ConnectionPool`).
 - **integration/** exercises multiple layers together, such as the CLI embed command against a real temporary database, or the full search pipeline (FTS5 + vector + RRF fusion).
 - **e2e/** is a placeholder with no tests yet; add true end-to-end scenarios here.
-- **test_docs.py** extracts fenced code blocks from a hardcoded `DOCS_FILES` list (README plus the main docs pages) and checks that the documented commands actually work and that JSON examples match the real output schemas.
+- **test_docs.py** extracts fenced code blocks from a hardcoded `DOCS_FILES` list (README.md plus `docs/index.md`, `cli-reference.md`, `configuration.md`, `quickstart.md`, `mcp-server.md`, `search-algorithms.md`, `architecture.md`, and `models.md`) and checks that the documented commands actually work and that JSON examples match the real output schemas.
 - **test_sif_complete.py** is a smoke suite that imports the core modules and runs basic database/collection/search operations against temp directories.
 
 ## Writing new tests
@@ -124,11 +128,13 @@ Follow the naming conventions enforced by `pyproject.toml`: files named `test_*.
 | `temp_dir`, `temp_db_path` | Temporary directory / database file path |
 | `db_connection` | A `DatabaseConnection` on a temp path |
 | `temp_db` | A `DatabaseConnection` with collections/documents/chunks/contexts tables created |
-| `sample_markdown_file`, `sample_markdown_content` | A realistic Markdown file with frontmatter |
-| `sample_collection(s)`, `sample_document(s)`, `sample_chunk(s)`, `sample_context` | Prebuilt domain entities |
+| `sample_markdown_file`, `sample_markdown_content` | A realistic Markdown file with frontmatter (and its raw contents) |
+| `sample_collection_id`, `sample_document_id`, `sample_chunk_id` | Prebuilt entity IDs |
+| `sample_collection(s)`, `sample_document(s)`, `sample_chunk(s)`, `sample_context`, `sample_document_metadata` | Prebuilt domain entities |
 | `sample_search_options`, `sample_search_result(s)` | Search options and results |
 | `mock_embedder` | Deterministic 384-dim mock embedding model |
 | `mock_repository`, `mock_search_repository`, `mock_embedding_manager` | Mocked persistence and search collaborators |
+| `event_loop` | Shared event loop for the async MCP tests |
 | `docs_test_db`, `docs_runner` | Temp database seeded with a docs collection, and a Click `CliRunner` pointed at it via `SIF_DB_PATH` |
 
 Helper functions `create_test_document()` and `create_test_collection()` are also available for one-off entities inside a test body.
@@ -140,7 +146,7 @@ For entities with varying shapes, prefer the factories over the fixed `sample_*`
 - `CollectionFactory`, `DocumentFactory` (supports `with_chunks=True`), `DocumentChunkFactory`, `DocumentMetadataFactory`, `ContextFactory` — each has `.create(**overrides)` and `.create_batch(n, **overrides)`
 - `SearchOptionsFactory` — plus `.bm25()`, `.vector()`, `.hybrid()` presets
 - `SearchResultFactory` — `.create_batch(n)` yields decreasing scores
-- `SAMPLE_MARKDOWN_CONTENTS`, `SAMPLE_SEARCH_QUERIES`, `get_sample_embedding(dim)` — shared corpora and deterministic vectors
+- `SAMPLE_MARKDOWN_CONTENTS`, `SAMPLE_SEARCH_QUERIES`, `get_sample_embedding(dim)`, `get_sample_embeddings(count, dim)` — shared corpora and deterministic vectors
 
 Example:
 
@@ -159,7 +165,7 @@ Mark coroutine tests with `@pytest.mark.asyncio` (see `tests/unit/mcp/test_backe
 
 ### Updating documentation tests
 
-`tests/test_docs.py` validates only the files listed in its `DOCS_FILES` constant. If you add a new docs page containing runnable code blocks, add its path to `DOCS_FILES` so its examples are validated too. Commands that must not execute (server daemons, installs, network pulls) are excluded via `SKIP_COMMAND_PATTERNS` in the same file.
+`tests/test_docs.py` validates only the files listed in its `DOCS_FILES` constant. If you add a new docs page containing runnable code blocks, add its path to `DOCS_FILES` so its examples are validated too. Commands that must not execute (server daemons, installs, network pulls, benchmarks) are excluded via `SKIP_COMMAND_PATTERNS` in the same file (e.g., `mcp http`, `pip install`, `git clone`, `bench `).
 
 ## Coverage
 
@@ -169,7 +175,9 @@ Coverage is measured over `src/sif` on every run (via `addopts`) and reported th
 - `htmlcov/index.html` — browsable HTML report
 - `coverage.xml` — machine-readable report
 
-No coverage threshold is configured — the suite reports coverage but does not fail below a minimum. Artifacts are cleaned by `make clean` (removes `htmlcov/`, `.coverage`, `coverage.xml`).
+A minimum threshold **is** enforced: `[tool.coverage.report]` in `pyproject.toml` sets `fail_under = 90`, so any run whose total coverage falls below 90% fails with `Required test coverage of 90.0% not reached`. Note that this applies to partial runs too — running a single file or tier measures only that subset against the same 90% gate, so use `--no-cov` for focused work. The full suite currently sits around 96%.
+
+Artifacts are cleaned by `make clean` (removes `htmlcov/`, `.coverage`, `coverage.xml`).
 
 ## CI integration
 
@@ -177,7 +185,7 @@ The only test workflow is `.github/workflows/docs.yml` ("Docs Validation"). It d
 
 The workflow triggers on:
 
-- pull requests touching `docs/**`, `README.md`, `src/sif/cli/**`, `src/sif/config/**`, the reference-generation scripts, or `tests/test_docs.py`
+- pull requests touching `docs/**`, `README.md`, `src/sif/cli/**`, `src/sif/config/**`, `scripts/generate_cli_ref.py`, `scripts/generate_config_ref.py`, or `tests/test_docs.py`
 - pushes to `main`
 
 The `docs-test` job (ubuntu-latest, Python 3.11) then:

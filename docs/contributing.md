@@ -408,6 +408,38 @@ Contributors will be:
 
 By contributing, you agree that your contributions will be licensed under the MIT License.
 
+## Troubleshooting
+
+### Coverage gate fails on partial test runs
+
+`pyproject.toml` enables coverage on every `pytest` invocation (`addopts = "--cov=src/sif ..."` under `[tool.pytest.ini_options]`) and enforces a floor of 90% (`[tool.coverage.report] fail_under = 90`). Running a single test file therefore fails the run even when every test in it passes:
+
+```
+FAIL Required test coverage of 90.0% not reached. Total coverage: 12.96%
+```
+
+For subset runs during development, disable coverage explicitly:
+
+```bash
+pytest --no-cov tests/unit/test_collection.py
+```
+
+Before opening a PR, run the full suite (`make test`) so total coverage is measured against the 90% floor — the PR checklist item "Tests pass (`pytest`)" means the full suite with coverage, not a single file.
+
+### Tests fail with ANSI escape codes in assertions
+
+Some terminals and CI harnesses export `FORCE_COLOR`. Rich treats **any non-empty value — including `0` — as forced color**, so CLI output tests fail on plain-text assertions:
+
+```
+AssertionError: assert '   1: line1' in '\x1b[1;36ma.md\x1b[0m\n...'
+```
+
+Setting `FORCE_COLOR=0` does not help; the variable must be unset. Run the suite with styling suppressed:
+
+```bash
+env -u FORCE_COLOR NO_COLOR=1 pytest
+```
+
 ## Thank You!
 
 Every contribution, no matter how small, helps make SIF better. Thank you for your support!

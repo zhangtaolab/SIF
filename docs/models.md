@@ -34,8 +34,8 @@ class Collection:
     description: str | None = None   # Optional description
     pre_update_cmd: str | None = None  # Command to run before indexing
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    created_at: datetime = field(default_factory=datetime.utcnow)
-    updated_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     document_count: int = 0          # Number of documents
     chunk_count: int = 0             # Number of chunks
     last_indexed_at: datetime | None = None
@@ -76,9 +76,9 @@ class Document:
     filename: str = field(init=False)   # Computed from path
     checksum: str | None = None   # SHA-256 of content (computed in __post_init__ if not set)
     file_size: int | None = None  # Content size in bytes (computed in __post_init__ if not set)
-    mtime: float = field(default_factory=lambda: datetime.utcnow().timestamp())
-    created_at: datetime = field(default_factory=datetime.utcnow)
-    updated_at: datetime = field(default_factory=datetime.utcnow)
+    mtime: float = field(default_factory=lambda: datetime.now(timezone.utc).timestamp())
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     chunks: list[DocumentChunk] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
 ```
@@ -150,12 +150,12 @@ class PathContext:
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     collection_id: str | None = None
     context_type: str = "path"
-    created_at: datetime = field(default_factory=datetime.utcnow)
-    updated_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 ```
 
 **Context Types:**
-- `global`: Applies to all searches (target_id="*")
+- `global`: Applies to all searches (resolved via `list_by_type(ContextType.GLOBAL)` in `sif.core.context`)
 - `collection`: Applies to searches in a specific collection
 - `path`: Applies to searches in a specific path
 

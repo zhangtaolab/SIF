@@ -197,7 +197,7 @@ Get indexing status for all collections.
 |----------|---------|-------------|
 | `SIF_DB_PATH` | `~/.local/share/sif/sif.db` | Path to SQLite database |
 | `SIF_MCP_HOST` | `127.0.0.1` | HTTP server host |
-| `SIF_MCP_PORT` | `8080` | HTTP server port |
+| `SIF_MCP_PORT` | `8080` | HTTP server port (settings default; not read by `sif mcp http`, which defaults to `--port 3000`) |
 
 When `SIF_DB_PATH` is not set, the database path is computed in the platform data
 directory (via platformdirs) and the directory is created on first run —
@@ -365,7 +365,7 @@ sif mcp stdio
 
 # Test HTTP transport
 sif mcp http
-curl http://127.0.0.1:8080/health
+curl http://127.0.0.1:3000/health
 ```
 
 ### Tool Not Found

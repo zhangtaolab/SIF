@@ -1,8 +1,8 @@
-# DocSift Architecture Design Document
+# SIF Architecture Design Document
 
 ## Overview
 
-DocSift is a local CLI search engine for indexing and searching markdown documents. It is a Python reimplementation of the original TypeScript QMD (Query Markup Documents) project.
+SIF is a local CLI search engine for indexing and searching markdown documents. It is a Python reimplementation of the original TypeScript QMD (Query Markup Documents) project.
 
 ## Design Goals
 
@@ -47,7 +47,7 @@ DocSift is a local CLI search engine for indexing and searching markdown documen
 
 #### Repository Pattern
 - **Purpose**: Abstract data access layer
-- **Location**: `docsift/database/repository.py`
+- **Location**: `src/sif/database/repository.py`
 - **Benefits**: 
   - Decouples domain logic from data storage
   - Enables easy testing with mock repositories
@@ -55,19 +55,20 @@ DocSift is a local CLI search engine for indexing and searching markdown documen
 
 #### Strategy Pattern
 - **Purpose**: Pluggable search algorithms
-- **Location**: `docsift/search/strategy.py`
+- **Location**: `src/sif/search/strategy.py`
 - **Implementations**:
-  - `BM25SearchStrategy`: Full-text search via SQLite FTS5
-  - `VectorSearchStrategy`: Semantic search via embeddings
-  - `HybridSearchStrategy`: Combined BM25 + Vector with RRF fusion
+  - `BM25Searcher`: Full-text search via SQLite FTS5
+  - `VectorSearcher`: Semantic search via embeddings
+  - `HybridSearcher`: Combined BM25 + Vector with RRF fusion
 
 #### Factory Pattern
 - **Purpose**: Create embedding model instances
-- **Location**: `docsift/embedding/factory.py`
+- **Location**: `src/sif/embedding/factory.py`
 - **Supported Models**:
   - GGUF models via llama-cpp-python
   - Sentence Transformers
-  - OpenAI API (future)
+  - OpenAI API
+  - ModelScope models
   - HuggingFace models (future)
 
 #### Dependency Injection
@@ -78,35 +79,44 @@ DocSift is a local CLI search engine for indexing and searching markdown documen
 ## Module Structure
 
 ```
-docsift/
+src/sif/
 ├── __init__.py              # Package exports
 ├── _version.py              # Version information
 ├── core/                    # Domain entities and business logic
 │   ├── __init__.py
 │   ├── collection.py        # Collection entity and manager
 │   ├── document.py          # Document and DocumentChunk entities
-│   └── context.py           # Context entity and manager
+│   ├── context.py           # Context entity and manager
+│   └── models.py            # Core data models and protocols
 ├── models/                  # Pydantic models for validation
 │   ├── __init__.py
 │   ├── collection.py        # Collection request/response models
 │   ├── document.py          # Document request/response models
 │   ├── context.py           # Context request/response models
 │   ├── search.py            # Search query and result models
-│   └── embedding.py         # Embedding configuration models
+│   ├── embedding.py         # Embedding configuration models
+│   └── download.py          # Model download models
 ├── database/                # Data access layer
 │   ├── __init__.py
 │   ├── connection.py        # Database connection management
+│   ├── database.py          # Database facade and transactions
 │   ├── repository.py        # Repository interfaces
+│   ├── repositories.py      # Repository implementations
+│   ├── schema.py            # Schema creation (tables, FTS5, vectors)
 │   └── migrations.py        # Database migrations
 ├── search/                  # Search functionality
 │   ├── __init__.py
 │   ├── strategy.py          # Search strategy interface
 │   ├── bm25.py              # BM25 search implementation
 │   ├── vector.py            # Vector search implementation
-│   ├── hybrid.py            # Hybrid search implementation
+│   ├── hybrid.py            # Hybrid search and search pipeline
 │   ├── rrf.py               # Reciprocal Rank Fusion
 │   ├── expansion.py         # Query expansion
-│   └── rerank.py            # Result reranking
+│   ├── rerank.py            # Result reranking
+│   ├── snippets.py          # Snippet extraction
+│   ├── term_match.py        # Stem-tolerant term matching
+│   ├── context_attach.py    # Path-context attachment for results
+│   └── benchmark.py         # Search quality benchmarks
 ├── indexing/                # Document indexing
 │   ├── __init__.py
 │   ├── scanner.py           # File system scanning
@@ -118,23 +128,34 @@ docsift/
 │   ├── __init__.py
 │   ├── manager.py           # Embedding model management
 │   ├── model.py             # Model interface
+│   ├── embedder.py          # Embedding model implementations
 │   ├── factory.py           # Model factory
 │   └── cache.py             # Embedding cache
-├── mcp_server/              # MCP server implementation
+├── mcp/                     # MCP server implementation
 │   ├── __init__.py
 │   ├── server.py            # MCP server
-│   ├── transport.py         # Transport implementations
+│   ├── backend.py           # SearchBackend for MCP tools
+│   ├── protocol.py          # MCP protocol definitions
 │   ├── handlers.py          # Request handlers
-│   └── tools.py             # MCP tool definitions
+│   ├── cli.py               # MCP server CLI helpers
+│   └── transports/          # Transport implementations
+│       ├── __init__.py
+│       ├── stdio.py         # stdio transport
+│       └── http.py          # HTTP transport (FastAPI)
 ├── cli/                     # Command-line interface
 │   ├── __init__.py
 │   ├── main.py              # CLI entry point
+│   ├── formatters.py        # Output formatters
 │   └── commands/            # CLI command implementations
 │       ├── __init__.py
 │       ├── collection.py    # Collection commands
 │       ├── context.py       # Context commands
 │       ├── index.py         # Index commands
 │       ├── search.py        # Search commands
+│       ├── get.py           # Document retrieval commands
+│       ├── ls.py            # Indexed document listing
+│       ├── pull.py          # Model download command
+│       ├── bench.py         # Benchmark commands
 │       └── mcp.py           # MCP commands
 ├── config/                  # Configuration
 │   ├── __init__.py
@@ -199,7 +220,7 @@ class EmbeddingModel(ABC):
 ### Indexing Flow
 
 ```
-1. User: docsift index add my-collection ~/notes
+1. User: sif index add my-collection ~/notes
    │
    ▼
 2. CLI: Parse command, validate inputs
@@ -232,7 +253,7 @@ class EmbeddingModel(ABC):
 ### Search Flow
 
 ```
-1. User: docsift search "machine learning"
+1. User: sif search "machine learning"
    │
    ▼
 2. CLI: Parse query, build SearchQuery
@@ -244,13 +265,13 @@ class EmbeddingModel(ABC):
 4. QueryExpansion (optional): Expand query
    │
    ▼
-5. BM25SearchStrategy: Search FTS index
+5. BM25Searcher: Search FTS index
    │
    ▼
-6. VectorSearchStrategy: Search vector index
+6. VectorSearcher: Search vector index
    │
    ▼
-7. HybridSearchStrategy: Combine results (RRF)
+7. HybridSearcher: Combine results (RRF)
    │
    ▼
 8. Reranker (optional): Rerank results
@@ -298,16 +319,18 @@ CREATE TABLE documents (
 );
 ```
 
-### Chunks Table
+### Document Chunks Table
 ```sql
-CREATE TABLE chunks (
+CREATE TABLE document_chunks (
     id TEXT PRIMARY KEY,
     document_id TEXT NOT NULL,
+    sequence INTEGER NOT NULL,
     content TEXT NOT NULL,
-    start_line INTEGER NOT NULL,
-    end_line INTEGER NOT NULL,
-    token_count INTEGER NOT NULL,
+    start_pos INTEGER DEFAULT 0,
+    end_pos INTEGER DEFAULT 0,
+    token_count INTEGER DEFAULT 0,
     embedding_id TEXT,
+    created_at TEXT NOT NULL,
     FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
 );
 ```
@@ -327,17 +350,20 @@ CREATE TABLE contexts (
 
 ### FTS5 Virtual Table
 ```sql
-CREATE VIRTUAL TABLE documents_fts USING fts5(
+CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(
     content,
-    content_rowid=rowid,
+    content='documents',
+    content_rowid='rowid',
     tokenize='porter'
 );
 ```
 
 ### sqlite-vec Vector Table
 ```sql
-CREATE VIRTUAL TABLE chunk_embeddings USING vec0(
+CREATE VIRTUAL TABLE document_embeddings USING vec0(
     embedding_id TEXT PRIMARY KEY,
+    document_id TEXT NOT NULL,
+    chunk_id TEXT,
     embedding FLOAT[{dim}]  -- dimension from model
 );
 ```
@@ -348,15 +374,15 @@ Settings are managed via Pydantic Settings with environment variable support:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| DOCSIFT_DB_PATH | ~/.local/share/docsift/docsift.db | Database path |
-| DOCSIFT_MODEL_PATH | None | Embedding model path |
-| DOCSIFT_MODEL_NAME | all-MiniLM-L6-v2 | Model name |
-| DOCSIFT_EMBEDDING_DIM | 384 | Embedding dimension |
-| DOCSIFT_CHUNK_SIZE | 512 | Chunk size in tokens |
-| DOCSIFT_CHUNK_OVERLAP | 128 | Chunk overlap in tokens |
-| DOCSIFT_LOG_LEVEL | INFO | Logging level |
-| DOCSIFT_MCP_HOST | 127.0.0.1 | MCP HTTP server host |
-| DOCSIFT_MCP_PORT | 8080 | MCP HTTP server port |
+| SIF_DB_PATH | platformdirs user_data_dir/sif/sif.db | Database path |
+| SIF_MODEL_PATH | None | Embedding model path |
+| SIF_MODEL_NAME | Qwen/Qwen3-Embedding-0.6B | Model name |
+| SIF_EMBEDDING_DIM | 1024 | Embedding dimension |
+| SIF_CHUNK_SIZE | 512 | Chunk size in tokens |
+| SIF_CHUNK_OVERLAP | 128 | Chunk overlap in tokens |
+| SIF_LOG_LEVEL | INFO | Logging level |
+| SIF_MCP_HOST | 127.0.0.1 | MCP HTTP server host |
+| SIF_MCP_PORT | 8080 | MCP HTTP server port |
 
 ## Testing Strategy
 

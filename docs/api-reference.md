@@ -9,7 +9,7 @@ Complete reference for SIF's Python API.
 Domain entity representing a document collection.
 
 ```python
-from sif import Collection
+from sif.core.collection import Collection
 ```
 
 #### Class: `Collection`
@@ -157,7 +157,7 @@ collection = manager.remove_path("uuid-string", "~/Documents/old-notes")
 Domain entity representing an indexed document.
 
 ```python
-from sif import Document
+from sif.core.document import Document
 ```
 
 #### Class: `Document`
@@ -183,7 +183,7 @@ class Document:
 Represents a chunk of a document.
 
 ```python
-from sif import DocumentChunk
+from sif.core.document import DocumentChunk
 ```
 
 #### Class: `DocumentChunk`
