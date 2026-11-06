@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import re
 from typing import Any
 from xml.sax.saxutils import escape as xml_escape, quoteattr
 
@@ -27,6 +28,20 @@ console = Console()
 # Display truncation constants
 _TITLE_MAX_LEN = 50
 _CONTENT_MAX_LEN = 200
+
+# XML 1.0 Char production (W3C REC-xml §2.2): #x9 | #xA | #xD | [#x20-#xD7FF] |
+# [#xE000-#xFFFD] | [#x10000-#x10FFFF]. This class is its forbidden complement:
+# #x00-#x08, #x0B, #x0C, #x0E-#x1F, surrogates #xD800-#xDFFF, #xFFFE-#xFFFF.
+_XML_1_0_INVALID = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]")
+
+
+def _xml_sanitize(text: str) -> str:
+    """Strip code points forbidden by the XML 1.0 Char production.
+
+    Tab (#x9), LF (#xA), and CR (#xD) are preserved. #x7F-#x9F are legal per
+    the production (only discouraged) and are NOT stripped.
+    """
+    return _XML_1_0_INVALID.sub("", text)
 
 
 def _display_snippet(r: SearchResult, max_len: int = _CONTENT_MAX_LEN) -> str:
@@ -103,19 +118,28 @@ def format_results_md(results: list[Any], query: str) -> str:
 
 def format_results_xml(results: list[Any], query: str) -> str:
     """Format results as XML."""
-    lines = ['<?xml version="1.0" encoding="UTF-8"?>', f"<search query={quoteattr(query)}>"]
+    lines = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        f"<search query={quoteattr(_xml_sanitize(query))}>",
+    ]
     for r in results:
         score = f"{float(_field(r, 'score')):.4f}"
         lines.append(f'  <result rank="{_field(r, "rank")}" score="{score}">')
-        lines.append(f"    <title>{xml_escape(str(_field(r, 'title')))}</title>")
-        lines.append(f"    <path>{xml_escape(str(_field(r, 'path')))}</path>")
+        lines.append(f"    <title>{xml_escape(_xml_sanitize(str(_field(r, 'title'))))}</title>")
+        lines.append(f"    <path>{xml_escape(_xml_sanitize(str(_field(r, 'path'))))}</path>")
         lines.append(
-            f"    <collection>{xml_escape(str(_field(r, 'collection_name')))}</collection>"
+            f"    <collection>{xml_escape(_xml_sanitize(str(_field(r, 'collection_name'))))}"
+            "</collection>"
         )
         if hasattr(r, "get") and r.get("line_numbers"):
-            lines.append(f"    <line_numbers>{xml_escape(r.get('line_numbers'))}</line_numbers>")
+            lines.append(
+                f"    <line_numbers>{xml_escape(_xml_sanitize(str(r.get('line_numbers'))))}"
+                "</line_numbers>"
+            )
         elif hasattr(r, "line_numbers") and r.line_numbers:
-            lines.append(f"    <line_numbers>{xml_escape(r.line_numbers)}</line_numbers>")
+            lines.append(
+                f"    <line_numbers>{xml_escape(_xml_sanitize(str(r.line_numbers)))}</line_numbers>"
+            )
         lines.append("  </result>")
     lines.append("</search>")
     return "\n".join(lines)
