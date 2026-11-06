@@ -3,18 +3,10 @@ phase: 05
 review: 05-REVIEW.md
 titles: json
 findings:
-  - id: CR-01
+  - id: CR-03
     severity: critical
     disposition: open
-    title: "Rich markup injection — unescaped query/title/content crash or silently vanish in all three search commands"
-  - id: CR-02
-    severity: critical
-    disposition: open
-    title: "Rich markup injection in `context list` — stored context content crashes or silently loses text"
-  - id: WR-01
-    severity: warning
-    disposition: open
-    title: "LLM cache TTL writes naive local-time expiry compared against aware UTC strings — cache broken west of UTC; in-scope test fails"
+    title: "`context add` confirmation prints interpolate the user-derived target into Rich markup unescaped — MarkupError rolls back the write, so bracket-named targets can never be added"
   - id: WR-02
     severity: warning
     disposition: open
@@ -23,6 +15,30 @@ findings:
     severity: warning
     disposition: open
     title: "`vsearch` surfaces embedding-dimension mismatch as a raw sqlite3 traceback"
+  - id: IN-05
+    severity: info
+    disposition: open
+    title: "Output cascade and table rendering triplicated across the three search commands"
+  - id: IN-17
+    severity: info
+    disposition: open
+    title: "`vsearch_cmd` re-imports `Database`/`CollectionRepository` inside the function, shadowing the module-level imports and splitting the patch surface"
+  - id: IN-18
+    severity: info
+    disposition: open
+    title: "`format_results_md` interpolates field values raw into Markdown structure — backticks/newlines/# corrupt the output"
+  - id: CR-01
+    severity: critical
+    disposition: open
+    title: "Rich markup injection — unescaped query/title/content crash or silently vanish in all three search commands"
+  - id: CR-02
+    severity: critical
+    disposition: fixed
+    title: "`--line-numbers --md` and `--line-numbers --xml` crash with `AttributeError: 'dict' object has no attribute 'rank'`"
+  - id: WR-01
+    severity: warning
+    disposition: open
+    title: "LLM cache TTL writes naive local-time expiry compared against aware UTC strings — cache broken west of UTC; in-scope test fails"
   - id: WR-04
     severity: warning
     disposition: open
@@ -43,10 +59,6 @@ findings:
     severity: info
     disposition: open
     title: "`test_status_respects_env_var` does not exercise the env var"
-  - id: IN-05
-    severity: info
-    disposition: open
-    title: "Output cascade and table rendering triplicated across the three search commands"
   - id: WR-10
     severity: warning
     disposition: open
@@ -143,26 +155,29 @@ findings:
     severity: info
     disposition: open
     title: "`Qwen3Reranker.load()` duplicates the entire loading block for quiet/non-quiet"
-open: 34
-total: 35
-recorded: 2026-11-06T06:48:20.422Z
+open: 36
+total: 38
+recorded: 2026-11-06T08:55:56.670Z
 ---
 
 # Phase 05: Code Review Disposition
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| CR-01 | critical | open | - |
-| CR-02 | critical | open | - |
-| WR-01 | warning | open | - |
+| CR-03 | critical | open | - |
 | WR-02 | warning | open | - |
 | WR-03 | warning | open | - |
-| WR-04 | warning | open | - |
-| IN-01 | info | open | - |
-| IN-02 | info | open | - |
-| IN-03 | info | open | - |
-| IN-04 | info | open | - |
 | IN-05 | info | open | - |
+| IN-17 | info | open | - |
+| IN-18 | info | open | - |
+| CR-01 | critical | open | - (not in the current review) |
+| CR-02 | critical | fixed | 05-REVIEW-FIX.md (not in the current review) |
+| WR-01 | warning | open | - (not in the current review) |
+| WR-04 | warning | open | - (not in the current review) |
+| IN-01 | info | open | - (not in the current review) |
+| IN-02 | info | open | - (not in the current review) |
+| IN-03 | info | open | - (not in the current review) |
+| IN-04 | info | open | - (not in the current review) |
 | WR-10 | warning | open | - (not in the current review) |
 | WR-12 | warning | open | - (not in the current review) |
 | WR-13 | warning | open | - (not in the current review) |
