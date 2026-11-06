@@ -429,11 +429,14 @@ class TestSchemaRealSQLiteCoverage:
 
 
 class TestFtsUpdateTrigger:
-    """FND-06 / CR-01: external-content FTS5 update triggers must not direct-UPDATE.
+    """FND-06 / CR-01: external-content FTS5 sync triggers must not write directly.
 
     A direct UPDATE on an external-content FTS5 table corrupts the index
     ("database disk image is malformed") on medium+ content edits, so the
     document edit loop (`sif index update` on a changed note) cannot work.
+    A direct DELETE silently leaves the removed content MATCHable, so deleted
+    documents stay searchable (CR-01). create_all() must migrate both legacy
+    forms to the documented 'delete'-command triggers.
     """
 
     MEDIUM_CONTENT = "# Title\n\n" + ("Paragraph text here. " * 400)
@@ -544,9 +547,76 @@ class TestFtsUpdateTrigger:
             assert f"UPDATE {table} SET" not in sql
             assert "VALUES('delete'" in sql
 
-    def test_modern_trigger_is_left_alone(self, fts_db):
-        """create_all() does not churn an already-migrated trigger."""
+    def test_legacy_direct_delete_trigger_is_migrated(self, fts_db):
+        """create_all() replaces legacy direct-DELETE triggers; deletes purge from MATCH."""
         SchemaManager(fts_db, embedding_dim=384).create_all()
+
+        for trigger, table, base in (
+            ("documents_fts_delete", "documents_fts", "documents"),
+            ("chunks_fts_delete", "chunks_fts", "document_chunks"),
+        ):
+            fts_db.execute(f"DROP TRIGGER {trigger}")
+            fts_db.execute(f"""
+                CREATE TRIGGER {trigger}
+                AFTER DELETE ON {base}
+                BEGIN
+                    DELETE FROM {table} WHERE rowid = old.rowid;
+                END
+            """)
+        fts_db.commit()
+
+        SchemaManager(fts_db, embedding_dim=384).create_all()
+
+        for trigger, table in (
+            ("documents_fts_delete", "documents_fts"),
+            ("chunks_fts_delete", "chunks_fts"),
+        ):
+            sql = fts_db.execute(
+                "SELECT sql FROM sqlite_master WHERE type='trigger' AND name=?",
+                (trigger,),
+            ).fetchone()[0]
+            assert f"DELETE FROM {table}" not in sql
+            assert "VALUES('delete'" in sql
+
+        self._insert_document(fts_db)
+        fts_db.execute(
+            "INSERT INTO document_chunks (id, document_id, sequence, content, created_at) "
+            "VALUES ('ch1', 'd1', 0, ?, '2020-01-01')",
+            (self.MEDIUM_CONTENT,),
+        )
+        assert (
+            fts_db.execute(
+                "SELECT COUNT(*) FROM documents_fts WHERE documents_fts MATCH 'paragraph'"
+            ).fetchone()[0]
+            == 1
+        )
+        assert (
+            fts_db.execute(
+                "SELECT COUNT(*) FROM chunks_fts WHERE chunks_fts MATCH 'paragraph'"
+            ).fetchone()[0]
+            == 1
+        )
+
+        fts_db.execute("DELETE FROM document_chunks WHERE id = 'ch1'")
+        fts_db.execute("DELETE FROM documents WHERE id = 'd1'")
+        fts_db.commit()
+        assert (
+            fts_db.execute(
+                "SELECT COUNT(*) FROM documents_fts WHERE documents_fts MATCH 'paragraph'"
+            ).fetchone()[0]
+            == 0
+        )
+        assert (
+            fts_db.execute(
+                "SELECT COUNT(*) FROM chunks_fts WHERE chunks_fts MATCH 'paragraph'"
+            ).fetchone()[0]
+            == 0
+        )
+
+    def test_modern_trigger_is_left_alone(self, fts_db):
+        """create_all() does not churn an already-migrated trigger or wipe live entries."""
+        SchemaManager(fts_db, embedding_dim=384).create_all()
+        self._insert_document(fts_db)
         trigger_sql = fts_db.execute(
             "SELECT sql FROM sqlite_master WHERE type='trigger' AND name='documents_fts_update'"
         ).fetchone()[0]
@@ -557,3 +627,9 @@ class TestFtsUpdateTrigger:
             "SELECT sql FROM sqlite_master WHERE type='trigger' AND name='documents_fts_update'"
         ).fetchone()[0]
         assert trigger_sql_after == trigger_sql
+        assert (
+            fts_db.execute(
+                "SELECT COUNT(*) FROM documents_fts WHERE documents_fts MATCH 'paragraph'"
+            ).fetchone()[0]
+            == 1
+        )
