@@ -5,7 +5,7 @@ titles: json
 findings:
   - id: WR-18
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "`context add` confirmation prints execute inside the open transaction — any display failure still rolls back a completed write"
   - id: IN-13
     severity: info
@@ -167,16 +167,16 @@ findings:
     severity: info
     disposition: open
     title: "`Qwen3Reranker.load()` duplicates the entire loading block for quiet/non-quiet"
-open: 39
+open: 38
 total: 41
-recorded: 2026-11-06T11:07:59.847Z
+recorded: 2026-11-06T11:37:12.541Z
 ---
 
 # Phase 05: Code Review Disposition
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| WR-18 | warning | open | - |
+| WR-18 | warning | fixed | 05-REVIEW-FIX.md |
 | IN-13 | info | open | - |
 | IN-19 | info | open | - |
 | IN-20 | info | open | - |
