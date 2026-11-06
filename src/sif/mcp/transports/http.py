@@ -71,6 +71,7 @@ async def _mcp_post_handler(
     server: MCPServer,
 ) -> Any:
     """Handle POST /mcp requests."""
+    assert JSONResponse is not None
     session_id = _get_session_id(dict(request.headers))
 
     try:
@@ -122,6 +123,7 @@ async def _mcp_get_handler(
     max_events: int | None = None,
 ) -> Any:
     """Handle GET /mcp SSE requests."""
+    assert StreamingResponse is not None
     session_id = _get_session_id(dict(request.headers))
 
     async def event_generator() -> Any:
@@ -154,6 +156,7 @@ def create_app(
 
     app = FastAPI()
 
+    assert CORSMiddleware is not None
     app.add_middleware(
         CORSMiddleware,
         allow_origins=origins,
@@ -164,6 +167,8 @@ def create_app(
 
     @app.middleware("http")
     async def validate_origin(request: Request, call_next: Any) -> Response:
+        assert request is not None
+        assert JSONResponse is not None
         origin = request.headers.get("origin")
         if origin and origin not in origins:
             return JSONResponse(

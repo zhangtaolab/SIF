@@ -4,6 +4,7 @@ import contextlib
 import sqlite3
 from collections.abc import Callable
 from contextlib import AbstractContextManager
+from typing import Any, Protocol
 
 from sif.config.constants import CURRENT_SCHEMA_VERSION
 from sif.utils.logging import get_logger
@@ -118,10 +119,22 @@ CREATE VIRTUAL TABLE IF NOT EXISTS chunk_embeddings USING vec0(
 """
 
 
+class _MigrationConnection(Protocol):
+    """Structural type for the SQLite connection surface used by migrations."""
+
+    def execute(self, query: str, parameters: tuple[Any, ...] | None = None) -> Any:
+        """Execute a statement."""
+        ...
+
+    def fetchone(self, query: str, parameters: tuple[Any, ...] | None = None) -> Any:
+        """Fetch a single row."""
+        ...
+
+
 class MigrationManager:
     """Manages database schema migrations."""
 
-    def __init__(self, connection: "DatabaseConnection") -> None:  # noqa: F821
+    def __init__(self, connection: _MigrationConnection) -> None:
         """Initialize the migration manager."""
         self._connection = connection
 
