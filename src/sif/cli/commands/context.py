@@ -6,6 +6,7 @@ from datetime import timezone
 
 import click
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 from sif.core.models import PathContext
@@ -268,11 +269,20 @@ def context_list(ctx: click.Context, context_type: str | None) -> None:
         table.add_column("Content", style="green")
 
         for ctx_item in contexts:
-            # Truncate long contexts for display
+            # Truncate long contexts for display, then escape every cell:
+            # stored user-authored text crosses into markup-parsed console
+            # output here, so bracket sequences must render literally rather
+            # than crash (MarkupError) or swallow text (CR-02). Escape AFTER
+            # truncation so the display cap applies to raw text; stored bytes
+            # are untouched.
             content_text = ctx_item.context
             if len(content_text) > _CONTEXT_TRUNCATE_LEN:
                 content_text = content_text[: _CONTEXT_TRUNCATE_LEN - 3] + "..."
-            table.add_row(ctx_item.context_type, ctx_item.path, content_text)
+            table.add_row(
+                escape(ctx_item.context_type),
+                escape(ctx_item.path),
+                escape(content_text),
+            )
 
         console.print(table)
 
