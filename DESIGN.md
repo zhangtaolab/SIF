@@ -220,7 +220,8 @@ class EmbeddingModel(ABC):
 ### Indexing Flow
 
 ```
-1. User: sif index add my-collection ~/notes
+1. User: sif collection add ~/notes --name my-collection
+   │     sif index update -c my-collection
    │
    ▼
 2. CLI: Parse command, validate inputs
@@ -290,14 +291,17 @@ class EmbeddingModel(ABC):
 CREATE TABLE collections (
     id TEXT PRIMARY KEY,
     name TEXT UNIQUE NOT NULL,
+    path TEXT NOT NULL,
+    pattern TEXT DEFAULT '**/*.md',
+    ignore_patterns TEXT DEFAULT '[]',  -- JSON array
+    include_by_default INTEGER DEFAULT 1,
     description TEXT,
-    paths TEXT,  -- JSON array
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    last_indexed_at TEXT,
     document_count INTEGER DEFAULT 0,
     chunk_count INTEGER DEFAULT 0,
-    metadata TEXT,  -- JSON
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    last_indexed_at DATETIME
+    pre_update_cmd TEXT  -- added by migration
 );
 ```
 
@@ -307,16 +311,18 @@ CREATE TABLE documents (
     id TEXT PRIMARY KEY,
     collection_id TEXT NOT NULL,
     path TEXT NOT NULL,
+    filename TEXT NOT NULL,
+    title TEXT,
     content TEXT NOT NULL,
     checksum TEXT NOT NULL,
-    file_size INTEGER NOT NULL,
-    metadata TEXT,  -- JSON
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    indexed_at DATETIME,
-    FOREIGN KEY (collection_id) REFERENCES collections(id),
-    UNIQUE(collection_id, path)
+    file_size INTEGER DEFAULT 0,
+    mtime REAL NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    metadata TEXT DEFAULT '{}',  -- JSON
+    FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE
 );
+-- Lookups use non-unique indexes on collection_id, path, and checksum.
 ```
 
 ### Document Chunks Table
@@ -339,13 +345,13 @@ CREATE TABLE document_chunks (
 ```sql
 CREATE TABLE contexts (
     id TEXT PRIMARY KEY,
-    content TEXT NOT NULL,
-    context_type TEXT NOT NULL,  -- 'collection', 'path', 'document', 'global'
     target_id TEXT NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(context_type, target_id)
+    context_type TEXT NOT NULL CHECK(context_type IN ('path', 'collection', 'global')),
+    content TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
 );
+-- Lookups use a non-unique index on (target_id, context_type).
 ```
 
 ### FTS5 Virtual Table
