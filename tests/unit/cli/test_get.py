@@ -1,7 +1,9 @@
 """Tests for get CLI commands."""
 
+import os
 from collections.abc import Generator
 from pathlib import Path
+from typing import ClassVar
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -13,6 +15,18 @@ from sif.config.settings import get_settings
 from sif.core.models import Collection, Document
 from sif.database.database import Database
 from sif.database.repositories import CollectionRepository, DocumentRepository
+from sif.utils.paths import normalize_path
+
+
+class TrackingDatabase(Database):
+    """Database double recording constructed instances for closure assertions."""
+
+    created: ClassVar[list[Database]] = []
+
+    def __init__(self, db_path: str | Path) -> None:
+        """Record each construction so tests can assert every handle closed."""
+        super().__init__(db_path)
+        TrackingDatabase.created.append(self)
 
 
 class RealDatabaseTestCase:
@@ -58,6 +72,47 @@ class RealDatabaseTestCase:
                 for document in documents:
                     DocumentRepository(conn).create(document)
         return db_path, documents
+
+    @pytest.fixture
+    def alias_documents(self, tmp_path: Path) -> tuple[Path, Path, list[Document]]:
+        """Index files under a real directory, then expose a symlink alias of it.
+
+        Stored rows carry the resolved real strings (mirroring the scanner,
+        which stores ``normalize_path`` forms), while lookups arrive through
+        the alias — the exact asymmetry DEBT-PN describes.
+        """
+        notes_real = tmp_path / "notes_real"
+        notes_real.mkdir()
+        documents = [
+            Document(
+                id="doc-1",
+                path=normalize_path(notes_real / "alpha.md"),
+                collection_id="collection-1",
+                title="Alpha",
+                content="first line\nsecond line\nthird line",
+            ),
+            Document(
+                id="doc-2",
+                path=normalize_path(notes_real / "beta.txt"),
+                collection_id="collection-1",
+                title=None,
+                content="beta content",
+            ),
+        ]
+        for document in documents:
+            Path(document.path).write_text(document.content, encoding="utf-8")
+        notes_alias = tmp_path / "notes_alias"
+        os.symlink(notes_real, notes_alias)
+        db_path = tmp_path / "sif.db"
+        with Database(db_path) as db:
+            db.init_schema()
+            with db.transaction() as conn:
+                CollectionRepository(conn).create(
+                    Collection(id="collection-1", name="notes", path=str(notes_real))
+                )
+                for document in documents:
+                    DocumentRepository(conn).create(document)
+        return db_path, notes_alias, documents
 
     def _invoke(self, db_path: Path, command: str, argument: str, *options: str) -> Result:
         """Invoke retrieval through the top-level CLI and a tmp_path index."""
@@ -229,6 +284,141 @@ class TestMultiGetRetrieval(RealDatabaseTestCase):
 
         assert result.exit_code == 0, result.output
         assert "No index found." in result.output
+
+
+class TestAliasPathResolution(RealDatabaseTestCase):
+    """Symlink-alias paths resolve to indexed documents stored under real paths."""
+
+    def test_get_by_alias_path_hits_index(
+        self, alias_documents: tuple[Path, Path, list[Document]]
+    ) -> None:
+        """An alias path is canonicalized to the stored real path before lookup.
+
+        The ``Collection:`` header proves the index row matched — the disk
+        fallback prints no collection line.
+        """
+        db_path, notes_alias, documents = alias_documents
+
+        result = self._invoke(db_path, "get", str(notes_alias / "alpha.md"))
+
+        assert result.exit_code == 0, result.output
+        assert "first line" in result.output
+        assert "Collection: collection-1" in result.output
+        assert f"Path: {documents[0].path}" in result.output
+
+    def test_multi_get_alias_list_and_raw_id(
+        self, alias_documents: tuple[Path, Path, list[Document]]
+    ) -> None:
+        """A comma list resolves an alias path and a raw document ID together."""
+        db_path, notes_alias, documents = alias_documents
+
+        result = self._invoke(db_path, "multi-get", f"{notes_alias / 'alpha.md'},{documents[1].id}")
+
+        assert result.exit_code == 0, result.output
+        assert "Found 2 matching document(s)" in result.output
+        assert "first line" in result.output
+        assert "beta content" in result.output
+
+    def test_multi_get_alias_glob_pattern(
+        self, alias_documents: tuple[Path, Path, list[Document]]
+    ) -> None:
+        """An absolute glob with a symlinked directory prefix matches stored paths."""
+        db_path, notes_alias, documents = alias_documents
+
+        result = self._invoke(db_path, "multi-get", str(notes_alias / "*.md"))
+
+        assert result.exit_code == 0, result.output
+        assert "Found 1 matching document(s)" in result.output
+        assert documents[0].path in result.output
+        assert "beta content" not in result.output
+
+    def test_id_and_filename_lookups_unchanged(
+        self, alias_documents: tuple[Path, Path, list[Document]]
+    ) -> None:
+        """ID-first and bare-filename lookups keep resolving (control)."""
+        db_path, _notes_alias, documents = alias_documents
+
+        by_id = self._invoke(db_path, "get", documents[0].id)
+        by_filename = self._invoke(db_path, "multi-get", documents[1].filename)
+
+        assert by_id.exit_code == 0, by_id.output
+        assert "first line" in by_id.output
+        assert by_filename.exit_code == 0, by_filename.output
+        assert "beta content" in by_filename.output
+
+
+class TestDatabaseClosure(RealDatabaseTestCase):
+    """get and multi-get own their Database lifecycle end to end."""
+
+    def test_get_closes_database_on_success(
+        self,
+        alias_documents: tuple[Path, Path, list[Document]],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Every Database constructed by get is closed after a successful run."""
+        db_path, notes_alias, _documents = alias_documents
+        TrackingDatabase.created.clear()
+        monkeypatch.setattr("sif.cli.commands.get.Database", TrackingDatabase)
+
+        result = self._invoke(db_path, "get", str(notes_alias / "alpha.md"))
+
+        assert result.exit_code == 0, result.output
+        assert TrackingDatabase.created, "get must construct its Database"
+        for instance in TrackingDatabase.created:
+            assert instance._connection is None
+
+    def test_get_closes_database_on_exception(
+        self,
+        alias_documents: tuple[Path, Path, list[Document]],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A repository failure still closes every Database get constructed."""
+        db_path, _notes_alias, documents = alias_documents
+        TrackingDatabase.created.clear()
+        monkeypatch.setattr("sif.cli.commands.get.Database", TrackingDatabase)
+
+        with patch.object(DocumentRepository, "get_by_id", side_effect=RuntimeError("boom")):
+            result = self._invoke(db_path, "get", documents[0].id)
+
+        assert result.exit_code != 0
+        assert TrackingDatabase.created, "get must construct its Database"
+        for instance in TrackingDatabase.created:
+            assert instance._connection is None
+
+    def test_multi_get_closes_database_on_success(
+        self,
+        alias_documents: tuple[Path, Path, list[Document]],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Every Database constructed by multi-get is closed after a successful run."""
+        db_path, notes_alias, _documents = alias_documents
+        TrackingDatabase.created.clear()
+        monkeypatch.setattr("sif.cli.commands.get.Database", TrackingDatabase)
+
+        result = self._invoke(db_path, "multi-get", str(notes_alias / "*.md"))
+
+        assert result.exit_code == 0, result.output
+        assert TrackingDatabase.created, "multi-get must construct its Database"
+        for instance in TrackingDatabase.created:
+            assert instance._connection is None
+
+    def test_multi_get_closes_database_on_exception(
+        self,
+        alias_documents: tuple[Path, Path, list[Document]],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A repository failure still closes every Database multi-get constructed."""
+        db_path, _notes_alias, documents = alias_documents
+        TrackingDatabase.created.clear()
+        monkeypatch.setattr("sif.cli.commands.get.Database", TrackingDatabase)
+
+        with patch.object(DocumentRepository, "get_by_id", side_effect=RuntimeError("boom")):
+            result = self._invoke(db_path, "multi-get", documents[0].id)
+
+        assert result.exit_code != 0
+        assert TrackingDatabase.created, "multi-get must construct its Database"
+        for instance in TrackingDatabase.created:
+            assert instance._connection is None
 
 
 class TestMultiGet:
