@@ -16,7 +16,7 @@
 - [x] **Phase 8: Project rename from DocSift to SIF** - Rename the entire project from DocSift to SIF
 - [x] **Phase 9: MCP Server Implementation** - Unify dual MCP implementations and implement real tool handlers with stdio/HTTP transports
 - [x] **Phase 10: Raise pytest coverage to 90%** (completed 2026-11-06)
-- [ ] **Phase 10.1: Address tech debt: path normalization + review findings CR-01/CR-02/WR-01**
+- [x] **Phase 10.1: Address tech debt: path normalization + review findings CR-01/CR-02/WR-01** (completed 2026-11-06)
 
 ## Phase Details
 
@@ -331,7 +331,7 @@ Plans:
 **Goal:** Users' existing databases stop returning deleted documents after one open (CR-01: legacy direct-DELETE FTS5 triggers migrated + stale entries purged via detection-gated 'rebuild'), `search --xml` / `query --xml` output is always well-formed XML regardless of control characters in the query or indexed content (CR-02), every CLI command closes its SQLite connection deterministically on success and on exception (WR-01: all 26 construction sites across 8 CLI modules), and symlink/alias paths resolve to indexed documents through `get`, `multi-get`, and MCP `get_document` (DEBT-PN) with the `get` index-vs-disk fallback boundary documented (DEBT-PN-DOC).
 **Requirements**: DEBT-PN, DEBT-PN-DOC, CR-01, CR-02, WR-01 (phase-requirement IDs from 10.1-RESEARCH.md — inserted urgent phase, no REQUIREMENTS.md REQ-IDs mapped)
 **Depends on:** Phase 10
-**Plans:** 4/4 plans executed
+**Plans:** 4/4 plans complete
 
 Plans:
 **Wave 1** *(no file overlap — all four run in parallel)*
