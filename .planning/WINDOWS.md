@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 5
+open_count: 6
 waived_count: 0
 fixed_count: 2
-total_count: 7
-last_updated: 2026-11-05T19:47:02.774Z
+total_count: 8
+last_updated: 2026-11-06T00:59:43.130Z
 ---
 
 # Broken Windows Ledger
@@ -22,6 +22,7 @@ last_updated: 2026-11-05T19:47:02.774Z
 | 5 | 261105-g1u | deviation | src/sif/cli/main.py | 71 | Group callback unconditionally mkdirs index parent dir for every command; guarded context add/list create no DB file but do create the empty parent dir (pre-existing, logged to quick-task deferred-items.md) | open |  | 2026-11-05T03:54:46.185Z |  |
 | 6 | 10 | deviation | src/sif/utils/logging.py | 122 | Applied computed formatter to caller-provided logging handlers (Rule 1 bug found by 10-05 tests) | fixed |  | 2026-11-05T19:46:51.982Z | 2026-11-05T19:47:02.697Z |
 | 7 | 10 | deviation | src/sif/utils/progress.py | 44 | Omitted Rich bar and percentage columns for indeterminate progress (Rule 1 bug found by 10-05 tests) | fixed |  | 2026-11-05T19:46:52.058Z | 2026-11-05T19:47:02.774Z |
+| 8 | 10.1 | deviation | .planning/phases/10.1-address-tech-debt-path-normalization-review-findings-cr-01-c/10.1-01-PLAN.md |  | Plan verify command 'pytest <2 files> -q' structurally cannot exit 0 under the 10-07 fail_under=90 gate (scoped run ~38% total); test signal verified via --no-cov plus full-suite 968-pass at 96.22% | open |  | 2026-11-06T00:59:43.130Z |  |
 
 ````json
 [
@@ -110,6 +111,19 @@ last_updated: 2026-11-05T19:47:02.774Z
     "reason": "",
     "recorded_at": "2026-11-05T19:46:52.058Z",
     "resolved_at": "2026-11-05T19:47:02.774Z",
+    "milestone": "v1.0"
+  },
+  {
+    "id": 8,
+    "kind": "deviation",
+    "phase": "10.1",
+    "file": ".planning/phases/10.1-address-tech-debt-path-normalization-review-findings-cr-01-c/10.1-01-PLAN.md",
+    "line": null,
+    "description": "Plan verify command 'pytest <2 files> -q' structurally cannot exit 0 under the 10-07 fail_under=90 gate (scoped run ~38% total); test signal verified via --no-cov plus full-suite 968-pass at 96.22%",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-11-06T00:59:43.130Z",
+    "resolved_at": null,
     "milestone": "v1.0"
   }
 ]

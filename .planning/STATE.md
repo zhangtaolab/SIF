@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: Not started
+current_plan: 2
 status: executing
-stopped_at: Phase 10 complete; Phase 10.1 (URGENT) inserted after Phase 10 — not planned yet
-last_updated: "2026-11-06T00:42:01.735Z"
-state_head: 9adfe46edd204090e594b0b15b0b3a64dc925476
+stopped_at: Completed 10.1-01-PLAN.md (DEBT-PN tracer + DEBT-PN-DOC); ready for 10.1-02
+last_updated: "2026-11-06T01:01:41.066Z"
+state_head: 8e0db2a76d93438971805f1ccec16f3d23f80994
 progress:
   total_phases: 11
   completed_phases: 9
   total_plans: 65
-  completed_plans: 61
+  completed_plans: 62
 milestone_name: milestone
-current_phase_name: "Address tech debt: path normalization + review findings CR-01/CR-02/WR-01"
 current_phase: 10
+current_phase_name: "Address tech debt: path normalization + review findings CR-01/CR-02/WR-01"
 ---
 
 # DocSift — Project State
@@ -27,7 +27,7 @@ current_phase: 10
 
 ## Current Position
 
-Current Plan: Not started
+Current Plan: 2
 Total Plans in Phase: 4
 
 - **Phases:** 9/10 complete (01–09); Phase 10 in progress
@@ -69,6 +69,7 @@ Phase 10-01 deleted the approved dead-code cluster; 10-02/10-03 expanded CLI and
 | Phase 10 P05 | 11min | 3 tasks | 12 files |
 | Phase 10 P06 | 20min | 3 tasks | 9 files |
 | Phase 10 P07 | 198s | 2 tasks | 1 files |
+| Phase 10.1 P01 | 13min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -141,6 +142,9 @@ Phase 10-01 deleted the approved dead-code cluster; 10-02/10-03 expanded CLI and
 - [Phase 10]: 10-06: Behavior tests repaired fixed-size chunker forward progress and post-insertion MCP session LRU bounds.
 - [Phase 10]: 10-07: Zero long-tail tests required; Wave-2 combined TOTAL already 96.16% (>=90%). D-05 did not trigger; no candidate test file was modified.
 - [Phase 10]: 10-07: Landed [tool.coverage.report] fail_under=90 LAST per D-04/Pattern 6; no exclude_lines/exclude_also/--cov-branch, no business-logic pragma. Canonical suite green under active gate (958 passed, 96.16%).
+- [Phase 10.1]: DEBT-PN lookup order (OQ2): normalized-only for exact-path lookups; ID-first and bare-filename stay raw; globs raw-first-then-normalized
+- [Phase 10.1]: get/multi-get own Database lifecycle via with Database(index_path) (WR-01, 2 sites); nested with db.connection kept for commit sequencing
+- [Phase 10.1]: DEBT-PN-DOC lands in docstrings + make docs-generate output + sif-get skill note; no separate prose page (OQ3/A5)
 
 ### Roadmap Evolution
 
@@ -185,8 +189,8 @@ Phase 10-01 deleted the approved dead-code cluster; 10-02/10-03 expanded CLI and
 
 ## Session Continuity
 
-**Last session:** 2026-11-05T20:27:59.466Z
-**Stopped at:** Phase 10 complete; Phase 10.1 (URGENT) inserted after Phase 10 — not planned yet
+**Last session:** 2026-11-06T01:01:40.310Z
+**Stopped at:** Completed 10.1-01-PLAN.md (DEBT-PN tracer + DEBT-PN-DOC); ready for 10.1-02
 **Resume file:** None
 
 - **Last action:** `/gsd-execute-phase 10` — plan 10-06 covered indexing and MCP behavior and repaired chunker progress/session bounds; 958 passed, coverage 96.16%.
