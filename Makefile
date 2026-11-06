@@ -1,7 +1,7 @@
 # Makefile for SIF project
 # Provides convenient commands for common development tasks
 
-.PHONY: help install install-dev install-all test test-verbose test-fast docs-test docs-generate lint lint-fix format format-check typecheck coverage clean build docs pre-commit security all ci dev-setup dev-check update-deps info
+.PHONY: help install install-dev install-all test test-verbose test-fast docs-test docs-generate lint lint-fix format format-check typecheck coverage clean clean-all build docs pre-commit security all ci dev-setup dev-check update-deps info
 
 # Default target
 help:

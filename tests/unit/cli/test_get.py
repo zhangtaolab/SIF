@@ -261,6 +261,13 @@ class TestMarkupLiteralContent(RealDatabaseTestCase):
                 title="Plain",
                 content="plain second document",
             ),
+            Document(
+                id="doc-m3",
+                path=str(notes / "note [draft].md"),
+                collection_id="collection-1",
+                title="Hostile [/bold] title",
+                content="bracketed header document",
+            ),
         ]
         for document in documents:
             Path(document.path).write_text(document.content, encoding="utf-8")
@@ -274,14 +281,6 @@ class TestMarkupLiteralContent(RealDatabaseTestCase):
                 for document in documents:
                     DocumentRepository(conn).create(document)
         return db_path, documents
-
-    def _invoke(self, db_path: Path, command: str, argument: str, *options: str) -> Result:
-        """Invoke retrieval through the top-level CLI and a tmp_path index."""
-        return CliRunner().invoke(
-            cli,
-            ["--index", str(db_path), "get", command, argument, *options],
-            env={"COLUMNS": "200"},
-        )
 
     def test_single_get_bracket_content_renders_literally(
         self, markup_documents: tuple[Path, list[Document]]
@@ -306,6 +305,24 @@ class TestMarkupLiteralContent(RealDatabaseTestCase):
         assert result.exit_code == 0, result.output
         assert "[/bold]" in result.output
         assert "plain second document" in result.output
+
+    def test_hostile_title_and_bracketed_filename_render_literally(
+        self, markup_documents: tuple[Path, list[Document]]
+    ) -> None:
+        """10-delta CR-01: header lines escape user-derived title/path text."""
+        db_path, documents = markup_documents
+        hostile = documents[2]
+
+        single = self._invoke(db_path, "get", hostile.id)
+        batch = self._invoke(db_path, "multi-get", hostile.id)
+
+        # Single get prints the title header; multi-get prints only the
+        # `=== path ===` header — assert each surface's own literals.
+        assert single.exit_code == 0, single.output
+        assert "Hostile [/bold] title" in single.output
+        assert "note [draft].md" in single.output
+        assert batch.exit_code == 0, batch.output
+        assert "note [draft].md" in batch.output
 
 
 class TestMultiGetRetrieval(RealDatabaseTestCase):

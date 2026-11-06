@@ -6,6 +6,7 @@ from pathlib import Path
 
 import click
 from rich.console import Console
+from rich.markup import escape
 
 from sif.cli.formatters import prepend_line_numbers
 from sif.core.models import Document
@@ -95,7 +96,9 @@ def get_cmd(  # noqa: C901, PLR0912, PLR0915
                             content = "\n".join(content_lines)
                         if line_numbers:
                             content = prepend_line_numbers(content)
-                        console.print(f"[bold]{path}[/bold]")
+                        # Header interpolates user-derived path text into a
+                        # markup-enabled line — escape it (10-delta CR-01).
+                        console.print(f"[bold]{escape(str(path))}[/bold]")
                         # Document content is data, not markup — print raw so
                         # bracket sequences render literally instead of being
                         # consumed or raising MarkupError (CR-01).
@@ -106,10 +109,13 @@ def get_cmd(  # noqa: C901, PLR0912, PLR0915
 
                 raise click.ClickException(f"Document not found: {path_or_docid}")
 
-            # Display document
-            console.print(f"[bold cyan]{doc.title or doc.filename}[/bold cyan]")
-            console.print(f"[dim]Path: {doc.path}[/dim]")
-            console.print(f"[dim]Collection: {doc.collection_id}[/dim]")
+            # Display document. Header lines interpolate user-derived title /
+            # filename / path text into markup-enabled strings — escape the
+            # values, keep the styling tags (10-delta CR-01; 04-06/05-10
+            # escape() precedent).
+            console.print(f"[bold cyan]{escape(doc.title or doc.filename)}[/bold cyan]")
+            console.print(f"[dim]Path: {escape(doc.path)}[/dim]")
+            console.print(f"[dim]Collection: {escape(doc.collection_id)}[/dim]")
             console.print("")
 
             # Get content
@@ -231,7 +237,10 @@ def multi_get_cmd(  # noqa: C901
                 if line_numbers:
                     content = prepend_line_numbers(content)
 
-                console.print(f"[bold cyan]=== {doc.path} ===[/bold cyan]")
+                # Escape the user-derived path in the markup-enabled header
+                # (10-delta CR-01) — a bracketed filename must not abort the
+                # batch or have segments consumed.
+                console.print(f"[bold cyan]=== {escape(doc.path)} ===[/bold cyan]")
                 # Raw content print (CR-01): also protects the literal
                 # "... [truncated]" marker added above from markup parsing.
                 console.print(content, markup=False)
