@@ -200,7 +200,9 @@ def context_add(
                 existing.context = content
                 repo.update(existing)
                 display_target = actual_target if type == "path" else target
-                console.print(f"[green]Context updated for {type} '{display_target}'[/green]")
+                console.print(
+                    f"[green]Context updated for {type} '{escape(display_target)}'[/green]"
+                )
             else:
                 path_context = PathContext(
                     path=actual_target,
@@ -209,7 +211,7 @@ def context_add(
                 )
                 repo.create(path_context)
                 display_target = actual_target if type == "path" else target
-                console.print(f"[green]Context added for {type} '{display_target}'[/green]")
+                console.print(f"[green]Context added for {type} '{escape(display_target)}'[/green]")
 
 
 @context_group.command("remove")
@@ -233,7 +235,7 @@ def context_remove(ctx: click.Context, context_id: str) -> None:
             if not deleted:
                 raise click.ClickException(f"No context found with ID '{context_id}'")
 
-        console.print(f"[green]Context '{context_id}' removed[/green]")
+        console.print(f"[green]Context '{escape(context_id)}' removed[/green]")
 
 
 @context_group.command("list")
