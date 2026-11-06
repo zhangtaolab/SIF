@@ -23,7 +23,7 @@ current_phase_name: Agent Context Experience
 
 - **Name:** DocSift
 - **Core Value:** 用户可以在自己的笔记和文档库中，用自然语言快速、准确地找到需要的信息——无论关键词是否匹配。
-- **Current Focus:** Phase 10 coverage campaign — plan 10-06 complete at 96.16%; ready for 10-07.
+- **Current Focus:** Milestone v1.0 roadmap-complete (all phases); Phase 05 verification regenerated 2026-11-06 — phases 10/10.1 verification refresh pending.
 - **Tech Stack:** Python 3.10+, SQLite (FTS5 + sqlite-vec), Click, Pydantic, sentence-transformers, llama-cpp-python
 
 ## Current Position
@@ -31,10 +31,10 @@ current_phase_name: Agent Context Experience
 Current Plan: 12
 Total Plans in Phase: 12
 
-- **Phases:** 9/10 complete (01–09); Phase 10 in progress
-- **Plans:** 60/61 complete
-- **Status:** Completed 10-06; ready for 10-07
-- **Progress Bar:** `[████████████████████] 98%`
+- **Phases:** 11/11 complete (01–10.1); milestone v1.0 roadmap-complete
+- **Plans:** 68/68 complete
+- **Status:** Phase 05 re-verified 2026-11-06 (fifth stale-verification regeneration, WR-18); phases 10/10.1 verifications stale — regenerate before milestone close
+- **Progress Bar:** `[████████████████████] 68/68 plans`
 - **Coverage baseline:** 96.16% (5341 statements, 205 missed); 958 passed, 0 failed
 
 Phase 10-01 deleted the approved dead-code cluster; 10-02/10-03 expanded CLI and reranker coverage; 10-04 closed the real-SQLite database layer; 10-05 covered core services, downloader, and utilities; 10-06 covered indexing and MCP behavior.
@@ -210,9 +210,9 @@ Phase 10-01 deleted the approved dead-code cluster; 10-02/10-03 expanded CLI and
 
 ## Session Continuity
 
-**Last session:** 2026-11-06T10:50:05.316Z
-**Stopped at:** Completed 05-12-PLAN.md
+**Last session:** 2026-11-06 (phase 05 gates + regeneration)
+**Stopped at:** Phase 05 re-verified (24/24, fresh fingerprint) and re-marked complete — fifth stale-verification regeneration, over the WR-18 fix (452ae48)
 **Resume file:** None
 
-- **Last action:** `/gsd-execute-phase 10` — plan 10-06 covered indexing and MCP behavior and repaired chunker progress/session bounds; 958 passed, coverage 96.16%.
-- **Next expected action:** `/gsd-execute-phase 10` — continue with plan 10-07. `T-10-1` remains held until all seven plans complete.
+- **Last action:** `/gsd-execute-phase 05` — all gates green (validation 145, security 23/23, UI re-audit, code review 0c/0w, regression 1011 passed @ 96.22%), verifier regenerated VERIFICATION.md.
+- **Next expected action:** `/gsd-execute-phase 10` then `/gsd-execute-phase 10.1` — both verifications read `stale` and route to the same gate-regeneration path; then `/gsd-complete-milestone v1.0`.

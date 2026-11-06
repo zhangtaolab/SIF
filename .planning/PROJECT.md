@@ -25,7 +25,7 @@ DocSift 是 [qmd](https://github.com/tobi/qmd) 的 Python 重构版本，一个�
 - ✓ 嵌入模型灵活可配置：本地 GGUF（llama-cpp-python）、sentence-transformers、ModelScope，及可选 OpenAI 兼容 API（默认 Qwen3 系列） — Validated in Phase 03
 - ✓ LLM 重排序（Qwen3-Reranker）和查询扩展（SearchPipeline），`query` 搜索质量达标 — Validated in Phase 04/05
 - ✓ 统一 MCP 服务器实现（`src/sif/mcp/`，stdio + Streamable HTTP） — Validated in Phase 09
-- ✓ 上下文描述：path/collection/global 三种作用域，context CLI 全命令集，搜索结果自动附加描述 — Validated in Phase 05（2026-11-05 重新验证 24/24 通过）
+- ✓ 上下文描述：path/collection/global 三种作用域，context CLI 全命令集，搜索结果自动附加描述 — Validated in Phase 05（2026-11-06 重新验证 24/24 通过，第五次陈旧验证再生）
 
 ### Active
 
@@ -83,4 +83,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-11-05 after Phase 05 transition (fourth stale verification regeneration — re-verified 24/24 over the CR-02 formatter fix with fresh fingerprint, all gates green; milestone v1.0 100% — 9/9 phases, 54/54 plans)*
+*Last updated: 2026-11-06 after Phase 05 transition (fifth stale verification regeneration — re-verified 24/24 over the WR-18 confirmation-print fix (452ae48) with fresh fingerprint; all gates green: validation 145 passed, security 23/23 closed, UI re-audit 11/16, code review 0 critical/0 warning, regression suite 1011 passed @ 96.22%)*
