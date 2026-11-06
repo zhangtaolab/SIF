@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: Not started
+current_plan: 11
 status: executing
-stopped_at: Phase 10.1 complete — all phases complete
-last_updated: "2026-11-06T07:55:14.554Z"
-state_head: 69f01f465bb58d89f686ad58952a4530addd1f27
+stopped_at: Completed 05-10-PLAN.md
+last_updated: "2026-11-06T08:17:08.387Z"
+state_head: ba7e0e4a514491385f5145a05cb2c342a72921f3
 progress:
   total_phases: 11
   completed_phases: 9
   total_plans: 67
-  completed_plans: 65
+  completed_plans: 66
 milestone_name: milestone
-current_phase_name: Agent Context Experience
 current_phase: 10
+current_phase_name: Agent Context Experience
 ---
 
 # DocSift — Project State
@@ -27,7 +27,7 @@ current_phase: 10
 
 ## Current Position
 
-Current Plan: Not started
+Current Plan: 11
 Total Plans in Phase: 11
 
 - **Phases:** 9/10 complete (01–09); Phase 10 in progress
@@ -73,6 +73,7 @@ Phase 10-01 deleted the approved dead-code cluster; 10-02/10-03 expanded CLI and
 | Phase 10.1 P02 | 9min | 2 tasks | 2 files |
 | Phase 10.1 P03 | 13min | 3 tasks | 2 files |
 | Phase 10.1 P04 | 16min | 3 tasks | 8 files |
+| Phase 05 P10 | 8min | 3 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -157,6 +158,8 @@ Phase 10-01 deleted the approved dead-code cluster; 10-02/10-03 expanded CLI and
 - [Phase 10.1]: 10.1-04: WR-01 closed for six CLI modules (21 sites) — with Database(index_path) ownership wraps each command body from init_schema onward; nested with db.connection/transaction blocks preserved verbatim (57→13 ResourceWarnings, remainder test-side)
 - [Phase 10.1]: 10.1-04: main.py ownership scopes sit INSIDE the existing try/except — exceptions close the Database via __exit__ before the ClickException handler runs
 - [Phase 10.1]: 10.1-04: lifecycle harness asserts non-vacuous closure (every test asserts >=1 TrackingDatabase captured) and covers index update (not index status, which delegates to main's status_cmd and would not exercise index.py's scope)
+- [Phase 05]: 05-10: truth-21 duplicate collapse centralized in _collapse_duplicate_path_rows — shared by exact-match branch, normalized branch, and upsert-hit path; exact-match branch gains the same landed-guard (update_target True before any deletion) as the normalized branch (T-05-16)
+- [Phase 05]: 05-10: CR-02 closed — context list wraps all three Rich table cells in rich.markup.escape AFTER truncation so the 50-char display cap applies to raw text; display-only, stored bytes untouched (mirrors 04-06 snippet precedent)
 
 ### Roadmap Evolution
 
@@ -201,8 +204,8 @@ Phase 10-01 deleted the approved dead-code cluster; 10-02/10-03 expanded CLI and
 
 ## Session Continuity
 
-**Last session:** 2026-11-06T01:53:27.276Z
-**Stopped at:** Phase 10.1 complete — all phases complete
+**Last session:** 2026-11-06T08:17:07.636Z
+**Stopped at:** Completed 05-10-PLAN.md
 **Resume file:** None
 
 - **Last action:** `/gsd-execute-phase 10` — plan 10-06 covered indexing and MCP behavior and repaired chunker progress/session bounds; 958 passed, coverage 96.16%.
