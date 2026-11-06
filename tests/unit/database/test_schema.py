@@ -465,6 +465,30 @@ class TestFtsUpdateTrigger:
         )
         db.commit()
 
+    def _insert_chunk(self, db: sqlite3.Connection) -> None:
+        db.execute(
+            "INSERT INTO document_chunks (id, document_id, sequence, content, created_at) "
+            "VALUES ('ch1', 'd1', 0, ?, '2020-01-01')",
+            (self.MEDIUM_CONTENT,),
+        )
+        db.commit()
+
+    def _install_legacy_delete_triggers(self, db: sqlite3.Connection) -> None:
+        """Replace both delete triggers with the broken legacy direct-DELETE form."""
+        for trigger, table, base in (
+            ("documents_fts_delete", "documents_fts", "documents"),
+            ("chunks_fts_delete", "chunks_fts", "document_chunks"),
+        ):
+            db.execute(f"DROP TRIGGER {trigger}")
+            db.execute(f"""
+                CREATE TRIGGER {trigger}
+                AFTER DELETE ON {base}
+                BEGIN
+                    DELETE FROM {table} WHERE rowid = old.rowid;
+                END
+            """)
+        db.commit()
+
     def test_medium_document_update_keeps_fts_in_sync(self, fts_db):
         """A medium+ content edit through UPDATE documents must not corrupt the index."""
         SchemaManager(fts_db, embedding_dim=384).create_all()
@@ -550,20 +574,7 @@ class TestFtsUpdateTrigger:
     def test_legacy_direct_delete_trigger_is_migrated(self, fts_db):
         """create_all() replaces legacy direct-DELETE triggers; deletes purge from MATCH."""
         SchemaManager(fts_db, embedding_dim=384).create_all()
-
-        for trigger, table, base in (
-            ("documents_fts_delete", "documents_fts", "documents"),
-            ("chunks_fts_delete", "chunks_fts", "document_chunks"),
-        ):
-            fts_db.execute(f"DROP TRIGGER {trigger}")
-            fts_db.execute(f"""
-                CREATE TRIGGER {trigger}
-                AFTER DELETE ON {base}
-                BEGIN
-                    DELETE FROM {table} WHERE rowid = old.rowid;
-                END
-            """)
-        fts_db.commit()
+        self._install_legacy_delete_triggers(fts_db)
 
         SchemaManager(fts_db, embedding_dim=384).create_all()
 
@@ -579,11 +590,7 @@ class TestFtsUpdateTrigger:
             assert "VALUES('delete'" in sql
 
         self._insert_document(fts_db)
-        fts_db.execute(
-            "INSERT INTO document_chunks (id, document_id, sequence, content, created_at) "
-            "VALUES ('ch1', 'd1', 0, ?, '2020-01-01')",
-            (self.MEDIUM_CONTENT,),
-        )
+        self._insert_chunk(fts_db)
         assert (
             fts_db.execute(
                 "SELECT COUNT(*) FROM documents_fts WHERE documents_fts MATCH 'paragraph'"
@@ -612,6 +619,70 @@ class TestFtsUpdateTrigger:
             ).fetchone()[0]
             == 0
         )
+
+    def test_stale_fts_entries_are_purged_on_migration(self, fts_db):
+        """Entries orphaned under the legacy trigger are purged by the gated rebuild."""
+        SchemaManager(fts_db, embedding_dim=384).create_all()
+        self._install_legacy_delete_triggers(fts_db)
+
+        self._insert_document(fts_db)
+        self._insert_chunk(fts_db)
+        # Delete WHILE the legacy trigger is active: the plain DELETE FROM the
+        # FTS table leaves the removed content MATCHable (the bug state).
+        fts_db.execute("DELETE FROM document_chunks WHERE id = 'ch1'")
+        fts_db.execute("DELETE FROM documents WHERE id = 'd1'")
+        fts_db.commit()
+        assert (
+            fts_db.execute(
+                "SELECT COUNT(*) FROM documents_fts WHERE documents_fts MATCH 'paragraph'"
+            ).fetchone()[0]
+            == 1
+        )
+        assert (
+            fts_db.execute(
+                "SELECT COUNT(*) FROM chunks_fts WHERE chunks_fts MATCH 'paragraph'"
+            ).fetchone()[0]
+            == 1
+        )
+
+        # Migration replaces the triggers and the gated rebuild reaps the orphans.
+        SchemaManager(fts_db, embedding_dim=384).create_all()
+
+        assert (
+            fts_db.execute(
+                "SELECT COUNT(*) FROM documents_fts WHERE documents_fts MATCH 'paragraph'"
+            ).fetchone()[0]
+            == 0
+        )
+        assert (
+            fts_db.execute(
+                "SELECT COUNT(*) FROM chunks_fts WHERE chunks_fts MATCH 'paragraph'"
+            ).fetchone()[0]
+            == 0
+        )
+
+    def test_migration_rebuild_preserves_live_documents(self, fts_db):
+        """The gated rebuild resyncs the index rather than wiping live documents."""
+        SchemaManager(fts_db, embedding_dim=384).create_all()
+        self._insert_document(fts_db)
+        self._insert_chunk(fts_db)
+
+        self._install_legacy_delete_triggers(fts_db)
+        SchemaManager(fts_db, embedding_dim=384).create_all()
+
+        assert (
+            fts_db.execute(
+                "SELECT COUNT(*) FROM documents_fts WHERE documents_fts MATCH 'paragraph'"
+            ).fetchone()[0]
+            == 1
+        )
+        assert (
+            fts_db.execute(
+                "SELECT COUNT(*) FROM chunks_fts WHERE chunks_fts MATCH 'paragraph'"
+            ).fetchone()[0]
+            == 1
+        )
+        assert fts_db.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
 
     def test_modern_trigger_is_left_alone(self, fts_db):
         """create_all() does not churn an already-migrated trigger or wipe live entries."""
