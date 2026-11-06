@@ -199,10 +199,7 @@ def context_add(
                     _collapse_duplicate_path_rows(repo, actual_target, existing.id)
                 existing.context = content
                 repo.update(existing)
-                display_target = actual_target if type == "path" else target
-                console.print(
-                    f"[green]Context updated for {type} '{escape(display_target)}'[/green]"
-                )
+                message = "updated"
             else:
                 path_context = PathContext(
                     path=actual_target,
@@ -210,8 +207,13 @@ def context_add(
                     context_type=type,
                 )
                 repo.create(path_context)
-                display_target = actual_target if type == "path" else target
-                console.print(f"[green]Context added for {type} '{escape(display_target)}'[/green]")
+                message = "added"
+            display_target = actual_target if type == "path" else target
+
+        # Confirmation print outside the transaction, mirroring
+        # context_remove: a display failure (broken pipe, closed stream)
+        # must not roll back a write that already committed (REVIEW WR-18).
+        console.print(f"[green]Context {message} for {type} '{escape(display_target)}'[/green]")
 
 
 @context_group.command("remove")
