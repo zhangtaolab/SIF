@@ -3,14 +3,14 @@ phase: 05
 review: 05-REVIEW.md
 titles: json
 findings:
+  - id: IN-13
+    severity: info
+    disposition: open
+    title: "`context list` shows raw collection UUIDs in the Target column"
   - id: WR-18
     severity: warning
     disposition: fixed
     title: "`context add` confirmation prints execute inside the open transaction — any display failure still rolls back a completed write"
-  - id: IN-13
-    severity: info
-    disposition: open
-    title: "`context list` shows raw collection UUIDs; `--line-numbers` default in the search skill is ineffective without `--full`"
   - id: IN-19
     severity: info
     disposition: open
@@ -169,17 +169,17 @@ findings:
     title: "`Qwen3Reranker.load()` duplicates the entire loading block for quiet/non-quiet"
 open: 38
 total: 41
-recorded: 2026-11-06T11:37:12.541Z
+recorded: 2026-11-06T11:59:51.521Z
 ---
 
 # Phase 05: Code Review Disposition
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| WR-18 | warning | fixed | 05-REVIEW-FIX.md |
 | IN-13 | info | open | - |
-| IN-19 | info | open | - |
-| IN-20 | info | open | - |
+| WR-18 | warning | fixed | 05-REVIEW-FIX.md (not in the current review) |
+| IN-19 | info | open | - (not in the current review) |
+| IN-20 | info | open | - (not in the current review) |
 | CR-03 | critical | open | - (not in the current review) |
 | WR-02 | warning | open | - (not in the current review) |
 | WR-03 | warning | open | - (not in the current review) |
