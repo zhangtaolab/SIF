@@ -3,9 +3,9 @@ gsd_state_version: "1.0"
 milestone: v1.0
 current_plan: 4
 status: executing
-stopped_at: Completed 10.1-03-PLAN.md (CR-02 XML sanitizer + WR-01 search.py lifecycle); ready for 10.1-04
-last_updated: "2026-11-06T01:33:24.746Z"
-state_head: ab424418abab224caffd588d0fe264f33635f0c7
+stopped_at: Completed 10.1-04-PLAN.md (WR-01 lifecycle for 6 CLI modules + closure harness); phase 10.1 plans 4/4 complete
+last_updated: "2026-11-06T01:53:28.052Z"
+state_head: 2c6782903c07b03710b29c7af9d707e9edc50376
 progress:
   total_phases: 11
   completed_phases: 9
@@ -72,6 +72,7 @@ Phase 10-01 deleted the approved dead-code cluster; 10-02/10-03 expanded CLI and
 | Phase 10.1 P01 | 13min | 2 tasks | 6 files |
 | Phase 10.1 P02 | 9min | 2 tasks | 2 files |
 | Phase 10.1 P03 | 13min | 3 tasks | 2 files |
+| Phase 10.1 P04 | 16min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -153,6 +154,9 @@ Phase 10-01 deleted the approved dead-code cluster; 10-02/10-03 expanded CLI and
 - [Phase 10.1]: 10.1-03: CR-02 closed — sanitizer is the XML 1.0 Char production complement transliterated (strip #x00-#x08/#x0B/#x0C/#x0E-#x1F/surrogates/#xFFFE-#xFFFF; keep tab/LF/CR; never strip #x7F-#x9F), applied BEFORE xml_escape/quoteattr which keep owning <>&'"
 - [Phase 10.1]: 10.1-03: WR-01 search.py — with Database(index_path) covers each command body from init_schema onward; all nine nested with db.connection: transaction blocks preserved
 - [Phase 10.1]: 10.1-03: closure doubles patch the import SOURCE for function-local imports — vsearch_cmd binds Database at call time, so its TrackingDatabase patches sif.database.database.Database; and real-Database doubles need settings.embedding_dim as a real int (init_schema resolves get_settings lazily per call)
+- [Phase 10.1]: 10.1-04: WR-01 closed for six CLI modules (21 sites) — with Database(index_path) ownership wraps each command body from init_schema onward; nested with db.connection/transaction blocks preserved verbatim (57→13 ResourceWarnings, remainder test-side)
+- [Phase 10.1]: 10.1-04: main.py ownership scopes sit INSIDE the existing try/except — exceptions close the Database via __exit__ before the ClickException handler runs
+- [Phase 10.1]: 10.1-04: lifecycle harness asserts non-vacuous closure (every test asserts >=1 TrackingDatabase captured) and covers index update (not index status, which delegates to main's status_cmd and would not exercise index.py's scope)
 
 ### Roadmap Evolution
 
@@ -197,8 +201,8 @@ Phase 10-01 deleted the approved dead-code cluster; 10-02/10-03 expanded CLI and
 
 ## Session Continuity
 
-**Last session:** 2026-11-06T01:33:23.985Z
-**Stopped at:** Completed 10.1-03-PLAN.md (CR-02 XML sanitizer + WR-01 search.py lifecycle); ready for 10.1-04
+**Last session:** 2026-11-06T01:53:27.276Z
+**Stopped at:** Completed 10.1-04-PLAN.md (WR-01 lifecycle for 6 CLI modules + closure harness); phase 10.1 plans 4/4 complete
 **Resume file:** None
 
 - **Last action:** `/gsd-execute-phase 10` — plan 10-06 covered indexing and MCP behavior and repaired chunker progress/session bounds; 958 passed, coverage 96.16%.
