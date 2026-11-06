@@ -14,17 +14,17 @@
   **Resolution:** Resolved by quick task 261106-u7d (ty exits 0, all 17 cleared).
 
 - Test-side raw `sqlite3.connect` handles leak ResourceWarnings (13 remain after WR-01)
-  status: open
+  status: resolved
   **What:** After plan 10.1-04 converted every production CLI `Database` construction
   to context-manager ownership, full-suite unclosed-database ResourceWarnings dropped
-  57 → 13. The remaining 13 come from TEST-side raw sqlite usage, not production code:
-  `tests/unit/search/test_bm25.py:281,309` open in-memory `sqlite3.connect` connections
+  57 → 13. The remaining 13 came from TEST-side raw sqlite usage, not production code:
+  `tests/unit/search/test_bm25.py` opened in-memory `sqlite3.connect` connections
   without `conn.close()`, and `tests/unit/cli/test_collection.py` `_read_collection`
-  uses `with sqlite3.connect(...)` (transaction-scoped, does NOT close). ResourceWarning
-  fires at GC time, so pytest attributes them to whichever test runs when the interpreter
-  collects the old handles (hence the misleading test_pull/test_collection attribution).
+  used `with sqlite3.connect(...)` (transaction-scoped, does NOT close). ResourceWarning
+  fires at GC time, so pytest attributed them to whichever test ran when the interpreter
+  collected the old handles (hence the misleading test_pull/test_collection attribution).
   **Found during:** Plan 10.1-04 plan-level verification.
-  **Disposition:** Out of scope (test-file debt predating this plan; production modules
-  verified leak-free — `grep -rn " = Database(index_path)" src/sif/cli` = 0, and the
-  lifecycle harness asserts closure). Fix shape if taken up: `conn.close()` in bm25
-  tests or `contextlib.closing`, and `_read_connection` helpers should close explicitly.
+  **Resolved:** 2026-11-06 at milestone v1.0 close — both sites wrapped in
+  `contextlib.closing(...)` (bm25 probe tests + `_read_collection` helper); production
+  modules were already leak-free (`grep -rn " = Database(index_path)" src/sif/cli` = 0,
+  lifecycle harness asserts closure).

@@ -8,5 +8,6 @@
 
 ## 2026-09-14 — audit re-file: mypy strict-mode typing debt
 
-- Untracked anywhere else in `.planning/`; replaces the resolved "mypy cannot run" item above. As of 2026-09-14 `uv run mypy src/sif` reports 140 errors in 36 files (76 checked); top error codes type-arg, no-any-return, attr-defined; hottest files search/rerank.py, indexing/watcher.py, mcp/handlers.py, embedding/manager.py. Pre-existing strict-mode typing debt, unrelated to phase 03 scope.
-  Disposition: tracked backlog — scheduling a dedicated typing-hardening phase is a future `/gsd-phase` decision; until then this item stays open by design so the audit keeps surfacing it.
+- As of 2026-09-14 `uv run mypy src/sif` reported 140 errors in 36 files (76 checked); top error codes type-arg, no-any-return, attr-defined; hottest files search/rerank.py, indexing/watcher.py, mcp/handlers.py, embedding/manager.py. Pre-existing strict-mode typing debt, unrelated to phase 03 scope.
+  **Status:** resolved
+  Resolved 2026-11-06 at milestone v1.0 close — mypy retired, ty is the sole type checker. Typing debt was cleared in two waves: batches 260917-bo2/dkf/kav drove mypy errors down (117→46 full-project) while mypy was still the checker; quick task 261106-u7d then cleared all 17 remaining `ty check src/sif` diagnostics (assert-narrowing, Protocol, cast; zero behavior change) and dropped every residual mypy reference (commits e0d9596 + 3fc5908). Final state: `ty check src/sif` exits 0, zero mypy references in src/tests/pyproject, 10.1 deferred-items item 1 ledgered resolved.
