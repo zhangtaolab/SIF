@@ -1,7 +1,7 @@
 <!-- generated-by: gsd-doc-writer -->
 # Testing
 
-SIF's test suite is built on [pytest](https://docs.pytest.org/) with coverage collected by pytest-cov. Tests live in `tests/` and are organized into unit, integration, and e2e tiers — 1000 tests in total, running in well under a minute. This guide covers how to run the suite, how the tiers are laid out, and how to write new tests using the shared fixtures and factories.
+SIF's test suite is built on [pytest](https://docs.pytest.org/) with coverage collected by pytest-cov. Tests live in `tests/` and are organized into unit, integration, and e2e tiers — 1011 tests in total, running in well under a minute. This guide covers how to run the suite, how the tiers are laid out, and how to write new tests using the shared fixtures and factories.
 
 ## Test framework and setup
 
@@ -90,7 +90,7 @@ tests/
 ├── factories.py             # Test data factories
 ├── test_docs.py             # Validates code blocks in documentation (13 tests)
 ├── test_sif_complete.py     # End-to-end smoke tests over the installed package (9 tests)
-├── unit/                    # 960 tests — module-level tests with mocks/temp databases
+├── unit/                    # 971 tests — module-level tests with mocks/temp databases
 │   ├── cli/                 #   CLI commands (index, search, get, pull, bench, ls, status, ...)
 │   ├── config/              #   Settings loading and validation
 │   ├── core/                #   Core domain entities (Collection, Context)
@@ -175,7 +175,7 @@ Coverage is measured over `src/sif` on every run (via `addopts`) and reported th
 - `htmlcov/index.html` — browsable HTML report
 - `coverage.xml` — machine-readable report
 
-A minimum threshold **is** enforced: `[tool.coverage.report]` in `pyproject.toml` sets `fail_under = 90`, so any run whose total coverage falls below 90% fails with `Required test coverage of 90.0% not reached`. Note that this applies to partial runs too — running a single file or tier measures only that subset against the same 90% gate, so use `--no-cov` for focused work. The full suite currently sits around 96%.
+A minimum threshold **is** enforced: `[tool.coverage.report]` in `pyproject.toml` sets `fail_under = 90`, so any run whose total coverage falls below 90% fails with `Required test coverage of 90.0% not reached`. Note that this applies to partial runs too — running a single file or tier measures only that subset against the same 90% gate, so use `--no-cov` for focused work. The full suite currently sits at 96.2% (5389 statements, 204 missed across 1011 tests).
 
 Artifacts are cleaned by `make clean` (removes `htmlcov/`, `.coverage`, `coverage.xml`).
 

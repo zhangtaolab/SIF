@@ -611,7 +611,7 @@ The [Makefile](../Makefile) defines convenience targets for every common develop
 |---------|-------------|
 | `make test` | Run tests with coverage (terminal, HTML, and XML reports) |
 | `make test-verbose` | Run tests verbosely (`pytest -vvs --tb=short`) with coverage |
-| `make test-fast` | Run tests without coverage, stopping at the first failure (`pytest -x -q`) |
+| `make test-fast` | Run tests stopping at the first failure (`pytest -x -q`); coverage is still collected via `addopts` — the speed comes from `-x` and `-q`, not from skipping coverage |
 | `make lint` | Run the ruff linter (`ruff check .`) |
 | `make lint-fix` | Lint and auto-fix (`ruff check --fix .`) |
 | `make format` | Format code with ruff (`ruff format .`) |
