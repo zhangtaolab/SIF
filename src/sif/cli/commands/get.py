@@ -29,7 +29,7 @@ def get_group() -> None:
 @click.option("--lines", "-l", type=int, help="Number of lines to show")
 @click.option("--line-numbers", is_flag=True, help="Show line numbers")
 @click.pass_context
-def get_cmd(  # noqa: C901, PLR0912
+def get_cmd(  # noqa: C901, PLR0912, PLR0915
     ctx: click.Context,
     path_or_docid: str,
     from_line: int | None,
@@ -82,8 +82,24 @@ def get_cmd(  # noqa: C901, PLR0912
                 if path.exists():
                     try:
                         content = path.read_text()
+                        # Honor the same line filtering/numbering contract
+                        # as the indexed path (CR-02: these were silently
+                        # ignored on the fallback, dumping unbounded output).
+                        if from_line is not None or lines is not None:
+                            content_lines = content.split("\n")
+                            start = max(0, (from_line or 1) - 1)
+                            if lines is not None:
+                                content_lines = content_lines[start : start + lines]
+                            else:
+                                content_lines = content_lines[start:]
+                            content = "\n".join(content_lines)
+                        if line_numbers:
+                            content = prepend_line_numbers(content)
                         console.print(f"[bold]{path}[/bold]")
-                        console.print(content)
+                        # Document content is data, not markup — print raw so
+                        # bracket sequences render literally instead of being
+                        # consumed or raising MarkupError (CR-01).
+                        console.print(content, markup=False)
                         return
                     except Exception as e:
                         raise click.ClickException(f"Cannot read file: {e}") from e
@@ -117,11 +133,11 @@ def get_cmd(  # noqa: C901, PLR0912
             if line_numbers:
                 content = prepend_line_numbers(content)
 
-            # Display with syntax highlighting if markdown
-            if doc.path.endswith(".md"):
-                console.print(content)
-            else:
-                console.print(content)
+            # Document content is data, not markup — print raw so bracket
+            # sequences render literally instead of being consumed or raising
+            # MarkupError (CR-01). The former markdown/else branches were
+            # byte-identical calls; collapsed to the single raw print.
+            console.print(content, markup=False)
 
 
 @get_group.command("multi-get")
@@ -216,5 +232,7 @@ def multi_get_cmd(  # noqa: C901
                     content = prepend_line_numbers(content)
 
                 console.print(f"[bold cyan]=== {doc.path} ===[/bold cyan]")
-                console.print(content)
+                # Raw content print (CR-01): also protects the literal
+                # "... [truncated]" marker added above from markup parsing.
+                console.print(content, markup=False)
                 console.print("")

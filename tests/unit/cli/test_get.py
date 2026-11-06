@@ -219,6 +219,94 @@ class TestGetRetrieval(RealDatabaseTestCase):
         assert failure.exit_code != 0
         assert "Cannot read file: simulated read failure" in failure.stderr
 
+    def test_disk_fallback_honors_line_options(
+        self, indexed_documents: tuple[Path, list[Document]], tmp_path: Path
+    ) -> None:
+        """--lines/--line-numbers apply on the disk-fallback path too (CR-02)."""
+        db_path, _ = indexed_documents
+        local_file = tmp_path / "five_lines.md"
+        local_file.write_text(
+            "line one\nline two\nline three\nline four\nline five", encoding="utf-8"
+        )
+
+        result = self._invoke(db_path, "get", str(local_file), "--lines", "2", "--line-numbers")
+
+        assert result.exit_code == 0, result.output
+        assert "   1: line one" in result.output
+        assert "   2: line two" in result.output
+        assert "line three" not in result.output
+        assert "line five" not in result.output
+
+
+class TestMarkupLiteralContent(RealDatabaseTestCase):
+    """CR-01 regressions: document content prints raw, never as Rich markup."""
+
+    @pytest.fixture
+    def markup_documents(self, tmp_path: Path) -> tuple[Path, list[Document]]:
+        """Index documents whose content contains markup-hostile bracket sequences."""
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        documents = [
+            Document(
+                id="doc-m1",
+                path=str(notes / "hostile.md"),
+                collection_id="collection-1",
+                title="Hostile",
+                content="see [/bold] and [link](https://example.com) here",
+            ),
+            Document(
+                id="doc-m2",
+                path=str(notes / "plain.md"),
+                collection_id="collection-1",
+                title="Plain",
+                content="plain second document",
+            ),
+        ]
+        for document in documents:
+            Path(document.path).write_text(document.content, encoding="utf-8")
+        db_path = tmp_path / "sif.db"
+        with Database(db_path) as db:
+            db.init_schema()
+            with db.transaction() as conn:
+                CollectionRepository(conn).create(
+                    Collection(id="collection-1", name="notes", path=str(notes))
+                )
+                for document in documents:
+                    DocumentRepository(conn).create(document)
+        return db_path, documents
+
+    def _invoke(self, db_path: Path, command: str, argument: str, *options: str) -> Result:
+        """Invoke retrieval through the top-level CLI and a tmp_path index."""
+        return CliRunner().invoke(
+            cli,
+            ["--index", str(db_path), "get", command, argument, *options],
+            env={"COLUMNS": "200"},
+        )
+
+    def test_single_get_bracket_content_renders_literally(
+        self, markup_documents: tuple[Path, list[Document]]
+    ) -> None:
+        """Unmatched closing tags must not crash and link syntax must not be consumed."""
+        db_path, documents = markup_documents
+
+        result = self._invoke(db_path, "get", documents[0].id)
+
+        assert result.exit_code == 0, result.output
+        assert "[/bold]" in result.output
+        assert "[link](https://example.com)" in result.output
+
+    def test_multi_get_batch_survives_markup_hostile_document(
+        self, markup_documents: tuple[Path, list[Document]]
+    ) -> None:
+        """One markup-hostile document must not abort the rest of the batch."""
+        db_path, documents = markup_documents
+
+        result = self._invoke(db_path, "multi-get", f"{documents[0].id},{documents[1].id}")
+
+        assert result.exit_code == 0, result.output
+        assert "[/bold]" in result.output
+        assert "plain second document" in result.output
+
 
 class TestMultiGetRetrieval(RealDatabaseTestCase):
     """Batch selection and output behavior against real SQLite."""
