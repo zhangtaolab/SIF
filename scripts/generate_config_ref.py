@@ -6,6 +6,7 @@ from __future__ import annotations
 import inspect
 import re
 import sys
+import types
 from pathlib import Path
 
 
@@ -21,6 +22,13 @@ def get_type_name(annotation: object) -> str:
     result = ""
     if annotation is None:
         result = ""
+    elif isinstance(annotation, types.UnionType):
+        # `X | None` unions must render stable short names on every Python version:
+        # str(UnionType) leaks version-specific module paths (pathlib._local.Path on
+        # 3.13+) and once UnionType grows __name__ the branch below would render a
+        # bare "Union" — either way the CI drift gate could not reproduce the output.
+        arg_names = ["None" if a is type(None) else get_type_name(a) for a in annotation.__args__]
+        result = " | ".join(arg_names) if arg_names else "None"
     elif isinstance(annotation, type) or hasattr(annotation, "__name__"):
         result = annotation.__name__
     elif hasattr(annotation, "__origin__"):
@@ -221,6 +229,8 @@ def _append_options_tables(lines: list[str]) -> None:
             field_info = model_fields[field_name]
             env_var = f"`SIF_{field_name.upper()}`"
             type_name = get_type_name(field_info.annotation)
+            # A `|` inside a type (union) would add a phantom column to the table row.
+            type_cell = type_name.replace("|", "\\|")
             default = field_info.default
             if default is None:
                 default = get_computed_default(field_name) or "None"
@@ -228,7 +238,7 @@ def _append_options_tables(lines: list[str]) -> None:
             description = field_info.description or ""
             if field_name in validators:
                 description += f" (validated by `{validators[field_name]}`)"
-            lines.append(f"| {env_var} | {type_name} | {default_str} | {description} |")
+            lines.append(f"| {env_var} | {type_cell} | {default_str} | {description} |")
 
         if section_name == "Embedding Model Settings":
             _append_device_selection_note(lines)

@@ -352,7 +352,7 @@ sif index embed --collection my-notes
 sif index embed --collection my-notes --model-type gguf --model Qwen/Qwen3-Embedding-0.6B
 
 # Fetch a document by path or document ID, with an optional line range
-sif get notes/python_guide.md --lines 50 --line-numbers
+sif get get notes/python_guide.md --lines 50 --line-numbers
 
 # Fetch multiple documents via a glob pattern or comma-separated IDs/paths
 sif get multi-get "docs/*.md"

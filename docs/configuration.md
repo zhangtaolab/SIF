@@ -44,14 +44,14 @@ SIF_LOG_LEVEL=INFO
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
-| `SIF_DB_PATH` | pathlib._local.Path | None | `~/.local/share/sif/sif.db (computed)` | Path to SQLite database file (validated by `expand_path`) |
+| `SIF_DB_PATH` | Path \| None | `~/.local/share/sif/sif.db (computed)` | Path to SQLite database file (validated by `expand_path`) |
 
 ### Embedding Model Settings
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
 | `SIF_MODEL_NAME` | str | `Qwen/Qwen3-Embedding-0.6B` | Embedding model name |
-| `SIF_MODEL_PATH` | pathlib._local.Path | None | `None` | Path to embedding model file |
+| `SIF_MODEL_PATH` | Path \| None | `None` | Path to embedding model file |
 | `SIF_EMBEDDING_DIM` | int | `1024` | Embedding dimension |
 | `SIF_MAX_TOKENS` | int | `512` | Maximum tokens per input |
 | `SIF_BATCH_SIZE` | int | `32` | Batch size for inference |
@@ -74,15 +74,15 @@ BM25/FTS5 keyword search and sqlite-vec vector search always run on CPU regardle
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
-| `SIF_API_KEY` | str | None | `None` | API key for remote embedding models |
-| `SIF_API_BASE` | str | None | `None` | Base URL for remote embedding API (validated by `validate_api_base`) |
+| `SIF_API_KEY` | str \| None | `None` | API key for remote embedding models |
+| `SIF_API_BASE` | str \| None | `None` | Base URL for remote embedding API (validated by `validate_api_base`) |
 
 ### Reranker Settings
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
 | `SIF_RERANKER_MODEL_NAME` | str | `Qwen/Qwen3-Reranker-0.6B` | Reranker model name |
-| `SIF_RERANKER_MODEL_PATH` | pathlib._local.Path | None | `None` | Path to local reranker model file |
+| `SIF_RERANKER_MODEL_PATH` | Path \| None | `None` | Path to local reranker model file |
 | `SIF_RERANKER_MODEL_TYPE` | str | `sentence_transformers` | Reranker model type (gguf, sentence_transformers) (validated by `validate_reranker_model_type`) |
 | `SIF_RERANKER_BATCH_SIZE` | int | `32` | Batch size for reranker inference |
 
@@ -112,7 +112,7 @@ BM25/FTS5 keyword search and sqlite-vec vector search always run on CPU regardle
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
-| `SIF_CACHE_DIR` | pathlib._local.Path | None | `~/.cache/sif (computed)` | Cache directory path |
+| `SIF_CACHE_DIR` | Path \| None | `~/.cache/sif (computed)` | Cache directory path |
 | `SIF_CACHE_EMBEDDINGS` | bool | `True` | Whether to cache embeddings |
 
 ## Validation Rules
