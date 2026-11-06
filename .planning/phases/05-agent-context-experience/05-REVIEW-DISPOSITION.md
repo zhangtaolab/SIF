@@ -41,7 +41,7 @@ findings:
     title: "`_seed`/`_path_rows` helpers duplicated near-verbatim across the two real-SQL test classes"
   - id: CR-03
     severity: critical
-    disposition: open
+    disposition: fixed
     title: "`context add` confirmation prints interpolate the user-derived target into Rich markup unescaped — MarkupError rolls back the write, so bracket-named targets can never be added"
   - id: IN-05
     severity: info
@@ -167,7 +167,7 @@ findings:
     severity: info
     disposition: open
     title: "`Qwen3Reranker.load()` duplicates the entire loading block for quiet/non-quiet"
-open: 38
+open: 37
 total: 41
 recorded: 2026-11-06T15:00:47.384Z
 ---
@@ -185,7 +185,7 @@ recorded: 2026-11-06T15:00:47.384Z
 | WR-18 | warning | fixed | 05-REVIEW-FIX.md (not in the current review) |
 | IN-19 | info | open | - (not in the current review) |
 | IN-20 | info | open | - (not in the current review) |
-| CR-03 | critical | open | - (not in the current review) |
+| CR-03 | critical | fixed | hand-triage 2026-11-06: fixed by plan 05-12 (escape at context.py:216/240), live-verified at milestone close — bracket-named target adds/persists/lists literally (was: - not in the current review) |
 | IN-05 | info | open | - (not in the current review) |
 | IN-17 | info | open | - (not in the current review) |
 | IN-18 | info | open | - (not in the current review) |
