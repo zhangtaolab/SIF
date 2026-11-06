@@ -26,6 +26,7 @@ DocSift 是 [qmd](https://github.com/tobi/qmd) 的 Python 重构版本，一个�
 - ✓ LLM 重排序（Qwen3-Reranker）和查询扩展（SearchPipeline），`query` 搜索质量达标 — Validated in Phase 04/05
 - ✓ 统一 MCP 服务器实现（`src/sif/mcp/`，stdio + Streamable HTTP） — Validated in Phase 09
 - ✓ 上下文描述：path/collection/global 三种作用域，context CLI 全命令集，搜索结果自动附加描述 — Validated in Phase 05（2026-11-06 重新验证 24/24 通过，第五次陈旧验证再生）
+- ✓ 测试覆盖率常驻门禁：TOTAL 96.22%（1011 项测试），`[tool.coverage.report] fail_under = 90` 落地且无任何豁免行 — Validated in Phase 10（2026-11-06 重新验证 35/35 通过，fresh fingerprint）
 
 ### Active
 
@@ -64,6 +65,7 @@ DocSift 是 [qmd](https://github.com/tobi/qmd) 的 Python 重构版本，一个�
 | 向量库幂等：re-chunk 事务内 delete-before-insert + 精确 chunk-id 集合跳过，`--force` 才全量重嵌 | G-03-3：重复 embed 不再产生孤儿向量/重复计费 | Phase 03 Complete (UAT 7/7) |
 | embed_cmd 每集合一个事务，失败报告在事务外抛出 | CR-02：单集合失败不回滚已成功集合、退出码如实非零 | Phase 03 Complete (live-verified) |
 | 远端维度探测 probe-free，缓存键 `base_url::model_name` | 避免对远端后端产生计费探测请求 | Phase 03 Complete |
+| 覆盖率门禁 `fail_under = 90` 最后落地（D-04），禁用 exclude_lines / cov-branch / pragma 豁免 | 门禁不可绕过；覆盖率成为永久回归约束，只增不减 | Phase 10 Complete (96.22%, 1011 tests) |
 
 ## Evolution
 
@@ -83,4 +85,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-11-06 after Phase 05 transition (fifth stale verification regeneration — re-verified 24/24 over the WR-18 confirmation-print fix (452ae48) with fresh fingerprint; all gates green: validation 145 passed, security 23/23 closed, UI re-audit 11/16, code review 0 critical/0 warning, regression suite 1011 passed @ 96.22%)*
+*Last updated: 2026-11-06 after Phase 10 transition (stale-verification regeneration — re-verified 35/35 with fresh fingerprint eb6807f8; gates green: validation 0 gaps (17/17 map), code review 0 critical / 10 warnings ledgered in 10-REVIEW-DISPOSITION.md, regression suite 1011 passed @ 96.22% under active fail_under=90)*

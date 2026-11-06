@@ -23,7 +23,7 @@ current_phase_name: Raise pytest coverage to 90%
 
 - **Name:** DocSift
 - **Core Value:** 用户可以在自己的笔记和文档库中，用自然语言快速、准确地找到需要的信息——无论关键词是否匹配。
-- **Current Focus:** Milestone v1.0 roadmap-complete (all phases); Phase 05 verification regenerated 2026-11-06 — phases 10/10.1 verification refresh pending.
+- **Current Focus:** Milestone v1.0 roadmap-complete (all phases); Phase 10 verification regenerated 2026-11-06 — phase 10.1 verification refresh pending, then milestone close.
 - **Tech Stack:** Python 3.10+, SQLite (FTS5 + sqlite-vec), Click, Pydantic, sentence-transformers, llama-cpp-python
 
 ## Current Position
@@ -33,9 +33,9 @@ Total Plans in Phase: 7
 
 - **Phases:** 11/11 complete (01–10.1); milestone v1.0 roadmap-complete
 - **Plans:** 68/68 complete
-- **Status:** Phase 05 re-verified 2026-11-06 (fifth stale-verification regeneration, WR-18); phases 10/10.1 verifications stale — regenerate before milestone close
+- **Status:** Phase 10 re-verified 2026-11-06 (stale-verification regeneration, fresh fingerprint, 35/35); phase 10.1 verification stale — regenerate before milestone close
 - **Progress Bar:** `[████████████████████] 68/68 plans`
-- **Coverage baseline:** 96.16% (5341 statements, 205 missed); 958 passed, 0 failed
+- **Coverage baseline:** 96.22% (5375 statements, 203 missed); 1011 passed, 0 failed
 
 Phase 10-01 deleted the approved dead-code cluster; 10-02/10-03 expanded CLI and reranker coverage; 10-04 closed the real-SQLite database layer; 10-05 covered core services, downloader, and utilities; 10-06 covered indexing and MCP behavior.
 
@@ -54,7 +54,7 @@ Phase 10-01 deleted the approved dead-code cluster; 10-02/10-03 expanded CLI and
 
 - **Requirements mapped:** 31/31 v1 + 7 DOC requirements
 - **Phases defined:** 10
-- **Tests passing:** 958 passed, 0 failed (post 10-06)
+- **Tests passing:** 1011 passed, 0 failed (post 10.1 + phase-10 regeneration, fail_under=90 active)
 - **Known blockers:** 0
 
 **Per-Plan Metrics:**
@@ -178,6 +178,7 @@ Phase 10-01 deleted the approved dead-code cluster; 10-02/10-03 expanded CLI and
 - [x] Plan Phase 06 documentation audit and refresh — 7 plans created and verified
 - [x] Phase 7: CLI Claude Skill — sif-search and sif-get skills created, symlinked, and committed
 - [ ] (Backlog) Phase 8: LLM-based query expansion — model tested (Qwen3.5-2B), awaiting v1.0 ship
+- [ ] (Backlog) Phase 10 regen code review: 10 warnings open (WR-01..WR-10, 0 critical) — ledger in 10-REVIEW-DISPOSITION.md; candidates for a future debt phase (precedent: 10.1 arose from 10's original review)
 
 ### Blockers
 
@@ -210,9 +211,9 @@ Phase 10-01 deleted the approved dead-code cluster; 10-02/10-03 expanded CLI and
 
 ## Session Continuity
 
-**Last session:** 2026-11-06 (phase 05 gates + regeneration)
-**Stopped at:** Phase 10 complete — all phases complete
+**Last session:** 2026-11-06 (phase 10 gates + regeneration)
+**Stopped at:** Phase 10 re-verified (35/35, fresh fingerprint) — milestone close pending 10.1 verification refresh
 **Resume file:** None
 
-- **Last action:** `/gsd-execute-phase 05` — all gates green (validation 145, security 23/23, UI re-audit, code review 0c/0w, regression 1011 passed @ 96.22%), verifier regenerated VERIFICATION.md.
-- **Next expected action:** `/gsd-execute-phase 10` then `/gsd-execute-phase 10.1` — both verifications read `stale` and route to the same gate-regeneration path; then `/gsd-complete-milestone v1.0`.
+- **Last action:** `/gsd-execute-phase 10` — all gates green (validation 0 gaps / 17-17 map, code review 0c/10w ledgered, regression 1011 passed @ 96.22%), verifier regenerated VERIFICATION.md.
+- **Next expected action:** `/gsd-execute-phase 10.1` (verification reads `stale`, routes to the same gate-regeneration path); then `/gsd-complete-milestone v1.0`.
