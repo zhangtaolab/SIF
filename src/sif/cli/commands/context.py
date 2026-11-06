@@ -34,6 +34,33 @@ def _merge_key(context: PathContext) -> float:
     return updated.timestamp()
 
 
+def _collapse_duplicate_path_rows(
+    repo: ContextRepository,
+    canonical_target: str,
+    keep_id: str,
+) -> int:
+    """Delete every OTHER path-type row denoting the same file as ``canonical_target``.
+
+    This is the single duplicate-collapse loop shared by every re-add path
+    (05-VERIFICATION truth 21): the ``_self_heal_path_row`` exact-match
+    branch, its normalized-key branch, and the plain upsert-hit path in
+    ``context_add`` all funnel here, so no reachable legacy spelling state
+    can leave a second same-file row behind. Same-file identity is defined
+    solely by :func:`sif.utils.paths.normalize_path` equality (never byte
+    equality), deletion is scoped to path-type rows only, and ``keep_id``
+    is always excluded.
+
+    Returns:
+        The number of duplicate rows deleted.
+    """
+    deleted = 0
+    for row in repo.list_by_type("path"):
+        if row.id != keep_id and normalize_path(row.path) == canonical_target:
+            repo.delete(row.id)
+            deleted += 1
+    return deleted
+
+
 def _resolve_path_target(target: str) -> str:
     """Canonicalize a path target, raising a clean CLI error when un-expandable.
 
@@ -73,7 +100,16 @@ def _self_heal_path_row(
     """
     existing = repo.get_by_target(typed_target, "path")
     if existing:
-        repo.update_target(existing.id, actual_target)
+        # Collapse duplicates only when the re-point actually landed; otherwise
+        # signal "no merge" so the caller creates a fresh row rather than
+        # deleting rows whose content would be lost (same data-safety posture
+        # as the normalized branch's landed-guard).
+        if not repo.update_target(existing.id, actual_target):
+            return None
+        # The typed row was the ONLY spelling this branch used to fix; every
+        # other alias spelling of the same file must die too (truth 21) —
+        # legacy rows under two different aliases otherwise survive forever.
+        _collapse_duplicate_path_rows(repo, actual_target, existing.id)
         return existing
     candidates = sorted(
         (c for c in repo.list_by_type("path") if normalize_path(c.path) == actual_target),
@@ -82,14 +118,13 @@ def _self_heal_path_row(
     )
     if not candidates:
         return None
-    winner, losers = candidates[0], candidates[1:]
+    winner = candidates[0]
     # Collapse duplicates only when the re-point actually landed; otherwise
     # signal "no merge" so the caller creates a fresh row rather than
     # deleting rows whose content would be lost.
     if not repo.update_target(winner.id, actual_target):
         return None
-    for loser in losers:
-        repo.delete(loser.id)
+    _collapse_duplicate_path_rows(repo, actual_target, winner.id)
     return winner
 
 
@@ -147,12 +182,20 @@ def context_add(
 
             # Upsert: update if exists for this target+type, else create
             existing = repo.get_by_target(actual_target, type)
+            upsert_hit = existing is not None
             if not existing and type == "path":
                 # Re-point a legacy row holding any historical spelling of the
                 # same file instead of creating a duplicate (self-heal merge,
                 # REVIEW WR-02).
                 existing = _self_heal_path_row(repo, target, actual_target)
             if existing:
+                if type == "path" and upsert_hit:
+                    # The canonical row exists and receives the re-added
+                    # content below; shadowed rows under alias spellings of
+                    # the same file must not survive a plain re-add (truth
+                    # 21) — without this, the upsert short-circuit skips the
+                    # self-heal merge entirely.
+                    _collapse_duplicate_path_rows(repo, actual_target, existing.id)
                 existing.context = content
                 repo.update(existing)
                 display_target = actual_target if type == "path" else target

@@ -356,6 +356,7 @@ class TestContextAddNormalizedPaths:
         with patch("sif.cli.commands.context.Database") as mock_db_cls:
             mock_db_cls.return_value = mock_db
             mock_repo = MagicMock()
+            mock_repo.list_by_type.return_value = [legacy]
 
             def lookup(target_id, _context_type="path"):
                 return legacy if target_id == alias else None
@@ -375,20 +376,30 @@ class TestContextAddNormalizedPaths:
         mock_repo.update_target.assert_called_once_with(legacy.id, canonical)
         mock_repo.create.assert_not_called()
         mock_repo.update.assert_called_once()
+        mock_repo.delete.assert_not_called()
         assert legacy.context == "new text"
         assert canonical in result.output.replace("\n", "")
 
-    def test_readd_canonical_row_updates_without_repoint(self, mock_db, alias_pair) -> None:
-        """Re-adding when the canonical row exists only refreshes content."""
+    def test_readd_canonical_row_collapses_alias_duplicates(self, mock_db, alias_pair) -> None:
+        """Re-adding over the canonical row also collapses same-file alias rows.
+
+        Widened contract (05-10 truth 21): the upsert pre-check hit used to
+        short-circuit before the self-heal merge, so a legacy row under an
+        alias spelling survived every plain re-add. Now the upsert-hit path
+        deletes every other same-file row (normalize_path equality) while the
+        surviving canonical row receives the re-added content via update.
+        """
         _, alias = alias_pair
         canonical = normalize_path(alias)
         existing = PathContext(path=canonical, context="old text")
+        stale = PathContext(path=alias, context="stale text")
         runner = CliRunner()
         ctx_obj = {"index_path": MagicMock(exists=lambda: True)}
 
         with patch("sif.cli.commands.context.Database") as mock_db_cls:
             mock_db_cls.return_value = mock_db
             mock_repo = MagicMock()
+            mock_repo.list_by_type.return_value = [existing, stale]
 
             def lookup(target_id, _context_type="path"):
                 return existing if target_id == canonical else None
@@ -405,6 +416,7 @@ class TestContextAddNormalizedPaths:
                 )
 
         assert result.exit_code == 0
+        mock_repo.delete.assert_called_once_with(stale.id)
         mock_repo.update.assert_called_once()
         mock_repo.update_target.assert_not_called()
         mock_repo.create.assert_not_called()
@@ -533,9 +545,7 @@ class TestContextAddMultiAliasSelfHeal:
         with db.transaction() as conn:
             repo = ContextRepository(conn)
             for spelling in spellings:
-                repo.create(
-                    PathContext(path=spelling, context="old text", context_type="path")
-                )
+                repo.create(PathContext(path=spelling, context="old text", context_type="path"))
         db.close()
 
     def _path_rows(self, db_path: Path) -> list[tuple[str, str]]:
@@ -575,9 +585,7 @@ class TestContextAddMultiAliasSelfHeal:
         assert len(rows) == 1
         assert rows[0] == (canonical, "new text")
 
-    def test_readd_via_alias_with_two_alias_legacy_rows_ends_with_one_row(
-        self, tmp_path
-    ) -> None:
+    def test_readd_via_alias_with_two_alias_legacy_rows_ends_with_one_row(self, tmp_path) -> None:
         """Repro (b): two alias legacy rows collapse to one row on re-add."""
         vault = tmp_path / "vault"
         vault.mkdir()
