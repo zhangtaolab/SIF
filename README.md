@@ -239,9 +239,7 @@ See [docs/architecture.md](docs/architecture.md) for detailed architecture docum
 
 BM25 is a probabilistic ranking function that scores documents based on term frequency and inverse document frequency.
 
-**Parameters:**
-- `k1`: Controls term frequency saturation (default: 1.5)
-- `b`: Controls document length normalization (default: 0.75)
+**Parameters:** BM25 tuning uses SQLite FTS5's built-in defaults (`k1` = 1.2, `b` = 0.75); SIF does not expose them as configuration. See [Search Algorithms](docs/search-algorithms.md) for details.
 
 ### Vector Search
 

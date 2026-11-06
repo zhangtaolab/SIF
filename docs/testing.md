@@ -45,7 +45,7 @@ pip install pytest-asyncio
 | `make test` | Full suite with coverage: `pytest --cov=src/sif --cov-report=term-missing --cov-report=html --cov-report=xml` |
 | `make test-verbose` | Full suite with verbose output: `pytest -vvs --tb=short --cov=src/sif --cov-report=term-missing` |
 | `make test-fast` | Quiet run that stops at the first failure: `pytest -x -q` (coverage still applies via `addopts`) |
-| `make docs-test` | Documentation validation only: `pytest tests/test_docs.py -v` |
+| `make docs-test` | Documentation validation only: `pytest tests/test_docs.py -v --no-cov` (the `--no-cov` skips the global coverage `addopts` — a docs-only subset would otherwise fall under the 90% `fail_under` gate) |
 | `make docs-generate` | Regenerates the CLI and configuration reference docs (`scripts/generate_cli_ref.py`, `scripts/generate_config_ref.py`) |
 | `make coverage` | Full suite with coverage, then prints the HTML report location (`htmlcov/index.html`) |
 

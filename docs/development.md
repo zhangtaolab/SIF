@@ -629,7 +629,7 @@ The [Makefile](../Makefile) defines convenience targets for every common develop
 | `make clean` | Remove build artifacts, caches, and coverage output |
 | `make clean-all` | `make clean` plus removal of `venv/` and `.venv/` |
 | `make docs` | Placeholder — prints "Documentation build not yet configured" |
-| `make docs-test` | Run the documentation validation tests (`pytest tests/test_docs.py -v`) |
+| `make docs-test` | Run the documentation validation tests (`pytest tests/test_docs.py -v --no-cov`) |
 | `make docs-generate` | Regenerate `docs/cli-reference.md` and `docs/configuration.md` from source |
 | `make all` | Run `lint`, `typecheck`, and `test` |
 | `make ci` | Run all CI checks locally: `format-check`, `lint`, `typecheck`, `security`, `test` |

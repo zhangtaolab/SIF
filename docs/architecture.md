@@ -361,7 +361,6 @@ graph TD
     mcp --> utils
     models --> utils
     search --> core
-    search --> embedding
     search --> models
     search --> utils
     utils --> config

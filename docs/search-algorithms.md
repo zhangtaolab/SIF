@@ -233,16 +233,18 @@ results = hybrid.search("python decorators", options)
 - Lower k (20-40): Emphasizes top ranks
 - Higher k (80-100): More democratic fusion
 
-### Weighted Combination
+### Weighted Fusion
 
-For fine-grained control, use weighted scores:
+RRF supports optional per-source weights via the Python API (`RRFFusion.fuse_with_weights`).
+Weights scale each list's reciprocal-rank contribution — they multiply `1/(k + rank)`,
+never the raw scores:
 
 ```
-final_score = bm25_weight * bm25_score + vector_weight * vector_score
-
-Where:
-- bm25_weight + vector_weight = 1.0
+score = Σ weight_i / (k + rank_i)
 ```
+
+There is no weighted raw-score combination, and no CLI or environment knob selects weights:
+the CLI always fuses with equal weights.
 
 ## Query Expansion
 

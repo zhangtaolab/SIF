@@ -66,7 +66,7 @@ test-fast:
 
 docs-test:
 	@echo "Running docs validation tests..."
-	pytest tests/test_docs.py -v
+	pytest tests/test_docs.py -v --no-cov
 
 docs-generate:
 	@echo "Regenerating CLI and configuration reference docs..."
