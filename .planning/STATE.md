@@ -1,16 +1,16 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: 2
+current_plan: 3
 status: executing
-stopped_at: Completed 10.1-01-PLAN.md (DEBT-PN tracer + DEBT-PN-DOC); ready for 10.1-02
-last_updated: "2026-11-06T01:01:41.066Z"
-state_head: 8e0db2a76d93438971805f1ccec16f3d23f80994
+stopped_at: Completed 10.1-02-PLAN.md (CR-01 legacy DELETE trigger migration); ready for 10.1-03
+last_updated: "2026-11-06T01:16:01.280Z"
+state_head: 3b0b8c516045537e907b08e38db07fb3d296fb17
 progress:
   total_phases: 11
   completed_phases: 9
   total_plans: 65
-  completed_plans: 62
+  completed_plans: 63
 milestone_name: milestone
 current_phase: 10
 current_phase_name: "Address tech debt: path normalization + review findings CR-01/CR-02/WR-01"
@@ -27,7 +27,7 @@ current_phase_name: "Address tech debt: path normalization + review findings CR-
 
 ## Current Position
 
-Current Plan: 2
+Current Plan: 3
 Total Plans in Phase: 4
 
 - **Phases:** 9/10 complete (01–09); Phase 10 in progress
@@ -70,6 +70,7 @@ Phase 10-01 deleted the approved dead-code cluster; 10-02/10-03 expanded CLI and
 | Phase 10 P06 | 20min | 3 tasks | 9 files |
 | Phase 10 P07 | 198s | 2 tasks | 1 files |
 | Phase 10.1 P01 | 13min | 2 tasks | 6 files |
+| Phase 10.1 P02 | 9min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -145,6 +146,9 @@ Phase 10-01 deleted the approved dead-code cluster; 10-02/10-03 expanded CLI and
 - [Phase 10.1]: DEBT-PN lookup order (OQ2): normalized-only for exact-path lookups; ID-first and bare-filename stay raw; globs raw-first-then-normalized
 - [Phase 10.1]: get/multi-get own Database lifecycle via with Database(index_path) (WR-01, 2 sites); nested with db.connection kept for commit sequencing
 - [Phase 10.1]: DEBT-PN-DOC lands in docstrings + make docs-generate output + sif-get skill note; no separate prose page (OQ3/A5)
+- [Phase 10.1]: 10.1-02: CR-01 closed via generalized _fts_trigger_is_legacy detector (direct-UPDATE FND-06 + direct-DELETE forms) migrating all four FTS sync triggers on create_all()
+- [Phase 10.1]: 10.1-02 OQ1: detection-gated FTS 'rebuild' purges entries orphaned by past broken deletes; gate is legacy detection alone, never needs_rebuild_*; fresh/migrated DBs pay nothing
+- [Phase 10.1]: 10.1-02: migration logic extracted to _drop_legacy_fts_triggers returning legacy-delete booleans (ruff C901 mccabe-10 cap)
 
 ### Roadmap Evolution
 
@@ -189,8 +193,8 @@ Phase 10-01 deleted the approved dead-code cluster; 10-02/10-03 expanded CLI and
 
 ## Session Continuity
 
-**Last session:** 2026-11-06T01:01:40.310Z
-**Stopped at:** Completed 10.1-01-PLAN.md (DEBT-PN tracer + DEBT-PN-DOC); ready for 10.1-02
+**Last session:** 2026-11-06T01:16:00.532Z
+**Stopped at:** Completed 10.1-02-PLAN.md (CR-01 legacy DELETE trigger migration); ready for 10.1-03
 **Resume file:** None
 
 - **Last action:** `/gsd-execute-phase 10` — plan 10-06 covered indexing and MCP behavior and repaired chunker progress/session bounds; 958 passed, coverage 96.16%.

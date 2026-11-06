@@ -331,12 +331,12 @@ Plans:
 **Goal:** Users' existing databases stop returning deleted documents after one open (CR-01: legacy direct-DELETE FTS5 triggers migrated + stale entries purged via detection-gated 'rebuild'), `search --xml` / `query --xml` output is always well-formed XML regardless of control characters in the query or indexed content (CR-02), every CLI command closes its SQLite connection deterministically on success and on exception (WR-01: all 26 construction sites across 8 CLI modules), and symlink/alias paths resolve to indexed documents through `get`, `multi-get`, and MCP `get_document` (DEBT-PN) with the `get` index-vs-disk fallback boundary documented (DEBT-PN-DOC).
 **Requirements**: DEBT-PN, DEBT-PN-DOC, CR-01, CR-02, WR-01 (phase-requirement IDs from 10.1-RESEARCH.md — inserted urgent phase, no REQUIREMENTS.md REQ-IDs mapped)
 **Depends on:** Phase 10
-**Plans:** 1/4 plans executed
+**Plans:** 2/4 plans executed
 
 Plans:
 **Wave 1** *(no file overlap — all four run in parallel)*
 
 - [x] 10.1-01-PLAN.md — DEBT-PN tracer: normalize_path on get/multi-get/MCP lookups (exact paths normalized-only, glob patterns raw-or-normalized), get.py WR-01 ownership, symlink-alias regression tests, get fallback boundary docs (DEBT-PN, DEBT-PN-DOC, WR-01 get.py sites)
-- [ ] 10.1-02-PLAN.md — CR-01: generalize the legacy-trigger detector to direct-DELETE forms, migrate all four triggers, detection-gated FTS 'rebuild' purge of stale entries, migration regression tests (CR-01)
+- [x] 10.1-02-PLAN.md — CR-01: generalize the legacy-trigger detector to direct-DELETE forms, migrate all four triggers, detection-gated FTS 'rebuild' purge of stale entries, migration regression tests (CR-01)
 - [ ] 10.1-03-PLAN.md — CR-02: XML 1.0 Char-production sanitizer in format_results_xml + round-trip tests; search/query/vsearch WR-01 ownership + closure tests (CR-02, WR-01 search.py sites)
 - [ ] 10.1-04-PLAN.md — WR-01 sweep: context-manager ownership for the remaining 21 construction sites in collection/context/index/ls/bench/main + lifecycle closure test harness (WR-01)
