@@ -17,11 +17,11 @@ findings:
     title: "Generator output is Python-version-dependent — CI drift gate cannot reproduce the checked-in artifact"
   - id: WR-01
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "BM25 k1 default contradicts search-algorithms.md and the actual FTS5 behavior"
   - id: WR-02
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "architecture.md Mermaid diagram has drifted from its own generator; nothing regenerates it"
   - id: WR-03
     severity: warning
@@ -41,7 +41,7 @@ findings:
     title: "Computed-default paths presented as Linux-only values"
   - id: WR-07
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "\"Weighted Combination\" documents a fusion scheme that does not exist"
   - id: WR-08
     severity: warning
@@ -67,7 +67,7 @@ findings:
     severity: info
     disposition: open
     title: "Published examples hardcode one user's home directory"
-open: 13
+open: 10
 total: 16
 recorded: 2026-11-06T15:40:45.414Z
 ---
@@ -79,13 +79,13 @@ recorded: 2026-11-06T15:40:45.414Z
 | CR-01 | critical | fixed | fix commit b418f7c (hand-triage 2026-11-06, live-verified) |
 | CR-02 | critical | fixed | fix commit b418f7c (hand-triage 2026-11-06, live-verified) |
 | CR-03 | critical | fixed | fix commit b418f7c (hand-triage 2026-11-06, live-verified) |
-| WR-01 | warning | open | - |
-| WR-02 | warning | open | - |
+| WR-01 | warning | fixed | fix dfafa9e gap-3 (README k1 → FTS5 built-in 1.2, not exposed) |
+| WR-02 | warning | fixed | fix dfafa9e gap-1 (generator filters TYPE_CHECKING imports; block re-synced, diff-verified). CI-wiring hardening (arch generator into docs-generate/drift gate) remains a follow-up |
 | WR-03 | warning | open | - |
 | WR-04 | warning | open | - |
 | WR-05 | warning | open | - |
 | WR-06 | warning | open | - |
-| WR-07 | warning | open | - |
+| WR-07 | warning | fixed | fix dfafa9e gap-2 (section rewritten to the real RRF fuse_with_weights semantics) |
 | WR-08 | warning | open | - |
 | IN-01 | info | open | - |
 | IN-02 | info | open | - |
