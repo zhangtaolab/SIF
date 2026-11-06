@@ -1,17 +1,17 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: Not started
-status: executing
+status: Awaiting next milestone
 stopped_at: Phase 10.1 complete — all phases complete
-last_updated: "2026-11-06T17:08:40.247Z"
-state_head: cf514c12cc4576b0756150e50e5de6f576f46325
+last_updated: "2026-11-06T22:48:12.150Z"
+last_activity: 2026-11-07
+last_activity_desc: Milestone v1.0 completed and archived
+state_head: df482bc48c67f06bf5af5cdf2cc30756f719de65
 progress:
   total_phases: 11
   completed_phases: 11
   total_plans: 68
   completed_plans: 68
-  percent: 100
 milestone_name: milestone
 current_phase: 10
 current_phase_name: "Address tech debt: path normalization + review findings CR-01/CR-02/WR-01 (INSERTED)"
@@ -28,16 +28,10 @@ current_phase_name: "Address tech debt: path normalization + review findings CR-
 
 ## Current Position
 
-Current Plan: Not started
-Total Plans in Phase: 4
-
-- **Phases:** 11/11 complete (01–10.1); milestone v1.0 roadmap-complete
-- **Plans:** 68/68 complete
-- **Status:** Phase 10.1 re-verified 2026-11-06 (stale-verification regeneration, fresh fingerprint, 16/16; gates: validation 10/10, security 12/12 closed, review 0c/0w/4i, regression 1011 @ 96.22%) — milestone v1.0 ready to close
-- **Progress Bar:** `[████████████████████] 68/68 plans`
-- **Coverage baseline:** 96.22% (5375 statements, 203 missed); 1011 passed, 0 failed
-
-Phase 10-01 deleted the approved dead-code cluster; 10-02/10-03 expanded CLI and reranker coverage; 10-04 closed the real-SQLite database layer; 10-05 covered core services, downloader, and utilities; 10-06 covered indexing and MCP behavior.
+Phase: Milestone v1.0 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-11-07 — Milestone v1.0 completed and archived
 
 ## Phase History
 
@@ -189,23 +183,6 @@ Phase 10-01 deleted the approved dead-code cluster; 10-02/10-03 expanded CLI and
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
-| 260905-hc3 | Fix G-04-1 snippet relevance: markdown line-aware SmartSnippetExtractor windows; stem-tolerant word-boundary term matching shared with BM25 highlights | 2026-09-05 | 89a8a5e | [260905-hc3-fix-g-04-1-snippet-relevance-markdown-li](./quick/260905-hc3-fix-g-04-1-snippet-relevance-markdown-li/) |
-| 260905-kmv | Fix G-04-2 reranker load crash: model-dir resolution prefers real model config over aux subdirs; CLI ClickException on reranker failure | 2026-09-05 | 0831f41 | [260905-kmv-fix-g-04-2-reranker-load-crash-model-dir](./quick/260905-kmv-fix-g-04-2-reranker-load-crash-model-dir/) |
-| 260905-sxc | Fix G-04-3 HyDE unreachable: add create_completion to LlamaCppEmbedder wrapping llama_cpp completion with openai-style return shape | 2026-09-05 | 67c9ecf | [260905-sxc-fix-g-04-3-hyde-unreachable-add-create-c](./quick/260905-sxc-fix-g-04-3-hyde-unreachable-add-create-c/) |
-| 260905-tax | Fix G-04-4 GGUF embed shape: unwrap llama_cpp list-of-embeddings, mean-pool token-level output before normalization | 2026-09-05 | 958262b | [260905-tax-fix-g-04-4-gguf-embed-shape-unwrap-llama](./quick/260905-tax-fix-g-04-4-gguf-embed-shape-unwrap-llama/) |
-| 260910-kps | Fix CLI machine-output corruption: emit --json/--csv/--md/--xml/--files via click.echo so Rich neither word-wraps nor markup-interprets; regression tests under forced COLUMNS=80 | 2026-09-10 | 4d4bb02 | [260910-kps-fix-json-output-emit-via-click-echo-no-w](./quick/260910-kps-fix-json-output-emit-via-click-echo-no-w/) |
-| 260914-g63 | Audit follow-up: fix deferred-items doc formats (05 resolved, 03 split), add missing sqlite3 import in cli/main.py, re-file mypy typing debt as open deferred item | 2026-09-14 | ae2cb6d | [260914-g63-audit-follow-up-fix-deferred-items-doc-f](./quick/260914-g63-audit-follow-up-fix-deferred-items-doc-f/) |
-| 260914-v5f | Fix exclude-all collection leak (audit BLOCKER 1): [] filters everything / None unfiltered sentinel guards in BM25+Vector searchers; 3 RED regression tests + 5 controls, suite 675 green | 2026-09-14 | b7381d6 | [260914-v5f-fix-exclude-all-collection-leak-empty-co](./quick/260914-v5f-fix-exclude-all-collection-leak-empty-co/) |
-| 260914-vyr | Rename distribution docsif→sif (audit BLOCKER 2): pyproject name/script/keywords, README installs, uv.lock root entry; new mcp/http extras (uvicorn only) so sif[mcp]/sif[http]/sif[embed] hints resolve; suite 675 green | 2026-09-14 | 4657ea8 | [260914-vyr-rename-distribution-docsif-to-sif-pyproj](./quick/260914-vyr-rename-distribution-docsif-to-sif-pyproj/) |
-| 260914-wxv | Fix stale command references (DOC-02/04): 5 CLI 'sif update' hints → real index-group commands, development.md 2 blocks + both live skills corrected; --help existence proofs + live hint verification, suite 675 green | 2026-09-14 | 484b82c | [260914-wxv-fix-stale-command-references-nonexistent](./quick/260914-wxv-fix-stale-command-references-nonexistent/) |
-| 260917-bo2 | Typing debt batch 1: search/rerank.py mypy strict-clean (22→0; TYPE_CHECKING imports, Optional annotations, narrowing asserts, 4 stale ignores removed) — zero behavior change, suite 676 green | 2026-09-17 | 1c1bec2 | [260917-bo2-typing-debt-batch-1-clear-search-rerank-](./quick/260917-bo2-typing-debt-batch-1-clear-search-rerank-/) |
-| 260917-dkf | Typing debt batch 2: watcher.py/manager.py/embedder.py mypy-clean (39→0; EmbeddingConfig Field defaults → keyword syntax, typed locals, os.fsdecode) — full-project 117→78, zero behavior change, suite 676 green | 2026-09-17 | e39d092 | [260917-dkf-typing-debt-batch-2-clear-indexing-watch](./quick/260917-dkf-typing-debt-batch-2-clear-indexing-watch/) |
-| 260917-kav | Typing debt batch 3: mcp/handlers.py + cli/commands/search.py + database/connection.py mypy-clean (32→0; ClassVar base attrs, generics, walrus narrowing, SearchPipeline reranker union widened) — full-project 78→46, zero behavior change, suite 676 green | 2026-09-17 | 4f24682 | [260917-kav-typing-debt-batch-3-clear-mcp-handlers-p](./quick/260917-kav-typing-debt-batch-3-clear-mcp-handlers-p/) |
-| 261105-eev | Document embedding hardware/device selection (MPS/GPU/CPU): generator Device Selection note under Embedding Model Settings + hardware-acceleration notes in installation.md; suite 676 green | 2026-11-05 | e3f7e2d | [261105-eev-document-embedding-hardware-device-selec](./quick/261105-eev-document-embedding-hardware-device-selec/) |
-| 261105-g1u | Fix 05-REVIEW WR-03/WR-09: guard context add/remove against missing index (no silent empty-DB creation); validate reranker_model_type + ClickException surface for bad SIF_RERANKER_MODEL_TYPE | 2026-11-05 | b8a81e1 | [261105-g1u-fix-05-review-wr-03-and-wr-09-context-ad](./quick/261105-g1u-fix-05-review-wr-03-and-wr-09-context-ad/) |
-| 261105-wbj | 修复 embed 完整性检查 O(N²) 性能 bug:vector.py 新增 get_all_embedded_chunk_ids() 批量预取,index.py 主循环改查 dict(vec0 全表扫 4 万次 → 一次全量) | 2026-11-05 | 16b7b25 | [261105-wbj-embed-o-n-bug-src-sif-search-vector-py-2](./quick/261105-wbj-embed-o-n-bug-src-sif-search-vector-py-2/) |
-| 261105-wwz | 排查搜索路径 vec0 metadata 过滤同类问题:结论无需改动——KNN 查询无 metadata WHERE,EQP 实测虚拟表扫一次且最外层,计时平坦(0.24-0.27ms),每用户查询调用一次;仅加 7 行审计注释(vector.py:79-86) | 2026-11-06 | 751a0c3 | [261105-wwz-vec0-metadata-src-sif-search-vector-py-8](./quick/261105-wwz-vec0-metadata-src-sif-search-vector-py-8/) |
-| 261106-u7d | Typing debt batch 4: clear all 17 ledgered ty diagnostics (assert-narrowing, Protocol, cast; mcp.py stderr console replaces latent Console.print TypeError) + drop residual mypy refs — ty sole type checker; 17→0, suite 1011 @ 96.21% | 2026-11-06 | 3fc5908 | [261106-u7d-typing-debt-batch-4-clear-all-17-ledgere](./quick/261106-u7d-typing-debt-batch-4-clear-all-17-ledgere/) |
 
 ### Overrides
 
@@ -219,3 +196,7 @@ Phase 10-01 deleted the approved dead-code cluster; 10-02/10-03 expanded CLI and
 
 - **Last action:** Quick task 261106-u7d (typing debt batch 4): commits e0d9596 + 3fc5908; 10.1 deferred-items.md item 1 flipped to resolved.
 - **Next expected action:** `/gsd-complete-milestone v1.0` — all quality gates green (ty, ruff, format, pytest).
+
+## Operator Next Steps
+
+- Start the next milestone with /gsd-new-milestone

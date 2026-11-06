@@ -49,10 +49,11 @@ DocSift 是 [qmd](https://github.com/tobi/qmd) 的 Python 重构版本，一个�
 
 ## Constraints
 
-- **Tech Stack**: Python 3.9+、SQLite（FTS5 + 可选 sqlite-vec）、Click CLI、Pydantic Settings
+- **Tech Stack**: Python 3.10+、SQLite（FTS5 + 可选 sqlite-vec）、Click CLI、Pydantic Settings
 - **Local-First**: 默认所有模型本地运行，不依赖外部 API；API 调用仅作为可选配置
 - **Compatibility**: CLI 接口和 MCP Tool Schema 尽量与 qmd 保持一致
-- **Build**: hatchling 构建后端，pytest 测试
+- **Build**: hatchling 构建后端，pytest 测试（常驻 fail_under=90 覆盖率门禁）
+- **Type checking**: ty 为唯一类型检查器（mypy 已于 2026-11-06 退役，`ty check src/sif` 0 诊断）
 
 ## Key Decisions
 
@@ -70,6 +71,15 @@ DocSift 是 [qmd](https://github.com/tobi/qmd) 的 Python 重构版本，一个�
 | FTS 迁移检测门控 `VALUES('rebuild')`（OQ1）：仅当检出旧版 direct-DELETE 触发器才重建索引，永不用 needs_rebuild_* 做门 | 修复状态而非仅机制：清除坏触发器时期的孤儿索引项；新库/已迁移库零开销 | Phase 10.1 Complete |
 | CLI Database 生命周期：`with Database(index_path) as db:` 自 init_schema 起持有命令体，嵌套事务块原样保留 | 成功与异常路径都确定性关闭连接（57→13 ResourceWarnings，余量测试侧）；main.py 作用域置于 try/except 内部保证异常先关句柄 | Phase 10.1 Complete |
 | XML 输出净化器 = XML 1.0 Char 产生式补集，先于 `xml_escape`/`quoteattr` 应用 | 转义只管 `<>&'"`，禁用码位归净化器管——两者不可互相替代；`ET.fromstring` 往返测试锁定 | Phase 10.1 Complete |
+| mypy 退役，ty 为唯一类型检查器 | 17 条 ty 诊断清零（断言收窄/Protocol/cast，零行为变化），全部 mypy 残留清除；typing-debt 四批次收官 | v1.0 Complete |
+| 文档内容永不作为 Rich markup 渲染 | get/multi-get 内容 `markup=False` 直出、表头 `escape()`——与 05-10/05-11 同类第三例；回归测试锁定（字面渲染、批次不中断、回退路径同等契约） | v1.0 Complete |
+| docs 局部套件 `--no-cov` | 全局 `addopts` 覆盖率 + `fail_under=90` 使 docs-only 运行必失败（CI 自 Phase 10 起恒红）；Makefile 与 docs.yml 双修 | v1.0 Complete |
+
+## Context（v1.0 shipped 2026-11-07）
+
+- 版本 1.0.0；692 commits（2026-04-14 → 2026-11-07）；src 12.5K 行 / tests 23.1K 行
+- 质量门禁：pytest 1015 passed @ 96.20%（fail_under=90 常驻、零豁免行）、ruff/format/ty 全绿
+- 里程碑收尾时全量文档事实核验：512 条声明 0 失败；四个陈旧验证全部再生（05/06/07/10.1）
 
 ## Evolution
 
@@ -89,4 +99,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-11-06 after Phase 10.1 transition (stale-verification regeneration — re-verified 16/16 with fresh fingerprint; gates green: validation 0 gaps (10/10 map), security 12/12 threats closed, code review 0 critical / 0 warning / 4 info on the post-review delta, regression suite 1011 passed @ 96.22% under active fail_under=90; milestone v1.0 fully complete, all 11 phases done)*
+*Last updated: 2026-11-07 after v1.0 milestone（11/11 阶段、68/68 计划全部交付并持新鲜验证；里程碑审计 tech_debt 项全部在收尾前解决：路径规范化、CR-01/02、WR-01、docs CI、ty 清零、get 显示完整性、需求追溯 31/31）*
