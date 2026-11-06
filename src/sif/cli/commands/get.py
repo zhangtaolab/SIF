@@ -11,6 +11,7 @@ from sif.cli.formatters import prepend_line_numbers
 from sif.core.models import Document
 from sif.database.database import Database
 from sif.database.repositories import DocumentRepository
+from sif.utils.paths import normalize_path
 
 
 console = Console()
@@ -42,77 +43,78 @@ def get_cmd(  # noqa: C901, PLR0912
         console.print("[yellow]No index found.[/yellow]")
         return
 
-    db = Database(index_path)
-    db.init_schema()
+    with Database(index_path) as db:
+        db.init_schema()
 
-    with db.connection:
-        doc_repo = DocumentRepository(db.connection)
+        with db.connection:
+            doc_repo = DocumentRepository(db.connection)
 
-        # Try to find by ID first
-        doc = doc_repo.get_by_id(path_or_docid)
+            # Try to find by ID first
+            doc = doc_repo.get_by_id(path_or_docid)
 
-        if not doc:
-            # Try to find by path
-            # Need collection ID - search all collections
-            from sif.database.repositories import CollectionRepository  # noqa: PLC0415
+            if not doc:
+                # Try to find by path — canonicalized so symlink-alias paths
+                # (e.g. /tmp vs /private/tmp) match the stored resolved form.
+                # Need collection ID - search all collections
+                from sif.database.repositories import CollectionRepository  # noqa: PLC0415
 
-            coll_repo = CollectionRepository(db.connection)
+                coll_repo = CollectionRepository(db.connection)
 
-            for coll in coll_repo.list_all():
-                doc = doc_repo.get_by_path(path_or_docid, coll.id)
-                if doc:
-                    break
+                for coll in coll_repo.list_all():
+                    doc = doc_repo.get_by_path(normalize_path(path_or_docid), coll.id)
+                    if doc:
+                        break
 
-        if not doc:
-            # Try matching by filename (short name lookup)
-            doc = doc_repo.get_by_filename(path_or_docid)
+            if not doc:
+                # Try matching by filename (short name lookup)
+                doc = doc_repo.get_by_filename(path_or_docid)
 
-        if not doc:
-            # Try as file path
-            path = Path(path_or_docid)
-            if path.exists():
-                try:
-                    content = path.read_text()
-                    console.print(f"[bold]{path}[/bold]")
-                    console.print(content)
-                    return
-                except Exception as e:
-                    raise click.ClickException(f"Cannot read file: {e}") from e
+            if not doc:
+                # Try as file path
+                path = Path(path_or_docid)
+                if path.exists():
+                    try:
+                        content = path.read_text()
+                        console.print(f"[bold]{path}[/bold]")
+                        console.print(content)
+                        return
+                    except Exception as e:
+                        raise click.ClickException(f"Cannot read file: {e}") from e
 
-            raise click.ClickException(f"Document not found: {path_or_docid}")
+                raise click.ClickException(f"Document not found: {path_or_docid}")
 
-        # Display document
-        console.print(f"[bold cyan]{doc.title or doc.filename}[/bold cyan]")
-        console.print(f"[dim]Path: {doc.path}[/dim]")
-        console.print(f"[dim]Collection: {doc.collection_id}[/dim]")
-        console.print("")
+            # Display document
+            console.print(f"[bold cyan]{doc.title or doc.filename}[/bold cyan]")
+            console.print(f"[dim]Path: {doc.path}[/dim]")
+            console.print(f"[dim]Collection: {doc.collection_id}[/dim]")
+            console.print("")
 
-        # Get content
-        content = doc.content
+            # Get content
+            content = doc.content
 
-        # Apply line filtering
-        if from_line is not None or lines is not None:
-            content_lines = content.split("\n")
+            # Apply line filtering
+            if from_line is not None or lines is not None:
+                content_lines = content.split("\n")
 
-            start = (from_line or 1) - 1  # Convert to 0-indexed
-            start = max(0, start)
+                start = (from_line or 1) - 1  # Convert to 0-indexed
+                start = max(0, start)
 
-            if lines is not None:
-                end = start + lines
-                content_lines = content_lines[start:end]
+                if lines is not None:
+                    end = start + lines
+                    content_lines = content_lines[start:end]
+                else:
+                    content_lines = content_lines[start:]
+
+                content = "\n".join(content_lines)
+
+            if line_numbers:
+                content = prepend_line_numbers(content)
+
+            # Display with syntax highlighting if markdown
+            if doc.path.endswith(".md"):
+                console.print(content)
             else:
-                content_lines = content_lines[start:]
-
-            content = "\n".join(content_lines)
-
-        if line_numbers:
-            content = prepend_line_numbers(content)
-
-        # Display with syntax highlighting if markdown
-        if doc.path.endswith(".md"):
-            console.print(content)
-        else:
-            console.print(content)
+                console.print(content)
 
 
 @get_group.command("multi-get")
@@ -135,66 +137,72 @@ def multi_get_cmd(  # noqa: C901
 
     import fnmatch  # noqa: PLC0415
 
-    db = Database(index_path)
-    db.init_schema()
+    with Database(index_path) as db:
+        db.init_schema()
 
-    with db.connection:
-        doc_repo = DocumentRepository(db.connection)
-        from sif.database.repositories import CollectionRepository  # noqa: PLC0415
+        with db.connection:
+            doc_repo = DocumentRepository(db.connection)
+            from sif.database.repositories import CollectionRepository  # noqa: PLC0415
 
-        coll_repo = CollectionRepository(db.connection)
+            coll_repo = CollectionRepository(db.connection)
 
-        matched_docs: list[Document] = []
+            matched_docs: list[Document] = []
 
-        def _lookup_by_id_or_path_or_filename(item: str) -> Document | None:
-            """Try ID, then exact path, then filename match."""
-            doc = doc_repo.get_by_id(item)
-            if doc:
-                return doc
-            for coll in coll_repo.list_all():
-                doc = doc_repo.get_by_path(item, coll.id)
+            def _lookup_by_id_or_path_or_filename(item: str) -> Document | None:
+                """Try ID, then exact path, then filename match."""
+                doc = doc_repo.get_by_id(item)
                 if doc:
                     return doc
-            return doc_repo.get_by_filename(item)
+                for coll in coll_repo.list_all():
+                    # Canonicalized so symlink-alias paths match stored rows.
+                    doc = doc_repo.get_by_path(normalize_path(item), coll.id)
+                    if doc:
+                        return doc
+                return doc_repo.get_by_filename(item)
 
-        if "," in pattern:
-            # Comma-separated IDs/paths
-            items = [item.strip() for item in pattern.split(",") if item.strip()]
-            seen_ids: set[str] = set()
-            for item in items:
-                doc = _lookup_by_id_or_path_or_filename(item)
-                if doc and doc.id not in seen_ids:
+            if "," in pattern:
+                # Comma-separated IDs/paths
+                items = [item.strip() for item in pattern.split(",") if item.strip()]
+                seen_ids: set[str] = set()
+                for item in items:
+                    doc = _lookup_by_id_or_path_or_filename(item)
+                    if doc and doc.id not in seen_ids:
+                        matched_docs.append(doc)
+                        seen_ids.add(doc.id)
+            elif "*" in pattern or "?" in pattern:
+                # Glob pattern: raw pattern first (relative patterns and
+                # hand-migrated rows), then a canonicalized pattern whose
+                # symlinked directory prefixes match resolved stored paths.
+                normalized_pattern = normalize_path(pattern)
+                for coll in coll_repo.list_all():
+                    matched_docs.extend(
+                        doc
+                        for doc in doc_repo.list_by_collection(coll.id)
+                        if fnmatch.fnmatch(doc.path, pattern)
+                        or fnmatch.fnmatch(doc.filename, pattern)
+                        or fnmatch.fnmatch(doc.path, normalized_pattern)
+                    )
+            else:
+                # Single item
+                doc = _lookup_by_id_or_path_or_filename(pattern)
+                if doc:
                     matched_docs.append(doc)
-                    seen_ids.add(doc.id)
-        elif "*" in pattern or "?" in pattern:
-            # Glob pattern
-            for coll in coll_repo.list_all():
-                matched_docs.extend(
-                    doc
-                    for doc in doc_repo.list_by_collection(coll.id)
-                    if fnmatch.fnmatch(doc.path, pattern) or fnmatch.fnmatch(doc.filename, pattern)
-                )
-        else:
-            # Single item
-            doc = _lookup_by_id_or_path_or_filename(pattern)
-            if doc:
-                matched_docs.append(doc)
 
-        if not matched_docs:
-            console.print(f"[yellow]No documents matching pattern: {pattern}[/yellow]")
-            return
+            if not matched_docs:
+                console.print(f"[yellow]No documents matching pattern: {pattern}[/yellow]")
+                return
 
-        console.print(f"[green]Found {len(matched_docs)} matching document(s)[/green]")
-        console.print("")
-
-        for doc in matched_docs:
-            content = doc.content
-            if len(content.encode()) > max_bytes:
-                content = content[:max_bytes] + "\n... [truncated]"
-
-            if line_numbers:
-                content = prepend_line_numbers(content)
-
-            console.print(f"[bold cyan]=== {doc.path} ===[/bold cyan]")
-            console.print(content)
+            console.print(f"[green]Found {len(matched_docs)} matching document(s)[/green]")
             console.print("")
+
+            for doc in matched_docs:
+                content = doc.content
+                if len(content.encode()) > max_bytes:
+                    content = content[:max_bytes] + "\n... [truncated]"
+
+                if line_numbers:
+                    content = prepend_line_numbers(content)
+
+                console.print(f"[bold cyan]=== {doc.path} ===[/bold cyan]")
+                console.print(content)
+                console.print("")

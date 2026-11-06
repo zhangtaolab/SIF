@@ -16,6 +16,7 @@ from sif.embedding.model import ModelType
 from sif.mcp.protocol import CollectionInfo, Document, SearchResult
 from sif.search.hybrid import SearchPipeline
 from sif.utils.logging import get_logger
+from sif.utils.paths import normalize_path
 
 
 logger = get_logger(__name__)
@@ -126,7 +127,8 @@ class SearchBackend:
             if not doc:
                 coll_repo = CollectionRepository(conn)
                 for coll in coll_repo.list_all():
-                    doc = repo.get_by_path(path_or_docid, coll.id)
+                    # Canonicalized so symlink-alias paths match stored rows.
+                    doc = repo.get_by_path(normalize_path(path_or_docid), coll.id)
                     if doc:
                         break
             if not doc:
@@ -171,9 +173,16 @@ class SearchBackend:
             errors: list[str] = []
             total_bytes = 0
             max_b = max_bytes or (100 * 1024)
+            # Canonicalized pattern: symlinked directory prefixes match the
+            # resolved stored paths (non-existent wildcard tails are preserved).
+            normalized_pattern = normalize_path(pattern)
             for coll in coll_repo.list_all():
                 for doc in doc_repo.list_by_collection(coll.id):
-                    if fnmatch.fnmatch(doc.path, pattern) or fnmatch.fnmatch(doc.filename, pattern):
+                    if (
+                        fnmatch.fnmatch(doc.path, pattern)
+                        or fnmatch.fnmatch(doc.filename, pattern)
+                        or fnmatch.fnmatch(doc.path, normalized_pattern)
+                    ):
                         content = doc.content
                         content_bytes = len(content.encode("utf-8"))
                         if total_bytes + content_bytes > max_b:
