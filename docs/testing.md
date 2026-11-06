@@ -191,7 +191,7 @@ The workflow triggers on:
 The `docs-test` job (ubuntu-latest, Python 3.11) then:
 
 1. Installs the package with `pip install -e ".[dev]"`
-2. Runs `pytest tests/test_docs.py -v`
+2. Runs `pytest tests/test_docs.py -v --no-cov`
 3. Regenerates the CLI and configuration reference docs (`scripts/generate_cli_ref.py`, `scripts/generate_config_ref.py`) and fails on any diff (`git diff --exit-code docs/cli-reference.md docs/configuration.md`), ensuring the reference docs stay in sync with the code
 
 To reproduce all local checks in one shot, use `make ci` (format check, lint, typecheck, security scan, and the full test suite). See [development.md](development.md) for the broader development workflow.

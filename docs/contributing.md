@@ -362,7 +362,7 @@ The repository has one GitHub Actions workflow, `.github/workflows/docs.yml` ("D
 - **On pull requests** that touch `docs/**`, `README.md`, `src/sif/cli/**`, `src/sif/config/**`, `scripts/generate_cli_ref.py`, `scripts/generate_config_ref.py`, or `tests/test_docs.py`
 - **On pushes** to `main`
 
-The workflow installs the package with `pip install -e ".[dev]"` on Python 3.11, runs `pytest tests/test_docs.py -v`, then regenerates the reference docs via `scripts/generate_cli_ref.py` and `scripts/generate_config_ref.py` and fails if `git diff --exit-code docs/cli-reference.md docs/configuration.md` detects drift. In practice:
+The workflow installs the package with `pip install -e ".[dev]"` on Python 3.11, runs `pytest tests/test_docs.py -v --no-cov`, then regenerates the reference docs via `scripts/generate_cli_ref.py` and `scripts/generate_config_ref.py` and fails if `git diff --exit-code docs/cli-reference.md docs/configuration.md` detects drift. In practice:
 
 > If you change CLI commands or configuration settings, regenerate the reference docs and commit the result, or CI will fail:
 >
@@ -380,8 +380,8 @@ The `Makefile` wraps the common development commands:
 |--------|--------------|-------|
 | `make install-dev` | `pip install -e ".[dev]"` + `pre-commit install` | See pre-commit caveat below |
 | `make test` | `pytest --cov=src/sif ...` | Coverage is also on by default via `pyproject.toml` `addopts` |
-| `make test-fast` | `pytest -x -q` | No coverage, stops at first failure |
-| `make docs-test` | `pytest tests/test_docs.py -v` | Same docs validation CI runs |
+| `make test-fast` | `pytest -x -q` | Coverage still applies via `addopts`; stops at first failure |
+| `make docs-test` | `pytest tests/test_docs.py -v --no-cov` | Same docs validation CI runs |
 | `make docs-generate` | `scripts/generate_cli_ref.py` + `scripts/generate_config_ref.py` | Regenerate reference docs before committing CLI/config changes |
 | `make lint` / `make lint-fix` | `ruff check .` / `ruff check --fix .` | |
 | `make format` / `make format-check` | `ruff format .` / `ruff format --check .` | |

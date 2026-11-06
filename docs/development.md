@@ -695,7 +695,7 @@ The "Docs Validation" workflow (`.github/workflows/docs.yml`) regenerates `docs/
 
 ### Documentation Tests
 
-`make docs-test` (`pytest tests/test_docs.py -v`) validates the code blocks in `README.md`, `docs/index.md`, `docs/cli-reference.md`, `docs/configuration.md`, `docs/quickstart.md`, `docs/mcp-server.md`, `docs/search-algorithms.md`, `docs/architecture.md`, and `docs/models.md`:
+`make docs-test` (`pytest tests/test_docs.py -v --no-cov`) validates the code blocks in `README.md`, `docs/index.md`, `docs/cli-reference.md`, `docs/configuration.md`, `docs/quickstart.md`, `docs/mcp-server.md`, `docs/search-algorithms.md`, `docs/architecture.md`, and `docs/models.md`:
 
 - JSON blocks must parse, and JSON output examples must contain the expected keys.
 - Python blocks must be syntactically valid.
