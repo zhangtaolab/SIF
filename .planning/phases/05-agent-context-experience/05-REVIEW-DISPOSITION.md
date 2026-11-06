@@ -3,6 +3,22 @@ phase: 05
 review: 05-REVIEW.md
 titles: json
 findings:
+  - id: WR-18
+    severity: warning
+    disposition: open
+    title: "`context add` confirmation prints execute inside the open transaction — any display failure still rolls back a completed write"
+  - id: IN-13
+    severity: info
+    disposition: open
+    title: "`context list` shows raw collection UUIDs; `--line-numbers` default in the search skill is ineffective without `--full`"
+  - id: IN-19
+    severity: info
+    disposition: open
+    title: "Tautological guard asserts in the new CR-03 tests can never fail"
+  - id: IN-20
+    severity: info
+    disposition: open
+    title: "`_seed`/`_path_rows` helpers duplicated near-verbatim across the two real-SQL test classes"
   - id: CR-03
     severity: critical
     disposition: open
@@ -147,29 +163,29 @@ findings:
     severity: info
     disposition: open
     title: "mcp-server.md overclaims query behavior: content and reranking"
-  - id: IN-13
-    severity: info
-    disposition: open
-    title: "`context list` shows raw collection UUIDs; `--line-numbers` default in the search skill is ineffective without `--full`"
   - id: IN-14
     severity: info
     disposition: open
     title: "`Qwen3Reranker.load()` duplicates the entire loading block for quiet/non-quiet"
-open: 36
-total: 38
-recorded: 2026-11-06T08:55:56.670Z
+open: 39
+total: 41
+recorded: 2026-11-06T11:07:59.847Z
 ---
 
 # Phase 05: Code Review Disposition
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| CR-03 | critical | open | - |
-| WR-02 | warning | open | - |
-| WR-03 | warning | open | - |
-| IN-05 | info | open | - |
-| IN-17 | info | open | - |
-| IN-18 | info | open | - |
+| WR-18 | warning | open | - |
+| IN-13 | info | open | - |
+| IN-19 | info | open | - |
+| IN-20 | info | open | - |
+| CR-03 | critical | open | - (not in the current review) |
+| WR-02 | warning | open | - (not in the current review) |
+| WR-03 | warning | open | - (not in the current review) |
+| IN-05 | info | open | - (not in the current review) |
+| IN-17 | info | open | - (not in the current review) |
+| IN-18 | info | open | - (not in the current review) |
 | CR-01 | critical | open | - (not in the current review) |
 | CR-02 | critical | fixed | 05-REVIEW-FIX.md (not in the current review) |
 | WR-01 | warning | open | - (not in the current review) |
@@ -200,7 +216,6 @@ recorded: 2026-11-06T08:55:56.670Z
 | IN-10 | info | open | - (not in the current review) |
 | IN-11 | info | open | - (not in the current review) |
 | IN-12 | info | open | - (not in the current review) |
-| IN-13 | info | open | - (not in the current review) |
 | IN-14 | info | open | - (not in the current review) |
 
 Dispositions: `open` (recorded, not yet triaged), `fixed`, `skipped`, `deferred`.
