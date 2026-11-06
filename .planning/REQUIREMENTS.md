@@ -7,25 +7,25 @@
 
 ### Foundation (Bugfix & Stub Removal)
 
-- [ ] **FND-01**: 修复 `pyproject.toml` 中缺失的运行时依赖声明（sqlite-vec、structlog、platformdirs、pydantic、fastapi/uvicorn、watchdog、python-frontmatter 等）
-- [ ] **FND-02**: 修复索引更新逻辑中的 checksum 比较错误（应跳过未变更文档，而非跳过已变更文档）
-- [ ] **FND-03**: 替换 embedding 工厂中的随机/占位实现，实现真正的 sentence-transformers 和 llama-cpp-python 加载路径
-- [ ] **FND-04**: 移除硬编码模型路径 `BAAI/bge-small-zh-v1.5`，改为从 Settings 读取并允许 CLI 覆盖
-- [ ] **FND-05**: 统一或清理重复的数据库 repository 实现（repositories.py vs sqlite_repository.py）
-- [ ] **FND-06**: 修复 FTS5 外部内容表的同步问题，确保 BM25 搜索结果与主表一致
-- [ ] **FND-07**: 修复向量搜索 CLI 的 fallback 问题：`vsearch` 不应在未找到 embedder 时无条件回退到 BM25
-- [ ] **FND-08**: 改进 SQLite 连接管理，避免异步/多线程场景下的竞态条件
+- [x] **FND-01**: 修复 `pyproject.toml` 中缺失的运行时依赖声明（sqlite-vec、structlog、platformdirs、pydantic、fastapi/uvicorn、watchdog、python-frontmatter 等）
+- [x] **FND-02**: 修复索引更新逻辑中的 checksum 比较错误（应跳过未变更文档，而非跳过已变更文档）
+- [x] **FND-03**: 替换 embedding 工厂中的随机/占位实现，实现真正的 sentence-transformers 和 llama-cpp-python 加载路径
+- [x] **FND-04**: 移除硬编码模型路径 `BAAI/bge-small-zh-v1.5`，改为从 Settings 读取并允许 CLI 覆盖
+- [x] **FND-05**: 统一或清理重复的数据库 repository 实现（repositories.py vs sqlite_repository.py）
+- [x] **FND-06**: 修复 FTS5 外部内容表的同步问题，确保 BM25 搜索结果与主表一致
+- [x] **FND-07**: 修复向量搜索 CLI 的 fallback 问题：`vsearch` 不应在未找到 embedder 时无条件回退到 BM25
+- [x] **FND-08**: 改进 SQLite 连接管理，避免异步/多线程场景下的竞态条件
 
 ### CLI Completion
 
 - [x] **CLI-01**: 实现 `multi-get` 命令：支持 glob 模式、逗号分隔列表或 docid 批量获取文档
 - [x] **CLI-02**: 实现 `ls` 命令：列出索引中的虚拟文件树（按集合查看已索引文档）
-- [ ] **CLI-03**: 实现 `collection update-cmd`：为集合设置/清除索引前执行的 shell 命令（如 `git pull`）
-- [ ] **CLI-04**: 实现 `collection include/exclude`：控制集合是否参与默认查询
+- [x] **CLI-03**: 实现 `collection update-cmd`：为集合设置/清除索引前执行的 shell 命令（如 `git pull`）
+- [x] **CLI-04**: 实现 `collection include/exclude`：控制集合是否参与默认查询
 - [x] **CLI-05**: 实现 `pull` 命令：下载/检查本地 GGUF 模型文件
 - [x] **CLI-06**: 支持 `--min-score` 参数过滤低置信度结果
 - [x] **CLI-07**: 支持 `--full` 参数返回完整文档内容而非片段
-- [ ] **CLI-08**: 支持 `--line-numbers` 参数在输出中附加行号
+- [x] **CLI-08**: 支持 `--line-numbers` 参数在输出中附加行号
 
 ### Context & Agent Experience
 
