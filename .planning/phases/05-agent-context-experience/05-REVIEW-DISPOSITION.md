@@ -3,6 +3,26 @@ phase: 05
 review: 05-REVIEW.md
 titles: json
 findings:
+  - id: WR-01
+    severity: warning
+    disposition: open
+    title: "`cast(\"str\", ...)` asserts an invariant the parser does not enforce on YAML frontmatter titles"
+  - id: WR-02
+    severity: warning
+    disposition: open
+    title: "`EmbeddingModelFactory` Protocol signature contradicts the concrete factory of the same name"
+  - id: WR-03
+    severity: warning
+    disposition: open
+    title: "Version declared in four unsynchronized places; the documented release step updates the one file nothing imports"
+  - id: IN-01
+    severity: info
+    disposition: open
+    title: "`.mypy_cache` dropped from `FileScanner.DEFAULT_IGNORE_PATTERNS` along with the tooling references"
+  - id: IN-02
+    severity: info
+    disposition: open
+    title: "Mypy-coded `# type: ignore[misc,assignment]` suppressions survive the \"ty is the sole type checker\" cleanup"
   - id: IN-13
     severity: info
     disposition: open
@@ -23,14 +43,6 @@ findings:
     severity: critical
     disposition: open
     title: "`context add` confirmation prints interpolate the user-derived target into Rich markup unescaped — MarkupError rolls back the write, so bracket-named targets can never be added"
-  - id: WR-02
-    severity: warning
-    disposition: open
-    title: "Unknown `-c/--collection` names silently resolve to exclude-all — typo returns \"No results found\" instead of an error"
-  - id: WR-03
-    severity: warning
-    disposition: open
-    title: "`vsearch` surfaces embedding-dimension mismatch as a raw sqlite3 traceback"
   - id: IN-05
     severity: info
     disposition: open
@@ -51,22 +63,10 @@ findings:
     severity: critical
     disposition: fixed
     title: "`--line-numbers --md` and `--line-numbers --xml` crash with `AttributeError: 'dict' object has no attribute 'rank'`"
-  - id: WR-01
-    severity: warning
-    disposition: open
-    title: "LLM cache TTL writes naive local-time expiry compared against aware UTC strings — cache broken west of UTC; in-scope test fails"
   - id: WR-04
     severity: warning
     disposition: open
     title: "Self-heal merge skips duplicate collapsing in the exact-match branch, contradicting its documented contract"
-  - id: IN-01
-    severity: info
-    disposition: open
-    title: "Dimension-mismatch error message points users at `sif cleanup`, which cannot fix the problem"
-  - id: IN-02
-    severity: info
-    disposition: open
-    title: "Dead `DEFAULT_INDEX_PATH` constant that also disagrees with the real default"
   - id: IN-03
     severity: info
     disposition: open
@@ -169,29 +169,29 @@ findings:
     title: "`Qwen3Reranker.load()` duplicates the entire loading block for quiet/non-quiet"
 open: 38
 total: 41
-recorded: 2026-11-06T11:59:51.521Z
+recorded: 2026-11-06T15:00:47.384Z
 ---
 
 # Phase 05: Code Review Disposition
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| IN-13 | info | open | - |
+| WR-01 | warning | open | - |
+| WR-02 | warning | open | - |
+| WR-03 | warning | open | - |
+| IN-01 | info | open | - |
+| IN-02 | info | open | - |
+| IN-13 | info | open | - (not in the current review) |
 | WR-18 | warning | fixed | 05-REVIEW-FIX.md (not in the current review) |
 | IN-19 | info | open | - (not in the current review) |
 | IN-20 | info | open | - (not in the current review) |
 | CR-03 | critical | open | - (not in the current review) |
-| WR-02 | warning | open | - (not in the current review) |
-| WR-03 | warning | open | - (not in the current review) |
 | IN-05 | info | open | - (not in the current review) |
 | IN-17 | info | open | - (not in the current review) |
 | IN-18 | info | open | - (not in the current review) |
 | CR-01 | critical | open | - (not in the current review) |
 | CR-02 | critical | fixed | 05-REVIEW-FIX.md (not in the current review) |
-| WR-01 | warning | open | - (not in the current review) |
 | WR-04 | warning | open | - (not in the current review) |
-| IN-01 | info | open | - (not in the current review) |
-| IN-02 | info | open | - (not in the current review) |
 | IN-03 | info | open | - (not in the current review) |
 | IN-04 | info | open | - (not in the current review) |
 | WR-10 | warning | open | - (not in the current review) |
