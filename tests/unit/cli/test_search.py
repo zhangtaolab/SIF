@@ -1890,6 +1890,55 @@ class TestSearchOutputBranches:
         assert "B" * 55 not in result.output
         assert "..." in result.output
 
+    def test_search_table_renders_markup_literally(self, tmp_path: Path) -> None:
+        """CR-01: markup-bearing query/title/collection render literally in the table."""
+        row = self._result(title="notes [/3] review", collection_name="[WIP] col")
+
+        result, _ = self._invoke_bm25(tmp_path, ["[/3]-notes"], [row])
+
+        assert result.exit_code == 0
+        assert "[/3]" in result.output
+        assert "[WIP]" in result.output
+
+    def test_query_table_renders_markup_literally(self, tmp_path: Path) -> None:
+        """CR-01: the hybrid query table escapes markup-bearing user data."""
+        row = self._result(title="notes [/3] review", collection_name="[WIP] col")
+
+        result, _ = self._invoke_query(tmp_path, ["[/3]-notes"], [row])
+
+        assert result.exit_code == 0
+        assert "[/3]" in result.output
+        assert "[WIP]" in result.output
+
+    def test_vsearch_table_renders_markup_literally(self, tmp_path: Path) -> None:
+        """CR-01: the vector search table escapes markup-bearing user data."""
+        row = self._result(title="notes [/3] review", collection_name="[WIP] col")
+
+        result, _ = self._invoke_vsearch(tmp_path, ["[/3]-notes"], [row])
+
+        assert result.exit_code == 0
+        assert "[/3]" in result.output
+        assert "[WIP]" in result.output
+
+    def test_line_numbers_content_cell_renders_markup_literally(self, tmp_path: Path) -> None:
+        """CR-01: the --line-numbers Content cell escapes bracket sequences in content."""
+        row = self._result(content="line one\n[/] marker line")
+
+        result, _ = self._invoke_bm25(tmp_path, ["notes", "--line-numbers"], [row])
+
+        assert result.exit_code == 0
+        assert "[/]" in result.output
+
+    def test_explain_output_renders_markup_literally(self, tmp_path: Path) -> None:
+        """CR-01: --explain prints escape the interpolated query and result titles."""
+        row = self._result(title="notes [/3] review")
+
+        result, _ = self._invoke_query(tmp_path, ["[/3]-notes", "--explain"], [row])
+
+        assert result.exit_code == 0
+        assert "Query: [/3]-notes" in result.output
+        assert "[/3]" in result.output
+
 
 class TrackingDatabase(Database):
     """Database double recording constructed instances for closure assertions."""
