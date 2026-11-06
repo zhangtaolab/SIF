@@ -145,7 +145,7 @@ sif --help
 
 Expected output:
 ```
-sif, version 0.2.1
+sif, version 1.0.0
 
 Usage: sif [OPTIONS] COMMAND [ARGS]...
 
