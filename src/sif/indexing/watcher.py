@@ -16,6 +16,7 @@ import queue
 import re
 import sqlite3
 import threading
+import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from functools import partial
@@ -76,7 +77,12 @@ class WatchConfig:
     """Tunables and host callbacks for :class:`FileWatcher`.
 
     Bundled so the constructor stays under the project's argument-count lint
-    gate; host flags extend this struct without touching call sites.
+    gate; host flags extend this struct without touching call sites. The
+    ``rescope_provider``/``rescope_interval``/``checkpoint_interval`` trio is
+    the long-lived-host opt-in (D-15/D-16): 13-02's daemon and 13-03's MCP
+    watch host wire them, and the foreground MVP host passes none of the
+    three, keeping its restart-on-change behavior. ``now`` is the tick clock
+    — monotonic in production, injectable for zero-timing tests.
     """
 
     debounce_interval: float = 0.5
@@ -85,6 +91,10 @@ class WatchConfig:
     restat_interval: float = 5.0
     on_event: Callable[[str], None] | None = None
     on_batch: Callable[[Collection, IncrementalResult], None] | None = None
+    rescope_provider: Callable[[], list[Collection]] | None = None
+    rescope_interval: float = 0.0
+    checkpoint_interval: float = 0.0
+    now: Callable[[], float] = time.monotonic
 
 
 @dataclass
@@ -95,6 +105,7 @@ class _WatchState:
     root: Path
     handle: ObservedWatch | None = None
     missing: bool = False
+    debouncer: EventDebouncer | None = None
 
 
 def fold_events(
@@ -334,8 +345,8 @@ class FileWatcher:
         self._db_path = Path(db_path)
         self._config = config if config is not None else WatchConfig()
         self._observer: BaseObserver | None = None
-        self._debouncers: list[EventDebouncer] = []
         self._watch_states: dict[str, _WatchState] = {}
+        self._rescope_deadline: float | None = None
         self._queue: queue.Queue[tuple[Collection, FoldResult] | None] = queue.Queue()
         self._worker: threading.Thread | None = None
         self._stop_event = threading.Event()
@@ -380,7 +391,7 @@ class FileWatcher:
         state.handle = observer.schedule(
             IndexingEventHandler(debouncer), str(state.root), recursive=True
         )
-        self._debouncers.append(debouncer)
+        state.debouncer = debouncer
         debouncer.start()
 
     def stop(self, *, flush: bool = True) -> None:
@@ -392,8 +403,9 @@ class FileWatcher:
         logger.info("Stopping file watcher (flush=%s)", flush)
         if self._observer is not None:
             self._observer.stop()
-        for debouncer in self._debouncers:
-            debouncer.stop()
+        for state in self._watch_states.values():
+            if state.debouncer is not None:
+                state.debouncer.stop()
         # The worker exits on the stop flag; queued work is then drained on
         # this thread so no two threads ever share the connection mid-job.
         # A timed-out join means a job legitimately still runs (flock wait up
@@ -416,8 +428,9 @@ class FileWatcher:
             self._drain_once()
         if self._observer is not None:
             self._observer.join(timeout=_JOIN_TIMEOUT_SECONDS)
-        for debouncer in self._debouncers:
-            debouncer.join(timeout=_JOIN_TIMEOUT_SECONDS)
+        for state in self._watch_states.values():
+            if state.debouncer is not None:
+                state.debouncer.join(timeout=_JOIN_TIMEOUT_SECONDS)
 
     def recovery_tick(self) -> None:
         """Run one D-12 re-stat pass over tracked roots.
@@ -453,6 +466,90 @@ class FileWatcher:
                 state.missing = False
                 self._queue.put((state.collection, FoldResult(needs_reconcile=True)))
 
+    def rescope(self, collections: list[Collection]) -> None:
+        """Diff the eligible collection set against the watched set (D-15).
+
+        Worker-thread-only, like :meth:`recovery_tick`: the only production
+        caller is the tick in :meth:`_on_tick`, and tests invoke it directly
+        with the worker quiesced — mutating ``_watch_states`` or the observer
+        from any other thread races the tick's own iteration (Pitfall 6). The
+        diff is exact: only collections present in ``collections`` end up
+        watched, so a host's provider embodies its eligible set (a ``-c``
+        filter simply withholds the excluded names).
+
+        Added collections get their debouncer armed and, when the root
+        exists, one full-reconcile job enqueued — the exact recovery-return
+        shape; a missing root is marked for the D-12 re-stat loop instead.
+        Removed collections are unscheduled and their debouncers stopped;
+        documents are never touched (stopping watching never deletes).
+        """
+        observer = self._observer
+        if observer is None:
+            return
+        wanted = {coll.name: coll for coll in collections}
+        for name, state in list(self._watch_states.items()):
+            if name in wanted:
+                continue
+            if state.handle is not None:
+                observer.unschedule(state.handle)
+                state.handle = None
+            if state.debouncer is not None:
+                state.debouncer.stop()
+                state.debouncer.join(timeout=_JOIN_TIMEOUT_SECONDS)
+                state.debouncer = None
+            del self._watch_states[name]
+            logger.info("Unscheduled watch for collection %s (documents preserved)", name)
+        for name, coll in wanted.items():
+            if name in self._watch_states:
+                continue
+            root = Path(coll.path).resolve()
+            state = _WatchState(collection=coll, root=root)
+            self._watch_states[name] = state
+            if not root.exists():
+                logger.warning(
+                    "Collection root %s missing; not scheduling a watch (D-11)",
+                    root,
+                )
+                state.missing = True
+                continue
+            self._schedule_watch(state, observer)
+            self._queue.put((coll, FoldResult(needs_reconcile=True)))
+
+    def _on_tick(self) -> None:
+        """Run one idle-tick body: the D-12 recovery pass, then due opt-ins.
+
+        Called by the worker whenever its idle wait times out, or directly
+        from tests with zero timing. Rescope (D-15) rides the same tick
+        behind its interval guard, so a default-configured watcher performs
+        no extra work. Everything here runs on the worker thread only.
+        """
+        self.recovery_tick()
+        now = self._config.now()
+        self._rescope_if_due(now)
+
+    def _rescope_if_due(self, now: float) -> None:
+        """Consult the rescope provider once its interval has elapsed (D-15).
+
+        The deadline seeds on the first tick (one full interval of grace) and
+        resets whether or not the provider run changes anything, keeping the
+        cadence fixed even across provider failures.
+        """
+        provider = self._config.rescope_provider
+        if provider is None or self._config.rescope_interval <= 0:
+            return
+        if self._rescope_deadline is None:
+            self._rescope_deadline = now + self._config.rescope_interval
+            return
+        if now < self._rescope_deadline:
+            return
+        self._rescope_deadline = now + self._config.rescope_interval
+        try:
+            wanted = provider()
+        except Exception:
+            logger.warning("Rescope provider failed; keeping the current watch set", exc_info=True)
+            return
+        self.rescope(wanted)
+
     def _settled_callback(self, collection: Collection) -> SettledCallback:
         """Build the debouncer callback for one collection.
 
@@ -477,14 +574,15 @@ class FileWatcher:
     def _worker_loop(self) -> None:
         """Consume settled bursts until stopped; one job per queue item.
 
-        The idle wait doubles as the D-12 re-stat cadence: when no burst
-        arrives within the re-stat interval, one recovery tick runs.
+        The idle wait doubles as the periodic tick: when no burst arrives
+        within the re-stat interval, :meth:`_on_tick` runs the D-12 recovery
+        pass plus the due long-lived-host behaviors (rescope, checkpoint).
         """
         while not self._stop_event.is_set():
             try:
                 job = self._queue.get(timeout=self._config.restat_interval)
             except queue.Empty:
-                self.recovery_tick()
+                self._on_tick()
                 continue
             if job is None:
                 # stop() sentinel: wake immediately instead of parking for

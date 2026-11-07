@@ -1466,17 +1466,17 @@ class TestLiveRescope:
             watcher.stop(flush=False)
         db.close()
 
-    def test_rescope_added_collection_schedules_and_reconciles(
-        self, tmp_path, monkeypatch
-    ) -> None:
+    def test_rescope_added_collection_schedules_and_reconciles(self, tmp_path, monkeypatch) -> None:
         """An added collection arms its debouncer, schedules a watch handle,
         and gets one reconcile job that indexes a file under the new root."""
-        db_path, alpha, beta = self._seed(tmp_path, monkeypatch)
+        db_path, _alpha, beta = self._seed(tmp_path, monkeypatch)
         # A NEW file lands under beta's root before the rescope.
         new_file = beta / "new.md"
         new_file.write_text("# New note\n\n" + ("New body text. " * 30), encoding="utf-8")
 
-        watcher, observer, colls, db = self._start_watcher(db_path, ("alpha",), monkeypatch)
+        watcher, observer, colls, db = self._start_watcher(
+            db_path, ("alpha",), monkeypatch, extra_registered=("beta",)
+        )
         try:
             assert observer.schedule.call_count == 1
             watcher.rescope([colls["alpha"], colls["beta"]])
@@ -1491,6 +1491,7 @@ class TestLiveRescope:
             assert job_coll.name == "beta"
             assert folded == FoldResult(needs_reconcile=True)
             # Drive the job: the file under beta's root becomes indexed.
+            watcher._queue.put((job_coll, folded))
             watcher._drain_once()
         finally:
             self._teardown(watcher, db)
@@ -1519,7 +1520,8 @@ class TestLiveRescope:
             repo = CollectionRepository(db.connection)
             coll_a = repo.get_by_name("alpha")
             coll_b = repo.get_by_name("beta")
-            assert coll_a is not None and coll_b is not None
+            assert coll_a is not None
+            assert coll_b is not None
             watcher = FileWatcher([coll_a, coll_b], db.connection, db_path)
             monkeypatch.setattr(watcher, "_worker_loop", lambda: None)
             watcher.start()
@@ -1606,9 +1608,7 @@ class TestLiveRescope:
         foreground MVP host keeps its restart-on-change behavior (D-15)."""
         db_path, _alpha, _beta = self._seed(tmp_path, monkeypatch)
 
-        watcher, observer, _colls, db = self._start_watcher(
-            db_path, ("alpha", "beta"), monkeypatch
-        )
+        watcher, observer, _colls, db = self._start_watcher(db_path, ("alpha", "beta"), monkeypatch)
         try:
             assert watcher._config.rescope_provider is None
             before = set(watcher._watch_states)

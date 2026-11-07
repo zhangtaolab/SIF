@@ -64,6 +64,25 @@ class Settings(BaseSettings):
         description="Seconds between re-stat checks for watched collection roots "
         "that went missing while `sif watch` runs",
     )
+    mcp_watch: bool = Field(
+        default=False,
+        description="Run the index watcher inside the MCP server so assistant "
+        "queries hit a fresh index (opt-in via SIF_MCP_WATCH=1; both "
+        "transports, BM25-only by design)",
+    )
+    watch_rescope_interval: float = Field(
+        default=60.0,
+        ge=1,
+        description="Seconds between collections-table rescope polls riding the "
+        "watch tick in long-lived hosts; added collections start watching, "
+        "removed ones stop",
+    )
+    watch_checkpoint_interval: float = Field(
+        default=300.0,
+        ge=0,
+        description="Seconds between idle WAL checkpoint attempts in long-lived "
+        "hosts; 0 disables (shutdown checkpointing stays the final word)",
+    )
 
     # Model settings
     model_path: Path | None = Field(
