@@ -8,6 +8,7 @@ the D-14 signal/shutdown machinery invoked directly — never real signals
 
 from __future__ import annotations
 
+import io
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -17,6 +18,7 @@ import click
 import pytest
 from click.testing import CliRunner
 from pydantic import ValidationError
+from rich.console import Console
 
 from sif.cli.commands import watch as watch_mod
 from sif.cli.commands.watch import (
@@ -179,6 +181,54 @@ class TestDepthMatrix:
         monkeypatch.delenv("SIF_WATCH_UPDATE_DEPTH", raising=False)
         with pytest.raises(ValidationError):
             Settings(watch_update_depth="bogus")
+
+
+class TestEventRenderingEscapesMarkup:
+    """IN-01: payloads (file names, collection names) are user data — Rich
+    must render bracketed text like ``report[v2].md`` literally instead of
+    consuming ``[v2]`` as a style tag."""
+
+    def _captured_output(self, monkeypatch, render) -> str:
+        """Run ``render`` with the module console pointed at a StringIO."""
+        buf = io.StringIO()
+        monkeypatch.setattr(watch_mod, "console", Console(file=buf, width=200))
+        render()
+        return buf.getvalue()
+
+    def test_bracketed_filename_renders_literally(self, monkeypatch) -> None:
+        """`indexed report[v2].md` keeps its `[v2]` under --verbose."""
+        out = self._captured_output(
+            monkeypatch,
+            lambda: watch_mod._render_watch_event("indexed report[v2].md", verbose=True),
+        )
+
+        assert "Indexed: report[v2].md" in out
+
+    def test_error_and_missing_payloads_stay_visible_and_escaped(self, monkeypatch) -> None:
+        """Error/missing lines always print (no --verbose) and stay literal."""
+        out = self._captured_output(
+            monkeypatch,
+            lambda: [
+                watch_mod._render_watch_event(
+                    "error Embedding failed for report[v2].md: boom", verbose=False
+                ),
+                watch_mod._render_watch_event("missing notes[2024]", verbose=False),
+            ],
+        )
+
+        assert "Embedding failed for report[v2].md: boom" in out
+        assert "Collection root missing: notes[2024]" in out
+
+    def test_batch_summary_escapes_collection_name(self, monkeypatch) -> None:
+        """The per-batch summary line keeps a bracketed collection name."""
+        out = self._captured_output(
+            monkeypatch,
+            lambda: watch_mod._render_batch(
+                "notes[v1]", added=2, updated=1, removed=0, unchanged=3
+            ),
+        )
+
+        assert "notes[v1]: indexed 3" in out
 
 
 class TestSignalMachinery:

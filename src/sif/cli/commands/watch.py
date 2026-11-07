@@ -22,6 +22,7 @@ from types import FrameType
 
 import click
 from rich.console import Console
+from rich.markup import escape
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from sif.cli.commands.index import _render_index_event
@@ -128,27 +129,37 @@ def _render_watch_event(event: str, *, verbose: bool) -> None:
 
     Failures and missing roots always stay visible. Per-file lines print
     only under ``--verbose``; the default is the per-batch summary.
+    Payloads are user data (file names, collection names) and routinely
+    contain brackets, so they are escaped — Rich would otherwise consume
+    the ``[v2]`` in ``report[v2].md`` as a style tag (IN-01).
     """
     code, _, payload = event.partition(" ")
+    safe_payload = escape(payload)
     if code == "error":
-        console.print(f"  [red]{payload}[/red]")
+        console.print(f"  [red]{safe_payload}[/red]")
     elif code == "missing":
         console.print(
-            f"  [yellow]Collection root missing: {payload} — skipped, documents preserved[/yellow]"
+            f"  [yellow]Collection root missing: {safe_payload} — "
+            "skipped, documents preserved[/yellow]"
         )
     elif verbose:
         if code == "scan":
-            console.print(f"  [dim]Found {payload} files[/dim]")
+            console.print(f"  [dim]Found {safe_payload} files[/dim]")
         elif code == "unchanged":
-            console.print(f"  [dim]Unchanged: {payload}[/dim]")
+            console.print(f"  [dim]Unchanged: {safe_payload}[/dim]")
         elif code == "indexed":
-            console.print(f"  [dim]Indexed: {payload}[/dim]")
+            console.print(f"  [dim]Indexed: {safe_payload}[/dim]")
 
 
 def _render_batch(name: str, added: int, updated: int, removed: int, unchanged: int) -> None:
-    """One concise summary line per settled burst (D-13)."""
+    """One concise summary line per settled burst (D-13).
+
+    The collection name is user data and is escaped (IN-01).
+    """
+    safe_name = escape(name)
     console.print(
-        f"[dim]{name}: indexed {added + updated} · removed {removed} · unchanged {unchanged}[/dim]"
+        f"[dim]{safe_name}: indexed {added + updated} · removed {removed} · "
+        f"unchanged {unchanged}[/dim]"
     )
 
 
@@ -218,7 +229,7 @@ def watch_cmd(
             # checksums.
             indexer = IncrementalIndexer(db.connection)
             for coll in selected:
-                console.print(f"\n[bold]Reconciling collection: {coll.name}[/bold]")
+                console.print(f"\n[bold]Reconciling collection: {escape(coll.name)}[/bold]")
                 with Progress(
                     SpinnerColumn(),
                     TextColumn("[progress.description]{task.description}"),
@@ -264,7 +275,7 @@ def watch_cmd(
             depth_label = "embed" if depth == "embed" else "BM25-only"
             console.print(f"\n[bold]Watching {len(selected)} collection(s) — Ctrl-C to stop[/bold]")
             for coll in selected:
-                console.print(f"  {coll.name}: {coll.path}")
+                console.print(f"  {escape(coll.name)}: {escape(coll.path)}")
             console.print(f"  depth: {depth_label} · debounce: {debounce_interval}s")
 
             while not state.stop:
