@@ -100,7 +100,9 @@ def _select_collections(
         return coll_repo.list_all()
     by_name = {coll.name: coll for coll in coll_repo.list_all()}
     selected: list[Collection] = []
-    for name in names:
+    # WR-02: order-preserving dedupe — a repeated -c name must not schedule
+    # duplicate watches or orphan a _WatchState entry in FileWatcher.start().
+    for name in dict.fromkeys(names):
         if name not in by_name:
             raise click.ClickException(f"Collection '{name}' not found")
         selected.append(by_name[name])

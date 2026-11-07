@@ -100,6 +100,22 @@ class TestCollectionFilter:
 
         assert [coll.name for coll in selected] == ["notes", "docs"]
 
+    def test_select_collections_dedupes_repeated_names_in_flag_order(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """WR-02: `-c notes -c docs -c notes` selects notes, docs — once each."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "watch.db"
+        _seed_collections(db_path, "notes", "docs", "journal")
+        db = Database(db_path)
+        try:
+            coll_repo = CollectionRepository(db.connection)
+            selected = _select_collections(coll_repo, ("notes", "docs", "notes"))
+        finally:
+            db.close()
+
+        assert [coll.name for coll in selected] == ["notes", "docs"]
+
     def test_select_collections_unknown_name_raises_update_cmd_wording(
         self, tmp_path, monkeypatch
     ) -> None:
