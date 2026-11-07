@@ -30,7 +30,7 @@ pip install docsif
 For full functionality including embeddings:
 
 ```bash
-pip install "docdocsif[all]"
+pip install "docsif[all]"
 ```
 
 ### Basic Usage
