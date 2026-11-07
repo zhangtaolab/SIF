@@ -879,6 +879,8 @@ class TestRecoveryTick:
             watcher.start()
             observer = observer_cls.return_value
             assert observer.schedule.call_count == 1
+            first_debouncer = watcher._watch_states["notes"].debouncer
+            assert first_debouncer is not None
 
             # The root disappears (unmounted/renamed drive); two ticks run.
             notes.rename(tmp_path / "notes-gone")
@@ -893,6 +895,57 @@ class TestRecoveryTick:
             disappeared = [r for r in caplog.records if "disappeared" in r.message]
             assert len(disappeared) == 1
             assert _doc_paths(db_path) == {str(doc_file)}
+            # WR-02: the debouncer is stopped, joined, and cleared — never a
+            # leaked live thread per disappear cycle.
+            state = watcher._watch_states["notes"]
+            assert state.missing is True
+            assert state.debouncer is None
+            assert first_debouncer.is_alive() is False
+        finally:
+            if watcher is not None:
+                watcher.stop(flush=False)
+            db.close()
+
+    def test_disappear_return_cycle_stops_each_debouncer(self, tmp_path, monkeypatch) -> None:
+        """WR-02 regression: a disappear/return cycle replaces the state's
+        debouncer, so the disappear branch must stop the old one — otherwise
+        each cycle leaks one live EventDebouncer thread in a host designed
+        to run for months (the D-12 flaky-mount scenario)."""
+        db_path = self._seed_one_doc(tmp_path, monkeypatch)
+        notes = tmp_path / "notes"
+        gone = tmp_path / "notes-gone"
+
+        observer_cls = MagicMock()
+        monkeypatch.setattr(watcher_module, "Observer", observer_cls)
+
+        db = Database(db_path)
+        watcher = None
+        try:
+            from sif.database.repositories import CollectionRepository
+
+            coll = CollectionRepository(db.connection).get_by_name("notes")
+            assert coll is not None
+            watcher = FileWatcher([coll], db.connection, db_path)
+            watcher.start()
+            observer = observer_cls.return_value
+            state = watcher._watch_states["notes"]
+
+            debouncers = []
+            for _ in range(3):
+                debouncers.append(state.debouncer)
+                notes.rename(gone)
+                watcher.recovery_tick()
+                assert state.debouncer is None
+                assert debouncers[-1].is_alive() is False
+                gone.rename(notes)
+                watcher.recovery_tick()
+                assert state.debouncer is not None
+                assert state.debouncer is not debouncers[-1]
+
+            # Three full cycles: every previously armed debouncer is dead;
+            # only the currently installed (fresh) one is live.
+            assert observer.schedule.call_count == 4
+            assert all(d.is_alive() is False for d in debouncers)
         finally:
             if watcher is not None:
                 watcher.stop(flush=False)

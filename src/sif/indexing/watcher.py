@@ -494,8 +494,11 @@ class FileWatcher:
         Called by the worker whenever its idle wait times out (the re-stat
         cadence), or directly from tests with zero timing. A root that
         disappeared is marked missing — one warning per transition, its
-        watch handle unscheduled, its documents never touched. A root that
-        returned is rescheduled and gets one full-reconcile job enqueued.
+        watch handle unscheduled and its debouncer stopped and joined
+        (WR-02: a leaked live debouncer thread per disappear/return cycle,
+        since the return arms a fresh one), its documents never touched. A
+        root that returned is rescheduled and gets one full-reconcile job
+        enqueued.
         """
         observer = self._observer
         if observer is None:
@@ -511,6 +514,14 @@ class FileWatcher:
                 if state.handle is not None:
                     observer.unschedule(state.handle)
                     state.handle = None
+                if state.debouncer is not None:
+                    # The watch handle is gone, so no further events can
+                    # arrive: stop the debouncer now — the return branch arms
+                    # a fresh one, and an unstopped old one is a leaked live
+                    # thread per cycle (WR-02, _unschedule_removed parity).
+                    state.debouncer.stop()
+                    state.debouncer.join(timeout=_JOIN_TIMEOUT_SECONDS)
+                    state.debouncer = None
                 state.missing = True
             elif exists and state.missing:
                 if self._schedule_watch(state, observer):
