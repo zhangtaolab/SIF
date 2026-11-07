@@ -9,6 +9,7 @@ the D-14 signal/shutdown machinery invoked directly — never real signals
 from __future__ import annotations
 
 import io
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -32,6 +33,8 @@ from sif.config.settings import Settings
 from sif.core.models import Collection
 from sif.database.database import Database
 from sif.database.repositories import CollectionRepository
+from sif.utils import service
+from sif.utils.service import InstallResult
 
 
 WAL_CHECKPOINT_TRUNCATE = "PRAGMA wal_checkpoint(TRUNCATE)"
@@ -292,6 +295,152 @@ class TestDaemonFlagGuards:
         assert "--detach" in output
         assert "--stop" in output
         assert "--log-file" in output
+
+
+class TestServiceFlags:
+    """13-04 Test 7: --install-service/--uninstall-service CLI tracer.
+
+    Path.home is patched to tmp_path and the manager-invoking service
+    functions are patched at the module boundary, so the CLI wiring is
+    exercised without touching real agents or invoking launchctl/systemctl.
+    """
+
+    def test_help_lists_service_flags(self) -> None:
+        """--help surfaces --install-service and --uninstall-service."""
+        result = CliRunner().invoke(watch_mod.watch_cmd, ["--help"])
+
+        assert result.exit_code == 0
+        assert "--install-service" in result.output
+        assert "--uninstall-service" in result.output
+
+    def test_install_prints_artifact_log_and_verify_and_bakes_tail(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """Exit 0 with the artifact path, log location, verify command; the
+        -c/--embed flags given at install time are baked into the tail (D-11)."""
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        artifact = tmp_path / "Library" / "LaunchAgents" / "com.docsif.watch.plist"
+        fake_result = InstallResult(
+            artifact_path=artifact,
+            log_location=str(tmp_path / "logs" / "watch.log"),
+            verify_command="launchctl print gui/501/com.docsif.watch",
+        )
+        captured: dict[str, Any] = {}
+
+        def fake_install(db_path, argv_tail, *, manager, **_kwargs):
+            captured["db"] = str(db_path)
+            captured["tail"] = list(argv_tail)
+            captured["manager"] = manager
+            return fake_result
+
+        monkeypatch.setattr(watch_mod.service, "install_watch_service", fake_install)
+
+        with patch("sif.config.settings.get_settings", return_value=_test_settings()):
+            result = CliRunner().invoke(
+                watch_mod.watch_cmd,
+                ["--install-service", "-c", "notes", "--embed"],
+                obj={"index_path": tmp_path / "watch.db"},
+            )
+
+        assert result.exit_code == 0
+        assert str(artifact) in result.output
+        assert fake_result.log_location in result.output
+        assert "launchctl print" in result.output
+        assert captured["tail"] == ["-c", "notes", "--embed"]
+        assert captured["manager"] == ("launchd" if sys.platform == "darwin" else "systemd")
+        # The service must not depend on a user cwd: the db path is absolute.
+        assert Path(captured["db"]).is_absolute()
+
+    def test_install_on_linux_documents_linger(self, tmp_path, monkeypatch) -> None:
+        """D-13: the systemd install output surfaces loginctl enable-linger."""
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.setattr(watch_mod, "_service_manager", lambda: "systemd")
+        fake_result = InstallResult(
+            artifact_path=tmp_path / ".config" / "systemd" / "user" / "sif-watch.service",
+            log_location="journalctl --user -u sif-watch -f",
+            verify_command="systemctl --user status sif-watch",
+        )
+        monkeypatch.setattr(
+            watch_mod.service,
+            "install_watch_service",
+            lambda *args, **_kwargs: fake_result,
+        )
+
+        with patch("sif.config.settings.get_settings", return_value=_test_settings()):
+            result = CliRunner().invoke(
+                watch_mod.watch_cmd,
+                ["--install-service"],
+                obj={"index_path": tmp_path / "watch.db"},
+            )
+
+        assert result.exit_code == 0
+        assert "loginctl enable-linger" in result.output
+
+    def test_uninstall_reports_stop_then_remove(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        plist = tmp_path / "Library" / "LaunchAgents" / "com.docsif.watch.plist"
+        monkeypatch.setattr(
+            watch_mod.service, "uninstall_watch_service", lambda **_kwargs: plist
+        )
+
+        result = CliRunner().invoke(
+            watch_mod.watch_cmd,
+            ["--uninstall-service"],
+            obj={"index_path": tmp_path / "watch.db"},
+        )
+
+        assert result.exit_code == 0
+        assert str(plist) in result.output
+        assert "stopped" in result.output
+        assert "removed" in result.output
+
+    def test_install_with_uninstall_is_rejected(self, tmp_path) -> None:
+        result = CliRunner().invoke(
+            watch_mod.watch_cmd,
+            ["--install-service", "--uninstall-service"],
+            obj={"index_path": tmp_path / "watch.db"},
+        )
+
+        assert result.exit_code != 0
+        assert "mutually exclusive" in result.output
+
+    def test_install_with_detach_is_rejected(self, tmp_path) -> None:
+        """SC3: --detach under the supervisor is the anti-pattern."""
+        result = CliRunner().invoke(
+            watch_mod.watch_cmd,
+            ["--install-service", "--detach"],
+            obj={"index_path": tmp_path / "watch.db"},
+        )
+
+        assert result.exit_code != 0
+        assert "--install-service" in result.output
+
+    def test_install_with_stop_is_rejected(self, tmp_path) -> None:
+        result = CliRunner().invoke(
+            watch_mod.watch_cmd,
+            ["--install-service", "--stop"],
+            obj={"index_path": tmp_path / "watch.db"},
+        )
+
+        assert result.exit_code != 0
+        assert "--install-service" in result.output
+
+    def test_missing_manager_surfaces_as_click_error(self, tmp_path, monkeypatch) -> None:
+        """A missing launchctl/systemctl is a friendly ClickException, never a traceback."""
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.setattr(service.shutil, "which", lambda _name: None)
+
+        with patch("sif.config.settings.get_settings", return_value=_test_settings()):
+            result = CliRunner().invoke(
+                watch_mod.watch_cmd,
+                ["--install-service"],
+                obj={"index_path": tmp_path / "watch.db"},
+            )
+
+        assert result.exit_code != 0
+        binary = "launchctl" if sys.platform == "darwin" else "systemctl"
+        assert binary in result.output
+        assert "not found" in result.output
 
 
 class TestDaemonLogPath:
