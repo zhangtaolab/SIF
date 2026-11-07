@@ -8,6 +8,27 @@ DocSift 是 [qmd](https://github.com/tobi/qmd) 的 Python 重构版本，一个�
 
 用户可以在自己的笔记和文档库中，用自然语言快速、准确地找到需要的信息——无论关键词是否匹配。
 
+## Current Milestone: v1.1 Live Index and Search Quality
+
+**Goal:** 让索引从手动 `index update` 变为自动常新（Live Index），并让搜索质量可配置、可量化、持续可调（Search Quality）。
+
+**Target features:**
+
+*Live Index（四种形态，依赖递进）*
+- `sif watch` 前台命令：文件变更 → 增量重索引（watchdog 地基已在 `src/sif/indexing/watcher.py`，未接线）
+- MCP server 内嵌刷新：watch 与 MCP 同进程，AI 助手查询时索引常新
+- 后台守护进程：`--detach` / launchd / systemd 常驻
+- 命令前自动检测：未开 watch 时，搜索命令前轻量增量兜底
+
+*更新深度可配置*
+- 默认仅 BM25/FTS 增量（快）；`--embed` 选项开启向量自动更新
+
+*Search Quality*
+- 混合权重可配置（BM25 / 向量 / RRF k 暴露为设置）
+- Query suggestions（索引词项/历史 did-you-mean）
+- Reranker 调优（Qwen3-Reranker 阈值/延迟）
+- bench 基准集扩充（为全部调优提供量化依据）
+
 ## Requirements
 
 ### Validated
@@ -31,7 +52,15 @@ DocSift 是 [qmd](https://github.com/tobi/qmd) 的 Python 重构版本，一个�
 
 ### Active
 
-（无 — v1.0 全部需求已交付，待 milestone 归档时全面复核）
+- [ ] Live Index：`sif watch` 前台命令（增量重索引 + 防抖）
+- [ ] Live Index：MCP server 内嵌 watch 刷新
+- [ ] Live Index：后台守护进程（--detach / launchd / systemd）
+- [ ] Live Index：搜索命令前自动增量检测兜底
+- [ ] 更新深度可配置：默认 BM25/FTS，`--embed` 开启向量自动更新
+- [ ] 搜索质量：混合权重（BM25/向量/RRF k）可配置
+- [ ] 搜索质量：Query suggestions（did-you-mean）
+- [ ] 搜索质量：Reranker 调优（阈值/延迟）
+- [ ] 搜索质量：bench 基准集扩充
 
 ### Out of Scope
 
@@ -99,4 +128,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-11-07 after v1.0 milestone（11/11 阶段、68/68 计划全部交付并持新鲜验证；里程碑审计 tech_debt 项全部在收尾前解决：路径规范化、CR-01/02、WR-01、docs CI、ty 清零、get 显示完整性、需求追溯 31/31）*
+*Last updated: 2026-11-07 after v1.1 milestone start（Live Index and Search Quality 立项）*
