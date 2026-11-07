@@ -61,13 +61,33 @@ Requirements for milestone v1.1. Each maps to roadmap phases (numbering continue
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (待 roadmap 填充) | | |
+| LIVE-01 | Phase 12 | Pending |
+| LIVE-02 | Phase 12 | Pending |
+| LIVE-03 | Phase 12 | Pending |
+| LIVE-04 | Phase 12 | Pending |
+| LIVE-05 | Phase 12 | Pending |
+| LIVE-06 | Phase 11 | Pending |
+| LIVE-07 | Phase 11 | Pending |
+| LIVE-08 | Phase 13 | Pending |
+| LIVE-09 | Phase 13 | Pending |
+| LIVE-10 | Phase 14 | Pending |
+| LIVE-11 | Phase 12 | Pending |
+| QUAL-01 | Phase 15 | Pending |
+| QUAL-02 | Phase 15 | Pending |
+| QUAL-03 | Phase 15 | Pending |
+| QUAL-04 | Phase 15 | Pending |
+| QUAL-05 | Phase 16 | Pending |
+| QUAL-06 | Phase 14 | Pending |
+| EVAL-01 | Phase 16 | Pending |
+| EVAL-02 | Phase 16 | Pending |
+| EVAL-03 | Phase 16 | Pending |
+| EVAL-04 | Phase 16 | Pending |
 
 **Coverage:**
-- v1.1 requirements: 22 total
-- Mapped to phases: 0
-- Unmapped: 22 ⚠️
+- v1.1 requirements: 21 total (11 LIVE + 6 QUAL + 4 EVAL; earlier count of 22 was a miscount — no requirement ID is missing)
+- Mapped to phases: 21
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-11-07*
-*Last updated: 2026-11-07 after v1.1 milestone requirements definition*
+*Last updated: 2026-11-07 after v1.1 roadmap creation (traceability filled, 21/21 mapped)*
