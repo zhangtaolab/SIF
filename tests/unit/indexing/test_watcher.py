@@ -8,6 +8,7 @@ end-to-end proof lives in ``tests/integration/test_watch_e2e.py``.
 
 from __future__ import annotations
 
+import errno
 import logging
 import os
 import sqlite3
@@ -87,8 +88,8 @@ def _doc_paths(db_path: Path) -> set[str]:
         conn.close()
 
 
-def _seed_two_collections(db_path: Path, alpha: Path, beta: Path) -> None:
-    """Init schema, register alpha+beta collections, index one doc in each."""
+def _seed_collections(db_path: Path, roots: dict[str, Path]) -> None:
+    """Init schema, register one collection per name->root, index one doc each."""
     db = Database(db_path)
     with patch("sif.config.settings.get_settings", return_value=_test_settings()):
         db.init_schema()
@@ -96,15 +97,46 @@ def _seed_two_collections(db_path: Path, alpha: Path, beta: Path) -> None:
             from sif.database.repositories import CollectionRepository
 
             repo = CollectionRepository(db.connection)
-            repo.create(Collection(name="alpha", path=str(alpha)))
-            repo.create(Collection(name="beta", path=str(beta)))
+            for name, root in roots.items():
+                repo.create(Collection(name=name, path=str(root)))
         repo = CollectionRepository(db.connection)
         indexer = IncrementalIndexer(db.connection)
-        for name in ("alpha", "beta"):
+        for name in roots:
             coll = repo.get_by_name(name)
             assert coll is not None
             indexer.update_collection(coll)
     db.close()
+
+
+class _CheckpointSpy:
+    """Connection proxy counting PRAGMA wal_checkpoint(TRUNCATE) executions.
+
+    Non-checkpoint statements (and the transaction protocol the indexer's
+    ``with conn:`` blocks need) delegate to the wrapped real connection, so
+    the watcher can run real burst jobs through the spy.
+    """
+
+    def __init__(self, conn: sqlite3.Connection, busy: bool = False) -> None:
+        self._conn = conn
+        self._busy = busy
+        self.calls = 0
+
+    def execute(self, sql: str, *args: object) -> sqlite3.Cursor:
+        if sql == "PRAGMA wal_checkpoint(TRUNCATE)":
+            self.calls += 1
+            cursor = MagicMock()
+            cursor.fetchone.return_value = (1 if self._busy else 0, 0, 0)
+            return cursor
+        return self._conn.execute(sql, *args)
+
+    def __enter__(self) -> sqlite3.Connection:
+        return self._conn.__enter__()
+
+    def __exit__(self, *args: object) -> object:
+        return self._conn.__exit__(*args)
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(self._conn, name)
 
 
 def _should_track(root: Path, path: Path) -> bool:
@@ -1428,7 +1460,7 @@ class TestLiveRescope:
         beta.mkdir()
         (alpha / "a.md").write_text(BODY_ALPHA, encoding="utf-8")
         (beta / "b.md").write_text(BODY_BETA, encoding="utf-8")
-        _seed_two_collections(db_path, alpha, beta)
+        _seed_collections(db_path, {"alpha": alpha, "beta": beta})
         return db_path, alpha, beta
 
     def _start_watcher(
@@ -1652,3 +1684,264 @@ class TestWatchSettings:
         assert settings.mcp_watch is True
         assert settings.watch_rescope_interval == 2.0
         assert settings.watch_checkpoint_interval == 0.0
+
+
+class TestIdleCheckpoint:
+    """D-16 idle WAL checkpoint riding the tick, zero timing.
+
+    The tick is driven directly with an injectable clock; the connection is
+    a _CheckpointSpy wrapping a real DB connection so burst jobs stay real.
+    """
+
+    def _make(self, tmp_path, monkeypatch, *, checkpoint_interval, busy=False):
+        """Seed alpha, start a quiesced-worker watcher over the spy connection."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "watch.db"
+        alpha = tmp_path / "alpha"
+        alpha.mkdir()
+        (alpha / "a.md").write_text(BODY_ALPHA, encoding="utf-8")
+        _seed_collections(db_path, {"alpha": alpha})
+
+        clock = {"now": 100.0}
+        observer_cls = MagicMock()
+        monkeypatch.setattr(watcher_module, "Observer", observer_cls)
+        db = Database(db_path)
+        spy = _CheckpointSpy(db.connection, busy=busy)
+        from sif.database.repositories import CollectionRepository
+
+        coll = CollectionRepository(spy).get_by_name("alpha")
+        assert coll is not None
+        watcher = FileWatcher(
+            [coll],
+            spy,
+            db_path,
+            WatchConfig(checkpoint_interval=checkpoint_interval, now=lambda: clock["now"]),
+        )
+        monkeypatch.setattr(watcher, "_worker_loop", lambda: None)
+        watcher.start()
+        return watcher, spy, clock, alpha, coll
+
+    def test_checkpoint_runs_once_when_due(self, tmp_path, monkeypatch) -> None:
+        """Deadline elapsed + idle -> exactly one TRUNCATE checkpoint on the
+        worker connection; one per interval, never two inside one tick."""
+        watcher, spy, clock, _alpha, _coll = self._make(
+            tmp_path, monkeypatch, checkpoint_interval=300.0
+        )
+        try:
+            watcher._on_tick()  # t=100: seeds the deadline at 400
+            assert spy.calls == 0
+            clock["now"] = 399.9
+            watcher._on_tick()  # not due yet
+            assert spy.calls == 0
+            clock["now"] = 400.0
+            watcher._on_tick()  # due and idle
+            assert spy.calls == 1
+            clock["now"] = 699.9
+            watcher._on_tick()  # deadline was reset: not due yet
+            assert spy.calls == 1
+            clock["now"] = 700.0
+            watcher._on_tick()
+            assert spy.calls == 2
+        finally:
+            watcher.stop(flush=False)
+
+    def test_busy_row_skips_silently_and_resets_deadline(
+        self, tmp_path, monkeypatch, caplog
+    ) -> None:
+        """A busy result row means contention: no retry inside the tick, NO
+        warning log records, and the deadline still resets for the next
+        interval (Pitfall 7)."""
+        watcher, spy, clock, _alpha, _coll = self._make(
+            tmp_path, monkeypatch, checkpoint_interval=300.0, busy=True
+        )
+        try:
+            with caplog.at_level(logging.WARNING, logger="sif.indexing.watcher"):
+                clock["now"] = 400.0
+                watcher._on_tick()
+                assert spy.calls == 1
+                clock["now"] = 401.0
+                watcher._on_tick()  # deadline reset: no immediate retry
+                assert spy.calls == 1
+                clock["now"] = 700.0
+                watcher._on_tick()  # next interval attempts again
+                assert spy.calls == 2
+            assert [r for r in caplog.records if "checkpoint" in r.message] == []
+        finally:
+            watcher.stop(flush=False)
+
+    def test_recent_burst_postpones_checkpoint(self, tmp_path, monkeypatch) -> None:
+        """A job completed within the recent window (restat_interval) means
+        the writer was active: the due checkpoint is postponed a full
+        interval, then runs once the burst is stale."""
+        watcher, spy, clock, alpha, coll = self._make(
+            tmp_path, monkeypatch, checkpoint_interval=300.0
+        )
+        try:
+            watcher._on_tick()  # t=100: deadline 400
+            # A real burst job completes at t=398 (content untouched: the
+            # job is real worker activity even though it indexes nothing).
+            clock["now"] = 398.0
+            watcher._settled_callback(coll)([FileModifiedEvent(str(alpha / "a.md"))])
+            watcher._drain_once()
+            clock["now"] = 400.0
+            watcher._on_tick()  # due, but 400-398 < restat window (5s)
+            assert spy.calls == 0
+            clock["now"] = 700.0  # deadline was reset; burst now stale
+            watcher._on_tick()
+            assert spy.calls == 1
+        finally:
+            watcher.stop(flush=False)
+
+    def test_disabled_by_default_never_checkpoints(self, tmp_path, monkeypatch) -> None:
+        """checkpoint_interval=0 (the WatchConfig default): driven ticks never
+        execute a checkpoint — shutdown checkpointing stays the final word."""
+        assert WatchConfig().checkpoint_interval == 0.0
+        watcher, spy, clock, _alpha, _coll = self._make(
+            tmp_path, monkeypatch, checkpoint_interval=0.0
+        )
+        try:
+            for now in (100.0, 1e6, 1e9):
+                clock["now"] = now
+                watcher._on_tick()
+            assert spy.calls == 0
+        finally:
+            watcher.stop(flush=False)
+
+
+class TestScheduleFailure:
+    """D-17: an OSError from observer.schedule warns once with the inotify
+    remedy, other roots keep watching, and the tick retries silently."""
+
+    _REMEDY = "fs.inotify.max_user_watches"
+
+    def test_schedule_failure_at_start_warns_once_others_watch_and_tick_retries(
+        self, tmp_path, monkeypatch, caplog
+    ) -> None:
+        """One root failing to schedule at start: exactly one warning with
+        the cause and the max_user_watches remedy, the sibling root watches
+        on, the failed root stays tracked (missing) and the tick retries it
+        without a second warning."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "watch.db"
+        alpha = tmp_path / "alpha"
+        beta = tmp_path / "beta"
+        alpha.mkdir()
+        beta.mkdir()
+        (alpha / "a.md").write_text(BODY_ALPHA, encoding="utf-8")
+        (beta / "b.md").write_text(BODY_BETA, encoding="utf-8")
+        _seed_collections(db_path, {"alpha": alpha, "beta": beta})
+
+        observer_cls = MagicMock()
+        monkeypatch.setattr(watcher_module, "Observer", observer_cls)
+        observer = observer_cls.return_value
+        observer.schedule.side_effect = [
+            OSError(errno.ENOSPC, "No space left on device"),
+            MagicMock(),
+        ]
+
+        db = Database(db_path)
+        watcher = None
+        try:
+            from sif.database.repositories import CollectionRepository
+
+            repo = CollectionRepository(db.connection)
+            coll_a = repo.get_by_name("alpha")
+            coll_b = repo.get_by_name("beta")
+            assert coll_a is not None
+            assert coll_b is not None
+            watcher = FileWatcher([coll_a, coll_b], db.connection, db_path)
+            monkeypatch.setattr(watcher, "_worker_loop", lambda: None)
+            with caplog.at_level(logging.WARNING, logger="sif.indexing.watcher"):
+                watcher.start()
+                assert observer.schedule.call_count == 2  # alpha raised, beta armed
+                assert watcher._watch_states["alpha"].missing is True
+                assert watcher._watch_states["beta"].handle is not None
+
+                # The tick retries the failed root; schedule now succeeds.
+                observer.schedule.side_effect = MagicMock()
+                watcher.recovery_tick()
+                watcher.recovery_tick()  # second retry-target is a no-op
+
+            remedy = [
+                r for r in caplog.records if self._REMEDY in r.message
+            ]
+            assert len(remedy) == 1
+            assert "No space left on device" in remedy[0].message
+            assert "28" in remedy[0].message  # errno cause carried
+            assert observer.schedule.call_count == 3
+            assert watcher._watch_states["alpha"].missing is False
+            # The successful retry enqueued exactly one reconcile for alpha.
+            assert watcher._queue.qsize() == 1
+            job_coll, folded = watcher._queue.get_nowait()
+            watcher._queue.task_done()
+            assert job_coll.name == "alpha"
+            assert folded.needs_reconcile is True
+        finally:
+            if watcher is not None:
+                watcher.stop(flush=False)
+            db.close()
+
+    def test_rescope_add_with_schedule_failure_rest_of_diff_proceeds(
+        self, tmp_path, monkeypatch, caplog
+    ) -> None:
+        """Rescope adding two roots where one fails to schedule: one warning
+        with the remedy, the failed root stays missing, the sibling add
+        completes with its reconcile job."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "watch.db"
+        alpha = tmp_path / "alpha"
+        beta = tmp_path / "beta"
+        gamma = tmp_path / "gamma"
+        for root in (alpha, beta, gamma):
+            root.mkdir()
+        (alpha / "a.md").write_text(BODY_ALPHA, encoding="utf-8")
+        (beta / "b.md").write_text(BODY_BETA, encoding="utf-8")
+        (gamma / "g.md").write_text(BODY_ALPHA, encoding="utf-8")
+        _seed_collections(db_path, {"alpha": alpha, "beta": beta, "gamma": gamma})
+
+        observer_cls = MagicMock()
+        monkeypatch.setattr(watcher_module, "Observer", observer_cls)
+        observer = observer_cls.return_value
+        observer.schedule.side_effect = [MagicMock()]  # alpha at start
+
+        db = Database(db_path)
+        watcher = None
+        try:
+            from sif.database.repositories import CollectionRepository
+
+            repo = CollectionRepository(db.connection)
+            coll_a = repo.get_by_name("alpha")
+            coll_b = repo.get_by_name("beta")
+            coll_g = repo.get_by_name("gamma")
+            assert coll_a is not None
+            assert coll_b is not None
+            assert coll_g is not None
+            watcher = FileWatcher([coll_a], db.connection, db_path)
+            monkeypatch.setattr(watcher, "_worker_loop", lambda: None)
+            watcher.start()
+            assert observer.schedule.call_count == 1
+
+            # Rescope adds beta (fails ENOSPC) then gamma (succeeds).
+            observer.schedule.side_effect = [
+                OSError(errno.ENOSPC, "No space left on device"),
+                MagicMock(),
+            ]
+            with caplog.at_level(logging.WARNING, logger="sif.indexing.watcher"):
+                watcher.rescope([coll_a, coll_b, coll_g])
+
+            remedy = [r for r in caplog.records if self._REMEDY in r.message]
+            assert len(remedy) == 1
+            assert watcher._watch_states["beta"].missing is True
+            assert watcher._watch_states["beta"].debouncer is None
+            assert watcher._watch_states["gamma"].handle is not None
+            assert set(watcher._watch_states) == {"alpha", "beta", "gamma"}
+            # Only gamma's add produced a job; beta (not actually being
+            # watched) must not get a reconcile.
+            assert watcher._queue.qsize() == 1
+            job_coll, _folded = watcher._queue.get_nowait()
+            watcher._queue.task_done()
+            assert job_coll.name == "gamma"
+        finally:
+            if watcher is not None:
+                watcher.stop(flush=False)
+            db.close()
