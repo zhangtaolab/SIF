@@ -1755,6 +1755,8 @@ class TestIdleCheckpoint:
             tmp_path, monkeypatch, checkpoint_interval=300.0, busy=True
         )
         try:
+            watcher._on_tick()  # t=100: seeds the deadline at 400
+            assert spy.calls == 0
             with caplog.at_level(logging.WARNING, logger="sif.indexing.watcher"):
                 clock["now"] = 400.0
                 watcher._on_tick()
@@ -1862,9 +1864,7 @@ class TestScheduleFailure:
                 watcher.recovery_tick()
                 watcher.recovery_tick()  # second retry-target is a no-op
 
-            remedy = [
-                r for r in caplog.records if self._REMEDY in r.message
-            ]
+            remedy = [r for r in caplog.records if self._REMEDY in r.message]
             assert len(remedy) == 1
             assert "No space left on device" in remedy[0].message
             assert "28" in remedy[0].message  # errno cause carried

@@ -53,6 +53,15 @@ SettledCallback = Callable[[list[FileSystemEvent]], None]
 # waits out the interval; nothing is enqueued after it (D-14 bounded stop).
 _WORKER_STOP_SENTINEL = None
 
+# The shutdown-checkpoint spelling (12-D14) reused by the D-16 idle tick.
+_WAL_CHECKPOINT_TRUNCATE = "PRAGMA wal_checkpoint(TRUNCATE)"
+
+# D-17 remedy text: the standard Linux fix for inotify watch exhaustion.
+_INOTIFY_REMEDY = (
+    "on Linux this is usually inotify watch exhaustion — raise "
+    "fs.inotify.max_user_watches (e.g. sysctl -w fs.inotify.max_user_watches=524288)"
+)
+
 
 def _event_path(path: bytes | str) -> str:
     """Normalize a watchdog event path to str (T-12-01)."""
@@ -106,6 +115,9 @@ class _WatchState:
     handle: ObservedWatch | None = None
     missing: bool = False
     debouncer: EventDebouncer | None = None
+    # D-17 warn-once flag: one schedule-failure warning per failure episode
+    # (reset on a successful schedule so a later episode warns again).
+    schedule_warned: bool = False
 
 
 def fold_events(
@@ -347,6 +359,8 @@ class FileWatcher:
         self._observer: BaseObserver | None = None
         self._watch_states: dict[str, _WatchState] = {}
         self._rescope_deadline: float | None = None
+        self._checkpoint_deadline: float | None = None
+        self._last_job_at: float | None = None
         self._queue: queue.Queue[tuple[Collection, FoldResult] | None] = queue.Queue()
         self._worker: threading.Thread | None = None
         self._stop_event = threading.Event()
@@ -369,7 +383,11 @@ class FileWatcher:
                 # loop picks the root up when it appears.
                 state.missing = True
                 continue
-            self._schedule_watch(state, observer)
+            if not self._schedule_watch(state, observer):
+                # D-17: the schedule itself failed (e.g. inotify
+                # exhaustion) — treat like a missing root so the D-12 loop
+                # retries without warning spam.
+                state.missing = True
 
         self._observer = observer
         observer.start()
@@ -378,8 +396,16 @@ class FileWatcher:
         )
         self._worker.start()
 
-    def _schedule_watch(self, state: _WatchState, observer: BaseObserver) -> None:
-        """Arm one collection's debouncer and recursive watch on its resolved root."""
+    def _schedule_watch(self, state: _WatchState, observer: BaseObserver) -> bool:
+        """Arm one collection's debouncer and recursive watch on its resolved root.
+
+        Returns False — leaving the state retryable and its debouncer
+        unstarted — when ``observer.schedule`` raises OSError (the
+        inotify-exhaustion / ENOSPC class, D-17): one warning per failure
+        episode carries the cause and remedy, other roots keep watching, and
+        the caller treats the failure like a missing root so the D-12 loop
+        keeps retrying.
+        """
         # Positional args (D-05): the first kwarg name differs across
         # watchdog 4.x-7.x; positionally identical on all of them. The
         # upstream annotation says int but the value only flows into
@@ -388,11 +414,28 @@ class FileWatcher:
         debouncer = EventDebouncer(
             cast(int, self._config.debounce_interval), self._settled_callback(state.collection)
         )
-        state.handle = observer.schedule(
-            IndexingEventHandler(debouncer), str(state.root), recursive=True
-        )
+        try:
+            state.handle = observer.schedule(
+                IndexingEventHandler(debouncer), str(state.root), recursive=True
+            )
+        except OSError as e:
+            if not state.schedule_warned:
+                state.schedule_warned = True
+                logger.warning(
+                    "Scheduling watch for root %s (collection %s) failed: [%s] %s — "
+                    "other roots keep watching; the root stays tracked for retry. "
+                    "Remedy: %s",
+                    state.root,
+                    state.collection.name,
+                    e.errno,
+                    e.strerror or e,
+                    _INOTIFY_REMEDY,
+                )
+            return False
+        state.schedule_warned = False
         state.debouncer = debouncer
         debouncer.start()
+        return True
 
     def stop(self, *, flush: bool = True) -> None:
         """Stop intake, drain queued work once (bounded), and join threads.
@@ -457,14 +500,18 @@ class FileWatcher:
                     state.handle = None
                 state.missing = True
             elif exists and state.missing:
-                logger.warning(
-                    "Watched root %s (collection %s) returned — rescheduling watch and reconciling",
-                    state.root,
-                    state.collection.name,
-                )
-                self._schedule_watch(state, observer)
-                state.missing = False
-                self._queue.put((state.collection, FoldResult(needs_reconcile=True)))
+                if self._schedule_watch(state, observer):
+                    # Only a successful (re)schedule clears missing and
+                    # enqueues the reconcile — a failed schedule keeps the
+                    # retry coming without repeating the transition warning.
+                    logger.warning(
+                        "Watched root %s (collection %s) returned — "
+                        "rescheduling watch and reconciling",
+                        state.root,
+                        state.collection.name,
+                    )
+                    state.missing = False
+                    self._queue.put((state.collection, FoldResult(needs_reconcile=True)))
 
     def rescope(self, collections: list[Collection]) -> None:
         """Diff the eligible collection set against the watched set (D-15).
@@ -487,6 +534,14 @@ class FileWatcher:
         if observer is None:
             return
         wanted = {coll.name: coll for coll in collections}
+        self._unschedule_removed(wanted, observer)
+        self._schedule_added(wanted, observer)
+
+    def _unschedule_removed(self, wanted: dict[str, Collection], observer: BaseObserver) -> None:
+        """Tear down watches for collections absent from the eligible set.
+
+        Documents are never touched — stopping watching never deletes.
+        """
         for name, state in list(self._watch_states.items()):
             if name in wanted:
                 continue
@@ -499,6 +554,14 @@ class FileWatcher:
                 state.debouncer = None
             del self._watch_states[name]
             logger.info("Unscheduled watch for collection %s (documents preserved)", name)
+
+    def _schedule_added(self, wanted: dict[str, Collection], observer: BaseObserver) -> None:
+        """Arm watches (and one reconcile job) for newly eligible collections.
+
+        A missing root or a failed schedule (D-17) keeps the state tracked
+        with ``missing`` set, so the D-12 loop adopts or retries it; only a
+        root that is actually being watched gets the reconcile job.
+        """
         for name, coll in wanted.items():
             if name in self._watch_states:
                 continue
@@ -512,20 +575,24 @@ class FileWatcher:
                 )
                 state.missing = True
                 continue
-            self._schedule_watch(state, observer)
-            self._queue.put((coll, FoldResult(needs_reconcile=True)))
+            if self._schedule_watch(state, observer):
+                self._queue.put((coll, FoldResult(needs_reconcile=True)))
+            else:
+                state.missing = True
 
     def _on_tick(self) -> None:
         """Run one idle-tick body: the D-12 recovery pass, then due opt-ins.
 
         Called by the worker whenever its idle wait times out, or directly
-        from tests with zero timing. Rescope (D-15) rides the same tick
-        behind its interval guard, so a default-configured watcher performs
-        no extra work. Everything here runs on the worker thread only.
+        from tests with zero timing. Rescope (D-15) and the idle WAL
+        checkpoint (D-16) ride the same tick behind their interval guards,
+        so a default-configured watcher performs no extra work. Everything
+        here runs on the worker thread only.
         """
         self.recovery_tick()
         now = self._config.now()
         self._rescope_if_due(now)
+        self._checkpoint_if_due(now)
 
     def _rescope_if_due(self, now: float) -> None:
         """Consult the rescope provider once its interval has elapsed (D-15).
@@ -549,6 +616,44 @@ class FileWatcher:
             logger.warning("Rescope provider failed; keeping the current watch set", exc_info=True)
             return
         self.rescope(wanted)
+
+    def _checkpoint_if_due(self, now: float) -> None:
+        """Run the idle WAL checkpoint when its interval has elapsed (D-16).
+
+        Disabled unless ``checkpoint_interval > 0`` — a default-configured
+        watcher performs zero work here, and shutdown checkpointing (12-D14)
+        stays the final word. The deadline resets whether or not the
+        checkpoint ran: busy and recent-burst skips postpone to the next
+        interval rather than retrying inside the tick.
+        """
+        if self._config.checkpoint_interval <= 0:
+            return
+        if self._checkpoint_deadline is None:
+            self._checkpoint_deadline = now + self._config.checkpoint_interval
+            return
+        if now < self._checkpoint_deadline:
+            return
+        self._checkpoint_deadline = now + self._config.checkpoint_interval
+        self._checkpoint_if_idle(now)
+
+    def _checkpoint_if_idle(self, now: float) -> None:
+        """One TRUNCATE checkpoint on the worker's own connection, if idle.
+
+        A job that completed within the re-stat window means the writer was
+        recently active — not idle — so the checkpoint waits a full interval.
+        A busy result row means another connection holds the WAL: skip
+        silently, never log per tick (Pitfall 7).
+        """
+        last_job = self._last_job_at
+        if last_job is not None and (now - last_job) < self._config.restat_interval:
+            return
+        try:
+            row = self._conn.execute(_WAL_CHECKPOINT_TRUNCATE).fetchone()
+        except sqlite3.Error as e:
+            logger.warning("Idle WAL checkpoint failed: %s", e)
+            return
+        if row is not None and row[0]:
+            return
 
     def _settled_callback(self, collection: Collection) -> SettledCallback:
         """Build the debouncer callback for one collection.
@@ -614,6 +719,9 @@ class FileWatcher:
         else:
             # An empty fold (pure temp-noise burst) never touches the DB.
             return
+        # Completed worker activity: the D-16 idle checkpoint treats any job
+        # inside the recent window as "not idle" (burst postponement).
+        self._last_job_at = self._config.now()
         if self._config.on_batch is not None:
             self._config.on_batch(collection, result)
 
