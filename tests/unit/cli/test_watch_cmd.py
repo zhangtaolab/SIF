@@ -258,6 +258,64 @@ class TestEventRenderingEscapesMarkup:
         assert "notes[v1]: indexed 3" in out
 
 
+class TestDaemonFlagGuards:
+    """13-02 Tests 4-5: lifecycle-flag guards, help surface, D-07 log path."""
+
+    def test_detach_with_stop_is_rejected(self, tmp_path) -> None:
+        """--detach and --stop are mutually exclusive lifecycle actions."""
+        result = CliRunner().invoke(
+            watch_mod.watch_cmd,
+            ["--detach", "--stop"],
+            obj={"index_path": tmp_path / "watch.db"},
+        )
+
+        assert result.exit_code != 0
+        assert "--detach and --stop are mutually exclusive" in result.output
+
+    def test_log_file_without_detach_is_rejected(self, tmp_path) -> None:
+        """--log-file only means something for the detached daemon."""
+        result = CliRunner().invoke(
+            watch_mod.watch_cmd,
+            ["--log-file", str(tmp_path / "daemon.log")],
+            obj={"index_path": tmp_path / "watch.db"},
+        )
+
+        assert result.exit_code != 0
+        assert "--log-file requires --detach" in result.output
+
+    def test_help_lists_daemon_lifecycle_flags(self) -> None:
+        """--help surfaces --detach, --stop, and --log-file."""
+        result = CliRunner().invoke(watch_mod.watch_cmd, ["--help"])
+
+        assert result.exit_code == 0
+        output = result.output
+        assert "--detach" in output
+        assert "--stop" in output
+        assert "--log-file" in output
+
+
+class TestDaemonLogPath:
+    """D-07: daemon logs default to the platform log dir; --log-file overrides."""
+
+    def test_default_log_path_is_platform_log_dir(self, tmp_path, monkeypatch) -> None:
+        """No --log-file: platformdirs user_log_dir('sif')/watch.log, created."""
+        monkeypatch.setattr(watch_mod, "user_log_dir", lambda app: str(tmp_path / "platlogs"))
+
+        path = watch_mod._daemon_log_path(None)
+
+        assert path == tmp_path / "platlogs" / "watch.log"
+        assert path.parent.is_dir()
+
+    def test_explicit_log_file_overrides_default(self, tmp_path) -> None:
+        """--log-file wins over the platform default and creates its parent."""
+        target = tmp_path / "custom-dir" / "daemon.log"
+
+        path = watch_mod._daemon_log_path(str(target))
+
+        assert path == target
+        assert path.parent.is_dir()
+
+
 class TestSignalMachinery:
     """Test 5: first signal sets the stop flag; second raises SystemExit 130."""
 
