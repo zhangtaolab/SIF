@@ -10,7 +10,8 @@ from unittest.mock import patch
 import pytest
 
 from sif.config.settings import get_settings
-from sif.database.database import Database, DatabaseConnection
+from sif.database.connection import DatabaseConnection
+from sif.database.database import Database
 
 
 @pytest.fixture(autouse=True)
@@ -166,10 +167,14 @@ class TestDatabaseRealSQLite:
             database.close()
 
     def test_lightweight_connection_optional_vector_failure_and_commit(self, tmp_path: Path):
-        """DatabaseConnection remains usable without sqlite-vec and commits on clean exit."""
+        """DatabaseConnection remains usable without sqlite-vec and commits on clean exit.
+
+        Commit-on-clean-exit lives in the surviving class's transaction()
+        (D-07 retired the duplicate wrapper whose connect() committed).
+        """
         connector = DatabaseConnection(tmp_path / "lightweight.db")
         with patch("sif.database.factory.sqlite_vec.load", side_effect=OSError("no vec")):
-            with connector.connect() as conn:
+            with connector.transaction() as conn:
                 conn.execute("CREATE TABLE probe (value TEXT)")
                 conn.execute("INSERT INTO probe VALUES ('committed')")
 
@@ -178,13 +183,13 @@ class TestDatabaseRealSQLite:
             assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
 
     def test_lightweight_connection_rolls_back_and_closes_on_error(self, tmp_path: Path):
-        """The lightweight context rolls back partial work and closes on exceptional exit."""
+        """The lightweight transaction rolls back partial work and closes on exceptional exit."""
         connector = DatabaseConnection(tmp_path / "lightweight-rollback.db")
-        with connector.connect() as conn:
+        with connector.transaction() as conn:
             conn.execute("CREATE TABLE probe (value TEXT)")
 
         with pytest.raises(ValueError, match="lightweight rollback"):
-            with connector.connect() as conn:
+            with connector.transaction() as conn:
                 _insert_lightweight_probe_then_raise(conn)
 
         with connector.connect() as conn:

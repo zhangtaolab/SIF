@@ -162,3 +162,25 @@ class TestConnectionFactory:
             assert _pragma(conn, "synchronous") == 1
             assert conn.isolation_level == "IMMEDIATE"
             assert conn.row_factory is sqlite3.Row
+
+
+class TestRetiredImports:
+    """D-07: the retired names are gone from the published package API."""
+
+    def test_connection_pool_no_longer_imports_from_package(self) -> None:
+        """Importing the retired pool name from sif.database raises ImportError."""
+        with pytest.raises(ImportError):
+            from sif.database import ConnectionPool  # noqa: F401
+
+    def test_duplicate_wrapper_no_longer_imports_from_database_module(self) -> None:
+        """The duplicate wrapper no longer imports from sif.database.database."""
+        with pytest.raises(ImportError):
+            from sif.database.database import DatabaseConnection  # noqa: F401
+
+    def test_all_lists_surviving_names_and_not_the_pool(self) -> None:
+        """__all__ carries the surviving surface; the pool name is absent."""
+        import sif.database
+
+        assert "ConnectionPool" not in sif.database.__all__
+        for name in ("DatabaseConnection", "create_connection", "index_lock"):
+            assert name in sif.database.__all__

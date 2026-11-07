@@ -1,12 +1,11 @@
 """Tests for database connection and operations."""
 
 import sqlite3
-from collections.abc import Generator
 from pathlib import Path
 
 import pytest
 
-from sif.database.connection import ConnectionPool, DatabaseConnection
+from sif.database.connection import DatabaseConnection
 
 
 class TestDatabaseConnection:
@@ -213,92 +212,3 @@ class TestDatabaseConnection:
 
         # Assert
         assert results == []
-
-
-@pytest.fixture
-def connection_pool(temp_db_path: Path) -> Generator[ConnectionPool, None, None]:
-    """Provide a connection pool that is cleaned up after each test."""
-    pool = ConnectionPool(temp_db_path)
-    yield pool
-    pool.close_all()
-
-
-class TestConnectionPool:
-    """Tests for ConnectionPool class."""
-
-    def test_init_stores_parameters(self, connection_pool: ConnectionPool):
-        """Test that init stores parameters correctly."""
-        # Arrange
-        connection_pool._max_connections = 10
-
-        # Assert
-        assert connection_pool._db_path.exists() or True  # path resolved during init
-        assert connection_pool._max_connections == 10
-        assert connection_pool._connections == []
-
-    def test_get_connection_creates_new_when_empty(
-        self,
-        connection_pool: ConnectionPool,
-    ):
-        """Test get_connection creates new connection when pool is empty."""
-        # Act
-        conn = connection_pool.get_connection()
-
-        # Assert
-        assert isinstance(conn, sqlite3.Connection)
-        conn.close()
-
-    def test_get_connection_reuses_existing(self, connection_pool: ConnectionPool):
-        """Test get_connection reuses existing connection."""
-        # Arrange
-        conn1 = connection_pool.get_connection()
-        connection_pool.release_connection(conn1)
-
-        # Act
-        conn2 = connection_pool.get_connection()
-
-        # Assert
-        assert conn1 is conn2
-        conn2.close()
-
-    def test_release_connection_adds_to_pool(self, connection_pool: ConnectionPool):
-        """Test release_connection adds connection back to pool."""
-        # Arrange
-        conn = connection_pool.get_connection()
-
-        # Act
-        connection_pool.release_connection(conn)
-
-        # Assert
-        assert len(connection_pool._connections) == 1
-
-    def test_release_connection_closes_when_full(self, temp_db_path: Path):
-        """Test release_connection closes connection when pool is full."""
-        # Arrange
-        pool = ConnectionPool(temp_db_path, max_connections=1)
-        try:
-            conn1 = pool.get_connection()
-            conn2 = pool.get_connection()
-            pool.release_connection(conn1)  # Pool now has 1 connection
-
-            # Act - releasing second connection should close it
-            pool.release_connection(conn2)
-
-            # Assert
-            assert len(pool._connections) == 1
-        finally:
-            pool.close_all()
-
-    def test_close_all_closes_connections(self, connection_pool: ConnectionPool):
-        """Test close_all closes all connections in pool."""
-        # Arrange
-        conn1 = connection_pool.get_connection()
-        conn2 = connection_pool.get_connection()
-        connection_pool.release_connection(conn1)
-        connection_pool.release_connection(conn2)
-
-        # Act
-        connection_pool.close_all()
-
-        # Assert
-        assert len(connection_pool._connections) == 0
