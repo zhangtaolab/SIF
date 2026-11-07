@@ -29,7 +29,7 @@ from watchdog.events import (
 from sif.config.settings import Settings
 from sif.core.models import Collection
 from sif.database.database import Database
-from sif.database.repositories import DocumentRepository
+from sif.database.repositories import DocumentChunkRepository, DocumentRepository
 from sif.indexing import watcher as watcher_module
 from sif.indexing.incremental import IncrementalIndexer, IncrementalResult
 from sif.indexing.scanner import FileScanner
@@ -800,3 +800,341 @@ class TestRecoveryTick:
         assert "missing notes" in events
         assert results == [IncrementalResult()]
         assert _doc_paths(db_path) == {str(doc_file)}
+
+
+DIM = 8
+
+
+def _embed_manager_mock(
+    dim: int = DIM,
+    conn: sqlite3.Connection | None = None,
+    embed_txn_flags: list[bool] | None = None,
+    sequence: list[str] | None = None,
+) -> MagicMock:
+    """Build a mocked EmbeddingManager producing deterministic dim-length vectors.
+
+    ``conn``/``embed_txn_flags``: when both given, every embed() call records
+    ``conn.in_transaction`` at call time (the D-09 boundary proof).
+    ``sequence``: when given, every embed() call appends "embed" (lock-order proof).
+    """
+    manager = MagicMock()
+    manager.get_model_info.return_value = {
+        "loaded": True,
+        "model_id": "test-model",
+        "embedding_dim": dim,
+    }
+
+    def fake_embed(texts: list[str], **_kwargs: object) -> MagicMock:
+        if conn is not None and embed_txn_flags is not None:
+            embed_txn_flags.append(conn.in_transaction)
+        if sequence is not None:
+            sequence.append("embed")
+        vectors = [[0.1] * dim for _ in texts]
+        return MagicMock(embeddings=vectors)
+
+    manager.embed.side_effect = fake_embed
+    return manager
+
+
+class TestEmbedDepth:
+    """The --embed inline depth (D-09/D-10, LIVE-05), mocked at the manager boundary.
+
+    Real tmp DB with a FLOAT[8] vec0 table; chunk/embedding rows are asserted
+    through fresh connections. Embedding compute must never run inside an
+    open write transaction.
+    """
+
+    def _run_burst(
+        self,
+        watcher: FileWatcher,
+        coll: Collection,
+        file_path: Path,
+    ) -> None:
+        """Fold one modified-file burst and drain it on the calling thread."""
+        watcher._settled_callback(coll)([FileModifiedEvent(str(file_path))])
+        watcher._drain_once()
+
+    @staticmethod
+    def _check_conn(db_path: Path) -> sqlite3.Connection:
+        """Fresh factory connection (sqlite-vec loaded) for vector-table reads."""
+        from sif.database.factory import create_connection
+
+        return create_connection(Path(db_path))
+
+    def test_default_depth_writes_document_but_zero_chunks_and_vectors(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """LIVE-05/D-10: a burst without embed depth purges/writes nothing vector-side."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "watch.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        doc_file = notes / "a.md"
+        doc_file.write_text(BODY_ALPHA, encoding="utf-8")
+        _seed_collection(db_path, notes)
+
+        db = Database(db_path)
+        try:
+            from sif.database.repositories import CollectionRepository
+
+            coll = CollectionRepository(db.connection).get_by_name("notes")
+            assert coll is not None
+            watcher = FileWatcher([coll], db.connection, db_path)
+            self._run_burst(watcher, coll, doc_file)
+        finally:
+            db.close()
+
+        check = self._check_conn(db_path)
+        try:
+            doc = check.execute(
+                "SELECT id FROM documents WHERE path = ?", (str(doc_file.resolve()),)
+            ).fetchone()
+            assert doc is not None
+            assert check.execute("SELECT COUNT(*) FROM document_chunks").fetchone()[0] == 0
+            assert check.execute("SELECT COUNT(*) FROM document_embeddings").fetchone()[0] == 0
+        finally:
+            check.close()
+
+    def test_embed_depth_writes_chunks_and_vectors(self, tmp_path, monkeypatch) -> None:
+        """D-09: embed depth chunks the changed doc and persists vectors."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "watch.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        doc_file = notes / "a.md"
+        doc_file.write_text(BODY_ALPHA, encoding="utf-8")
+        _seed_collection(db_path, notes)
+
+        manager = _embed_manager_mock()
+        db = Database(db_path)
+        try:
+            from sif.database.repositories import CollectionRepository
+
+            coll = CollectionRepository(db.connection).get_by_name("notes")
+            assert coll is not None
+            with (
+                patch("sif.config.settings.get_settings", return_value=_test_settings()),
+                patch(
+                    "sif.embedding.manager.EmbeddingManager.from_settings",
+                    return_value=manager,
+                ),
+            ):
+                watcher = FileWatcher([coll], db.connection, db_path, WatchConfig(depth="embed"))
+                self._run_burst(watcher, coll, doc_file)
+        finally:
+            db.close()
+
+        check = self._check_conn(db_path)
+        try:
+            rows = check.execute(
+                """
+                SELECT c.document_id, c.sequence, e.chunk_id
+                FROM document_chunks c
+                LEFT JOIN document_embeddings e ON e.chunk_id = c.id
+                WHERE c.document_id = (SELECT id FROM documents WHERE path = ?)
+                ORDER BY c.sequence
+                """,
+                (str(doc_file.resolve()),),
+            ).fetchall()
+        finally:
+            check.close()
+
+        assert len(rows) >= 1
+        assert [row[1] for row in rows] == list(range(len(rows)))
+        assert all(row[2] is not None for row in rows)
+
+    def test_embed_compute_runs_outside_any_write_transaction(self, tmp_path, monkeypatch) -> None:
+        """D-09/Pitfall 5: conn.in_transaction is False at every embed() call.
+
+        The vector-write transaction opens only AFTER embed returns — proven
+        by recording in_transaction at chunk-create time and observing it
+        True there while the embed-time flags are all False, with the
+        transaction closed again once the leg finishes.
+        """
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "watch.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        doc_file = notes / "a.md"
+        doc_file.write_text(BODY_ALPHA, encoding="utf-8")
+        _seed_collection(db_path, notes)
+
+        embed_txn_flags: list[bool] = []
+        write_txn_flags: list[bool] = []
+        original_create = DocumentChunkRepository.create
+
+        def recording_create(self: DocumentChunkRepository, chunk: object) -> object:
+            write_txn_flags.append(self.db.in_transaction)
+            return original_create(self, chunk)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(DocumentChunkRepository, "create", recording_create)
+
+        db = Database(db_path)
+        try:
+            from sif.database.repositories import CollectionRepository
+
+            coll = CollectionRepository(db.connection).get_by_name("notes")
+            assert coll is not None
+            manager = _embed_manager_mock(conn=db.connection, embed_txn_flags=embed_txn_flags)
+            with (
+                patch("sif.config.settings.get_settings", return_value=_test_settings()),
+                patch(
+                    "sif.embedding.manager.EmbeddingManager.from_settings",
+                    return_value=manager,
+                ),
+            ):
+                watcher = FileWatcher([coll], db.connection, db_path, WatchConfig(depth="embed"))
+                self._run_burst(watcher, coll, doc_file)
+                assert db.connection.in_transaction is False
+        finally:
+            db.close()
+
+        assert len(embed_txn_flags) >= 1
+        assert all(flag is False for flag in embed_txn_flags)
+        assert len(write_txn_flags) >= 1
+        assert all(flag is True for flag in write_txn_flags)
+
+    def test_dimension_mismatch_fails_soft_and_disables_embed_for_session(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """First-use check: 768-dim model vs FLOAT[8] schema -> one error event,
+        embed disabled for the session, BM25 freshness continues."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "watch.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        doc_file = notes / "a.md"
+        doc_file.write_text(BODY_ALPHA, encoding="utf-8")
+        _seed_collection(db_path, notes)
+
+        manager = _embed_manager_mock(dim=768)
+        events: list[str] = []
+        results: list[IncrementalResult] = []
+        db = Database(db_path)
+        try:
+            from sif.database.repositories import CollectionRepository
+
+            coll = CollectionRepository(db.connection).get_by_name("notes")
+            assert coll is not None
+            with (
+                patch("sif.config.settings.get_settings", return_value=_test_settings()),
+                patch(
+                    "sif.embedding.manager.EmbeddingManager.from_settings",
+                    return_value=manager,
+                ) as from_settings,
+            ):
+                watcher = FileWatcher(
+                    [coll],
+                    db.connection,
+                    db_path,
+                    WatchConfig(
+                        depth="embed",
+                        on_event=events.append,
+                        on_batch=lambda _c, result: results.append(result),
+                    ),
+                )
+                doc_file.write_text(BODY_BETA, encoding="utf-8")
+                self._run_burst(watcher, coll, doc_file)
+                doc_file.write_text("# Third\n\n" + ("Gamma text. " * 40), encoding="utf-8")
+                self._run_burst(watcher, coll, doc_file)
+                assert from_settings.call_count == 1
+        finally:
+            db.close()
+
+        errors = [e for e in events if e.startswith("error ")]
+        assert len(errors) == 1
+        assert "768" in errors[0]
+        assert "8" in errors[0]
+        # BM25 freshness continued through both bursts.
+        assert [r.added + r.updated for r in results] == [1, 1]
+        manager.embed.assert_not_called()
+        check = sqlite3.connect(str(db_path))
+        try:
+            assert check.execute("SELECT COUNT(*) FROM document_chunks").fetchone()[0] == 0
+        finally:
+            check.close()
+
+    def test_model_lazy_loads_on_first_embed_burst_and_stays_cached(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """D-09: from_settings/load_model run at first embed work, not at
+        construction; one cached load across bursts."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "watch.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        doc_file = notes / "a.md"
+        doc_file.write_text(BODY_ALPHA, encoding="utf-8")
+        _seed_collection(db_path, notes)
+
+        manager = _embed_manager_mock()
+        db = Database(db_path)
+        try:
+            from sif.database.repositories import CollectionRepository
+
+            coll = CollectionRepository(db.connection).get_by_name("notes")
+            assert coll is not None
+            with (
+                patch("sif.config.settings.get_settings", return_value=_test_settings()),
+                patch(
+                    "sif.embedding.manager.EmbeddingManager.from_settings",
+                    return_value=manager,
+                ) as from_settings,
+            ):
+                watcher = FileWatcher([coll], db.connection, db_path, WatchConfig(depth="embed"))
+                assert from_settings.call_count == 0
+                assert manager.load_model.call_count == 0
+
+                self._run_burst(watcher, coll, doc_file)
+                assert from_settings.call_count == 1
+                assert manager.load_model.call_count == 1
+
+                doc_file.write_text(BODY_BETA, encoding="utf-8")
+                self._run_burst(watcher, coll, doc_file)
+                assert from_settings.call_count == 1
+                assert manager.load_model.call_count == 1
+        finally:
+            db.close()
+
+    def test_embed_runs_inside_the_same_per_burst_lock_window(self, tmp_path, monkeypatch) -> None:
+        """D-09: one index_lock enter/exit spans the BM25 leg AND the embed leg."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "watch.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        doc_file = notes / "a.md"
+        doc_file.write_text(BODY_ALPHA, encoding="utf-8")
+        _seed_collection(db_path, notes)
+
+        sequence: list[str] = []
+
+        @contextmanager
+        def recording_lock(_db_path: Path, _timeout_s: float, _on_wait=None):
+            sequence.append("enter")
+            try:
+                yield
+            finally:
+                sequence.append("exit")
+
+        monkeypatch.setattr(watcher_module, "index_lock", recording_lock)
+
+        manager = _embed_manager_mock(sequence=sequence)
+        db = Database(db_path)
+        try:
+            from sif.database.repositories import CollectionRepository
+
+            coll = CollectionRepository(db.connection).get_by_name("notes")
+            assert coll is not None
+            with (
+                patch("sif.config.settings.get_settings", return_value=_test_settings()),
+                patch(
+                    "sif.embedding.manager.EmbeddingManager.from_settings",
+                    return_value=manager,
+                ),
+            ):
+                watcher = FileWatcher([coll], db.connection, db_path, WatchConfig(depth="embed"))
+                self._run_burst(watcher, coll, doc_file)
+        finally:
+            db.close()
+
+        assert sequence == ["enter", "embed", "exit"]
