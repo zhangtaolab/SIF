@@ -5,16 +5,16 @@ milestone_name: Live Index and Search Quality
 current_phase: 13
 current_phase_name: Watch Everywhere (MCP-Embedded Refresh + Background Daemon)
 status: executing
-stopped_at: Completed 13-02-PLAN.md
-last_updated: "2026-11-07T15:49:15.409Z"
+stopped_at: Completed 13-03-PLAN.md
+last_updated: "2026-11-07T16:19:52.690Z"
 last_activity: 2026-11-07
 last_activity_desc: Phase 13 execution started
-state_head: 335066eb62b153d3d7f21ebc1c78fce397298abe
+state_head: 0e842a38ac756a3720f266db32b50eab8439d6ff
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 10
-  completed_plans: 8
+  completed_plans: 9
 ---
 
 # DocSift — Project State
@@ -30,7 +30,7 @@ progress:
 ## Current Position
 
 Phase: 13 (Watch Everywhere (MCP-Embedded Refresh + Background Daemon)) — EXECUTING
-Plan: 3 of 4
+Plan: 4 of 4
 Status: Ready to execute
 Last activity: 2026-11-07 — Phase 13 execution started
 
@@ -57,6 +57,7 @@ Progress: [███░░░░░░░] 33%
 | Phase 12 P03 | 21 min | 2 tasks | 4 files |
 | Phase 13 P01 | 25min | 2 tasks | 3 files |
 | Phase 13 P02 | 28min | 2 tasks | 7 files |
+| Phase 13 P03 | 18min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -103,6 +104,9 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 - [Phase 13]: 13-02: detach handshake = one pipe message (armed <pid>/error <msg>) with 30s bounded select; PID printed only when schema+collections+PID-file are ready (never a silent maybe-detach)
 - [Phase 13]: 13-02: corroboration's 'watch' marker is token-based (command.split()) so a reused PID whose argv merely embeds 'watch.db' never corroborates — fail-closed Pitfall 3 reading
 - [Phase 13]: 13-02: run_watch_host(WatchHostParams) is the shared body on an OPEN Database; daemon derives its params via dataclasses.replace wiring rescope-within-filter + checkpoint intervals; graceful daemon exit unlinks its own PID file
+- [Phase 13]: MCP watch host forces the literal bm25 depth (D-02) and serves first (D-04/Pitfall 4): one shared host module gates on SIF_MCP_WATCH, never reads the update-depth setting, and enqueues the startup reconcile as the watcher's first queued jobs so initialize/lifespan never wait on indexing — A background host the user did not launch with an explicit embed flag must never compute embeddings (billing-surprise guard); a protocol server cannot afford a blocking first reconcile (12-D03 checksum skipping absorbs the startup burst either way)
+- [Phase 13]: HTTP lifespan threading is unconditional with default-None parameters (D-01): create_app/HTTPTransport/run_http_server always accept and forward the lifespan; the flag check lives inside start_embedded_watch so flag-off serving stays byte-identical with zero transport-side conditionals — Keeps every existing create_app(server) call site compiling and passing (compat-pinned) and avoids conditional plumbing drifting between the two transports; mcp_watch_lifespan stays a plain async CM so watch_host never imports fastapi
+- [Phase 13]: MCP watch e2e is hermetic: queries use the lex: BM25 prefix and the child env sets SIF_MODEL_TYPE=gguf so embedder construction fails fast - no model load, no network, ~1s deterministic server boot — The default ModelScope boot loaded a real embedding model in the subprocess (seconds of mps variance, cache dependence); lex: keeps the query path embedder-free by routing and the gguf fail-fast removes the load entirely
 
 ### Pending Todos
 
@@ -123,8 +127,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 
 ## Session Continuity
 
-Last session: 2026-11-07T15:49:14.165Z
-Stopped at: Completed 13-02-PLAN.md
+Last session: 2026-11-07T16:19:52.446Z
+Stopped at: Completed 13-03-PLAN.md
 Resume file: None
 
 - **Next expected action:** `/gsd-discuss-phase 13` (Phase 13 needs context; research flags: daemon/service-install specifics already in research/STACK.md)
