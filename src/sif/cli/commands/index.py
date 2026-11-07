@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import re
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import click
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.progress import Progress, SpinnerColumn, TaskID, TextColumn
 
-from sif.core.models import Document
+from sif.core.models import Collection
 from sif.database.database import Database
 from sif.database.locking import index_lock
 from sif.database.repositories import (
@@ -20,12 +20,7 @@ from sif.database.repositories import (
     DocumentRepository,
 )
 from sif.indexing.chunker import create_chunker
-from sif.indexing.parser import MarkdownParser
-from sif.indexing.scanner import FileScanner
-
-
-if TYPE_CHECKING:
-    from sif.search.vector import VectorSearcher
+from sif.indexing.incremental import IncrementalIndexer
 
 
 console = Console()
@@ -46,7 +41,7 @@ def index_group() -> None:
 @click.option("--collection", "-c", help="Update specific collection only")
 @click.option("--force", "-f", is_flag=True, help="Force re-index all documents")
 @click.pass_context
-def update_cmd(ctx: click.Context, collection: str | None, force: bool) -> None:  # noqa: C901, PLR0912, PLR0915
+def update_cmd(ctx: click.Context, collection: str | None, force: bool) -> None:
     """Update the index by scanning collections."""
     index_path = ctx.obj["index_path"]
 
@@ -56,27 +51,21 @@ def update_cmd(ctx: click.Context, collection: str | None, force: bool) -> None:
         from sif.config.settings import get_settings  # noqa: PLC0415
 
         lock_timeout = get_settings().lock_wait_timeout
-        with (
-            index_lock(
-                Path(index_path),
-                lock_timeout,
-                on_wait=lambda: console.print(
-                    "[dim]Another index writer is running; "
-                    f"waiting up to {lock_timeout:.0f}s...[/dim]"
-                ),
+        with index_lock(
+            Path(index_path),
+            lock_timeout,
+            on_wait=lambda: console.print(
+                f"[dim]Another index writer is running; waiting up to {lock_timeout:.0f}s...[/dim]"
             ),
-            db.connection,
         ):
             coll_repo = CollectionRepository(db.connection)
-            doc_repo = DocumentRepository(db.connection)
-            chunk_repo = DocumentChunkRepository(db.connection)
-            vector_purger = _embedding_purger(db)
 
             # Get collections to update
             if collection:
-                collections = [coll_repo.get_by_name(collection)]
-                if not collections[0]:
+                found = coll_repo.get_by_name(collection)
+                if not found:
                     raise click.ClickException(f"Collection '{collection}' not found")
+                collections = [found]
             else:
                 collections = coll_repo.list_all()
 
@@ -86,6 +75,9 @@ def update_cmd(ctx: click.Context, collection: str | None, force: bool) -> None:
                 )
                 return
 
+            # The per-file incremental loop lives in exactly one place (SC3):
+            # the CLI delegates to the shared core and renders its counts.
+            indexer = IncrementalIndexer(db.connection)
             total_added = 0
             total_updated = 0
             total_removed = 0
@@ -95,131 +87,23 @@ def update_cmd(ctx: click.Context, collection: str | None, force: bool) -> None:
                     continue
 
                 console.print(f"\n[bold]Updating collection: {coll.name}[/bold]")
-
-                if coll.pre_update_cmd:
-                    console.print(f"  Running pre-update command: {coll.pre_update_cmd}")
-                    try:
-                        result = subprocess.run(
-                            coll.pre_update_cmd,
-                            shell=True,
-                            capture_output=True,
-                            text=True,
-                            check=False,
-                            timeout=_PRE_UPDATE_TIMEOUT_SECONDS,
-                            stdin=subprocess.DEVNULL,
-                        )
-                    except subprocess.TimeoutExpired as e:
-                        raise click.ClickException(
-                            f"Pre-update command for '{coll.name}' timed out after "
-                            f"{_PRE_UPDATE_TIMEOUT_SECONDS}s: {coll.pre_update_cmd}"
-                        ) from e
-                    if result.returncode != 0:
-                        err_msg = (
-                            f"Pre-update command failed for '{coll.name}' "
-                            f"(exit {result.returncode}): "
-                            f"{result.stderr.strip() or result.stdout.strip()}"
-                        )
-                        raise click.ClickException(err_msg)
-
-                # Scan files
-                scanner = FileScanner()
-                scan_result = scanner.scan(
-                    Path(coll.path),
-                    pattern=coll.pattern,
-                    ignore_patterns=coll.ignore_patterns,
-                )
-
-                console.print(f"  Found {scan_result.file_count} files")
-
-                # Get existing documents
-                existing_docs = {d.path: d for d in doc_repo.list_by_collection(coll.id)}
-                scanned_paths = set()
-
-                # Process each file
-                parser = MarkdownParser()
+                _run_pre_update_hook(coll)
 
                 with Progress(
                     SpinnerColumn(),
                     TextColumn("[progress.description]{task.description}"),
                     console=console,
                 ) as progress:
-                    task = progress.add_task(
-                        f"Indexing {coll.name}...", total=scan_result.file_count
+                    task = progress.add_task(f"Indexing {coll.name}...", total=None)
+                    result = indexer.update_collection(
+                        coll,
+                        force=force,
+                        progress=_render_index_event(console, progress, task),
                     )
 
-                    for file_path in scan_result.files:
-                        scanned_paths.add(str(file_path))
-
-                        # Parse document
-                        try:
-                            parsed = parser.parse(file_path)
-                        except Exception as e:
-                            console.print(f"  [red]Error parsing {file_path}: {e}[/red]")
-                            progress.advance(task)
-                            continue
-
-                        # Check if document exists
-                        existing = existing_docs.get(str(file_path))
-
-                        if existing:
-                            # Check if changed
-                            if existing.checksum == parsed.checksum and not force:
-                                console.print(f"  [dim]Unchanged: {file_path.name}[/dim]")
-                                progress.advance(task)
-                                continue
-
-                            # Content changed (or --force): drop stale chunks and
-                            # embeddings so the next `embed` run re-chunks the new
-                            # content instead of trusting the chunk-id-set
-                            # completeness check against stale rows (CR-01).
-                            chunk_repo.delete_by_document(existing.id)
-                            if vector_purger is not None:
-                                vector_purger.delete_embeddings_by_document(existing.id)
-
-                            # Update document
-                            existing.content = parsed.content
-                            existing.title = parsed.title
-                            existing.metadata = parsed.metadata
-                            existing.mtime = parsed.mtime
-                            # Persist the fresh checksum, or the next update run
-                            # compares the new content against the pre-edit hash
-                            # and rewrites this document again every run.
-                            existing.checksum = parsed.checksum
-                            doc_repo.update(existing)
-                            total_updated += 1
-                        else:
-                            # Create new document
-                            doc = Document(
-                                path=str(file_path),
-                                collection_id=coll.id,
-                                content=parsed.content,
-                                title=parsed.title,
-                                metadata=parsed.metadata,
-                                mtime=parsed.mtime,
-                            )
-                            doc_repo.create(doc)
-                            total_added += 1
-
-                        progress.advance(task)
-
-                # Remove documents that no longer exist
-                for path, doc in existing_docs.items():
-                    if path not in scanned_paths:
-                        # Purge embeddings before the document row (WR-01): vec0
-                        # rows cannot carry the FK cascade, so orphaned vectors
-                        # would otherwise occupy KNN top-k slots and crowd live
-                        # documents out of vector search results.
-                        if vector_purger is not None:
-                            vector_purger.delete_embeddings_by_document(doc.id)
-                        doc_repo.delete(doc.id)
-                        total_removed += 1
-
-                # Update collection stats
-                coll.document_count = len(doc_repo.list_by_collection(coll.id))
-                from datetime import datetime, timezone  # noqa: PLC0415
-
-                coll.last_indexed_at = datetime.now(timezone.utc)
-                coll_repo.update(coll)
+                total_added += result.added
+                total_updated += result.updated
+                total_removed += result.removed
 
             console.print("\n[green]Index updated:[/green]")
             console.print(f"  Added: {total_added}")
@@ -227,18 +111,63 @@ def update_cmd(ctx: click.Context, collection: str | None, force: bool) -> None:
             console.print(f"  Removed: {total_removed}")
 
 
-def _embedding_purger(db: Database) -> VectorSearcher | None:
-    """Return a VectorSearcher for purging embeddings, or None without sqlite-vec.
+def _run_pre_update_hook(coll: Collection) -> None:
+    """Run a collection's pre-update subprocess hook.
 
-    A missing sqlite-vec extension also means no vec0 table — hence no stored
-    embeddings — so callers treat None as "nothing to purge".
+    The hook is command policy/presentation, so it stays in the CLI: MCP and
+    watch hosts (Phases 12-13) decide their own pre-behavior.
     """
-    from sif.search.vector import VectorSearcher  # noqa: PLC0415
-
+    if not coll.pre_update_cmd:
+        return
+    console.print(f"  Running pre-update command: {coll.pre_update_cmd}")
     try:
-        return VectorSearcher(db.connection)
-    except RuntimeError:
-        return None
+        result = subprocess.run(
+            coll.pre_update_cmd,
+            shell=True,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=_PRE_UPDATE_TIMEOUT_SECONDS,
+            stdin=subprocess.DEVNULL,
+        )
+    except subprocess.TimeoutExpired as e:
+        raise click.ClickException(
+            f"Pre-update command for '{coll.name}' timed out after "
+            f"{_PRE_UPDATE_TIMEOUT_SECONDS}s: {coll.pre_update_cmd}"
+        ) from e
+    if result.returncode != 0:
+        err_msg = (
+            f"Pre-update command failed for '{coll.name}' "
+            f"(exit {result.returncode}): "
+            f"{result.stderr.strip() or result.stdout.strip()}"
+        )
+        raise click.ClickException(err_msg)
+
+
+def _render_index_event(
+    console: Console,
+    progress: Progress,
+    task: TaskID,
+) -> Callable[[str], None]:
+    """Render IncrementalIndexer progress events with the CLI's Rich styling.
+
+    The core emits presentation-free ``"code payload"`` events; this callback
+    is the only place they become console lines and progress advances, so MCP
+    and watch hosts reuse the core without Rich.
+    """
+
+    def _on_event(event: str) -> None:
+        code, _, payload = event.partition(" ")
+        if code == "scan":
+            progress.update(task, total=int(payload))
+            console.print(f"  Found {payload} files")
+        elif code == "unchanged":
+            console.print(f"  [dim]Unchanged: {payload}[/dim]")
+        elif code == "error":
+            console.print(f"  [red]{payload}[/red]")
+        progress.advance(task)
+
+    return _on_event
 
 
 def _needs_embedding(live_chunk_ids: set[str], embedded_chunk_ids: set[str], force: bool) -> bool:

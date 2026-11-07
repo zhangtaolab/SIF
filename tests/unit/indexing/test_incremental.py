@@ -127,7 +127,9 @@ class TestIncrementalIndexer:
         assert str(notes / "a.md") in _doc_paths(db_path)
         title, content, checksum = _doc_row(db_path, str(notes / "a.md"))
         assert title == "Heading One"
-        assert content == BODY_ALPHA
+        # frontmatter.loads normalizes the body's trailing whitespace, matching
+        # the pre-extraction loop (the stored content is parsed.content).
+        assert content == BODY_ALPHA.rstrip()
         assert checksum == hashlib.sha256(content.encode()).hexdigest()
         # The scan event reaches the presentation callback before per-file events.
         assert events[0].startswith("scan ")
@@ -268,8 +270,8 @@ class TestIncrementalIndexer:
         # Record call order across the purger and the document delete.
         calls: list[tuple[str, str]] = []
         purger = MagicMock()
-        purger.delete_embeddings_by_document.side_effect = (
-            lambda doc_id: calls.append(("purge", doc_id))
+        purger.delete_embeddings_by_document.side_effect = lambda doc_id: calls.append(
+            ("purge", doc_id)
         )
         original_delete = DocumentRepository.delete
 
@@ -292,9 +294,7 @@ class TestIncrementalIndexer:
         # Embeddings are purged before the document row delete (WR-01 ordering).
         assert [kind for kind, _ in calls][:2] == ["purge", "delete"]
 
-    def test_mid_run_failure_keeps_completed_files_durable(
-        self, tmp_path, monkeypatch
-    ) -> None:
+    def test_mid_run_failure_keeps_completed_files_durable(self, tmp_path, monkeypatch) -> None:
         """D-04: a failing file aborts the pass but earlier files stay committed."""
         _delenv_settings_vars(monkeypatch)
         db_path = tmp_path / "incr.db"

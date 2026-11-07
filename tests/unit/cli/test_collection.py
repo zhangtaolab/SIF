@@ -455,7 +455,7 @@ class TestIndexPreUpdateHook:
                 "sif.cli.commands.index.DocumentRepository",
                 return_value=mock_doc_repo,
             ),
-            patch("sif.cli.commands.index.FileScanner", mock_scanner),
+            patch("sif.indexing.incremental.FileScanner", mock_scanner),
             patch(
                 "subprocess.run",
                 return_value=MagicMock(returncode=0, stderr="", stdout=""),
@@ -510,7 +510,7 @@ class TestIndexPreUpdateHook:
                 "sif.cli.commands.index.DocumentRepository",
                 return_value=mock_doc_repo,
             ),
-            patch("sif.cli.commands.index.FileScanner", mock_scanner),
+            patch("sif.indexing.incremental.FileScanner", mock_scanner),
             patch(
                 "subprocess.run",
                 side_effect=subprocess.TimeoutExpired(cmd="sleep 9999", timeout=300),
@@ -554,7 +554,7 @@ class TestIndexPreUpdateHook:
                 "sif.cli.commands.index.DocumentRepository",
                 return_value=mock_doc_repo,
             ),
-            patch("sif.cli.commands.index.FileScanner", mock_scanner),
+            patch("sif.indexing.incremental.FileScanner", mock_scanner),
             patch(
                 "subprocess.run",
                 return_value=MagicMock(returncode=1, stderr="failed", stdout=""),
