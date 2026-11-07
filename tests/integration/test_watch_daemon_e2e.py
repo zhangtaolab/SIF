@@ -28,9 +28,9 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import TypeVar
 
+from sif.core.models import Collection
 from sif.database.database import Database
 from sif.database.repositories import CollectionRepository
-from sif.core.models import Collection
 
 
 _SEED_BODY = "# Seed Note\n\n" + ("Seed paragraph text. " * 30)
@@ -167,6 +167,7 @@ def _detach(db_path: Path, cwd: Path, log_path: Path) -> subprocess.CompletedPro
         capture_output=True,
         text=True,
         timeout=_DETACH_TIMEOUT_S,
+        check=False,
     )
 
 
@@ -189,6 +190,7 @@ def _run_stop(db_path: Path, cwd: Path) -> subprocess.CompletedProcess[str]:
         capture_output=True,
         text=True,
         timeout=_STOP_TIMEOUT_S,
+        check=False,
     )
 
 
@@ -245,16 +247,16 @@ def test_detach_backgrounds_watcher_and_indexes_live_changes(tmp_path: Path) -> 
         # Live change indexed with no terminal attached (SC2 core).
         (notes / "live-note.md").write_text(_NEW_BODY, encoding="utf-8")
         _wait_for_row(db_path, _doc_path(notes, "live-note.md"), _LIVE_DEADLINE_S)
-        content = _fetch_one(
-            db_path, "SELECT content FROM documents WHERE path = ?", (_doc_path(notes, "live-note.md"),)
-        )
+        live_path = _doc_path(notes, "live-note.md")
+        content = _fetch_one(db_path, "SELECT content FROM documents WHERE path = ?", (live_path,))
         assert content is not None
         assert "Live paragraph text" in content[0]
 
         # --stop exits 0, the daemon process is gone, the PID file is removed.
         stop = _run_stop(db_path, tmp_path)
         assert stop.returncode == 0, (
-            f"watch --stop exited {stop.returncode}:\nstdout:\n{stop.stdout}\nstderr:\n{stop.stderr}"
+            f"watch --stop exited {stop.returncode}:\n"
+            f"stdout:\n{stop.stdout}\nstderr:\n{stop.stderr}"
         )
         _wait_pid_gone(pid, _SHUTDOWN_DEADLINE_S)
         assert not pid_file.exists(), "PID file survived --stop"
@@ -289,7 +291,8 @@ def test_stop_terminates_gracefully_with_wal_truncate(tmp_path: Path) -> None:
 
             stop = _run_stop(db_path, tmp_path)
             assert stop.returncode == 0, (
-                f"watch --stop exited {stop.returncode}:\nstdout:\n{stop.stdout}\nstderr:\n{stop.stderr}"
+                f"watch --stop exited {stop.returncode}:\n"
+                f"stdout:\n{stop.stdout}\nstderr:\n{stop.stderr}"
             )
             _wait_pid_gone(pid, _SHUTDOWN_DEADLINE_S)
 
@@ -312,6 +315,58 @@ def test_stop_without_daemon_prints_not_running(tmp_path: Path) -> None:
     result = _run_stop(db_path, tmp_path)
 
     assert result.returncode == 0, (
-        f"watch --stop exited {result.returncode}:\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+        f"watch --stop exited {result.returncode}:\n"
+        f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
     )
     assert "not running" in result.stdout
+
+
+def test_sigkill_then_immediate_redetach_succeeds(tmp_path: Path) -> None:
+    """SC4: a SIGKILLed daemon leaves no stale lock — re-detach succeeds at once.
+
+    Per-burst flock is kernel-released on process death (locking.py contract),
+    so the replacement daemon needs no cleanup step and no lock error
+    appears in either daemon's log. The stale PID file is simply overwritten
+    (D-05: it is metadata, never a gate).
+    """
+    db_path = tmp_path / "watch.db"
+    notes = tmp_path / "notes"
+    log_a = tmp_path / "daemon-a.log"
+    log_b = tmp_path / "daemon-b.log"
+    pid_file = _pid_file_for(db_path)
+    _seed_db(db_path, notes, "seed.md")
+
+    # Daemon A reaches steady state, then dies uncleanly.
+    with _detached_daemon(db_path, tmp_path, log_a) as pid_a:
+        _wait_for_row(db_path, _doc_path(notes, "seed.md"), _STARTUP_DEADLINE_S)
+        _wait_for_marker(log_a, "Watching", _STARTUP_DEADLINE_S)
+        assert pid_file.exists()
+
+        os.kill(pid_a, signal.SIGKILL)
+        _wait_pid_gone(pid_a, _SHUTDOWN_DEADLINE_S)
+
+    # IMMEDIATE re-detach: the parent must exit 0 with a NEW pid — no lock
+    # error, no cleanup (SC4).
+    with _detached_daemon(db_path, tmp_path, log_b) as pid_b:
+        assert pid_b != pid_a
+        payload = json.loads(pid_file.read_text(encoding="utf-8"))
+        assert payload["pid"] == pid_b
+
+        # The replacement daemon indexes a subsequent change, then stops
+        # cleanly through the D-14 graceful path.
+        _wait_for_marker(log_b, "Watching", _STARTUP_DEADLINE_S)
+        (notes / "replacement.md").write_text(_NEW_BODY, encoding="utf-8")
+        _wait_for_row(db_path, _doc_path(notes, "replacement.md"), _LIVE_DEADLINE_S)
+
+        stop = _run_stop(db_path, tmp_path)
+        assert stop.returncode == 0, (
+            f"watch --stop exited {stop.returncode}:\n"
+            f"stdout:\n{stop.stdout}\nstderr:\n{stop.stderr}"
+        )
+        _wait_pid_gone(pid_b, _SHUTDOWN_DEADLINE_S)
+
+    # Neither daemon's log shows contention or a crash.
+    for log_path in (log_a, log_b):
+        log_text = log_path.read_text(encoding="utf-8", errors="replace")
+        assert "lock wait deadline" not in log_text, f"stale lock error in {log_path}:\n{log_text}"
+        assert "Traceback" not in log_text, f"traceback in {log_path}:\n{log_text}"
