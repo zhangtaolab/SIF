@@ -184,6 +184,10 @@ class _EmbedSession:
         self._manager: EmbeddingManager | None = None
         self._searcher: VectorSearcher | None = None
         self._chunker: Chunker | None = None
+        # Per-collection paths whose embed leg failed (WR-01): the BM25 leg
+        # already committed their fresh checksum, so the checksum diff alone
+        # never re-selects them — the next burst unions them back in.
+        self._pending_retry: dict[str, set[Path]] = {}
 
     def ensure_ready(self, on_event: Callable[[str], None] | None) -> bool:
         """Load the model once and validate its dimension (fail-soft)."""
@@ -231,11 +235,19 @@ class _EmbedSession:
         Chunking and embedding compute with NO write transaction open —
         explicitly NOT embed_cmd's inside-txn shape (Pitfall 5) — then one
         short closing transaction persists chunk rows and batched vectors.
+        Candidates also include this collection's pending-retry paths
+        (WR-01): a path whose embed failed an earlier burst is retried here
+        even though its checksum no longer counts as changed. A per-path
+        failure emits one ``error`` event, leaves earlier candidates
+        durable, and re-queues only that path for the next burst.
         """
-        candidates = sorted(paths)
+        candidates = sorted(set(paths) | self._pending_retry.pop(collection.id, set()))
         if not candidates:
             return
         if not self.ensure_ready(on_event):
+            # Session-level fail-soft (embed disabled for good): retrying can
+            # never succeed, so the popped paths are dropped, matching the
+            # one-error-event contract.
             return
         manager = self._manager
         searcher = self._searcher
@@ -245,27 +257,35 @@ class _EmbedSession:
         assert chunker is not None
         doc_repo = DocumentRepository(self._conn)
         chunk_repo = DocumentChunkRepository(self._conn)
+        failed: set[Path] = set()
         for path in candidates:
-            doc = doc_repo.get_by_path(str(path), collection.id)
-            if doc is None:
-                continue
-            chunks = chunker.chunk(doc.content)
-            if not chunks:
-                continue
-            # Embedding compute never runs inside an open write transaction.
-            vectors = manager.embed([chunk.content for chunk in chunks]).embeddings
-            # One short vector-write txn: chunk rows + batched vec0 inserts.
-            with self._conn:
-                for sequence, chunk in enumerate(chunks):
-                    chunk.document_id = doc.id
-                    chunk.sequence = sequence
-                    chunk_repo.create(chunk)
-                searcher.add_embeddings_batch(
-                    [
-                        (chunk.id, doc.id, chunk.id, vector)
-                        for chunk, vector in zip(chunks, vectors, strict=True)
-                    ]
-                )
+            try:
+                doc = doc_repo.get_by_path(str(path), collection.id)
+                if doc is None:
+                    continue
+                chunks = chunker.chunk(doc.content)
+                if not chunks:
+                    continue
+                # Embedding compute never runs inside an open write transaction.
+                vectors = manager.embed([chunk.content for chunk in chunks]).embeddings
+                # One short vector-write txn: chunk rows + batched vec0 inserts.
+                with self._conn:
+                    for sequence, chunk in enumerate(chunks):
+                        chunk.document_id = doc.id
+                        chunk.sequence = sequence
+                        chunk_repo.create(chunk)
+                    searcher.add_embeddings_batch(
+                        [
+                            (chunk.id, doc.id, chunk.id, vector)
+                            for chunk, vector in zip(chunks, vectors, strict=True)
+                        ]
+                    )
+            except Exception as e:
+                failed.add(path)
+                logger.exception("Embedding failed for %s; re-queued for next burst", path)
+                self._notify(on_event, f"error Embedding failed for {path}: {e}")
+        if failed:
+            self._pending_retry[collection.id] = failed
 
     def _schema_embedding_dim(self) -> int | None:
         """Declared FLOAT[n] of the vec0 table, or None when absent/unparsed."""

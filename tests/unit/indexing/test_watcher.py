@@ -924,6 +924,20 @@ def _embed_manager_mock(
     return manager
 
 
+def _chunk_rows(check: sqlite3.Connection, path: Path) -> list[tuple]:
+    """Chunk rows (sequence + LEFT JOINed vector id) for one document path."""
+    return check.execute(
+        """
+        SELECT c.sequence, e.chunk_id
+        FROM document_chunks c
+        LEFT JOIN document_embeddings e ON e.chunk_id = c.id
+        WHERE c.document_id = (SELECT id FROM documents WHERE path = ?)
+        ORDER BY c.sequence
+        """,
+        (str(path.resolve()),),
+    ).fetchall()
+
+
 class TestEmbedDepth:
     """The --embed inline depth (D-09/D-10, LIVE-05), mocked at the manager boundary.
 
@@ -948,6 +962,26 @@ class TestEmbedDepth:
         from sif.database.factory import create_connection
 
         return create_connection(Path(db_path))
+
+    def _prepare_two_changed_docs(self, tmp_path, monkeypatch) -> tuple[Path, Path, Path]:
+        """Seed two indexed docs, edit both; returns (db_path, doc_a, doc_b)."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "watch.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        doc_a = notes / "a.md"
+        doc_b = notes / "b.md"
+        doc_a.write_text(BODY_ALPHA, encoding="utf-8")
+        doc_b.write_text(BODY_BETA, encoding="utf-8")
+        _seed_collection(db_path, notes)
+        indexer, db, coll = _open_indexer(db_path)
+        try:
+            assert indexer.update_collection(coll) == IncrementalResult(2, 0, 0)
+        finally:
+            db.close()
+        doc_a.write_text("# A2\n\n" + ("Alpha two text. " * 40), encoding="utf-8")
+        doc_b.write_text("# B2\n\n" + ("Beta two text. " * 40), encoding="utf-8")
+        return db_path, doc_a, doc_b
 
     def test_default_depth_writes_document_but_zero_chunks_and_vectors(
         self, tmp_path, monkeypatch
@@ -1229,3 +1263,74 @@ class TestEmbedDepth:
             db.close()
 
         assert sequence == ["enter", "embed", "exit"]
+
+    def test_embed_failure_emits_error_continues_and_retries_next_burst(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """WR-01: a per-path embed failure emits one error event, the burst's
+        remaining candidate still embeds, and a later burst — whose checksum
+        diff alone would never re-select the failed path — retries it to
+        completion."""
+        db_path, doc_a, doc_b = self._prepare_two_changed_docs(tmp_path, monkeypatch)
+
+        def flaky_embed(texts: list[str], **_kwargs: object) -> MagicMock:
+            if manager.embed.call_count == 1:
+                raise RuntimeError("provider 503")
+            return MagicMock(embeddings=[[0.1] * DIM for _ in texts])
+
+        manager = _embed_manager_mock()
+        manager.embed.side_effect = flaky_embed
+
+        events: list[str] = []
+        db = Database(db_path)
+        try:
+            from sif.database.repositories import CollectionRepository
+
+            coll = CollectionRepository(db.connection).get_by_name("notes")
+            assert coll is not None
+            with (
+                patch("sif.config.settings.get_settings", return_value=_test_settings()),
+                patch(
+                    "sif.embedding.manager.EmbeddingManager.from_settings",
+                    return_value=manager,
+                ),
+            ):
+                watcher = FileWatcher(
+                    [coll],
+                    db.connection,
+                    db_path,
+                    WatchConfig(depth="embed", on_event=events.append),
+                )
+                # Burst 1: both changed; a.md (sorted first) fails embed,
+                # b.md — the remaining candidate — still embeds.
+                watcher._settled_callback(coll)(
+                    [FileModifiedEvent(str(doc_a)), FileModifiedEvent(str(doc_b))]
+                )
+                watcher._drain_once()
+                assert manager.embed.call_count == 2
+
+                # Burst 2: a.md touched WITHOUT a content change — the
+                # checksum diff is empty; only the retry set can heal it.
+                watcher._settled_callback(coll)([FileModifiedEvent(str(doc_a))])
+                watcher._drain_once()
+                assert manager.embed.call_count == 3
+        finally:
+            db.close()
+
+        errors = [e for e in events if e.startswith("error ")]
+        assert len(errors) == 1
+        assert str(doc_a.resolve()) in errors[0]
+        assert "provider 503" in errors[0]
+
+        check = self._check_conn(db_path)
+        try:
+            rows_a = _chunk_rows(check, doc_a)
+            rows_b = _chunk_rows(check, doc_b)
+        finally:
+            check.close()
+
+        # Burst 1 kept b.md fully embedded; burst 2's retry healed a.md.
+        assert len(rows_a) >= 1
+        assert all(row[1] is not None for row in rows_a)
+        assert len(rows_b) >= 1
+        assert all(row[1] is not None for row in rows_b)
