@@ -5,16 +5,16 @@ milestone_name: Live Index and Search Quality
 current_phase: 13
 current_phase_name: Watch Everywhere (MCP-Embedded Refresh + Background Daemon)
 status: executing
-stopped_at: Phase 13 context gathered
-last_updated: "2026-11-07T14:31:59.550Z"
+stopped_at: Completed 13-01-PLAN.md
+last_updated: "2026-11-07T15:08:14.275Z"
 last_activity: 2026-11-07
-last_activity_desc: Phase 12 complete, transitioned to Phase 13
-state_head: 3d8555d8248c47280fe27951b9e8fec20d2bd366
+last_activity_desc: Phase 13 execution started
+state_head: f52748fc64066369099408554f57b1120333e16b
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 10
-  completed_plans: 6
+  completed_plans: 7
 ---
 
 # DocSift — Project State
@@ -29,10 +29,10 @@ progress:
 
 ## Current Position
 
-Phase: 13 (Watch Everywhere (MCP-Embedded Refresh + Background Daemon)) — READY TO EXECUTE
-Plan: Not started
+Phase: 13 (Watch Everywhere (MCP-Embedded Refresh + Background Daemon)) — EXECUTING
+Plan: 2 of 4
 Status: Ready to execute
-Last activity: 2026-11-07 — Phase 12 complete, transitioned to Phase 13
+Last activity: 2026-11-07 — Phase 13 execution started
 
 Progress: [███░░░░░░░] 33%
 
@@ -55,6 +55,7 @@ Progress: [███░░░░░░░] 33%
 | Phase 12 P01 | 42 min | 2 tasks | 12 files |
 | Phase 12 P02 | 34 min | 2 tasks | 5 files |
 | Phase 12 P03 | 21 min | 2 tasks | 4 files |
+| Phase 13 P01 | 25min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -94,6 +95,10 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 - [Phase 12]: E2E WAL-truncate proof: parent holds an open read connection so the child's close is never last (SQLite deletes a checkpointed -wal otherwise) and first proves a non-empty WAL after a live write — the post-exit 0-byte file then uniquely demonstrates the D-14 truncate
 - [Phase 12]: watch_* settings reach docs/configuration.md by registering a Watch Settings section in the generator's SECTIONS allowlist — the doc is only ever regenerated (never hand-edited); generator now renders default_factory defaults by product ([]) instead of PydanticUndefined
 - [Phase 12]: E2e output capture merges stderr into the stdout capture file (banner = console/stdout, D-12 recovery warnings = logger/stderr) so both are assertable from one artifact; configuration.md greps must use SIF_WATCH_* env-var spellings, never lowercase field names
+- [Phase 13]: 13-01: rescope is an exact-set diff — the provider embodies the host's eligible set (a -c filter withholds names), so rescope-within-the-filter is the locked reading of open question 1
+- [Phase 13]: 13-01: tick deadline machinery (rescope + checkpoint) seeds lazily, resets on every due fire; busy/recent-burst skips postpone a full interval, never retry inside the tick (Pitfall 7)
+- [Phase 13]: 13-01: D-17 schedule failure treated like a missing root (state.missing stays True) so the D-12 tick retries without spam; recovery 'returned' warning moved inside the successful-reschedule branch
+- [Phase 13]: 13-01: worker-thread guards around rescope provider and checkpoint pragma — one failure cannot kill a months-long daemon's worker thread (Rule 2)
 
 ### Pending Todos
 
@@ -114,9 +119,9 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 
 ## Session Continuity
 
-Last session: 2026-11-07T13:33:41.199Z
-Stopped at: Phase 13 context gathered
-Resume file: .planning/phases/13-watch-everywhere-mcp-embedded-refresh-background-daemon/13-CONTEXT.md
+Last session: 2026-11-07T15:08:14.059Z
+Stopped at: Completed 13-01-PLAN.md
+Resume file: None
 
 - **Next expected action:** `/gsd-discuss-phase 13` (Phase 13 needs context; research flags: daemon/service-install specifics already in research/STACK.md)
 - Research flags for later phases: Phase 13 (daemon/service-install specifics), Phase 16 (`SearchOptions.candidate_limit` audit + fixture design)

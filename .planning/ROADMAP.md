@@ -93,10 +93,10 @@ Plans:
   2. `sif watch --detach` runs in the background with working lifecycle controls — PID reported at detach, `--stop` terminates cleanly, `status` reports running state
   3. A launchd LaunchAgent (macOS) or systemd user unit (Linux) can be generated and installed so watch survives login sessions (no forking under the supervisor)
   4. A daemon killed with SIGKILL leaves no stale lock — a restart succeeds immediately (flock, not PID-file, arbitration)
-**Plans**: 4 plans
+**Plans**: 1/4 plans executed
 Plans:
 **Wave 1**
-- [ ] 13-01-PLAN.md — FileWatcher long-lived-host growth: live rescope (D-15), idle WAL checkpoint (D-16), schedule-failure warn (D-17), mcp_watch + interval settings
+- [x] 13-01-PLAN.md — FileWatcher long-lived-host growth: live rescope (D-15), idle WAL checkpoint (D-16), schedule-failure warn (D-17), mcp_watch + interval settings
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 13-02-PLAN.md — Detached daemon: `--detach` double-fork + PID file + `--stop` escalation + `sif status` Watch section + SC4 SIGKILL proof (SC2/SC4)
@@ -144,7 +144,7 @@ Plans:
 |-------|-----------|----------------|--------|-----------|
 | 11. Live-Index Foundation | v1.1 | 3/3 | Complete    | 2026-11-07 |
 | 12. `sif watch` Foreground MVP | v1.1 | 3/3 | Complete    | 2026-11-07 |
-| 13. Watch Everywhere (MCP + Daemon) | v1.1 | 0/4 | Not started | - |
+| 13. Watch Everywhere (MCP + Daemon) | v1.1 | 1/4 | In Progress | - |
 | 14. Freshness Floor (Pre-Command + Staleness) | v1.1 | 0/TBD | Not started | - |
 | 15. Search Quality Configuration | v1.1 | 0/TBD | Not started | - |
 | 16. Bench Expansion + Reranker Tuning | v1.1 | 0/TBD | Not started | - |
