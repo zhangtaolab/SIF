@@ -33,6 +33,12 @@ class Settings(BaseSettings):
         default=None,
         description="Path to SQLite database file",
     )
+    lock_wait_timeout: float = Field(
+        default=30.0,
+        ge=0,
+        description="Seconds an index writer waits for a competing writer's "
+        "lock before proceeding with its own pass anyway",
+    )
 
     # Model settings
     model_path: Path | None = Field(

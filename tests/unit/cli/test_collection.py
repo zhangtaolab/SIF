@@ -424,7 +424,7 @@ class TestCollectionIncludeExclude:
 class TestIndexPreUpdateHook:
     """Tests for index update pre-update command hook."""
 
-    def test_index_update_runs_pre_update_cmd(self):
+    def test_index_update_runs_pre_update_cmd(self, tmp_path):
         """Test that index update runs pre-update command."""
         runner = CliRunner()
         collection = Collection(name="notes", path="/tmp/notes", pre_update_cmd="echo hello")
@@ -464,7 +464,7 @@ class TestIndexPreUpdateHook:
             result = runner.invoke(
                 update_cmd,
                 ["--collection", "notes"],
-                obj={"index_path": MagicMock()},
+                obj={"index_path": tmp_path / "sif.db"},
             )
 
         assert result.exit_code == 0
@@ -479,7 +479,7 @@ class TestIndexPreUpdateHook:
         )
         assert "Running pre-update command" in result.output
 
-    def test_index_update_times_out_hung_pre_update_cmd(self):
+    def test_index_update_times_out_hung_pre_update_cmd(self, tmp_path):
         """WR-06: a hung pre-update command exits with a ClickException, not a hang."""
         runner = CliRunner()
         collection = Collection(name="notes", path="/tmp/notes", pre_update_cmd="sleep 9999")
@@ -519,13 +519,13 @@ class TestIndexPreUpdateHook:
             result = runner.invoke(
                 update_cmd,
                 ["--collection", "notes"],
-                obj={"index_path": MagicMock()},
+                obj={"index_path": tmp_path / "sif.db"},
             )
 
         assert result.exit_code != 0
         assert "timed out after 300s" in result.output
 
-    def test_index_update_fails_fast_on_pre_update_cmd_error(self):
+    def test_index_update_fails_fast_on_pre_update_cmd_error(self, tmp_path):
         """Test that index update fails fast on pre-update command error."""
         runner = CliRunner()
         collection = Collection(name="notes", path="/tmp/notes", pre_update_cmd="echo hello")
@@ -563,7 +563,7 @@ class TestIndexPreUpdateHook:
             result = runner.invoke(
                 update_cmd,
                 ["--collection", "notes"],
-                obj={"index_path": MagicMock()},
+                obj={"index_path": tmp_path / "sif.db"},
             )
 
         assert result.exit_code != 0

@@ -7,8 +7,7 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 
-import sqlite_vec
-
+from sif.database.factory import create_connection
 from sif.database.schema import SchemaManager
 
 
@@ -26,30 +25,8 @@ class Database:
     def connection(self) -> sqlite3.Connection:
         """Get or create database connection."""
         if self._connection is None:
-            self._connection = sqlite3.connect(
-                str(self.db_path),
-                detect_types=sqlite3.PARSE_DECLTYPES,
-                check_same_thread=False,
-            )
-            self._connection.row_factory = sqlite3.Row
-            self._enable_extensions()
+            self._connection = create_connection(self.db_path)
         return self._connection
-
-    def _enable_extensions(self) -> None:
-        """Enable SQLite extensions."""
-        conn = self._connection
-        assert conn is not None
-
-        # Enable FTS5
-        conn.execute("PRAGMA foreign_keys = ON")
-
-        # Load sqlite-vec extension
-        try:
-            conn.enable_load_extension(True)
-            sqlite_vec.load(conn)
-            conn.enable_load_extension(False)
-        except Exception:
-            pass  # sqlite-vec is optional
 
     def init_schema(self) -> None:
         """Initialize database schema."""
@@ -106,7 +83,13 @@ class Database:
 
 
 class DatabaseConnection:
-    """Lightweight database connection wrapper."""
+    """Lightweight database connection wrapper.
+
+    .. deprecated::
+        Duplicate of :class:`sif.database.connection.DatabaseConnection`;
+        retired in plan 11-03 (D-07). Kept working — connections route
+        through the shared factory — until then.
+    """
 
     def __init__(self, db_path: str | Path) -> None:
         """Initialize the database connection wrapper."""
@@ -116,21 +99,7 @@ class DatabaseConnection:
     @contextmanager
     def connect(self) -> Generator[sqlite3.Connection, None, None]:
         """Create a connection context."""
-        conn = sqlite3.connect(
-            str(self.db_path),
-            detect_types=sqlite3.PARSE_DECLTYPES,
-            check_same_thread=False,
-        )
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys = ON")
-
-        # Load sqlite-vec extension
-        try:
-            conn.enable_load_extension(True)
-            sqlite_vec.load(conn)
-            conn.enable_load_extension(False)
-        except Exception:
-            pass  # sqlite-vec is optional
+        conn = create_connection(self.db_path)
 
         try:
             yield conn

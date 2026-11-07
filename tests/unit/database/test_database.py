@@ -158,7 +158,7 @@ class TestDatabaseRealSQLite:
         """Database catches sqlite-vec loader failure without disabling ordinary SQL."""
         database = Database(tmp_path / "no-vec.db")
         try:
-            with patch("sif.database.database.sqlite_vec.load", side_effect=OSError("no vec")):
+            with patch("sif.database.factory.sqlite_vec.load", side_effect=OSError("no vec")):
                 conn = database.connection
             assert conn.execute("SELECT 40 + 2").fetchone()[0] == 42
             assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
@@ -168,7 +168,7 @@ class TestDatabaseRealSQLite:
     def test_lightweight_connection_optional_vector_failure_and_commit(self, tmp_path: Path):
         """DatabaseConnection remains usable without sqlite-vec and commits on clean exit."""
         connector = DatabaseConnection(tmp_path / "lightweight.db")
-        with patch("sif.database.database.sqlite_vec.load", side_effect=OSError("no vec")):
+        with patch("sif.database.factory.sqlite_vec.load", side_effect=OSError("no vec")):
             with connector.connect() as conn:
                 conn.execute("CREATE TABLE probe (value TEXT)")
                 conn.execute("INSERT INTO probe VALUES ('committed')")

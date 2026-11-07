@@ -13,6 +13,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from sif.core.models import Document
 from sif.database.database import Database
+from sif.database.locking import index_lock
 from sif.database.repositories import (
     CollectionRepository,
     DocumentChunkRepository,
@@ -52,7 +53,20 @@ def update_cmd(ctx: click.Context, collection: str | None, force: bool) -> None:
     with Database(index_path) as db:
         db.init_schema()
 
-        with db.connection:
+        from sif.config.settings import get_settings  # noqa: PLC0415
+
+        lock_timeout = get_settings().lock_wait_timeout
+        with (
+            index_lock(
+                Path(index_path),
+                lock_timeout,
+                on_wait=lambda: console.print(
+                    "[dim]Another index writer is running; "
+                    f"waiting up to {lock_timeout:.0f}s...[/dim]"
+                ),
+            ),
+            db.connection,
+        ):
             coll_repo = CollectionRepository(db.connection)
             doc_repo = DocumentRepository(db.connection)
             chunk_repo = DocumentChunkRepository(db.connection)
