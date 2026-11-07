@@ -52,6 +52,18 @@ class Settings(BaseSettings):
         description="Global ignore-pattern additions applied to the shared "
         "scan/watch predicate (extends the scanner defaults for both)",
     )
+    watch_update_depth: str = Field(
+        default="bm25",
+        description="Default update depth for `sif watch`: 'bm25' (FTS only) or "
+        "'embed' (also write vectors for changed documents); the --embed / "
+        "--no-embed flags override it",
+    )
+    watch_restat_interval: float = Field(
+        default=5.0,
+        ge=0.1,
+        description="Seconds between re-stat checks for watched collection roots "
+        "that went missing while `sif watch` runs",
+    )
 
     # Model settings
     model_path: Path | None = Field(

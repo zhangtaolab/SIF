@@ -10,6 +10,8 @@ from __future__ import annotations
 import signal
 import sys
 import time
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from types import FrameType
 
@@ -18,6 +20,7 @@ from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from sif.cli.commands.index import _render_index_event
+from sif.core.models import Collection
 from sif.database.database import Database
 from sif.database.locking import index_lock
 from sif.database.repositories import CollectionRepository
@@ -29,6 +32,44 @@ console = Console()
 
 _LOOP_INTERVAL_SECONDS = 0.2
 _IMMEDIATE_EXIT_AFTER_SIGNALS = 2
+
+
+@dataclass
+class SignalState:
+    """Mutable stop-flag state shared by the D-14 signal machinery."""
+
+    stop: bool = False
+    signal_count: int = 0
+
+
+def make_signal_handler(state: SignalState) -> Callable[[int, FrameType | None], None]:
+    """Build the D-14 SIGINT/SIGTERM handler (skeleton: stop flag only)."""
+
+    def _handle_signal(_signum: int, _frame: FrameType | None) -> None:
+        state.signal_count += 1
+        state.stop = True
+
+    return _handle_signal
+
+
+def shutdown_watcher(watcher: FileWatcher, conn: object) -> None:
+    """D-14 teardown (skeleton): one bounded flush of the in-flight batch."""
+    _ = conn
+    watcher.stop(flush=True)
+
+
+def _select_collections(
+    coll_repo: CollectionRepository, names: tuple[str, ...]
+) -> list[Collection]:
+    """Resolve -c names to collections (skeleton: no filtering yet)."""
+    _ = names
+    return coll_repo.list_all()
+
+
+def _effective_depth(*, embed: bool, no_embed: bool, settings: object) -> str:
+    """LIVE-05 depth matrix (skeleton: bm25 only)."""
+    _ = (embed, no_embed, settings)
+    return "bm25"
 
 
 def _render_watch_event(event: str) -> None:

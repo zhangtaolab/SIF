@@ -8,6 +8,7 @@ end-to-end proof lives in ``tests/integration/test_watch_e2e.py``.
 
 from __future__ import annotations
 
+import logging
 import os
 import sqlite3
 from contextlib import contextmanager
@@ -649,3 +650,153 @@ class TestWatchPipeline:
 
         assert len(results) == 1
         assert results[0] == IncrementalResult(added=0, updated=0, removed=0, unchanged=2)
+
+
+class TestRecoveryTick:
+    """D-12 missing-root recovery, zero timing: the tick is invoked directly.
+
+    A watched root that disappears is marked missing with ONE warning per
+    transition (never per poll), its watch handle unscheduled, and its
+    documents preserved; when the root returns, the watch is rescheduled and
+    one full-reconcile job is enqueued.
+    """
+
+    def _seed_one_doc(self, tmp_path, monkeypatch) -> Path:
+        """Seed db + collection + one indexed document; returns the db path."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "watch.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        (notes / "a.md").write_text(BODY_ALPHA, encoding="utf-8")
+        _seed_collection(db_path, notes)
+
+        indexer, db, coll = _open_indexer(db_path)
+        try:
+            assert indexer.update_collection(coll) == IncrementalResult(1, 0, 0)
+        finally:
+            db.close()
+        return db_path
+
+    def test_disappear_marks_missing_warns_once_preserves_docs(
+        self, tmp_path, monkeypatch, caplog
+    ) -> None:
+        db_path = self._seed_one_doc(tmp_path, monkeypatch)
+        notes = tmp_path / "notes"
+        doc_file = notes / "a.md"
+
+        observer_cls = MagicMock()
+        monkeypatch.setattr(watcher_module, "Observer", observer_cls)
+
+        db = Database(db_path)
+        watcher = None
+        try:
+            from sif.database.repositories import CollectionRepository
+
+            coll = CollectionRepository(db.connection).get_by_name("notes")
+            assert coll is not None
+            watcher = FileWatcher([coll], db.connection, db_path)
+            watcher.start()
+            observer = observer_cls.return_value
+            assert observer.schedule.call_count == 1
+
+            # The root disappears (unmounted/renamed drive); two ticks run.
+            notes.rename(tmp_path / "notes-gone")
+            with caplog.at_level(logging.WARNING, logger="sif.indexing.watcher"):
+                watcher.recovery_tick()
+                watcher.recovery_tick()
+
+            # Marked missing: handle unscheduled, exactly ONE warning across
+            # two ticks, and every document preserved (never swept).
+            assert observer.unschedule.call_count == 1
+            observer.unschedule.assert_called_once_with(observer.schedule.return_value)
+            disappeared = [r for r in caplog.records if "disappeared" in r.message]
+            assert len(disappeared) == 1
+            assert _doc_paths(db_path) == {str(doc_file)}
+        finally:
+            if watcher is not None:
+                watcher.stop(flush=False)
+            db.close()
+
+    def test_return_reschedules_and_enqueues_full_reconcile(
+        self, tmp_path, monkeypatch, caplog
+    ) -> None:
+        db_path = self._seed_one_doc(tmp_path, monkeypatch)
+        notes = tmp_path / "notes"
+
+        observer_cls = MagicMock()
+        monkeypatch.setattr(watcher_module, "Observer", observer_cls)
+
+        db = Database(db_path)
+        watcher = None
+        try:
+            from sif.database.repositories import CollectionRepository
+
+            coll = CollectionRepository(db.connection).get_by_name("notes")
+            assert coll is not None
+            watcher = FileWatcher([coll], db.connection, db_path)
+            watcher.start()
+            observer = observer_cls.return_value
+
+            # Lose the root, then bring it back.
+            notes.rename(tmp_path / "notes-gone")
+            watcher.recovery_tick()
+            (tmp_path / "notes-gone").rename(notes)
+            with caplog.at_level(logging.WARNING, logger="sif.indexing.watcher"):
+                watcher.recovery_tick()
+
+            # Rescheduled (second schedule call), warned exactly once on the
+            # return transition, and one full-reconcile job enqueued (D-12).
+            assert observer.schedule.call_count == 2
+            returned = [r for r in caplog.records if "returned" in r.message]
+            assert len(returned) == 1
+            assert watcher._queue.qsize() == 1
+            job_collection, folded = watcher._queue.get_nowait()
+            watcher._queue.task_done()
+            assert job_collection.name == "notes"
+            assert folded.needs_reconcile is True
+            assert folded.index_candidates == set()
+            assert folded.remove_candidates == set()
+        finally:
+            if watcher is not None:
+                watcher.stop(flush=False)
+            db.close()
+
+    def test_burst_for_missing_root_hits_d11_guard_no_sweep(self, tmp_path, monkeypatch) -> None:
+        """Edge (adjacency): a burst for a vanished root is a missing event, zero counts."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "watch.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        doc_file = notes / "a.md"
+        doc_file.write_text(BODY_ALPHA, encoding="utf-8")
+        _seed_collection(db_path, notes)
+
+        indexer, db, coll = _open_indexer(db_path)
+        try:
+            assert indexer.update_collection(coll) == IncrementalResult(1, 0, 0)
+        finally:
+            db.close()
+
+        notes.rename(tmp_path / "notes-gone")
+        events: list[str] = []
+        results: list[IncrementalResult] = []
+        db = Database(db_path)
+        try:
+            from sif.database.repositories import CollectionRepository
+
+            coll = CollectionRepository(db.connection).get_by_name("notes")
+            assert coll is not None
+            watcher = FileWatcher(
+                [coll],
+                db.connection,
+                db_path,
+                WatchConfig(on_event=events.append, on_batch=lambda _c, r: results.append(r)),
+            )
+            watcher._settled_callback(coll)([FileModifiedEvent(str(doc_file))])
+            watcher._drain_once()
+        finally:
+            db.close()
+
+        assert "missing notes" in events
+        assert results == [IncrementalResult()]
+        assert _doc_paths(db_path) == {str(doc_file)}

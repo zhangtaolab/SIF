@@ -229,6 +229,9 @@ class FileWatcher:
         for debouncer in self._debouncers:
             debouncer.join(timeout=_JOIN_TIMEOUT_SECONDS)
 
+    def recovery_tick(self) -> None:
+        """One D-12 re-stat pass over watched roots (skeleton: no-op)."""
+
     def _settled_callback(self, collection: Collection) -> SettledCallback:
         """Build the debouncer callback for one collection.
 
