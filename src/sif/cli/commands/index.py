@@ -267,90 +267,109 @@ def embed_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
         else:
             collections = coll_repo.list_all()
 
-        total_chunks = 0
-        failed_collections: list[str] = []
+        # D-01: embed_cmd holds the DB write lock for an entire collection, so
+        # it must arbitrate with update_cmd on the same per-DB flock. The lock
+        # sits below the embedder load and the vec0 dimension check on purpose
+        # — it is never held across model loading. The collection loop's
+        # per-collection transactions keep their exact commit points (D-05):
+        # the factory's implicit BEGIN IMMEDIATE flowing through the existing
+        # with-conn blocks is the accepted, strictly-better change (CR-02).
+        lock_timeout = settings.lock_wait_timeout
+        with index_lock(
+            Path(index_path),
+            lock_timeout,
+            on_wait=lambda: console.print(
+                f"[dim]Another index writer is running; waiting up to {lock_timeout:.0f}s...[/dim]"
+            ),
+        ):
+            total_chunks = 0
+            failed_collections: list[str] = []
 
-        for coll in collections:
-            if not coll:
-                continue
+            for coll in collections:
+                if not coll:
+                    continue
 
-            console.print(f"\n[bold]Embedding collection: {coll.name}[/bold]")
-            documents = doc_repo.list_by_collection(coll.id)
+                console.print(f"\n[bold]Embedding collection: {coll.name}[/bold]")
+                documents = doc_repo.list_by_collection(coll.id)
 
-            if not documents:
-                with db.connection:
-                    coll.chunk_count = 0
-                    coll_repo.update(coll)
-                continue
+                if not documents:
+                    with db.connection:
+                        coll.chunk_count = 0
+                        coll_repo.update(coll)
+                    continue
 
-            chunker = create_chunker(chunk_strategy)
+                chunker = create_chunker(chunk_strategy)
 
-            # One searcher per collection. Construction failure (sqlite-vec
-            # unavailable) is user-facing and never swallowed (D-03 fail-fast).
-            # Raised outside any open transaction so it cannot roll back work
-            # already committed by earlier collections (CR-02).
-            try:
-                vector_searcher = VectorSearcher(db.connection, embedding_dim)
-            except RuntimeError as e:
-                raise click.ClickException(f"Vector store unavailable: {e}") from e
+                # One searcher per collection. Construction failure (sqlite-vec
+                # unavailable) is user-facing and never swallowed (D-03 fail-fast).
+                # Raised outside any open transaction so it cannot roll back work
+                # already committed by earlier collections (CR-02).
+                try:
+                    vector_searcher = VectorSearcher(db.connection, embedding_dim)
+                except RuntimeError as e:
+                    raise click.ClickException(f"Vector store unavailable: {e}") from e
 
-            # One transaction per collection (CR-02): a failed collection rolls
-            # back only its own work, and successful collections keep theirs.
-            # (The previous whole-run transaction discarded every successful
-            # collection when the final failure report was raised inside it.)
-            all_chunks = []  # (chunk, document_id)
-            doc_chunks_map: dict[str, list] = {}
-            try:
-                # One unindexed metadata scan per document made the completeness
-                # check quadratic; prefetch the whole map once per collection and
-                # judge each document against it.
-                embedded_by_doc = vector_searcher.get_all_embedded_chunk_ids()
-                with db.connection:
-                    for doc in documents:
-                        # Skip documents whose live chunks already have an exact,
-                        # complete set of embeddings; --force bypasses the check.
-                        existing = chunk_repo.get_by_document(doc.id)
-                        embedded = embedded_by_doc.get(doc.id, set())
-                        if not _needs_embedding({c.id for c in existing}, embedded, force):
-                            console.print(f"  [dim]Already embedded: {doc.path}[/dim]")
-                            continue
-                        chunk_repo.delete_by_document(doc.id)
-                        # Delete-before-insert (G-03-3): re-chunked rows get fresh
-                        # uuid4 ids that can never collide with the old embedding
-                        # rows, so the old vectors must be removed explicitly.
-                        vector_searcher.delete_embeddings_by_document(doc.id)
-                        chunks = chunker.chunk(doc.content)
-                        doc_chunks_map[doc.id] = chunks
-                        for i, chunk in enumerate(chunks):
-                            chunk.document_id = doc.id
-                            chunk.sequence = i
-                            all_chunks.append((chunk, doc.id))
+                # One transaction per collection (CR-02): a failed collection rolls
+                # back only its own work, and successful collections keep theirs.
+                # (The previous whole-run transaction discarded every successful
+                # collection when the final failure report was raised inside it.)
+                all_chunks = []  # (chunk, document_id)
+                doc_chunks_map: dict[str, list] = {}
+                try:
+                    # One unindexed metadata scan per document made the completeness
+                    # check quadratic; prefetch the whole map once per collection and
+                    # judge each document against it.
+                    embedded_by_doc = vector_searcher.get_all_embedded_chunk_ids()
+                    with db.connection:
+                        for doc in documents:
+                            # Skip documents whose live chunks already have an exact,
+                            # complete set of embeddings; --force bypasses the check.
+                            existing = chunk_repo.get_by_document(doc.id)
+                            embedded = embedded_by_doc.get(doc.id, set())
+                            if not _needs_embedding({c.id for c in existing}, embedded, force):
+                                console.print(f"  [dim]Already embedded: {doc.path}[/dim]")
+                                continue
+                            chunk_repo.delete_by_document(doc.id)
+                            # Delete-before-insert (G-03-3): re-chunked rows get fresh
+                            # uuid4 ids that can never collide with the old embedding
+                            # rows, so the old vectors must be removed explicitly.
+                            vector_searcher.delete_embeddings_by_document(doc.id)
+                            chunks = chunker.chunk(doc.content)
+                            doc_chunks_map[doc.id] = chunks
+                            for i, chunk in enumerate(chunks):
+                                chunk.document_id = doc.id
+                                chunk.sequence = i
+                                all_chunks.append((chunk, doc.id))
 
-                    # Batch embed all chunks
-                    if all_chunks:
-                        chunk_texts = [c.content for c, _ in all_chunks]
-                        embedding_response = manager.embed(chunk_texts)
-                        embeddings = embedding_response.embeddings
+                        # Batch embed all chunks
+                        if all_chunks:
+                            chunk_texts = [c.content for c, _ in all_chunks]
+                            embedding_response = manager.embed(chunk_texts)
+                            embeddings = embedding_response.embeddings
 
-                        # Persist chunks and embeddings
-                        batch_items: list[tuple[str, str, str | None, list[float]]] = []
-                        for (chunk, doc_id), embedding in zip(all_chunks, embeddings, strict=True):
-                            chunk_repo.create(chunk)
-                            batch_items.append((chunk.id, doc_id, chunk.id, embedding))
+                            # Persist chunks and embeddings
+                            batch_items: list[tuple[str, str, str | None, list[float]]] = []
+                            for (chunk, doc_id), embedding in zip(
+                                all_chunks, embeddings, strict=True
+                            ):
+                                chunk_repo.create(chunk)
+                                batch_items.append((chunk.id, doc_id, chunk.id, embedding))
 
-                        vector_searcher.add_embeddings_batch(batch_items)
+                            vector_searcher.add_embeddings_batch(batch_items)
 
-                    # Update collection stats
-                    documents = doc_repo.list_by_collection(coll.id)
-                    coll.chunk_count = sum(len(chunk_repo.get_by_document(d.id)) for d in documents)
-                    coll_repo.update(coll)
-                # Count only after the transaction committed — a rolled-back
-                # collection must not be reported as embedded.
-                total_chunks += len(all_chunks)
-            except Exception as e:
-                console.print(f"  [red]Error embedding collection {coll.name}: {e}[/red]")
-                failed_collections.append(coll.name)
-                continue
+                        # Update collection stats
+                        documents = doc_repo.list_by_collection(coll.id)
+                        coll.chunk_count = sum(
+                            len(chunk_repo.get_by_document(d.id)) for d in documents
+                        )
+                        coll_repo.update(coll)
+                    # Count only after the transaction committed — a rolled-back
+                    # collection must not be reported as embedded.
+                    total_chunks += len(all_chunks)
+                except Exception as e:
+                    console.print(f"  [red]Error embedding collection {coll.name}: {e}[/red]")
+                    failed_collections.append(coll.name)
+                    continue
 
         console.print(f"\n[green]Embedding complete: {total_chunks} chunks embedded[/green]")
 
