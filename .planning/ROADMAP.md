@@ -54,8 +54,13 @@ Full detail: `.planning/milestones/v1.0-ROADMAP.md`
   4. Existing CLI/MCP behavior is unchanged — full quality suite green (pytest fail_under=90, ruff, ty)
 **Plans**: 3 plans
 Plans:
+**Wave 1**
 - [ ] 11-01-PLAN.md — Shared connection factory (WAL/busy_timeout/BEGIN IMMEDIATE), flock per-DB arbitration, SC1/SC2 proofs (in-suite + subprocess)
+
+**Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 11-02-PLAN.md — IncrementalIndexer extraction with per-file transactions; update_cmd delegates; SC3 golden equivalence
+
+**Wave 3** *(blocked on Wave 2 completion)*
 - [ ] 11-03-PLAN.md — Dead-code retirement (D-07), embed_cmd under the lock (D-01), full quality gate (SC4)
 
 ### Phase 12: `sif watch` Foreground MVP
