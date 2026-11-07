@@ -3,22 +3,24 @@
 observer -> IndexingEventHandler -> EventDebouncer -> fold_events -> queue ->
 single worker thread -> per-burst index_lock -> IncrementalIndexer. The
 module owns no presentation: hosts pass ``on_event``/``on_batch`` callbacks
-and render themselves (D-13). Signal handling and the WAL checkpoint stay
-in the CLI host (D-14); the worker's idle wait doubles as the D-12
-missing-root re-stat loop.
+and render themselves (D-13). At embed depth the worker adds an inline
+chunk+embed leg that computes embeddings OUTSIDE any write transaction
+(D-09). Signal handling and the WAL checkpoint stay in the CLI host (D-14);
+the worker's idle wait doubles as the D-12 missing-root re-stat loop.
 """
 
 from __future__ import annotations
 
 import os
 import queue
+import re
 import sqlite3
 import threading
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
@@ -27,9 +29,16 @@ from watchdog.utils.event_debouncer import EventDebouncer
 
 from sif.core.models import Collection
 from sif.database.locking import index_lock
+from sif.database.repositories import DocumentChunkRepository, DocumentRepository
 from sif.indexing.incremental import IncrementalIndexer, IncrementalResult
 from sif.indexing.scanner import FileScanner
 from sif.utils.logging import get_logger
+
+
+if TYPE_CHECKING:
+    from sif.embedding.manager import EmbeddingManager
+    from sif.indexing.chunker import Chunker
+    from sif.search.vector import VectorSearcher
 
 
 logger = get_logger(__name__)
@@ -156,13 +165,133 @@ class IndexingEventHandler(FileSystemEventHandler):
         self._debouncer.handle_event(event)
 
 
+class _EmbedSession:
+    """Lazy embed-depth state for the watch worker (D-09/LIVE-05).
+
+    Nothing loads at construction — the model loads on first embed work and
+    stays cached, keeping watch startup BM25-cheap. The first use also runs
+    embed_cmd's probe-free dimension check against the vec0 schema; any
+    first-use failure (backend missing, model load, dimension mismatch,
+    sqlite-vec unavailable) is fail-soft: one ``error`` event, embed
+    disabled for the session, BM25 freshness continues.
+    """
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        """Initialize with a factory connection; model work stays lazy."""
+        self._conn = conn
+        self._attempted = False
+        self._ready = False
+        self._manager: EmbeddingManager | None = None
+        self._searcher: VectorSearcher | None = None
+        self._chunker: Chunker | None = None
+
+    def ensure_ready(self, on_event: Callable[[str], None] | None) -> bool:
+        """Load the model once and validate its dimension (fail-soft)."""
+        if self._attempted:
+            return self._ready
+        self._attempted = True
+        try:
+            from sif.config.settings import get_settings  # noqa: PLC0415
+            from sif.embedding.manager import EmbeddingManager  # noqa: PLC0415
+            from sif.indexing.chunker import create_chunker  # noqa: PLC0415
+            from sif.search.vector import VectorSearcher  # noqa: PLC0415
+
+            manager = EmbeddingManager.from_settings(get_settings())
+            # Load eagerly (idempotent, cached) so backend-missing and
+            # model-load failures surface here, fail-soft.
+            manager.load_model()
+            info = manager.get_model_info()
+            model_dim = info.get("embedding_dim")
+            if not isinstance(model_dim, int):
+                raise RuntimeError(f"embedding model reported no dimension: {info!r}")
+            schema_dim = self._schema_embedding_dim()
+            if schema_dim is not None and schema_dim != model_dim:
+                raise RuntimeError(
+                    f"Model '{info.get('model_id', 'embedding model')}' produces "
+                    f"{model_dim}-dim embeddings but the index stores "
+                    f"{schema_dim}-dim vectors"
+                )
+            self._manager = manager
+            self._searcher = VectorSearcher(self._conn, model_dim)
+            self._chunker = create_chunker("auto")  # embed_cmd's default strategy
+            self._ready = True
+        except Exception as e:
+            self._notify(on_event, f"error Embedding disabled for this watch session: {e}")
+            self._ready = False
+        return self._ready
+
+    def embed_documents(
+        self,
+        collection: Collection,
+        paths: Iterable[Path],
+        on_event: Callable[[str], None] | None,
+    ) -> None:
+        """Chunk and embed changed documents (D-09 sequence).
+
+        Chunking and embedding compute with NO write transaction open —
+        explicitly NOT embed_cmd's inside-txn shape (Pitfall 5) — then one
+        short closing transaction persists chunk rows and batched vectors.
+        """
+        candidates = sorted(paths)
+        if not candidates:
+            return
+        if not self.ensure_ready(on_event):
+            return
+        manager = self._manager
+        searcher = self._searcher
+        chunker = self._chunker
+        assert manager is not None
+        assert searcher is not None
+        assert chunker is not None
+        doc_repo = DocumentRepository(self._conn)
+        chunk_repo = DocumentChunkRepository(self._conn)
+        for path in candidates:
+            doc = doc_repo.get_by_path(str(path), collection.id)
+            if doc is None:
+                continue
+            chunks = chunker.chunk(doc.content)
+            if not chunks:
+                continue
+            # Embedding compute never runs inside an open write transaction.
+            vectors = manager.embed([chunk.content for chunk in chunks]).embeddings
+            # One short vector-write txn: chunk rows + batched vec0 inserts.
+            with self._conn:
+                for sequence, chunk in enumerate(chunks):
+                    chunk.document_id = doc.id
+                    chunk.sequence = sequence
+                    chunk_repo.create(chunk)
+                searcher.add_embeddings_batch(
+                    [
+                        (chunk.id, doc.id, chunk.id, vector)
+                        for chunk, vector in zip(chunks, vectors, strict=True)
+                    ]
+                )
+
+    def _schema_embedding_dim(self) -> int | None:
+        """Declared FLOAT[n] of the vec0 table, or None when absent/unparsed."""
+        row = self._conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='document_embeddings'"
+        ).fetchone()
+        if not row or not row[0]:
+            return None
+        match = re.search(r"FLOAT\[(\d+)\]", row[0])
+        return int(match.group(1)) if match else None
+
+    @staticmethod
+    def _notify(on_event: Callable[[str], None] | None, event: str) -> None:
+        """Forward an event to the host's presentation callback, if any."""
+        if on_event is not None:
+            on_event(event)
+
+
 class FileWatcher:
     """Owns the observer/debouncer/worker pipeline for a set of collections.
 
     One worker thread performs all database access (sqlite connections must
     not cross threads mid-transaction) and wraps each settled burst in the
     per-DB flock — acquired per burst, never held for the process lifetime
-    (D-04).
+    (D-04). At embed depth the same lock window also spans the inline
+    chunk+embed leg (D-09); the core ``IncrementalIndexer`` stays BM25-only.
     """
 
     def __init__(
@@ -190,6 +319,8 @@ class FileWatcher:
         self._queue: queue.Queue[tuple[Collection, FoldResult] | None] = queue.Queue()
         self._worker: threading.Thread | None = None
         self._stop_event = threading.Event()
+        self._doc_repo = DocumentRepository(conn)
+        self._embed = _EmbedSession(conn)
 
     def start(self) -> None:
         """Arm the observer, per-collection debouncers, and the worker thread."""
@@ -341,25 +472,57 @@ class FileWatcher:
         """Process one settled burst under the per-DB flock (D-04 per-burst).
 
         Cost is proportional to the burst: per-path processing, or one full
-        collection pass only when a directory move requires a reconcile.
+        collection pass only when a directory move (or a returning missing
+        root) requires a reconcile. At embed depth the embed leg runs inside
+        the SAME lock window as the BM25 leg (D-09).
         """
         collection, folded = job
         paths = folded.index_candidates | folded.remove_candidates
         if folded.needs_reconcile:
+            # Reconcile jobs stay BM25-only: the per-file embed leg applies
+            # to burst jobs, whose changed paths are computable.
             with index_lock(self._db_path, self._config.lock_timeout):
                 result = IncrementalIndexer(self._conn).update_collection(
                     collection, progress=self._config.on_event
                 )
         elif paths:
             with index_lock(self._db_path, self._config.lock_timeout):
-                result = IncrementalIndexer(self._conn).update_paths(
-                    collection, paths, progress=self._config.on_event
-                )
+                result = self._run_burst(collection, folded)
         else:
             # An empty fold (pure temp-noise burst) never touches the DB.
             return
         if self._config.on_batch is not None:
             self._config.on_batch(collection, result)
+
+    def _run_burst(self, collection: Collection, folded: FoldResult) -> IncrementalResult:
+        """BM25 leg first, then the inline embed leg for changed paths (D-09)."""
+        paths = folded.index_candidates | folded.remove_candidates
+        indexer = IncrementalIndexer(self._conn)
+        progress = self._config.on_event
+        if self._config.depth != "embed":
+            return indexer.update_paths(collection, paths, progress=progress)
+        before = self._checksums(collection, folded.index_candidates)
+        result = indexer.update_paths(collection, paths, progress=progress)
+        changed = {
+            path for path in folded.index_candidates if self._path_changed(collection, path, before)
+        }
+        self._embed.embed_documents(collection, changed, progress)
+        return result
+
+    def _checksums(self, collection: Collection, paths: Iterable[Path]) -> dict[str, str | None]:
+        """Snapshot stored checksums for the index candidates (change detection)."""
+        snapshots: dict[str, str | None] = {}
+        for path in paths:
+            doc = self._doc_repo.get_by_path(str(path), collection.id)
+            snapshots[str(path)] = doc.checksum if doc else None
+        return snapshots
+
+    def _path_changed(
+        self, collection: Collection, path: Path, before: dict[str, str | None]
+    ) -> bool:
+        """True when the BM25 leg added or updated this path's document."""
+        doc = self._doc_repo.get_by_path(str(path), collection.id)
+        return doc is not None and doc.checksum != before.get(str(path))
 
     def _drain_once(self) -> None:
         """Run every job already queued at call time (bounded, no waiting)."""

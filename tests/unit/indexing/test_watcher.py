@@ -964,8 +964,11 @@ class TestEmbedDepth:
         original_create = DocumentChunkRepository.create
 
         def recording_create(self: DocumentChunkRepository, chunk: object) -> object:
+            result = original_create(self, chunk)  # type: ignore[arg-type]
+            # Recorded AFTER the insert: the legacy implicit BEGIN fires on
+            # the first DML, so pre-insert flags would read autocommit.
             write_txn_flags.append(self.db.in_transaction)
-            return original_create(self, chunk)  # type: ignore[arg-type]
+            return result
 
         monkeypatch.setattr(DocumentChunkRepository, "create", recording_create)
 
