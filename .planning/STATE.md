@@ -6,10 +6,10 @@ current_phase: 11
 current_phase_name: Live-Index Foundation (Concurrent DB + Incremental Core)
 status: verifying
 stopped_at: Completed 11-03-PLAN.md
-last_updated: "2026-11-07T06:52:03.762Z"
+last_updated: "2026-11-07T06:58:13.316Z"
 last_activity: 2026-11-07
 last_activity_desc: Phase 11 execution started
-state_head: c0cfa000b41976f49b38040889ce608c66c5c8f6
+state_head: 824ac7f7505ffce2f28c98f463bf7873791b374d
 progress:
   total_phases: 6
   completed_phases: 0
@@ -74,6 +74,7 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 - [Phase 11]: 11-03: dead-test cleanup lands inside the RED commit — deleted test files import symbols deleted in Task 1, so the same-commit removal is what lets the suite collect; the RED target fails on its assertion, never an import error
 - [Phase 11]: 11-03: commit-on-clean-exit for the surviving DatabaseConnection is proven via transaction(); the retired duplicate's connect() was the only connect() that committed (D-07 consequence)
 - [Phase 11]: 11-03: embed_cmd joins update_cmd under the same per-DB flock (D-01) — lock acquired after model load and dimension checks; per-collection transaction structure unchanged (D-05); REFACTOR skipped to avoid reworking 11-01's committed lock-wrap shape
+- [Phase 11]: 11-03: embed_cmd's index_lock wrap made eight test_index.py mocks materialize MagicMock/mock/<id>.lock litter in the repo root — fixed by passing tmp_path sif.db (same class as 11-01's update_cmd fix; any command that wraps Path(index_path) must never receive a mock index_path)
 
 ### Pending Todos
 

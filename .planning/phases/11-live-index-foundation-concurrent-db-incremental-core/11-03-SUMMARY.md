@@ -17,12 +17,12 @@ provides:
 affects: [12-watch, 13-daemon-mcp, 14-precommand]
 
 actuals:
-  tokens: 15862   # chars/4 over the realized 3c8b125..c0cfa00 diff (63449 chars)
+  tokens: 23077   # chars/4 over the realized 3c8b125..824ac7f diff (92307 chars)
   tasks: 2
-  commits: 3      # MEASURED: git rev-list --count 3c8b125..HEAD
+  commits: 4      # MEASURED: git rev-list --count 3c8b125..HEAD (work commits; docs commit separate)
 
 plan_head_before: 3c8b125a54059f66c8f572e74bd028aca83c3256
-plan_head_after: c0cfa00c367d97a2517d1e0ab5b31c1a5f4b1a49
+plan_head_after: 824ac7f9682aecc61a29374c70c9748063489a1d
 
 tech-stack:
   added: []   # deletions + stdlib locking only; zero new dependencies (locked)
@@ -39,6 +39,7 @@ key-files:
     - src/sif/database/connection.py
     - src/sif/database/database.py
     - src/sif/indexing/watcher.py
+    - tests/unit/cli/test_index.py
     - tests/unit/database/test_database.py
     - tests/unit/database/test_factory.py
     - tests/unit/db/test_database.py
@@ -116,7 +117,7 @@ status: complete
 - **Started:** 2026-11-07T06:39:51Z
 - **Completed:** 2026-11-07T06:49:49Z
 - **Tasks:** 2/2
-- **Files modified:** 11 (1 created, 8 modified, 2 deleted)
+- **Files modified:** 12 (1 created, 9 modified, 2 deleted)
 - **Suite:** 1030 passed @ 96.20% (fail_under=90 honored); ruff, format, ty all green
 - **Delta vs 11-02:** −22 tests (35-test dead DocumentIndexer suite + 6 pool tests removed, 6 regression locks added); coverage 96.34% → 96.20% because the deleted tests covered now-deleted source
 
@@ -143,6 +144,7 @@ REFACTOR: skipped with rationale (see key-decisions) — no commit. Task 1 is a 
 1. **Task 1: retire dead connection code + dead indexer (D-07)** - `0d0767e` (refactor)
 2. **Task 2 RED: failing embed_cmd lock spy + dead-test removal + retired-name assertions** - `a87e657` (test)
 3. **Task 2 GREEN: embed_cmd under the per-DB lock (D-01)** - `c0cfa00` (feat)
+4. **Rule 1 fix: mock index_path litter from the new lock wrap** - `824ac7f` (fix)
 
 **Plan metadata:** final docs commit (below)
 
@@ -159,6 +161,7 @@ REFACTOR: skipped with rationale (see key-decisions) — no commit. Task 1 is a 
 - `tests/unit/db/test_database.py` - pool fixture + `TestConnectionPool` removed (20 → 14 test methods)
 - `tests/unit/database/test_database.py` - imports repointed to the surviving classes; the two lightweight tests use `transaction()`
 - `tests/unit/database/test_factory.py` - extended with `TestRetiredImports` (D-07 row of the validation map)
+- `tests/unit/cli/test_index.py` - eight mock `index_path` invocations switched to `tmp_path / "sif.db"` (the new lock wrap materialized mock paths into repo-root `.lock` litter — Rule 1 fix)
 
 ## Decisions Made
 
@@ -168,7 +171,15 @@ REFACTOR: skipped with rationale (see key-decisions) — no commit. Task 1 is a 
 
 ### Auto-fixed Issues
 
-**1. [Plan-spec adjustment] Stale line anchors from 11-01's interim changes**
+**1. [Rule 1 - Bug] Mock index_path in eight embed tests materialized repo-root lock litter**
+- **Found during:** Task 2 close-out (post-SC4 working-tree inspection)
+- **Issue:** Eight tests in `tests/unit/cli/test_index.py` invoke embed_cmd with `obj={"index_path": MagicMock(exists=lambda: True)}`. Before this plan embed_cmd never touched the path; the new `index_lock(Path(index_path), ...)` resolves the mock's `__fspath__` to `MagicMock/mock/<id>` and each run created untracked `.lock` files in the repo root (new ids every run — unbounded accumulation; same failure class as 11-01's update_cmd fix, which the full-suite green hid because nothing asserts on untracked files).
+- **Fix:** All eight invocations (six inline + the `_invoke_with_mocks` helper and its three callers) now pass `tmp_path / "sif.db"`; the tests' mock wiring is otherwise untouched.
+- **Files modified:** tests/unit/cli/test_index.py
+- **Verification:** `pytest tests/unit/cli/test_index.py` 10/10 pass; FULL suite re-run green (1030 passed @ 96.20%) with `find MagicMock -name "*.lock"` returning zero after the run; ruff/format/ty clean
+- **Committed in:** 824ac7f
+
+**2. [Plan-spec adjustment] Stale line anchors from 11-01's interim changes**
 - **Found during:** Task 1 (read_first)
 - **Issue:** The plan cites the duplicate wrapper at database.py:108-143 and the pool at connection.py:105-143 — 11-01's factory routing moved both classes up (actual: 85-112 and 94-133). Similarly "embed_cmd lines 240-420" and the test-file line anchors had drifted.
 - **Fix:** Located every target by its class/content rather than line number ("the duplicate wrapper class at the bottom of database.py", etc.); blast-radius grep re-verified before committing (zero deleted-symbol references left in src/). Two lines inside embed_cmd's loop re-wrapped for the 100-char limit after the lock indentation (the `zip(...)` and `coll.chunk_count = sum(...)` lines — formatting only, logic identical).
@@ -178,8 +189,8 @@ REFACTOR: skipped with rationale (see key-decisions) — no commit. Task 1 is a 
 
 ---
 
-**Total deviations:** 1 auto-fixed (1 plan-spec adjustment)
-**Impact on plan:** None — anchors were informational; every action matched the plan's named targets.
+**Total deviations:** 2 auto-fixed (1 Rule 1 bug, 1 plan-spec adjustment)
+**Impact on plan:** The litter fix was required — the D-01 change itself created the leak, and unbounded untracked-file accumulation in the repo root is exactly the regression class 11-01 already established a no-tolerance precedent for. No scope creep.
 
 ## Issues Encountered
 
@@ -207,7 +218,7 @@ None - no external service configuration required.
 
 ## Self-Check: PASSED
 
-All key files exist on disk (test_index_locking.py created; the deleted files confirmed gone in the Task 1/2 verifies); all 3 task commits (0d0767e, a87e657, c0cfa00) are ancestors of HEAD; `plan_head_before=3c8b125`, commits measured = 3; SC4 gate re-run green (1030 passed @ 96.20%, ruff/format/ty clean).
+All key files exist on disk (test_index_locking.py created; the deleted files confirmed gone in the Task 1/2 verifies); all 4 work commits (0d0767e, a87e657, c0cfa00, 824ac7f) are ancestors of HEAD; `plan_head_before=3c8b125`, work commits measured = 4; SC4 gate run twice green (before and after the litter fix: 1030 passed @ 96.20%, ruff/format/ty clean, zero lock litter).
 
 ---
 *Phase: 11-live-index-foundation-concurrent-db-incremental-core*
