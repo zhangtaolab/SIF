@@ -147,14 +147,23 @@ def create_app(
     cors_origins: list[str] | None = None,
     sse_ping_interval: float = 30,
     sse_max_events: int | None = None,
+    lifespan: Any = None,
 ) -> Any:
-    """Create FastAPI app for MCP HTTP transport."""
+    """Create FastAPI app for MCP HTTP transport.
+
+    ``lifespan`` (an async context manager factory) hosts app-lifetime work —
+    the MCP watch host's :func:`~sif.mcp.watch_host.mcp_watch_lifespan` starts
+    the embedded watcher before the app accepts requests and stops it after
+    serving ends (D-01). It defaults to ``None`` (FastAPI's own default), so
+    existing ``create_app(server)`` call sites keep working unchanged;
+    lifespan fully replaces deprecated ``on_event`` handlers — never both.
+    """
     if FastAPI is None:
         raise ImportError("FastAPI is required for HTTP transport")
 
     origins = cors_origins if cors_origins is not None else DEFAULT_CORS_ORIGINS
 
-    app = FastAPI()
+    app = FastAPI(lifespan=lifespan)
 
     assert CORSMiddleware is not None
     app.add_middleware(
@@ -205,18 +214,24 @@ class HTTPTransport:
         host: str = DEFAULT_HOST,
         port: int = DEFAULT_PORT,
         cors_origins: list[str] | None = None,
+        lifespan: Any = None,
     ) -> None:
-        """Initialize HTTP transport."""
+        """Initialize HTTP transport.
+
+        ``lifespan`` (optional) is threaded into :func:`create_app` — the MCP
+        watch host's lifespan factory when watch serving is wired (D-01).
+        """
         self.server = server
         self.host = host
         self.port = port
         self.cors_origins = cors_origins
+        self.lifespan = lifespan
 
     def run(self) -> None:
         """Run the HTTP server."""
         import uvicorn  # noqa: PLC0415
 
-        app = create_app(self.server, self.cors_origins)
+        app = create_app(self.server, self.cors_origins, lifespan=self.lifespan)
         uvicorn.run(app, host=self.host, port=self.port, log_level="info")
 
 
@@ -226,9 +241,20 @@ def run_http_server(
     port: int = DEFAULT_PORT,
     cors_origins: list[str] | None = None,
 ) -> None:
-    """Run MCP server in HTTP mode."""
+    """Run MCP server in HTTP mode.
+
+    The MCP watch lifespan is wired unconditionally (D-01): the flag check
+    lives inside ``start_embedded_watch``, so ``SIF_MCP_WATCH`` unset keeps
+    serving byte-identical while the wiring stays cheap. The import is lazy,
+    mirroring the uvicorn lazy-import style, to keep module import light.
+    """
+    from sif.mcp.watch_host import mcp_watch_lifespan  # noqa: PLC0415
+
     backend = SearchBackend(db_path)
     server = MCPServer(backend)
     server.register_tools(create_default_tools())
-    transport = HTTPTransport(server, host=host, port=port, cors_origins=cors_origins)
+    lifespan = mcp_watch_lifespan(db_path)
+    transport = HTTPTransport(
+        server, host=host, port=port, cors_origins=cors_origins, lifespan=lifespan
+    )
     transport.run()

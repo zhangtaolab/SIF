@@ -42,9 +42,7 @@ def _make_db(db_path: Path, *, with_collection: bool) -> Path:
         db.init_schema()
         if with_collection:
             with db.connection:
-                CollectionRepository(db.connection).create(
-                    Collection(name="notes", path=str(root))
-                )
+                CollectionRepository(db.connection).create(Collection(name="notes", path=str(root)))
     finally:
         db.close()
     return root
@@ -170,7 +168,7 @@ def test_stop_embedded_watch_flushes_checkpoints_then_closes() -> None:
     watcher = MagicMock()
     watcher.stop.side_effect = lambda **_kwargs: calls.append("stop")
     db = MagicMock()
-    db.connection.execute.side_effect = lambda sql, *args, **kwargs: (
+    db.connection.execute.side_effect = lambda sql, *_args, **_kwargs: (
         calls.append(f"execute:{sql}") or MagicMock()
     )
     db.close.side_effect = lambda: calls.append("close")

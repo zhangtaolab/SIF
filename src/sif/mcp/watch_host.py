@@ -25,6 +25,8 @@ checkpoint, then close.
 
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -179,3 +181,22 @@ def stop_embedded_watch(watch: EmbeddedWatch | None) -> None:
     finally:
         watch.db.close()
     logger.info("MCP watch stopped")
+
+
+@asynccontextmanager
+async def mcp_watch_lifespan(db_path: str) -> AsyncGenerator[None, None]:
+    """FastAPI lifespan hosting the embedded watcher (D-01 HTTP wiring).
+
+    A plain async context manager — FastAPI accepts any lifespan-shaped
+    async CM, so this module stays free of a fastapi import (import-light,
+    no optional-dependency try/except). Before the yield (the app accepts
+    requests) the watcher starts; after the yield (serving ended) it stops
+    with the full D-14 teardown. The flag check lives inside
+    :func:`start_embedded_watch`, so the wiring is unconditional and cheap
+    when the opt-in is off.
+    """
+    watch = start_embedded_watch(db_path)
+    try:
+        yield
+    finally:
+        stop_embedded_watch(watch)

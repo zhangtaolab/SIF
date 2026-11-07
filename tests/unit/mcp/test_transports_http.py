@@ -347,7 +347,7 @@ class TestHTTPTransportBranches:
         ):
             transport.run()
 
-        create.assert_called_once_with(server, ["https://allowed.example"])
+        create.assert_called_once_with(server, ["https://allowed.example"], lifespan=None)
         uvicorn.run.assert_called_once_with(app, host="0.0.0.0", port=8765, log_level="info")
 
     def test_run_http_server_composes_backend_tools_and_transport(self) -> None:
@@ -355,12 +355,14 @@ class TestHTTPTransportBranches:
         server = MagicMock()
         transport = MagicMock()
         tools = [MagicMock()]
+        lifespan_cm = MagicMock()
 
         with (
             patch.object(http, "SearchBackend", return_value="backend") as backend,
             patch.object(http, "MCPServer", return_value=server) as server_type,
             patch.object(http, "create_default_tools", return_value=tools),
             patch.object(http, "HTTPTransport", return_value=transport) as transport_type,
+            patch("sif.mcp.watch_host.mcp_watch_lifespan", return_value=lifespan_cm),
         ):
             http.run_http_server(
                 "/tmp/sif-test.db",
@@ -377,6 +379,7 @@ class TestHTTPTransportBranches:
             host="localhost",
             port=9999,
             cors_origins=["https://allowed.example"],
+            lifespan=lifespan_cm,
         )
         transport.run.assert_called_once_with()
 
