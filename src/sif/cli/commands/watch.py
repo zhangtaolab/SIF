@@ -21,6 +21,7 @@ from pathlib import Path
 from types import FrameType
 
 import click
+from pydantic import ValidationError
 from rich.console import Console
 from rich.markup import escape
 from rich.progress import Progress, SpinnerColumn, TextColumn
@@ -204,7 +205,16 @@ def watch_cmd(
 
     from sif.config.settings import get_settings  # noqa: PLC0415
 
-    settings = get_settings()
+    try:
+        settings = get_settings()
+    except ValidationError as e:
+        # IN-02: the group-level conversion (main._get_default_db_path)
+        # only runs when --index is OMITTED — Click never invokes a default
+        # callable for a supplied option. With an explicit --index this is
+        # the first Settings construction, so an invalid value (e.g.
+        # SIF_WATCH_UPDATE_DEPTH=bogus) must surface as a config error
+        # naming the field, not a raw pydantic traceback.
+        raise click.ClickException(str(e)) from e
     lock_timeout = settings.lock_wait_timeout
     debounce_interval = settings.watch_debounce_interval
     depth = _effective_depth(embed=embed, no_embed=no_embed, settings=settings)

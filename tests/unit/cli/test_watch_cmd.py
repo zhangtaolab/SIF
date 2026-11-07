@@ -183,6 +183,33 @@ class TestDepthMatrix:
             Settings(watch_update_depth="bogus")
 
 
+class TestInvalidSettingsSurfacing:
+    """IN-02: with an explicit ``--index``, the group's default-path callable
+    never runs, so watch_cmd's own get_settings() is the first Settings
+    construction — invalid config must surface as a ClickException there,
+    not escape as a raw pydantic traceback."""
+
+    def test_invalid_depth_with_explicit_index_is_a_click_error(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        _delenv_settings_vars(monkeypatch)
+        monkeypatch.setenv("SIF_WATCH_UPDATE_DEPTH", "bogus")
+
+        from sif.config.settings import get_settings
+
+        get_settings.cache_clear()
+        try:
+            result = CliRunner().invoke(
+                watch_mod.watch_cmd, [], obj={"index_path": tmp_path / "watch.db"}
+            )
+        finally:
+            get_settings.cache_clear()
+
+        assert result.exit_code == 1
+        assert "Invalid watch_update_depth" in result.output
+        assert not isinstance(result.exception, ValidationError)
+
+
 class TestEventRenderingEscapesMarkup:
     """IN-01: payloads (file names, collection names) are user data — Rich
     must render bracketed text like ``report[v2].md`` literally instead of
