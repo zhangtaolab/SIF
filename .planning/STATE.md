@@ -24,7 +24,7 @@ progress:
 
 - **Name:** DocSift (package `sif`)
 - **Core Value:** 用户可以在自己的笔记和文档库中，用自然语言快速、准确地找到需要的信息——无论关键词是否匹配。
-- **Current Focus:** v1.1 Live Index and Search Quality — Phase 11 (Live-Index Foundation) ready to plan
+- **Current Focus:** v1.1 Live Index and Search Quality — Phase 13 (Watch Everywhere: MCP-Embedded Refresh + Background Daemon) ready to discuss
 - **Tech Stack:** Python 3.10+, SQLite (FTS5 + sqlite-vec), Click, Pydantic, sentence-transformers, llama-cpp-python
 - See: .planning/PROJECT.md (updated 2026-11-07)
 
@@ -63,6 +63,11 @@ Progress: [███░░░░░░░] 33%
 
 Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 
+- [Phase 12]: per-burst flock — watch never holds the Phase 11 lock while idle; `update_paths` is the per-path seam all Phase 13/14 hosts reuse (cost ∝ burst size, stat-decides)
+- [Phase 12]: `FileScanner.matches` is the ONE exclusion predicate (scan and watch share it); `DEFAULT_IGNORE_PATTERNS` gained editor noise (`.sb-*`/`4913`/`.#*`/`*.tmp`)
+- [Phase 12]: D-11 missing-root guard in the shared core closed a latent `update_cmd` mass-delete bug (rglob on a missing root yields empty → sweep)
+- [Phase 12]: `--embed` computes chunk+embed strictly OUTSIDE write transactions inside the same burst lock window (embed_cmd's inside-txn shape deliberately NOT copied); lazy model load, fail-soft dimension check
+- [Phase 12]: signal shutdown = one bounded flush + `wal_checkpoint(TRUNCATE)` + exit 0; second signal exits 130 (module-level SignalState, directly invocable for tests)
 - One `LiveIndexService` watch core hosted three ways (CLI watch / MCP thread / pre-command check); `IncrementalIndexer` extracted from `update_cmd` — no third copy of the indexing loop
 - WAL + busy_timeout + BEGIN IMMEDIATE lands BEFORE any second writer process (Phase 11 is first)
 - Zero new runtime dependencies; only change is watchdog cap `>=4.0.0,<7.0.0`
@@ -110,9 +115,9 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 
 ## Session Continuity
 
-Last session: 2026-11-07T11:51:46.511Z
-Stopped at: Phase 12 complete, ready to plan Phase 13
-Resume file: .planning/phases/12-sif-watch-foreground-mvp/12-UAT.md
+Last session: 2026-11-07T12:15:00Z
+Stopped at: Phase 12 complete (UAT passed 2/2, security verified), ready to discuss Phase 13
+Resume file: None
 
-- **Next expected action:** `/gsd-plan-phase 11` (no research flag — pragma recipe fully specified in research/STACK.md)
+- **Next expected action:** `/gsd-discuss-phase 13` (Phase 13 needs context; research flags: daemon/service-install specifics already in research/STACK.md)
 - Research flags for later phases: Phase 13 (daemon/service-install specifics), Phase 16 (`SearchOptions.candidate_limit` audit + fixture design)

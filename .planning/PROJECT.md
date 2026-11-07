@@ -50,13 +50,16 @@ DocSift 是 [qmd](https://github.com/tobi/qmd) 的 Python 重构版本，一个�
 - ✓ 测试覆盖率常驻门禁：TOTAL 96.22%（1011 项测试），`[tool.coverage.report] fail_under = 90` 落地且无任何豁免行 — Validated in Phase 10（2026-11-06 重新验证 35/35 通过，fresh fingerprint）
 - ✓ 技术债收口：symlink/别名路径经 `get`/`multi-get`/MCP `get_document` 解析到已索引文档（DEBT-PN）；旧版 FTS 触发器迁移 + 检测门控 rebuild 清除陈旧索引（CR-01）；`--xml` 输出恒为良构 XML（CR-02）；全部 26 处 CLI Database 构造点上下文管理器持有、异常路径确定性关闭（WR-01） — Validated in Phase 10.1（2026-11-06 重新验证 16/16 通过，fresh fingerprint）
 
+### Validated（v1.1 进行中）
+
+- ✓ Live Index：`sif watch` 前台命令（增量重索引 + 防抖） — Validated in Phase 12
+- ✓ Live Index：更新深度可配置（默认 BM25/FTS，`--embed` 开启向量自动更新） — Validated in Phase 12（与 MCP 内嵌刷新项合并验证 LIVE-05 深度矩阵）
+
 ### Active
 
-- [ ] Live Index：`sif watch` 前台命令（增量重索引 + 防抖）
 - [ ] Live Index：MCP server 内嵌 watch 刷新
 - [ ] Live Index：后台守护进程（--detach / launchd / systemd）
 - [ ] Live Index：搜索命令前自动增量检测兜底
-- [ ] 更新深度可配置：默认 BM25/FTS，`--embed` 开启向量自动更新
 - [ ] 搜索质量：混合权重（BM25/向量/RRF k）可配置
 - [ ] 搜索质量：Query suggestions（did-you-mean）
 - [ ] 搜索质量：Reranker 调优（阈值/延迟）
@@ -101,6 +104,9 @@ DocSift 是 [qmd](https://github.com/tobi/qmd) 的 Python 重构版本，一个�
 | CLI Database 生命周期：`with Database(index_path) as db:` 自 init_schema 起持有命令体，嵌套事务块原样保留 | 成功与异常路径都确定性关闭连接（57→13 ResourceWarnings，余量测试侧）；main.py 作用域置于 try/except 内部保证异常先关句柄 | Phase 10.1 Complete |
 | XML 输出净化器 = XML 1.0 Char 产生式补集，先于 `xml_escape`/`quoteattr` 应用 | 转义只管 `<>&'"`，禁用码位归净化器管——两者不可互相替代；`ET.fromstring` 往返测试锁定 | Phase 10.1 Complete |
 | mypy 退役，ty 为唯一类型检查器 | 17 条 ty 诊断清零（断言收窄/Protocol/cast，零行为变化），全部 mypy 残留清除；typing-debt 四批次收官 | v1.0 Complete |
+| Watch 管线：per-burst flock + per-path 定向更新 | 每个防抖批次短锁（watch 空闲不持锁，D-04）；`update_paths` 成本正比于变更规模，stat 为准（D-06），Phase 13/14 宿主复用 | Phase 12 Complete |
+| 单一排除谓词 `FileScanner.matches`（扫描与 watch 同源） | LIVE-04 一致性由构造保证；`DEFAULT_IGNORE_PATTERNS` 增补编辑器噪声（.sb-*/4913/.#*/*.tmp） | Phase 12 Complete |
+| missing-root 防护在共享核心（D-11） | 顺带修复 update_cmd 对消失根目录的潜在全量删除 bug；两条更新路径都有回归测试 | Phase 12 Complete |
 | 文档内容永不作为 Rich markup 渲染 | get/multi-get 内容 `markup=False` 直出、表头 `escape()`——与 05-10/05-11 同类第三例；回归测试锁定（字面渲染、批次不中断、回退路径同等契约） | v1.0 Complete |
 | docs 局部套件 `--no-cov` | 全局 `addopts` 覆盖率 + `fail_under=90` 使 docs-only 运行必失败（CI 自 Phase 10 起恒红）；Makefile 与 docs.yml 双修 | v1.0 Complete |
 
@@ -128,4 +134,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-11-07 after v1.1 milestone start（Live Index and Search Quality 立项）*
+*Last updated: 2026-11-07 after Phase 12（`sif watch` Foreground MVP 完成）*
