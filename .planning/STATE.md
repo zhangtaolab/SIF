@@ -5,16 +5,16 @@ milestone_name: Live Index and Search Quality
 current_phase: 12
 current_phase_name: "`sif watch` Foreground MVP"
 status: executing
-stopped_at: Phase 12 context gathered
-last_updated: "2026-11-07T08:51:57.683Z"
+stopped_at: Completed 12-01-PLAN.md
+last_updated: "2026-11-07T09:46:37.650Z"
 last_activity: 2026-11-07
-last_activity_desc: Phase 11 complete, transitioned to Phase 12
-state_head: 0038e50a81cfb5d9ec51c16132d4ea3cf119e323
+last_activity_desc: Phase 12 execution started
+state_head: 10d652a1e0ba66212fd58ee11416883b87f32d69
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 6
-  completed_plans: 3
+  completed_plans: 4
 ---
 
 # DocSift — Project State
@@ -29,10 +29,10 @@ progress:
 
 ## Current Position
 
-Phase: 12 (`sif watch` Foreground MVP) — READY TO EXECUTE
-Plan: Not started
+Phase: 12 (`sif watch` Foreground MVP) — EXECUTING
+Plan: 2 of 3
 Status: Ready to execute
-Last activity: 2026-11-07 — Phase 11 complete, transitioned to Phase 12
+Last activity: 2026-11-07 — Phase 12 execution started
 
 Progress: [██░░░░░░░░] 17%
 
@@ -52,6 +52,7 @@ Progress: [██░░░░░░░░] 17%
 | Phase 11 P01 | 27 min | 3 tasks | 13 files |
 | Phase 11 P02 | 12 min | 2 tasks | 5 files |
 | Phase 11 P03 | 9 min | 2 tasks | 11 files |
+| Phase 12 P01 | 42 min | 2 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -75,6 +76,11 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 - [Phase 11]: 11-03: commit-on-clean-exit for the surviving DatabaseConnection is proven via transaction(); the retired duplicate's connect() was the only connect() that committed (D-07 consequence)
 - [Phase 11]: 11-03: embed_cmd joins update_cmd under the same per-DB flock (D-01) — lock acquired after model load and dimension checks; per-collection transaction structure unchanged (D-05); REFACTOR skipped to avoid reworking 11-01's committed lock-wrap shape
 - [Phase 11]: 11-03: embed_cmd's index_lock wrap made eight test_index.py mocks materialize MagicMock/mock/<id>.lock litter in the repo root — fixed by passing tmp_path sif.db (same class as 11-01's update_cmd fix; any command that wraps Path(index_path) must never receive a mock index_path)
+- [Phase 12]: [Phase 12] FileWatcher tunables bundled into WatchConfig dataclass (plan's 8-param constructor trips PLR0913; no-noqa culture); 12-02 flags extend the struct
+- [Phase 12]: [Phase 12] fold_events resolves a both-touched-and-deleted path toward the index candidate (remove -= index): order-independent, satisfies the atomic-save truth, lossless because update_paths' stat still removes gone paths
+- [Phase 12]: [Phase 12] watch e2e waits for the banner printed AFTER observer.start() (python -u subprocess): seed-row polling alone leaves a lost-event window between the reconcile commit and arming
+- [Phase 12]: [Phase 12] EventDebouncer float interval passed via cast(int): watchdog 6.0.0 annotates int but the value only flows into Condition.wait (source-verified)
+- [Phase 12]: [Phase 12] Docs regen (make docs-generate) deferred to 12-03 per plan - docs gate test red until then; WINDOWS ledger entry open
 
 ### Pending Todos
 
@@ -95,9 +101,9 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 
 ## Session Continuity
 
-Last session: 2026-11-07T07:37:14.620Z
-Stopped at: Phase 12 context gathered
-Resume file: .planning/phases/12-sif-watch-foreground-mvp/12-CONTEXT.md
+Last session: 2026-11-07T09:46:37.545Z
+Stopped at: Completed 12-01-PLAN.md
+Resume file: None
 
 - **Next expected action:** `/gsd-plan-phase 11` (no research flag — pragma recipe fully specified in research/STACK.md)
 - Research flags for later phases: Phase 13 (daemon/service-install specifics), Phase 16 (`SearchOptions.candidate_limit` audit + fixture design)
