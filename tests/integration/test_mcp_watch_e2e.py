@@ -151,9 +151,7 @@ class _StdioServer:
         self._proc.stdin.write((json.dumps(message) + "\n").encode("utf-8"))
         self._proc.stdin.flush()
 
-    def send_request(
-        self, msg_id: int, method: str, params: dict[str, Any] | None = None
-    ) -> None:
+    def send_request(self, msg_id: int, method: str, params: dict[str, Any] | None = None) -> None:
         """Send a request with the given id."""
         self.send({"jsonrpc": "2.0", "id": msg_id, "method": method, "params": params or {}})
 
@@ -238,9 +236,7 @@ def _query(
     return payload["results"]
 
 
-def _poll_findable(
-    server: _StdioServer, path: str, needle_query: str, deadline_s: float
-) -> None:
+def _poll_findable(server: _StdioServer, path: str, needle_query: str, deadline_s: float) -> None:
     """Poll query results until ``path`` is findable — no manual update ever."""
     # Nonlocal-free mutable id: each poll gets a fresh request id.
     _msg_id = [100]
@@ -256,17 +252,19 @@ def _poll_findable(
     )
 
 
+def _parses_as_json(line: str) -> bool:
+    """True when the line is valid JSON (protocol-clean proof, Pitfall 1)."""
+    try:
+        json.loads(line)
+    except json.JSONDecodeError:
+        return False
+    return True
+
+
 def _assert_protocol_clean(server: _StdioServer) -> None:
     """Pitfall 1: every captured stdout line must parse as JSON."""
-    bad: list[str] = []
-    for line in server.stdout_lines:
-        try:
-            json.loads(line)
-        except json.JSONDecodeError:
-            bad.append(line)
-    assert not bad, (
-        f"non-JSON stdout lines corrupt the stdio JSON-RPC stream (Pitfall 1): {bad!r}"
-    )
+    bad = [line for line in server.stdout_lines if not _parses_as_json(line)]
+    assert not bad, f"non-JSON stdout lines corrupt the stdio JSON-RPC stream (Pitfall 1): {bad!r}"
 
 
 def _doc_path(notes_dir: Path, name: str) -> str:

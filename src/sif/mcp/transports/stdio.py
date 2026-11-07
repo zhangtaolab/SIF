@@ -16,6 +16,7 @@ from sif.mcp.protocol import (
     create_error_response,
 )
 from sif.mcp.server import MCPServer
+from sif.mcp.watch_host import start_embedded_watch, stop_embedded_watch
 from sif.utils.logging import get_logger
 
 
@@ -125,12 +126,23 @@ class StdioTransport:
 
 
 async def run_stdio_server(db_path: str) -> None:
-    """Run MCP server in stdio mode."""
-    backend = SearchBackend(db_path)
-    server = MCPServer(backend)
-    server.register_tools(create_default_tools())
-    transport = StdioTransport(server)
-    await transport.run()
+    """Run MCP server in stdio mode.
+
+    The embedded watcher (SIF_MCP_WATCH opt-in, D-04) starts before the
+    transport serves and stops in the ``finally`` with the D-14 flush +
+    checkpoint ordering; with the flag off the call returns ``None`` and
+    serving is byte-identical to the watcher-free path.
+    """
+    watch = start_embedded_watch(db_path)
+    try:
+        backend = SearchBackend(db_path)
+        server = MCPServer(backend)
+        server.register_tools(create_default_tools())
+        transport = StdioTransport(server)
+        await transport.run()
+    finally:
+        if watch is not None:
+            stop_embedded_watch(watch)
 
 
 def run_stdio_server_sync(db_path: str) -> None:
