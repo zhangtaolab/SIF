@@ -4,7 +4,7 @@ slug: "live-index-foundation-concurrent-db-incremental-core"
 # status lifecycle: draft (seeded by plan-phase) → validated (set by validate-phase §6)
 # audit-milestone §5.5 distinguishes NOT-VALIDATED (draft) from PARTIAL (validated + nyquist_compliant: false) (#2117)
 status: draft
-nyquist_compliant: false
+nyquist_compliant: true
 wave_0_complete: false
 created: "2026-11-07"
 ---
@@ -43,16 +43,16 @@ Task IDs are assigned at planning; rows below are the requirement-level contract
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| TBD (post-planning) | TBD | 0 | LIVE-06 | — | Factory-created connections: busy_timeout=5000, journal_mode=wal, synchronous=NORMAL, foreign_keys=on | unit | `env -u FORCE_COLOR NO_COLOR=1 pytest tests/unit/database/test_factory.py -x` | ❌ W0 | ⬜ pending |
-| TBD (post-planning) | TBD | 0 | LIVE-06 | — | Readers (CLI + MCP DatabaseConnection) query during open BEGIN IMMEDIATE write txn, zero "database is locked" | integration | `env -u FORCE_COLOR NO_COLOR=1 pytest tests/integration/test_concurrency.py -x` | ❌ W0 | ⬜ pending |
-| TBD (post-planning) | TBD | 0 | LIVE-06 | — | Second writer waits busy_timeout then proceeds (short holder); WAL switch retries under contention | unit/integration | `env -u FORCE_COLOR NO_COLOR=1 pytest tests/unit/database/test_factory.py -k wal -x` | ❌ W0 | ⬜ pending |
-| TBD (post-planning) | TBD | 0 | LIVE-07 | T-11-01 (lock-file poisoning) | flock try-lock blocks while held, acquires after release within deadline, times out cleanly, released on holder SIGKILL; lock file 0600 | unit | `env -u FORCE_COLOR NO_COLOR=1 pytest tests/unit/database/test_locking.py -x` | ❌ W0 | ⬜ pending |
-| TBD (post-planning) | TBD | 0 | LIVE-07 | — | update_cmd/embed_cmd acquire lock; loser waits then runs own pass (parent holds/releases; child exit 0) | integration (subprocess) | `env -u FORCE_COLOR NO_COLOR=1 pytest tests/integration/test_two_writer_subprocess.py -x` | ❌ W0 | ⬜ pending |
-| TBD (post-planning) | TBD | 0 | LIVE-07/SC2 | — | Two `sif index update` on same collection: each file indexed exactly once, no duplicate embedding rows, both exit 0 | integration (subprocess) | `env -u FORCE_COLOR NO_COLOR=1 pytest tests/integration/test_two_writer_subprocess.py -k duplicate -x` | ❌ W0 | ⬜ pending |
-| TBD (post-planning) | TBD | 0 | SC3 | — | Index state identical before/after extraction (documents/chunks/FTS rows + CLI Added/Updated/Removed output) | integration (golden) | `env -u FORCE_COLOR NO_COLOR=1 pytest tests/integration/test_incremental_equivalence.py -x` | ❌ W0 | ⬜ pending |
-| TBD (post-planning) | TBD | 0 | SC3/D-04 | — | Per-file commit: mid-run failure keeps completed files, failed file not half-written | unit | `env -u FORCE_COLOR NO_COLOR=1 pytest tests/unit/indexing/test_incremental.py -x` | ❌ W0 | ⬜ pending |
-| TBD (post-planning) | TBD | 0 | SC4 | — | Full quality suite green | suite | `env -u FORCE_COLOR NO_COLOR=1 pytest && ruff check src tests && ruff format --check src tests && ty check src/sif` | ✅ | ⬜ pending |
-| TBD (post-planning) | TBD | 0 | D-07 | — | Retirement: ConnectionPool/duplicate DatabaseConnection/DocumentIndexer gone, exports updated, watcher repointed, dead tests removed | suite-level | `env -u FORCE_COLOR NO_COLOR=1 pytest tests/unit/database/test_factory.py -x` (import assertions) | ❌ W0 | ⬜ pending |
+| 11-01-T2 | 01 | 1 | LIVE-06 | — | Factory-created connections: busy_timeout=5000, journal_mode=wal, synchronous=NORMAL, foreign_keys=on | unit | `env -u FORCE_COLOR NO_COLOR=1 pytest tests/unit/database/test_factory.py -x` | ❌ W0 | ⬜ pending |
+| 11-01-T3 | 01 | 1 | LIVE-06 | — | Readers (CLI + MCP DatabaseConnection) query during open BEGIN IMMEDIATE write txn, zero "database is locked" | integration | `env -u FORCE_COLOR NO_COLOR=1 pytest tests/integration/test_concurrency.py -x` | ❌ W0 | ⬜ pending |
+| 11-01-T2, 11-01-T3 | 01 | 1 | LIVE-06 | — | Second writer waits busy_timeout then proceeds (short holder); WAL switch retries under contention | unit/integration | `env -u FORCE_COLOR NO_COLOR=1 pytest tests/unit/database/test_factory.py -k wal -x` | ❌ W0 | ⬜ pending |
+| 11-01-T3 | 01 | 1 | LIVE-07 | T-11-01 (lock-file poisoning) | flock try-lock blocks while held, acquires after release within deadline, times out cleanly, released on holder SIGKILL; lock file 0600 | unit | `env -u FORCE_COLOR NO_COLOR=1 pytest tests/unit/database/test_locking.py -x` | ❌ W0 | ⬜ pending |
+| 11-01-T1, 11-03-T2 | 01, 03 | 1, 3 | LIVE-07 | — | update_cmd/embed_cmd acquire lock; loser waits then runs own pass (parent holds/releases; child exit 0) | integration (subprocess) | `env -u FORCE_COLOR NO_COLOR=1 pytest tests/integration/test_two_writer_subprocess.py -x` | ❌ W0 | ⬜ pending |
+| 11-01-T1 | 01 | 1 | LIVE-07/SC2 | — | Two `sif index update` on same collection: each file indexed exactly once, no duplicate embedding rows, both exit 0 | integration (subprocess) | `env -u FORCE_COLOR NO_COLOR=1 pytest tests/integration/test_two_writer_subprocess.py -k duplicate -x` | ❌ W0 | ⬜ pending |
+| 11-02-T2 | 02 | 2 | SC3 | — | Index state identical before/after extraction (documents/chunks/FTS rows + CLI Added/Updated/Removed output) | integration (golden) | `env -u FORCE_COLOR NO_COLOR=1 pytest tests/integration/test_incremental_equivalence.py -x` | ❌ W0 | ⬜ pending |
+| 11-02-T1 | 02 | 2 | SC3/D-04 | — | Per-file commit: mid-run failure keeps completed files, failed file not half-written | unit | `env -u FORCE_COLOR NO_COLOR=1 pytest tests/unit/indexing/test_incremental.py -x` | ❌ W0 | ⬜ pending |
+| 11-03-T2 | 03 | 3 | SC4 | — | Full quality suite green | suite | `env -u FORCE_COLOR NO_COLOR=1 pytest && ruff check src tests && ruff format --check src tests && ty check src/sif` | ✅ | ⬜ pending |
+| 11-03-T1, 11-03-T2 | 03 | 3 | D-07 | — | Retirement: ConnectionPool/duplicate DatabaseConnection/DocumentIndexer gone, exports updated, watcher repointed, dead tests removed | suite-level | `env -u FORCE_COLOR NO_COLOR=1 pytest tests/unit/database/test_factory.py -x` (import assertions) | ❌ W0 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
