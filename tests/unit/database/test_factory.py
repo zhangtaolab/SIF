@@ -130,8 +130,7 @@ class TestConnectionFactory:
 
     def test_database_package_exports_factory_and_lock(self) -> None:
         """sif.database exports create_connection and index_lock."""
-        from sif.database import create_connection as exported_factory
-        from sif.database import index_lock as exported_lock
+        from sif.database import create_connection as exported_factory, index_lock as exported_lock
 
         assert callable(exported_factory)
         assert callable(exported_lock)

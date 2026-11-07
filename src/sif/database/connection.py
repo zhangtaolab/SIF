@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-import sqlite_vec
+from sif.database.factory import create_connection
 
 
 class DatabaseConnection:
@@ -23,18 +23,7 @@ class DatabaseConnection:
 
     def _create_connection(self) -> sqlite3.Connection:
         """Create a new database connection with extensions loaded."""
-        conn = sqlite3.connect(str(self._db_path), check_same_thread=False)
-        conn.row_factory = sqlite3.Row
-
-        # Enable foreign keys
-        conn.execute("PRAGMA foreign_keys = ON")
-
-        # Load sqlite-vec extension
-        conn.enable_load_extension(True)
-        sqlite_vec.load(conn)
-        conn.enable_load_extension(False)
-
-        return conn
+        return create_connection(self._db_path)
 
     @contextmanager
     def connect(self) -> Generator[sqlite3.Connection, None, None]:
