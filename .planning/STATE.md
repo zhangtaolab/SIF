@@ -5,16 +5,16 @@ milestone_name: Live Index and Search Quality
 current_phase: 11
 current_phase_name: Live-Index Foundation (Concurrent DB + Incremental Core)
 status: executing
-stopped_at: Phase 11 context gathered
-last_updated: "2026-11-07T05:37:54.632Z"
+stopped_at: Completed 11-01-PLAN.md
+last_updated: "2026-11-07T06:13:29.725Z"
 last_activity: 2026-11-07
-last_activity_desc: v1.1 roadmap created (6 phases, 21/21 requirements mapped)
-state_head: 96c450b566549c0d8aa271daf6b6b5c65e53cbac
+last_activity_desc: Phase 11 execution started
+state_head: b7c386d246697d8807ab080fde8a0595c5fd66e2
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 3
-  completed_plans: 0
+  completed_plans: 1
 ---
 
 # DocSift — Project State
@@ -29,10 +29,10 @@ progress:
 
 ## Current Position
 
-Phase: 11 (Live-Index Foundation (Concurrent DB + Incremental Core)) — READY TO EXECUTE
-Plan: — (not yet planned)
+Phase: 11 (Live-Index Foundation (Concurrent DB + Incremental Core)) — EXECUTING
+Plan: 2 of 3
 Status: Ready to execute
-Last activity: 2026-11-07 — v1.1 roadmap created (6 phases, 21/21 requirements mapped)
+Last activity: 2026-11-07 — Phase 11 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -45,6 +45,11 @@ Progress: [░░░░░░░░░░] 0%
 | Phase | Plans | Status |
 |-------|-------|--------|
 | 11-16 (v1.1) | 0 | Not started |
+**Per-Plan Metrics:**
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| Phase 11 P01 | 27 min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -58,6 +63,9 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 - Search-quality track (Phases 15-16) is orthogonal to watch hosts (12-14); only Phase 11 is shared
 - QUAL-06 staleness marking slotted with pre-command staleness detection (Phase 14)
 - Bench expansion + held-out split lands together with the tuning conclusions it arbitrates (Phase 16)
+- [Phase 11]: Legacy duplicate DatabaseConnection (database.py) routed through the factory ahead of its 11-03 retirement: deleting the sqlite_vec import (plan-mandated) while leaving the class untouched would break ruff F821 and two patch-target tests
+- [Phase 11]: index_lock deadline expiry breaks to the yield instead of returning - a pre-yield return from a contextmanager raises RuntimeError and crashes the D-02 loser path (caught by the 11-01 Task 3 RED test)
+- [Phase 11]: WAL retry is a for-else with an unguarded final attempt (persistent contention surfaces the original OperationalError; non-wal row degrades with a warning); busy-timeout wait test made deterministic instead of the plan's racy busy_timeout=200 numbers
 
 ### Pending Todos
 
@@ -78,9 +86,9 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 
 ## Session Continuity
 
-Last session: 2026-11-07T04:52:31.016Z
-Stopped at: Phase 11 context gathered
-Resume file: .planning/phases/11-live-index-foundation-concurrent-db-incremental-core/11-CONTEXT.md
+Last session: 2026-11-07T06:13:29.711Z
+Stopped at: Completed 11-01-PLAN.md
+Resume file: None
 
 - **Next expected action:** `/gsd-plan-phase 11` (no research flag — pragma recipe fully specified in research/STACK.md)
 - Research flags for later phases: Phase 13 (daemon/service-install specifics), Phase 16 (`SearchOptions.candidate_limit` audit + fixture design)
