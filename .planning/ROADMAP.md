@@ -73,7 +73,16 @@ Plans:
   3. Temporary files (`.swp`, `.sb-*`, `4913`, `.DS_Store`, etc.) never enter the index — watch exclusions behave identically to scanner ignore_patterns
   4. Default update depth is BM25/FTS only; `--embed` explicitly opts into vector updates (embedding never runs as a background default)
   5. A collection root that disappears (unmounted or renamed) is not treated as mass deletion — the index survives and recovers when the root returns
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+**Wave 1**
+- [ ] 12-01-PLAN.md — End-to-end watch tracer (observer → EventDebouncer → fold → worker → per-burst flock → update_paths) + missing-root guard + shared exclusion predicate + synthetic proof battery
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 12-02-PLAN.md — CLI surface (-c/--embed/--verbose), signal-driven shutdown + WAL checkpoint (D-14), missing-root recovery (D-12), `--embed` inline depth outside write txns (LIVE-05)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 12-03-PLAN.md — Real-FS e2e battery (SC1-5), docs regeneration, full quality gate
 
 ### Phase 13: Watch Everywhere (MCP-Embedded Refresh + Background Daemon)
 **Goal**: The index stays fresh with no terminal window open — the proven watch loop hosted inside the MCP server and as an installable background daemon.
@@ -124,7 +133,7 @@ Plans:
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 11. Live-Index Foundation | v1.1 | 3/3 | Complete    | 2026-11-07 |
-| 12. `sif watch` Foreground MVP | v1.1 | 0/TBD | Not started | - |
+| 12. `sif watch` Foreground MVP | v1.1 | 0/3 | Not started | - |
 | 13. Watch Everywhere (MCP + Daemon) | v1.1 | 0/TBD | Not started | - |
 | 14. Freshness Floor (Pre-Command + Staleness) | v1.1 | 0/TBD | Not started | - |
 | 15. Search Quality Configuration | v1.1 | 0/TBD | Not started | - |
