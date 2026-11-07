@@ -80,32 +80,3 @@ class Database:
             self._schema = SchemaManager(self.connection, embedding_dim=settings.embedding_dim)
         self._schema.drop_all()
         self._schema.create_all()
-
-
-class DatabaseConnection:
-    """Lightweight database connection wrapper.
-
-    .. deprecated::
-        Duplicate of :class:`sif.database.connection.DatabaseConnection`;
-        retired in plan 11-03 (D-07). Kept working — connections route
-        through the shared factory — until then.
-    """
-
-    def __init__(self, db_path: str | Path) -> None:
-        """Initialize the database connection wrapper."""
-        self.db_path = Path(db_path).expanduser().resolve()
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-
-    @contextmanager
-    def connect(self) -> Generator[sqlite3.Connection, None, None]:
-        """Create a connection context."""
-        conn = create_connection(self.db_path)
-
-        try:
-            yield conn
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()

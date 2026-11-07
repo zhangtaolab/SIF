@@ -12,7 +12,7 @@ from sif.utils.logging import get_logger
 
 
 if TYPE_CHECKING:
-    from sif.indexing.indexer import DocumentIndexer
+    from sif.indexing.incremental import IncrementalIndexer
 
 logger = get_logger(__name__)
 
@@ -28,14 +28,14 @@ class IndexingEventHandler(FileSystemEventHandler):
     def __init__(
         self,
         collection_id: str,
-        indexer: "DocumentIndexer",
+        indexer: "IncrementalIndexer",
         extensions: set[str] | None = None,
     ) -> None:
         """Initialize event handler.
 
         Args:
             collection_id: Collection ID
-            indexer: Document indexer
+            indexer: Incremental indexer
             extensions: File extensions to watch
         """
         self._collection_id = collection_id
@@ -103,13 +103,13 @@ class FileWatcher:
 
     def __init__(
         self,
-        indexer: "DocumentIndexer",
+        indexer: "IncrementalIndexer",
         extensions: set[str] | None = None,
     ) -> None:
         """Initialize file watcher.
 
         Args:
-            indexer: Document indexer
+            indexer: Incremental indexer
             extensions: File extensions to watch
         """
         self._indexer = indexer
