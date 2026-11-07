@@ -9,11 +9,11 @@ findings:
     title: "MCP HTTP transport crashes at startup — lifespan passed as invoked context manager, not a factory"
   - id: WR-01
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "Shutdown WAL checkpoint bypasses the worker-liveness gate — can execute on the same sqlite connection as a still-live worker"
   - id: WR-02
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "Debouncer thread leaked on every missing-root disappear/return cycle (regression vs. the flat-list implementation)"
   - id: WR-03
     severity: warning
@@ -39,7 +39,7 @@ findings:
     severity: info
     disposition: open
     title: "`SESSION_MAX_AGE` is dead — sessions never expire by age"
-open: 6
+open: 4
 total: 9
 recorded: 2026-11-07T17:33:36.673Z
 ---
@@ -49,8 +49,8 @@ recorded: 2026-11-07T17:33:36.673Z
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
 | CR-01 | critical | fixed | 13-REVIEW-FIX.md |
-| WR-01 | warning | open | - |
-| WR-02 | warning | open | - |
+| WR-01 | warning | fixed | 13-REVIEW-FIX.md (title truncated in fix report; verified: commit e3156da) |
+| WR-02 | warning | fixed | 13-REVIEW-FIX.md (title truncated in fix report; verified: commit 8039a3e) |
 | WR-03 | warning | fixed | 13-REVIEW-FIX.md |
 | WR-04 | warning | fixed | 13-REVIEW-FIX.md |
 | IN-01 | info | open | - |
