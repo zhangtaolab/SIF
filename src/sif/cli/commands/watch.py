@@ -15,6 +15,12 @@ opt-ins wired from settings (D-15 live rescope within the ``-c`` filter,
 D-16 idle WAL checkpoint); ``--stop`` corroborates the PID file's identity
 and escalates SIGTERM -> bounded wait -> SIGKILL (D-05, Pitfall 3); the PID
 file itself is management metadata only — flock stays the sole arbitration.
+
+Phase 13-04 adds the OS-supervisor path (SC3): ``--install-service``
+generates and installs a launchd LaunchAgent / systemd user unit whose argv
+runs this same FOREGROUND command with the install-time flags baked in
+(the supervised process never forks); ``--uninstall-service`` stops the
+service and removes the artifact (D-11/D-12/D-13).
 """
 
 from __future__ import annotations
@@ -44,7 +50,7 @@ from sif.database.locking import index_lock
 from sif.database.repositories import CollectionRepository
 from sif.indexing.incremental import IncrementalIndexer
 from sif.indexing.watcher import FileWatcher, WatchConfig
-from sif.utils import daemon
+from sif.utils import daemon, service
 
 
 console = Console()
@@ -399,6 +405,88 @@ def _run_stop(index_path: str | Path) -> None:
         console.print("[yellow]Watch daemon is not running (stale PID file removed).[/yellow]")
 
 
+def _service_manager() -> str:
+    """Derive the platform's service manager (D-13): launchd on macOS, systemd elsewhere."""
+    return service.LAUNCHD_MANAGER if sys.platform == "darwin" else service.SYSTEMD_MANAGER
+
+
+def _service_argv_tail(params: WatchHostParams, collections: tuple[str, ...]) -> list[str]:
+    """The baked tail (D-11): ``-c`` names plus ``--embed`` iff the installed depth embeds.
+
+    The service replays exactly what was installed — an absolute interpreter
+    and absolute index path come from the service module, so the supervised
+    process never depends on a user PATH or cwd.
+    """
+    tail: list[str] = []
+    for name in dict.fromkeys(collections):
+        tail.extend(["-c", name])
+    if params.depth == "embed":
+        tail.append("--embed")
+    return tail
+
+
+def _run_install_service(params: WatchHostParams, collections: tuple[str, ...]) -> None:
+    """Install path (D-11/D-12/D-13): generate, write, enable, start, verify."""
+    abs_db = Path(params.index_path).expanduser().resolve()
+    manager = _service_manager()
+    try:
+        result = service.install_watch_service(
+            abs_db, _service_argv_tail(params, collections), manager=manager
+        )
+    except (service.ServiceManagerMissing, service.ServiceCommandError) as e:
+        raise click.ClickException(str(e)) from e
+    console.print("[green]Watch service installed and running.[/green]")
+    console.print(f"[dim]Artifact: {escape(str(result.artifact_path))}[/dim]")
+    console.print(f"[dim]Logs: {escape(result.log_location)}[/dim]")
+    console.print(f"[dim]Verify: {escape(result.verify_command)}[/dim]")
+    if manager == service.SYSTEMD_MANAGER:
+        # D-13: survive-logout is surfaced, never silently assumed — the user
+        # manager ends with the last session unless linger is enabled.
+        console.print(
+            "[dim]To keep the service running after your last session ends: "
+            "loginctl enable-linger $USER[/dim]"
+        )
+
+
+def _run_uninstall_service() -> None:
+    """Uninstall path (D-11/D-12): stop the service, then remove the artifact."""
+    try:
+        removed = service.uninstall_watch_service(manager=_service_manager())
+    except (service.ServiceManagerMissing, service.ServiceCommandError) as e:
+        raise click.ClickException(str(e)) from e
+    console.print(f"[green]Watch service stopped and removed: {escape(str(removed))}[/green]")
+
+
+def _check_lifecycle_guards(
+    *,
+    detach: bool,
+    stop: bool,
+    log_file: str | None,
+    install_service: bool,
+    uninstall_service: bool,
+) -> None:
+    """Flag-combination guards for the lifecycle family (13-02/13-04).
+
+    SC3 pins the important one: the installed service runs the foreground
+    watcher under the OS supervisor and never forks, so the detach path
+    (double-fork) must never be combined with it.
+    """
+    if detach and stop:
+        raise click.ClickException("--detach and --stop are mutually exclusive.")
+    if log_file is not None and not detach:
+        raise click.ClickException("--log-file requires --detach.")
+    if install_service and uninstall_service:
+        raise click.ClickException(
+            "--install-service and --uninstall-service are mutually exclusive."
+        )
+    if (install_service or uninstall_service) and (detach or stop):
+        raise click.ClickException(
+            "--install-service/--uninstall-service cannot be combined with "
+            "--detach/--stop: the installed service runs the foreground watcher "
+            "under the OS supervisor (no forking)."
+        )
+
+
 @click.command("watch")
 @click.option(
     "--collection",
@@ -438,6 +526,18 @@ def _run_stop(index_path: str | Path) -> None:
     "--log-file",
     help="Daemon log file path (requires --detach; default: platform log dir)",
 )
+@click.option(
+    "--install-service",
+    is_flag=True,
+    help="Generate and install a launchd LaunchAgent (macOS) or systemd user unit "
+    "(Linux) running the FOREGROUND watcher under the OS supervisor; the -c and "
+    "--embed flags given now are baked into the service definition",
+)
+@click.option(
+    "--uninstall-service",
+    is_flag=True,
+    help="Stop the installed watch service and remove its artifact",
+)
 @click.pass_context
 def watch_cmd(  # noqa: PLR0913
     ctx: click.Context,
@@ -448,6 +548,8 @@ def watch_cmd(  # noqa: PLR0913
     detach: bool,
     stop: bool,
     log_file: str | None,
+    install_service: bool,
+    uninstall_service: bool,
 ) -> None:
     """Watch collections and keep the index current as files change.
 
@@ -456,13 +558,19 @@ def watch_cmd(  # noqa: PLR0913
     """
     index_path = ctx.obj["index_path"]
 
-    if detach and stop:
-        raise click.ClickException("--detach and --stop are mutually exclusive.")
-    if log_file is not None and not detach:
-        raise click.ClickException("--log-file requires --detach.")
+    _check_lifecycle_guards(
+        detach=detach,
+        stop=stop,
+        log_file=log_file,
+        install_service=install_service,
+        uninstall_service=uninstall_service,
+    )
 
     if stop:
         _run_stop(index_path)
+        return
+    if uninstall_service:
+        _run_uninstall_service()
         return
 
     from sif.config.settings import get_settings  # noqa: PLC0415
@@ -485,6 +593,10 @@ def watch_cmd(  # noqa: PLR0913
         restat_interval=settings.watch_restat_interval,
         verbose=verbose,
     )
+
+    if install_service:
+        _run_install_service(params, collections)
+        return
 
     if detach:
         # Pitfall 2: the fork happens before any Database, observer, or

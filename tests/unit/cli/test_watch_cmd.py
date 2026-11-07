@@ -343,9 +343,12 @@ class TestServiceFlags:
             )
 
         assert result.exit_code == 0
-        assert str(artifact) in result.output
-        assert fake_result.log_location in result.output
-        assert "launchctl print" in result.output
+        # Rich folds the long tmp path across 80-column lines; comparing with
+        # newlines stripped keeps the assertion about content, not wrapping.
+        flat_output = result.output.replace("\n", "")
+        assert str(artifact) in flat_output
+        assert fake_result.log_location in flat_output
+        assert "launchctl print" in flat_output
         assert captured["tail"] == ["-c", "notes", "--embed"]
         assert captured["manager"] == ("launchd" if sys.platform == "darwin" else "systemd")
         # The service must not depend on a user cwd: the db path is absolute.
@@ -363,7 +366,7 @@ class TestServiceFlags:
         monkeypatch.setattr(
             watch_mod.service,
             "install_watch_service",
-            lambda *args, **_kwargs: fake_result,
+            lambda *_args, **_kwargs: fake_result,
         )
 
         with patch("sif.config.settings.get_settings", return_value=_test_settings()):
@@ -379,9 +382,7 @@ class TestServiceFlags:
     def test_uninstall_reports_stop_then_remove(self, tmp_path, monkeypatch) -> None:
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         plist = tmp_path / "Library" / "LaunchAgents" / "com.docsif.watch.plist"
-        monkeypatch.setattr(
-            watch_mod.service, "uninstall_watch_service", lambda **_kwargs: plist
-        )
+        monkeypatch.setattr(watch_mod.service, "uninstall_watch_service", lambda **_kwargs: plist)
 
         result = CliRunner().invoke(
             watch_mod.watch_cmd,
@@ -390,7 +391,7 @@ class TestServiceFlags:
         )
 
         assert result.exit_code == 0
-        assert str(plist) in result.output
+        assert str(plist) in result.output.replace("\n", "")
         assert "stopped" in result.output
         assert "removed" in result.output
 

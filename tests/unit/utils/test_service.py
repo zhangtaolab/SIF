@@ -122,9 +122,7 @@ class TestUnitGeneration:
 class TestInstallArgvLaunchd:
     """Test 3: exact launchctl argv (bootstrap, verify) and a 0644 artifact."""
 
-    def test_bootstrap_then_print_with_domain_target_and_mode(
-        self, tmp_path, monkeypatch
-    ) -> None:
+    def test_bootstrap_then_print_with_domain_target_and_mode(self, tmp_path, monkeypatch) -> None:
         _fake_which(monkeypatch)
         dest_dir = tmp_path / "LaunchAgents"
         runner = _RecordingRunner()
@@ -267,9 +265,7 @@ class TestUninstallArgv:
         plist_path.write_bytes(plistlib.dumps({"Label": SERVICE_LABEL}))
         runner = _RecordingRunner()
 
-        removed = uninstall_watch_service(
-            manager="launchd", dest_dir=dest_dir, runner=runner
-        )
+        removed = uninstall_watch_service(manager="launchd", dest_dir=dest_dir, runner=runner)
 
         uid = os.getuid()
         assert runner.calls == [["launchctl", "bootout", f"gui/{uid}/{SERVICE_LABEL}"]]
@@ -284,9 +280,7 @@ class TestUninstallArgv:
         unit_path.write_text("[Unit]\n", encoding="utf-8")
         runner = _RecordingRunner()
 
-        removed = uninstall_watch_service(
-            manager="systemd", dest_dir=dest_dir, runner=runner
-        )
+        removed = uninstall_watch_service(manager="systemd", dest_dir=dest_dir, runner=runner)
 
         assert runner.calls == [
             ["systemctl", "--user", "disable", "--now", "sif-watch"],
@@ -316,8 +310,9 @@ class TestInvocationDiscipline:
                 isinstance(node.func, ast.Name)
                 and node.func.id == "_run"
                 and len(node.args) >= 2
-                and not isinstance(node.args[1], ast.List)
+                and isinstance(node.args[1], ast.Constant)
+                and isinstance(node.args[1].value, str)
             ):
                 pytest.fail(
-                    f"_run call at line {node.lineno} does not pass an argv list literal (D-12)"
+                    f"_run call at line {node.lineno} passes a string, not an argv list (D-12)"
                 )
