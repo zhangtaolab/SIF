@@ -652,6 +652,94 @@ class TestWatchPipeline:
         assert results[0] == IncrementalResult(added=0, updated=0, removed=0, unchanged=2)
 
 
+class TestStopFlushGate:
+    """CR-01: the bounded flush runs only once the worker thread has exited.
+
+    ``Thread.join(timeout=...)`` returns silently when the thread is still
+    alive, and a job can legitimately outlast the join (flock wait up to
+    lock_timeout, first-use model load at embed depth). Draining then would
+    run jobs on the calling thread concurrently with the still-live worker
+    on the SAME connection — two threads interleaving BEGIN IMMEDIATE
+    transactions breaks per-file atomicity (D-04). Synthetic worker fakes,
+    zero timing (D-15).
+    """
+
+    def _make_watcher(self, conn: sqlite3.Connection, db_path: Path) -> FileWatcher:
+        """Build a FileWatcher over the seeded 'notes' collection (never started)."""
+        from sif.database.repositories import CollectionRepository
+
+        coll = CollectionRepository(conn).get_by_name("notes")
+        assert coll is not None
+        return FileWatcher([coll], conn, db_path)
+
+    def test_stop_skips_flush_when_worker_join_times_out(
+        self, tmp_path, monkeypatch, caplog
+    ) -> None:
+        """A still-alive worker after the join: flush skipped, ONE warning logged."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "watch.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        (notes / "a.md").write_text(BODY_ALPHA, encoding="utf-8")
+        _seed_collection(db_path, notes)
+
+        drained: list[bool] = []
+        db = Database(db_path)
+        try:
+            watcher = self._make_watcher(db.connection, db_path)
+            monkeypatch.setattr(watcher, "_drain_once", lambda: drained.append(True))
+
+            class BusyWorker:
+                """join() returns with the thread still 'alive' (timed out)."""
+
+                def join(self, timeout: float | None = None) -> None:  # noqa: ARG002
+                    return None
+
+                def is_alive(self) -> bool:
+                    return True
+
+            watcher._worker = BusyWorker()  # type: ignore[assignment]
+            with caplog.at_level(logging.WARNING, logger="sif.indexing.watcher"):
+                watcher.stop(flush=True)
+        finally:
+            db.close()
+
+        assert drained == []
+        busy = [r for r in caplog.records if "still busy" in r.message]
+        assert len(busy) == 1
+
+    def test_stop_flushes_once_worker_exited(self, tmp_path, monkeypatch) -> None:
+        """A joined (dead) worker: the bounded flush runs exactly once."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "watch.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        (notes / "a.md").write_text(BODY_ALPHA, encoding="utf-8")
+        _seed_collection(db_path, notes)
+
+        drained: list[bool] = []
+        db = Database(db_path)
+        try:
+            watcher = self._make_watcher(db.connection, db_path)
+            monkeypatch.setattr(watcher, "_drain_once", lambda: drained.append(True))
+
+            class DoneWorker:
+                """join() returns with the thread exited."""
+
+                def join(self, timeout: float | None = None) -> None:  # noqa: ARG002
+                    return None
+
+                def is_alive(self) -> bool:
+                    return False
+
+            watcher._worker = DoneWorker()  # type: ignore[assignment]
+            watcher.stop(flush=True)
+        finally:
+            db.close()
+
+        assert drained == [True]
+
+
 class TestRecoveryTick:
     """D-12 missing-root recovery, zero timing: the tick is invoked directly.
 

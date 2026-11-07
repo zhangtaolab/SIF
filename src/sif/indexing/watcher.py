@@ -376,12 +376,22 @@ class FileWatcher:
             debouncer.stop()
         # The worker exits on the stop flag; queued work is then drained on
         # this thread so no two threads ever share the connection mid-job.
+        # A timed-out join means a job legitimately still runs (flock wait up
+        # to lock_timeout, first-use model load) — the flush is then skipped
+        # rather than racing the live worker on the same connection (CR-01).
         self._stop_event.set()
         # Wake a worker parked on its re-stat-timeout idle wait so the join
         # below never waits out the interval (D-14 bounded stop).
         self._queue.put(_WORKER_STOP_SENTINEL)
         if self._worker is not None:
             self._worker.join(timeout=_WORKER_JOIN_TIMEOUT_SECONDS)
+            if flush and self._worker.is_alive():
+                logger.warning(
+                    "watch worker still busy after %.1fs; skipping bounded flush "
+                    "(jobs stay queued)",
+                    _WORKER_JOIN_TIMEOUT_SECONDS,
+                )
+                flush = False
         if flush:
             self._drain_once()
         if self._observer is not None:
