@@ -35,7 +35,7 @@ Full detail: `.planning/milestones/v1.0-ROADMAP.md`
 **Track structure:** Phase 11 is the shared foundation (WAL hardening lands before any second writer process exists). Phases 12-14 form the live-index track (watch hosts, then freshness floor). Phases 15-16 form the search-quality track — orthogonal to 12-14, depending only on 11; bench expansion arrives together with the tuning conclusions it arbitrates. Research SUMMARY.md's suggested phases 1-8 map onto roadmap phases: 1→11, 2→12, 3+4→13, 5→14, 6+7→15, 8→16.
 
 - [x] **Phase 11: Live-Index Foundation (Concurrent DB + Incremental Core)** - WAL/busy_timeout/BEGIN IMMEDIATE hardening, IncrementalIndexer extraction, flock single-writer arbitration (completed 2026-11-07)
-- [ ] **Phase 12: `sif watch` Foreground MVP** - File changes auto-reindex with debounce, atomic-save/move handling, temp-file exclusion, tiered depth (`--embed`), missing-root protection
+- [x] **Phase 12: `sif watch` Foreground MVP** - File changes auto-reindex with debounce, atomic-save/move handling, temp-file exclusion, tiered depth (`--embed`), missing-root protection (completed 2026-11-07)
 - [ ] **Phase 13: Watch Everywhere (MCP-Embedded Refresh + Background Daemon)** - `SIF_MCP_WATCH=1` embedded refresh; `--detach` + launchd/systemd service install
 - [ ] **Phase 14: Freshness Floor (Pre-Command Refresh + Staleness Marking)** - Stat-based drift refresh before search with no daemon running; staleness markers on vector-lagging results
 - [ ] **Phase 15: Search Quality Configuration (Weights + Suggestions)** - `rrf_k`/BM25/vector weights configurable with unchanged defaults; did-you-mean + history suggestions; `sif suggest`
@@ -73,7 +73,7 @@ Plans:
   3. Temporary files (`.swp`, `.sb-*`, `4913`, `.DS_Store`, etc.) never enter the index — watch exclusions behave identically to scanner ignore_patterns
   4. Default update depth is BM25/FTS only; `--embed` explicitly opts into vector updates (embedding never runs as a background default)
   5. A collection root that disappears (unmounted or renamed) is not treated as mass deletion — the index survives and recovers when the root returns
-**Plans**: 3/3 plans executed
+**Plans**: 3/3 plans complete
 Plans:
 **Wave 1**
 - [x] 12-01-PLAN.md — End-to-end watch tracer (observer → EventDebouncer → fold → worker → per-burst flock → update_paths) + missing-root guard + shared exclusion predicate + synthetic proof battery
@@ -133,7 +133,7 @@ Plans:
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 11. Live-Index Foundation | v1.1 | 3/3 | Complete    | 2026-11-07 |
-| 12. `sif watch` Foreground MVP | v1.1 | 3/3 | In Progress | - |
+| 12. `sif watch` Foreground MVP | v1.1 | 3/3 | Complete    | 2026-11-07 |
 | 13. Watch Everywhere (MCP + Daemon) | v1.1 | 0/TBD | Not started | - |
 | 14. Freshness Floor (Pre-Command + Staleness) | v1.1 | 0/TBD | Not started | - |
 | 15. Search Quality Configuration | v1.1 | 0/TBD | Not started | - |
