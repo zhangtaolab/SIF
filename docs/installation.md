@@ -20,7 +20,7 @@ pip install docsif
 For full functionality including embeddings:
 
 ```bash
-pip install "docdocsif[all]"
+pip install "docsif[all]"
 ```
 
 ### Method 2: Install from Source
@@ -57,7 +57,7 @@ SIF has several optional dependency groups:
 For vector search functionality:
 
 ```bash
-pip install "docdocsif[embed]"
+pip install "docsif[embed]"
 ```
 
 This installs:
@@ -71,7 +71,7 @@ With this extra installed, the local embedding backends pick their compute devic
 For contributing to SIF:
 
 ```bash
-pip install "docdocsif[dev]"
+pip install "docsif[dev]"
 ```
 
 This installs:
@@ -86,7 +86,7 @@ This installs:
 To install everything:
 
 ```bash
-pip install "docdocsif[all]"
+pip install "docsif[all]"
 ```
 
 ## Platform-Specific Instructions
@@ -145,7 +145,7 @@ sif --help
 
 Expected output:
 ```
-sif, version 1.0.0
+sif, version 1.0.1
 
 Usage: sif [OPTIONS] COMMAND [ARGS]...
 

@@ -13,7 +13,7 @@ pip install docsif
 For full functionality including embeddings:
 
 ```bash
-pip install "docdocsif[all]"
+pip install "docsif[all]"
 ```
 
 Verify installation:
@@ -465,9 +465,9 @@ Optional, depending on which features you plan to use:
   search, install one of the extras:
 
   ```bash
-  pip install "docdocsif[embed]"   # sentence-transformers and modelscope backends
+  pip install "docsif[embed]"   # sentence-transformers and modelscope backends
   # or
-  pip install "docdocsif[all]"     # adds GGUF (llama-cpp-python) and OpenAI API support
+  pip install "docsif[all]"     # adds GGUF (llama-cpp-python) and OpenAI API support
   ```
 
   The first `sif index embed` run downloads the default embedding model

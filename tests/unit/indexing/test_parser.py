@@ -27,10 +27,15 @@ class TestDocumentParsers:
         result = parser.parse(file_path)
 
         assert result.path == str(file_path.resolve())
-        assert result.content == "# 搜索 🔍\n\n你好世界 Café é"
         assert result.title == "本地知识库"
         assert result.metadata == {"title": "本地知识库", "author": "测试"}
-        assert result.checksum == hashlib.sha256(content.encode("utf-8")).hexdigest()
+        # Checksum covers the parsed body (frontmatter stripped, trailing
+        # whitespace rstripped), matching the storage convention in
+        # core.models.Document.__post_init__ — hashing the whole raw file would
+        # make every stored checksum disagree with the create path and force a
+        # full-library rewrite on every `index update`.
+        assert not result.content.startswith("---")
+        assert result.checksum == hashlib.sha256(result.content.encode("utf-8")).hexdigest()
         assert result.mtime == file_path.stat().st_mtime
 
     @pytest.mark.parametrize(
