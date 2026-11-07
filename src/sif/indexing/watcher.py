@@ -509,12 +509,7 @@ class FileWatcher:
         collection, folded = job
         paths = folded.index_candidates | folded.remove_candidates
         if folded.needs_reconcile:
-            # Reconcile jobs stay BM25-only: the per-file embed leg applies
-            # to burst jobs, whose changed paths are computable.
-            with index_lock(self._db_path, self._config.lock_timeout):
-                result = IncrementalIndexer(self._conn).update_collection(
-                    collection, progress=self._config.on_event
-                )
+            result = self._run_reconcile(collection)
         elif paths:
             with index_lock(self._db_path, self._config.lock_timeout):
                 result = self._run_burst(collection, folded)
@@ -523,6 +518,30 @@ class FileWatcher:
             return
         if self._config.on_batch is not None:
             self._config.on_batch(collection, result)
+
+    def _run_reconcile(self, collection: Collection) -> IncrementalResult:
+        """One full-collection BM25 pass (directory move, returning root).
+
+        The core pass stays BM25-only, but its update branch purges chunks
+        and embeddings for every changed document. At embed depth that
+        purge must not strand those documents vector-less (IN-04): the
+        changed set — computable as a checksum diff around the pass — is
+        fed through the embed leg in the SAME lock window (D-09), because
+        the burst change detector alone would never re-select paths whose
+        fresh checksums the reconcile just committed.
+        """
+        with index_lock(self._db_path, self._config.lock_timeout):
+            before = (
+                self._collection_checksums(collection) if self._config.depth == "embed" else None
+            )
+            result = IncrementalIndexer(self._conn).update_collection(
+                collection, progress=self._config.on_event
+            )
+            if before is not None:
+                changed = self._changed_since(collection, before)
+                if changed:
+                    self._embed.embed_documents(collection, changed, self._config.on_event)
+            return result
 
     def _run_burst(self, collection: Collection, folded: FoldResult) -> IncrementalResult:
         """BM25 leg first, then the inline embed leg for changed paths (D-09)."""
@@ -546,6 +565,18 @@ class FileWatcher:
             doc = self._doc_repo.get_by_path(str(path), collection.id)
             snapshots[str(path)] = doc.checksum if doc else None
         return snapshots
+
+    def _collection_checksums(self, collection: Collection) -> dict[str, str | None]:
+        """Snapshot {path: checksum} for every stored document in the collection."""
+        return {doc.path: doc.checksum for doc in self._doc_repo.list_by_collection(collection.id)}
+
+    def _changed_since(self, collection: Collection, before: dict[str, str | None]) -> set[Path]:
+        """Paths whose stored checksum appeared or changed since ``before``."""
+        return {
+            Path(doc.path)
+            for doc in self._doc_repo.list_by_collection(collection.id)
+            if doc.checksum != before.get(doc.path)
+        }
 
     def _path_changed(
         self, collection: Collection, path: Path, before: dict[str, str | None]

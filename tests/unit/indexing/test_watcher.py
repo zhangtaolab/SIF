@@ -1334,3 +1334,56 @@ class TestEmbedDepth:
         assert all(row[1] is not None for row in rows_a)
         assert len(rows_b) >= 1
         assert all(row[1] is not None for row in rows_b)
+
+    def test_reconcile_at_embed_depth_rewrites_purged_vectors(self, tmp_path, monkeypatch):
+        """IN-04: a reconcile job (directory move, returning root) at embed
+        depth re-embeds the documents its BM25 pass changed — without the
+        checksum-diff feed, the update branch's chunk+vector purge would
+        strand them vector-less under fresh checksums that no later burst's
+        change detector ever re-selects."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "watch.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        doc_file = notes / "a.md"
+        doc_file.write_text(BODY_ALPHA, encoding="utf-8")
+        _seed_collection(db_path, notes)
+
+        manager = _embed_manager_mock()
+        db = Database(db_path)
+        try:
+            from sif.database.repositories import CollectionRepository
+
+            coll = CollectionRepository(db.connection).get_by_name("notes")
+            assert coll is not None
+            with (
+                patch("sif.config.settings.get_settings", return_value=_test_settings()),
+                patch(
+                    "sif.embedding.manager.EmbeddingManager.from_settings",
+                    return_value=manager,
+                ),
+            ):
+                watcher = FileWatcher([coll], db.connection, db_path, WatchConfig(depth="embed"))
+
+                # Reconcile 1 (startup drift): the new doc's checksum
+                # appears (None -> fresh) and the embed leg writes vectors.
+                watcher._run_job((coll, FoldResult(needs_reconcile=True)))
+                assert manager.embed.call_count == 1
+
+                # Drift while unwatched, then reconcile 2: the BM25 update
+                # branch purges chunks and embeddings, and the embed leg
+                # must rewrite them in the same job.
+                doc_file.write_text("# Drifted\n\n" + ("Changed text. " * 60), encoding="utf-8")
+                watcher._run_job((coll, FoldResult(needs_reconcile=True)))
+                assert manager.embed.call_count == 2
+        finally:
+            db.close()
+
+        check = self._check_conn(db_path)
+        try:
+            rows = _chunk_rows(check, doc_file)
+        finally:
+            check.close()
+
+        assert len(rows) >= 1
+        assert all(row[1] is not None for row in rows)
