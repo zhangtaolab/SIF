@@ -181,8 +181,9 @@ def test_stop_embedded_watch_flushes_checkpoints_then_closes() -> None:
 
 @pytest.mark.asyncio
 async def test_lifespan_factory_starts_before_yield_and_stops_after() -> None:
-    """D-01: mcp_watch_lifespan starts the watcher before the yield (app
-    accepts requests) and stops it after (serving ended)."""
+    """D-01: mcp_watch_lifespan returns a lifespan factory — invoking it with
+    the app yields a context manager that starts the watcher before the
+    yield (app accepts requests) and stops it after (serving ended)."""
     from sif.mcp.watch_host import mcp_watch_lifespan
 
     started: list[str] = []
@@ -200,7 +201,7 @@ async def test_lifespan_factory_starts_before_yield_and_stops_after() -> None:
         patch.object(watch_host, "start_embedded_watch", side_effect=_start),
         patch.object(watch_host, "stop_embedded_watch", side_effect=_stop),
     ):
-        async with mcp_watch_lifespan("/tmp/x.db"):
+        async with mcp_watch_lifespan("/tmp/x.db")(None):
             assert started == ["/tmp/x.db"]
             assert stopped == []
 
@@ -217,7 +218,7 @@ async def test_lifespan_factory_tolerates_disabled_watch() -> None:
         patch.object(watch_host, "start_embedded_watch", return_value=None),
         patch.object(watch_host, "stop_embedded_watch") as stop,
     ):
-        async with mcp_watch_lifespan("/tmp/x.db"):
+        async with mcp_watch_lifespan("/tmp/x.db")(None):
             pass
 
     stop.assert_called_once_with(None)
@@ -233,7 +234,7 @@ async def test_lifespan_factory_stops_even_when_body_raises() -> None:
         patch.object(watch_host, "stop_embedded_watch") as stop,
     ):
         with pytest.raises(RuntimeError, match="app died"):
-            async with mcp_watch_lifespan("/tmp/x.db"):
+            async with mcp_watch_lifespan("/tmp/x.db")(None):
                 raise RuntimeError("app died")
 
     stop.assert_called_once_with(None)

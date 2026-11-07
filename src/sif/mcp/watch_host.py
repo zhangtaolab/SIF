@@ -25,10 +25,11 @@ checkpoint, then close.
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from sif.config.settings import get_settings
 from sif.core.models import Collection
@@ -183,20 +184,28 @@ def stop_embedded_watch(watch: EmbeddedWatch | None) -> None:
     logger.info("MCP watch stopped")
 
 
-@asynccontextmanager
-async def mcp_watch_lifespan(db_path: str) -> AsyncGenerator[None, None]:
-    """FastAPI lifespan hosting the embedded watcher (D-01 HTTP wiring).
+def mcp_watch_lifespan(db_path: str) -> Callable[[Any], Any]:
+    """FastAPI lifespan FACTORY hosting the embedded watcher (D-01 HTTP wiring).
 
-    A plain async context manager — FastAPI accepts any lifespan-shaped
-    async CM, so this module stays free of a fastapi import (import-light,
+    Returns a callable accepting the app that itself returns an async context
+    manager — the exact shape Starlette's ``Router.lifespan`` executes
+    (``async with self.lifespan_context(app)``). Never hand FastAPI an
+    already-invoked context manager: its ``__call__`` is contextlib's
+    decorator protocol and startup dies with ``TypeError`` (CR-01). The
+    factory still keeps this module free of a fastapi import (import-light,
     no optional-dependency try/except). Before the yield (the app accepts
     requests) the watcher starts; after the yield (serving ended) it stops
     with the full D-14 teardown. The flag check lives inside
     :func:`start_embedded_watch`, so the wiring is unconditional and cheap
     when the opt-in is off.
     """
-    watch = start_embedded_watch(db_path)
-    try:
-        yield
-    finally:
-        stop_embedded_watch(watch)
+
+    @asynccontextmanager
+    async def _lifespan(_app: Any) -> AsyncGenerator[None, None]:
+        watch = start_embedded_watch(db_path)
+        try:
+            yield
+        finally:
+            stop_embedded_watch(watch)
+
+    return _lifespan

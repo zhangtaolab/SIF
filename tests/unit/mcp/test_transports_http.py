@@ -430,19 +430,35 @@ class TestWatchLifespanThreading:
 
         assert create.call_args.kwargs["lifespan"] is sentinel
 
-    def test_run_http_server_hands_mcp_watch_lifespan_to_transport(self) -> None:
-        """run_http_server constructs mcp_watch_lifespan(db_path) (lazily) and
-        threads its product into HTTPTransport — unconditional wiring; the
-        flag check lives inside start_embedded_watch."""
-        lifespan_cm = MagicMock()
-        with (
-            patch.object(http, "SearchBackend", return_value="backend"),
-            patch.object(http, "MCPServer", return_value=MagicMock()),
-            patch.object(http, "create_default_tools", return_value=[]),
-            patch.object(http, "HTTPTransport", return_value=MagicMock()) as transport_type,
-            patch("sif.mcp.watch_host.mcp_watch_lifespan", return_value=lifespan_cm) as factory,
-        ):
-            http.run_http_server("/tmp/sif-test.db")
+    def test_mcp_watch_lifespan_boots_a_real_app(self, tmp_path) -> None:
+        """Regression (CR-01): the lifespan ``run_http_server`` wires must be a
+        factory (callable with the app) Starlette can execute. Exercised with
+        the REAL mcp_watch_lifespan through create_app + TestClient — the old
+        test mocked the lifespan itself and pinned the broken invoked-CM
+        shape, hiding the startup TypeError that killed every HTTP-mode
+        invocation. Only the start/stop collaborators are patched."""
+        from sif.mcp import watch_host
+        from sif.mcp.watch_host import mcp_watch_lifespan
 
-        factory.assert_called_once_with("/tmp/sif-test.db")
-        assert transport_type.call_args.kwargs["lifespan"] is lifespan_cm
+        started: list[str] = []
+        stopped: list[object] = []
+
+        def _fake_start(db_path: str) -> None:
+            started.append(db_path)
+            return None
+
+        def _fake_stop(watch: object) -> None:
+            stopped.append(watch)
+
+        db_path = str(tmp_path / "watch.db")
+        with (
+            patch.object(watch_host, "start_embedded_watch", side_effect=_fake_start),
+            patch.object(watch_host, "stop_embedded_watch", side_effect=_fake_stop),
+        ):
+            app = create_app(MagicMock(), lifespan=mcp_watch_lifespan(db_path))
+            with TestClient(app) as client:
+                assert started == [db_path]
+                assert stopped == []
+                assert client.get("/health").status_code == 200
+
+        assert stopped == [None]
