@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -376,3 +379,67 @@ class TestHTTPTransportBranches:
             cors_origins=["https://allowed.example"],
         )
         transport.run.assert_called_once_with()
+
+
+class TestWatchLifespanThreading:
+    """Lifespan parameter threading through create_app/HTTPTransport (13-03 D-01)."""
+
+    def test_create_app_accepts_lifespan_running_it_around_requests(self) -> None:
+        """create_app(server, lifespan=cm): start before the app serves, stop after."""
+        events: list[str] = []
+
+        @asynccontextmanager
+        async def lifespan(app: Any) -> AsyncIterator[None]:
+            events.append(f"start:{app is not None}")
+            yield
+            events.append("stop")
+
+        app = create_app(MagicMock(), lifespan=lifespan)
+        with TestClient(app) as client:
+            assert events == ["start:True"]
+            assert client.get("/health").status_code == 200
+        assert events == ["start:True", "stop"]
+
+    def test_create_app_without_lifespan_still_builds_and_serves_health(self) -> None:
+        """Compatibility pin: existing create_app(server) call sites keep working."""
+        app = create_app(MagicMock())
+        with TestClient(app) as client:
+            response = client.get("/health")
+        assert response.status_code == 200
+        assert response.json() == {"status": "ok"}
+
+    def test_create_app_has_no_on_event_handlers(self) -> None:
+        """Lifespan only — FastAPI forbids mixing on_event with lifespan."""
+        app = create_app(MagicMock())
+        assert app.router.on_startup == []
+        assert app.router.on_shutdown == []
+
+    def test_transport_run_forwards_lifespan_into_create_app(self) -> None:
+        """HTTPTransport carries its lifespan parameter into create_app."""
+        sentinel = MagicMock()
+        transport = http.HTTPTransport(MagicMock(), lifespan=sentinel)
+
+        with (
+            patch.dict("sys.modules", {"uvicorn": MagicMock()}),
+            patch.object(http, "create_app", return_value=MagicMock()) as create,
+        ):
+            transport.run()
+
+        assert create.call_args.kwargs["lifespan"] is sentinel
+
+    def test_run_http_server_hands_mcp_watch_lifespan_to_transport(self) -> None:
+        """run_http_server constructs mcp_watch_lifespan(db_path) (lazily) and
+        threads its product into HTTPTransport — unconditional wiring; the
+        flag check lives inside start_embedded_watch."""
+        lifespan_cm = MagicMock()
+        with (
+            patch.object(http, "SearchBackend", return_value="backend"),
+            patch.object(http, "MCPServer", return_value=MagicMock()),
+            patch.object(http, "create_default_tools", return_value=[]),
+            patch.object(http, "HTTPTransport", return_value=MagicMock()) as transport_type,
+            patch("sif.mcp.watch_host.mcp_watch_lifespan", return_value=lifespan_cm) as factory,
+        ):
+            http.run_http_server("/tmp/sif-test.db")
+
+        factory.assert_called_once_with("/tmp/sif-test.db")
+        assert transport_type.call_args.kwargs["lifespan"] is lifespan_cm
