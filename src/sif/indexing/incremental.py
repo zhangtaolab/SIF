@@ -108,6 +108,17 @@ class IncrementalIndexer:
         Returns:
             Counts of added, updated, and removed documents.
         """
+        # D-11: a missing collection root must never be read as mass
+        # deletion — rglob on a missing root yields no files, which the
+        # sweep below would otherwise treat as "every file vanished".
+        if not Path(collection.path).exists():
+            logger.warning(
+                "Collection root %s does not exist; skipping update (all documents preserved)",
+                collection.path,
+            )
+            self._notify(progress, f"missing {collection.name}")
+            return IncrementalResult()
+
         scanner = FileScanner()
         scan_result = scanner.scan(
             Path(collection.path),
@@ -177,8 +188,63 @@ class IncrementalIndexer:
         Returns:
             Counts of added, updated, removed, and unchanged documents.
         """
-        _ = (collection, paths, force, progress)
-        return IncrementalResult()
+        # D-11: same missing-root guard as update_collection — a burst of
+        # delete-shaped events from a vanished root must not remove anything.
+        if not Path(collection.path).exists():
+            logger.warning(
+                "Collection root %s does not exist; skipping update (all documents preserved)",
+                collection.path,
+            )
+            self._notify(progress, f"missing {collection.name}")
+            return IncrementalResult()
+
+        scanner = FileScanner()
+        root = Path(collection.path)
+        resolved: set[Path] = {Path(p).resolve() for p in paths}
+        added = 0
+        updated = 0
+        removed = 0
+        unchanged = 0
+
+        for path in sorted(resolved):
+            # Never-indexable paths (temp noise, pattern misses) are skipped:
+            # a fold remove-hint for a never-indexed path is a harmless no-op.
+            if not scanner.matches(
+                root,
+                path,
+                pattern=collection.pattern,
+                ignore_patterns=collection.ignore_patterns,
+            ):
+                continue
+            existing = self._doc_repo.get_by_path(str(path), collection.id)
+            if path.exists():
+                outcome = self._process_file(
+                    path,
+                    collection=collection,
+                    existing=existing,
+                    force=force,
+                    progress=progress,
+                )
+                if outcome == "added":
+                    added += 1
+                elif outcome == "updated":
+                    updated += 1
+                else:
+                    # Checksum skip (or a parse failure already reported via
+                    # an "error" event): nothing to write for this path.
+                    unchanged += 1
+            elif existing is not None:
+                self._remove_document(existing)
+                removed += 1
+
+        # Update collection stats — its own short transaction, mirroring
+        # update_collection's tail.
+        with self._conn:
+            collection.document_count = len(self._doc_repo.list_by_collection(collection.id))
+            collection.last_indexed_at = datetime.now(timezone.utc)
+            self._coll_repo.update(collection)
+
+        return IncrementalResult(added=added, updated=updated, removed=removed, unchanged=unchanged)
 
     @staticmethod
     def _notify(progress: Callable[[str], None] | None, event: str) -> None:
@@ -254,17 +320,23 @@ class IncrementalIndexer:
         existing_docs: dict[str, Document],
         scanned_paths: set[str],
     ) -> int:
-        """Remove stored documents whose files vanished; one short transaction."""
+        """Remove stored documents whose files vanished."""
         removed = 0
-        with self._conn:
-            for path, doc in existing_docs.items():
-                if path not in scanned_paths:
-                    # Purge embeddings before the document row (WR-01): vec0
-                    # rows cannot carry the FK cascade, so orphaned vectors
-                    # would otherwise occupy KNN top-k slots and crowd live
-                    # documents out of vector search results.
-                    if self._vector_purger is not None:
-                        self._vector_purger.delete_embeddings_by_document(doc.id)
-                    self._doc_repo.delete(doc.id)
-                    removed += 1
+        for path, doc in existing_docs.items():
+            if path not in scanned_paths:
+                self._remove_document(doc)
+                removed += 1
         return removed
+
+    def _remove_document(self, doc: Document) -> None:
+        """Remove one document; vector purge BEFORE the row delete (WR-01).
+
+        Both the collection sweep and the per-path update path share this
+        body: vec0 rows cannot carry the FK cascade, so orphaned vectors
+        would otherwise occupy KNN top-k slots and crowd live documents out
+        of vector search results. One short BEGIN IMMEDIATE transaction.
+        """
+        with self._conn:
+            if self._vector_purger is not None:
+                self._vector_purger.delete_embeddings_by_document(doc.id)
+            self._doc_repo.delete(doc.id)

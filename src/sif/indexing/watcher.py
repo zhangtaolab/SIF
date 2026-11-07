@@ -15,18 +15,29 @@ import sqlite3
 import threading
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
+from typing import cast
 
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
+from watchdog.observers import Observer
 from watchdog.observers.api import BaseObserver
 from watchdog.utils.event_debouncer import EventDebouncer
 
 from sif.core.models import Collection
-from sif.indexing.incremental import IncrementalResult
+from sif.database.locking import index_lock
+from sif.indexing.incremental import IncrementalIndexer, IncrementalResult
+from sif.indexing.scanner import FileScanner
 from sif.utils.logging import get_logger
 
 
 logger = get_logger(__name__)
+
+_WORKER_POLL_SECONDS = 0.5
+_JOIN_TIMEOUT_SECONDS = 5.0
+_WORKER_JOIN_TIMEOUT_SECONDS = 10.0
+
+SettledCallback = Callable[[list[FileSystemEvent]], None]
 
 
 def _event_path(path: bytes | str) -> str:
@@ -73,9 +84,9 @@ def fold_events(
     Directory events are skipped except directory ``moved``, which flags
     ``needs_reconcile`` (children get no individual events — Pitfall 7).
     Every candidate is resolved (FSEvents delivers realpaths — Pitfall 2) and
-    predicate-checked via ``should_track``; a path both touched and deleted in
-    one burst stays an index candidate only — update_paths stats it and disk
-    state decides. The fold is order-independent by construction.
+    predicate-checked via ``should_track``; a path both touched and deleted
+    in one burst stays an index candidate only — update_paths stats it and
+    disk state decides. The fold is order-independent by construction.
 
     Args:
         events: Settled batch from the EventDebouncer callback.
@@ -84,8 +95,29 @@ def fold_events(
     Returns:
         The folded candidate sets and reconcile flag.
     """
-    _ = (events, should_track)
-    return FoldResult()
+    result = FoldResult()
+    for event in events:
+        if event.is_directory:
+            if event.event_type == "moved":
+                result.needs_reconcile = True
+            continue
+        src = Path(_event_path(event.src_path)).resolve()
+        if event.event_type in ("created", "modified"):
+            result.index_candidates.add(src)
+        elif event.event_type == "deleted":
+            result.remove_candidates.add(src)
+        elif event.event_type == "moved":
+            dest = Path(_event_path(event.dest_path)).resolve()
+            result.index_candidates.add(dest)
+            result.remove_candidates.add(src)
+    result.index_candidates = {p for p in result.index_candidates if should_track(p)}
+    result.remove_candidates = {p for p in result.remove_candidates if should_track(p)}
+    # A path both touched and deleted in the same burst is an index
+    # candidate: the stat inside update_paths lets the disk state decide
+    # (the atomic-save trailing delete and delete+create pairs both land
+    # here), and a gone index candidate is still removed by that stat.
+    result.remove_candidates -= result.index_candidates
+    return result
 
 
 class IndexingEventHandler(FileSystemEventHandler):
@@ -145,7 +177,34 @@ class FileWatcher:
 
     def start(self) -> None:
         """Arm the observer, per-collection debouncers, and the worker thread."""
-        logger.info("Starting file watcher over %d collection(s)", len(self._collections))
+        observer = Observer()
+        for coll in self._collections:
+            root = Path(coll.path).resolve()
+            if not root.exists():
+                logger.warning(
+                    "Collection root %s missing; not scheduling a watch (D-11)",
+                    root,
+                )
+                continue
+            # Positional args (D-05): the first kwarg name differs across
+            # watchdog 4.x-7.x; positionally identical on all of them. The
+            # upstream annotation says int but the value only flows into
+            # Condition.wait(timeout=...), which takes floats (verified
+            # against the installed 6.0.0 source) — hence the cast.
+            debouncer = EventDebouncer(
+                cast(int, self._config.debounce_interval), self._settled_callback(coll)
+            )
+            observer.schedule(IndexingEventHandler(debouncer), str(root), recursive=True)
+            self._debouncers.append(debouncer)
+
+        self._observer = observer
+        observer.start()
+        for debouncer in self._debouncers:
+            debouncer.start()
+        self._worker = threading.Thread(
+            target=self._worker_loop, name="sif-watch-worker", daemon=True
+        )
+        self._worker.start()
 
     def stop(self, *, flush: bool = True) -> None:
         """Stop intake, drain queued work once (bounded), and join threads.
@@ -154,3 +213,91 @@ class FileWatcher:
             flush: When True, run every job already queued at stop time.
         """
         logger.info("Stopping file watcher (flush=%s)", flush)
+        if self._observer is not None:
+            self._observer.stop()
+        for debouncer in self._debouncers:
+            debouncer.stop()
+        # The worker exits on the stop flag; queued work is then drained on
+        # this thread so no two threads ever share the connection mid-job.
+        self._stop_event.set()
+        if self._worker is not None:
+            self._worker.join(timeout=_WORKER_JOIN_TIMEOUT_SECONDS)
+        if flush:
+            self._drain_once()
+        if self._observer is not None:
+            self._observer.join(timeout=_JOIN_TIMEOUT_SECONDS)
+        for debouncer in self._debouncers:
+            debouncer.join(timeout=_JOIN_TIMEOUT_SECONDS)
+
+    def _settled_callback(self, collection: Collection) -> SettledCallback:
+        """Build the debouncer callback for one collection.
+
+        The callback executes while holding the debouncer's condition lock,
+        so it only folds and enqueues (Pitfall 3); the worker thread owns
+        every database access.
+        """
+        scanner = FileScanner()
+        root = Path(collection.path).resolve()
+        should_track = partial(
+            scanner.matches,
+            root,
+            pattern=collection.pattern,
+            ignore_patterns=collection.ignore_patterns,
+        )
+
+        def _on_settled(events: list[FileSystemEvent]) -> None:
+            self._queue.put((collection, fold_events(events, should_track)))
+
+        return _on_settled
+
+    def _worker_loop(self) -> None:
+        """Consume settled bursts until stopped; one job per queue item."""
+        while not self._stop_event.is_set():
+            try:
+                job = self._queue.get(timeout=_WORKER_POLL_SECONDS)
+            except queue.Empty:
+                continue
+            try:
+                self._run_job(job)
+            except Exception:
+                logger.exception("watch job failed for %s", job[0].name)
+            finally:
+                self._queue.task_done()
+
+    def _run_job(self, job: tuple[Collection, FoldResult]) -> None:
+        """Process one settled burst under the per-DB flock (D-04 per-burst).
+
+        Cost is proportional to the burst: per-path processing, or one full
+        collection pass only when a directory move requires a reconcile.
+        """
+        collection, folded = job
+        paths = folded.index_candidates | folded.remove_candidates
+        if folded.needs_reconcile:
+            with index_lock(self._db_path, self._config.lock_timeout):
+                result = IncrementalIndexer(self._conn).update_collection(
+                    collection, progress=self._config.on_event
+                )
+        elif paths:
+            with index_lock(self._db_path, self._config.lock_timeout):
+                result = IncrementalIndexer(self._conn).update_paths(
+                    collection, paths, progress=self._config.on_event
+                )
+        else:
+            # An empty fold (pure temp-noise burst) never touches the DB.
+            return
+        if self._config.on_batch is not None:
+            self._config.on_batch(collection, result)
+
+    def _drain_once(self) -> None:
+        """Run every job already queued at call time (bounded, no waiting)."""
+        while True:
+            try:
+                job = self._queue.get_nowait()
+            except queue.Empty:
+                return
+            try:
+                self._run_job(job)
+            except Exception:
+                logger.exception("watch flush job failed for %s", job[0].name)
+            finally:
+                self._queue.task_done()
