@@ -114,6 +114,24 @@ class TestConnectionFactory:
             conn.close()
         assert any("WAL journal mode unavailable" in rec.message for rec in caplog.records)
 
+    def test_wal_switch_exhaustion_raises_original_error(self, tmp_path: Path) -> None:
+        """Persistent contention exhausts the retry budget and surfaces the lock error."""
+        from sif.database.factory import _set_wal_with_retry
+
+        db_path = tmp_path / "exhaust.db"
+        incumbent = sqlite3.connect(str(db_path), check_same_thread=False)
+        incumbent.execute("CREATE TABLE scratch (x INTEGER)")
+        incumbent.commit()
+        incumbent.execute("INSERT INTO scratch VALUES (1)")  # write txn held open
+        conn = sqlite3.connect(str(db_path), check_same_thread=False)
+        try:
+            with pytest.raises(sqlite3.OperationalError, match="locked"):
+                _set_wal_with_retry(conn, attempts=2, backoff_s=0.01)
+        finally:
+            conn.close()
+            incumbent.rollback()
+            incumbent.close()
+
     def test_sqlite_vec_load_failure_is_swallowed(self, tmp_path: Path, monkeypatch) -> None:
         """A failing sqlite-vec load leaves a working connection (OQ3)."""
 
