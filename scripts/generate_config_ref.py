@@ -168,9 +168,11 @@ SECTIONS: list[tuple[str, list[str]]] = [
             "watch_ignore_patterns",
             "watch_update_depth",
             "watch_restat_interval",
+            "watch_rescope_interval",
+            "watch_checkpoint_interval",
         ],
     ),
-    ("MCP Server Settings", ["mcp_host", "mcp_port", "mcp_transport"]),
+    ("MCP Server Settings", ["mcp_watch", "mcp_host", "mcp_port", "mcp_transport"]),
     ("Cache Settings", ["cache_dir", "cache_embeddings"]),
 ]
 

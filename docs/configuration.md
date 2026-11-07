@@ -108,11 +108,14 @@ BM25/FTS5 keyword search and sqlite-vec vector search always run on CPU regardle
 | `SIF_WATCH_IGNORE_PATTERNS` | list | `[]` | Global ignore-pattern additions applied to the shared scan/watch predicate (extends the scanner defaults for both) |
 | `SIF_WATCH_UPDATE_DEPTH` | str | `bm25` | Default update depth for `sif watch`: 'bm25' (FTS only) or 'embed' (also write vectors for changed documents); the --embed / --no-embed flags override it (validated by `validate_watch_update_depth`) |
 | `SIF_WATCH_RESTAT_INTERVAL` | float | `5.0` | Seconds between re-stat checks for watched collection roots that went missing while `sif watch` runs |
+| `SIF_WATCH_RESCOPE_INTERVAL` | float | `60.0` | Seconds between collections-table rescope polls riding the watch tick in long-lived hosts; added collections start watching, removed ones stop |
+| `SIF_WATCH_CHECKPOINT_INTERVAL` | float | `300.0` | Seconds between idle WAL checkpoint attempts in long-lived hosts; 0 disables (shutdown checkpointing stays the final word) |
 
 ### MCP Server Settings
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
+| `SIF_MCP_WATCH` | bool | `False` | Run the index watcher inside the MCP server so assistant queries hit a fresh index (opt-in via SIF_MCP_WATCH=1; both transports, BM25-only by design) |
 | `SIF_MCP_HOST` | str | `127.0.0.1` | MCP HTTP server host |
 | `SIF_MCP_PORT` | int | `8080` | MCP HTTP server port |
 | `SIF_MCP_TRANSPORT` | str | `stdio` | MCP transport type (stdio, http) |

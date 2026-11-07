@@ -649,8 +649,8 @@ sif status [OPTIONS]
 
 Watch collections and keep the index current as files change.
 
-Collection-set changes (adding or removing collections) require a watch
-restart in this MVP.
+Collection-set changes are picked up live by the detached daemon
+(--detach); the foreground watch still requires a restart in this MVP.
 
 ```bash
 sif watch [OPTIONS]
@@ -660,10 +660,15 @@ sif watch [OPTIONS]
 
 | Option | Short | Type | Default | Description |
 |--------|-------|------|---------|-------------|
-| `--collection` | `-c` | text[] | — | Watch only the named collection(s); repeatable. Collection-set changes while watch runs require a restart. |
+| `--collection` | `-c` | text[] | — | Watch only the named collection(s); repeatable. The detached daemon picks up collection-set changes live; the foreground watch requires a restart. |
 | `--embed` | `—` | flag | `false` | Also write vector embeddings for changed documents (opt-in; default is BM25-only) |
 | `--no-embed` | `—` | flag | `false` | Force BM25-only updates even when SIF_WATCH_UPDATE_DEPTH=embed |
 | `--verbose` | `—` | flag | `false` | Print per-file event lines instead of per-batch summaries |
+| `--detach` | `—` | flag | `false` | Run the watcher in the background as a detached daemon and print its PID; logs go to the platform log dir unless --log-file is given |
+| `--stop` | `—` | flag | `false` | Stop the detached watch daemon (SIGTERM, bounded wait, SIGKILL fallback) |
+| `--log-file` | `—` | text | — | Daemon log file path (requires --detach; default: platform log dir) |
+| `--install-service` | `—` | flag | `false` | Generate and install a launchd LaunchAgent (macOS) or systemd user unit (Linux) running the FOREGROUND watcher under the OS supervisor; the -c and --embed flags given now are baked into the service definition |
+| `--uninstall-service` | `—` | flag | `false` | Stop the installed watch service and remove its artifact |
 
 ## Output Formats
 
