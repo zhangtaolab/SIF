@@ -474,17 +474,23 @@ Install: `systemctl --user daemon-reload && systemctl --user enable --now sif-wa
 | A6 | `wal_checkpoint(TRUNCATE)` result row `(busy, log, checkpointed)` is the skip signal for D-16 | Pattern 4 | Low — fire-and-forget execution is also acceptable per D-16 discretion |
 | A7 | Status "host mode/depth" are carried inside the PID file payload (small structured content) | Pattern 5 | Low — alternative is filename/dir conventions; both satisfy D-08 |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+All four resolved during phase planning (revision 1); each resolution below names the plan task that adopts it.
 
 1. **Rescope scope for `-c`-filtered hosts** — should a filtered daemon/MCP host rescope within its filter (recommended) or skip rescope entirely (simplest)?
    - What we know: `_select_collections` supports subsets; D-15's rationale (new collections must not be silently ignored) is about watch-all hosts.
    - What's unclear: whether a `-c` user adding a collection expects it picked up.
    - Recommendation: rescope within the filter (added-and-selected → watch; deselected-or-removed → unwatch); document in the plan.
+   - **Resolution:** rescope within the filter — the rescope provider returns only the host's eligible set (adopted: 13-01 must_haves truth 4; the daemon's filter-respecting provider in 13-02 truth 8).
 2. **MCP startup reconcile placement** — serve-then-reconcile-on-worker (recommended, Pitfall 4) vs reconcile-then-serve.
    - Recommendation: serve first; enqueue reconcile as first job; checksum skipping absorbs the startup burst either way.
+   - **Resolution:** serve-then-reconcile-on-worker — the watcher starts before serving and the per-collection reconcile runs as the first queued worker jobs (adopted: 13-03 must_haves truth 6 / Task 1 step 1; e2e Test 4 pins the unblocked handshake).
 3. **Does the MCP-embedded watcher also get rescope (D-15)?** — CONTEXT says "daemon + MCP watch" are the long-lived hosts; confirm both get the API (recommended: yes — same `FileWatcher` core, same tick).
+   - **Resolution:** yes — the MCP host wires rescope_provider returning all registered collections on the 13-01 tick seam (adopted: 13-03 must_haves truth 8 / Task 1 step 1).
 4. **`--stop` identity corroboration scheme** (Pitfall 3) — start-timestamp in PID file vs cmdline probe vs both.
    - Recommendation: timestamp-in-file + `ps` start-time comparison on macOS, `/proc/<pid>/stat` field 22 on Linux; planner picks the lightest portable form.
+   - **Resolution:** cmdline probe, the lightest portable form the recommendation grants — `ps -p PID -o command=` output must contain the sif CLI and watch argv markers, fail-closed on mismatch or missing ps (adopted: 13-02 Task 1 step 3 corroborate_pid; unit-pinned in 13-02 Task 2 Test 3).
 
 ## Environment Availability
 
