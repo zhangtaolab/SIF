@@ -4,17 +4,17 @@ milestone: v1.1
 milestone_name: Live Index and Search Quality
 current_phase: 12
 current_phase_name: "`sif watch` Foreground MVP"
-status: executing
-stopped_at: Completed 12-02-PLAN.md
-last_updated: "2026-11-07T10:35:50.412Z"
+status: verifying
+stopped_at: Completed 12-03-PLAN.md
+last_updated: "2026-11-07T11:02:24.991Z"
 last_activity: 2026-11-07
 last_activity_desc: Phase 12 execution started
-state_head: e49547a33bf1aba49cfed6d5f26a22b72e799869
+state_head: 64efc8ca0093d543d2804f89bf05ae748879c51d
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 6
-  completed_plans: 5
+  completed_plans: 6
 ---
 
 # DocSift — Project State
@@ -31,7 +31,7 @@ progress:
 
 Phase: 12 (`sif watch` Foreground MVP) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-11-07 — Phase 12 execution started
 
 Progress: [██░░░░░░░░] 17%
@@ -54,6 +54,7 @@ Progress: [██░░░░░░░░] 17%
 | Phase 11 P03 | 9 min | 2 tasks | 11 files |
 | Phase 12 P01 | 42 min | 2 tasks | 12 files |
 | Phase 12 P02 | 34 min | 2 tasks | 5 files |
+| Phase 12 P03 | 21 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -85,6 +86,9 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 - [Phase 12]: [Phase 12] Watch reconcile jobs stay BM25-only at embed depth: the per-file embed leg needs a computable changed-path set, which only burst jobs have (vectors catch up on the next burst or sif embed)
 - [Phase 12]: [Phase 12] Worker stop sentinel wakes the re-stat idle wait so D-14 bounded shutdown never waits out watch_restat_interval (sentinel-skipping drain; T-12-06)
 - [Phase 12]: [Phase 12] Embed changed-path detection = checksum before/after snapshots around the BM25 leg (None->new = added, old->new = updated) — IncrementalIndexer's Phase 11 contract untouched
+- [Phase 12]: E2E WAL-truncate proof: parent holds an open read connection so the child's close is never last (SQLite deletes a checkpointed -wal otherwise) and first proves a non-empty WAL after a live write — the post-exit 0-byte file then uniquely demonstrates the D-14 truncate
+- [Phase 12]: watch_* settings reach docs/configuration.md by registering a Watch Settings section in the generator's SECTIONS allowlist — the doc is only ever regenerated (never hand-edited); generator now renders default_factory defaults by product ([]) instead of PydanticUndefined
+- [Phase 12]: E2e output capture merges stderr into the stdout capture file (banner = console/stdout, D-12 recovery warnings = logger/stderr) so both are assertable from one artifact; configuration.md greps must use SIF_WATCH_* env-var spellings, never lowercase field names
 
 ### Pending Todos
 
@@ -105,8 +109,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 
 ## Session Continuity
 
-Last session: 2026-11-07T10:35:50.305Z
-Stopped at: Completed 12-02-PLAN.md
+Last session: 2026-11-07T11:02:24.888Z
+Stopped at: Completed 12-03-PLAN.md
 Resume file: None
 
 - **Next expected action:** `/gsd-plan-phase 11` (no research flag — pragma recipe fully specified in research/STACK.md)

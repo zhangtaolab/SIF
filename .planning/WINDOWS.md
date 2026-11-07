@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 7
+open_count: 6
 waived_count: 0
-fixed_count: 2
+fixed_count: 3
 total_count: 9
-last_updated: 2026-11-07T09:42:25.792Z
+last_updated: 2026-11-07T10:58:23.037Z
 ---
 
 # Broken Windows Ledger
@@ -23,7 +23,7 @@ last_updated: 2026-11-07T09:42:25.792Z
 | 6 | 10 | deviation | src/sif/utils/logging.py | 122 | Applied computed formatter to caller-provided logging handlers (Rule 1 bug found by 10-05 tests) | fixed |  | 2026-11-05T19:46:51.982Z | 2026-11-05T19:47:02.697Z |
 | 7 | 10 | deviation | src/sif/utils/progress.py | 44 | Omitted Rich bar and percentage columns for indeterminate progress (Rule 1 bug found by 10-05 tests) | fixed |  | 2026-11-05T19:46:52.058Z | 2026-11-05T19:47:02.774Z |
 | 8 | 10.1 | deviation | .planning/phases/10.1-address-tech-debt-path-normalization-review-findings-cr-01-c/10.1-01-PLAN.md |  | Plan verify command 'pytest <2 files> -q' structurally cannot exit 0 under the 10-07 fail_under=90 gate (scoped run ~38% total); test signal verified via --no-cov plus full-suite 968-pass at 96.22% | open |  | 2026-11-06T00:59:43.130Z |  |
-| 9 | 12 | deviation | docs/cli-reference.md |  | Full-suite docs gate test_docs.py::test_cli_reference_has_all_commands red until 12-03 runs make docs-generate (docs regen is assigned to the final plan; hand-editing prohibited) | open |  | 2026-11-07T09:42:25.792Z |  |
+| 9 | 12 | deviation | docs/cli-reference.md |  | Full-suite docs gate test_docs.py::test_cli_reference_has_all_commands red until 12-03 runs make docs-generate (docs regen is assigned to the final plan; hand-editing prohibited) | fixed |  | 2026-11-07T09:42:25.792Z | 2026-11-07T10:58:23.037Z |
 
 ````json
 [
@@ -134,10 +134,10 @@ last_updated: 2026-11-07T09:42:25.792Z
     "file": "docs/cli-reference.md",
     "line": null,
     "description": "Full-suite docs gate test_docs.py::test_cli_reference_has_all_commands red until 12-03 runs make docs-generate (docs regen is assigned to the final plan; hand-editing prohibited)",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-11-07T09:42:25.792Z",
-    "resolved_at": null,
+    "resolved_at": "2026-11-07T10:58:23.037Z",
     "milestone": "v1.1"
   }
 ]

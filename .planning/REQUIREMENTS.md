@@ -10,17 +10,17 @@ Requirements for milestone v1.1. Each maps to roadmap phases (numbering continue
 
 ### Live Index
 
-- [ ] **LIVE-01**: 运行 `sif watch` 后，collection 内文件增/改/删自动增量重索引，无需手动 `sif index update`
-- [ ] **LIVE-02**: 编辑器保存风暴（单次保存 2-5 事件）防抖合并为一次索引操作
-- [ ] **LIVE-03**: macOS 原子保存（rename 链）与文件移动/重命名正确处理，不误删不重建
-- [ ] **LIVE-04**: 临时文件（`.swp`/`.sb-*`/`4913`/`.DS_Store` 等）与 scanner `ignore_patterns` 一致排除
+- [x] **LIVE-01**: 运行 `sif watch` 后，collection 内文件增/改/删自动增量重索引，无需手动 `sif index update`
+- [x] **LIVE-02**: 编辑器保存风暴（单次保存 2-5 事件）防抖合并为一次索引操作
+- [x] **LIVE-03**: macOS 原子保存（rename 链）与文件移动/重命名正确处理，不误删不重建
+- [x] **LIVE-04**: 临时文件（`.swp`/`.sb-*`/`4913`/`.DS_Store` 等）与 scanner `ignore_patterns` 一致排除
 - [x] **LIVE-05**: 默认仅更新 BM25/FTS；`--embed` 显式开启向量更新（embed 永不作为后台默认）
 - [x] **LIVE-06**: watch 写入与 CLI/MCP 并发读共存，零 "database is locked"（WAL + busy_timeout + BEGIN IMMEDIATE）
 - [x] **LIVE-07**: flock 单写者仲裁，多 watch 形态并存不重复 embed
 - [ ] **LIVE-08**: `SIF_MCP_WATCH=1` 启用 MCP server 内嵌刷新，查询不被事件风暴阻塞
 - [ ] **LIVE-09**: `sif watch --detach`（PID/stop/status）+ launchd/systemd 服务安装
 - [ ] **LIVE-10**: 未运行 watch 时，搜索命令前 stat 漂移检测自动刷新（有上限，干净时零成本）
-- [ ] **LIVE-11**: collection 根目录消失不解读为全量删除（missing-root 防护）
+- [x] **LIVE-11**: collection 根目录消失不解读为全量删除（missing-root 防护）
 
 ### Search Quality
 
@@ -61,17 +61,17 @@ Requirements for milestone v1.1. Each maps to roadmap phases (numbering continue
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| LIVE-01 | Phase 12 | Pending |
-| LIVE-02 | Phase 12 | Pending |
-| LIVE-03 | Phase 12 | Pending |
-| LIVE-04 | Phase 12 | Pending |
+| LIVE-01 | Phase 12 | Complete |
+| LIVE-02 | Phase 12 | Complete |
+| LIVE-03 | Phase 12 | Complete |
+| LIVE-04 | Phase 12 | Complete |
 | LIVE-05 | Phase 12 | Complete |
 | LIVE-06 | Phase 11 | Complete |
 | LIVE-07 | Phase 11 | Complete |
 | LIVE-08 | Phase 13 | Pending |
 | LIVE-09 | Phase 13 | Pending |
 | LIVE-10 | Phase 14 | Pending |
-| LIVE-11 | Phase 12 | Pending |
+| LIVE-11 | Phase 12 | Complete |
 | QUAL-01 | Phase 15 | Pending |
 | QUAL-02 | Phase 15 | Pending |
 | QUAL-03 | Phase 15 | Pending |
