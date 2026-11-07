@@ -100,6 +100,15 @@ BM25/FTS5 keyword search and sqlite-vec vector search always run on CPU regardle
 | `SIF_DEFAULT_SEARCH_TYPE` | str | `hybrid` | Default search type (bm25, vector, hybrid) |
 | `SIF_DEFAULT_LIMIT` | int | `10` | Default search result limit |
 
+### Watch Settings
+
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `SIF_WATCH_DEBOUNCE_INTERVAL` | float | `0.5` | Quiet window in seconds a filesystem event burst must settle for before `sif watch` runs one incremental update |
+| `SIF_WATCH_IGNORE_PATTERNS` | list | `[]` | Global ignore-pattern additions applied to the shared scan/watch predicate (extends the scanner defaults for both) |
+| `SIF_WATCH_UPDATE_DEPTH` | str | `bm25` | Default update depth for `sif watch`: 'bm25' (FTS only) or 'embed' (also write vectors for changed documents); the --embed / --no-embed flags override it (validated by `validate_watch_update_depth`) |
+| `SIF_WATCH_RESTAT_INTERVAL` | float | `5.0` | Seconds between re-stat checks for watched collection roots that went missing while `sif watch` runs |
+
 ### MCP Server Settings
 
 | Variable | Type | Default | Description |

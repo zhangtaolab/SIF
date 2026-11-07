@@ -54,6 +54,7 @@ sif
 ├── ls              List indexed documents as a virtual file tree.
 ├── pull            Download a GGUF model file.
 ├── bench           Run benchmark evaluation against a fixture file.
+├── watch           Watch collections and keep the index current as files change.
 ├── status          Show index status.
 └── cleanup         Clean up the index (remove orphaned entries).
 ```
@@ -643,6 +644,26 @@ Show index status.
 ```bash
 sif status [OPTIONS]
 ```
+
+### `watch`
+
+Watch collections and keep the index current as files change.
+
+Collection-set changes (adding or removing collections) require a watch
+restart in this MVP.
+
+```bash
+sif watch [OPTIONS]
+```
+
+**Options:**
+
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--collection` | `-c` | text[] | — | Watch only the named collection(s); repeatable. Collection-set changes while watch runs require a restart. |
+| `--embed` | `—` | flag | `false` | Also write vector embeddings for changed documents (opt-in; default is BM25-only) |
+| `--no-embed` | `—` | flag | `false` | Force BM25-only updates even when SIF_WATCH_UPDATE_DEPTH=embed |
+| `--verbose` | `—` | flag | `false` | Print per-file event lines instead of per-batch summaries |
 
 ## Output Formats
 

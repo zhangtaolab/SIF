@@ -14,6 +14,8 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
+from pydantic.fields import PydanticUndefined  # noqa: E402
+
 from sif.config.settings import Settings  # noqa: E402
 
 
@@ -131,6 +133,15 @@ SECTIONS: list[tuple[str, list[str]]] = [
     ),
     ("Chunking Settings", ["chunk_size", "chunk_overlap"]),
     ("Search Settings", ["default_search_type", "default_limit"]),
+    (
+        "Watch Settings",
+        [
+            "watch_debounce_interval",
+            "watch_ignore_patterns",
+            "watch_update_depth",
+            "watch_restat_interval",
+        ],
+    ),
     ("MCP Server Settings", ["mcp_host", "mcp_port", "mcp_transport"]),
     ("Cache Settings", ["cache_dir", "cache_embeddings"]),
 ]
@@ -232,6 +243,11 @@ def _append_options_tables(lines: list[str]) -> None:
             # A `|` inside a type (union) would add a phantom column to the table row.
             type_cell = type_name.replace("|", "\\|")
             default = field_info.default
+            if default is PydanticUndefined:
+                # default_factory fields (e.g. watch_ignore_patterns) carry no
+                # static default; render the factory's product instead of the
+                # PydanticUndefined sentinel repr.
+                default = field_info.default_factory() if field_info.default_factory else None
             if default is None:
                 default = get_computed_default(field_name) or "None"
             default_str = f"`{default}`" if default != "" else '`""`'
