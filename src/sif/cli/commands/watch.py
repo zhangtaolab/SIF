@@ -1,4 +1,4 @@
-"""The ``sif watch`` foreground command (Phase 12 MVP host).
+"""The ``sif watch`` command: foreground host (Phase 12) + daemon lifecycle (13-02).
 
 Startup reconcile per collection (D-03) runs BEFORE the observer arms, so
 the FSEvents startup created-burst is absorbed by checksum skips
@@ -7,20 +7,30 @@ the FSEvents startup created-burst is absorbed by checksum skips
 Shutdown is signal-driven (D-14): first SIGINT/SIGTERM runs one bounded
 flush plus a WAL truncate checkpoint and exits 0; a second signal exits 130
 immediately with no flush.
+
+Phase 13 adds the detached-daemon lifecycle on the SAME host body (D-09):
+``--detach`` double-forks before anything threaded exists (Pitfall 2) and
+the daemon child runs :func:`run_watch_host` verbatim with the long-lived
+opt-ins wired from settings (D-15 live rescope within the ``-c`` filter,
+D-16 idle WAL checkpoint); ``--stop`` corroborates the PID file's identity
+and escalates SIGTERM -> bounded wait -> SIGKILL (D-05, Pitfall 3); the PID
+file itself is management metadata only — flock stays the sole arbitration.
 """
 
 from __future__ import annotations
 
+import os
 import signal
 import sqlite3
 import sys
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from types import FrameType
 
 import click
+from platformdirs import user_log_dir
 from pydantic import ValidationError
 from rich.console import Console
 from rich.markup import escape
@@ -34,6 +44,7 @@ from sif.database.locking import index_lock
 from sif.database.repositories import CollectionRepository
 from sif.indexing.incremental import IncrementalIndexer
 from sif.indexing.watcher import FileWatcher, WatchConfig
+from sif.utils import daemon
 
 
 console = Console()
@@ -88,6 +99,118 @@ def shutdown_watcher(watcher: FileWatcher, conn: sqlite3.Connection) -> None:
         watcher.stop(flush=True)
     finally:
         conn.execute(_WAL_CHECKPOINT_TRUNCATE)
+
+
+@dataclass
+class WatchHostParams:
+    """Resolved parameters for :func:`run_watch_host`.
+
+    Bundled for the argument-count lint gate (the WatchConfig precedent);
+    the foreground command fills the watch fields and leaves the long-lived
+    opt-ins at their defaults, while the daemon path derives a copy with the
+    rescope/checkpoint fields wired from settings (D-15/D-16).
+    """
+
+    index_path: str
+    debounce_interval: float
+    lock_timeout: float
+    depth: str
+    restat_interval: float
+    rescope_provider: Callable[[], list[Collection]] | None = None
+    rescope_interval: float = 0.0
+    checkpoint_interval: float = 0.0
+    verbose: bool = False
+
+
+def run_watch_host(db: Database, selected: list[Collection], params: WatchHostParams) -> None:
+    """Run the shared watch host body (D-09) on an OPEN database.
+
+    The foreground command and the detached daemon execute this exact same
+    body: per-collection startup reconcile (D-03), FileWatcher start, the
+    D-13 banner, the park loop, and the D-14 graceful teardown. Only the
+    long-lived-host opt-ins differ — the daemon wires ``rescope_provider``
+    and the rescope/checkpoint intervals from settings (D-15/D-16); the
+    foreground MVP passes none of them and keeps its restart-on-change shape.
+    The database lifecycle belongs to the caller.
+    """
+    state = SignalState()
+    install_signal_handlers(state)
+
+    index_path = params.index_path
+    lock_timeout = params.lock_timeout
+    depth = params.depth
+    debounce_interval = params.debounce_interval
+
+    watcher: FileWatcher | None = None
+    try:
+        # D-03: one full reconcile pass per collection BEFORE the observer
+        # arms — anything drifted before watch started becomes fresh
+        # immediately, and the startup burst lands on matching checksums.
+        indexer = IncrementalIndexer(db.connection)
+        for coll in selected:
+            console.print(f"\n[bold]Reconciling collection: {escape(coll.name)}[/bold]")
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                console=console,
+            ) as progress:
+                task = progress.add_task(f"Indexing {coll.name}...", total=None)
+                with index_lock(
+                    Path(index_path),
+                    lock_timeout,
+                    on_wait=lambda: console.print(
+                        f"[dim]Another index writer is running; waiting up to "
+                        f"{lock_timeout:.0f}s...[/dim]"
+                    ),
+                ):
+                    indexer.update_collection(
+                        coll,
+                        progress=_render_index_event(console, progress, task),
+                    )
+
+        watcher = FileWatcher(
+            selected,
+            db.connection,
+            Path(index_path),
+            WatchConfig(
+                debounce_interval=debounce_interval,
+                lock_timeout=lock_timeout,
+                depth=depth,
+                restat_interval=params.restat_interval,
+                on_event=lambda event: _render_watch_event(event, verbose=params.verbose),
+                on_batch=lambda coll, result: _render_batch(
+                    coll.name,
+                    result.added,
+                    result.updated,
+                    result.removed,
+                    result.unchanged,
+                ),
+                rescope_provider=params.rescope_provider,
+                rescope_interval=params.rescope_interval,
+                checkpoint_interval=params.checkpoint_interval,
+            ),
+        )
+        watcher.start()
+
+        # D-13 banner — printed after the observer arms, so "Watching" marks
+        # the moment live events start flowing.
+        depth_label = "embed" if depth == "embed" else "BM25-only"
+        console.print(f"\n[bold]Watching {len(selected)} collection(s) — Ctrl-C to stop[/bold]")
+        for coll in selected:
+            console.print(f"  {escape(coll.name)}: {escape(coll.path)}")
+        console.print(f"  depth: {depth_label} · debounce: {debounce_interval}s")
+
+        while not state.stop:
+            time.sleep(_LOOP_INTERVAL_SECONDS)
+
+        # Graceful path: ONE bounded flush, then the WAL checkpoint, exit 0.
+        shutdown_watcher(watcher, db.connection)
+        watcher = None
+    finally:
+        if watcher is not None:
+            # Exception path (including the second signal's SystemExit(130)):
+            # stop intake without flushing — the immediate-exit contract.
+            watcher.stop(flush=False)
 
 
 def _select_collections(
@@ -164,14 +287,126 @@ def _render_batch(name: str, added: int, updated: int, removed: int, unchanged: 
     )
 
 
+def _daemon_log_path(log_file: str | None) -> Path:
+    """Resolve the daemon log path (D-07): ``--log-file``, else the platform log dir.
+
+    The platformdirs default joins the same log tree the installed service
+    will use (launchd StandardOutPath convention), so raw and supervised
+    daemons log to one place. The parent directory is created eagerly — the
+    grandchild's stdio redirect needs it to exist.
+    """
+    if log_file is not None:
+        path = Path(log_file).expanduser()
+    else:
+        path = Path(user_log_dir("sif")) / "watch.log"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _daemon_rescope_provider(
+    db: Database, names: tuple[str, ...]
+) -> Callable[[], list[Collection]]:
+    """Eligible set for the D-15 rescope poll: rescope WITHIN the ``-c`` filter.
+
+    No names: every registered collection. With names: only the named subset
+    — the provider embodies the host's eligible set and rescope is an
+    exact-set diff, so a filtered daemon can never gain an excluded
+    collection, and a collection removed from the table stops being watched.
+    Runs on the worker thread (the tick caller), sharing the watcher's
+    connection discipline.
+    """
+
+    def _provider() -> list[Collection]:
+        registered = CollectionRepository(db.connection).list_all()
+        if not names:
+            return registered
+        wanted = set(names)
+        return [coll for coll in registered if coll.name in wanted]
+
+    return _provider
+
+
+def _run_detach(
+    params: WatchHostParams,
+    collections: tuple[str, ...],
+    log_file: str | None,
+    settings: Settings,
+) -> None:
+    """Detached-daemon path (D-06/D-07/D-09): fork FIRST, arm, then host.
+
+    ``daemon.detach`` must be the first thing this path does — the fork
+    happens before any Database, observer, or thread exists (Pitfall 2). The
+    grandchild runs the exact foreground host body via :func:`run_watch_host`
+    with the long-lived opt-ins wired from settings; the original parent
+    prints the armed PID (SC2) or raises the arming failure.
+    """
+    log_path = _daemon_log_path(log_file)
+    pid_file = daemon.pid_path_for(params.index_path)
+    armed_db: Database | None = None
+    armed_selected: list[Collection] | None = None
+
+    def arm() -> None:
+        """Armed means ready: schema open, collections selected, PID file written."""
+        nonlocal armed_db, armed_selected
+        db = Database(params.index_path)
+        db.init_schema()
+        selected = _select_collections(CollectionRepository(db.connection), collections)
+        if not selected:
+            raise RuntimeError("no collections found — add one with 'sif collection add'")
+        daemon.write_pid_file(pid_file, pid=os.getpid(), mode="daemon", depth=params.depth)
+        armed_db = db
+        armed_selected = selected
+
+    outcome = daemon.detach(log_path, arm)
+    if outcome.daemon:
+        assert armed_db is not None
+        assert armed_selected is not None
+        daemon_params = replace(
+            params,
+            rescope_provider=_daemon_rescope_provider(armed_db, collections),
+            rescope_interval=settings.watch_rescope_interval,
+            checkpoint_interval=settings.watch_checkpoint_interval,
+        )
+        try:
+            with armed_db:
+                run_watch_host(armed_db, armed_selected, daemon_params)
+        finally:
+            # A graceful exit takes its PID file with it, so --stop and
+            # status stay honest without a cleanup pass (D-05 metadata).
+            daemon.remove_pid_file(pid_file)
+        return
+    if outcome.error is not None:
+        raise click.ClickException(f"Watch daemon failed to start: {outcome.error}")
+    assert outcome.pid is not None
+    console.print(f"[green]Watch daemon running (PID {outcome.pid}).[/green]")
+    console.print(f"[dim]Logs: {escape(str(log_path))}[/dim]")
+
+
+def _run_stop(index_path: str | Path) -> None:
+    """Stop path (D-05): corroborated SIGTERM, bounded wait, SIGKILL fallback.
+
+    All outcomes are soft notices per the stop-idempotence contract: not
+    running (no PID file), stale (garbage payload or uncorroborated PID —
+    cleaned up, never signalled), or stopped.
+    """
+    outcome = daemon.stop_daemon(daemon.pid_path_for(index_path))
+    if outcome.status == "stopped":
+        assert outcome.pid is not None
+        console.print(f"[green]Watch daemon stopped (PID {outcome.pid}).[/green]")
+    elif outcome.status == "not_running":
+        console.print("[yellow]Watch daemon is not running.[/yellow]")
+    else:
+        console.print("[yellow]Watch daemon is not running (stale PID file removed).[/yellow]")
+
+
 @click.command("watch")
 @click.option(
     "--collection",
     "-c",
     "collections",
     multiple=True,
-    help="Watch only the named collection(s); repeatable. Collection-set "
-    "changes while watch runs require a restart.",
+    help="Watch only the named collection(s); repeatable. The detached daemon "
+    "picks up collection-set changes live; the foreground watch requires a restart.",
 )
 @click.option(
     "--embed",
@@ -188,20 +423,47 @@ def _render_batch(name: str, added: int, updated: int, removed: int, unchanged: 
     is_flag=True,
     help="Print per-file event lines instead of per-batch summaries",
 )
+@click.option(
+    "--detach",
+    is_flag=True,
+    help="Run the watcher in the background as a detached daemon and print its "
+    "PID; logs go to the platform log dir unless --log-file is given",
+)
+@click.option(
+    "--stop",
+    is_flag=True,
+    help="Stop the detached watch daemon (SIGTERM, bounded wait, SIGKILL fallback)",
+)
+@click.option(
+    "--log-file",
+    help="Daemon log file path (requires --detach; default: platform log dir)",
+)
 @click.pass_context
-def watch_cmd(
+def watch_cmd(  # noqa: PLR0913
     ctx: click.Context,
     collections: tuple[str, ...],
     embed: bool,
     no_embed: bool,
     verbose: bool,
+    detach: bool,
+    stop: bool,
+    log_file: str | None,
 ) -> None:
     """Watch collections and keep the index current as files change.
 
-    Collection-set changes (adding or removing collections) require a watch
-    restart in this MVP.
+    Collection-set changes are picked up live by the detached daemon
+    (--detach); the foreground watch still requires a restart in this MVP.
     """
     index_path = ctx.obj["index_path"]
+
+    if detach and stop:
+        raise click.ClickException("--detach and --stop are mutually exclusive.")
+    if log_file is not None and not detach:
+        raise click.ClickException("--log-file requires --detach.")
+
+    if stop:
+        _run_stop(index_path)
+        return
 
     from sif.config.settings import get_settings  # noqa: PLC0415
 
@@ -215,87 +477,28 @@ def watch_cmd(
         # SIF_WATCH_UPDATE_DEPTH=bogus) must surface as a config error
         # naming the field, not a raw pydantic traceback.
         raise click.ClickException(str(e)) from e
-    lock_timeout = settings.lock_wait_timeout
-    debounce_interval = settings.watch_debounce_interval
-    depth = _effective_depth(embed=embed, no_embed=no_embed, settings=settings)
+    params = WatchHostParams(
+        index_path=str(index_path),
+        debounce_interval=settings.watch_debounce_interval,
+        lock_timeout=settings.lock_wait_timeout,
+        depth=_effective_depth(embed=embed, no_embed=no_embed, settings=settings),
+        restat_interval=settings.watch_restat_interval,
+        verbose=verbose,
+    )
 
-    state = SignalState()
-    install_signal_handlers(state)
+    if detach:
+        # Pitfall 2: the fork happens before any Database, observer, or
+        # thread exists — detaching is the first thing this path does.
+        _run_detach(params, collections, log_file, settings)
+        return
 
-    watcher: FileWatcher | None = None
-    try:
-        with Database(index_path) as db:
-            db.init_schema()
-            selected = _select_collections(CollectionRepository(db.connection), collections)
-            if not selected:
-                console.print(
-                    "[yellow]No collections found. Add one with 'sif collection add'.[/yellow]",
-                )
-                return
-
-            # D-03: one full reconcile pass per collection BEFORE the
-            # observer arms — anything drifted before watch started becomes
-            # fresh immediately, and the startup burst lands on matching
-            # checksums.
-            indexer = IncrementalIndexer(db.connection)
-            for coll in selected:
-                console.print(f"\n[bold]Reconciling collection: {escape(coll.name)}[/bold]")
-                with Progress(
-                    SpinnerColumn(),
-                    TextColumn("[progress.description]{task.description}"),
-                    console=console,
-                ) as progress:
-                    task = progress.add_task(f"Indexing {coll.name}...", total=None)
-                    with index_lock(
-                        Path(index_path),
-                        lock_timeout,
-                        on_wait=lambda: console.print(
-                            f"[dim]Another index writer is running; waiting up to "
-                            f"{lock_timeout:.0f}s...[/dim]"
-                        ),
-                    ):
-                        indexer.update_collection(
-                            coll,
-                            progress=_render_index_event(console, progress, task),
-                        )
-
-            watcher = FileWatcher(
-                selected,
-                db.connection,
-                Path(index_path),
-                WatchConfig(
-                    debounce_interval=debounce_interval,
-                    lock_timeout=lock_timeout,
-                    depth=depth,
-                    restat_interval=settings.watch_restat_interval,
-                    on_event=lambda event: _render_watch_event(event, verbose=verbose),
-                    on_batch=lambda coll, result: _render_batch(
-                        coll.name,
-                        result.added,
-                        result.updated,
-                        result.removed,
-                        result.unchanged,
-                    ),
-                ),
+    with Database(index_path) as db:
+        db.init_schema()
+        selected = _select_collections(CollectionRepository(db.connection), collections)
+        if not selected:
+            console.print(
+                "[yellow]No collections found. Add one with 'sif collection add'.[/yellow]",
             )
-            watcher.start()
+            return
 
-            # D-13 banner — printed after the observer arms, so "Watching"
-            # marks the moment live events start flowing.
-            depth_label = "embed" if depth == "embed" else "BM25-only"
-            console.print(f"\n[bold]Watching {len(selected)} collection(s) — Ctrl-C to stop[/bold]")
-            for coll in selected:
-                console.print(f"  {escape(coll.name)}: {escape(coll.path)}")
-            console.print(f"  depth: {depth_label} · debounce: {debounce_interval}s")
-
-            while not state.stop:
-                time.sleep(_LOOP_INTERVAL_SECONDS)
-
-            # Graceful path: ONE bounded flush, then the WAL checkpoint, exit 0.
-            shutdown_watcher(watcher, db.connection)
-            watcher = None
-    finally:
-        if watcher is not None:
-            # Exception path (including the second signal's SystemExit(130)):
-            # stop intake without flushing — the immediate-exit contract.
-            watcher.stop(flush=False)
+        run_watch_host(db, selected, params)
