@@ -130,7 +130,9 @@ SIF validates configuration on startup. Invalid values will raise errors:
 
 | Field | Rule | Error Example |
 |-------|------|---------------|
+| `watch_update_depth` | Must be one of: `bm25`, `embed` | `Invalid watch_update_depth: xyz. Must be one of ['bm25', 'embed']` |
 | `model_type` | Must be one of: `gguf`, `modelscope`, `openai`, `sentence_transformers` | `Invalid model_type: xyz. Must be one of ['gguf', 'modelscope', 'openai', 'sentence_transformers']` |
+| `reranker_model_type` | Must be one of: `gguf`, `sentence_transformers` | `Invalid reranker_model_type: xyz. Must be one of ['gguf', 'sentence_transformers']` |
 | `api_base` | Must start with `http://` or `https://` | `api_base must be an HTTP or HTTPS URL` |
 | `log_level` | Must be one of: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` | `Invalid log level: TRACE` |
 | `chunk_size` | Minimum 100 | `ensure this value is greater than or equal to 100` |

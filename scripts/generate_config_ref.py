@@ -97,6 +97,34 @@ def get_valid_model_types() -> list[str]:
     return sorted(entries)
 
 
+def get_validator_choices() -> dict[str, list[str]]:
+    """Map each membership-set validator's field to its allowed values.
+
+    Scans every ``field_validator`` method's live source for its
+    ``valid_* = {...}`` set literal (model_type, reranker_model_type,
+    watch_update_depth), so the Validation Rules table is derived from the
+    validators actually enforced and cannot drift as new ones are added
+    (IN-03). Validators without such a set (api_base, log_level, the path
+    expander) are skipped and keep their handwritten rows.
+    """
+    choices: dict[str, list[str]] = {}
+    for field_name, method_name in get_validators().items():
+        method = getattr(Settings, method_name, None)
+        if method is None:
+            continue
+        match = re.search(
+            r"valid_\w+\s*=\s*\{(.*?)\}",
+            inspect.getsource(method.__func__),
+            re.DOTALL,
+        )
+        if match is None:
+            continue
+        entries = re.findall(r"[\"']([^\"']+)[\"']", match.group(1))
+        if entries:
+            choices[field_name] = sorted(entries)
+    return choices
+
+
 def get_computed_default(field_name: str) -> str | None:
     """Return computed default description for Path fields that default to None."""
     computed = {
@@ -262,17 +290,23 @@ def _append_options_tables(lines: list[str]) -> None:
         lines.append("")
 
 
-def _append_validation_rules(lines: list[str], valid_model_types: list[str]) -> None:
-    """Append validation rules section."""
+def _append_validation_rules(lines: list[str], validator_choices: dict[str, list[str]]) -> None:
+    """Append validation rules section.
+
+    Membership-set rules are DERIVED from the live validators
+    (``get_validator_choices``, IN-03) so the table tracks what is
+    actually enforced; format and range rules stay handwritten.
+    """
     lines.append("## Validation Rules")
     lines.append("")
     lines.append("SIF validates configuration on startup. Invalid values will raise errors:")
     lines.append("")
     lines.append("| Field | Rule | Error Example |")
     lines.append("|-------|------|---------------|")
-    choices = ", ".join(f"`{t}`" for t in valid_model_types)
-    error = f"Invalid model_type: xyz. Must be one of {valid_model_types}"
-    lines.append(f"| `model_type` | Must be one of: {choices} | `{error}` |")
+    for field_name, values in validator_choices.items():
+        choices = ", ".join(f"`{t}`" for t in values)
+        error = f"Invalid {field_name}: xyz. Must be one of {values}"
+        lines.append(f"| `{field_name}` | Must be one of: {choices} | `{error}` |")
     lines.append(
         "| `api_base` | Must start with `http://` or `https://` | "
         "`api_base must be an HTTP or HTTPS URL` |"
@@ -428,10 +462,11 @@ def _append_related_docs(lines: list[str]) -> None:
 def generate_markdown() -> str:
     """Generate the full configuration reference markdown."""
     valid_model_types = get_valid_model_types()
+    validator_choices = get_validator_choices()
     lines: list[str] = []
     _append_header(lines)
     _append_options_tables(lines)
-    _append_validation_rules(lines, valid_model_types)
+    _append_validation_rules(lines, validator_choices)
     _append_env_example(lines)
     _append_validation_example(lines, valid_model_types)
     _append_viewing_config(lines)

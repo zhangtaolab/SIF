@@ -278,6 +278,10 @@ def _append_exit_codes(lines: list[str]) -> None:
     lines.append("| 0 | Success |")
     lines.append("| 1 | General error |")
     lines.append("| 2 | Invalid arguments |")
+    lines.append(
+        "| 130 | `sif watch`: second SIGINT/SIGTERM during shutdown — "
+        "immediate exit without the final flush |"
+    )
     lines.append("")
 
 

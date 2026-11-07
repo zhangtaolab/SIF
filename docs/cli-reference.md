@@ -685,6 +685,7 @@ Several commands support multiple output formats via flags:
 | 0 | Success |
 | 1 | General error |
 | 2 | Invalid arguments |
+| 130 | `sif watch`: second SIGINT/SIGTERM during shutdown — immediate exit without the final flush |
 
 ## Common Workflows
 
