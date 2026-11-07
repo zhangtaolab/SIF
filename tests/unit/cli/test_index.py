@@ -1,6 +1,7 @@
 """Tests for index CLI commands."""
 
 import types
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -56,7 +57,7 @@ class TestEmbedCommand:
             title="A",
         )
 
-    def test_embed_cmd_uses_embedding_manager(self):
+    def test_embed_cmd_uses_embedding_manager(self, tmp_path: Path):
         """embed_cmd invokes EmbeddingManager for chunk texts."""
         runner = CliRunner()
 
@@ -115,7 +116,7 @@ class TestEmbedCommand:
             result = runner.invoke(
                 embed_cmd,
                 [],
-                obj={"index_path": MagicMock(exists=lambda: True)},
+                obj={"index_path": tmp_path / "sif.db"},
             )
 
         assert result.exit_code == 0
@@ -123,7 +124,7 @@ class TestEmbedCommand:
         call_args = mock_manager.embed.call_args[0][0]
         assert call_args == ["hello world"]
 
-    def test_embed_cmd_embedding_failure_exits_nonzero(self):
+    def test_embed_cmd_embedding_failure_exits_nonzero(self, tmp_path: Path):
         """embed_cmd must exit non-zero when embedding a collection fails."""
         runner = CliRunner()
 
@@ -169,14 +170,14 @@ class TestEmbedCommand:
             result = runner.invoke(
                 embed_cmd,
                 [],
-                obj={"index_path": MagicMock(exists=lambda: True)},
+                obj={"index_path": tmp_path / "sif.db"},
             )
 
         assert result.exit_code != 0
         assert "Error embedding collection" in result.output
         assert "Embedding failed for 1 collection(s): notes" in result.output
 
-    def test_embed_cmd_backend_load_failure_exits_nonzero(self):
+    def test_embed_cmd_backend_load_failure_exits_nonzero(self, tmp_path: Path):
         """Backend load errors must reach the dedicated handler and exit non-zero."""
         runner = CliRunner()
 
@@ -194,13 +195,13 @@ class TestEmbedCommand:
             result = runner.invoke(
                 embed_cmd,
                 ["--model-type", "openai"],
-                obj={"index_path": MagicMock(exists=lambda: True)},
+                obj={"index_path": tmp_path / "sif.db"},
             )
 
         assert result.exit_code != 0
         assert "Embedding backend not installed" in result.output
 
-    def test_embed_cmd_invalid_chunk_strategy_is_usage_error(self):
+    def test_embed_cmd_invalid_chunk_strategy_is_usage_error(self, tmp_path: Path):
         """WR-05: an invalid --chunk-strategy is a Click usage error, not a traceback."""
         runner = CliRunner()
 
@@ -218,14 +219,14 @@ class TestEmbedCommand:
             result = runner.invoke(
                 embed_cmd,
                 ["--chunk-strategy", "smrt"],
-                obj={"index_path": MagicMock(exists=lambda: True)},
+                obj={"index_path": tmp_path / "sif.db"},
             )
 
         assert result.exit_code == 2  # Click usage error
         assert "Invalid value" in result.output
         assert isinstance(result.exception, SystemExit)
 
-    def test_embed_cmd_batches_across_documents(self):
+    def test_embed_cmd_batches_across_documents(self, tmp_path: Path):
         """embed_cmd batches embeddings across documents."""
         runner = CliRunner()
 
@@ -289,7 +290,7 @@ class TestEmbedCommand:
             result = runner.invoke(
                 embed_cmd,
                 [],
-                obj={"index_path": MagicMock(exists=lambda: True)},
+                obj={"index_path": tmp_path / "sif.db"},
             )
 
         assert result.exit_code == 0
@@ -297,7 +298,7 @@ class TestEmbedCommand:
         batch = mock_vector_searcher.add_embeddings_batch.call_args[0][0]
         assert len(batch) == 2
 
-    def test_embed_cmd_respects_model_type_override(self):
+    def test_embed_cmd_respects_model_type_override(self, tmp_path: Path):
         """embed_cmd passes --model-type to settings override."""
         runner = CliRunner()
 
@@ -359,13 +360,13 @@ class TestEmbedCommand:
             result = runner.invoke(
                 embed_cmd,
                 ["--model-type", "openai"],
-                obj={"index_path": MagicMock(exists=lambda: True)},
+                obj={"index_path": tmp_path / "sif.db"},
             )
 
         assert result.exit_code == 0
         assert captured_updates["model_type"] == "openai"
 
-    def test_embed_cmd_openai_model_type_reaches_endpoint(self):
+    def test_embed_cmd_openai_model_type_reaches_endpoint(self, tmp_path: Path):
         """embed_cmd --model-type openai embeds via real manager + fake endpoint."""
         runner = CliRunner()
 
@@ -424,7 +425,7 @@ class TestEmbedCommand:
             result = runner.invoke(
                 embed_cmd,
                 ["--model-type", "openai"],
-                obj={"index_path": MagicMock(exists=lambda: True)},
+                obj={"index_path": tmp_path / "sif.db"},
             )
 
         assert result.exit_code == 0
@@ -458,7 +459,7 @@ class TestEmbedCommand:
 
         return mock_coll_repo, mock_doc_repo, mock_chunk_repo, mock_searcher, mock_manager
 
-    def _invoke_with_mocks(self, runner, mocks, args):
+    def _invoke_with_mocks(self, runner, mocks, args, db_path: Path):
         """Invoke embed_cmd with the force-semantics mock set wired in."""
         mock_coll_repo, mock_doc_repo, mock_chunk_repo, mock_searcher, mock_manager = mocks
         with (
@@ -495,10 +496,12 @@ class TestEmbedCommand:
             return runner.invoke(
                 embed_cmd,
                 args,
-                obj={"index_path": MagicMock(exists=lambda: True)},
+                # Real tmp path: embed_cmd's index_lock wraps the loop, and a
+                # MagicMock index_path materializes repo-root .lock litter.
+                obj={"index_path": db_path},
             )
 
-    def test_embed_cmd_default_skips_fully_embedded_document(self):
+    def test_embed_cmd_default_skips_fully_embedded_document(self, tmp_path: Path):
         """Default run: a complete chunk/embedding set is skipped with no embed call."""
         runner = CliRunner()
 
@@ -509,7 +512,7 @@ class TestEmbedCommand:
             coll, [doc], embedded_chunk_ids={"chunk-1"}, live_chunk="chunk-1"
         )
 
-        result = self._invoke_with_mocks(runner, mocks, [])
+        result = self._invoke_with_mocks(runner, mocks, [], tmp_path / "sif.db")
 
         _mock_coll_repo, _mock_doc_repo, mock_chunk_repo, mock_searcher, mock_manager = mocks
         assert result.exit_code == 0
@@ -524,7 +527,7 @@ class TestEmbedCommand:
         assert "Already embedded" in result.output
         assert doc.path in result.output
 
-    def test_embed_cmd_default_heals_stale_embedding_state(self):
+    def test_embed_cmd_default_heals_stale_embedding_state(self, tmp_path: Path):
         """Default run: an orphaned embedding set (stale rows) is re-embedded."""
         runner = CliRunner()
 
@@ -536,7 +539,7 @@ class TestEmbedCommand:
             coll, [doc], embedded_chunk_ids={"chunk-1", "orphan-chunk"}, live_chunk="chunk-1"
         )
 
-        result = self._invoke_with_mocks(runner, mocks, [])
+        result = self._invoke_with_mocks(runner, mocks, [], tmp_path / "sif.db")
 
         _mock_coll_repo, _mock_doc_repo, mock_chunk_repo, mock_searcher, mock_manager = mocks
         assert result.exit_code == 0
@@ -549,7 +552,7 @@ class TestEmbedCommand:
         mock_searcher.get_all_embedded_chunk_ids.assert_called_once()
         mock_searcher.get_embedded_chunk_ids.assert_not_called()
 
-    def test_embed_cmd_force_reembeds_fully_embedded_document(self):
+    def test_embed_cmd_force_reembeds_fully_embedded_document(self, tmp_path: Path):
         """--force re-embeds even when the stored set exactly matches the live chunks."""
         runner = CliRunner()
 
@@ -560,7 +563,7 @@ class TestEmbedCommand:
             coll, [doc], embedded_chunk_ids={"chunk-1"}, live_chunk="chunk-1"
         )
 
-        result = self._invoke_with_mocks(runner, mocks, ["--force"])
+        result = self._invoke_with_mocks(runner, mocks, ["--force"], tmp_path / "sif.db")
 
         _mock_coll_repo, _mock_doc_repo, mock_chunk_repo, mock_searcher, mock_manager = mocks
         assert result.exit_code == 0
