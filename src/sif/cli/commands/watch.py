@@ -51,9 +51,11 @@ from sif.database.repositories import CollectionRepository
 from sif.indexing.incremental import IncrementalIndexer
 from sif.indexing.watcher import FileWatcher, WatchConfig
 from sif.utils import daemon, service
+from sif.utils.logging import get_logger
 
 
 console = Console()
+logger = get_logger(__name__)
 
 _LOOP_INTERVAL_SECONDS = 0.2
 _IMMEDIATE_EXIT_AFTER_SIGNALS = 2
@@ -98,13 +100,22 @@ def shutdown_watcher(watcher: FileWatcher, conn: sqlite3.Connection) -> None:
 
     The checkpoint executes on the worker's own connection AFTER
     ``watcher.stop`` has quiesced the worker thread (the main thread runs it,
-    never the worker), inside try/finally so a failed flush still attempts
-    the checkpoint.
+    never the worker) — but only when the worker actually exited (WR-01):
+    a timed-out join means a job legitimately still runs on the same
+    connection (flock wait, first-use model load), and a checkpoint there is
+    concurrent same-connection use — undefined even under
+    ``check_same_thread=False``. A still-live worker skips the checkpoint
+    with a warning; a failed flush no longer force-runs it either, for the
+    same reason (worker state unknown).
     """
-    try:
-        watcher.stop(flush=True)
-    finally:
+    watcher.stop(flush=True)
+    if watcher.worker_joined():
         conn.execute(_WAL_CHECKPOINT_TRUNCATE)
+    else:
+        logger.warning(
+            "watch worker still busy at shutdown; skipping WAL checkpoint "
+            "(WAL is checkpointed on the next run)"
+        )
 
 
 @dataclass

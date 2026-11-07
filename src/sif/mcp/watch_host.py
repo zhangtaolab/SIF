@@ -168,17 +168,22 @@ def stop_embedded_watch(watch: EmbeddedWatch | None) -> None:
     """Stop the embedded watcher: flush, checkpoint, close (D-14 ordering).
 
     ``stop(flush=True)`` quiesces the worker and drains queued jobs once;
-    the WAL truncate checkpoint runs on the host connection in a
-    ``finally`` so a failed flush still checkpoints; the ``Database`` closes
-    last. Tolerates ``None`` so callers can stop unconditionally.
+    the WAL truncate checkpoint runs on the host connection only when the
+    worker actually exited (WR-01: a timed-out join means a job still runs
+    on the same connection, and a checkpoint there is concurrent
+    same-connection use — skipped with a warning instead); the ``Database``
+    closes last. Tolerates ``None`` so callers can stop unconditionally.
     """
     if watch is None:
         return
     try:
-        try:
-            watch.watcher.stop(flush=True)
-        finally:
+        watch.watcher.stop(flush=True)
+        if watch.watcher.worker_joined():
             watch.db.connection.execute(_WAL_CHECKPOINT_TRUNCATE)
+        else:
+            logger.warning(
+                "MCP watch: worker still busy at shutdown; skipping WAL checkpoint"
+            )
     finally:
         watch.db.close()
     logger.info("MCP watch stopped")

@@ -791,6 +791,47 @@ class TestStopFlushGate:
 
         assert drained == [True]
 
+    def test_worker_joined_tracks_worker_liveness(self, tmp_path, monkeypatch) -> None:
+        """WR-01 gate for the hosts' shutdown checkpoint: True when no worker
+        was ever started or the thread exited; False while it runs (the
+        timed-out-join state that must skip same-connection work)."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "watch.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        (notes / "a.md").write_text(BODY_ALPHA, encoding="utf-8")
+        _seed_collection(db_path, notes)
+
+        db = Database(db_path)
+        try:
+            watcher = self._make_watcher(db.connection, db_path)
+            assert watcher.worker_joined() is True  # never started
+
+            class BusyWorker:
+                """join() returns with the thread still 'alive' (timed out)."""
+
+                def join(self, timeout: float | None = None) -> None:  # noqa: ARG002
+                    return None
+
+                def is_alive(self) -> bool:
+                    return True
+
+            class DoneWorker:
+                """join() returns with the thread exited."""
+
+                def join(self, timeout: float | None = None) -> None:  # noqa: ARG002
+                    return None
+
+                def is_alive(self) -> bool:
+                    return False
+
+            watcher._worker = BusyWorker()  # type: ignore[assignment]
+            assert watcher.worker_joined() is False
+            watcher._worker = DoneWorker()  # type: ignore[assignment]
+            assert watcher.worker_joined() is True
+        finally:
+            db.close()
+
 
 class TestRecoveryTick:
     """D-12 missing-root recovery, zero timing: the tick is invoked directly.

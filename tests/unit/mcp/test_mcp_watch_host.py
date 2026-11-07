@@ -179,6 +179,25 @@ def test_stop_embedded_watch_flushes_checkpoints_then_closes() -> None:
     assert calls == ["stop", "execute:PRAGMA wal_checkpoint(TRUNCATE)", "close"]
 
 
+def test_stop_embedded_watch_skips_checkpoint_when_worker_busy(caplog) -> None:
+    """WR-01: a timed-out worker join skips the checkpoint — the still-live
+    worker owns the same connection mid-job, so a checkpoint there is the
+    concurrent use the flush gate forbids. The Database still closes."""
+    watcher = MagicMock()
+    watcher.worker_joined.return_value = False
+    db = MagicMock()
+    closed: list[bool] = []
+    db.close.side_effect = lambda: closed.append(True)
+
+    with caplog.at_level(logging.WARNING, logger=watch_host.logger.name):
+        stop_embedded_watch(EmbeddedWatch(watcher=watcher, db=db))
+
+    watcher.stop.assert_called_once_with(flush=True)
+    db.connection.execute.assert_not_called()
+    assert closed == [True]
+    assert any("skipping WAL checkpoint" in record.message for record in caplog.records)
+
+
 @pytest.mark.asyncio
 async def test_lifespan_factory_starts_before_yield_and_stops_after() -> None:
     """D-01: mcp_watch_lifespan returns a lifespan factory — invoking it with

@@ -475,6 +475,19 @@ class FileWatcher:
             if state.debouncer is not None:
                 state.debouncer.join(timeout=_JOIN_TIMEOUT_SECONDS)
 
+    def worker_joined(self) -> bool:
+        """Whether the worker thread is gone, so its connection is free to use.
+
+        The WR-01 gate for same-connection host work (the shutdown WAL
+        checkpoint): True when no worker was ever started or the thread has
+        exited — including the bounded join inside :meth:`stop` succeeding —
+        and False while it still runs (a timed-out join means a job
+        legitimately outlasted the stop deadline). Checked live rather than
+        recorded at stop time so a worker that exits late still reports True.
+        """
+        worker = self._worker
+        return worker is None or not worker.is_alive()
+
     def recovery_tick(self) -> None:
         """Run one D-12 re-stat pass over tracked roots.
 

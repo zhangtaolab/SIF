@@ -9,6 +9,7 @@ the D-14 signal/shutdown machinery invoked directly — never real signals
 from __future__ import annotations
 
 import io
+import logging
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -500,6 +501,21 @@ class TestShutdownRoutine:
 
         watcher.stop.assert_called_once_with(flush=True)
         conn.execute.assert_called_once_with(WAL_CHECKPOINT_TRUNCATE)
+
+    def test_shutdown_skips_checkpoint_when_worker_still_busy(self, caplog) -> None:
+        """WR-01: a timed-out worker join skips the WAL checkpoint — running
+        it on the same connection as a still-live worker is the concurrent
+        same-connection use the flush gate already forbids."""
+        watcher = MagicMock()
+        watcher.worker_joined.return_value = False
+        conn = MagicMock()
+
+        with caplog.at_level(logging.WARNING, logger="sif.cli.commands.watch"):
+            shutdown_watcher(watcher, conn)
+
+        watcher.stop.assert_called_once_with(flush=True)
+        conn.execute.assert_not_called()
+        assert any("skipping WAL checkpoint" in r.message for r in caplog.records)
 
     def test_graceful_sigterm_exits_zero_and_shares_the_routine(
         self, tmp_path, monkeypatch
