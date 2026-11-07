@@ -380,3 +380,30 @@ class TestIncrementalIndexer:
 
         assert result == IncrementalResult(0, 0, 0)
         assert events[0] == "scan 0"
+
+
+class TestUpdatePathsReplay:
+    """Replay semantics of the per-path API (Phase 12 D-06 edge: idempotency)."""
+
+    def test_replaying_settled_batch_is_all_unchanged(self, tmp_path, monkeypatch) -> None:
+        """A second update_paths over the same settled paths writes nothing."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "incr.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        paths = []
+        for name in ("one.md", "two.md"):
+            path = notes / name
+            path.write_text(f"# {name}\n\nBody text for {name}. ", encoding="utf-8")
+            paths.append(path)
+        _seed_collection(db_path, notes)
+
+        indexer, db, coll = _open_indexer(db_path)
+        try:
+            first = indexer.update_paths(coll, paths)
+            second = indexer.update_paths(coll, paths)
+        finally:
+            db.close()
+
+        assert first == IncrementalResult(added=2, updated=0, removed=0, unchanged=0)
+        assert second == IncrementalResult(added=0, updated=0, removed=0, unchanged=2)

@@ -96,3 +96,67 @@ class TestFileScanner:
             "total_size_mb": round(expected_size / (1024 * 1024), 2),
             "extensions": {".md": 2, ".txt": 1, "(no extension)": 1},
         }
+
+
+class TestSharedPredicate:
+    """LIVE-04 parity: scan() membership equals matches() truth (D-07/D-08)."""
+
+    def test_default_ignore_patterns_include_editor_noise(self) -> None:
+        """D-08: the four editor-noise patterns live in the shared list."""
+        patterns = FileScanner.DEFAULT_IGNORE_PATTERNS
+        for required in ("*.sb-*", "4913", ".#*", "*.tmp"):
+            assert required in patterns
+
+    def test_scan_membership_equals_matches_over_parametrized_tree(self, tmp_path: Path) -> None:
+        """set(scan().files) == {p in tree if matches(...)}, incl. root-level files."""
+        root = tmp_path / "notes"
+        sub = root / "sub"
+        nested_ignored = root / "node_modules"
+        sub.mkdir(parents=True)
+        nested_ignored.mkdir()
+        files = {
+            root / "note.md": "root-level file (zero-dir **/ case)",
+            sub / "note2.md": "nested file",
+            nested_ignored / "x.md": "file under an ignored directory",
+            root / "a.md.sb-ABCD": "atomic-save temp",
+            root / "4913": "vim housekeeping",
+            root / ".#b.md": "emacs lock (matches *.md!)",
+            root / "c.tmp": "tmp scratch",
+            root / "d.swp": "swap",
+            root / "e~": "backup suffix",
+        }
+        for path, content in files.items():
+            path.write_text(content, encoding="utf-8")
+
+        scanner = FileScanner()
+        scan_result = scanner.scan(root)
+        matches_truth = {p for p in files if scanner.matches(root, p)}
+
+        assert set(scan_result.files) == matches_truth
+        assert matches_truth == {root / "note.md", sub / "note2.md"}
+
+    def test_watch_ignore_patterns_setting_extends_both_scan_and_matches(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """A4: the settings field extends the SHARED predicate — no scan/watch drift."""
+        import os
+
+        from sif.config.settings import Settings
+
+        for key in [k for k in os.environ if k.startswith("SIF_")]:
+            monkeypatch.delenv(key, raising=False)
+        fake = Settings(watch_ignore_patterns=["secret/**"])
+        monkeypatch.setattr("sif.config.settings.get_settings", lambda: fake)
+
+        root = tmp_path / "notes"
+        secret = root / "secret"
+        secret.mkdir(parents=True)
+        keep = root / "keep.md"
+        hidden = secret / "under.md"
+        keep.write_text("kept", encoding="utf-8")
+        hidden.write_text("hidden", encoding="utf-8")
+
+        scanner = FileScanner()
+        assert set(scanner.scan(root).files) == {keep}
+        assert scanner.matches(root, hidden) is False
+        assert scanner.matches(root, keep) is True

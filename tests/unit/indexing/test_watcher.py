@@ -8,7 +8,9 @@ end-to-end proof lives in ``tests/integration/test_watch_e2e.py``.
 
 from __future__ import annotations
 
+import os
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -27,9 +29,10 @@ from sif.config.settings import Settings
 from sif.core.models import Collection
 from sif.database.database import Database
 from sif.database.repositories import DocumentRepository
+from sif.indexing import watcher as watcher_module
 from sif.indexing.incremental import IncrementalIndexer, IncrementalResult
 from sif.indexing.scanner import FileScanner
-from sif.indexing.watcher import FoldResult, fold_events
+from sif.indexing.watcher import FileWatcher, FoldResult, WatchConfig, fold_events
 
 
 BODY_ALPHA = "# Heading One\n\n" + ("Alpha paragraph text. " * 50)
@@ -172,6 +175,29 @@ class TestFoldEvents:
         assert moved.needs_reconcile is True
         assert moved.index_candidates == set()
         assert moved.remove_candidates == set()
+
+    def test_fold_is_order_independent(self, tmp_path: Path) -> None:
+        """A burst and its reverse fold to identical candidate sets (edge: ordering)."""
+        root = tmp_path / "notes"
+        final = root / "file.md"
+        temp = root / "file.md.sb-ABCD1234"
+        other = root / "other.md"
+        burst = [
+            FileCreatedEvent(str(temp)),
+            FileModifiedEvent(str(temp)),
+            FileMovedEvent(str(temp), str(final)),
+            FileModifiedEvent(str(final)),
+            FileDeletedEvent(str(final)),
+            FileDeletedEvent(str(other)),
+        ]
+
+        def track(path: Path) -> bool:
+            return _should_track(root, path)
+
+        forward = fold_events(burst, should_track=track)
+        backward = fold_events(list(reversed(burst)), should_track=track)
+
+        assert forward == backward
 
 
 class TestUpdatePaths:
@@ -321,3 +347,305 @@ class TestUpdatePaths:
 
         assert result == IncrementalResult(added=0, updated=0, removed=0, unchanged=1)
         assert any(e.startswith("unchanged a.md") for e in events)
+
+
+class TestWatchPipeline:
+    """Settled-burst → worker → flock → update_paths, driven synthetically (D-15).
+
+    The settled callback is invoked directly and the queue drained with
+    ``_drain_once`` — no observer threads, no timing anywhere.
+    """
+
+    def test_save_burst_coalesces_to_one_update_paths_call(self, tmp_path, monkeypatch) -> None:
+        """LIVE-02: a 5-event save burst yields exactly one update_paths invocation."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "watch.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        (notes / "file.md").write_text(BODY_ALPHA, encoding="utf-8")
+        _seed_collection(db_path, notes)
+
+        calls: list[frozenset] = []
+
+        class SpyIndexer:
+            """Records update_paths invocations without touching the DB."""
+
+            def __init__(self, conn) -> None:
+                self.conn = conn
+
+            def update_paths(self, collection, paths, *, force=False, progress=None):
+                _ = (collection, force, progress)
+                calls.append(frozenset(paths))
+                return IncrementalResult(added=1)
+
+            def update_collection(self, collection, *, force=False, progress=None):
+                _ = (collection, force, progress)
+                raise AssertionError("burst must not trigger a full reconcile")
+
+        monkeypatch.setattr(watcher_module, "IncrementalIndexer", SpyIndexer)
+
+        db = Database(db_path)
+        try:
+            from sif.database.repositories import CollectionRepository
+
+            coll = CollectionRepository(db.connection).get_by_name("notes")
+            assert coll is not None
+            watcher = FileWatcher([coll], db.connection, db_path)
+            burst = [
+                FileCreatedEvent(str(notes / "file.md")),
+                FileModifiedEvent(str(notes / "file.md")),
+                FileModifiedEvent(str(notes / "file.md")),
+                FileCreatedEvent(str(notes / "file.md")),
+                FileModifiedEvent(str(notes / "file.md")),
+            ]
+            watcher._settled_callback(coll)(burst)
+            watcher._drain_once()
+        finally:
+            db.close()
+
+        assert len(calls) == 1
+        assert calls[0] == frozenset({(notes / "file.md").resolve()})
+        assert len(calls[0]) == 1
+
+    def test_atomic_save_chain_one_index_op_removed_zero(self, tmp_path, monkeypatch) -> None:
+        """LIVE-03: the full probe atomic-save chain indexes once, removes nothing."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "watch.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        final = notes / "file.md"
+        final.write_text(BODY_ALPHA, encoding="utf-8")
+        _seed_collection(db_path, notes)
+
+        indexer, db, coll = _open_indexer(db_path)
+        try:
+            assert indexer.update_collection(coll) == IncrementalResult(1, 0, 0)
+        finally:
+            db.close()
+
+        # Real atomic save: new content lands in a .sb- temp, then replaces.
+        temp = notes / "file.md.sb-ABCD1234"
+        temp.write_text(BODY_BETA, encoding="utf-8")
+        os.replace(temp, final)
+        burst = [
+            FileCreatedEvent(str(temp)),
+            FileModifiedEvent(str(temp)),
+            FileMovedEvent(str(temp), str(final)),
+            FileModifiedEvent(str(final)),
+            FileDeletedEvent(str(final)),
+        ]
+
+        results: list[IncrementalResult] = []
+        db = Database(db_path)
+        try:
+            from sif.database.repositories import CollectionRepository
+
+            coll = CollectionRepository(db.connection).get_by_name("notes")
+            assert coll is not None
+            watcher = FileWatcher(
+                [coll],
+                db.connection,
+                db_path,
+                WatchConfig(on_batch=lambda _coll, result: results.append(result)),
+            )
+            watcher._settled_callback(coll)(burst)
+            watcher._drain_once()
+        finally:
+            db.close()
+
+        assert len(results) == 1
+        assert results[0].removed == 0
+        assert results[0].added + results[0].updated == 1
+        conn = sqlite3.connect(str(db_path))
+        try:
+            row = conn.execute(
+                "SELECT content FROM documents WHERE path = ?", (str(final),)
+            ).fetchone()
+        finally:
+            conn.close()
+        assert row is not None
+        assert "Beta paragraph text" in row[0]
+
+    def test_plain_rename_removes_old_adds_new_only(self, tmp_path, monkeypatch) -> None:
+        """LIVE-03: a rename reconciles to removed=1 + added=1, others untouched."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "watch.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        old = notes / "old.md"
+        other = notes / "other.md"
+        old.write_text(BODY_ALPHA, encoding="utf-8")
+        other.write_text("# Other\n\n" + ("Other body text. " * 20), encoding="utf-8")
+        _seed_collection(db_path, notes)
+
+        indexer, db, coll = _open_indexer(db_path)
+        try:
+            assert indexer.update_collection(coll) == IncrementalResult(2, 0, 0)
+        finally:
+            db.close()
+
+        renamed = notes / "renamed.md"
+        os.rename(old, renamed)
+        burst = [
+            FileModifiedEvent(str(old)),
+            FileMovedEvent(str(old), str(renamed)),
+        ]
+
+        results: list[IncrementalResult] = []
+        db = Database(db_path)
+        try:
+            from sif.database.repositories import CollectionRepository
+
+            coll = CollectionRepository(db.connection).get_by_name("notes")
+            assert coll is not None
+            watcher = FileWatcher(
+                [coll],
+                db.connection,
+                db_path,
+                WatchConfig(on_batch=lambda _coll, result: results.append(result)),
+            )
+            watcher._settled_callback(coll)(burst)
+            watcher._drain_once()
+        finally:
+            db.close()
+
+        assert len(results) == 1
+        assert results[0] == IncrementalResult(added=1, updated=0, removed=1, unchanged=0)
+        assert _doc_paths(db_path) == {str(other), str(renamed)}
+
+    def test_empty_fold_never_calls_update_paths_single_event_works(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """Edge: a pure-noise burst never reaches update_paths; one event does."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "watch.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        (notes / "file.md").write_text(BODY_ALPHA, encoding="utf-8")
+        _seed_collection(db_path, notes)
+
+        calls: list[frozenset] = []
+
+        class SpyIndexer:
+            """Records update_paths invocations without touching the DB."""
+
+            def __init__(self, conn) -> None:
+                self.conn = conn
+
+            def update_paths(self, collection, paths, *, force=False, progress=None):
+                _ = (collection, force, progress)
+                calls.append(frozenset(paths))
+                return IncrementalResult()
+
+        monkeypatch.setattr(watcher_module, "IncrementalIndexer", SpyIndexer)
+
+        db = Database(db_path)
+        try:
+            from sif.database.repositories import CollectionRepository
+
+            coll = CollectionRepository(db.connection).get_by_name("notes")
+            assert coll is not None
+            watcher = FileWatcher([coll], db.connection, db_path)
+            noise_burst = [
+                FileCreatedEvent(str(notes / "scratch.tmp")),
+                FileDeletedEvent(str(notes / "d.swp")),
+            ]
+            watcher._settled_callback(coll)(noise_burst)
+            watcher._drain_once()
+            assert calls == []
+
+            watcher._settled_callback(coll)([FileModifiedEvent(str(notes / "file.md"))])
+            watcher._drain_once()
+        finally:
+            db.close()
+
+        assert len(calls) == 1
+
+    def test_lock_acquired_per_job_never_held_for_lifetime(self, tmp_path, monkeypatch) -> None:
+        """Edge/D-04: index_lock enters and exits around EACH job, never the loop."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "watch.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        (notes / "file.md").write_text(BODY_ALPHA, encoding="utf-8")
+        _seed_collection(db_path, notes)
+
+        lock_events: list[str] = []
+
+        @contextmanager
+        def recording_lock(_db_path, _timeout_s, _on_wait=None):
+            lock_events.append("enter")
+            try:
+                yield
+            finally:
+                lock_events.append("exit")
+
+        monkeypatch.setattr(watcher_module, "index_lock", recording_lock)
+
+        class SpyIndexer:
+            """No-op indexer; the lock shape is what this test observes."""
+
+            def __init__(self, conn) -> None:
+                self.conn = conn
+
+            def update_paths(self, collection, paths, *, force=False, progress=None):
+                _ = (collection, paths, force, progress)
+                return IncrementalResult()
+
+        monkeypatch.setattr(watcher_module, "IncrementalIndexer", SpyIndexer)
+
+        db = Database(db_path)
+        try:
+            from sif.database.repositories import CollectionRepository
+
+            coll = CollectionRepository(db.connection).get_by_name("notes")
+            assert coll is not None
+            watcher = FileWatcher([coll], db.connection, db_path)
+            for _ in range(2):
+                watcher._settled_callback(coll)([FileModifiedEvent(str(notes / "file.md"))])
+                watcher._drain_once()
+        finally:
+            db.close()
+
+        assert lock_events == ["enter", "exit", "enter", "exit"]
+
+    def test_startup_created_burst_absorbed_as_unchanged(self, tmp_path, monkeypatch) -> None:
+        """Pitfall 1: pre-existing files' created burst is all checksum-skips."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "watch.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        files = []
+        for name in ("a.md", "b.md"):
+            path = notes / name
+            path.write_text(f"# {name}\n\nBody text for {name}. ", encoding="utf-8")
+            files.append(path)
+        _seed_collection(db_path, notes)
+
+        indexer, db, coll = _open_indexer(db_path)
+        try:
+            assert indexer.update_collection(coll) == IncrementalResult(2, 0, 0)
+        finally:
+            db.close()
+
+        burst = [FileCreatedEvent(str(p)) for p in files] + [FileModifiedEvent(str(files[0]))]
+        results: list[IncrementalResult] = []
+        db = Database(db_path)
+        try:
+            from sif.database.repositories import CollectionRepository
+
+            coll = CollectionRepository(db.connection).get_by_name("notes")
+            assert coll is not None
+            watcher = FileWatcher(
+                [coll],
+                db.connection,
+                db_path,
+                WatchConfig(on_batch=lambda _coll, result: results.append(result)),
+            )
+            watcher._settled_callback(coll)(burst)
+            watcher._drain_once()
+        finally:
+            db.close()
+
+        assert len(results) == 1
+        assert results[0] == IncrementalResult(added=0, updated=0, removed=0, unchanged=2)
