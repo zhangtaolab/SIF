@@ -410,17 +410,22 @@ Both-exit-0 is the D-02 contract; "no duplicated work" is asserted from DB state
 | A4 | Schema DDL first-open races are absorbed by the WAL-switch retry + busy_timeout (the verified hazard is the WAL pragma itself; DDL statements autocommit individually under legacy isolation and are guarded by `IF NOT EXISTS` forms) | Pattern 2 | Low — the SUMMARY-research "DDL race guard" is covered by the same bounded retry if wrapped around the factory's first-open; planner may wrap `init_schema` calls in the same retry for belt-and-braces |
 | A5 | Recommended lock-file name `{db_path}.lock` and settings field name (e.g. `SIF_LOCK_WAIT_TIMEOUT`, default ~30s) — Claude's-discretion choices research is recommending, not user-locked | Pattern 3 | None — explicitly discretionary |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+All three are resolved by the dispositions recorded in the `11-01-PLAN.md` assumptions block (OQ1, OQ3, and A2 covering OQ2); none remain open.
 
 1. **Subprocess coverage measurement** — enable `[tool.coverage.run] patch = ["subprocess"]` (auto-enables `parallel = true`, changes `.coverage*` file handling) or rely on in-suite coverage with subprocess tests as outcome-only proofs?
    - What we know: pytest-cov 7.1.0 installed; subprocess support removed upstream; in-suite tests can cover all shared code paths.
    - What's unclear: whether the team wants subprocess lines counted for the 90% gate.
    - Recommendation: rely on in-suite coverage (config untouched, zero risk); revisit only if the gate gets tight.
+   - **(RESOLVED — 11-01 assumptions, OQ1 "subprocess coverage")** Adopted the recommendation: subprocess tests are outcome-only proofs (exit codes, DB row state); in-suite tests carry coverage for the fail_under=90 gate; the pytest-cov config is intentionally left untouched.
 2. **Windows arbitration** — degrade-and-warn (recommended) vs implementing `msvcrt.locking`.
    - What we know: no Windows support signals anywhere in the project; zero-new-deps locked.
    - Recommendation: degrade-and-warn behind a `try: import fcntl` guard; revisit if Windows support is ever declared.
+   - **(RESOLVED — 11-01 assumptions, A2 "Windows posture")** Adopted degrade-and-warn behind a `try: import fcntl` guard: WAL + busy_timeout still protect integrity on non-POSIX platforms (only duplicate-work protection is lost); revisit if Windows support is ever declared.
 3. **Factory behavior when sqlite-vec fails to load** — the two current paths disagree: `Database._enable_extensions` swallows (`except Exception: pass  # sqlite-vec is optional`) while `connection.py:_create_connection` lets it raise; `SchemaManager._create_vector_tables` and `VectorSearcher.__init__` both detect availability lazily.
    - Recommendation: unify on swallow+lazy-detect (matches schema/searcher behavior and keeps BM25-only installs working); planner should encode whichever choice keeps the existing suite green.
+   - **(RESOLVED — 11-01 assumptions, OQ3 "vec-load failure")** Unified on swallow + lazy-detect in the shared factory — matches SchemaManager/VectorSearcher behavior and keeps BM25-only installs working.
 
 ## Environment Availability
 
