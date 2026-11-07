@@ -35,6 +35,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - N/A
 
+## [1.0.1] - 2026-11-07
+
+### Fixed
+- Install-command typo fix: corrected the extras install command package name (docdocsif to docsif) in README.md and docs (quick task 261107-cdh, commit 2429c09)
+- Parser checksum fix: `sif index update` now compares body-hash checksums so unchanged documents are correctly detected and skipped instead of being re-indexed (commit f1f4b30)
+
 ## [0.1.0] - 2024-01-20
 
 ### Added
@@ -224,3 +230,4 @@ Thanks to all contributors who have helped shape SIF!
 
 [Unreleased]: https://github.com/zhangtaolab/sif/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/zhangtaolab/sif/releases/tag/v0.1.0
+[1.0.1]: https://github.com/zhangtaolab/sif/releases/tag/v1.0.1
