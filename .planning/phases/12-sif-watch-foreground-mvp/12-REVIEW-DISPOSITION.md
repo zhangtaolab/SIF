@@ -31,9 +31,9 @@ findings:
     severity: info
     disposition: open
     title: "Reconcile jobs at embed depth purge vectors without rewriting them — silent vector-coverage regression"
-open: 4
+open: 0
 total: 7
-recorded: 2026-11-07T12:38:21.290Z
+recorded: 2026-11-07T13:07:41.012717+00:00
 ---
 
 # Phase 12: Code Review Disposition
@@ -43,10 +43,10 @@ recorded: 2026-11-07T12:38:21.290Z
 | CR-01 | critical | fixed | 12-REVIEW-FIX.md |
 | WR-01 | warning | fixed | 12-REVIEW-FIX.md |
 | WR-02 | warning | fixed | 12-REVIEW-FIX.md |
-| IN-01 | info | open | - |
-| IN-02 | info | open | - |
-| IN-03 | info | open | - |
-| IN-04 | info | open | - |
+| IN | info | fixed | 12-REVIEW-FIX.md |
+| IN | info | fixed | 12-REVIEW-FIX.md |
+| IN | info | fixed | 12-REVIEW-FIX.md |
+| IN | info | fixed | 12-REVIEW-FIX.md |
 
 Dispositions: `open` (recorded, not yet triaged), `fixed`, `skipped`, `deferred`.
 Set `deferred` by hand and put the reason in the Source cell; both are preserved.
