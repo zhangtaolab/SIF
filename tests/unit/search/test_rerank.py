@@ -1,9 +1,14 @@
 """Tests for reranker model-dir resolution in the ModelScope download layout (G-04-2)."""
 
 import json
+import math
 from pathlib import Path
+from unittest.mock import MagicMock
 
-from sif.search.rerank import _resolve_model_dir
+import pytest
+
+from sif.core.models import SearchResult
+from sif.search.rerank import CrossEncoderReranker, LlamaCppReranker, _resolve_model_dir
 
 
 class TestModelScopeRootLayout:
@@ -84,3 +89,50 @@ class TestDefensiveParsing:
         (tmp_path / "config.json").write_text("[1, 2, 3]")
 
         assert _resolve_model_dir(tmp_path) == tmp_path
+
+
+class TestRerankerBehavior:
+    """Scoped ML mocks exercise real content selection and score construction."""
+
+    @staticmethod
+    def _result(content: str | None, title: str = "") -> SearchResult:
+        return SearchResult(
+            document_id="doc-1",
+            path="note.md",
+            title=title,
+            collection_name="notes",
+            score=0.5,
+            content=content,
+            highlights=["highlight text"],
+            scores={"bm25_score": 0.5},
+        )
+
+    def test_cross_encoder_content_title_and_metadata(self) -> None:
+        model = MagicMock()
+        model.predict.return_value = [0.0]
+        reranker = CrossEncoderReranker()
+        reranker._model = model
+        source = self._result("body", "heading")
+
+        ranked = reranker.rerank("query", [source])
+
+        assert model.predict.call_args.args[0] == [("query", "heading\n\nbody")]
+        assert ranked[0].score == pytest.approx(0.5)
+        assert ranked[0].scores == {"bm25_score": 0.5, "reranker_score": 0.5}
+        assert ranked[0].content == "body"
+        assert source.scores == {"bm25_score": 0.5}
+
+    def test_llama_cpp_empty_content_uses_title_only(self) -> None:
+        model = MagicMock()
+        model.embed.side_effect = [[1.0, 0.0], [1.0, 0.0]]
+        reranker = LlamaCppReranker()
+        reranker._model = model
+        source = self._result(None, "heading")
+        source.highlights = []
+
+        ranked = reranker.rerank("query", [source])
+
+        assert model.embed.call_args_list[1].args[0] == "heading"
+        assert ranked[0].scores["reranker_score"] == pytest.approx(
+            1.0 / (1.0 + math.exp(-(1.0 / (1.0 + 1e-8)))),
+        )

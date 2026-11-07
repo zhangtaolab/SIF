@@ -30,7 +30,6 @@ class FileScanner:
         ".hg",
         "__pycache__",
         ".pytest_cache",
-        ".mypy_cache",
         ".tox",
         ".venv",
         "venv",

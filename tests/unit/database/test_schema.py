@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime, timezone
+from unittest.mock import patch
 
 import pytest
 
@@ -219,12 +221,222 @@ class TestSchemaManagerVectorTables:
         conn.close()
 
 
+class _VectorDropFailureConnection:
+    """Real SQLite adapter whose optional vector drop fails as SQLite would."""
+
+    def __init__(self, connection: sqlite3.Connection) -> None:
+        self._connection = connection
+
+    def execute(self, sql: str, parameters: tuple = ()) -> sqlite3.Cursor:
+        if sql == "DROP TABLE IF EXISTS document_embeddings":
+            raise sqlite3.OperationalError("no such table: document_embeddings")
+        return self._connection.execute(sql, parameters)
+
+    def commit(self) -> None:
+        self._connection.commit()
+
+
+class TestSchemaRealSQLiteCoverage:
+    """Production index, trigger, migration-failure, and reset behavior."""
+
+    def test_create_all_builds_indexes_and_fts_delete_triggers(self):
+        """Fresh production DDL indexes relational rows and keeps FTS in sync on delete."""
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            SchemaManager(conn, embedding_dim=384).create_all()
+            indexes = {
+                row[0]
+                for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'index'",
+                ).fetchall()
+            }
+            assert {
+                "idx_documents_collection",
+                "idx_documents_path",
+                "idx_documents_checksum",
+                "idx_chunks_document",
+                "idx_contexts_target",
+                "idx_llm_cache_lookup",
+            } <= indexes
+
+            now = datetime.now(timezone.utc).isoformat()
+            conn.execute(
+                "INSERT INTO collections (id, name, path, created_at, updated_at) "
+                "VALUES ('c1', 'notes', '/vault', ?, ?)",
+                (now, now),
+            )
+            conn.execute(
+                "INSERT INTO documents (id, collection_id, path, filename, content, checksum, "
+                "mtime, created_at, updated_at) VALUES ('d1', 'c1', '/vault/a.md', 'a.md', "
+                "'deletemarker', 'checksum', 1.0, ?, ?)",
+                (now, now),
+            )
+            conn.execute(
+                "INSERT INTO document_chunks (id, document_id, sequence, content, created_at) "
+                "VALUES ('ch1', 'd1', 0, 'chunkdeletemarker', ?)",
+                (now,),
+            )
+            assert (
+                conn.execute(
+                    "SELECT COUNT(*) FROM documents_fts WHERE documents_fts MATCH 'deletemarker'",
+                ).fetchone()[0]
+                == 1
+            )
+            assert (
+                conn.execute(
+                    "SELECT COUNT(*) FROM chunks_fts WHERE chunks_fts MATCH 'chunkdeletemarker'",
+                ).fetchone()[0]
+                == 1
+            )
+
+            conn.execute("DELETE FROM document_chunks WHERE id = 'ch1'")
+            conn.execute("DELETE FROM documents WHERE id = 'd1'")
+            assert (
+                conn.execute(
+                    "SELECT COUNT(*) FROM documents_fts WHERE documents_fts MATCH 'deletemarker'",
+                ).fetchone()[0]
+                == 0
+            )
+            assert (
+                conn.execute(
+                    "SELECT COUNT(*) FROM chunks_fts WHERE chunks_fts MATCH 'chunkdeletemarker'",
+                ).fetchone()[0]
+                == 0
+            )
+        finally:
+            conn.close()
+
+    def test_misconfigured_fts_tables_are_rebuilt_and_seeded(self):
+        """Legacy FTS definitions are replaced and their existing content is reindexed."""
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            manager = SchemaManager(conn, embedding_dim=384)
+            manager._create_collections_table()
+            manager._create_documents_table()
+            manager._create_document_chunks_table()
+            now = datetime.now(timezone.utc).isoformat()
+            conn.execute(
+                "INSERT INTO documents (id, collection_id, path, filename, content, checksum, "
+                "mtime, created_at, updated_at) VALUES ('d1', 'c1', '/a.md', 'a.md', "
+                "'legacydocmarker', 'x', 1.0, ?, ?)",
+                (now, now),
+            )
+            conn.execute(
+                "INSERT INTO document_chunks (id, document_id, sequence, content, created_at) "
+                "VALUES ('ch1', 'd1', 0, 'legacychunkmarker', ?)",
+                (now,),
+            )
+            conn.execute("CREATE VIRTUAL TABLE documents_fts USING fts5(content)")
+            conn.execute("CREATE VIRTUAL TABLE chunks_fts USING fts5(content)")
+
+            manager._create_fts_tables()
+
+            assert (
+                conn.execute(
+                    "SELECT COUNT(*) FROM documents_fts "
+                    "WHERE documents_fts MATCH 'legacydocmarker'",
+                ).fetchone()[0]
+                == 1
+            )
+            assert (
+                conn.execute(
+                    "SELECT COUNT(*) FROM chunks_fts WHERE chunks_fts MATCH 'legacychunkmarker'",
+                ).fetchone()[0]
+                == 1
+            )
+        finally:
+            conn.close()
+
+    def test_path_context_migration_rolls_back_on_failure(self):
+        """A migration failure restores the savepoint and leaves the legacy table intact."""
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            _create_old_path_contexts_table(conn)
+            manager = SchemaManager(conn)
+            with (
+                patch.object(
+                    manager,
+                    "_create_contexts_table",
+                    side_effect=sqlite3.OperationalError("injected migration failure"),
+                ),
+                pytest.raises(sqlite3.OperationalError, match="injected migration failure"),
+            ):
+                manager._migrate_path_contexts()
+
+            assert (
+                conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table' "
+                    "AND name = 'path_contexts'",
+                ).fetchone()
+                is not None
+            )
+            conn.execute("SAVEPOINT after_failed_migration")
+            conn.execute("RELEASE SAVEPOINT after_failed_migration")
+        finally:
+            conn.close()
+
+    def test_drop_all_and_stats_use_real_tables(self):
+        """Reset suppresses an absent optional vector table and stats aggregate real rows."""
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            manager = SchemaManager(conn)
+            manager.create_all()
+            now = datetime.now(timezone.utc).isoformat()
+            conn.execute(
+                "INSERT INTO collections (id, name, path, created_at, updated_at) "
+                "VALUES ('c1', 'notes', '/vault', ?, ?)",
+                (now, now),
+            )
+            conn.execute(
+                "INSERT INTO documents (id, collection_id, path, filename, content, checksum, "
+                "file_size, mtime, created_at, updated_at) VALUES "
+                "('d1', 'c1', '/a.md', 'a.md', 'abc', 'x', 3, 1.0, ?, ?)",
+                (now, now),
+            )
+            conn.execute(
+                "INSERT INTO document_chunks (id, document_id, sequence, content, created_at) "
+                "VALUES ('ch1', 'd1', 0, 'abc', ?)",
+                (now,),
+            )
+            conn.execute(
+                "INSERT INTO contexts (id, target_id, context_type, content, created_at, "
+                "updated_at) VALUES ('ctx1', '/a.md', 'path', 'note', ?, ?)",
+                (now, now),
+            )
+            assert manager.get_stats() == {
+                "collections": 1,
+                "documents": 1,
+                "chunks": 1,
+                "contexts": 1,
+                "total_size_bytes": 3,
+            }
+
+            reset_manager = SchemaManager(_VectorDropFailureConnection(conn))
+            reset_manager.drop_all()
+            assert (
+                conn.execute(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' "
+                    "AND name NOT LIKE 'sqlite_%'",
+                ).fetchone()[0]
+                == 0
+            )
+        finally:
+            conn.close()
+
+
 class TestFtsUpdateTrigger:
-    """FND-06 / CR-01: external-content FTS5 update triggers must not direct-UPDATE.
+    """FND-06 / CR-01: external-content FTS5 sync triggers must not write directly.
 
     A direct UPDATE on an external-content FTS5 table corrupts the index
     ("database disk image is malformed") on medium+ content edits, so the
     document edit loop (`sif index update` on a changed note) cannot work.
+    A direct DELETE silently leaves the removed content MATCHable, so deleted
+    documents stay searchable (CR-01). create_all() must migrate both legacy
+    forms to the documented 'delete'-command triggers.
     """
 
     MEDIUM_CONTENT = "# Title\n\n" + ("Paragraph text here. " * 400)
@@ -251,6 +463,30 @@ class TestFtsUpdateTrigger:
             "'2020-01-01', '2020-01-01')",
             (self.MEDIUM_CONTENT,),
         )
+        db.commit()
+
+    def _insert_chunk(self, db: sqlite3.Connection) -> None:
+        db.execute(
+            "INSERT INTO document_chunks (id, document_id, sequence, content, created_at) "
+            "VALUES ('ch1', 'd1', 0, ?, '2020-01-01')",
+            (self.MEDIUM_CONTENT,),
+        )
+        db.commit()
+
+    def _install_legacy_delete_triggers(self, db: sqlite3.Connection) -> None:
+        """Replace both delete triggers with the broken legacy direct-DELETE form."""
+        for trigger, table, base in (
+            ("documents_fts_delete", "documents_fts", "documents"),
+            ("chunks_fts_delete", "chunks_fts", "document_chunks"),
+        ):
+            db.execute(f"DROP TRIGGER {trigger}")
+            db.execute(f"""
+                CREATE TRIGGER {trigger}
+                AFTER DELETE ON {base}
+                BEGIN
+                    DELETE FROM {table} WHERE rowid = old.rowid;
+                END
+            """)
         db.commit()
 
     def test_medium_document_update_keeps_fts_in_sync(self, fts_db):
@@ -335,9 +571,123 @@ class TestFtsUpdateTrigger:
             assert f"UPDATE {table} SET" not in sql
             assert "VALUES('delete'" in sql
 
-    def test_modern_trigger_is_left_alone(self, fts_db):
-        """create_all() does not churn an already-migrated trigger."""
+    def test_legacy_direct_delete_trigger_is_migrated(self, fts_db):
+        """create_all() replaces legacy direct-DELETE triggers; deletes purge from MATCH."""
         SchemaManager(fts_db, embedding_dim=384).create_all()
+        self._install_legacy_delete_triggers(fts_db)
+
+        SchemaManager(fts_db, embedding_dim=384).create_all()
+
+        for trigger, table in (
+            ("documents_fts_delete", "documents_fts"),
+            ("chunks_fts_delete", "chunks_fts"),
+        ):
+            sql = fts_db.execute(
+                "SELECT sql FROM sqlite_master WHERE type='trigger' AND name=?",
+                (trigger,),
+            ).fetchone()[0]
+            assert f"DELETE FROM {table}" not in sql
+            assert "VALUES('delete'" in sql
+
+        self._insert_document(fts_db)
+        self._insert_chunk(fts_db)
+        assert (
+            fts_db.execute(
+                "SELECT COUNT(*) FROM documents_fts WHERE documents_fts MATCH 'paragraph'"
+            ).fetchone()[0]
+            == 1
+        )
+        assert (
+            fts_db.execute(
+                "SELECT COUNT(*) FROM chunks_fts WHERE chunks_fts MATCH 'paragraph'"
+            ).fetchone()[0]
+            == 1
+        )
+
+        fts_db.execute("DELETE FROM document_chunks WHERE id = 'ch1'")
+        fts_db.execute("DELETE FROM documents WHERE id = 'd1'")
+        fts_db.commit()
+        assert (
+            fts_db.execute(
+                "SELECT COUNT(*) FROM documents_fts WHERE documents_fts MATCH 'paragraph'"
+            ).fetchone()[0]
+            == 0
+        )
+        assert (
+            fts_db.execute(
+                "SELECT COUNT(*) FROM chunks_fts WHERE chunks_fts MATCH 'paragraph'"
+            ).fetchone()[0]
+            == 0
+        )
+
+    def test_stale_fts_entries_are_purged_on_migration(self, fts_db):
+        """Entries orphaned under the legacy trigger are purged by the gated rebuild."""
+        SchemaManager(fts_db, embedding_dim=384).create_all()
+        self._install_legacy_delete_triggers(fts_db)
+
+        self._insert_document(fts_db)
+        self._insert_chunk(fts_db)
+        # Delete WHILE the legacy trigger is active: the plain DELETE FROM the
+        # FTS table leaves the removed content MATCHable (the bug state).
+        fts_db.execute("DELETE FROM document_chunks WHERE id = 'ch1'")
+        fts_db.execute("DELETE FROM documents WHERE id = 'd1'")
+        fts_db.commit()
+        assert (
+            fts_db.execute(
+                "SELECT COUNT(*) FROM documents_fts WHERE documents_fts MATCH 'paragraph'"
+            ).fetchone()[0]
+            == 1
+        )
+        assert (
+            fts_db.execute(
+                "SELECT COUNT(*) FROM chunks_fts WHERE chunks_fts MATCH 'paragraph'"
+            ).fetchone()[0]
+            == 1
+        )
+
+        # Migration replaces the triggers and the gated rebuild reaps the orphans.
+        SchemaManager(fts_db, embedding_dim=384).create_all()
+
+        assert (
+            fts_db.execute(
+                "SELECT COUNT(*) FROM documents_fts WHERE documents_fts MATCH 'paragraph'"
+            ).fetchone()[0]
+            == 0
+        )
+        assert (
+            fts_db.execute(
+                "SELECT COUNT(*) FROM chunks_fts WHERE chunks_fts MATCH 'paragraph'"
+            ).fetchone()[0]
+            == 0
+        )
+
+    def test_migration_rebuild_preserves_live_documents(self, fts_db):
+        """The gated rebuild resyncs the index rather than wiping live documents."""
+        SchemaManager(fts_db, embedding_dim=384).create_all()
+        self._insert_document(fts_db)
+        self._insert_chunk(fts_db)
+
+        self._install_legacy_delete_triggers(fts_db)
+        SchemaManager(fts_db, embedding_dim=384).create_all()
+
+        assert (
+            fts_db.execute(
+                "SELECT COUNT(*) FROM documents_fts WHERE documents_fts MATCH 'paragraph'"
+            ).fetchone()[0]
+            == 1
+        )
+        assert (
+            fts_db.execute(
+                "SELECT COUNT(*) FROM chunks_fts WHERE chunks_fts MATCH 'paragraph'"
+            ).fetchone()[0]
+            == 1
+        )
+        assert fts_db.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+
+    def test_modern_trigger_is_left_alone(self, fts_db):
+        """create_all() does not churn an already-migrated trigger or wipe live entries."""
+        SchemaManager(fts_db, embedding_dim=384).create_all()
+        self._insert_document(fts_db)
         trigger_sql = fts_db.execute(
             "SELECT sql FROM sqlite_master WHERE type='trigger' AND name='documents_fts_update'"
         ).fetchone()[0]
@@ -348,3 +698,9 @@ class TestFtsUpdateTrigger:
             "SELECT sql FROM sqlite_master WHERE type='trigger' AND name='documents_fts_update'"
         ).fetchone()[0]
         assert trigger_sql_after == trigger_sql
+        assert (
+            fts_db.execute(
+                "SELECT COUNT(*) FROM documents_fts WHERE documents_fts MATCH 'paragraph'"
+            ).fetchone()[0]
+            == 1
+        )

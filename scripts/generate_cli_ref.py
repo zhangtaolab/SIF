@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import inspect
 import sys
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,33 @@ from sif.cli.main import cli  # noqa: E402
 def _is_sentinel(value: Any) -> bool:
     """Check if a value is a Click sentinel (internal default marker)."""
     return type(value).__name__ == "Sentinel"
+
+
+def _normalize_help(text: str | None) -> str:
+    """Normalize help text to a version-independent form.
+
+    Click changed help handling across 8.x releases: ≤8.3 dedents docstring
+    help, ≥8.5 preserves the source indentation (and keeps trailing
+    whitespace on blank continuation lines). ``inspect.cleandoc`` plus a
+    per-line rstrip produces identical output from either shape, so the CI
+    drift gate cannot fire on a Click version bump.
+    """
+    if not text:
+        return ""
+    cleaned = inspect.cleandoc(text)
+    return "\n".join(line.rstrip() for line in cleaned.split("\n"))
+
+
+def _format_flag_default(opt: click.Parameter, rendered: str | None) -> str | None:
+    """Canonicalize unset flag defaults to ``false``.
+
+    Click ≤8.3 materializes an unset flag's default as ``False``; ≥8.5
+    leaves it ``None`` (rendered as an em-dash). An unset flag is off by
+    default on every version — render one canonical ``false``.
+    """
+    if getattr(opt, "is_flag", False) and rendered is None:
+        return "false"
+    return rendered
 
 
 def _format_default(value: Any) -> str | None:
@@ -82,7 +110,8 @@ def _build_tree_lines(cmd: click.Command, prefix: str = "") -> list[str]:
         for i, (name, subcmd) in enumerate(items):
             is_last = i == len(items) - 1
             connector = "└──" if is_last else "├──"
-            tree_lines.append(f"{prefix}{connector} {name:<15} {subcmd.help or ''}")
+            help_first_line = _normalize_help(subcmd.help).split("\n")[0]
+            tree_lines.append(f"{prefix}{connector} {name:<15} {help_first_line}")
             if isinstance(subcmd, click.Group):
                 extension = "    " if is_last else "│   "
                 tree_lines.extend(_build_tree_lines(subcmd, prefix + extension))
@@ -95,7 +124,7 @@ def _format_command_section(path: str, cmd: click.Command) -> list[str]:
     section.append(f"### `{path}`")
     section.append("")
     if cmd.help:
-        section.append(cmd.help)
+        section.append(_normalize_help(cmd.help))
         section.append("")
 
     section.append(f"```bash\nsif {path} [OPTIONS]\n```")
@@ -109,7 +138,7 @@ def _format_command_section(path: str, cmd: click.Command) -> list[str]:
         section.append("|----------|------|----------|-------------|")
         for arg in args:
             required = "Yes" if arg.required else "No"
-            help_text = getattr(arg, "help", "") or ""
+            help_text = _normalize_help(getattr(arg, "help", "") or "")
             section.append(f"| `{arg.name}` | {arg.type.name} | {required} | {help_text} |")
         section.append("")
 
@@ -123,9 +152,9 @@ def _format_command_section(path: str, cmd: click.Command) -> list[str]:
             long_opt = next((o for o in opt.opts if o.startswith("--")), opt.opts[0])
             short_opt = next((o for o in opt.opts if not o.startswith("--")), "—")
             ptype = _format_type(opt)
-            default = _format_default(opt.default)
+            default = _format_flag_default(opt, _format_default(opt.default))
             default_str = f"`{default}`" if default else "—"
-            help_text = opt.help or ""
+            help_text = _normalize_help(opt.help or "")
             section.append(
                 f"| `{long_opt}` | `{short_opt}` | {ptype} | {default_str} | {help_text} |"
             )
@@ -164,9 +193,12 @@ def _append_global_options(lines: list[str]) -> None:
             long = ", ".join(o for o in param.opts if o.startswith("--"))
             short = ", ".join(o for o in param.opts if not o.startswith("--"))
             ptype = _format_type(param)
-            default = _format_default(param.default)
+            default = _format_flag_default(param, _format_default(param.default))
             default_str = f"`{default}`" if default else "—"
-            lines.append(f"| `{long}` | `{short}` | {ptype} | {default_str} | {param.help or ''} |")
+            lines.append(
+                f"| `{long}` | `{short}` | {ptype} | {default_str} |"
+                f" {_normalize_help(param.help or '')} |"
+            )
 
     lines.append("")
 

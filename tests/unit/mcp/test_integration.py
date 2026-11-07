@@ -15,8 +15,9 @@ from sif.mcp.handlers import (
     QueryToolHandler,
     StatusToolHandler,
 )
-from sif.mcp.protocol import MCPErrorCode, SearchResult
+from sif.mcp.protocol import CollectionInfo, Document, MCPErrorCode, SearchResult
 from sif.mcp.server import MCPServer
+from sif.mcp.transports import http
 from sif.mcp.transports.http import create_app
 from sif.mcp.transports.stdio import StdioTransport
 
@@ -29,6 +30,14 @@ def _make_backend():
     backend.get_documents_by_pattern = AsyncMock(return_value=([], []))
     backend.get_status = AsyncMock(return_value=([], 0))
     return backend
+
+
+@pytest.fixture(autouse=True)
+def clear_http_sessions():
+    """Prevent integration tests from inheriting global HTTP session state."""
+    http._sessions.clear()
+    yield
+    http._sessions.clear()
 
 
 class TestStdioIntegration:
@@ -350,3 +359,79 @@ class TestHTTPIntegration:
                 decoded = line.decode("utf-8") if isinstance(line, bytes) else line
                 assert "ping" in decoded
                 break
+
+
+class TestToolHandlerPayloads:
+    """Handler tests assert serialized payloads and backend parameter forwarding."""
+
+    @pytest.mark.asyncio
+    async def test_get_handler_serializes_document_and_line_arguments(self) -> None:
+        """A found document includes Unicode text and forwards optional ranges."""
+        backend = _make_backend()
+        backend.get_document.return_value = Document(
+            doc_id="doc-1",
+            path="notes/知识.md",
+            content="你好\nsecond line",
+        )
+
+        result = await GetToolHandler().handle(
+            {"path_or_docid": "doc-1", "from_line": 2, "max_lines": 4},
+            backend,
+        )
+
+        payload = json.loads(result.content[0].text)
+        assert result.isError is False
+        assert payload["document"]["path"] == "notes/知识.md"
+        assert payload["document"]["content"] == "你好\nsecond line"
+        backend.get_document.assert_awaited_once_with("doc-1", 2, 4)
+
+    @pytest.mark.asyncio
+    async def test_get_handler_missing_document_is_an_error_payload(self) -> None:
+        """A missing document returns isError with the current public message."""
+        result = await GetToolHandler().handle({"path_or_docid": "missing"}, _make_backend())
+
+        assert result.isError is True
+        assert result.content[0].text == "Document not found"
+
+    @pytest.mark.asyncio
+    async def test_multi_get_serializes_documents_and_errors(self) -> None:
+        """Batch results preserve both returned documents and per-path errors."""
+        backend = _make_backend()
+        backend.get_documents_by_pattern.return_value = (
+            [Document(doc_id="doc-1", path="a.md", content="alpha")],
+            ["b.md: unreadable"],
+        )
+
+        result = await MultiGetToolHandler().handle(
+            {"pattern": "*.md", "max_bytes": 1024},
+            backend,
+        )
+
+        payload = json.loads(result.content[0].text)
+        assert payload["documents"][0]["doc_id"] == "doc-1"
+        assert payload["errors"] == ["b.md: unreadable"]
+        backend.get_documents_by_pattern.assert_awaited_once_with("*.md", 1024)
+
+    @pytest.mark.asyncio
+    async def test_status_serializes_collection_totals(self) -> None:
+        """Status output uses real protocol collection models and totals."""
+        backend = _make_backend()
+        backend.get_status.return_value = (
+            [CollectionInfo(name="notes", document_count=3, last_updated="today")],
+            3,
+        )
+
+        result = await StatusToolHandler().handle({}, backend)
+
+        payload = json.loads(result.content[0].text)
+        assert payload == {
+            "collections": [
+                {
+                    "name": "notes",
+                    "document_count": 3,
+                    "last_updated": "today",
+                    "size_bytes": None,
+                }
+            ],
+            "total_documents": 3,
+        }

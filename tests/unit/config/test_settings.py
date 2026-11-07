@@ -34,6 +34,20 @@ def test_model_type_validation_rejects_unimplemented_huggingface() -> None:
         Settings(model_type="huggingface")
 
 
+def test_reranker_model_type_validation_accepts_valid_values() -> None:
+    """Test that reranker_model_type accepts the two dispatch backends."""
+    valid_types = ["gguf", "sentence_transformers"]
+    for type_value in valid_types:
+        settings = Settings(reranker_model_type=type_value)
+        assert settings.reranker_model_type == type_value
+
+
+def test_reranker_model_type_validation_rejects_invalid_values() -> None:
+    """WR-09: an unsupported reranker backend fails at settings-validation time."""
+    with pytest.raises(ValueError, match="Invalid reranker_model_type"):
+        Settings(reranker_model_type="cross-encoder")
+
+
 def test_api_base_validation_accepts_https_url() -> None:
     """Test that api_base accepts HTTPS URLs."""
     settings = Settings(api_base="https://api.openai.com/v1")

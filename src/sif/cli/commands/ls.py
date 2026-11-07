@@ -29,39 +29,39 @@ def ls_cmd(
         console.print("[yellow]No index found.[/yellow]")
         return
 
-    db = Database(index_path)
-    db.init_schema()
+    with Database(index_path) as db:
+        db.init_schema()
 
-    with db.connection:
-        doc_repo = DocumentRepository(db.connection)
-        coll_repo = CollectionRepository(db.connection)
+        with db.connection:
+            doc_repo = DocumentRepository(db.connection)
+            coll_repo = CollectionRepository(db.connection)
 
-        if collection:
-            collections = [coll_repo.get_by_name(collection)]
-            if not collections[0]:
-                raise click.ClickException(f"Collection '{collection}' not found")
-        else:
-            collections = coll_repo.list_all()
+            if collection:
+                collections = [coll_repo.get_by_name(collection)]
+                if not collections[0]:
+                    raise click.ClickException(f"Collection '{collection}' not found")
+            else:
+                collections = coll_repo.list_all()
 
-        for coll in collections:
-            if not coll:
-                continue
+            for coll in collections:
+                if not coll:
+                    continue
 
-            docs = doc_repo.list_by_collection(coll.id)
-            if subpath:
-                prefix = subpath.strip("/")
-                docs = [d for d in docs if d.path.strip("/").startswith(prefix)]
+                docs = doc_repo.list_by_collection(coll.id)
+                if subpath:
+                    prefix = subpath.strip("/")
+                    docs = [d for d in docs if d.path.strip("/").startswith(prefix)]
 
-            if not docs:
-                continue
+                if not docs:
+                    continue
 
-            tree = Tree(f"[bold cyan]{coll.name}[/bold cyan]")
-            for doc in sorted(docs, key=lambda d: d.path):
-                parts = doc.path.strip("/").split("/")
-                node = tree
-                for part in parts[:-1]:
-                    found = next((c for c in node.children if str(c.label) == part), None)
-                    node = found if found else node.add(part)
-                node.add(parts[-1])
+                tree = Tree(f"[bold cyan]{coll.name}[/bold cyan]")
+                for doc in sorted(docs, key=lambda d: d.path):
+                    parts = doc.path.strip("/").split("/")
+                    node = tree
+                    for part in parts[:-1]:
+                        found = next((c for c in node.children if str(c.label) == part), None)
+                        node = found if found else node.add(part)
+                    node.add(parts[-1])
 
-            console.print(tree)
+                console.print(tree)

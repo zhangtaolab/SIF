@@ -13,9 +13,13 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   docs-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -29,7 +33,7 @@ jobs:
           pip install -e ".[dev]"
 
       - name: Run docs tests
-        run: pytest tests/test_docs.py -v
+        run: pytest tests/test_docs.py -v --no-cov
 
       - name: Verify generation scripts work
         run: |

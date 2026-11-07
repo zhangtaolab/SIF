@@ -145,13 +145,16 @@ class SchemaManager:
             )
         """)
 
-    def _fts_update_trigger_is_legacy(self, trigger_name: str, fts_table: str) -> bool:
-        """Check if an existing FTS sync trigger uses the broken direct-UPDATE form.
+    def _fts_trigger_is_legacy(self, trigger_name: str, fts_table: str) -> bool:
+        """Check if an existing FTS sync trigger writes directly to the FTS table.
 
-        Direct UPDATEs on an external-content FTS5 table are not supported and
-        corrupt the index ("database disk image is malformed") once the edit is
-        large enough to span internal node boundaries. The documented pattern
-        issues a 'delete' command plus a fresh INSERT instead.
+        Two broken legacy forms exist, both issuing a direct write to the
+        external-content FTS5 table instead of the documented commands: a
+        direct UPDATE corrupts the index ("database disk image is malformed")
+        once the edit spans internal node boundaries (FND-06), and a direct
+        DELETE silently leaves the removed content MATCHable (CR-01). The
+        documented remedy for both is the 'delete'-command trigger form
+        created in _create_fts_tables.
         """
         cursor = self.db.execute(
             "SELECT sql FROM sqlite_master WHERE type='trigger' AND name=?",
@@ -160,7 +163,33 @@ class SchemaManager:
         row = cursor.fetchone()
         if not row or not row[0]:
             return False
-        return f"UPDATE {fts_table} SET" in row[0]
+        sql = row[0]
+        return f"UPDATE {fts_table} SET" in sql or f"DELETE FROM {fts_table}" in sql
+
+    def _drop_legacy_fts_triggers(self) -> tuple[bool, bool]:
+        """Drop legacy FTS sync triggers; report which DELETE triggers were legacy.
+
+        Legacy triggers write directly to the external-content FTS5 tables
+        (FND-06 / CR-01): a direct UPDATE corrupts the index once an edit
+        spans internal node boundaries ("database disk image is malformed"),
+        and a direct DELETE silently leaves the removed content MATCHable.
+        CREATE TRIGGER IF NOT EXISTS cannot replace either form, so each
+        legacy trigger is dropped here; _create_fts_tables then recreates
+        the documented 'delete'-command forms. The returned booleans tell
+        the caller which FTS indexes may carry entries orphaned by past
+        deletes that ran under a broken trigger.
+        """
+        legacy_delete_docs = self._fts_trigger_is_legacy("documents_fts_delete", "documents_fts")
+        if legacy_delete_docs:
+            self.db.execute("DROP TRIGGER documents_fts_delete")
+        legacy_delete_chunks = self._fts_trigger_is_legacy("chunks_fts_delete", "chunks_fts")
+        if legacy_delete_chunks:
+            self.db.execute("DROP TRIGGER chunks_fts_delete")
+        if self._fts_trigger_is_legacy("documents_fts_update", "documents_fts"):
+            self.db.execute("DROP TRIGGER documents_fts_update")
+        if self._fts_trigger_is_legacy("chunks_fts_update", "chunks_fts"):
+            self.db.execute("DROP TRIGGER chunks_fts_update")
+        return legacy_delete_docs, legacy_delete_chunks
 
     def _create_fts_tables(self) -> None:
         """Create FTS5 virtual tables for full-text search with triggers."""
@@ -180,15 +209,7 @@ class SchemaManager:
         needs_rebuild_docs = _fts_is_misconfigured("documents_fts", "documents")
         needs_rebuild_chunks = _fts_is_misconfigured("chunks_fts", "document_chunks")
 
-        # Migrate legacy update triggers that direct-UPDATE the external-content
-        # FTS5 table (FND-06 / CR-01): such UPDATEs corrupt the FTS index once
-        # an edit spans internal node boundaries ("database disk image is
-        # malformed" on medium+ content edits). CREATE TRIGGER IF NOT EXISTS
-        # cannot replace them, so drop the legacy form before recreating below.
-        if self._fts_update_trigger_is_legacy("documents_fts_update", "documents_fts"):
-            self.db.execute("DROP TRIGGER documents_fts_update")
-        if self._fts_update_trigger_is_legacy("chunks_fts_update", "chunks_fts"):
-            self.db.execute("DROP TRIGGER chunks_fts_update")
+        legacy_delete_docs, legacy_delete_chunks = self._drop_legacy_fts_triggers()
 
         if needs_rebuild_docs:
             self.db.execute("DROP TABLE IF EXISTS documents_fts")
@@ -236,7 +257,8 @@ class SchemaManager:
             CREATE TRIGGER IF NOT EXISTS documents_fts_delete
             AFTER DELETE ON documents
             BEGIN
-                DELETE FROM documents_fts WHERE rowid = old.rowid;
+                INSERT INTO documents_fts(documents_fts, rowid, content)
+                VALUES('delete', old.rowid, old.content);
             END
         """)
 
@@ -261,7 +283,8 @@ class SchemaManager:
             CREATE TRIGGER IF NOT EXISTS chunks_fts_delete
             AFTER DELETE ON document_chunks
             BEGIN
-                DELETE FROM chunks_fts WHERE rowid = old.rowid;
+                INSERT INTO chunks_fts(chunks_fts, rowid, content)
+                VALUES('delete', old.rowid, old.content);
             END
         """)
 
@@ -276,6 +299,18 @@ class SchemaManager:
                 INSERT INTO chunks_fts(rowid, content)
                 SELECT rowid, content FROM document_chunks
             """)
+
+        # CR-01: purge FTS entries orphaned by deletes that ran while a legacy
+        # direct-DELETE trigger was active — replacing the trigger repairs
+        # future deletes, not past ones. 'rebuild' re-derives the whole index
+        # from the content tables, so live entries survive. Gated on legacy
+        # detection alone (not needs_rebuild_*): a table dropped and reseeded
+        # above is already consistent, but fresh and already-migrated databases
+        # must pay nothing.
+        if legacy_delete_docs:
+            self.db.execute("INSERT INTO documents_fts(documents_fts) VALUES('rebuild')")
+        if legacy_delete_chunks:
+            self.db.execute("INSERT INTO chunks_fts(chunks_fts) VALUES('rebuild')")
 
     def _create_vector_tables(self) -> None:
         """Create vector tables using sqlite-vec."""

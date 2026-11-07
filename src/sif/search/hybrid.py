@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from sif.core.models import Embedder, SearchOptions, SearchResult, SearchType
 from sif.search.bm25 import BM25Searcher
@@ -285,26 +285,29 @@ class SearchPipeline:
         it generates a short answer. Otherwise raises RuntimeError since HyDE
         requires text generation capability.
         """
-        if self.hybrid.embedder is None:
+        embedder = self.hybrid.embedder
+        if embedder is None:
             raise RuntimeError("HyDE search requires an embedder")
 
         # Check if embedder has generate capability
-        if hasattr(self.hybrid.embedder, "generate"):
+        if hasattr(embedder, "generate"):
             prompt = (
                 f"Answer the following question concisely and directly. "
                 f"Provide only the answer, no preamble.\n\n"
                 f"Question: {query}\n\nAnswer:"
             )
-            return self.hybrid.embedder.generate(prompt)
+            generate = getattr(embedder, "generate")  # noqa: B009
+            return cast(str, generate(prompt))
 
         # Check for llama-cpp style completion API
-        if hasattr(self.hybrid.embedder, "create_completion"):
+        if hasattr(embedder, "create_completion"):
             prompt = (
                 f"Answer the following question concisely and directly. "
                 f"Provide only the answer, no preamble.\n\n"
                 f"Question: {query}\n\nAnswer:"
             )
-            result = self.hybrid.embedder.create_completion(
+            create_completion = getattr(embedder, "create_completion")  # noqa: B009
+            result = create_completion(
                 prompt,
                 max_tokens=256,
                 temperature=0.3,

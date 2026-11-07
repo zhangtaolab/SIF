@@ -163,6 +163,23 @@ class Settings(BaseSettings):
             raise ValueError(f"Invalid model_type: {v}. Must be one of {sorted(valid_types)}")
         return v
 
+    @field_validator("reranker_model_type")
+    @classmethod
+    def validate_reranker_model_type(cls, v: str) -> str:
+        """Validate reranker_model_type is one of the supported dispatch backends.
+
+        Fails at settings-validation time (REVIEW WR-09) so an invalid
+        SIF_RERANKER_MODEL_TYPE surfaces as a config error naming the field,
+        instead of a raw ValueError traceback escaping create_reranker deep
+        inside query_cmd.
+        """
+        valid_types = {"gguf", "sentence_transformers"}
+        if v not in valid_types:
+            raise ValueError(
+                f"Invalid reranker_model_type: {v}. Must be one of {sorted(valid_types)}"
+            )
+        return v
+
     @field_validator("api_base")
     @classmethod
     def validate_api_base(cls, v: str | None) -> str | None:
