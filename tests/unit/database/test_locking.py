@@ -99,31 +99,29 @@ class TestIndexLock:
         assert not thread.is_alive()
         os.close(holder_fd)
 
-    def test_deadline_expiry_proceeds_without_lock_and_notifies_once(
-        self, tmp_path: Path
-    ) -> None:
+    def test_deadline_expiry_proceeds_without_lock_and_notifies_once(self, tmp_path: Path) -> None:
         """D-02: expiry is not an error — the body runs unlocked, once-notified, bounded."""
         db_path = tmp_path / "sif.db"
         holder_fd = _acquire_nb(_lock_path(db_path))
-        wait_calls: list[int] = []
-        body_ran = False
-        started = time.monotonic()
         try:
+            wait_calls: list[int] = []
+            body_ran = False
+            started = time.monotonic()
             with index_lock(db_path, timeout_s=0.5, on_wait=lambda: wait_calls.append(1)):
                 body_ran = True  # the loser still runs its own pass
+            elapsed = time.monotonic() - started
+            assert body_ran
+            assert wait_calls == [1]  # notified exactly once, on first contention
+            assert 0.5 <= elapsed < 1.5  # waited out the deadline with bounded overshoot
+            # The expired waiter holds nothing: the incumbent still owns the lock.
+            fd = os.open(_lock_path(db_path), os.O_RDWR)
+            try:
+                with pytest.raises(BlockingIOError):
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            finally:
+                os.close(fd)
         finally:
             os.close(holder_fd)
-        elapsed = time.monotonic() - started
-        assert body_ran
-        assert wait_calls == [1]  # notified exactly once, on first contention
-        assert 0.5 <= elapsed < 1.5  # waited out the deadline with bounded overshoot
-        # The expired waiter holds nothing: the incumbent still owns the lock.
-        fd = os.open(_lock_path(db_path), os.O_RDWR)
-        try:
-            with pytest.raises(BlockingIOError):
-                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        finally:
-            os.close(fd)
 
     def test_holder_death_releases_lock_immediately(self, tmp_path: Path) -> None:
         """SIGKILLing the holder releases the kernel lock — no stale locks possible."""

@@ -40,9 +40,7 @@ def _pragma(conn: sqlite3.Connection, name: str) -> object:
 class TestReaderDuringWriter:
     """WAL SC1: readers coexist with an open write transaction."""
 
-    def test_cli_and_mcp_style_readers_succeed_during_open_write_txn(
-        self, tmp_path: Path
-    ) -> None:
+    def test_cli_and_mcp_style_readers_succeed_during_open_write_txn(self, tmp_path: Path) -> None:
         """Both connection styles SELECT cleanly while a write txn is open."""
         db_path = tmp_path / "sc1.db"
         with Database(db_path) as db:
@@ -57,21 +55,22 @@ class TestReaderDuringWriter:
 
             # CLI-style reader (Database.connection) succeeds under WAL.
             with Database(db_path) as reader_db:
-                count = reader_db.connection.execute(
-                    "SELECT COUNT(*) FROM collections"
-                ).fetchone()[0]
+                count = reader_db.connection.execute("SELECT COUNT(*) FROM collections").fetchone()[
+                    0
+                ]
             assert count == 0  # WAL snapshot: the open txn stays invisible
 
             # MCP-style reader (DatabaseConnection.fetchone) succeeds too.
             row = DatabaseConnection(db_path).fetchone("SELECT COUNT(*) FROM collections")
-            assert row is not None and row[0] == 0
+            assert row is not None
+            assert row[0] == 0
 
             writer.commit()
 
             with Database(db_path) as reader_db:
-                after = reader_db.connection.execute(
-                    "SELECT COUNT(*) FROM collections"
-                ).fetchone()[0]
+                after = reader_db.connection.execute("SELECT COUNT(*) FROM collections").fetchone()[
+                    0
+                ]
             assert after == 1
         finally:
             writer.close()
@@ -151,8 +150,7 @@ class TestThreadedInterleave:
                 errors.append((name, str(e)))
 
         threads = [
-            threading.Thread(target=worker, args=(f"w{n}", conn))
-            for n, conn in enumerate(conns)
+            threading.Thread(target=worker, args=(f"w{n}", conn)) for n, conn in enumerate(conns)
         ]
         for thread in threads:
             thread.start()

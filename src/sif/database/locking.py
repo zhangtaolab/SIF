@@ -81,13 +81,15 @@ def index_lock(
                     if on_wait is not None:
                         on_wait()
                 if time.monotonic() >= deadline:
-                    # Availability over exclusion (D-02): run the pass anyway.
+                    # Availability over exclusion (D-02): break to the yield
+                    # so the caller's own pass runs without the kernel lock
+                    # (a pre-yield return would crash the with-statement).
                     logger.info(
                         "Index lock wait deadline (%.1fs) expired for %s; proceeding unlocked",
                         timeout_s,
                         lock_path,
                     )
-                    return
+                    break
                 time.sleep(_POLL_INTERVAL_SECONDS)
         yield
     finally:
