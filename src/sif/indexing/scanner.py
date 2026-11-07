@@ -50,6 +50,34 @@ class FileScanner:
     def __init__(self) -> None:
         """Initialize the file scanner."""
 
+    @staticmethod
+    def matches(
+        root_path: Path,
+        file_path: Path,
+        pattern: str = "**/*.md",
+        ignore_patterns: list[str] | None = None,
+    ) -> bool:
+        """Shared scan/watch membership predicate (D-07).
+
+        True exactly when ``file_path`` would appear in ``scan(root_path)``
+        output: under the resolved root, matching ``pattern`` with rglob
+        semantics (a ``**/`` prefix also matches zero directories), and not
+        ignored by the combined default + settings + per-call ignore list.
+        Watch-side event filtering consumes this same predicate so live
+        events can never index what a scan would skip.
+
+        Args:
+            root_path: Collection root directory
+            file_path: Candidate file path
+            pattern: Glob pattern to match (rglob semantics)
+            ignore_patterns: Per-collection ignore patterns
+
+        Returns:
+            True if the path is indexable under this root and pattern
+        """
+        _ = (root_path, file_path, pattern, ignore_patterns)
+        return False
+
     def scan(
         self,
         root_path: Path,

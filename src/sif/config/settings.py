@@ -40,6 +40,19 @@ class Settings(BaseSettings):
         "lock before proceeding with its own pass anyway",
     )
 
+    # Watch settings (Phase 12 live index)
+    watch_debounce_interval: float = Field(
+        default=0.5,
+        gt=0,
+        description="Quiet window in seconds a filesystem event burst must "
+        "settle for before `sif watch` runs one incremental update",
+    )
+    watch_ignore_patterns: list[str] = Field(
+        default_factory=list,
+        description="Global ignore-pattern additions applied to the shared "
+        "scan/watch predicate (extends the scanner defaults for both)",
+    )
+
     # Model settings
     model_path: Path | None = Field(
         default=None,

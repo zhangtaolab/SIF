@@ -15,7 +15,7 @@ loop is BM25-only; embedding work stays in ``embed_cmd`` (Phase 03 lock).
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -46,6 +46,7 @@ class IncrementalResult:
     added: int = 0
     updated: int = 0
     removed: int = 0
+    unchanged: int = 0
 
 
 def _embedding_purger(conn: sqlite3.Connection) -> VectorSearcher | None:
@@ -148,6 +149,36 @@ class IncrementalIndexer:
             self._coll_repo.update(collection)
 
         return IncrementalResult(added=added, updated=updated, removed=removed)
+
+    def update_paths(
+        self,
+        collection: Collection,
+        paths: Iterable[Path],
+        *,
+        force: bool = False,
+        progress: Callable[[str], None] | None = None,
+    ) -> IncrementalResult:
+        """Targeted update: for each path, stat it — exists+changed → re-index, gone → remove.
+
+        Cost is proportional to ``len(paths)``; the collection tree is never
+        scanned (D-06). A path may arrive from both sides of a folded event
+        burst; it is processed once and disk state decides the outcome.
+        Unchanged paths (checksum skip) count as ``unchanged``; a missing
+        collection root warns and returns zero counts without touching any
+        document (D-11).
+
+        Args:
+            collection: The collection the paths belong to.
+            paths: Candidate paths (index hints and remove hints unioned).
+            force: Re-index files whose stored checksum already matches.
+            progress: Optional presentation callback; same event protocol as
+                :meth:`update_collection` plus ``"missing <name>"``.
+
+        Returns:
+            Counts of added, updated, removed, and unchanged documents.
+        """
+        _ = (collection, paths, force, progress)
+        return IncrementalResult()
 
     @staticmethod
     def _notify(progress: Callable[[str], None] | None, event: str) -> None:

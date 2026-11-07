@@ -91,6 +91,7 @@ from sif.cli.commands.ls import ls_cmd  # noqa: E402
 from sif.cli.commands.mcp import mcp_group  # noqa: E402
 from sif.cli.commands.pull import pull_cmd  # noqa: E402
 from sif.cli.commands.search import search_group  # noqa: E402
+from sif.cli.commands.watch import watch_cmd  # noqa: E402
 
 
 cli.add_command(collection_group)
@@ -102,6 +103,7 @@ cli.add_command(mcp_group)
 cli.add_command(ls_cmd)
 cli.add_command(pull_cmd)
 cli.add_command(bench_cmd)
+cli.add_command(watch_cmd)
 
 
 @cli.command("status")

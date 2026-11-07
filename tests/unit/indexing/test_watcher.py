@@ -1,395 +1,323 @@
-"""Tests for file system watcher in sif.indexing.watcher."""
+"""Fold semantics and per-path update proofs for the Phase 12 watch pipeline.
+
+Synthetic-event, zero-timing culture (D-15): watchdog event objects are
+constructed positionally and driven directly into ``fold_events`` /
+``update_paths`` — no observer threads, no sleeps. The real-observer
+end-to-end proof lives in ``tests/integration/test_watch_e2e.py``.
+"""
 
 from __future__ import annotations
 
+import sqlite3
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from sif.indexing.watcher import FileWatcher, IndexingEventHandler
+from watchdog.events import (
+    DirCreatedEvent,
+    DirDeletedEvent,
+    DirModifiedEvent,
+    DirMovedEvent,
+    FileCreatedEvent,
+    FileDeletedEvent,
+    FileModifiedEvent,
+    FileMovedEvent,
+)
+
+from sif.config.settings import Settings
+from sif.core.models import Collection
+from sif.database.database import Database
+from sif.database.repositories import DocumentRepository
+from sif.indexing.incremental import IncrementalIndexer, IncrementalResult
+from sif.indexing.scanner import FileScanner
+from sif.indexing.watcher import FoldResult, fold_events
 
 
-# =============================================================================
-# IndexingEventHandler Tests
-# =============================================================================
+BODY_ALPHA = "# Heading One\n\n" + ("Alpha paragraph text. " * 50)
+BODY_BETA = "# Heading Two\n\n" + ("Beta paragraph text. " * 50)
 
 
-class TestIndexingEventHandler:
-    """Tests for IndexingEventHandler."""
+def _delenv_settings_vars(monkeypatch) -> None:
+    """Keep Settings construction hermetic against a developer shell."""
+    for var in ("SIF_EMBEDDING_DIM", "SIF_MODEL_TYPE", "SIF_MODEL_NAME"):
+        monkeypatch.delenv(var, raising=False)
 
-    def test_init_defaults(self) -> None:
-        """Test default extensions are markdown."""
-        mock_indexer = MagicMock()
-        handler = IndexingEventHandler(
-            collection_id="coll-1",
-            indexer=mock_indexer,
+
+def _test_settings() -> Settings:
+    """Build hermetic test settings."""
+    return Settings(embedding_dim=8, model_name="test", cache_embeddings=False)
+
+
+def _seed_collection(db_path: Path, notes: Path) -> str:
+    """Init schema and create one collection pointing at ``notes``; return its id."""
+    db = Database(db_path)
+    with patch("sif.config.settings.get_settings", return_value=_test_settings()):
+        db.init_schema()
+        with db.connection:
+            from sif.database.repositories import CollectionRepository
+
+            coll_repo = CollectionRepository(db.connection)
+            coll = Collection(name="notes", path=str(notes))
+            coll_repo.create(coll)
+            coll_id = coll.id
+    db.close()
+    return coll_id
+
+
+def _open_indexer(db_path: Path) -> tuple[IncrementalIndexer, Database, Collection]:
+    """Open the DB, load the seeded collection, and build an indexer."""
+    db = Database(db_path)
+    from sif.database.repositories import CollectionRepository
+
+    coll_repo = CollectionRepository(db.connection)
+    coll = coll_repo.get_by_name("notes")
+    assert coll is not None
+    return IncrementalIndexer(db.connection), db, coll
+
+
+def _doc_paths(db_path: Path) -> set[str]:
+    """Read document paths through a fresh connection (query, not files)."""
+    conn = sqlite3.connect(str(db_path))
+    try:
+        return {row[0] for row in conn.execute("SELECT path FROM documents")}
+    finally:
+        conn.close()
+
+
+def _should_track(root: Path, path: Path) -> bool:
+    """The collection's shared scanner predicate (D-07)."""
+    return FileScanner.matches(root, path, pattern="**/*.md")
+
+
+class TestFoldEvents:
+    """Folding a settled burst into candidate path sets (D-06/D-07/D-08)."""
+
+    def test_temp_noise_dropped_and_real_md_kept(self, tmp_path: Path) -> None:
+        """Editor-noise paths never become candidates; real .md paths do."""
+        root = tmp_path / "notes"
+        real = root / "note.md"
+        noise = [
+            root / "note.md.sb-ABCD1234",
+            root / ".swp.tmp",
+            root / "4913",
+            root / ".#b.md",
+            root / "c.tmp",
+            root / "d.swp",
+            root / ".DS_Store",
+        ]
+        events = [FileCreatedEvent(str(p)) for p in [real, *noise]]
+
+        folded = fold_events(events, should_track=lambda p: _should_track(root, p))
+
+        assert folded.index_candidates == {real.resolve()}
+        assert folded.remove_candidates == set()
+        assert folded.needs_reconcile is False
+
+    def test_atomic_save_chain_folds_to_final_path_only(self, tmp_path: Path) -> None:
+        """The probe's 5-event macOS atomic-save chain yields exactly the final path.
+
+        Includes the trailing ``deleted`` on the final path after ``moved`` —
+        the trailing delete must NOT turn the burst into a removal (D-06:
+        disk is truth; the index candidate's stat decides).
+        """
+        root = tmp_path / "notes"
+        final = root / "file.md"
+        temp = root / "file.md.sb-ABCD1234"
+        burst = [
+            FileCreatedEvent(str(temp)),
+            FileModifiedEvent(str(temp)),
+            FileMovedEvent(str(temp), str(final)),
+            FileModifiedEvent(str(final)),
+            FileDeletedEvent(str(final)),
+        ]
+
+        folded = fold_events(burst, should_track=lambda p: _should_track(root, p))
+
+        assert folded.index_candidates == {final.resolve()}
+        assert folded.remove_candidates == set()
+        assert folded.needs_reconcile is False
+
+    def test_moved_event_contributes_dest_index_src_remove(self, tmp_path: Path) -> None:
+        """A moved event indexes the dest and removes the src (D-07 dest rule)."""
+        root = tmp_path / "notes"
+        src = root / "old.md"
+        dest = root / "new.md"
+
+        folded = fold_events(
+            [FileMovedEvent(str(src), str(dest))],
+            should_track=lambda p: _should_track(root, p),
         )
-        assert handler._collection_id == "coll-1"
-        assert handler._indexer is mock_indexer
-        assert handler._extensions == {".md", ".markdown"}
 
-    def test_init_custom_extensions(self) -> None:
-        """Test custom extensions can be set."""
-        mock_indexer = MagicMock()
-        handler = IndexingEventHandler(
-            collection_id="coll-1",
-            indexer=mock_indexer,
-            extensions={".txt", ".rst"},
+        assert folded.index_candidates == {dest.resolve()}
+        assert folded.remove_candidates == {src.resolve()}
+
+    def test_directory_events_ignored_and_dir_moved_flags_reconcile(self, tmp_path: Path) -> None:
+        """Dir created/modified/deleted are ignored; dir moved needs a reconcile."""
+        root = tmp_path / "notes"
+        sub = root / "sub"
+
+        plain = fold_events(
+            [
+                DirCreatedEvent(str(sub)),
+                DirModifiedEvent(str(sub)),
+                DirDeletedEvent(str(sub)),
+            ],
+            should_track=lambda p: _should_track(root, p),
         )
-        assert handler._extensions == {".txt", ".rst"}
+        assert plain == FoldResult()
 
-    def test_should_handle_matching_extension(self) -> None:
-        """Test _should_handle returns True for matching extensions."""
-        mock_indexer = MagicMock()
-        handler = IndexingEventHandler(
-            collection_id="coll-1",
-            indexer=mock_indexer,
-            extensions={".md"},
+        moved = fold_events(
+            [DirMovedEvent(str(sub), str(root / "renamed"))],
+            should_track=lambda p: _should_track(root, p),
         )
-        assert handler._should_handle("/path/to/file.md") is True
-        assert handler._should_handle("/path/to/file.markdown") is False
+        assert moved.needs_reconcile is True
+        assert moved.index_candidates == set()
+        assert moved.remove_candidates == set()
 
-    def test_should_handle_no_match(self) -> None:
-        """Test _should_handle returns False for non-matching extensions."""
-        mock_indexer = MagicMock()
-        handler = IndexingEventHandler(
-            collection_id="coll-1",
-            indexer=mock_indexer,
-            extensions={".md"},
+
+class TestUpdatePaths:
+    """The per-path targeted update API (D-06/D-10/D-11), real DB culture."""
+
+    def test_new_file_added_and_document_row_exists(self, tmp_path, monkeypatch) -> None:
+        """A new on-disk path is added: added == 1 and the row is durable."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "watch.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        doc_file = notes / "a.md"
+        doc_file.write_text(BODY_ALPHA, encoding="utf-8")
+        _seed_collection(db_path, notes)
+
+        indexer, db, coll = _open_indexer(db_path)
+        try:
+            result = indexer.update_paths(coll, [doc_file])
+        finally:
+            db.close()
+
+        assert result == IncrementalResult(added=1, updated=0, removed=0, unchanged=0)
+        assert str(doc_file) in _doc_paths(db_path)
+
+    def test_edited_file_updated_with_fresh_checksum(self, tmp_path, monkeypatch) -> None:
+        """A content edit through update_paths reports updated == 1."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "watch.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        doc_file = notes / "a.md"
+        doc_file.write_text(BODY_ALPHA, encoding="utf-8")
+        _seed_collection(db_path, notes)
+
+        indexer, db, coll = _open_indexer(db_path)
+        try:
+            assert indexer.update_collection(coll) == IncrementalResult(1, 0, 0, 0)
+        finally:
+            db.close()
+
+        doc_file.write_text(BODY_BETA, encoding="utf-8")
+        indexer, db, coll = _open_indexer(db_path)
+        try:
+            result = indexer.update_paths(coll, [doc_file])
+        finally:
+            db.close()
+
+        assert result == IncrementalResult(added=0, updated=1, removed=0, unchanged=0)
+
+    def test_deleted_path_removed_with_purge_before_delete(self, tmp_path, monkeypatch) -> None:
+        """A vanished path is removed and its embeddings purge BEFORE the row delete (WR-01)."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "watch.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        doc_file = notes / "a.md"
+        doc_file.write_text(BODY_ALPHA, encoding="utf-8")
+        _seed_collection(db_path, notes)
+
+        indexer, db, coll = _open_indexer(db_path)
+        try:
+            assert indexer.update_collection(coll) == IncrementalResult(1, 0, 0, 0)
+        finally:
+            db.close()
+
+        doc_file.unlink()
+
+        calls: list[tuple[str, str]] = []
+        purger = MagicMock()
+        purger.delete_embeddings_by_document.side_effect = lambda doc_id: calls.append(
+            ("purge", doc_id)
         )
-        assert handler._should_handle("/path/to/file.txt") is False
-        assert handler._should_handle("/path/to/file.py") is False
-
-    def test_should_handle_multiple_extensions(self) -> None:
-        """Test _should_handle checks all extensions."""
-        mock_indexer = MagicMock()
-        handler = IndexingEventHandler(
-            collection_id="coll-1",
-            indexer=mock_indexer,
-            extensions={".md", ".txt", ".rst"},
-        )
-        assert handler._should_handle("/path/to/file.md") is True
-        assert handler._should_handle("/path/to/file.txt") is True
-        assert handler._should_handle("/path/to/file.rst") is True
-        assert handler._should_handle("/path/to/file.py") is False
-
-    def test_on_created_ignores_directories(self) -> None:
-        """Test on_created ignores directory events."""
-        mock_indexer = MagicMock()
-        handler = IndexingEventHandler(
-            collection_id="coll-1",
-            indexer=mock_indexer,
-        )
-        event = MagicMock()
-        event.is_directory = True
-        event.src_path = "/path/to/dir"
-
-        handler.on_created(event)
-        mock_indexer.assert_not_called()
-
-    def test_on_created_handles_file(self) -> None:
-        """Test on_created logs file creation."""
-        mock_indexer = MagicMock()
-        handler = IndexingEventHandler(
-            collection_id="coll-1",
-            indexer=mock_indexer,
-        )
-        event = MagicMock()
-        event.is_directory = False
-        event.src_path = "/path/to/file.md"
-
-        with patch("sif.indexing.watcher.logger"):
-            handler.on_created(event)
-
-    def test_on_created_skips_non_matching(self) -> None:
-        """Test on_created skips files with non-matching extensions."""
-        mock_indexer = MagicMock()
-        handler = IndexingEventHandler(
-            collection_id="coll-1",
-            indexer=mock_indexer,
-            extensions={".md"},
-        )
-        event = MagicMock()
-        event.is_directory = False
-        event.src_path = "/path/to/file.txt"
-
-        with patch("sif.indexing.watcher.logger"):
-            handler.on_created(event)
-
-    def test_on_modified_ignores_directories(self) -> None:
-        """Test on_modified ignores directory events."""
-        mock_indexer = MagicMock()
-        handler = IndexingEventHandler(
-            collection_id="coll-1",
-            indexer=mock_indexer,
-        )
-        event = MagicMock()
-        event.is_directory = True
-        event.src_path = "/path/to/dir"
-
-        handler.on_modified(event)
-        mock_indexer.assert_not_called()
-
-    def test_on_modified_handles_file(self) -> None:
-        """Test on_modified logs file modification."""
-        mock_indexer = MagicMock()
-        handler = IndexingEventHandler(
-            collection_id="coll-1",
-            indexer=mock_indexer,
-        )
-        event = MagicMock()
-        event.is_directory = False
-        event.src_path = "/path/to/file.md"
-
-        with patch("sif.indexing.watcher.logger"):
-            handler.on_modified(event)
-
-    def test_on_deleted_ignores_directories(self) -> None:
-        """Test on_deleted ignores directory events."""
-        mock_indexer = MagicMock()
-        handler = IndexingEventHandler(
-            collection_id="coll-1",
-            indexer=mock_indexer,
-        )
-        event = MagicMock()
-        event.is_directory = True
-        event.src_path = "/path/to/dir"
-
-        handler.on_deleted(event)
-        mock_indexer.assert_not_called()
-
-    def test_on_deleted_handles_file(self) -> None:
-        """Test on_deleted logs file deletion."""
-        mock_indexer = MagicMock()
-        handler = IndexingEventHandler(
-            collection_id="coll-1",
-            indexer=mock_indexer,
-        )
-        event = MagicMock()
-        event.is_directory = False
-        event.src_path = "/path/to/file.md"
-
-        with patch("sif.indexing.watcher.logger"):
-            handler.on_deleted(event)
-
-    def test_on_moved_ignores_directories(self) -> None:
-        """Test on_moved ignores directory events."""
-        mock_indexer = MagicMock()
-        handler = IndexingEventHandler(
-            collection_id="coll-1",
-            indexer=mock_indexer,
-        )
-        event = MagicMock()
-        event.is_directory = True
-        event.src_path = "/path/to/dir"
-        event.dest_path = "/path/to/newdir"
-
-        handler.on_moved(event)
-        mock_indexer.assert_not_called()
-
-    def test_on_moved_handles_file(self) -> None:
-        """Test on_moved logs file move."""
-        mock_indexer = MagicMock()
-        handler = IndexingEventHandler(
-            collection_id="coll-1",
-            indexer=mock_indexer,
-        )
-        event = MagicMock()
-        event.is_directory = False
-        event.src_path = "/path/to/file.md"
-        event.dest_path = "/path/to/newfile.md"
-
-        with patch("sif.indexing.watcher.logger"):
-            handler.on_moved(event)
-
-    def test_on_moved_skips_non_matching(self) -> None:
-        """Test on_moved skips files with non-matching extensions."""
-        mock_indexer = MagicMock()
-        handler = IndexingEventHandler(
-            collection_id="coll-1",
-            indexer=mock_indexer,
-            extensions={".md"},
-        )
-        event = MagicMock()
-        event.is_directory = False
-        event.src_path = "/path/to/file.txt"
-        event.dest_path = "/path/to/newfile.txt"
-
-        with patch("sif.indexing.watcher.logger"):
-            handler.on_moved(event)
-
-
-# =============================================================================
-# FileWatcher Tests
-# =============================================================================
-
-
-class TestFileWatcher:
-    """Tests for FileWatcher."""
-
-    def test_init_defaults(self) -> None:
-        """Test default extensions are markdown."""
-        mock_indexer = MagicMock()
-        watcher = FileWatcher(indexer=mock_indexer)
-        assert watcher._indexer is mock_indexer
-        assert watcher._extensions == {".md", ".markdown"}
-        assert watcher._observer is None
-        assert watcher._handlers == {}
-
-    def test_init_custom_extensions(self) -> None:
-        """Test custom extensions can be set."""
-        mock_indexer = MagicMock()
-        watcher = FileWatcher(
-            indexer=mock_indexer,
-            extensions={".txt", ".rst"},
-        )
-        assert watcher._extensions == {".txt", ".rst"}
-
-    def test_start_creates_observer(self) -> None:
-        """Test start creates and starts an observer."""
-        mock_indexer = MagicMock()
-        watcher = FileWatcher(indexer=mock_indexer)
-
-        mock_observer = MagicMock()
-        mock_observer_class = MagicMock(return_value=mock_observer)
-
-        with patch("sif.indexing.watcher.Observer", mock_observer_class):
-            with patch("pathlib.Path.exists", return_value=True):
-                watcher.start("coll-1", ["/path/to/watch"])
-
-        mock_observer_class.assert_called_once()
-        mock_observer.schedule.assert_called_once()
-        mock_observer.start.assert_called_once()
-        assert watcher.is_watching("coll-1") is True
-
-    def test_start_skips_missing_paths(self) -> None:
-        """Test start skips paths that don't exist."""
-        mock_indexer = MagicMock()
-        watcher = FileWatcher(indexer=mock_indexer)
-
-        mock_observer = MagicMock()
-        mock_observer_class = MagicMock(return_value=mock_observer)
-
-        with patch("sif.indexing.watcher.Observer", mock_observer_class):
-            with patch("pathlib.Path.exists", return_value=False):
-                watcher.start("coll-1", ["/nonexistent/path"])
-
-        mock_observer.schedule.assert_not_called()
-        mock_observer.start.assert_called_once()
-
-    def test_start_multiple_paths(self) -> None:
-        """Test start watches multiple paths."""
-        mock_indexer = MagicMock()
-        watcher = FileWatcher(indexer=mock_indexer)
-
-        mock_observer = MagicMock()
-        mock_observer_class = MagicMock(return_value=mock_observer)
-
-        with patch("sif.indexing.watcher.Observer", mock_observer_class):
-            with patch("pathlib.Path.exists", return_value=True):
-                watcher.start("coll-1", ["/path/one", "/path/two"])
-
-        assert mock_observer.schedule.call_count == 2
-        assert watcher.is_watching("coll-1") is True
-
-    def test_stop_specific_collection(self) -> None:
-        """Test stop removes specific collection handler."""
-        mock_indexer = MagicMock()
-        watcher = FileWatcher(indexer=mock_indexer)
-
-        mock_observer = MagicMock()
-        mock_observer_class = MagicMock(return_value=mock_observer)
-
-        with patch("sif.indexing.watcher.Observer", mock_observer_class):
-            with patch("pathlib.Path.exists", return_value=True):
-                watcher.start("coll-1", ["/path/to/watch"])
-                watcher.start("coll-2", ["/path/to/other"])
-
-        watcher.stop("coll-1")
-        assert watcher.is_watching("coll-1") is False
-        assert watcher.is_watching("coll-2") is True
-        mock_observer.stop.assert_not_called()
-
-    def test_stop_all_collections(self) -> None:
-        """Test stop without collection_id stops observer."""
-        mock_indexer = MagicMock()
-        watcher = FileWatcher(indexer=mock_indexer)
-
-        mock_observer = MagicMock()
-        mock_observer_class = MagicMock(return_value=mock_observer)
-
-        with patch("sif.indexing.watcher.Observer", mock_observer_class):
-            with patch("pathlib.Path.exists", return_value=True):
-                watcher.start("coll-1", ["/path/to/watch"])
-
-        watcher.stop()
-        # Note: handlers dict is not cleared when stopping all (current behavior)
-        mock_observer.stop.assert_called_once()
-        mock_observer.join.assert_called_once()
-
-    def test_stop_last_collection_stops_observer(self) -> None:
-        """Test stopping last collection stops observer."""
-        mock_indexer = MagicMock()
-        watcher = FileWatcher(indexer=mock_indexer)
-
-        mock_observer = MagicMock()
-        mock_observer_class = MagicMock(return_value=mock_observer)
-
-        with patch("sif.indexing.watcher.Observer", mock_observer_class):
-            with patch("pathlib.Path.exists", return_value=True):
-                watcher.start("coll-1", ["/path/to/watch"])
-
-        watcher.stop("coll-1")
-        mock_observer.stop.assert_called_once()
-        mock_observer.join.assert_called_once()
-
-    def test_stop_not_watching(self) -> None:
-        """Test stop when not watching any collection."""
-        mock_indexer = MagicMock()
-        watcher = FileWatcher(indexer=mock_indexer)
-
-        with patch("sif.indexing.watcher.logger"):
-            watcher.stop()
-
-    def test_is_watching_false(self) -> None:
-        """Test is_watching returns False for unwatched collection."""
-        mock_indexer = MagicMock()
-        watcher = FileWatcher(indexer=mock_indexer)
-        assert watcher.is_watching("coll-1") is False
-
-    def test_start_logs_info(self) -> None:
-        """Test start logs watcher initialization."""
-        mock_indexer = MagicMock()
-        watcher = FileWatcher(indexer=mock_indexer)
-
-        mock_observer = MagicMock()
-        mock_observer_class = MagicMock(return_value=mock_observer)
-
-        with patch("sif.indexing.watcher.Observer", mock_observer_class):
-            with patch("pathlib.Path.exists", return_value=True):
-                with patch("sif.indexing.watcher.logger") as mock_logger:
-                    watcher.start("coll-1", ["/path/to/watch"])
-
-        mock_logger.info.assert_any_call("Starting file watcher for collection: coll-1")
-        mock_logger.info.assert_any_call("Watching: /path/to/watch")
-
-    def test_stop_logs_info(self) -> None:
-        """Test stop logs watcher stop."""
-        mock_indexer = MagicMock()
-        watcher = FileWatcher(indexer=mock_indexer)
-
-        mock_observer = MagicMock()
-        mock_observer_class = MagicMock(return_value=mock_observer)
-
-        with patch("sif.indexing.watcher.Observer", mock_observer_class):
-            with patch("pathlib.Path.exists", return_value=True):
-                watcher.start("coll-1", ["/path/to/watch"])
-
-        with patch("sif.indexing.watcher.logger") as mock_logger:
-            watcher.stop()
-
-        mock_logger.info.assert_called_once_with("File watcher stopped")
-
-    def test_handler_inherits_from_filesystemeventhandler(self) -> None:
-        """Test IndexingEventHandler inherits from FileSystemEventHandler."""
-        from watchdog.events import FileSystemEventHandler
-
-        assert issubclass(IndexingEventHandler, FileSystemEventHandler)
+        original_delete = DocumentRepository.delete
+
+        def recording_delete(self: DocumentRepository, document_id: str) -> bool:
+            calls.append(("delete", document_id))
+            return original_delete(self, document_id)
+
+        monkeypatch.setattr(DocumentRepository, "delete", recording_delete)
+
+        indexer, db, coll = _open_indexer(db_path)
+        try:
+            indexer._vector_purger = purger
+            result = indexer.update_paths(coll, [doc_file])
+        finally:
+            db.close()
+
+        assert result == IncrementalResult(added=0, updated=0, removed=1, unchanged=0)
+        assert _doc_paths(db_path) == set()
+        assert [kind for kind, _ in calls] == ["purge", "delete"]
+
+    def test_missing_root_returns_zero_emits_missing_and_preserves_docs(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """D-11: a missing collection root never sweeps — both update paths."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "watch.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        doc_file = notes / "a.md"
+        doc_file.write_text(BODY_ALPHA, encoding="utf-8")
+        _seed_collection(db_path, notes)
+
+        indexer, db, coll = _open_indexer(db_path)
+        try:
+            assert indexer.update_collection(coll) == IncrementalResult(1, 0, 0, 0)
+        finally:
+            db.close()
+
+        # The collection root disappears (unmounted/renamed drive).
+        notes.rename(tmp_path / "notes-gone")
+
+        indexer, db, coll = _open_indexer(db_path)
+        try:
+            events: list[str] = []
+            result = indexer.update_paths(coll, [doc_file], progress=events.append)
+            assert result == IncrementalResult(added=0, updated=0, removed=0, unchanged=0)
+            assert "missing notes" in events
+
+            events = []
+            result = indexer.update_collection(coll, progress=events.append)
+            assert result == IncrementalResult(added=0, updated=0, removed=0, unchanged=0)
+            assert "missing notes" in events
+        finally:
+            db.close()
+
+        # Every existing document of that collection survives.
+        assert _doc_paths(db_path) == {str(doc_file)}
+
+    def test_unchanged_path_counted_as_unchanged(self, tmp_path, monkeypatch) -> None:
+        """A checksum-equal path maps the skip outcome to unchanged += 1."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "watch.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        doc_file = notes / "a.md"
+        doc_file.write_text(BODY_ALPHA, encoding="utf-8")
+        _seed_collection(db_path, notes)
+
+        indexer, db, coll = _open_indexer(db_path)
+        try:
+            assert indexer.update_collection(coll) == IncrementalResult(1, 0, 0, 0)
+            events: list[str] = []
+            result = indexer.update_paths(coll, [doc_file], progress=events.append)
+        finally:
+            db.close()
+
+        assert result == IncrementalResult(added=0, updated=0, removed=0, unchanged=1)
+        assert any(e.startswith("unchanged a.md") for e in events)
