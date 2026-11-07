@@ -5,11 +5,11 @@ milestone_name: Live Index and Search Quality
 current_phase: 12
 current_phase_name: "`sif watch` Foreground MVP"
 status: verifying
-stopped_at: Completed 12-03-PLAN.md
-last_updated: "2026-11-07T11:02:24.991Z"
+stopped_at: "Phase 12 executed + verified (human_needed): 2 UAT items pending"
+last_updated: "2026-11-07T11:51:46.655Z"
 last_activity: 2026-11-07
 last_activity_desc: Phase 12 execution started
-state_head: 64efc8ca0093d543d2804f89bf05ae748879c51d
+state_head: "0bb1b555f9671ca623a37401b7778c171571feca"
 progress:
   total_phases: 6
   completed_phases: 1
@@ -109,9 +109,9 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 
 ## Session Continuity
 
-Last session: 2026-11-07T11:02:24.888Z
-Stopped at: Completed 12-03-PLAN.md
-Resume file: None
+Last session: 2026-11-07T11:51:46.511Z
+Stopped at: Phase 12 executed + verified (human_needed): 2 UAT items pending
+Resume file: .planning/phases/12-sif-watch-foreground-mvp/12-UAT.md
 
 - **Next expected action:** `/gsd-plan-phase 11` (no research flag — pragma recipe fully specified in research/STACK.md)
 - Research flags for later phases: Phase 13 (daemon/service-install specifics), Phase 16 (`SearchOptions.candidate_limit` audit + fixture design)
