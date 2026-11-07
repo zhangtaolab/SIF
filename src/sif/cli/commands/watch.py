@@ -421,8 +421,22 @@ def _service_manager() -> str:
     return service.LAUNCHD_MANAGER if sys.platform == "darwin" else service.SYSTEMD_MANAGER
 
 
-def _service_argv_tail(params: WatchHostParams, collections: tuple[str, ...]) -> list[str]:
-    """The baked tail (D-11): ``-c`` names plus ``--embed`` iff the installed depth embeds.
+def _service_argv_tail(
+    params: WatchHostParams,
+    collections: tuple[str, ...],
+    settings: Settings,
+    no_embed: bool,
+) -> list[str]:
+    """The baked tail (D-11): ``-c`` names plus the exact depth pin.
+
+    ``--embed`` is baked when the installed depth embeds. ``--no-embed`` is
+    baked when the installer ran BM25 against an embedding ambient setting
+    (the flag forced it off, or ``SIF_WATCH_UPDATE_DEPTH=embed`` would
+    otherwise re-derive embed inside the service's own environment at
+    runtime — LIVE-05/WR-03: launchd/systemd environments are not the
+    installing shell's, so an installed-BM25 service must never start
+    computing vectors). With neither flag nor an opting-in setting, the
+    runtime default is already BM25-only and nothing is baked.
 
     The service replays exactly what was installed — an absolute interpreter
     and absolute index path come from the service module, so the supervised
@@ -433,16 +447,25 @@ def _service_argv_tail(params: WatchHostParams, collections: tuple[str, ...]) ->
         tail.extend(["-c", name])
     if params.depth == "embed":
         tail.append("--embed")
+    elif no_embed or settings.watch_update_depth == "embed":
+        tail.append("--no-embed")
     return tail
 
 
-def _run_install_service(params: WatchHostParams, collections: tuple[str, ...]) -> None:
+def _run_install_service(
+    params: WatchHostParams,
+    collections: tuple[str, ...],
+    no_embed: bool,
+    settings: Settings,
+) -> None:
     """Install path (D-11/D-12/D-13): generate, write, enable, start, verify."""
     abs_db = Path(params.index_path).expanduser().resolve()
     manager = _service_manager()
     try:
         result = service.install_watch_service(
-            abs_db, _service_argv_tail(params, collections), manager=manager
+            abs_db,
+            _service_argv_tail(params, collections, settings, no_embed),
+            manager=manager,
         )
     except (service.ServiceManagerMissing, service.ServiceCommandError) as e:
         raise click.ClickException(str(e)) from e
@@ -542,7 +565,7 @@ def _check_lifecycle_guards(
     is_flag=True,
     help="Generate and install a launchd LaunchAgent (macOS) or systemd user unit "
     "(Linux) running the FOREGROUND watcher under the OS supervisor; the -c and "
-    "--embed flags given now are baked into the service definition",
+    "depth (--embed/--no-embed) flags given now are baked into the service definition",
 )
 @click.option(
     "--uninstall-service",
@@ -606,7 +629,7 @@ def watch_cmd(  # noqa: PLR0913
     )
 
     if install_service:
-        _run_install_service(params, collections)
+        _run_install_service(params, collections, no_embed, settings)
         return
 
     if detach:

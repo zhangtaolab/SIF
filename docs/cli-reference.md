@@ -667,7 +667,7 @@ sif watch [OPTIONS]
 | `--detach` | `—` | flag | `false` | Run the watcher in the background as a detached daemon and print its PID; logs go to the platform log dir unless --log-file is given |
 | `--stop` | `—` | flag | `false` | Stop the detached watch daemon (SIGTERM, bounded wait, SIGKILL fallback) |
 | `--log-file` | `—` | text | — | Daemon log file path (requires --detach; default: platform log dir) |
-| `--install-service` | `—` | flag | `false` | Generate and install a launchd LaunchAgent (macOS) or systemd user unit (Linux) running the FOREGROUND watcher under the OS supervisor; the -c and --embed flags given now are baked into the service definition |
+| `--install-service` | `—` | flag | `false` | Generate and install a launchd LaunchAgent (macOS) or systemd user unit (Linux) running the FOREGROUND watcher under the OS supervisor; the -c and depth (--embed/--no-embed) flags given now are baked into the service definition |
 | `--uninstall-service` | `—` | flag | `false` | Stop the installed watch service and remove its artifact |
 
 ## Output Formats
