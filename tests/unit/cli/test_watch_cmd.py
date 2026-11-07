@@ -299,7 +299,7 @@ class TestDaemonLogPath:
 
     def test_default_log_path_is_platform_log_dir(self, tmp_path, monkeypatch) -> None:
         """No --log-file: platformdirs user_log_dir('sif')/watch.log, created."""
-        monkeypatch.setattr(watch_mod, "user_log_dir", lambda app: str(tmp_path / "platlogs"))
+        monkeypatch.setattr(watch_mod, "user_log_dir", lambda _app: str(tmp_path / "platlogs"))
 
         path = watch_mod._daemon_log_path(None)
 
