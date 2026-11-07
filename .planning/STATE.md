@@ -5,16 +5,16 @@ milestone_name: Live Index and Search Quality
 current_phase: 13
 current_phase_name: Watch Everywhere (MCP-Embedded Refresh + Background Daemon)
 status: executing
-stopped_at: Completed 13-01-PLAN.md
-last_updated: "2026-11-07T15:08:14.275Z"
+stopped_at: Completed 13-02-PLAN.md
+last_updated: "2026-11-07T15:49:15.409Z"
 last_activity: 2026-11-07
 last_activity_desc: Phase 13 execution started
-state_head: f52748fc64066369099408554f57b1120333e16b
+state_head: 335066eb62b153d3d7f21ebc1c78fce397298abe
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 10
-  completed_plans: 7
+  completed_plans: 8
 ---
 
 # DocSift — Project State
@@ -30,7 +30,7 @@ progress:
 ## Current Position
 
 Phase: 13 (Watch Everywhere (MCP-Embedded Refresh + Background Daemon)) — EXECUTING
-Plan: 2 of 4
+Plan: 3 of 4
 Status: Ready to execute
 Last activity: 2026-11-07 — Phase 13 execution started
 
@@ -56,6 +56,7 @@ Progress: [███░░░░░░░] 33%
 | Phase 12 P02 | 34 min | 2 tasks | 5 files |
 | Phase 12 P03 | 21 min | 2 tasks | 4 files |
 | Phase 13 P01 | 25min | 2 tasks | 3 files |
+| Phase 13 P02 | 28min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -99,6 +100,9 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 - [Phase 13]: 13-01: tick deadline machinery (rescope + checkpoint) seeds lazily, resets on every due fire; busy/recent-burst skips postpone a full interval, never retry inside the tick (Pitfall 7)
 - [Phase 13]: 13-01: D-17 schedule failure treated like a missing root (state.missing stays True) so the D-12 tick retries without spam; recovery 'returned' warning moved inside the successful-reschedule branch
 - [Phase 13]: 13-01: worker-thread guards around rescope provider and checkpoint pragma — one failure cannot kill a months-long daemon's worker thread (Rule 2)
+- [Phase 13]: 13-02: detach handshake = one pipe message (armed <pid>/error <msg>) with 30s bounded select; PID printed only when schema+collections+PID-file are ready (never a silent maybe-detach)
+- [Phase 13]: 13-02: corroboration's 'watch' marker is token-based (command.split()) so a reused PID whose argv merely embeds 'watch.db' never corroborates — fail-closed Pitfall 3 reading
+- [Phase 13]: 13-02: run_watch_host(WatchHostParams) is the shared body on an OPEN Database; daemon derives its params via dataclasses.replace wiring rescope-within-filter + checkpoint intervals; graceful daemon exit unlinks its own PID file
 
 ### Pending Todos
 
@@ -119,8 +123,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 
 ## Session Continuity
 
-Last session: 2026-11-07T15:08:14.059Z
-Stopped at: Completed 13-01-PLAN.md
+Last session: 2026-11-07T15:49:14.165Z
+Stopped at: Completed 13-02-PLAN.md
 Resume file: None
 
 - **Next expected action:** `/gsd-discuss-phase 13` (Phase 13 needs context; research flags: daemon/service-install specifics already in research/STACK.md)
