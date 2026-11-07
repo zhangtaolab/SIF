@@ -87,6 +87,26 @@ def _doc_paths(db_path: Path) -> set[str]:
         conn.close()
 
 
+def _seed_two_collections(db_path: Path, alpha: Path, beta: Path) -> None:
+    """Init schema, register alpha+beta collections, index one doc in each."""
+    db = Database(db_path)
+    with patch("sif.config.settings.get_settings", return_value=_test_settings()):
+        db.init_schema()
+        with db.connection:
+            from sif.database.repositories import CollectionRepository
+
+            repo = CollectionRepository(db.connection)
+            repo.create(Collection(name="alpha", path=str(alpha)))
+            repo.create(Collection(name="beta", path=str(beta)))
+        repo = CollectionRepository(db.connection)
+        indexer = IncrementalIndexer(db.connection)
+        for name in ("alpha", "beta"):
+            coll = repo.get_by_name(name)
+            assert coll is not None
+            indexer.update_collection(coll)
+    db.close()
+
+
 def _should_track(root: Path, path: Path) -> bool:
     """The collection's shared scanner predicate (D-07)."""
     return FileScanner.matches(root, path, pattern="**/*.md")
@@ -1387,3 +1407,248 @@ class TestEmbedDepth:
 
         assert len(rows) >= 1
         assert all(row[1] is not None for row in rows)
+
+
+class TestLiveRescope:
+    """D-15 live rescope of the watched collection set, zero timing.
+
+    ``rescope`` is invoked directly on the test thread with the worker
+    quiesced (a no-op ``_worker_loop`` is patched in before ``start``), so
+    every queue/state assertion is deterministic. The observer is the
+    battery's usual MagicMock; debouncers stay real.
+    """
+
+    def _seed(self, tmp_path, monkeypatch) -> tuple[Path, Path, Path]:
+        """Seed alpha+beta collections with one indexed doc each."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "watch.db"
+        alpha = tmp_path / "alpha"
+        beta = tmp_path / "beta"
+        alpha.mkdir()
+        beta.mkdir()
+        (alpha / "a.md").write_text(BODY_ALPHA, encoding="utf-8")
+        (beta / "b.md").write_text(BODY_BETA, encoding="utf-8")
+        _seed_two_collections(db_path, alpha, beta)
+        return db_path, alpha, beta
+
+    def _start_watcher(
+        self,
+        db_path: Path,
+        names: tuple[str, ...],
+        monkeypatch,
+        config: WatchConfig | None = None,
+        extra_registered: tuple[str, ...] = (),
+    ) -> tuple[FileWatcher, MagicMock, dict[str, object], Database]:
+        """Open the DB, build+start a quiesced-worker watcher over ``names``.
+
+        ``extra_registered`` names must exist in the DB but stay unwatched —
+        the provider-scoping probe. Returns (watcher, observer, colls, db).
+        """
+        observer_cls = MagicMock()
+        monkeypatch.setattr(watcher_module, "Observer", observer_cls)
+        db = Database(db_path)
+        from sif.database.repositories import CollectionRepository
+
+        repo = CollectionRepository(db.connection)
+        colls: dict[str, object] = {}
+        for name in (*names, *extra_registered):
+            coll = repo.get_by_name(name)
+            assert coll is not None
+            colls[name] = coll
+        watcher = FileWatcher([colls[n] for n in names], db.connection, db_path, config)
+        monkeypatch.setattr(watcher, "_worker_loop", lambda: None)
+        watcher.start()
+        return watcher, observer_cls.return_value, colls, db
+
+    @staticmethod
+    def _teardown(watcher: FileWatcher | None, db: Database) -> None:
+        if watcher is not None:
+            watcher.stop(flush=False)
+        db.close()
+
+    def test_rescope_added_collection_schedules_and_reconciles(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """An added collection arms its debouncer, schedules a watch handle,
+        and gets one reconcile job that indexes a file under the new root."""
+        db_path, alpha, beta = self._seed(tmp_path, monkeypatch)
+        # A NEW file lands under beta's root before the rescope.
+        new_file = beta / "new.md"
+        new_file.write_text("# New note\n\n" + ("New body text. " * 30), encoding="utf-8")
+
+        watcher, observer, colls, db = self._start_watcher(db_path, ("alpha",), monkeypatch)
+        try:
+            assert observer.schedule.call_count == 1
+            watcher.rescope([colls["alpha"], colls["beta"]])
+
+            beta_state = watcher._watch_states["beta"]
+            assert beta_state.debouncer is not None
+            assert observer.schedule.call_count == 2
+            # The exact recovery-return job shape for the added root.
+            assert watcher._queue.qsize() == 1
+            job_coll, folded = watcher._queue.get_nowait()
+            watcher._queue.task_done()
+            assert job_coll.name == "beta"
+            assert folded == FoldResult(needs_reconcile=True)
+            # Drive the job: the file under beta's root becomes indexed.
+            watcher._drain_once()
+        finally:
+            self._teardown(watcher, db)
+
+        assert str(new_file.resolve()) in _doc_paths(db_path)
+
+    def test_rescope_removed_collection_unschedules_and_preserves_documents(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """A removed collection is unscheduled (handle released, debouncer
+        stopped), its document rows survive, and changes under its root no
+        longer produce jobs."""
+        db_path, alpha, beta = self._seed(tmp_path, monkeypatch)
+
+        handle_alpha, handle_beta = MagicMock(), MagicMock()
+        observer_cls = MagicMock()
+        monkeypatch.setattr(watcher_module, "Observer", observer_cls)
+        observer = observer_cls.return_value
+        observer.schedule.side_effect = [handle_alpha, handle_beta]
+
+        db = Database(db_path)
+        watcher = None
+        try:
+            from sif.database.repositories import CollectionRepository
+
+            repo = CollectionRepository(db.connection)
+            coll_a = repo.get_by_name("alpha")
+            coll_b = repo.get_by_name("beta")
+            assert coll_a is not None and coll_b is not None
+            watcher = FileWatcher([coll_a, coll_b], db.connection, db_path)
+            monkeypatch.setattr(watcher, "_worker_loop", lambda: None)
+            watcher.start()
+            assert observer.schedule.call_count == 2
+
+            beta_debouncer = watcher._watch_states["beta"].debouncer
+            assert beta_debouncer is not None
+            watcher.rescope([coll_a])
+
+            observer.unschedule.assert_called_once_with(handle_beta)
+            assert beta_debouncer.is_alive() is False
+            assert set(watcher._watch_states) == {"alpha"}
+            # Documents of the removed collection are never touched.
+            assert _doc_paths(db_path) == {
+                str((alpha / "a.md").resolve()),
+                str((beta / "b.md").resolve()),
+            }
+            # A change under beta's root no longer produces a job: the
+            # stopped debouncer accepts the event but its thread is gone.
+            beta_debouncer.handle_event(FileModifiedEvent(str(beta / "b.md")))
+            assert watcher._queue.qsize() == 0
+        finally:
+            self._teardown(watcher, db)
+
+    def test_rescope_adds_exactly_the_providers_set_nothing_more(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """A registered-but-withheld collection is never pulled in: the tick's
+        rescope consults the provider once per interval and adds exactly its
+        return value — the -c-filter subtlety."""
+        db_path, _alpha, _beta = self._seed(tmp_path, monkeypatch)
+        # gamma: registered in the DB, outside the host's eligible set.
+        gamma = tmp_path / "gamma"
+        gamma.mkdir()
+        (gamma / "g.md").write_text(BODY_ALPHA, encoding="utf-8")
+        db = Database(db_path)
+        with patch("sif.config.settings.get_settings", return_value=_test_settings()):
+            with db.connection:
+                from sif.database.repositories import CollectionRepository
+
+                CollectionRepository(db.connection).create(
+                    Collection(name="gamma", path=str(gamma))
+                )
+        db.close()
+
+        provider_calls: list[float] = []
+        clock = {"now": 100.0}
+
+        def provider() -> list[object]:
+            provider_calls.append(clock["now"])
+            return [colls["alpha"]]
+
+        config = WatchConfig(
+            rescope_provider=provider,
+            rescope_interval=60.0,
+            now=lambda: clock["now"],
+        )
+
+        watcher, observer, colls, db = self._start_watcher(
+            db_path, ("alpha",), monkeypatch, config, extra_registered=("beta", "gamma")
+        )
+        try:
+            watcher._on_tick()  # seeds the deadline; provider not yet called
+            assert provider_calls == []
+            clock["now"] = 159.9
+            watcher._on_tick()  # not due yet
+            assert provider_calls == []
+            clock["now"] = 160.0
+            watcher._on_tick()  # due: provider consulted once
+            clock["now"] = 219.9
+            watcher._on_tick()
+            clock["now"] = 220.0
+            watcher._on_tick()
+
+            assert provider_calls == [160.0, 220.0]
+            assert set(watcher._watch_states) == {"alpha"}
+            assert observer.schedule.call_count == 1
+        finally:
+            self._teardown(watcher, db)
+
+    def test_no_provider_default_never_changes_watch_set(self, tmp_path, monkeypatch) -> None:
+        """Opt-in default: with no rescope_provider, ticks (recovery and the
+        full tick body) never change _watch_states membership — the
+        foreground MVP host keeps its restart-on-change behavior (D-15)."""
+        db_path, _alpha, _beta = self._seed(tmp_path, monkeypatch)
+
+        watcher, observer, _colls, db = self._start_watcher(
+            db_path, ("alpha", "beta"), monkeypatch
+        )
+        try:
+            assert watcher._config.rescope_provider is None
+            before = set(watcher._watch_states)
+            watcher.recovery_tick()
+            watcher.recovery_tick()
+            watcher._on_tick()
+            watcher._on_tick()
+            assert set(watcher._watch_states) == before == {"alpha", "beta"}
+            assert observer.unschedule.call_count == 0
+            assert observer.schedule.call_count == 2
+        finally:
+            self._teardown(watcher, db)
+
+
+class TestWatchSettings:
+    """The three Phase 13 host-behavior settings (D-04 + interval discretion)."""
+
+    _VARS = ("SIF_MCP_WATCH", "SIF_WATCH_RESCOPE_INTERVAL", "SIF_WATCH_CHECKPOINT_INTERVAL")
+
+    def test_defaults_off_and_minutes_scale(self, monkeypatch) -> None:
+        """Defaults: MCP watch off, rescope 60s, checkpoint 300s (disabled at 0
+        is the WatchConfig default; the settings default is the cadence)."""
+        _delenv_settings_vars(monkeypatch)
+        for var in self._VARS:
+            monkeypatch.delenv(var, raising=False)
+        settings = Settings(embedding_dim=8, model_name="test", cache_embeddings=False)
+        assert settings.mcp_watch is False
+        assert settings.watch_rescope_interval == 60.0
+        assert settings.watch_checkpoint_interval == 300.0
+
+    def test_sif_env_spellings_resolve(self, monkeypatch) -> None:
+        """SIF_MCP_WATCH / SIF_WATCH_RESCOPE_INTERVAL / SIF_WATCH_CHECKPOINT_INTERVAL
+        env spellings resolve through the standard SIF_ prefix (D-04)."""
+        _delenv_settings_vars(monkeypatch)
+        for var in self._VARS:
+            monkeypatch.delenv(var, raising=False)
+        monkeypatch.setenv("SIF_MCP_WATCH", "1")
+        monkeypatch.setenv("SIF_WATCH_RESCOPE_INTERVAL", "2")
+        monkeypatch.setenv("SIF_WATCH_CHECKPOINT_INTERVAL", "0")
+        settings = Settings()
+        assert settings.mcp_watch is True
+        assert settings.watch_rescope_interval == 2.0
+        assert settings.watch_checkpoint_interval == 0.0
