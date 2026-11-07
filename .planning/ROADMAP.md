@@ -34,7 +34,7 @@ Full detail: `.planning/milestones/v1.0-ROADMAP.md`
 
 **Track structure:** Phase 11 is the shared foundation (WAL hardening lands before any second writer process exists). Phases 12-14 form the live-index track (watch hosts, then freshness floor). Phases 15-16 form the search-quality track — orthogonal to 12-14, depending only on 11; bench expansion arrives together with the tuning conclusions it arbitrates. Research SUMMARY.md's suggested phases 1-8 map onto roadmap phases: 1→11, 2→12, 3+4→13, 5→14, 6+7→15, 8→16.
 
-- [ ] **Phase 11: Live-Index Foundation (Concurrent DB + Incremental Core)** - WAL/busy_timeout/BEGIN IMMEDIATE hardening, IncrementalIndexer extraction, flock single-writer arbitration
+- [x] **Phase 11: Live-Index Foundation (Concurrent DB + Incremental Core)** - WAL/busy_timeout/BEGIN IMMEDIATE hardening, IncrementalIndexer extraction, flock single-writer arbitration (completed 2026-11-07)
 - [ ] **Phase 12: `sif watch` Foreground MVP** - File changes auto-reindex with debounce, atomic-save/move handling, temp-file exclusion, tiered depth (`--embed`), missing-root protection
 - [ ] **Phase 13: Watch Everywhere (MCP-Embedded Refresh + Background Daemon)** - `SIF_MCP_WATCH=1` embedded refresh; `--detach` + launchd/systemd service install
 - [ ] **Phase 14: Freshness Floor (Pre-Command Refresh + Staleness Marking)** - Stat-based drift refresh before search with no daemon running; staleness markers on vector-lagging results
@@ -52,7 +52,7 @@ Full detail: `.planning/milestones/v1.0-ROADMAP.md`
   2. Two index-writer processes started at the same time: exactly one does the work; the other defers cleanly with no duplicated indexing or embedding (flock single-writer arbitration)
   3. `sif index update` produces identical results before and after the refactor — the per-file incremental loop is extracted into one shared IncrementalIndexer (update_cmd delegates to it; the dead DocumentIndexer is retired, no third copy)
   4. Existing CLI/MCP behavior is unchanged — full quality suite green (pytest fail_under=90, ruff, ty)
-**Plans**: 3/3 plans executed
+**Plans**: 3/3 plans complete
 Plans:
 **Wave 1**
 - [x] 11-01-PLAN.md — Shared connection factory (WAL/busy_timeout/BEGIN IMMEDIATE), flock per-DB arbitration, SC1/SC2 proofs (in-suite + subprocess)
@@ -123,7 +123,7 @@ Plans:
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 11. Live-Index Foundation | v1.1 | 3/3 | In Progress | - |
+| 11. Live-Index Foundation | v1.1 | 3/3 | Complete    | 2026-11-07 |
 | 12. `sif watch` Foreground MVP | v1.1 | 0/TBD | Not started | - |
 | 13. Watch Everywhere (MCP + Daemon) | v1.1 | 0/TBD | Not started | - |
 | 14. Freshness Floor (Pre-Command + Staleness) | v1.1 | 0/TBD | Not started | - |
