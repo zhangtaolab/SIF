@@ -469,7 +469,7 @@ class TestServiceFlags:
         )
         captured: dict[str, Any] = {}
 
-        def fake_install(db_path, argv_tail, *, manager, **_kwargs):
+        def fake_install(_db_path, argv_tail, **_kwargs):
             captured["tail"] = list(argv_tail)
             return fake_result
 

@@ -343,7 +343,7 @@ class TestDetachTimeout:
         assert sent == [(4321, signal.SIGKILL)]
 
     def test_kill_detached_group_tolerates_an_already_gone_group(self, monkeypatch) -> None:
-        def _gone(pgid: int, sig: int) -> None:
+        def _gone(_pgid: int, _sig: int) -> None:
             raise ProcessLookupError()
 
         monkeypatch.setattr(daemon.os, "killpg", _gone)
@@ -360,7 +360,7 @@ class TestDetachTimeout:
         monkeypatch.setattr(daemon.os, "fork", lambda: 4321)
         monkeypatch.setattr(daemon, "_read_pipe_message", lambda _fd, _timeout: None)
         monkeypatch.setattr(daemon.os, "killpg", lambda pgid, sig: killed.append((pgid, sig)))
-        monkeypatch.setattr(daemon.os, "waitpid", lambda pid, flags: (pid, 0))
+        monkeypatch.setattr(daemon.os, "waitpid", lambda pid, _flags: (pid, 0))
 
         outcome = daemon.detach(tmp_path / "watch.log", lambda: None, arm_timeout_s=0.5)
 

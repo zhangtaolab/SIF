@@ -445,7 +445,6 @@ class TestWatchLifespanThreading:
 
         def _fake_start(db_path: str) -> None:
             started.append(db_path)
-            return None
 
         def _fake_stop(watch: object) -> None:
             stopped.append(watch)

@@ -181,9 +181,7 @@ def stop_embedded_watch(watch: EmbeddedWatch | None) -> None:
         if watch.watcher.worker_joined():
             watch.db.connection.execute(_WAL_CHECKPOINT_TRUNCATE)
         else:
-            logger.warning(
-                "MCP watch: worker still busy at shutdown; skipping WAL checkpoint"
-            )
+            logger.warning("MCP watch: worker still busy at shutdown; skipping WAL checkpoint")
     finally:
         watch.db.close()
     logger.info("MCP watch stopped")
