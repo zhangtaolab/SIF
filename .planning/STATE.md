@@ -5,16 +5,16 @@ milestone_name: Live Index and Search Quality
 current_phase: 12
 current_phase_name: "`sif watch` Foreground MVP"
 status: executing
-stopped_at: Completed 12-01-PLAN.md
-last_updated: "2026-11-07T09:46:37.650Z"
+stopped_at: Completed 12-02-PLAN.md
+last_updated: "2026-11-07T10:35:50.412Z"
 last_activity: 2026-11-07
 last_activity_desc: Phase 12 execution started
-state_head: 10d652a1e0ba66212fd58ee11416883b87f32d69
+state_head: e49547a33bf1aba49cfed6d5f26a22b72e799869
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 6
-  completed_plans: 4
+  completed_plans: 5
 ---
 
 # DocSift — Project State
@@ -30,7 +30,7 @@ progress:
 ## Current Position
 
 Phase: 12 (`sif watch` Foreground MVP) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-11-07 — Phase 12 execution started
 
@@ -53,6 +53,7 @@ Progress: [██░░░░░░░░] 17%
 | Phase 11 P02 | 12 min | 2 tasks | 5 files |
 | Phase 11 P03 | 9 min | 2 tasks | 11 files |
 | Phase 12 P01 | 42 min | 2 tasks | 12 files |
+| Phase 12 P02 | 34 min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -81,6 +82,9 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 - [Phase 12]: [Phase 12] watch e2e waits for the banner printed AFTER observer.start() (python -u subprocess): seed-row polling alone leaves a lost-event window between the reconcile commit and arming
 - [Phase 12]: [Phase 12] EventDebouncer float interval passed via cast(int): watchdog 6.0.0 annotates int but the value only flows into Condition.wait (source-verified)
 - [Phase 12]: [Phase 12] Docs regen (make docs-generate) deferred to 12-03 per plan - docs gate test red until then; WINDOWS ledger entry open
+- [Phase 12]: [Phase 12] Watch reconcile jobs stay BM25-only at embed depth: the per-file embed leg needs a computable changed-path set, which only burst jobs have (vectors catch up on the next burst or sif embed)
+- [Phase 12]: [Phase 12] Worker stop sentinel wakes the re-stat idle wait so D-14 bounded shutdown never waits out watch_restat_interval (sentinel-skipping drain; T-12-06)
+- [Phase 12]: [Phase 12] Embed changed-path detection = checksum before/after snapshots around the BM25 leg (None->new = added, old->new = updated) — IncrementalIndexer's Phase 11 contract untouched
 
 ### Pending Todos
 
@@ -101,8 +105,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 
 ## Session Continuity
 
-Last session: 2026-11-07T09:46:37.545Z
-Stopped at: Completed 12-01-PLAN.md
+Last session: 2026-11-07T10:35:50.305Z
+Stopped at: Completed 12-02-PLAN.md
 Resume file: None
 
 - **Next expected action:** `/gsd-plan-phase 11` (no research flag — pragma recipe fully specified in research/STACK.md)
