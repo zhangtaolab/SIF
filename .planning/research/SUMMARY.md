@@ -1,175 +1,197 @@
 # Project Research Summary
 
-**Project:** DocSift
-**Domain:** Local-first Python document search engine (personal knowledge base)
-**Researched:** 2026-04-14
-**Confidence:** HIGH
+**Project:** DocSift/SIF v1.1 — Live Index and Search Quality
+**Domain:** Local-first hybrid search engine (Python 3.10+, SQLite FTS5 + sqlite-vec, CLI + MCP) adding file-watch live indexing and search-quality tuning
+**Researched:** 2026-11-07
+**Confidence:** HIGH (stack verdict verified against primary sources + local runtime experiments; architecture mapped directly from `src/sif/` source; pitfalls grounded in exact code lines)
 
 ## Executive Summary
 
-DocSift is a local-first, CLI-driven document search engine targeting personal knowledge bases. The research confirms it should follow a layered Python architecture with dual interfaces (CLI via Click and MCP server for AI assistants), SQLite as the single storage engine (FTS5 for BM25 + `sqlite-vec` for vector search), and local embedding models via `sentence-transformers` and `llama-cpp-python`. The codebase already has solid structural bones but is currently blocked by stubbed implementations, missing dependencies, duplicate code paths, and placeholder logic that would silently produce garbage results if shipped.
+SIF v1.1 adds live indexing (file watching → incremental reindex) and search-quality tuning (hybrid weights, did-you-mean, reranker thresholds, benchmarks) to an existing, well-layered local search engine. The headline stack finding is decisive: **zero new runtime dependencies**. Everything is buildable with the existing dep set plus stdlib — the only dependency change is capping `watchdog>=3.0.0` to `watchdog>=4.0.0,<7.0.0` (watchdog 7.0 dropped Python 3.10, which SIF mandates). Competitively, **qmd has no live index at all** — live index is differentiation beyond parity, not catch-up; search-quality tuning follows settled industry conventions (Elasticsearch `rank_constant=60`, Weaviate `alpha`, Meilisearch typo tolerance as suggest-only).
 
-The recommended approach is to fix the foundation first: remove embedding stubs, consolidate duplicate repositories, declare missing dependencies, and synchronize FTS5 tables. Only after the core indexing and search pipelines are trustworthy should the project add configurability (embedding model selection), advanced search features (reranking, query expansion), and finally unify the dual MCP implementations into a single server using `fastmcp`.
+The recommended approach is architectural: one `LiveIndexService` watch-loop core hosted three ways (CLI `sif watch`, MCP-embedded thread, one-shot pre-search staleness check), all funneling into an `IncrementalIndexer` extracted from the existing production loop in `update_cmd` — avoiding a third copy of indexing logic (one copy is already dead code). The non-negotiable foundation is SQLite concurrency hardening: `busy_timeout=5000` → `journal_mode=WAL` → `synchronous=NORMAL` on every connection, plus `BEGIN IMMEDIATE` write transactions — the current code has none of these, and a resident writer will hit "database is locked" on day one.
 
-Key risks are all addressable: (1) placeholder embeddings and mock MCP handlers will break user trust if not caught—smoke tests are essential; (2) `llama-cpp-python` has a known batch-embedding regression after v0.3.14, so GGUF paths should process one text at a time until verified; (3) SQLite connection sharing across async MCP requests will cause race conditions—connection-per-request or threadpool offloading is required; (4) missing runtime dependencies in `pyproject.toml` will break first installs and must be audited in CI.
+Key risks, ranked: (1) shipping the watcher without WAL/busy_timeout — instant lock errors; (2) macOS atomic-save rename chains (moved→deleted→created, never a clean modify) causing missed saves or index churn per save — path-based reconciliation + debounce + settle-check is the cure; (3) reranker CPU latency (34–49 s/query measured on qmd issue #264 against the same Qwen3 model) — latency must be a first-class bench axis and candidate caps enforced; (4) weight-tuning overfitting on a small fixture (measured collapse 0.91→0.68 on held-out) — bench expansion with tuning/held-out splits must precede the weights phase.
 
 ## Key Findings
 
 ### Recommended Stack
 
-DocSift should stay Python-based and double down on SQLite as the single storage engine. Vector search should use `sqlite-vec` (not ChromaDB, FAISS, or LanceDB) because it keeps vectors in the same file as metadata and requires no external server. For embeddings, `sentence-transformers` is the default backend, while `llama-cpp-python` provides GGUF embedding and reranking support. The MCP server should be rebuilt on `fastmcp` >=3.2.4, which is now the dominant Python MCP framework and replaces the current low-level scaffolding. Python minimum should be bumped to 3.10 because `llama-cpp-python` 0.3.20 does not ship pre-built wheels for 3.9.
+**Zero new runtime dependencies.** Only change: `watchdog>=4.0.0,<7.0.0`. Everything else is pragma configuration, stdlib code, and in-house modules. This preserves the pure-Python PyPI package constraint.
 
 **Core technologies:**
-- **Python 3.10+**: Runtime. Required because `llama-cpp-python` 0.3.20 lacks pre-built wheels for 3.9.
-- **SQLite + FTS5 + `sqlite-vec`**: Relational, full-text, and vector search in a single file. Zero external server dependencies.
-- **`sentence-transformers` >=5.4.0**: Default embedding backend. GPU-accelerated, batched, and supports the best open-source embedding models.
-- **`llama-cpp-python` >=0.3.20**: GGUF embeddings and local reranking. v0.3.20 adds native reranking via `LLAMA_POOLING_TYPE_RANK`.
-- **`fastmcp` >=3.2.4**: High-level MCP server framework. Decorator-based, async-friendly, and replaces legacy MCP scaffolding.
-- **`click` + `rich` + `pydantic` v2**: CLI framework, terminal formatting, and config validation. Already integrated and stable.
+- **watchdog (capped `>=4.0.0,<7.0.0`)** — `sif watch` event source; `Observer()` auto-selects FSEvents/inotify; ships built-in `EventDebouncer` (pass interval **positionally**). Cap mandatory: 7.0.0 dropped Python 3.10 and changed pattern/event semantics.
+- **SQLite WAL mode (stdlib, config-only)** — `busy_timeout=5000` FIRST, then `journal_mode=WAL`, then `synchronous=NORMAL` in `_create_connection()` and `ConnectionPool`. Verified compatible with sqlite-vec vec0 tables (llama-stack production precedent).
+- **Python stdlib (os/signal/plistlib/templates)** — `--detach` double-fork (~30 lines); launchd plist / systemd user-unit generation; foreground under supervisors (never fork under launchd/systemd).
+- **stdlib difflib + FTS5 trigram tokenizer (SQLite ≥3.34, runtime-checked with fallback)** — did-you-mean with SQL pre-filter (brute-force difflib is 0.58 s/lookup at 15k terms).
+- **In-house pure-Python metrics (extend `benchmark.py`)** — nDCG@k + MAP ~40 lines each; eval libraries (ranx/ir-measures) all pull C extensions/JIT — never at runtime.
+- **Pydantic Settings (existing)** — all v1.1 tunables as `SIF_`-prefixed fields.
+
+**Avoid:** watchdog ≥7 on Python 3.10; ranx/ir-measures/pytrec_eval at runtime; SQLite `spellfix1` (not in CPython's bundled sqlite3 — verified locally); `python-daemon` (conflicts with supervisor mode); janus (stdlib `queue.Queue` suffices); unversioned watchdog (split-brain 6.x/7.x semantics across the fleet).
 
 ### Expected Features
 
-Users expect BM25 search, collection management, document indexing with checksum deduplication, vector semantic search, hybrid search, and MCP integration. DocSift already has many of these partially implemented, but several table-stakes features are missing (`multi-get`, `ls`, working vector search). The biggest competitive differentiators from qmd are LLM reranking, query expansion, query document syntax (`lex:`, `vec:`, `hyde:`), and score explainability.
+**Must have (table stakes, all P1):**
+- `sif watch` foreground — events → incremental reindex; the foundation everything packages
+- Event debouncing/coalescing + delete/rename handling — editors emit 2–5 events per save; atomic saves arrive as rename chains; missing-root must NOT read as mass deletion
+- Tiered update depth — BM25/FTS live by default, embedding opt-in (`--embed`); embed is 100–1000× slower and must never be a background default
+- Pre-command staleness detection — mtime+size stat fast-path before search; the "always works without a daemon" floor; doubles as the watcher's resync backstop
+- WAL + busy_timeout multi-process coexistence — enabler, not headline
+- MCP-embedded watch refresh — the standout differentiator (no peer does it); opt-in flag
+- Daemon lifecycle (`--detach`, PID/stop/status) + launchd/systemd install generation
+- Hybrid weights + RRF k as settings AND per-query flags — defaults unchanged (k=60, equal weights)
+- Bench expansion: nDCG@k, Hit@k, categorized query sets, per-query breakdown, p50/p95 latency
+- Reranker threshold/latency tuning — prefer relative threshold (`score ≥ top1×α`, α≈0.2–0.3); candidate cap is the latency dial
+- Did-you-mean on zero/low results — suggest-only, corpus-constrained terms, never silent auto-rewrite
 
-**Must have (table stakes):**
-- BM25 full-text search — already implemented via FTS5.
-- Collection management (add/list/remove/rename/show) — partially done; missing `update-cmd` and include/exclude filters.
-- Document indexing with checksum dedup — already implemented.
-- File retrieval (`get`, `multi-get`, `ls`) — `get` exists; `multi-get` and `ls` are missing.
-- Vector semantic search — partially implemented; stubbed embedder fallback must be replaced.
-- Hybrid search (BM25 + vector fusion) — already implemented with RRF.
-- MCP server integration — skeleton exists; needs unification and real tool handlers.
-- Local-first execution — core design constraint.
+**Should have (differentiators, P2 after milestone core):**
+- Query-history suggestions (composes with DYM; opt-out, local-only)
+- `sif bench --sweep` — deterministic grid sweep; refuse to crown winners inside noise (<0.01)
+- Staleness-aware result marking / auto-embed of dirty chunks
 
-**Should have (competitive):**
-- LLM reranking — the "secret sauce" of qmd's `query` command.
-- LLM query expansion — improves recall for vague queries.
-- Query document format (`lex:`, `vec:`, `hyde:`, `expand:`) — power-user feature unique to qmd.
-- Score explainability (`--explain`) — useful for debugging and tuning.
-- Min-score threshold (`--min-score`) — critical for agent integrations.
-- Context descriptions (`context add`) — improves retrieval quality for agents.
+**Defer (v2+):** optional spellfix1 acceleration; LLM-assisted weight tuning; symspellpy (only if DYM quality proves insufficient in UAT).
 
-**Defer (v2+):**
-- Search benchmarking (`bench`) — nice for tuning, not essential.
-- Per-collection model configuration — advanced optimization.
-- Intent parameter — requires the full pipeline to be mature first.
-- Smart snippet extraction with intent weighting — polishing feature.
+**Anti-features:** server/cluster features; match-time typo tolerance (wrong layer, index bloat); silent auto-query-rewrite; auto-embed on every save; watcher as sole source of truth (no resync backstop); custom lockfiles; LLM in the DYM path; watching outside collection roots.
 
 ### Architecture Approach
 
-DocSift follows a layered modular architecture: Interface (CLI + MCP), Application (search pipeline + indexing pipeline), Domain (models and protocols), and Infrastructure (SQLite, embedding models, config). The codebase already aligns well with this structure. The remaining work is to consolidate the dual MCP packages (`mcp/` and `mcp_server/`), fill in missing search pipeline components (reranker, query expander), and extract a service layer so that CLI and MCP share the same business logic instead of duplicating it.
+One `LiveIndexService` (new `indexing/live.py`), three thin hosts (CLI watch process, MCP server background thread, one-shot pre-search check), one WAL-mode database, single-writer discipline. The per-file incremental logic is **extracted** from `update_cmd`'s production loop into `IncrementalIndexer` (new `indexing/incremental.py`); the existing `DocumentIndexer` is dead code — retire or delegate. Suggestions are a separate read-only `Suggester` (`search/suggest.py`) invoked by the presentation layer on empty/thin results — never inside `SearchPipeline.search()`. Weights flow via Settings → `HybridSearcher` constructor → `RRFFusion.fuse_with_weights` (which already exists — plumbing, not new math). Critical wiring trap: `sif/models/search.py`'s Pydantic `SearchOptions` already has weight fields but is **dead** — the live path uses `core/models.py` dataclasses; wire constructors, not the dead model.
 
 **Major components:**
-1. **CLI Layer (`cli/`)** — Click commands and output formatters. Should remain thin and delegate to services.
-2. **MCP Layer (`mcp/`)** — Unified MCP server exposing search and retrieval tools. Must be rebuilt on `fastmcp`.
-3. **Search Layer (`search/`)** — Strategy-based retrieval (BM25, vector, hybrid, RRF, reranking). Each algorithm is a standalone class.
-4. **Indexing Layer (`indexing/`)** — Pipeline: scan → parse → chunk → embed → persist. `DocumentIndexer` orchestrates.
-5. **Embedding Layer (`embedding/`)** — Model lifecycle, caching, and batching. Isolated because model loading is expensive.
-6. **Database Layer (`database/`)** — SQLite schema, connection management, and repository pattern for all CRUD.
-7. **Core Domain (`core/`)** — Shared models, enums, and `typing.Protocol` definitions for embedders and rerankers.
+1. `LiveIndexService` (`indexing/live.py`, NEW) — debounce → coalesce paths → checksum diff → incremental FTS write → optional embed; host-agnostic
+2. `IncrementalIndexer` (`indexing/incremental.py`, EXTRACTED) — per-file checksum-diff update; deletes/moves as first-class tombstones
+3. `DatabaseConnection`/`Database` (MODIFIED) — WAL pragma stack + `BEGIN IMMEDIATE` write txns; `SchemaManager` gets a DDL race guard (qmd hit this exact race) + `fts5vocab` + `query_log` tables
+4. `Suggester` (`search/suggest.py`, NEW) — prefix completion via fts5vocab + difflib DYM + history; read-only
+5. Daemon helper (`utils/daemon.py`, NEW) — detach/pidfile/flock/launchd/systemd; un-stubs `sif mcp daemon`
+6. `HybridSearcher`/`SearchPipeline` (MODIFIED) — `rrf_k`/weights ctor params; reranker threshold filter
 
 ### Critical Pitfalls
 
-The codebase audit revealed ten critical pitfalls, most of which cluster around stubbed implementations, missing dependencies, and SQLite/MCP concurrency issues. The top risks are:
+1. **No WAL/busy_timeout + deferred transactions** — a resident writer vs MCP/CLI readers = instant `SQLITE_BUSY`; and busy_timeout does NOT cover read→write lock upgrades, so writes need `BEGIN IMMEDIATE`. Precondition for the entire milestone, not a follow-up.
+2. **macOS atomic-save rename chains** — handlers see moved→deleted→created, never a clean modify; treat the **path**, not the event, as the unit of work; filter `on_moved` on `dest_path`; exclude temp-file patterns (`.swp`, `.sb-*`, `4913`, `.DS_Store`). Fixture-test the TextEdit sequence.
+3. **Reranker CPU latency** — 34–49 s/query measured (qmd #264, same Qwen3 model); hard candidate cap 10–20 on CPU, p50/p95 latency in every bench report, skip-rerank fast path as default for interactive use.
+4. **Weight-tuning overfitting + benchmark leakage** — measured collapse on held-out (0.91→0.68); separate tuning/held-out fixtures, ≥50 queries across query types, regression-floor CI bands (no golden numbers), labels never generated from the engine's own output; bench expansion must precede the weights phase.
+5. **Daemon lifecycle + double-writer** — stale-PID restart lockouts (flock is the backstop); three watch forms alive simultaneously triple embed work; design flock-based single-writer arbitration in the Watch MVP (cheap then, compatibility headache later).
 
-1. **Placeholder embedding implementations in production code** — Factory methods raise `NotImplementedError` or return random vectors. Prevention: gate incomplete backends behind feature flags, load model names from `Settings`, and run a cosine-similarity smoke test.
-2. **Brute-force vector search fallback loading all embeddings into memory** — `VectorSearcher._search_fallback()` is O(N) in Python and will break at scale. Prevention: make `sqlite-vec` required, cap or remove the fallback.
-3. **MCP server writing to `stdout` (breaking STDIO transport)** — Any `print()` or logging to `stdout` corrupts JSON-RPC. Prevention: configure all logging to `sys.stderr`, ban `print()` in MCP code, and test with a real MCP client.
-4. **SQLite connection singleton with `check_same_thread=False`** — Shared connections across async MCP requests cause race conditions and `ProgrammingError`. Prevention: connection-per-request or threadpool offloading for the HTTP transport.
-5. **FTS5 external content tables without synchronization** — Missing triggers or explicit mirroring causes BM25 to return empty/stale results. Prevention: use `content=` / `content_rowid=` and maintain synchronization via triggers or repository logic.
-6. **Missing runtime dependencies in `pyproject.toml`** — Imports exist for packages not declared as dependencies. Prevention: install in a clean venv and run the CLI as a CI step.
-7. **Duplicate repository implementations with schema drift** — `repositories.py` and `sqlite_repository.py` coexist with different schemas. Prevention: delete the legacy file immediately after wiring up the new one.
+Honorable mentions: silent inotify watch exhaustion on Linux (shape the watch scope, reuse scanner ignore logic — live events currently bypass `ignore_patterns` entirely); mid-write reads (settle-check event paths only, never tree-polling — FD exhaustion is proven); embed inside one transaction per collection (blocks all writers for minutes — embed outside txns, per-document commits).
 
 ## Implications for Roadmap
 
-Based on research, suggested phase structure:
+Research converges on a dependency-driven 8-step build order (architecture's Suggested Build Order, corroborated by features' dependency graph and pitfalls' phase mapping). Suggested phase structure:
 
-### Phase 1: Foundation Fix (Bugfix / Stub Removal)
-**Rationale:** The foundation is currently unsafe to build on. Stubbed embeddings, missing dependencies, duplicate repositories, and broken checksum logic will corrupt every feature built above them. This phase must come first.
-**Delivers:** A trustworthy embedding layer, a single repository implementation, synchronized FTS5 tables, and a clean `pyproject.toml`.
-**Addresses:** Fix stubbed embedder (FEATURES.md P1), `get` / `multi-get` / `ls` commands (FEATURES.md P1), missing runtime dependencies.
-**Avoids:** Placeholder embeddings (PITFALLS.md #1), brute-force fallback (PITFALLS.md #2), FTS5 desync (PITFALLS.md #5), missing deps (PITFALLS.md #6), duplicate repositories (PITFALLS.md #7), inverted checksum logic (PITFALLS.md moderate #5), SQL injection via f-strings (PITFALLS.md moderate #2), N+1 deletes (PITFALLS.md moderate #3), collection stats re-counting (PITFALLS.md moderate #4), vector search CLI fallback to BM25 (PITFULLS.md minor #1).
+### Phase 1: DB Concurrency Hardening + IncrementalIndexer Extraction
+**Rationale:** Foundation every watcher host stands on; WAL retrofit after hosts multiply is the risky direction; extraction removes the dead-code hazard before a third copy of the indexing loop appears.
+**Delivers:** WAL/busy_timeout/synchronous=NORMAL on every connection; `BEGIN IMMEDIATE` write txns; DDL race guard; `IncrementalIndexer` with per-file public API extracted from `update_cmd`; flock single-writer design.
+**Addresses:** WAL multi-process coexistence (table stakes); single-file incremental (dependency of everything).
+**Avoids:** Pitfall 1 (instant lock errors), Pitfall 5's arbitration (designed here), Anti-Pattern 1 (third indexing loop).
+**Verification:** CI test of concurrent search + embed with zero lock errors; pragma audit on all connection sites.
 
-### Phase 2: Embedding Model Configurability
-**Rationale:** Working vector search and configurable models unlock hybrid search and everything that depends on it (reranking, query expansion). This is a natural next step once the foundation is solid.
-**Delivers:** Configurable embedding backends (`sentence-transformers` default, `llama-cpp-python` GGUF optional), working `vsearch` and `query` CLI commands, and embedding cache/manager hardening.
-**Uses:** `sentence-transformers` >=5.4.0, `llama-cpp-python` >=0.3.20, `sqlite-vec` >=0.1.9 (STACK.md).
-**Avoids:** `llama-cpp-python` batch regression (PITFALLS.md #8 — process one text at a time), sentence-transformers memory spikes (PITFALLS.md #10 — expose `batch_size` setting with conservative default).
+### Phase 2: `sif watch` Foreground MVP
+**Rationale:** First and simplest host; proves the event→index loop end-to-end; daemon and MCP embed reuse it verbatim. The phase-critical risk item of the milestone.
+**Delivers:** EventDebouncer wiring, path-based reconciliation, delete/move tombstones, temp-file/ignore-pattern parity with scanner, BM25-only depth with `--embed` opt-in, settle-checks, overflow recovery.
+**Addresses:** `sif watch` foreground, debounce, delete/rename handling, tiered depth.
+**Avoids:** Pitfalls 2, 3, 4, 6 (rename chains, save storms, silent watch loss, mid-write reads).
+**Verification:** TextEdit-sequence fixture test; burst test (N rapid writes → 1 index op); ignore-parity test; real-editor UAT.
 
-### Phase 3: MCP Server Unification
-**Rationale:** MCP depends on stable search and retrieval APIs. Unifying the server last avoids refactoring it twice as the underlying services change.
-**Delivers:** A single `mcp/` package built on `fastmcp`, with real tool handlers wired to `SearchService` and `IndexService`, supporting both stdio and HTTP transports.
-**Addresses:** MCP server unification (FEATURES.md P1).
-**Avoids:** Mock tool handlers (PITFALLS.md #9), stdout pollution (PITFALLS.md #3), SQLite singleton races (PITFALLS.md #4), CORS wildcard (PITFALLS.md moderate #1), tight import coupling (PITFALLS.md minor #3), `vec_search` delegating to `lex_search` (PITFALLS.md minor #2).
+### Phase 3: MCP-Embedded Watch Refresh
+**Rationale:** Second host; the standout differentiator; stdio servers are client-lifecycle-owned so embedding must be explicit/opt-in.
+**Delivers:** `LiveIndexService` thread in `SearchBackend` (start at construction, join at shutdown), opt-in flag (`SIF_MCP_WATCH=1`), `queue.Queue`/`call_soon_threadsafe` bridge from watchdog threads to asyncio, batch-debounce so sync storms never starve query handling.
+**Avoids:** integration gotcha table's asyncio+threads traps; remote-embedding billing without consent.
+**Verification:** p95 of concurrent search during an event burst.
 
-### Phase 4: Advanced Search Pipeline (Rerank + Query Expansion)
-**Rationale:** These are the main quality differentiators, but they depend on a fully working embedding layer and stable search pipeline from Phase 2.
-**Delivers:** LLM reranking, LLM query expansion, query document syntax (`lex:`, `vec:`, `hyde:`), and score explainability (`--explain`).
-**Addresses:** LLM reranking (FEATURES.md P2), LLM query expansion (FEATURES.md P2), query document format (FEATURES.md P2), `--explain` (FEATURES.md P2).
-**Avoids:** LLM reranking latency spikes (PITFALLS.md phase warnings) — add timeout and truncation guards.
+### Phase 4: Daemon + Service Install
+**Rationale:** Packaging of the proven loop; long-running exposure is where silent watch loss compounds — harden here.
+**Delivers:** `--detach` (double-fork), pidfile with liveness validation, flock single-instance lock, SIGTERM graceful drain, launchd LaunchAgent + systemd user-unit generation, un-stub `sif mcp daemon`, `status` visibility.
+**Avoids:** Pitfall 5 in full (stale PID, orphaning, double-writer), supervisor anti-patterns (never fork under launchd/systemd).
+**Verification:** kill -9 restart recovery; SIGTERM drain exits 0; two-writer arbitration test.
 
-### Phase 5: Agent Experience & Polish
-**Rationale:** Lower-priority features that improve the tool for agent workflows and power users once the core pipeline is mature.
-**Delivers:** `--min-score`, full-content / line-number output, context descriptions, `update-cmd`, `--candidate-limit`.
-**Addresses:** `--min-score` (FEATURES.md P2), context descriptions (FEATURES.md P2), `update-cmd` (FEATURES.md P2), full-content/line-number output (FEATURES.md P2).
+### Phase 5: Pre-Command Staleness Detection
+**Rationale:** Independent of the watch loop (needs only `IncrementalIndexer`); the freshness floor for users who run no daemon; doubles as the watcher's checksum-gated backstop.
+**Delivers:** stat-only drift gate (milliseconds at personal-KB scale) → `refresh_once()` only on drift; capped so branch switches never become hidden full reindexes; quiet when clean.
+**Avoids:** Pitfall 4's overflow backstop; unbounded pre-search cost.
+**Verification:** unchanged library adds near-zero startup; missing-root does not mass-delete.
+
+### Phase 6: Hybrid Weights Configurable
+**Rationale:** Fully independent of watch tiers; pure plumbing over existing math (`fuse_with_weights` already exists); can slot anywhere after Phase 1 — placed here to keep live-index phases contiguous.
+**Delivers:** `rrf_k`/`bm25_weight`/`vector_weight` Settings + constructor injection at the 3 construction sites + per-query CLI flags/MCP params; defaults byte-identical (k=60, equal).
+**Avoids:** Anti-Pattern 5 (wiring through the dead Pydantic model).
+**Verification:** default-behavior regression test; per-query override works without config reload.
+
+### Phase 7: Query Suggestions
+**Rationale:** Needs only schema changes (fts5vocab + query_log), not the watcher — orthogonal track; CJK limitation (porter tokenizer doesn't segment Chinese) means history suggestions matter for Chinese users.
+**Delivers:** `Suggester` (prefix via fts5vocab, DYM via SQL-pre-filtered difflib, history from query_log), zero-result hook in CLI/MCP, `sif suggest` command, suggestion-index rebuild on index updates.
+**Avoids:** Pitfall 10 (per-keystroke vocabulary scans, corrections not in corpus); anti-feature of silent auto-rewrite.
+**Verification:** latency <100 ms on largest realistic vocabulary; every suggestion returns ≥1 hit by construction.
+
+### Phase 8: Bench Expansion + Reranker Tuning
+**Rationale:** Consumes Phases 6–7 as measurement subjects; quantified tuning last closes the loop. Bench must precede/accompany weight tuning to be the honest instrument (pitfalls is emphatic: bench before tuning, and latency from bench-expansion onward or reranker tunes blind).
+**Delivers:** nDCG@k, Hit@k, categorized fixtures (≥50 queries: keyword/paraphrase/multilingual/rival-notes), tuning/held-out splits, p50/p95 latency columns, reranker candidate cap + relative threshold + skip-rerank fast path, per-query overrides as the sweep bridge.
+**Avoids:** Pitfalls 7, 8, 9 (overfitting, leakage, CPU latency trap).
+**Verification:** shipped defaults justified by held-out numbers; regression-floor CI bands; `query` on CPU stays interactive.
 
 ### Phase Ordering Rationale
 
-- **Dependencies dictate order:** Vector search requires a working embedder; MCP requires stable search and retrieval APIs; reranking requires hybrid search.
-- **Risk reduction:** Fixing stubs and dependencies first prevents building features on broken assumptions.
-- **Architecture alignment:** The suggested order mirrors the "Suggested Build Order for Missing Pieces" in ARCHITECTURE.md (fix stubs → complete CLI → query expansion/reranking → unify MCP).
+- **Dependency-driven:** watch core (2) → MCP embed (3) → daemon (4) → pre-command detect (5) matches the milestone's stated "四种形态，依赖递进" — each later form is packaging around the same `LiveIndexService` core.
+- **Foundation-first:** Phase 1 lands WAL before any second process exists; pitfalls research is unambiguous this is a precondition, not a follow-up (recovery is cheap only before hosts multiply).
+- **Orthogonal tracks:** search-quality phases (6–8) are independent of live-index phases (2–5) and can proceed in parallel waves if desired — only Phase 1 is shared prerequisite. Suggestions (7) needs only a schema touch; weights (6) is trivial plumbing.
+- **Bench before tuning within the quality track:** pitfall research insists bench expansion (measurement instrument) precedes or accompanies weight/reranker tuning; per-query overrides (Phase 6) are the bridge that makes bench a tuning tool.
+- **Pitfall coverage:** each phase's verification items come from pitfalls' "Looks Done But Isn't" checklist — real-editor save chains, kill -9 recovery, concurrent search during embed, held-out numbers, latency on large vocabularies.
 
 ### Research Flags
 
-Phases likely needing deeper research during planning:
-- **Phase 4 (Advanced Search Pipeline):** The `llama-cpp-python` batch embedding regression and GGUF reranker integration may need API-level research to confirm exact call patterns for `LLAMA_POOLING_TYPE_RANK`. Query expansion model selection also lacks a single consensus choice in the Python ecosystem.
-- **Phase 5 (Agent Experience & Polish):** Snippet extraction and intent-aware scoring are not yet well-defined in the codebase; if these are pulled forward, they will need design research.
+Phases likely needing deeper research during planning (`/gsd-plan-phase --research-phase <N>`):
+- **Phase 4 (Daemon + Service Install):** launchd plist vs systemd unit generation specifics flagged as an open gap by pitfalls research; platform matrices (linger, ThrottleInterval, exit codes) need concrete verification.
+- **Phase 8 (Bench + Reranker):** whether SIF's existing `SearchOptions.candidate_limit` already caps rerank input today — audit before adding a new knob; fixture design (rival-notes, multilingual with porter/CJK limitation) needs deliberate construction.
 
 Phases with standard patterns (skip research-phase):
-- **Phase 1 (Foundation Fix):** Well-understood bugs with clear fixes. No additional research needed.
-- **Phase 2 (Embedding Model Configurability):** Standard `sentence-transformers` and `sqlite-vec` patterns are well documented.
-- **Phase 3 (MCP Server Unification):** `fastmcp` 3.x patterns are established and documented at gofastmcp.com.
+- **Phase 1 (DB Hardening):** pragma recipe is fully specified in STACK.md integration points; verified against sqlite.org and production precedents.
+- **Phase 2 (Watch MVP):** EventDebouncer recipe, rename-chain handling, and scope shaping all documented with exact code references.
+- **Phases 3, 5, 6, 7:** well-documented patterns (queue bridge, stat-gate fast-path, constructor injection, fts5vocab suggestions) — standard execution.
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | Verified via PyPI dry-run installs, official docs, and ecosystem consensus. `sqlite-vec`, `fastmcp`, `sentence-transformers`, and `llama-cpp-python` versions are all confirmed. |
-| Features | MEDIUM | qmd feature set is well documented, but some docsift-specific trade-offs (e.g., which qmd features to port vs. defer) are judgment calls based on priority matrix. |
-| Architecture | HIGH | Codebase audit provides direct evidence of current structure and gaps. Patterns (repository, strategy, pipeline) are standard and well documented. |
-| Pitfalls | MEDIUM-HIGH | Based on verified codebase issues (`CONCERNS.md`) plus domain research. Most pitfalls are directly observable in the current code. |
+| Stack | HIGH | Headline verdict verified against primary sources: watchdog changelog raw-fetched, PyPI JSON API, sqlite.org WAL doc, plus local runtime experiments (trigram OK, spellfix1 absent, WAL OK on this machine) |
+| Features | MEDIUM | qmd README/CHANGELOG read directly (primary); peer conventions cross-verified across recoll/Zoekt/Meilisearch/Typesense/Omnisearch; exa-sourced per seam tier |
+| Architecture | HIGH | Integration mapping read directly from `src/sif/` source (dead `DocumentIndexer`, unwired watcher, no WAL pragmas, hardcoded k=60 all confirmed by grep); external best practices MEDIUM but cross-verified |
+| Pitfalls | HIGH | Codebase-grounded findings cite exact lines; several pitfalls backed by upstream incidents (qmd #264, sqlite-vec #40, Hermes #13655); community claims cross-verified across 3–5 sources each |
 
 **Overall confidence:** HIGH
 
 ### Gaps to Address
 
-- **GGUF reranker call patterns:** The exact Python API for `llama-cpp-python` 0.3.20 reranking (`LLAMA_POOLING_TYPE_RANK`) is documented but should be validated with a small integration test before Phase 4 planning.
-- **Query expansion model choice:** No single lightweight local model dominates for query expansion in Python. During Phase 4 planning, evaluate rule-based expansion vs. small GGUF/Sentence-Transformer options.
-- **MCP client testing strategy:** We need a reproducible MCP client test harness (e.g., Claude Code or a scripted JSON-RPC client) to verify stdio and HTTP transports end-to-end before Phase 3 execution.
-- **Windows compatibility of `sqlite-vec`:** macOS ARM64 and Linux x86_64 wheels exist; Windows may need MSVC redistributables. If Windows is a supported target, this needs validation.
+- **Daemon service-generation specifics** (launchd plist fields, systemd linger/exit-code matrix): flagged for Phase 4 research; STUCK-notes carry the open questions.
+- **`SearchOptions.candidate_limit` audit**: does it already cap rerank input? Answer during Phase 8 planning before adding a knob.
+- **CJK suggestion quality**: porter tokenizer doesn't segment Chinese — vocab-based DYM skews ASCII. Validate history-based suggestions with a Chinese-language corpus during Phase 7 UAT; fixture tests must include CJK.
+- **Difflib DYM quality at scale**: SQL pre-filter makes it fast; quality unproven — symspellpy is the documented last-resort fallback (new runtime dep, only if UAT shows gaps).
+- **Battery/CPU claims for watchers**: single-community-source, directional only — treat as hypotheses to validate in-phase (Phase 2 profiling).
+- **Network-mounted collections**: PollingObserver fallback + WAL-on-network-FS degradation path documented in STACK variants but needs a runtime decision (detect WAL-switch failure, degrade to DELETE journal with warning).
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- DocSift codebase analysis (`src/docsift/`, `.planning/codebase/CONCERNS.md`) — current structure, stubs, and bugs.
-- [llama-cpp-python PyPI](https://pypi.org/project/llama-cpp-python/) — version 0.3.20, batch embedding regression notes.
-- [sqlite-vec PyPI](https://pypi.org/project/sqlite-vec/) — version 0.1.9, installation and API verification.
-- [fastmcp PyPI](https://pypi.org/project/fastmcp/) — version 3.2.4, decorator-based API.
-- [sentence-transformers PyPI](https://pypi.org/project/sentence-transformers/) — version 5.4.0, `encode()` API stability.
-- [sqlite-vec Official Docs](https://alexgarcia.xyz/sqlite-vec/) — hybrid FTS5 + vector query patterns.
-- [FastMCP Documentation](https://gofastmcp.com/) — transport and tool handler patterns.
+- watchdog official changelog + `event_debouncer.py` source (tags v3.0.0–v6.0.0) — version history, Python support drops, positional signature
+- PyPI JSON API (watchdog, python-daemon, ir-measures, ranx, symspellpy, sqlite-vec) — versions, requires_python, dependency lists
+- sqlite.org WAL docs (sqlite.org/wal.html) — WAL semantics, BUSY edge cases, checkpointing
+- qmd README + CHANGELOG (raw GitHub) — no watch command; `file_sync_state` fast-path; MCP daemon; missing-root fix (#989/#990); issue #264 reranker latency
+- SIF codebase reads (2026-11-07) — watcher stubs, no WAL pragmas, dead DocumentIndexer, hardcoded RRF k=60, dead Pydantic SearchOptions, no fts5vocab
+- Local runtime verification (macOS 26.6.2 / py3.13 / SQLite 3.50.4) — trigram OK, spellfix1 NOT available, WAL OK
 
 ### Secondary (MEDIUM confidence)
-- [tobi/qmd on GitHub](https://github.com/tobi/qmd) — feature parity target.
-- [QMD Changelog](https://github.com/tobi/qmd/blob/main/CHANGELOG.md) — versioned feature additions (`--explain`, `--intent`, etc.).
-- [QMD Query Syntax Documentation](https://mintlify.com/tobi/qmd/concepts/query-syntax) — `lex:`, `vec:`, `hyde:` semantics.
-- OWASP LLM08:2025 — Vector and Embedding Weaknesses.
-- "Real Faults in Model Context Protocol (MCP) Software" (arXiv:2603.05637v1) — stdout pollution and transport issues.
+- llama-stack PRs #5428/#5442 + sqlite-vec issue #40 — WAL+busy_timeout with vec0 in production; transactional vec0 writes
+- recoll user manual, Zoekt repo, Omnisearch DeepWiki — live-index peer conventions, resync backstops, resource warnings
+- Elasticsearch RRF docs (rank_constant=60) + Weaviate hybrid docs (alpha) — fusion-knob conventions
+- Meilisearch typo-tolerance + Typesense FAQ — suggest-only DYM conventions
+- Qdrant hybrid-tuning guide + chicong115 case study — k-before-weights, measured overfit collapse on held-out
+- watchdog issues #538, PRs #750/#754 — macOS rename chains, inode pairing
+- taosmd/dotagent/agenttap service-install code — plist/systemd generation pattern (three independent implementations)
+- IR-eval peer harnesses (obsidian-hybrid-search, gbrain) — nDCG graded/floor-band conventions
 
-### Tertiary (LOW confidence)
-- `llama-cpp-python` community fork reports (mid-2025) — maintenance hiatus and version confusion. Needs re-verification at implementation time.
-- `sqlite-vec` ANN limitations (GitHub issue #25, 2024-2025) — brute-force KNN is acceptable for personal scale, but HNSW is not yet available.
+### Tertiary (LOW confidence, directional)
+- Battery/CPU drain claims for event-driven vs polling watchers (AgentMonitors issue, SO answers) — validate in-phase
+- Individual reranker-threshold vendor blogs (dreaming.press, apiyi) — consensus MEDIUM in aggregate across four sources
 
 ---
-*Research completed: 2026-04-14*
+*Research completed: 2026-11-07*
 *Ready for roadmap: yes*
