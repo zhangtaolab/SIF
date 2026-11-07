@@ -18,7 +18,7 @@ Requirements for milestone v1.1. Each maps to roadmap phases (numbering continue
 - [x] **LIVE-06**: watch 写入与 CLI/MCP 并发读共存，零 "database is locked"（WAL + busy_timeout + BEGIN IMMEDIATE）
 - [x] **LIVE-07**: flock 单写者仲裁，多 watch 形态并存不重复 embed
 - [x] **LIVE-08**: `SIF_MCP_WATCH=1` 启用 MCP server 内嵌刷新，查询不被事件风暴阻塞
-- [ ] **LIVE-09**: `sif watch --detach`（PID/stop/status）+ launchd/systemd 服务安装
+- [x] **LIVE-09**: `sif watch --detach`（PID/stop/status）+ launchd/systemd 服务安装
 - [ ] **LIVE-10**: 未运行 watch 时，搜索命令前 stat 漂移检测自动刷新（有上限，干净时零成本）
 - [x] **LIVE-11**: collection 根目录消失不解读为全量删除（missing-root 防护）
 
@@ -69,7 +69,7 @@ Requirements for milestone v1.1. Each maps to roadmap phases (numbering continue
 | LIVE-06 | Phase 11 | Complete |
 | LIVE-07 | Phase 11 | Complete |
 | LIVE-08 | Phase 13 | Complete |
-| LIVE-09 | Phase 13 | Pending |
+| LIVE-09 | Phase 13 | Complete |
 | LIVE-10 | Phase 14 | Pending |
 | LIVE-11 | Phase 12 | Complete |
 | QUAL-01 | Phase 15 | Pending |
