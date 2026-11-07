@@ -4,17 +4,17 @@ milestone: v1.1
 milestone_name: Live Index and Search Quality
 current_phase: 11
 current_phase_name: Live-Index Foundation (Concurrent DB + Incremental Core)
-status: executing
-stopped_at: Completed 11-02-PLAN.md
-last_updated: "2026-11-07T06:36:09.153Z"
+status: verifying
+stopped_at: Completed 11-03-PLAN.md
+last_updated: "2026-11-07T06:52:03.762Z"
 last_activity: 2026-11-07
 last_activity_desc: Phase 11 execution started
-state_head: b3eea964837543185ba5607092ec3660277b5e81
+state_head: c0cfa000b41976f49b38040889ce608c66c5c8f6
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 3
-  completed_plans: 1
+  completed_plans: 3
 ---
 
 # DocSift — Project State
@@ -31,7 +31,7 @@ progress:
 
 Phase: 11 (Live-Index Foundation (Concurrent DB + Incremental Core)) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-11-07 — Phase 11 execution started
 
 Progress: [░░░░░░░░░░] 0%
@@ -51,6 +51,7 @@ Progress: [░░░░░░░░░░] 0%
 |------|----------|-------|-------|
 | Phase 11 P01 | 27 min | 3 tasks | 13 files |
 | Phase 11 P02 | 12 min | 2 tasks | 5 files |
+| Phase 11 P03 | 9 min | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -70,6 +71,9 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 - [Phase 11]: Progress callback protocol is short 'code payload' events (scan/unchanged/error/indexed): IncrementalIndexer stays presentation-free and the CLI _render_index_event is the only place events become Rich output
 - [Phase 11]: Per-file loop body split into _process_file/_sweep_removed helpers to keep complexity <=10 with no noqa exemption; MarkdownParser became indexer instance state (PLR0913)
 - [Phase 11]: RED phase committed an importable zero-behavior skeleton with the failing tests so the suite collects (assertion failures, not import errors); the pre-update hook stays in the CLI as _run_pre_update_hook
+- [Phase 11]: 11-03: dead-test cleanup lands inside the RED commit — deleted test files import symbols deleted in Task 1, so the same-commit removal is what lets the suite collect; the RED target fails on its assertion, never an import error
+- [Phase 11]: 11-03: commit-on-clean-exit for the surviving DatabaseConnection is proven via transaction(); the retired duplicate's connect() was the only connect() that committed (D-07 consequence)
+- [Phase 11]: 11-03: embed_cmd joins update_cmd under the same per-DB flock (D-01) — lock acquired after model load and dimension checks; per-collection transaction structure unchanged (D-05); REFACTOR skipped to avoid reworking 11-01's committed lock-wrap shape
 
 ### Pending Todos
 
@@ -90,8 +94,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 
 ## Session Continuity
 
-Last session: 2026-11-07T06:36:09.139Z
-Stopped at: Completed 11-02-PLAN.md
+Last session: 2026-11-07T06:52:03.748Z
+Stopped at: Completed 11-03-PLAN.md
 Resume file: None
 
 - **Next expected action:** `/gsd-plan-phase 11` (no research flag — pragma recipe fully specified in research/STACK.md)

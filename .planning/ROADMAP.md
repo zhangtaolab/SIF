@@ -52,16 +52,16 @@ Full detail: `.planning/milestones/v1.0-ROADMAP.md`
   2. Two index-writer processes started at the same time: exactly one does the work; the other defers cleanly with no duplicated indexing or embedding (flock single-writer arbitration)
   3. `sif index update` produces identical results before and after the refactor — the per-file incremental loop is extracted into one shared IncrementalIndexer (update_cmd delegates to it; the dead DocumentIndexer is retired, no third copy)
   4. Existing CLI/MCP behavior is unchanged — full quality suite green (pytest fail_under=90, ruff, ty)
-**Plans**: 1/3 plans executed
+**Plans**: 3/3 plans executed
 Plans:
 **Wave 1**
 - [x] 11-01-PLAN.md — Shared connection factory (WAL/busy_timeout/BEGIN IMMEDIATE), flock per-DB arbitration, SC1/SC2 proofs (in-suite + subprocess)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 11-02-PLAN.md — IncrementalIndexer extraction with per-file transactions; update_cmd delegates; SC3 golden equivalence
+- [x] 11-02-PLAN.md — IncrementalIndexer extraction with per-file transactions; update_cmd delegates; SC3 golden equivalence
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 11-03-PLAN.md — Dead-code retirement (D-07), embed_cmd under the lock (D-01), full quality gate (SC4)
+- [x] 11-03-PLAN.md — Dead-code retirement (D-07), embed_cmd under the lock (D-01), full quality gate (SC4)
 
 ### Phase 12: `sif watch` Foreground MVP
 **Goal**: Running `sif watch` in a terminal keeps the index current as files change — the first complete host of the live-index loop, proving events → incremental reindex end-to-end.
@@ -123,7 +123,7 @@ Plans:
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 11. Live-Index Foundation | v1.1 | 1/3 | In Progress | - |
+| 11. Live-Index Foundation | v1.1 | 3/3 | In Progress | - |
 | 12. `sif watch` Foreground MVP | v1.1 | 0/TBD | Not started | - |
 | 13. Watch Everywhere (MCP + Daemon) | v1.1 | 0/TBD | Not started | - |
 | 14. Freshness Floor (Pre-Command + Staleness) | v1.1 | 0/TBD | Not started | - |
