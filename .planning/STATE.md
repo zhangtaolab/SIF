@@ -5,11 +5,11 @@ milestone_name: Live Index and Search Quality
 current_phase: 11
 current_phase_name: Live-Index Foundation (Concurrent DB + Incremental Core)
 status: executing
-stopped_at: Completed 11-01-PLAN.md
-last_updated: "2026-11-07T06:13:29.725Z"
+stopped_at: Completed 11-02-PLAN.md
+last_updated: "2026-11-07T06:36:09.153Z"
 last_activity: 2026-11-07
 last_activity_desc: Phase 11 execution started
-state_head: b7c386d246697d8807ab080fde8a0595c5fd66e2
+state_head: b3eea964837543185ba5607092ec3660277b5e81
 progress:
   total_phases: 6
   completed_phases: 0
@@ -30,7 +30,7 @@ progress:
 ## Current Position
 
 Phase: 11 (Live-Index Foundation (Concurrent DB + Incremental Core)) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-11-07 — Phase 11 execution started
 
@@ -50,6 +50,7 @@ Progress: [░░░░░░░░░░] 0%
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
 | Phase 11 P01 | 27 min | 3 tasks | 13 files |
+| Phase 11 P02 | 12 min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -66,6 +67,9 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 - [Phase 11]: Legacy duplicate DatabaseConnection (database.py) routed through the factory ahead of its 11-03 retirement: deleting the sqlite_vec import (plan-mandated) while leaving the class untouched would break ruff F821 and two patch-target tests
 - [Phase 11]: index_lock deadline expiry breaks to the yield instead of returning - a pre-yield return from a contextmanager raises RuntimeError and crashes the D-02 loser path (caught by the 11-01 Task 3 RED test)
 - [Phase 11]: WAL retry is a for-else with an unguarded final attempt (persistent contention surfaces the original OperationalError; non-wal row degrades with a warning); busy-timeout wait test made deterministic instead of the plan's racy busy_timeout=200 numbers
+- [Phase 11]: Progress callback protocol is short 'code payload' events (scan/unchanged/error/indexed): IncrementalIndexer stays presentation-free and the CLI _render_index_event is the only place events become Rich output
+- [Phase 11]: Per-file loop body split into _process_file/_sweep_removed helpers to keep complexity <=10 with no noqa exemption; MarkdownParser became indexer instance state (PLR0913)
+- [Phase 11]: RED phase committed an importable zero-behavior skeleton with the failing tests so the suite collects (assertion failures, not import errors); the pre-update hook stays in the CLI as _run_pre_update_hook
 
 ### Pending Todos
 
@@ -86,8 +90,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 
 ## Session Continuity
 
-Last session: 2026-11-07T06:13:29.711Z
-Stopped at: Completed 11-01-PLAN.md
+Last session: 2026-11-07T06:36:09.139Z
+Stopped at: Completed 11-02-PLAN.md
 Resume file: None
 
 - **Next expected action:** `/gsd-plan-phase 11` (no research flag — pragma recipe fully specified in research/STACK.md)
