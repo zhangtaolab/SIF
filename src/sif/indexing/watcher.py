@@ -3,8 +3,9 @@
 observer -> IndexingEventHandler -> EventDebouncer -> fold_events -> queue ->
 single worker thread -> per-burst index_lock -> IncrementalIndexer. The
 module owns no presentation: hosts pass ``on_event``/``on_batch`` callbacks
-and render themselves (D-13). Signal handling and WAL checkpointing stay in
-the CLI host (plan 12-02 owns the full D-14 machinery).
+and render themselves (D-13). Signal handling and the WAL checkpoint stay
+in the CLI host (D-14); the worker's idle wait doubles as the D-12
+missing-root re-stat loop.
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ from typing import cast
 
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
-from watchdog.observers.api import BaseObserver
+from watchdog.observers.api import BaseObserver, ObservedWatch
 from watchdog.utils.event_debouncer import EventDebouncer
 
 from sif.core.models import Collection
@@ -33,11 +34,14 @@ from sif.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-_WORKER_POLL_SECONDS = 0.5
 _JOIN_TIMEOUT_SECONDS = 5.0
 _WORKER_JOIN_TIMEOUT_SECONDS = 10.0
 
 SettledCallback = Callable[[list[FileSystemEvent]], None]
+
+# Wakes a worker parked on its re-stat-timeout idle wait so shutdown never
+# waits out the interval; nothing is enqueued after it (D-14 bounded stop).
+_WORKER_STOP_SENTINEL = None
 
 
 def _event_path(path: bytes | str) -> str:
@@ -63,14 +67,25 @@ class WatchConfig:
     """Tunables and host callbacks for :class:`FileWatcher`.
 
     Bundled so the constructor stays under the project's argument-count lint
-    gate; Phase 12-02 flags extend this struct without touching call sites.
+    gate; host flags extend this struct without touching call sites.
     """
 
     debounce_interval: float = 0.5
     lock_timeout: float = 30.0
     depth: str = "bm25"
+    restat_interval: float = 5.0
     on_event: Callable[[str], None] | None = None
     on_batch: Callable[[Collection, IncrementalResult], None] | None = None
+
+
+@dataclass
+class _WatchState:
+    """Per-collection watch lifecycle state for the D-12 recovery loop."""
+
+    collection: Collection
+    root: Path
+    handle: ObservedWatch | None = None
+    missing: bool = False
 
 
 def fold_events(
@@ -171,7 +186,8 @@ class FileWatcher:
         self._config = config if config is not None else WatchConfig()
         self._observer: BaseObserver | None = None
         self._debouncers: list[EventDebouncer] = []
-        self._queue: queue.Queue[tuple[Collection, FoldResult]] = queue.Queue()
+        self._watch_states: dict[str, _WatchState] = {}
+        self._queue: queue.Queue[tuple[Collection, FoldResult] | None] = queue.Queue()
         self._worker: threading.Thread | None = None
         self._stop_event = threading.Event()
 
@@ -180,31 +196,41 @@ class FileWatcher:
         observer = Observer()
         for coll in self._collections:
             root = Path(coll.path).resolve()
+            state = _WatchState(collection=coll, root=root)
+            self._watch_states[coll.name] = state
             if not root.exists():
                 logger.warning(
                     "Collection root %s missing; not scheduling a watch (D-11)",
                     root,
                 )
+                # Missing from the start: still tracked so the D-12 re-stat
+                # loop picks the root up when it appears.
+                state.missing = True
                 continue
-            # Positional args (D-05): the first kwarg name differs across
-            # watchdog 4.x-7.x; positionally identical on all of them. The
-            # upstream annotation says int but the value only flows into
-            # Condition.wait(timeout=...), which takes floats (verified
-            # against the installed 6.0.0 source) — hence the cast.
-            debouncer = EventDebouncer(
-                cast(int, self._config.debounce_interval), self._settled_callback(coll)
-            )
-            observer.schedule(IndexingEventHandler(debouncer), str(root), recursive=True)
-            self._debouncers.append(debouncer)
+            self._schedule_watch(state, observer)
 
         self._observer = observer
         observer.start()
-        for debouncer in self._debouncers:
-            debouncer.start()
         self._worker = threading.Thread(
             target=self._worker_loop, name="sif-watch-worker", daemon=True
         )
         self._worker.start()
+
+    def _schedule_watch(self, state: _WatchState, observer: BaseObserver) -> None:
+        """Arm one collection's debouncer and recursive watch on its resolved root."""
+        # Positional args (D-05): the first kwarg name differs across
+        # watchdog 4.x-7.x; positionally identical on all of them. The
+        # upstream annotation says int but the value only flows into
+        # Condition.wait(timeout=...), which takes floats (verified
+        # against the installed 6.0.0 source) — hence the cast.
+        debouncer = EventDebouncer(
+            cast(int, self._config.debounce_interval), self._settled_callback(state.collection)
+        )
+        state.handle = observer.schedule(
+            IndexingEventHandler(debouncer), str(state.root), recursive=True
+        )
+        self._debouncers.append(debouncer)
+        debouncer.start()
 
     def stop(self, *, flush: bool = True) -> None:
         """Stop intake, drain queued work once (bounded), and join threads.
@@ -220,6 +246,9 @@ class FileWatcher:
         # The worker exits on the stop flag; queued work is then drained on
         # this thread so no two threads ever share the connection mid-job.
         self._stop_event.set()
+        # Wake a worker parked on its re-stat-timeout idle wait so the join
+        # below never waits out the interval (D-14 bounded stop).
+        self._queue.put(_WORKER_STOP_SENTINEL)
         if self._worker is not None:
             self._worker.join(timeout=_WORKER_JOIN_TIMEOUT_SECONDS)
         if flush:
@@ -230,7 +259,38 @@ class FileWatcher:
             debouncer.join(timeout=_JOIN_TIMEOUT_SECONDS)
 
     def recovery_tick(self) -> None:
-        """One D-12 re-stat pass over watched roots (skeleton: no-op)."""
+        """Run one D-12 re-stat pass over tracked roots.
+
+        Called by the worker whenever its idle wait times out (the re-stat
+        cadence), or directly from tests with zero timing. A root that
+        disappeared is marked missing — one warning per transition, its
+        watch handle unscheduled, its documents never touched. A root that
+        returned is rescheduled and gets one full-reconcile job enqueued.
+        """
+        observer = self._observer
+        if observer is None:
+            return
+        for state in self._watch_states.values():
+            exists = state.root.exists()
+            if not exists and not state.missing:
+                logger.warning(
+                    "Watched root %s (collection %s) disappeared — documents preserved",
+                    state.root,
+                    state.collection.name,
+                )
+                if state.handle is not None:
+                    observer.unschedule(state.handle)
+                    state.handle = None
+                state.missing = True
+            elif exists and state.missing:
+                logger.warning(
+                    "Watched root %s (collection %s) returned — rescheduling watch and reconciling",
+                    state.root,
+                    state.collection.name,
+                )
+                self._schedule_watch(state, observer)
+                state.missing = False
+                self._queue.put((state.collection, FoldResult(needs_reconcile=True)))
 
     def _settled_callback(self, collection: Collection) -> SettledCallback:
         """Build the debouncer callback for one collection.
@@ -254,12 +314,22 @@ class FileWatcher:
         return _on_settled
 
     def _worker_loop(self) -> None:
-        """Consume settled bursts until stopped; one job per queue item."""
+        """Consume settled bursts until stopped; one job per queue item.
+
+        The idle wait doubles as the D-12 re-stat cadence: when no burst
+        arrives within the re-stat interval, one recovery tick runs.
+        """
         while not self._stop_event.is_set():
             try:
-                job = self._queue.get(timeout=_WORKER_POLL_SECONDS)
+                job = self._queue.get(timeout=self._config.restat_interval)
             except queue.Empty:
+                self.recovery_tick()
                 continue
+            if job is None:
+                # stop() sentinel: wake immediately instead of parking for
+                # the rest of the re-stat interval; nothing follows it.
+                self._queue.task_done()
+                break
             try:
                 self._run_job(job)
             except Exception:
@@ -299,7 +369,8 @@ class FileWatcher:
             except queue.Empty:
                 return
             try:
-                self._run_job(job)
+                if job is not None:
+                    self._run_job(job)
             except Exception:
                 logger.exception("watch flush job failed for %s", job[0].name)
             finally:

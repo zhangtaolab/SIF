@@ -2,12 +2,17 @@
 
 Startup reconcile per collection (D-03) runs BEFORE the observer arms, so
 the FSEvents startup created-burst is absorbed by checksum skips
-(Pitfall 1). Depth is BM25-only in this plan; ``--embed`` arrives in 12-02.
+(Pitfall 1). Depth is tiered (LIVE-05): BM25-only unless ``--embed`` (or
+``SIF_WATCH_UPDATE_DEPTH=embed``) explicitly opts into vector updates.
+Shutdown is signal-driven (D-14): first SIGINT/SIGTERM runs one bounded
+flush plus a WAL truncate checkpoint and exits 0; a second signal exits 130
+immediately with no flush.
 """
 
 from __future__ import annotations
 
 import signal
+import sqlite3
 import sys
 import time
 from collections.abc import Callable
@@ -20,6 +25,7 @@ from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from sif.cli.commands.index import _render_index_event
+from sif.config.settings import Settings
 from sif.core.models import Collection
 from sif.database.database import Database
 from sif.database.locking import index_lock
@@ -32,6 +38,7 @@ console = Console()
 
 _LOOP_INTERVAL_SECONDS = 0.2
 _IMMEDIATE_EXIT_AFTER_SIGNALS = 2
+_WAL_CHECKPOINT_TRUNCATE = "PRAGMA wal_checkpoint(TRUNCATE)"
 
 
 @dataclass
@@ -43,41 +50,82 @@ class SignalState:
 
 
 def make_signal_handler(state: SignalState) -> Callable[[int, FrameType | None], None]:
-    """Build the D-14 SIGINT/SIGTERM handler (skeleton: stop flag only)."""
+    """Build the D-14 SIGINT/SIGTERM handler.
+
+    The first signal sets the stop flag so the run loop exits into the
+    graceful teardown (one bounded flush + WAL checkpoint, exit 0). A second
+    signal raises SystemExit(130) immediately with no flush — the escape
+    hatch when the graceful path is stuck (Pitfall 8).
+    """
 
     def _handle_signal(_signum: int, _frame: FrameType | None) -> None:
         state.signal_count += 1
+        if state.signal_count >= _IMMEDIATE_EXIT_AFTER_SIGNALS:
+            sys.exit(130)
         state.stop = True
 
     return _handle_signal
 
 
-def shutdown_watcher(watcher: FileWatcher, conn: object) -> None:
-    """D-14 teardown (skeleton): one bounded flush of the in-flight batch."""
-    _ = conn
-    watcher.stop(flush=True)
+def install_signal_handlers(state: SignalState) -> None:
+    """Install the D-14 handler for SIGINT and SIGTERM (one shared routine)."""
+    handler = make_signal_handler(state)
+    signal.signal(signal.SIGINT, handler)
+    signal.signal(signal.SIGTERM, handler)
+
+
+def shutdown_watcher(watcher: FileWatcher, conn: sqlite3.Connection) -> None:
+    """D-14 teardown: ONE bounded flush of the in-flight batch, then the WAL checkpoint.
+
+    The checkpoint executes on the worker's own connection AFTER
+    ``watcher.stop`` has quiesced the worker thread (the main thread runs it,
+    never the worker), inside try/finally so a failed flush still attempts
+    the checkpoint.
+    """
+    try:
+        watcher.stop(flush=True)
+    finally:
+        conn.execute(_WAL_CHECKPOINT_TRUNCATE)
 
 
 def _select_collections(
     coll_repo: CollectionRepository, names: tuple[str, ...]
 ) -> list[Collection]:
-    """Resolve -c names to collections (skeleton: no filtering yet)."""
-    _ = names
-    return coll_repo.list_all()
+    """Resolve ``-c`` names to their collections (D-01).
+
+    No names: every registered collection. An unknown name raises the same
+    ClickException wording as ``update_cmd``.
+    """
+    if not names:
+        return coll_repo.list_all()
+    by_name = {coll.name: coll for coll in coll_repo.list_all()}
+    selected: list[Collection] = []
+    for name in names:
+        if name not in by_name:
+            raise click.ClickException(f"Collection '{name}' not found")
+        selected.append(by_name[name])
+    return selected
 
 
-def _effective_depth(*, embed: bool, no_embed: bool, settings: object) -> str:
-    """LIVE-05 depth matrix (skeleton: bm25 only)."""
-    _ = (embed, no_embed, settings)
-    return "bm25"
+def _effective_depth(*, embed: bool, no_embed: bool, settings: Settings) -> str:
+    """LIVE-05 depth matrix: flags win, then the setting, default BM25-only.
+
+    ``--embed`` forces embed on; ``--no-embed`` forces it off; otherwise the
+    ``watch_update_depth`` setting applies. With neither flag nor an
+    opting-in setting, embedding never runs.
+    """
+    if embed:
+        return "embed"
+    if no_embed:
+        return "bm25"
+    return settings.watch_update_depth
 
 
-def _render_watch_event(event: str) -> None:
-    """Render live progress events during watching (D-13 subset).
+def _render_watch_event(event: str, *, verbose: bool) -> None:
+    """Render live progress events during watching (D-13).
 
-    Per-file ``scan``/``unchanged``/``indexed`` lines stay quiet — the
-    per-batch summary carries the counts (``--verbose`` arrives in 12-02).
-    Failures and missing roots stay visible.
+    Failures and missing roots always stay visible. Per-file lines print
+    only under ``--verbose``; the default is the per-batch summary.
     """
     code, _, payload = event.partition(" ")
     if code == "error":
@@ -86,6 +134,13 @@ def _render_watch_event(event: str) -> None:
         console.print(
             f"  [yellow]Collection root missing: {payload} — skipped, documents preserved[/yellow]"
         )
+    elif verbose:
+        if code == "scan":
+            console.print(f"  [dim]Found {payload} files[/dim]")
+        elif code == "unchanged":
+            console.print(f"  [dim]Unchanged: {payload}[/dim]")
+        elif code == "indexed":
+            console.print(f"  [dim]Indexed: {payload}[/dim]")
 
 
 def _render_batch(name: str, added: int, updated: int, removed: int, unchanged: int) -> None:
@@ -96,9 +151,42 @@ def _render_batch(name: str, added: int, updated: int, removed: int, unchanged: 
 
 
 @click.command("watch")
+@click.option(
+    "--collection",
+    "-c",
+    "collections",
+    multiple=True,
+    help="Watch only the named collection(s); repeatable. Collection-set "
+    "changes while watch runs require a restart.",
+)
+@click.option(
+    "--embed",
+    is_flag=True,
+    help="Also write vector embeddings for changed documents (opt-in; default is BM25-only)",
+)
+@click.option(
+    "--no-embed",
+    is_flag=True,
+    help="Force BM25-only updates even when SIF_WATCH_UPDATE_DEPTH=embed",
+)
+@click.option(
+    "--verbose",
+    is_flag=True,
+    help="Print per-file event lines instead of per-batch summaries",
+)
 @click.pass_context
-def watch_cmd(ctx: click.Context) -> None:
-    """Watch collections and keep the index current as files change."""
+def watch_cmd(
+    ctx: click.Context,
+    collections: tuple[str, ...],
+    embed: bool,
+    no_embed: bool,
+    verbose: bool,
+) -> None:
+    """Watch collections and keep the index current as files change.
+
+    Collection-set changes (adding or removing collections) require a watch
+    restart in this MVP.
+    """
     index_path = ctx.obj["index_path"]
 
     from sif.config.settings import get_settings  # noqa: PLC0415
@@ -106,24 +194,17 @@ def watch_cmd(ctx: click.Context) -> None:
     settings = get_settings()
     lock_timeout = settings.lock_wait_timeout
     debounce_interval = settings.watch_debounce_interval
+    depth = _effective_depth(embed=embed, no_embed=no_embed, settings=settings)
 
-    state = {"stop": False, "signals": 0}
-
-    def _handle_signal(_signum: int, _frame: FrameType | None) -> None:
-        state["signals"] += 1
-        if state["signals"] >= _IMMEDIATE_EXIT_AFTER_SIGNALS:
-            sys.exit(130)
-        state["stop"] = True
-
-    signal.signal(signal.SIGINT, _handle_signal)
-    signal.signal(signal.SIGTERM, _handle_signal)
+    state = SignalState()
+    install_signal_handlers(state)
 
     watcher: FileWatcher | None = None
     try:
         with Database(index_path) as db:
             db.init_schema()
-            collections = CollectionRepository(db.connection).list_all()
-            if not collections:
+            selected = _select_collections(CollectionRepository(db.connection), collections)
+            if not selected:
                 console.print(
                     "[yellow]No collections found. Add one with 'sif collection add'.[/yellow]",
                 )
@@ -134,7 +215,7 @@ def watch_cmd(ctx: click.Context) -> None:
             # fresh immediately, and the startup burst lands on matching
             # checksums.
             indexer = IncrementalIndexer(db.connection)
-            for coll in collections:
+            for coll in selected:
                 console.print(f"\n[bold]Reconciling collection: {coll.name}[/bold]")
                 with Progress(
                     SpinnerColumn(),
@@ -156,14 +237,15 @@ def watch_cmd(ctx: click.Context) -> None:
                         )
 
             watcher = FileWatcher(
-                collections,
+                selected,
                 db.connection,
                 Path(index_path),
                 WatchConfig(
                     debounce_interval=debounce_interval,
                     lock_timeout=lock_timeout,
-                    depth="bm25",
-                    on_event=_render_watch_event,
+                    depth=depth,
+                    restat_interval=settings.watch_restat_interval,
+                    on_event=lambda event: _render_watch_event(event, verbose=verbose),
                     on_batch=lambda coll, result: _render_batch(
                         coll.name,
                         result.added,
@@ -177,15 +259,20 @@ def watch_cmd(ctx: click.Context) -> None:
 
             # D-13 banner — printed after the observer arms, so "Watching"
             # marks the moment live events start flowing.
-            console.print(
-                f"\n[bold]Watching {len(collections)} collection(s) — Ctrl-C to stop[/bold]"
-            )
-            for coll in collections:
+            depth_label = "embed" if depth == "embed" else "BM25-only"
+            console.print(f"\n[bold]Watching {len(selected)} collection(s) — Ctrl-C to stop[/bold]")
+            for coll in selected:
                 console.print(f"  {coll.name}: {coll.path}")
-            console.print(f"  depth: BM25-only · debounce: {debounce_interval}s")
+            console.print(f"  depth: {depth_label} · debounce: {debounce_interval}s")
 
-            while not state["stop"]:
+            while not state.stop:
                 time.sleep(_LOOP_INTERVAL_SECONDS)
+
+            # Graceful path: ONE bounded flush, then the WAL checkpoint, exit 0.
+            shutdown_watcher(watcher, db.connection)
+            watcher = None
     finally:
         if watcher is not None:
-            watcher.stop()
+            # Exception path (including the second signal's SystemExit(130)):
+            # stop intake without flushing — the immediate-exit contract.
+            watcher.stop(flush=False)

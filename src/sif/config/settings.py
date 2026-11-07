@@ -178,6 +178,22 @@ class Settings(BaseSettings):
         description="Whether to cache embeddings",
     )
 
+    @field_validator("watch_update_depth")
+    @classmethod
+    def validate_watch_update_depth(cls, v: str) -> str:
+        """Validate watch_update_depth is one of the supported depths.
+
+        Fails at settings-validation time so an invalid SIF_WATCH_UPDATE_DEPTH
+        surfaces as a config error naming the field, not as a silently
+        BM25-only watch deep inside the run loop (LIVE-05 invariant).
+        """
+        valid_depths = {"bm25", "embed"}
+        if v not in valid_depths:
+            raise ValueError(
+                f"Invalid watch_update_depth: {v}. Must be one of {sorted(valid_depths)}"
+            )
+        return v
+
     @field_validator("model_type")
     @classmethod
     def validate_model_type(cls, v: str) -> str:
