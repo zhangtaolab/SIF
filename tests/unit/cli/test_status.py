@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any, ClassVar
 from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
@@ -100,29 +101,26 @@ class TestWatchSection:
     alias.
     """
 
-    _RUNNING_PAYLOAD = {
+    _RUNNING_PAYLOAD: ClassVar[dict] = {
         "pid": 4242,
         "mode": "daemon",
         "depth": "bm25",
         "started": "2026-11-07T00:00:00+00:00",
     }
 
-    def _invoke(self, command, db_path, monkeypatch, payload, corroborate=True):
+    def _invoke(self, command: Any, db_path, monkeypatch, payload, corroborate=True) -> Any:
         db_path.touch()
         mock_db = MagicMock()
         mock_db.get_stats.return_value = _mock_stats()
         monkeypatch.setattr(
             "sif.utils.daemon.read_pid_file",
-            lambda path: dict(payload) if payload is not None else None,
+            lambda _path: dict(payload) if payload is not None else None,
         )
         if payload is not None:
-            monkeypatch.setattr(
-                "sif.utils.daemon.corroborate_pid", lambda pl: corroborate
-            )
+            monkeypatch.setattr("sif.utils.daemon.corroborate_pid", lambda _pl: corroborate)
         with patch("sif.cli.main.Database") as mock_db_cls:
             mock_db_cls.return_value.__enter__.return_value = mock_db
-            result = CliRunner().invoke(command, [], obj={"index_path": db_path})
-        return result
+            return CliRunner().invoke(command, [], obj={"index_path": db_path})
 
     def test_running_daemon_renders_pid_mode_depth(self, tmp_path, monkeypatch):
         """Corroborated payload -> a Watch row naming PID, daemon mode, depth."""
@@ -160,9 +158,7 @@ class TestWatchSection:
         assert "stale PID file removed" in result.output
         assert not stale.exists()
 
-    def test_garbage_payload_reports_not_running_and_cleans_file(
-        self, tmp_path, monkeypatch
-    ):
+    def test_garbage_payload_reports_not_running_and_cleans_file(self, tmp_path, monkeypatch):
         db_path = tmp_path / "sif.db"
         db_path.touch()
         stale = db_path.with_name(db_path.name + ".watch.pid")

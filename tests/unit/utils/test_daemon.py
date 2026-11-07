@@ -20,11 +20,29 @@ import pytest
 from sif.utils import daemon
 
 
-_PAYLOAD = {"pid": 999999, "mode": "daemon", "depth": "bm25", "started": "2026-11-07T00:00:00+00:00"}
+_PAYLOAD = {
+    "pid": 999999,
+    "mode": "daemon",
+    "depth": "bm25",
+    "started": "2026-11-07T00:00:00+00:00",
+}
 
 
 def _write_payload(path: Path, pid: int = 999999) -> None:
     daemon.write_pid_file(path, pid=pid, mode="daemon", depth="bm25")
+
+
+def _alive_kill(_pid: int, _sig: int) -> None:
+    """os.kill fake for a process that always answers the 0-probe."""
+
+
+def _ps_run(stdout: str):
+    """subprocess.run fake answering with the given ps command line."""
+
+    def _run(_argv: list[str], **_kwargs: Any) -> SimpleNamespace:
+        return SimpleNamespace(returncode=0, stdout=stdout)
+
+    return _run
 
 
 class TestPidPath:
@@ -55,7 +73,8 @@ class TestPidPayload:
         assert payload["pid"] == 4242
         assert payload["mode"] == "daemon"
         assert payload["depth"] == "bm25"
-        assert isinstance(payload["started"], str) and payload["started"]
+        assert isinstance(payload["started"], str)
+        assert payload["started"] != ""
         assert path.stat().st_mode & 0o777 == 0o600
 
     def test_missing_file_reads_as_none(self, tmp_path: Path) -> None:
@@ -83,46 +102,51 @@ class TestCorroboratePid:
     """Test 3: identity corroboration is fail-closed on every branch (Pitfall 3)."""
 
     def test_ps_argv_with_sif_watch_markers_corroborates(self, monkeypatch) -> None:
-        monkeypatch.setattr(daemon.os, "kill", lambda pid, sig: None)
-        fake_run = lambda argv, **kwargs: SimpleNamespace(  # noqa: E731
-            returncode=0,
-            stdout=(
-                "/opt/python3.13 -u -m sif.cli.main --index "
-                "/tmp/watch.db watch --detach --log-file /tmp/d.log"
+        monkeypatch.setattr(daemon.os, "kill", _alive_kill)
+        monkeypatch.setattr(
+            daemon,
+            "subprocess",
+            SimpleNamespace(
+                run=_ps_run(
+                    "/opt/python3.13 -u -m sif.cli.main --index "
+                    "/tmp/watch.db watch --detach --log-file /tmp/d.log"
+                )
             ),
         )
-        monkeypatch.setattr(daemon, "subprocess", SimpleNamespace(run=fake_run))
 
         assert daemon.corroborate_pid(dict(_PAYLOAD)) is True
 
     def test_unrelated_process_command_does_not_corroborate(self, monkeypatch) -> None:
-        monkeypatch.setattr(daemon.os, "kill", lambda pid, sig: None)
-        fake_run = lambda argv, **kwargs: SimpleNamespace(  # noqa: E731
-            returncode=0, stdout="/opt/python3.13 /usr/local/bin/other-tool serve"
+        monkeypatch.setattr(daemon.os, "kill", _alive_kill)
+        monkeypatch.setattr(
+            daemon,
+            "subprocess",
+            SimpleNamespace(run=_ps_run("/opt/python3.13 /usr/local/bin/other-tool serve")),
         )
-        monkeypatch.setattr(daemon, "subprocess", SimpleNamespace(run=fake_run))
 
         assert daemon.corroborate_pid(dict(_PAYLOAD)) is False
 
     def test_watch_in_a_path_fragment_does_not_corroborate(self, monkeypatch) -> None:
         """A 'watch.db' path token must not count as the watch marker."""
-        monkeypatch.setattr(daemon.os, "kill", lambda pid, sig: None)
-        fake_run = lambda argv, **kwargs: SimpleNamespace(  # noqa: E731
-            returncode=0,
-            stdout="/opt/python3.13 -u -m sif.cli.main --index /tmp/watch.db mcp stdio",
+        monkeypatch.setattr(daemon.os, "kill", _alive_kill)
+        monkeypatch.setattr(
+            daemon,
+            "subprocess",
+            SimpleNamespace(
+                run=_ps_run("/opt/python3.13 -u -m sif.cli.main --index /tmp/watch.db mcp stdio")
+            ),
         )
-        monkeypatch.setattr(daemon, "subprocess", SimpleNamespace(run=fake_run))
 
         assert daemon.corroborate_pid(dict(_PAYLOAD)) is False
 
     def test_process_gone_does_not_corroborate_and_never_runs_ps(self, monkeypatch) -> None:
-        def _gone(pid: int, sig: int) -> None:
+        def _gone(_pid: int, _sig: int) -> None:
             raise ProcessLookupError()
 
         monkeypatch.setattr(daemon.os, "kill", _gone)
         calls: list[Any] = []
 
-        def _no_run(argv: Any, **kwargs: Any) -> None:
+        def _no_run(argv: Any, **_kwargs: Any) -> None:
             calls.append(argv)
 
         monkeypatch.setattr(daemon, "subprocess", SimpleNamespace(run=_no_run))
@@ -131,21 +155,29 @@ class TestCorroboratePid:
         assert calls == []
 
     def test_ps_executable_missing_fails_closed(self, monkeypatch) -> None:
-        monkeypatch.setattr(daemon.os, "kill", lambda pid, sig: None)
-        monkeypatch.setattr(daemon, "shutil", SimpleNamespace(which=lambda name: None))
+        monkeypatch.setattr(daemon.os, "kill", _alive_kill)
+        monkeypatch.setattr(daemon, "shutil", SimpleNamespace(which=lambda _name: None))
 
         assert daemon.corroborate_pid(dict(_PAYLOAD)) is False
 
     def test_ps_failure_fails_closed(self, monkeypatch) -> None:
-        monkeypatch.setattr(daemon.os, "kill", lambda pid, sig: None)
-        fake_run = lambda argv, **kwargs: SimpleNamespace(returncode=1, stdout="")  # noqa: E731
-        monkeypatch.setattr(daemon, "subprocess", SimpleNamespace(run=fake_run))
+        monkeypatch.setattr(daemon.os, "kill", _alive_kill)
+        monkeypatch.setattr(daemon, "subprocess", SimpleNamespace(run=_ps_run_with_code(1)))
 
         assert daemon.corroborate_pid(dict(_PAYLOAD)) is False
 
     def test_wrong_typed_pid_never_probes(self, monkeypatch) -> None:
-        monkeypatch.setattr(daemon.os, "kill", lambda pid, sig: None)
+        monkeypatch.setattr(daemon.os, "kill", _alive_kill)
         assert daemon.corroborate_pid({"pid": "123"}) is False
+
+
+def _ps_run_with_code(returncode: int):
+    """subprocess.run fake failing with the given return code."""
+
+    def _run(_argv: list[str], **_kwargs: Any) -> SimpleNamespace:
+        return SimpleNamespace(returncode=returncode, stdout="")
+
+    return _run
 
 
 class TestStopEscalation:
@@ -164,7 +196,7 @@ class TestStopEscalation:
                 sent.append((pid, sig))
 
         monkeypatch.setattr(daemon.os, "kill", fake_kill)
-        monkeypatch.setattr(daemon, "corroborate_pid", lambda payload: True)
+        monkeypatch.setattr(daemon, "corroborate_pid", lambda _payload: True)
 
         outcome = daemon.stop_daemon(
             pid_file, term_timeout_s=0.03, kill_timeout_s=0.03, poll_interval_s=0.01
@@ -182,7 +214,7 @@ class TestStopEscalation:
         sent: list[int] = []
         gone = False
 
-        def fake_kill(pid: int, sig: int) -> None:
+        def fake_kill(_pid: int, sig: int) -> None:
             nonlocal gone
             if sig == 0:
                 if gone:
@@ -192,7 +224,7 @@ class TestStopEscalation:
             gone = True  # the daemon exits promptly on SIGTERM (D-14)
 
         monkeypatch.setattr(daemon.os, "kill", fake_kill)
-        monkeypatch.setattr(daemon, "corroborate_pid", lambda payload: True)
+        monkeypatch.setattr(daemon, "corroborate_pid", lambda _payload: True)
 
         outcome = daemon.stop_daemon(
             pid_file, term_timeout_s=5.0, kill_timeout_s=5.0, poll_interval_s=0.01
@@ -208,12 +240,12 @@ class TestStopEscalation:
         _write_payload(pid_file)
         sent: list[int] = []
 
-        def fake_kill(pid: int, sig: int) -> None:
+        def fake_kill(_pid: int, sig: int) -> None:
             sent.append(sig)
             raise ProcessLookupError()
 
         monkeypatch.setattr(daemon.os, "kill", fake_kill)
-        monkeypatch.setattr(daemon, "corroborate_pid", lambda payload: True)
+        monkeypatch.setattr(daemon, "corroborate_pid", lambda _payload: True)
 
         outcome = daemon.stop_daemon(pid_file)
 
@@ -225,8 +257,8 @@ class TestStopEscalation:
         """Fail-closed: an uncorroborated PID is never signalled (Pitfall 3)."""
         pid_file = tmp_path / "sif.db.watch.pid"
         _write_payload(pid_file)
-        monkeypatch.setattr(daemon.os, "kill", lambda pid, sig: pytest.fail("signal sent"))
-        monkeypatch.setattr(daemon, "corroborate_pid", lambda payload: False)
+        monkeypatch.setattr(daemon.os, "kill", lambda _pid, _sig: pytest.fail("signal sent"))
+        monkeypatch.setattr(daemon, "corroborate_pid", lambda _payload: False)
 
         outcome = daemon.stop_daemon(pid_file)
 
@@ -237,7 +269,7 @@ class TestStopEscalation:
     def test_garbage_payload_is_stale_and_cleaned(self, tmp_path: Path, monkeypatch) -> None:
         pid_file = tmp_path / "sif.db.watch.pid"
         pid_file.write_bytes(b"\x00garbage")
-        monkeypatch.setattr(daemon.os, "kill", lambda pid, sig: pytest.fail("signal sent"))
+        monkeypatch.setattr(daemon.os, "kill", lambda _pid, _sig: pytest.fail("signal sent"))
 
         outcome = daemon.stop_daemon(pid_file)
 
@@ -245,7 +277,7 @@ class TestStopEscalation:
         assert not pid_file.exists()
 
     def test_missing_file_is_not_running(self, tmp_path: Path, monkeypatch) -> None:
-        monkeypatch.setattr(daemon.os, "kill", lambda pid, sig: pytest.fail("signal sent"))
+        monkeypatch.setattr(daemon.os, "kill", lambda _pid, _sig: pytest.fail("signal sent"))
 
         outcome = daemon.stop_daemon(tmp_path / "absent.pid")
 
@@ -258,9 +290,7 @@ class TestStopCliPath:
     def test_not_running_message(self, monkeypatch, capsys) -> None:
         from sif.cli.commands import watch as watch_mod
 
-        monkeypatch.setattr(
-            daemon, "stop_daemon", lambda path: daemon.StopOutcome("not_running")
-        )
+        monkeypatch.setattr(daemon, "stop_daemon", lambda _path: daemon.StopOutcome("not_running"))
         watch_mod._run_stop("/tmp/sif.db")
         output = capsys.readouterr().out
         assert "not running" in output
@@ -269,7 +299,7 @@ class TestStopCliPath:
     def test_stale_message(self, monkeypatch, capsys) -> None:
         from sif.cli.commands import watch as watch_mod
 
-        monkeypatch.setattr(daemon, "stop_daemon", lambda path: daemon.StopOutcome("stale", pid=7))
+        monkeypatch.setattr(daemon, "stop_daemon", lambda _path: daemon.StopOutcome("stale", pid=7))
         watch_mod._run_stop("/tmp/sif.db")
         output = capsys.readouterr().out
         assert "not running" in output
@@ -279,7 +309,7 @@ class TestStopCliPath:
         from sif.cli.commands import watch as watch_mod
 
         monkeypatch.setattr(
-            daemon, "stop_daemon", lambda path: daemon.StopOutcome("stopped", pid=4242)
+            daemon, "stop_daemon", lambda _path: daemon.StopOutcome("stopped", pid=4242)
         )
         watch_mod._run_stop("/tmp/sif.db")
         output = capsys.readouterr().out

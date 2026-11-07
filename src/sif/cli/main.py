@@ -14,6 +14,7 @@ from rich.table import Table
 from sif import __version__
 from sif.config.settings import get_settings
 from sif.database.database import Database
+from sif.utils import daemon
 from sif.utils.logging import get_logger, setup_logging
 
 
@@ -106,6 +107,28 @@ cli.add_command(bench_cmd)
 cli.add_command(watch_cmd)
 
 
+def _watch_status_text(index_path: Path) -> str:
+    """Watch-section value for the status table (D-08).
+
+    Sourced from the daemon PID file payload plus an identity-corroborated
+    liveness probe. Foreground watch and MCP hosts are deliberately
+    untracked (they own their terminals / are client-spawned and plural) —
+    status honestly reports what it knows. A stale or garbage payload
+    reports not-running and cleans the file up (metadata only — safe).
+    """
+    pid_path = daemon.pid_path_for(index_path)
+    payload = daemon.read_pid_file(pid_path)
+    if payload is None:
+        if pid_path.exists():
+            daemon.remove_pid_file(pid_path)
+            return "not running (stale PID file removed)"
+        return "not running"
+    if not daemon.corroborate_pid(payload):
+        daemon.remove_pid_file(pid_path)
+        return "not running (stale PID file removed)"
+    return f"running — {payload['mode']} · PID {payload['pid']} · {payload['depth']}"
+
+
 @cli.command("status")
 @click.pass_context
 def status_cmd(ctx: click.Context) -> None:
@@ -138,6 +161,16 @@ def status_cmd(ctx: click.Context) -> None:
             if total_size > 0:
                 size_mb = total_size / (1024 * 1024)
                 table.add_row("Total Size", f"{size_mb:.2f} MB")
+
+            # Watch section (D-08): one row sourced from the daemon PID file.
+            # Metadata display must never take the status command down, so
+            # any unexpected failure renders as not-running instead.
+            try:
+                watch_text = _watch_status_text(Path(index_path))
+            except Exception:
+                logger.debug("Watch status probe failed", exc_info=True)
+                watch_text = "not running"
+            table.add_row("Watch", watch_text)
 
             console.print(table)
 

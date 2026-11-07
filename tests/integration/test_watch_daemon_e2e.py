@@ -203,6 +203,10 @@ def _detached_daemon(db_path: Path, cwd: Path, log_path: Path) -> Iterator[int]:
     never outlive a failing test.
     """
     result = _detach(db_path, cwd, log_path)
+    assert result.returncode == 0, (
+        f"detach parent exited {result.returncode}:\n"
+        f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    )
     match = _PID_LINE_RE.search(result.stdout)
     assert match is not None, (
         f"detach parent printed no daemon PID line (exit {result.returncode}):\n"
