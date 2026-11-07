@@ -185,6 +185,9 @@ def detach(
     selected, PID file written — before the ``armed <pid>`` pipe message. An
     ``arm()`` failure is reported through the pipe instead, and the original
     parent surfaces it as a non-zero exit (never a silent maybe-detach).
+    A handshake TIMEOUT is likewise never a silent maybe-detach (SC2): the
+    parent SIGKILLs the detached session before reporting the failure (see
+    :func:`_kill_detached_group`).
 
     Returns:
         In the original parent: the arming outcome (pid or error). In the
@@ -200,6 +203,13 @@ def detach(
             message = _read_pipe_message(read_fd, arm_timeout_s)
         finally:
             os.close(read_fd)
+        if message is None:
+            # The grandchild may still arm late (slow init_schema under a
+            # concurrent reindex, first-use model load, slow storage) and
+            # run the host forever after the CLI reports failure — kill the
+            # detached session before reporting (SC2: never a silent
+            # maybe-detach).
+            _kill_detached_group(pid)
         # Reap the short-lived intermediate child (already-reaped cannot
         # happen here — this is the first wait on it).
         with contextlib.suppress(OSError):
@@ -312,10 +322,30 @@ def _wait_gone(
         time.sleep(poll_interval_s)
 
 
+def _kill_detached_group(pgid: int) -> None:
+    """SIGKILL the detached daemon's whole process group (SC2 timeout cleanup).
+
+    The intermediate child became a session and group leader via
+    ``setsid()`` before forking the grandchild, so the process group id IS
+    that child's pid: one ``killpg`` reaches a late-arming grandchild and
+    anything it spawned. Best-effort by design — a group that already
+    exited (ProcessLookupError) or cannot be signalled (PermissionError)
+    surfaces through the caller's failure report, never as a crash here.
+    """
+    with contextlib.suppress(OSError):
+        os.killpg(pgid, signal.SIGKILL)
+
+
 def _parent_outcome(message: str | None, timeout_s: float) -> DetachOutcome:
     """Translate the handshake message into the parent-side outcome."""
     if message is None:
-        return DetachOutcome(error=f"daemon did not report readiness within {timeout_s:.0f}s")
+        return DetachOutcome(
+            error=(
+                f"daemon did not report readiness within {timeout_s:.0f}s; "
+                "terminated the daemon process group — if a daemon still "
+                "survives, stop it with 'sif watch --stop'"
+            )
+        )
     if message.startswith("armed "):
         try:
             return DetachOutcome(pid=int(message[len("armed ") :]))

@@ -22,6 +22,7 @@ import signal
 import sqlite3
 import subprocess
 import sys
+import textwrap
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -374,3 +375,72 @@ def test_sigkill_then_immediate_redetach_succeeds(tmp_path: Path) -> None:
         log_text = log_path.read_text(encoding="utf-8", errors="replace")
         assert "lock wait deadline" not in log_text, f"stale lock error in {log_path}:\n{log_text}"
         assert "Traceback" not in log_text, f"traceback in {log_path}:\n{log_text}"
+
+
+def test_detach_arm_timeout_kills_grandchild_session(tmp_path: Path) -> None:
+    """SC2/WR-04: a handshake timeout must never leave a silent maybe-daemon.
+
+    ``arm()`` outruns the handshake deadline, so the parent reports failure —
+    but the grandchild would still finish arming and run the host forever
+    unless the parent kills the detached session first. The runner below is
+    a real double-fork in a subprocess; the grandchild records its survival
+    in a marker file (its stdio is already redirected, so a file is the only
+    channel), which must stay absent after the kill.
+    """
+    runner = textwrap.dedent(
+        """
+        import os
+        import sys
+        import time
+        from pathlib import Path
+
+        from sif.utils import daemon
+
+        marker, log_path = Path(sys.argv[1]), Path(sys.argv[2])
+
+        def slow_arm() -> None:
+            time.sleep(2.0)
+
+        outcome = daemon.detach(log_path, slow_arm, arm_timeout_s=0.3)
+        if outcome.daemon:
+            # Grandchild: the parent should have SIGKILLed us mid-arm.
+            # Reaching here means the kill failed — record it and leave.
+            marker.write_text("alive", encoding="utf-8")
+            os._exit(0)
+
+        assert not outcome.daemon
+        assert outcome.error is not None
+        assert "did not report readiness" in outcome.error
+        assert "terminated" in outcome.error
+        print(outcome.error)
+        """
+    )
+    marker = tmp_path / "grandchild-survived"
+    log_path = tmp_path / "daemon.log"
+    result = subprocess.run(
+        [sys.executable, "-u", "-c", runner, str(marker), str(log_path)],
+        cwd=tmp_path,
+        env=_child_env(),
+        capture_output=True,
+        text=True,
+        timeout=_DETACH_TIMEOUT_S,
+        check=False,
+    )
+
+    assert result.returncode == 0, (
+        f"detach runner exited {result.returncode}:\n"
+        f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    )
+    assert "terminated" in result.stdout
+
+    # The grandchild's 2s sleep window outlasts the parent's 0.3s deadline
+    # plus kill: wait it out, then prove nothing survived to run the host.
+    deadline = time.monotonic() + 4.0
+    while time.monotonic() < deadline:
+        if marker.exists():
+            break
+        time.sleep(_POLL_INTERVAL_S)
+    assert not marker.exists(), (
+        "a grandchild survived the timeout kill and armed after the parent "
+        "reported failure — silent maybe-detach (SC2 violation)"
+    )

@@ -315,3 +315,55 @@ class TestStopCliPath:
         output = capsys.readouterr().out
         assert "stopped" in output
         assert "4242" in output
+
+
+class TestDetachTimeout:
+    """SC2/WR-04: a handshake timeout must never leave a silent maybe-daemon.
+
+    The parent branch of ``detach`` SIGKILLs the detached process group
+    before reporting the failure, and the error says so (with the --stop
+    belt-and-braces). Hermetic: fork/read/killpg/waitpid are all faked.
+    """
+
+    def test_timeout_outcome_reports_the_termination(self) -> None:
+        outcome = daemon._parent_outcome(None, 30.0)
+
+        assert outcome.daemon is False
+        assert outcome.pid is None
+        assert "did not report readiness within 30s" in outcome.error
+        assert "terminated" in outcome.error
+        assert "sif watch --stop" in outcome.error
+
+    def test_kill_detached_group_sigkills_the_pgid(self, monkeypatch) -> None:
+        sent: list[tuple[int, int]] = []
+        monkeypatch.setattr(daemon.os, "killpg", lambda pgid, sig: sent.append((pgid, sig)))
+
+        daemon._kill_detached_group(4321)
+
+        assert sent == [(4321, signal.SIGKILL)]
+
+    def test_kill_detached_group_tolerates_an_already_gone_group(self, monkeypatch) -> None:
+        def _gone(pgid: int, sig: int) -> None:
+            raise ProcessLookupError()
+
+        monkeypatch.setattr(daemon.os, "killpg", _gone)
+
+        daemon._kill_detached_group(4321)  # must not raise
+
+    def test_detach_timeout_kills_group_then_reports_terminated(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        """Wiring: with no handshake message, the parent killpgs the forked
+        child's pid — the detached session's pgid (setsid made that child
+        the group leader) — before translating the failure."""
+        killed: list[tuple[int, int]] = []
+        monkeypatch.setattr(daemon.os, "fork", lambda: 4321)
+        monkeypatch.setattr(daemon, "_read_pipe_message", lambda _fd, _timeout: None)
+        monkeypatch.setattr(daemon.os, "killpg", lambda pgid, sig: killed.append((pgid, sig)))
+        monkeypatch.setattr(daemon.os, "waitpid", lambda pid, flags: (pid, 0))
+
+        outcome = daemon.detach(tmp_path / "watch.log", lambda: None, arm_timeout_s=0.5)
+
+        assert outcome.daemon is False
+        assert "terminated" in (outcome.error or "")
+        assert killed == [(4321, signal.SIGKILL)]
