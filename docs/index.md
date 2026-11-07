@@ -72,7 +72,7 @@ pip install docsif
 For full functionality:
 
 ```bash
-pip install "docdocsif[all]"
+pip install "docsif[all]"
 ```
 
 ## Quick Start
