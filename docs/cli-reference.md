@@ -44,9 +44,6 @@ sif
 │   ├── search          Search documents using BM25.
 │   ├── vsearch         Search documents using vector similarity.
 │   └── query           Search documents using hybrid approach (BM25 + Vector + RRF).
-
-This is the recommended search command for best results.
-
 ├── get             Retrieve documents.
 │   ├── get             Get a document by path or document ID.
 │   └── multi-get       Get multiple documents matching a pattern.
@@ -57,18 +54,6 @@ This is the recommended search command for best results.
 ├── ls              List indexed documents as a virtual file tree.
 ├── pull            Download a GGUF model file.
 ├── bench           Run benchmark evaluation against a fixture file.
-
-Fixture format (JSON):
-    {
-        "queries": [
-            {
-                "query": "search terms",
-                "relevant_docids": ["doc-id-1", "doc-id-2"],
-                "collections": ["optional-collection-filter"]
-            }
-        ]
-    }
-
 ├── status          Show index status.
 └── cleanup         Clean up the index (remove orphaned entries).
 ```
@@ -328,6 +313,12 @@ sif context rm [OPTIONS]
 
 Get a document by path or document ID.
 
+Path arguments are canonicalized (~ expansion and symlink resolution)
+before lookup, so alias paths that resolve to the same file as the
+indexed path also match. If no indexed document matches, the argument
+is treated as a filesystem path: a readable file is printed directly
+from disk even if it was never indexed.
+
 ```bash
 sif get get [OPTIONS]
 ```
@@ -349,6 +340,10 @@ sif get get [OPTIONS]
 ### `get multi-get`
 
 Get multiple documents matching a pattern.
+
+Absolute glob patterns are canonicalized before path matching, so
+symlinked directory prefixes match indexed paths; bare filenames always
+match raw.
 
 ```bash
 sif get multi-get [OPTIONS]
@@ -417,7 +412,6 @@ sif index update [OPTIONS]
 Search documents using hybrid approach (BM25 + Vector + RRF).
 
 This is the recommended search command for best results.
-
 
 ```bash
 sif search query [OPTIONS]
@@ -571,7 +565,6 @@ Fixture format (JSON):
             }
         ]
     }
-
 
 ```bash
 sif bench [OPTIONS]

@@ -14,13 +14,13 @@
 The easiest way to install SIF is from PyPI:
 
 ```bash
-pip install sif
+pip install docsif
 ```
 
 For full functionality including embeddings:
 
 ```bash
-pip install "sif[all]"
+pip install "docdocsif[all]"
 ```
 
 ### Method 2: Install from Source
@@ -45,7 +45,7 @@ pip install -e ".[dev]"
 For an isolated installation:
 
 ```bash
-pipx install sif
+pipx install docsif
 ```
 
 ## Optional Dependencies
@@ -57,19 +57,21 @@ SIF has several optional dependency groups:
 For vector search functionality:
 
 ```bash
-pip install "sif[embed]"
+pip install "docdocsif[embed]"
 ```
 
 This installs:
 - `sentence-transformers>=2.2.0`
 - `numpy>=1.24.0`
 
+With this extra installed, the local embedding backends pick their compute device automatically at model load — CUDA GPU where torch has it, Apple Metal (MPS) on arm64 macOS, otherwise CPU. No extra setup or configuration is needed; see [Configuration](configuration.md) for per-backend details.
+
 ### Development Dependencies
 
 For contributing to SIF:
 
 ```bash
-pip install "sif[dev]"
+pip install "docdocsif[dev]"
 ```
 
 This installs:
@@ -77,14 +79,14 @@ This installs:
 - `pytest-cov>=4.0.0`
 - `black>=23.0.0`
 - `ruff>=0.1.0`
-- `mypy>=1.0.0`
+- `ty>=0.0.1`
 
 ### All Dependencies
 
 To install everything:
 
 ```bash
-pip install "sif[all]"
+pip install "docdocsif[all]"
 ```
 
 ## Platform-Specific Instructions
@@ -117,6 +119,8 @@ brew install python@3.11
 pip3 install sif
 ```
 
+**Hardware acceleration**: on Apple Silicon Macs the modelscope and sentence_transformers backends automatically use the GPU via Metal (MPS). GGUF (llama.cpp) models run on CPU only unless `SIF_N_GPU_LAYERS` is set above 0, which enables llama.cpp Metal offload (distinct from MPS). See [Configuration](configuration.md) for the full device-selection behavior.
+
 ### Windows
 
 Using PowerShell:
@@ -124,7 +128,7 @@ Using PowerShell:
 ```powershell
 # Install Python from python.org or Microsoft Store
 # Then install SIF
-pip install sif
+pip install docsif
 ```
 
 ## Verifying Installation
@@ -141,18 +145,18 @@ sif --help
 
 Expected output:
 ```
-SIF version 0.1.0
+sif, version 1.0.0
 
 Usage: sif [OPTIONS] COMMAND [ARGS]...
 
-  SIF - Document indexing and search tool.
+  SIF - Search / Index / Find - Local document search engine.
 
 Options:
   --version         Show version and exit.
   --index PATH      Path to the index database file.
   -v, --verbose     Enable verbose output.
   -q, --quiet       Suppress non-error output.
-  --format FORMAT   Output format.
+  --config PATH     Path to the configuration file
   --help            Show this message and exit.
 
 Commands:
@@ -226,7 +230,7 @@ If you encounter issues not covered here:
 
 1. Check the [GitHub Issues](https://github.com/zhangtaolab/sif/issues)
 2. Run with verbose mode: `sif -v <command>`
-3. Check logs: `~/.local/share/sif/logs/sif.log`
+3. Logs are written to stderr; SIF does not create a log file
 
 ## Uninstallation
 

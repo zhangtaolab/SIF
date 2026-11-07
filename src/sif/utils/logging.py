@@ -118,7 +118,7 @@ def setup_logging(
     # Create handler if not provided
     if handler is None:
         handler = logging.StreamHandler(sys.stderr)
-        handler.setFormatter(formatter)
+    handler.setFormatter(formatter)
 
     # Configure root logger
     root_logger = logging.getLogger("sif")

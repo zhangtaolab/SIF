@@ -1,5 +1,6 @@
 """Tests for BM25 search strategy."""
 
+import contextlib
 import sqlite3
 from unittest.mock import MagicMock
 
@@ -278,49 +279,55 @@ class TestBM25Searcher:
 
     def test_build_fts_query_output_is_valid_fts5(self) -> None:
         """Built queries must execute against a real FTS5 table."""
-        conn = sqlite3.connect(":memory:")
-        conn.execute("CREATE VIRTUAL TABLE docs_fts_probe USING fts5(content, tokenize='porter')")
-        conn.execute("INSERT INTO docs_fts_probe(content) VALUES (?)", ("the e-mail about c++",))
-        searcher = BM25Searcher(MagicMock())
-
-        # Every input here previously produced sqlite3.OperationalError.
-        for raw in [
-            "e-mail",
-            "don't",
-            "c++",
-            "foo:bar",
-            "(paren)",
-            "a AND",
-            '"quote',
-            "OR",
-            "NEAR",
-            "NOT",
-            "hello",
-            "",
-        ]:
-            fts_query = searcher._build_fts_query(raw)
+        with contextlib.closing(sqlite3.connect(":memory:")) as conn:
             conn.execute(
-                "SELECT rowid FROM docs_fts_probe WHERE docs_fts_probe MATCH ? ORDER BY rank",
-                (fts_query,),
-            ).fetchall()
+                "CREATE VIRTUAL TABLE docs_fts_probe USING fts5(content, tokenize='porter')"
+            )
+            conn.execute(
+                "INSERT INTO docs_fts_probe(content) VALUES (?)", ("the e-mail about c++",)
+            )
+            searcher = BM25Searcher(MagicMock())
+
+            # Every input here previously produced sqlite3.OperationalError.
+            for raw in [
+                "e-mail",
+                "don't",
+                "c++",
+                "foo:bar",
+                "(paren)",
+                "a AND",
+                '"quote',
+                "OR",
+                "NEAR",
+                "NOT",
+                "hello",
+                "",
+            ]:
+                fts_query = searcher._build_fts_query(raw)
+                conn.execute(
+                    "SELECT rowid FROM docs_fts_probe WHERE docs_fts_probe MATCH ? ORDER BY rank",
+                    (fts_query,),
+                ).fetchall()
 
     def test_build_fts_query_metacharacter_input_finds_documents(self) -> None:
         """Sanitized queries still match the documents they should."""
-        conn = sqlite3.connect(":memory:")
-        conn.execute("CREATE VIRTUAL TABLE docs_fts_probe USING fts5(content, tokenize='porter')")
-        conn.execute(
-            "INSERT INTO docs_fts_probe(content) VALUES (?)",
-            ("the e-mail about c++ and don't stop",),
-        )
-        searcher = BM25Searcher(MagicMock())
+        with contextlib.closing(sqlite3.connect(":memory:")) as conn:
+            conn.execute(
+                "CREATE VIRTUAL TABLE docs_fts_probe USING fts5(content, tokenize='porter')"
+            )
+            conn.execute(
+                "INSERT INTO docs_fts_probe(content) VALUES (?)",
+                ("the e-mail about c++ and don't stop",),
+            )
+            searcher = BM25Searcher(MagicMock())
 
-        for raw in ("e-mail", "c++", "don't"):
-            fts_query = searcher._build_fts_query(raw)
-            rows = conn.execute(
-                "SELECT rowid FROM docs_fts_probe WHERE docs_fts_probe MATCH ?",
-                (fts_query,),
-            ).fetchall()
-            assert rows, f"query {raw!r} -> {fts_query!r} matched nothing"
+            for raw in ("e-mail", "c++", "don't"):
+                fts_query = searcher._build_fts_query(raw)
+                rows = conn.execute(
+                    "SELECT rowid FROM docs_fts_probe WHERE docs_fts_probe MATCH ?",
+                    (fts_query,),
+                ).fetchall()
+                assert rows, f"query {raw!r} -> {fts_query!r} matched nothing"
 
 
 class TestBM25SharedTermMatcherHighlights:

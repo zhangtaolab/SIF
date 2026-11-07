@@ -1,7 +1,7 @@
 """Embedding model interface."""
 
 from abc import ABC, abstractmethod
-from typing import Protocol
+from typing import Any, Protocol
 
 from sif.models.embedding import ModelType
 
@@ -110,7 +110,7 @@ class EmbeddingModelFactory(Protocol):
         model_type: ModelType,
         model_path: str | None,
         model_name: str,
-        **kwargs: dict[str, any],
+        **kwargs: dict[str, Any],
     ) -> EmbeddingModel:
         """Create an embedding model instance.
 

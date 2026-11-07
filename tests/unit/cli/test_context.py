@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -18,6 +20,8 @@ from sif.cli.commands.context import (
     context_remove,
 )
 from sif.core.models import Collection, PathContext
+from sif.database.database import Database
+from sif.database.repositories import ContextRepository
 from sif.utils.paths import normalize_path
 
 
@@ -353,6 +357,7 @@ class TestContextAddNormalizedPaths:
         with patch("sif.cli.commands.context.Database") as mock_db_cls:
             mock_db_cls.return_value = mock_db
             mock_repo = MagicMock()
+            mock_repo.list_by_type.return_value = [legacy]
 
             def lookup(target_id, _context_type="path"):
                 return legacy if target_id == alias else None
@@ -372,20 +377,30 @@ class TestContextAddNormalizedPaths:
         mock_repo.update_target.assert_called_once_with(legacy.id, canonical)
         mock_repo.create.assert_not_called()
         mock_repo.update.assert_called_once()
+        mock_repo.delete.assert_not_called()
         assert legacy.context == "new text"
         assert canonical in result.output.replace("\n", "")
 
-    def test_readd_canonical_row_updates_without_repoint(self, mock_db, alias_pair) -> None:
-        """Re-adding when the canonical row exists only refreshes content."""
+    def test_readd_canonical_row_collapses_alias_duplicates(self, mock_db, alias_pair) -> None:
+        """Re-adding over the canonical row also collapses same-file alias rows.
+
+        Widened contract (05-10 truth 21): the upsert pre-check hit used to
+        short-circuit before the self-heal merge, so a legacy row under an
+        alias spelling survived every plain re-add. Now the upsert-hit path
+        deletes every other same-file row (normalize_path equality) while the
+        surviving canonical row receives the re-added content via update.
+        """
         _, alias = alias_pair
         canonical = normalize_path(alias)
         existing = PathContext(path=canonical, context="old text")
+        stale = PathContext(path=alias, context="stale text")
         runner = CliRunner()
         ctx_obj = {"index_path": MagicMock(exists=lambda: True)}
 
         with patch("sif.cli.commands.context.Database") as mock_db_cls:
             mock_db_cls.return_value = mock_db
             mock_repo = MagicMock()
+            mock_repo.list_by_type.return_value = [existing, stale]
 
             def lookup(target_id, _context_type="path"):
                 return existing if target_id == canonical else None
@@ -402,6 +417,7 @@ class TestContextAddNormalizedPaths:
                 )
 
         assert result.exit_code == 0
+        mock_repo.delete.assert_called_once_with(stale.id)
         mock_repo.update.assert_called_once()
         mock_repo.update_target.assert_not_called()
         mock_repo.create.assert_not_called()
@@ -505,6 +521,103 @@ class TestContextAddNormalizedPaths:
         assert global_stored.context_type == "global"
 
 
+class TestContextAddMultiAliasSelfHeal:
+    """Real-SQL regression: multi-alias legacy states collapse to one row (05-10, truth 21).
+
+    05-VERIFICATION gap 1: two reachable legacy states left a duplicate
+    same-file row surviving EVERY re-add — (a) rows under BOTH an alias and
+    the canonical spelling (the ``context_add`` upsert pre-check
+    short-circuits before ``_self_heal_path_row`` runs) and (b) rows under
+    TWO alias spellings (the exact-match branch re-pointed only the typed
+    row and never ran the duplicate-collapse loop). Every test seeds a real
+    database file through the production DDL and repository code, invokes
+    the real CLI against that file (no mocks on Database or
+    ContextRepository), and asserts the exactly-one-row end state.
+    """
+
+    def _seed(self, db_path: Path, spellings: list[str]) -> None:
+        """Create a real index DB and seed one legacy path row per spelling.
+
+        ``ContextRepository.create`` stores ``context.path`` verbatim into
+        ``contexts.target_id`` — exactly how a legacy row looks.
+        """
+        db = Database(db_path)
+        db.init_schema()
+        with db.transaction() as conn:
+            repo = ContextRepository(conn)
+            for spelling in spellings:
+                repo.create(PathContext(path=spelling, context="old text", context_type="path"))
+        db.close()
+
+    def _path_rows(self, db_path: Path) -> list[tuple[str, str]]:
+        """Read persisted path contexts independently of the command's repo instance."""
+        with contextlib.closing(sqlite3.connect(db_path)) as conn:
+            rows = conn.execute(
+                "SELECT target_id, content FROM contexts WHERE context_type = 'path'"
+            ).fetchall()
+        return [(row[0], row[1]) for row in rows]
+
+    def test_readd_via_alias_with_alias_and_canonical_legacy_rows_ends_with_one_row(
+        self, tmp_path
+    ) -> None:
+        """Repro (a): alias + canonical legacy rows collapse to one row on re-add."""
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        doc = vault / "doc.md"
+        doc.write_text("# Doc\n", encoding="utf-8")
+        alias_dir = tmp_path / "alias"
+        alias_dir.symlink_to(vault)
+        alias = str(alias_dir / "doc.md")
+        canonical = normalize_path(str(doc))
+        assert normalize_path(alias) == canonical
+
+        db_path = tmp_path / "index.db"
+        self._seed(db_path, [alias, canonical])
+
+        result = CliRunner().invoke(
+            context_add,
+            ["path", alias, "new text"],
+            obj={"index_path": db_path},
+        )
+
+        assert result.exit_code == 0
+        assert "Context updated" in result.output
+        rows = self._path_rows(db_path)
+        assert len(rows) == 1
+        assert rows[0] == (canonical, "new text")
+
+    def test_readd_via_alias_with_two_alias_legacy_rows_ends_with_one_row(self, tmp_path) -> None:
+        """Repro (b): two alias legacy rows collapse to one row on re-add."""
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        doc = vault / "doc.md"
+        doc.write_text("# Doc\n", encoding="utf-8")
+        alias1_dir = tmp_path / "alias1"
+        alias1_dir.symlink_to(vault)
+        alias2_dir = tmp_path / "alias2"
+        alias2_dir.symlink_to(vault)
+        alias1 = str(alias1_dir / "doc.md")
+        alias2 = str(alias2_dir / "doc.md")
+        canonical = normalize_path(str(doc))
+        assert normalize_path(alias1) == canonical
+        assert normalize_path(alias2) == canonical
+
+        db_path = tmp_path / "index.db"
+        self._seed(db_path, [alias1, alias2])
+
+        result = CliRunner().invoke(
+            context_add,
+            ["path", alias1, "new text"],
+            obj={"index_path": db_path},
+        )
+
+        assert result.exit_code == 0
+        assert "Context updated" in result.output
+        rows = self._path_rows(db_path)
+        assert len(rows) == 1
+        assert rows[0] == (canonical, "new text")
+
+
 class TestContextList:
     """Tests for context list command."""
 
@@ -539,6 +652,39 @@ class TestContextList:
         assert "desc A" in result.output
         assert "collection" in result.output
         assert "global" in result.output
+
+    def test_list_renders_markup_bearing_cells_literally(self, mock_db) -> None:
+        """CR-02: markup-bearing stored content lists literally instead of crashing.
+
+        Rich interprets square-bracket sequences as markup tags, so a stored
+        context like "see section [/3] for caveats" raised
+        rich.errors.MarkupError (exit 1) and everyday bracket text like
+        "[WIP]" was silently swallowed. Every table cell must be escaped at
+        render time — display-only; stored bytes are unchanged.
+        """
+        runner = CliRunner()
+        ctx_obj = {"index_path": MagicMock(exists=lambda: True)}
+
+        contexts = [
+            PathContext(
+                path="/notes/[WIP] a.md",
+                context="see section [/3] for caveats",
+                context_type="path",
+            ),
+        ]
+        with patch("sif.cli.commands.context.Database") as mock_db_cls:
+            mock_db_cls.return_value = mock_db
+            mock_repo = MagicMock()
+            mock_repo.list_all.return_value = contexts
+            with patch(
+                "sif.cli.commands.context.ContextRepository",
+                return_value=mock_repo,
+            ):
+                result = runner.invoke(context_list, obj=ctx_obj)
+
+        assert result.exit_code == 0
+        assert "[/3]" in result.output
+        assert "[WIP]" in result.output
 
     def test_list_filter_by_type(self, mock_db) -> None:
         """Test listing contexts filtered by type."""
@@ -639,6 +785,51 @@ class TestContextRemove:
         assert result.exit_code != 0
 
 
+class TestContextNoIndexGuard:
+    """Missing-index guard for context add/remove (REVIEW WR-03).
+
+    Unlike list/prune, add/remove used to construct Database + init_schema
+    without an existence check, materializing a brand-new empty index DB as
+    a side effect and reporting success for a context that can never attach.
+    These tests use a real tmp_path and patch NOTHING so DB-file
+    materialization is directly observable; the guard must match the sibling
+    list/prune exit semantics (message + bare return, exit code 0).
+    """
+
+    def test_add_missing_index_creates_no_db(self, tmp_path) -> None:
+        """context add on a nonexistent index warns and materializes no DB file."""
+        runner = CliRunner()
+        missing = tmp_path / "missing.db"
+
+        result = runner.invoke(
+            context_add,
+            ["path", str(tmp_path / "a.md"), "note"],
+            obj={"index_path": missing},
+        )
+
+        assert result.exit_code == 0
+        assert "No index found" in result.output
+        assert "Context added" not in result.output
+        assert "Context updated" not in result.output
+        assert not missing.exists()
+
+    def test_remove_missing_index_creates_no_db(self, tmp_path) -> None:
+        """context remove on a nonexistent index warns and materializes no DB file."""
+        runner = CliRunner()
+        missing = tmp_path / "missing.db"
+
+        result = runner.invoke(
+            context_remove,
+            ["some-id"],
+            obj={"index_path": missing},
+        )
+
+        assert result.exit_code == 0
+        assert "No index found" in result.output
+        assert "No context found" not in result.output
+        assert not missing.exists()
+
+
 class TestContextRmAlias:
     """Tests for context rm alias."""
 
@@ -718,3 +909,132 @@ class TestContextPrune:
 
         assert result.exit_code == 0
         assert "Pruned 0" in result.output
+
+
+class TestContextConfirmationMarkupLiteral:
+    """CR-03: add/remove confirmation prints render markup-bearing targets literally.
+
+    ``context add`` interpolated the raw target into markup-parsed
+    ``console.print`` INSIDE ``with db.transaction()`` — an unmatched Rich
+    closing tag (``[/3]``, ``[/]``) raised ``rich.errors.MarkupError`` and
+    ``Database.transaction()`` rolled back on the exception, so a
+    bracket-named target was permanently unaddable with retry-identical
+    failures (create branch: zero rows persisted; update branch: the content
+    refresh rolled back and the old text remained). ``context remove``
+    interpolates the raw context id the same way. These tests encode the
+    verifier's three CR-03 reproductions; the display fix escapes the
+    interpolated value at the print site (display-only, stored bytes
+    untouched), mirroring the 05-10 list-cell and 05-11 search precedents.
+    """
+
+    def _seed(self, db_path: Path, spellings: list[str], content: str = "old text") -> None:
+        """Create a real index DB and seed one path row per spelling.
+
+        ``ContextRepository.create`` stores ``context.path`` verbatim into
+        ``contexts.target_id`` — exactly how a pre-existing row looks.
+        """
+        db = Database(db_path)
+        db.init_schema()
+        with db.transaction() as conn:
+            repo = ContextRepository(conn)
+            for spelling in spellings:
+                repo.create(PathContext(path=spelling, context=content, context_type="path"))
+        db.close()
+
+    def _path_rows(self, db_path: Path) -> list[tuple[str, str]]:
+        """Read persisted path contexts independently of the command's repo instance."""
+        with contextlib.closing(sqlite3.connect(db_path)) as conn:
+            rows = conn.execute(
+                "SELECT target_id, content FROM contexts WHERE context_type = 'path'"
+            ).fetchall()
+        return [(row[0], row[1]) for row in rows]
+
+    def test_add_bracket_named_target_persists_and_renders_literally(self, tmp_path) -> None:
+        """Create branch: a bracket-named target exits 0 with exactly one row persisted.
+
+        Pre-fix reproduction: exit 1 MarkupError from the create-branch
+        confirmation print inside the open transaction rolled the write
+        back — zero rows persisted on every retry.
+        """
+        typed = str(tmp_path / "notes [/3].md")
+        canonical = normalize_path(typed)
+        # Guard: normalization must keep the bracket sequence intact and
+        # resolve the tmp-dir spelling (macOS /tmp -> /private/tmp makes the
+        # explicit canonical the only safe expectation). The file need not
+        # exist on disk — normalize_path preserves non-existent tail
+        # components, so this tests display, not filesystem state.
+        assert normalize_path(typed) == canonical
+        assert "[/3]" in canonical
+
+        db_path = tmp_path / "index.db"
+        db = Database(db_path)
+        db.init_schema()
+        db.close()
+
+        result = CliRunner().invoke(
+            context_add,
+            ["path", typed, "my note"],
+            obj={"index_path": db_path},
+        )
+
+        assert result.exit_code == 0
+        assert "Context added" in result.output
+        # rich wraps long paths across lines in captured output; compare the
+        # newline-stripped rendering so the literal check is width-independent
+        assert "[/3]" in result.output.replace("\n", "")
+        assert self._path_rows(db_path) == [(canonical, "my note")]
+
+    def test_readd_bracket_named_target_updates_and_renders_literally(self, tmp_path) -> None:
+        """Update branch: re-adding a bracket-named canonical row refreshes content.
+
+        Pre-fix reproduction: exit 1 MarkupError from the update-branch
+        confirmation print rolled the content refresh back — the row still
+        held "old text" after every retry.
+        """
+        typed = str(tmp_path / "report [/].md")
+        canonical = normalize_path(typed)
+        # Guard: the re-add must resolve to the seeded canonical spelling.
+        assert normalize_path(typed) == canonical
+        assert "[/]" in canonical
+
+        db_path = tmp_path / "index.db"
+        self._seed(db_path, [canonical])
+
+        result = CliRunner().invoke(
+            context_add,
+            ["path", typed, "new text"],
+            obj={"index_path": db_path},
+        )
+
+        assert result.exit_code == 0
+        assert "Context updated" in result.output
+        assert "[/]" in result.output.replace("\n", "")
+        assert self._path_rows(db_path) == [(canonical, "new text")]
+
+    def test_remove_confirmation_renders_markup_literally(self) -> None:
+        """Remove print: a bracket-bearing context id renders literally (mock lock).
+
+        Context ids are uuid4 so the raw-id interpolation is unreachable
+        with real ids; this locks the print pattern itself. Pre-fix
+        reproduction: exit 1 MarkupError from the remove confirmation print.
+        """
+        mock_db = MagicMock()
+        mock_db.connection = MagicMock()
+        ctx_obj = {"index_path": MagicMock(exists=lambda: True)}
+
+        with patch("sif.cli.commands.context.Database") as mock_db_cls:
+            mock_db_cls.return_value = mock_db
+            mock_repo = MagicMock()
+            mock_repo.delete.return_value = True
+            with patch(
+                "sif.cli.commands.context.ContextRepository",
+                return_value=mock_repo,
+            ):
+                result = CliRunner().invoke(
+                    context_remove,
+                    ["[/3]"],
+                    obj=ctx_obj,
+                )
+
+        assert result.exit_code == 0
+        assert "[/3]" in result.output

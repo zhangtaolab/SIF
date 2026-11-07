@@ -76,6 +76,13 @@ class VectorSearcher:
         fetch_k = max(options.limit * 4, 50)
         params = [embedding_str, fetch_k, *(options.collection_ids or [])]
 
+        # Audit note (261105-wwz, 2026-11-05): this KNN MATCH is the only
+        # vec0 access in the search path and no WHERE filters a vec0 metadata
+        # column; EXPLAIN QUERY PLAN shows the single vec0 SCAN outermost with
+        # both JOINs resolved as PK lookups per KNN-emitted row, and timing is
+        # flat across collection-filter sizes. vec0 v0.1.9 KNN is an inherent
+        # once-per-query brute-force pass over all stored vectors regardless
+        # of filter shape.
         sql = f"""
             SELECT
                 d.id as document_id,
@@ -208,3 +215,24 @@ class VectorSearcher:
             (document_id,),
         )
         return {row[0] for row in cursor.fetchall() if row[0] is not None}
+
+    def get_all_embedded_chunk_ids(self) -> dict[str, set[str]]:
+        """Get every document's stored-embedding chunk-id set in one table read.
+
+        The vec0 virtual table has no index on its metadata columns, so each
+        per-document filtered lookup costs a full table scan; callers judging
+        every document must batch. Rows are iterated one at a time (never
+        fetchall) so peak memory is the resulting map, not a row buffer.
+        NULL chunk_id rows are skipped with the same contract as the
+        single-document lookup directly above: NULL can never equal a live
+        chunk id, so documents carrying such rows re-embed and self-heal.
+        """
+        result: dict[str, set[str]] = {}
+        cursor = self.db.execute(
+            "SELECT document_id, chunk_id FROM document_embeddings",
+        )
+        for document_id, chunk_id in cursor:
+            if chunk_id is None:
+                continue
+            result.setdefault(document_id, set()).add(chunk_id)
+        return result

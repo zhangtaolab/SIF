@@ -81,7 +81,7 @@ docsift/
 | pytest-cov | >=4.0.0 | ✅ Listed (dev) | Coverage |
 | black | >=23.0.0 | ✅ Listed (dev) | Formatting |
 | ruff | >=0.1.0 | ✅ Listed (dev) | Linting |
-| mypy | >=1.0.0 | ✅ Listed (dev) | Type checking |
+| ty | >=0.0.1 | ✅ Listed (dev) | Type checking |
 | sentence-transformers | >=2.2.0 | ✅ Listed (embed) | Embeddings |
 | numpy | >=1.24.0 | ✅ Listed (embed) | Numerical computing |
 

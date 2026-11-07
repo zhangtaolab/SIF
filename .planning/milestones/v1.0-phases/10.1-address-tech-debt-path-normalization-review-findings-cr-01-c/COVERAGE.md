@@ -1,0 +1,3 @@
+# API Coverage — Phase 10.1
+
+No external API integration: this phase fixes in-repo defects only (SQLite FTS5 trigger migration via the stdlib sqlite3 already in use, an XML 1.0 character sanitizer in this project's own CLI formatter, `with Database(...)` lifecycle conversion in this project's own CLI modules, and `normalize_path` reuse from this project's own `sif/utils/paths.py`). The MCP signals in the scope text refer to modifying the project's own Phase-09 MCP server code (`src/sif/mcp/backend.py`) — not consuming an external MCP/API service. No packages are installed (RESEARCH.md Package Legitimacy Audit: none).

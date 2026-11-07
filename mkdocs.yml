@@ -99,6 +99,7 @@ nav:
     - Data Models: models.md
     - MCP Server: mcp-server.md
     - Development: development.md
+    - Testing: testing.md
     - Contributing: contributing.md
   - About:
     - Changelog: changelog.md

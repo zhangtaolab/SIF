@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import csv
+import io
 import json
+import re
 from typing import Any
+from xml.sax.saxutils import escape as xml_escape, quoteattr
 
 import click
 from rich.console import Console
@@ -24,6 +28,20 @@ console = Console()
 # Display truncation constants
 _TITLE_MAX_LEN = 50
 _CONTENT_MAX_LEN = 200
+
+# XML 1.0 Char production (W3C REC-xml §2.2): #x9 | #xA | #xD | [#x20-#xD7FF] |
+# [#xE000-#xFFFD] | [#x10000-#x10FFFF]. This class is its forbidden complement:
+# #x00-#x08, #x0B, #x0C, #x0E-#x1F, surrogates #xD800-#xDFFF, #xFFFE-#xFFFF.
+_XML_1_0_INVALID = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]")
+
+
+def _xml_sanitize(text: str) -> str:
+    """Strip code points forbidden by the XML 1.0 Char production.
+
+    Tab (#x9), LF (#xA), and CR (#xD) are preserved. #x7F-#x9F are legal per
+    the production (only discouraged) and are NOT stripped.
+    """
+    return _XML_1_0_INVALID.sub("", text)
 
 
 def _display_snippet(r: SearchResult, max_len: int = _CONTENT_MAX_LEN) -> str:
@@ -51,23 +69,42 @@ def format_results_json(results: list[Any]) -> str:
     )
 
 
+def _field(r: Any, name: str) -> Any:
+    """Read a result field from a dict (--line-numbers path) or object row."""
+    return r.get(name, "") if isinstance(r, dict) else getattr(r, name, "")
+
+
 def format_results_csv(results: list[Any]) -> str:
-    """Format results as CSV."""
-    lines = ["rank,score,title,path,collection"]
-    lines.extend(
-        f'"{r.rank}","{r.score:.4f}","{r.title}","{r.path}","{r.collection_name}"' for r in results
-    )
-    return "\n".join(lines)
+    """Format results as CSV.
+
+    Accepts raw SearchResult objects and the dict rows produced by
+    add_line_numbers_to_results (--line-numbers). Uses csv.writer so
+    embedded quotes and commas are escaped correctly.
+    """
+    buf = io.StringIO()
+    buf.write("rank,score,title,path,collection\n")
+    writer = csv.writer(buf, quoting=csv.QUOTE_ALL, lineterminator="\n")
+    for r in results:
+        writer.writerow(
+            [
+                _field(r, "rank"),
+                f"{float(_field(r, 'score')):.4f}",
+                _field(r, "title"),
+                _field(r, "path"),
+                _field(r, "collection_name"),
+            ],
+        )
+    return buf.getvalue().rstrip("\n")
 
 
 def format_results_md(results: list[Any], query: str) -> str:
     """Format results as Markdown."""
     lines = [f"# Search Results: {query}", ""]
     for r in results:
-        lines.append(f"## {r.rank}. {r.title}")
-        lines.append(f"- **Score:** {r.score:.4f}")
-        lines.append(f"- **Path:** `{r.path}`")
-        lines.append(f"- **Collection:** {r.collection_name}")
+        lines.append(f"## {_field(r, 'rank')}. {_field(r, 'title')}")
+        lines.append(f"- **Score:** {float(_field(r, 'score')):.4f}")
+        lines.append(f"- **Path:** `{_field(r, 'path')}`")
+        lines.append(f"- **Collection:** {_field(r, 'collection_name')}")
         if hasattr(r, "get") and r.get("line_numbers"):
             lines.append(f"- **Line Numbers:** `{r.get('line_numbers')}`")
         elif hasattr(r, "line_numbers") and r.line_numbers:
@@ -81,16 +118,28 @@ def format_results_md(results: list[Any], query: str) -> str:
 
 def format_results_xml(results: list[Any], query: str) -> str:
     """Format results as XML."""
-    lines = ['<?xml version="1.0" encoding="UTF-8"?>', f'<search query="{query}">']
+    lines = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        f"<search query={quoteattr(_xml_sanitize(query))}>",
+    ]
     for r in results:
-        lines.append(f'  <result rank="{r.rank}" score="{r.score:.4f}">')
-        lines.append(f"    <title>{r.title}</title>")
-        lines.append(f"    <path>{r.path}</path>")
-        lines.append(f"    <collection>{r.collection_name}</collection>")
+        score = f"{float(_field(r, 'score')):.4f}"
+        lines.append(f'  <result rank="{_field(r, "rank")}" score="{score}">')
+        lines.append(f"    <title>{xml_escape(_xml_sanitize(str(_field(r, 'title'))))}</title>")
+        lines.append(f"    <path>{xml_escape(_xml_sanitize(str(_field(r, 'path'))))}</path>")
+        lines.append(
+            f"    <collection>{xml_escape(_xml_sanitize(str(_field(r, 'collection_name'))))}"
+            "</collection>"
+        )
         if hasattr(r, "get") and r.get("line_numbers"):
-            lines.append(f"    <line_numbers>{r.get('line_numbers')}</line_numbers>")
+            lines.append(
+                f"    <line_numbers>{xml_escape(_xml_sanitize(str(r.get('line_numbers'))))}"
+                "</line_numbers>"
+            )
         elif hasattr(r, "line_numbers") and r.line_numbers:
-            lines.append(f"    <line_numbers>{r.line_numbers}</line_numbers>")
+            lines.append(
+                f"    <line_numbers>{xml_escape(_xml_sanitize(str(r.line_numbers)))}</line_numbers>"
+            )
         lines.append("  </result>")
     lines.append("</search>")
     return "\n".join(lines)
@@ -146,112 +195,116 @@ def search_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             console.print("[yellow]No index found. Run 'sif index update' first.[/yellow]")
         return
 
-    db = Database(index_path)
-    db.init_schema()
+    with Database(index_path) as db:
+        db.init_schema()
 
-    # Build options
-    options = SearchOptions(
-        limit=limit,
-        min_score=min_score,
-        include_content=full,
-        include_highlights=True,
-    )
+        # Build options
+        options = SearchOptions(
+            limit=limit,
+            min_score=min_score,
+            include_content=full,
+            include_highlights=True,
+        )
 
-    # Get collection IDs if specified
-    if collection:
+        # Get collection IDs if specified
+        if collection:
+            with db.connection:
+                repo = CollectionRepository(db.connection)
+                options.collection_ids = []
+                for name in collection:
+                    coll = repo.get_by_name(name)
+                    if coll:
+                        options.collection_ids.append(coll.id)
+        elif not search_all:
+            with db.connection:
+                repo = CollectionRepository(db.connection)
+                enabled = repo.list_enabled()
+                options.collection_ids = [c.id for c in enabled]
+
+        # Search
         with db.connection:
-            repo = CollectionRepository(db.connection)
-            options.collection_ids = []
-            for name in collection:
-                coll = repo.get_by_name(name)
-                if coll:
-                    options.collection_ids.append(coll.id)
-    elif not search_all:
-        with db.connection:
-            repo = CollectionRepository(db.connection)
-            enabled = repo.list_enabled()
-            options.collection_ids = [c.id for c in enabled]
+            searcher = BM25Searcher(db.connection)
+            results = searcher.search(query, options)
 
-    # Search
-    with db.connection:
-        searcher = BM25Searcher(db.connection)
-        results = searcher.search(query, options)
+        # Output results
+        quiet = quiet or ctx.obj.get("quiet", False)
+        if output_files or (quiet and not any([output_json, output_csv, output_md, output_xml])):
+            for r in results:
+                click.echo(r.path)
+        elif output_json:
+            click.echo(
+                format_results_json(
+                    add_line_numbers_to_results([r.to_dict() for r in results])
+                    if line_numbers
+                    else results,
+                ),
+            )
+        elif output_csv:
+            click.echo(
+                format_results_csv(
+                    add_line_numbers_to_results([r.to_dict() for r in results])
+                    if line_numbers
+                    else results,
+                ),
+            )
+        elif output_md:
+            click.echo(
+                format_results_md(
+                    add_line_numbers_to_results([r.to_dict() for r in results])
+                    if line_numbers
+                    else results,
+                    query,
+                ),
+            )
+        elif output_xml:
+            click.echo(
+                format_results_xml(
+                    add_line_numbers_to_results([r.to_dict() for r in results])
+                    if line_numbers
+                    else results,
+                    query,
+                ),
+            )
+        else:
+            # Rich table output
+            if not results:
+                if not quiet:
+                    console.print("[yellow]No results found.[/yellow]")
+                return
 
-    # Output results
-    quiet = quiet or ctx.obj.get("quiet", False)
-    if output_files or (quiet and not any([output_json, output_csv, output_md, output_xml])):
-        for r in results:
-            click.echo(r.path)
-    elif output_json:
-        click.echo(
-            format_results_json(
-                add_line_numbers_to_results([r.to_dict() for r in results])
-                if line_numbers
-                else results,
-            ),
-        )
-    elif output_csv:
-        click.echo(
-            format_results_csv(
-                add_line_numbers_to_results([r.to_dict() for r in results])
-                if line_numbers
-                else results,
-            ),
-        )
-    elif output_md:
-        click.echo(
-            format_results_md(
-                add_line_numbers_to_results([r.to_dict() for r in results])
-                if line_numbers
-                else results,
-                query,
-            ),
-        )
-    elif output_xml:
-        click.echo(
-            format_results_xml(
-                add_line_numbers_to_results([r.to_dict() for r in results])
-                if line_numbers
-                else results,
-                query,
-            ),
-        )
-    else:
-        # Rich table output
-        if not results:
-            if not quiet:
-                console.print("[yellow]No results found.[/yellow]")
-            return
+            table = Table(title=f'Search Results: "{escape(query)}"')
+            table.add_column("#", style="cyan", justify="right")
+            table.add_column("Score", style="green", justify="right")
+            table.add_column("Title", style="yellow")
+            table.add_column("Collection", style="blue")
+            table.add_column("Snippet", style="white")
+            if line_numbers and any(getattr(r, "content", None) for r in results):
+                table.add_column("Content", style="white")
 
-        table = Table(title=f'Search Results: "{query}"')
-        table.add_column("#", style="cyan", justify="right")
-        table.add_column("Score", style="green", justify="right")
-        table.add_column("Title", style="yellow")
-        table.add_column("Collection", style="blue")
-        table.add_column("Snippet", style="white")
-        if line_numbers and any(getattr(r, "content", None) for r in results):
-            table.add_column("Content", style="white")
+            for r in results:
+                row = [
+                    str(r.rank),
+                    f"{r.score:.4f}",
+                    escape(
+                        r.title[:_TITLE_MAX_LEN] + "..."
+                        if len(r.title) > _TITLE_MAX_LEN
+                        else r.title
+                    ),
+                    escape(r.collection_name),
+                    escape(_display_snippet(r)),
+                ]
+                if line_numbers and (content := getattr(r, "content", None)):
+                    content = prepend_line_numbers(content)
+                    if len(content) > _CONTENT_MAX_LEN:
+                        content = content[:_CONTENT_MAX_LEN] + "..."
+                    row.append(escape(content))
+                table.add_row(*row)
 
-        for r in results:
-            row = [
-                str(r.rank),
-                f"{r.score:.4f}",
-                r.title[:_TITLE_MAX_LEN] + "..." if len(r.title) > _TITLE_MAX_LEN else r.title,
-                r.collection_name,
-                escape(_display_snippet(r)),
-            ]
-            if line_numbers and (content := getattr(r, "content", None)):
-                content = prepend_line_numbers(content)
-                if len(content) > _CONTENT_MAX_LEN:
-                    content = content[:_CONTENT_MAX_LEN] + "..."
-                row.append(content)
-            table.add_row(*row)
+            console.print(table)
 
-        console.print(table)
-
-        if explain:
-            console.print(f"\n[dim]Query: {query}[/dim]")
-            console.print(f"[dim]Results: {len(results)}[/dim]")
+            if explain:
+                console.print(f"\n[dim]Query: {escape(query)}[/dim]")
+                console.print(f"[dim]Results: {len(results)}[/dim]")
 
 
 @search_group.command("vsearch")
@@ -297,13 +350,21 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             )
         return
 
+    from pydantic import ValidationError  # noqa: PLC0415
+
     from sif.config.settings import get_settings  # noqa: PLC0415
     from sif.database.database import Database  # noqa: PLC0415
     from sif.database.repositories import CollectionRepository  # noqa: PLC0415
     from sif.embedding.manager import EmbeddingManager  # noqa: PLC0415
     from sif.search.vector import VectorSearcher  # noqa: PLC0415
 
-    settings = get_settings()
+    # Same guard as query_cmd: when --index IS passed the group default
+    # never runs, so this command must convert invalid config into a
+    # clean ClickException itself.
+    try:
+        settings = get_settings()
+    except ValidationError as e:
+        raise click.ClickException(str(e)) from e
     if model_type:
         settings = settings.model_copy(update={"model_type": model_type})
 
@@ -315,75 +376,79 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     except Exception as e:
         raise click.ClickException(f"Failed to load embedding model: {e}") from e
 
-    db = Database(index_path)
-    db.init_schema()
+    with Database(index_path) as db:
+        db.init_schema()
 
-    options = SearchOptions(
-        limit=limit,
-        min_score=min_score,
-        include_content=full,
-        include_highlights=True,
-    )
-
-    if collection:
-        with db.connection:
-            repo = CollectionRepository(db.connection)
-            options.collection_ids = []
-            for name in collection:
-                coll = repo.get_by_name(name)
-                if coll:
-                    options.collection_ids.append(coll.id)
-    elif not search_all:
-        with db.connection:
-            repo = CollectionRepository(db.connection)
-            enabled = repo.list_enabled()
-            options.collection_ids = [c.id for c in enabled]
-
-    with db.connection:
-        searcher = VectorSearcher(db.connection, len(query_embedding))
-        results = searcher.search(query_embedding, options)
-
-    quiet = quiet or ctx.obj.get("quiet", False)
-    if quiet and not output_json:
-        for r in results:
-            click.echo(r.path)
-    elif output_json:
-        click.echo(
-            format_results_json(
-                add_line_numbers_to_results([r.to_dict() for r in results])
-                if line_numbers
-                else results,
-            ),
+        options = SearchOptions(
+            limit=limit,
+            min_score=min_score,
+            include_content=full,
+            include_highlights=True,
         )
-    else:
-        if not results:
-            if not quiet:
-                console.print("[yellow]No results found.[/yellow]")
-            return
 
-        table = Table(title=f'Vector Search Results: "{query}"')
-        table.add_column("#", style="cyan", justify="right")
-        table.add_column("Score", style="green", justify="right")
-        table.add_column("Title", style="yellow")
-        table.add_column("Collection", style="blue")
-        if line_numbers and any(getattr(r, "content", None) for r in results):
-            table.add_column("Content", style="white")
+        if collection:
+            with db.connection:
+                repo = CollectionRepository(db.connection)
+                options.collection_ids = []
+                for name in collection:
+                    coll = repo.get_by_name(name)
+                    if coll:
+                        options.collection_ids.append(coll.id)
+        elif not search_all:
+            with db.connection:
+                repo = CollectionRepository(db.connection)
+                enabled = repo.list_enabled()
+                options.collection_ids = [c.id for c in enabled]
 
-        for r in results:
-            row = [
-                str(r.rank),
-                f"{r.score:.4f}",
-                r.title[:_TITLE_MAX_LEN] + "..." if len(r.title) > _TITLE_MAX_LEN else r.title,
-                r.collection_name,
-            ]
-            if line_numbers and (content := getattr(r, "content", None)):
-                content = prepend_line_numbers(content)
-                if len(content) > _CONTENT_MAX_LEN:
-                    content = content[:_CONTENT_MAX_LEN] + "..."
-                row.append(content)
-            table.add_row(*row)
+        with db.connection:
+            searcher = VectorSearcher(db.connection, len(query_embedding))
+            results = searcher.search(query_embedding, options)
 
-        console.print(table)
+        quiet = quiet or ctx.obj.get("quiet", False)
+        if quiet and not output_json:
+            for r in results:
+                click.echo(r.path)
+        elif output_json:
+            click.echo(
+                format_results_json(
+                    add_line_numbers_to_results([r.to_dict() for r in results])
+                    if line_numbers
+                    else results,
+                ),
+            )
+        else:
+            if not results:
+                if not quiet:
+                    console.print("[yellow]No results found.[/yellow]")
+                return
+
+            table = Table(title=f'Vector Search Results: "{escape(query)}"')
+            table.add_column("#", style="cyan", justify="right")
+            table.add_column("Score", style="green", justify="right")
+            table.add_column("Title", style="yellow")
+            table.add_column("Collection", style="blue")
+            if line_numbers and any(getattr(r, "content", None) for r in results):
+                table.add_column("Content", style="white")
+
+            for r in results:
+                row = [
+                    str(r.rank),
+                    f"{r.score:.4f}",
+                    escape(
+                        r.title[:_TITLE_MAX_LEN] + "..."
+                        if len(r.title) > _TITLE_MAX_LEN
+                        else r.title
+                    ),
+                    escape(r.collection_name),
+                ]
+                if line_numbers and (content := getattr(r, "content", None)):
+                    content = prepend_line_numbers(content)
+                    if len(content) > _CONTENT_MAX_LEN:
+                        content = content[:_CONTENT_MAX_LEN] + "..."
+                    row.append(escape(content))
+                table.add_row(*row)
+
+            console.print(table)
 
 
 @search_group.command("query")
@@ -449,159 +514,177 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             console.print("[yellow]No index found. Run 'sif index update' first.[/yellow]")
         return
 
-    db = Database(index_path)
-    db.init_schema()
+    with Database(index_path) as db:
+        db.init_schema()
 
-    # Build options
-    options = SearchOptions(
-        limit=limit,
-        min_score=min_score,
-        include_content=full,
-        include_highlights=True,
-        explain=explain,
-        candidate_limit=candidate_limit,
-        intent=intent,
-    )
-
-    # Get collection IDs if specified
-    if collection:
-        with db.connection:
-            repo = CollectionRepository(db.connection)
-            options.collection_ids = []
-            for name in collection:
-                coll = repo.get_by_name(name)
-                if coll:
-                    options.collection_ids.append(coll.id)
-    elif not search_all:
-        with db.connection:
-            repo = CollectionRepository(db.connection)
-            enabled = repo.list_enabled()
-            options.collection_ids = [c.id for c in enabled]
-
-    # Load embedder for hybrid search
-    from sif.config.settings import get_settings  # noqa: PLC0415
-    from sif.embedding.manager import EmbeddingManager  # noqa: PLC0415
-    from sif.search.expansion import QueryExpansion  # noqa: PLC0415
-    from sif.search.rerank import create_reranker  # noqa: PLC0415
-    from sif.search.snippets import SmartSnippetExtractor  # noqa: PLC0415
-
-    settings = get_settings()
-    if model_type:
-        settings = settings.model_copy(update={"model_type": model_type})
-
-    try:
-        manager = EmbeddingManager.from_settings(settings)
-        manager.load_model()
-        embedding_dim = len(manager.embed_single("probe"))
-    except ImportError as e:
-        raise click.ClickException(f"Embedding backend not installed: {e}") from None
-    except Exception as e:
-        raise click.ClickException(f"Failed to load embedding model: {e}") from e
-    # Create optional components
-    query_expander = QueryExpansion(embedding_manager=manager)
-
-    reranker = None
-    if settings.reranker_model_name or settings.reranker_model_path:
-        try:
-            reranker = create_reranker(settings)
-        except ImportError:
-            if not quiet:
-                console.print(
-                    "[yellow]Reranker not available. "
-                    "Install with: pip install -e '.[embed]'[/yellow]",
-                )
-
-    snippet_extractor = SmartSnippetExtractor(max_length=options.snippet_max_length)
-
-    # Search using pipeline
-    with db.connection:
-        pipeline = SearchPipeline(
-            db.connection,
-            embedder=manager._model,  # noqa: SLF001
-            query_expander=query_expander,
-            reranker=reranker,
-            snippet_extractor=snippet_extractor,
-            embedding_dim=embedding_dim,
+        # Build options
+        options = SearchOptions(
+            limit=limit,
+            min_score=min_score,
+            include_content=full,
+            include_highlights=True,
+            explain=explain,
+            candidate_limit=candidate_limit,
+            intent=intent,
         )
+
+        # Get collection IDs if specified
+        if collection:
+            with db.connection:
+                repo = CollectionRepository(db.connection)
+                options.collection_ids = []
+                for name in collection:
+                    coll = repo.get_by_name(name)
+                    if coll:
+                        options.collection_ids.append(coll.id)
+        elif not search_all:
+            with db.connection:
+                repo = CollectionRepository(db.connection)
+                enabled = repo.list_enabled()
+                options.collection_ids = [c.id for c in enabled]
+
+        # Load embedder for hybrid search
+        from pydantic import ValidationError  # noqa: PLC0415
+
+        from sif.config.settings import get_settings  # noqa: PLC0415
+        from sif.embedding.manager import EmbeddingManager  # noqa: PLC0415
+        from sif.search.expansion import QueryExpansion  # noqa: PLC0415
+        from sif.search.rerank import create_reranker  # noqa: PLC0415
+        from sif.search.snippets import SmartSnippetExtractor  # noqa: PLC0415
+
+        # When --index IS passed the group default never runs, so this is the
+        # first settings touchpoint and must convert invalid config itself
+        # (REVIEW WR-09).
         try:
-            results = pipeline.search(query, options)
-        except RuntimeError as e:
+            settings = get_settings()
+        except ValidationError as e:
             raise click.ClickException(str(e)) from e
+        if model_type:
+            settings = settings.model_copy(update={"model_type": model_type})
 
-    # Output results
-    quiet = quiet or ctx.obj.get("quiet", False)
-    if output_files or (quiet and not any([output_json, output_csv, output_md, output_xml])):
-        for r in results:
-            click.echo(r.path)
-    elif output_json:
-        click.echo(
-            format_results_json(
-                add_line_numbers_to_results([r.to_dict() for r in results])
-                if line_numbers
-                else results,
-            ),
-        )
-    elif output_csv:
-        click.echo(
-            format_results_csv(
-                add_line_numbers_to_results([r.to_dict() for r in results])
-                if line_numbers
-                else results,
-            ),
-        )
-    elif output_md:
-        click.echo(
-            format_results_md(
-                add_line_numbers_to_results([r.to_dict() for r in results])
-                if line_numbers
-                else results,
-                query,
-            ),
-        )
-    elif output_xml:
-        click.echo(
-            format_results_xml(
-                add_line_numbers_to_results([r.to_dict() for r in results])
-                if line_numbers
-                else results,
-                query,
-            ),
-        )
-    else:
-        # Rich table output
-        if not results:
-            if not quiet:
-                console.print("[yellow]No results found.[/yellow]")
-            return
+        try:
+            manager = EmbeddingManager.from_settings(settings)
+            manager.load_model()
+            embedding_dim = len(manager.embed_single("probe"))
+        except ImportError as e:
+            raise click.ClickException(f"Embedding backend not installed: {e}") from None
+        except Exception as e:
+            raise click.ClickException(f"Failed to load embedding model: {e}") from e
+        # Create optional components
+        query_expander = QueryExpansion(embedding_manager=manager)
 
-        table = Table(title=f'Hybrid Search Results: "{query}"')
-        table.add_column("#", style="cyan", justify="right")
-        table.add_column("Score", style="green", justify="right")
-        table.add_column("Title", style="yellow")
-        table.add_column("Collection", style="blue")
-        table.add_column("Snippet", style="white")
-        if line_numbers and any(getattr(r, "content", None) for r in results):
-            table.add_column("Content", style="white")
+        reranker = None
+        if settings.reranker_model_name or settings.reranker_model_path:
+            try:
+                reranker = create_reranker(settings)
+            except ImportError:
+                if not quiet:
+                    console.print(
+                        "[yellow]Reranker not available. "
+                        "Install with: pip install -e '.[embed]'[/yellow]",
+                    )
+            # Defense in depth (REVIEW WR-09): a factory ValueError for an
+            # unknown model_type must not escape as a raw traceback.
+            except ValueError as e:
+                raise click.ClickException(str(e)) from e
 
-        for r in results:
-            row = [
-                str(r.rank),
-                f"{r.score:.4f}",
-                r.title[:_TITLE_MAX_LEN] + "..." if len(r.title) > _TITLE_MAX_LEN else r.title,
-                r.collection_name,
-                escape(_display_snippet(r)),
-            ]
-            if line_numbers and (content := getattr(r, "content", None)):
-                content = prepend_line_numbers(content)
-                if len(content) > _CONTENT_MAX_LEN:
-                    content = content[:_CONTENT_MAX_LEN] + "..."
-                row.append(content)
-            table.add_row(*row)
+        snippet_extractor = SmartSnippetExtractor(max_length=options.snippet_max_length)
 
-        console.print(table)
+        # Search using pipeline
+        with db.connection:
+            pipeline = SearchPipeline(
+                db.connection,
+                embedder=manager._model,  # noqa: SLF001
+                query_expander=query_expander,
+                reranker=reranker,
+                snippet_extractor=snippet_extractor,
+                embedding_dim=embedding_dim,
+            )
+            try:
+                results = pipeline.search(query, options)
+            except RuntimeError as e:
+                raise click.ClickException(str(e)) from e
 
-        if explain:
+        # Output results
+        quiet = quiet or ctx.obj.get("quiet", False)
+        if output_files or (quiet and not any([output_json, output_csv, output_md, output_xml])):
             for r in results:
-                scores_str = ", ".join(f"{k}={v:.4f}" for k, v in r.scores.items() if v is not None)
-                if scores_str:
-                    console.print(f"[dim]{r.title}: {scores_str}[/dim]")
+                click.echo(r.path)
+        elif output_json:
+            click.echo(
+                format_results_json(
+                    add_line_numbers_to_results([r.to_dict() for r in results])
+                    if line_numbers
+                    else results,
+                ),
+            )
+        elif output_csv:
+            click.echo(
+                format_results_csv(
+                    add_line_numbers_to_results([r.to_dict() for r in results])
+                    if line_numbers
+                    else results,
+                ),
+            )
+        elif output_md:
+            click.echo(
+                format_results_md(
+                    add_line_numbers_to_results([r.to_dict() for r in results])
+                    if line_numbers
+                    else results,
+                    query,
+                ),
+            )
+        elif output_xml:
+            click.echo(
+                format_results_xml(
+                    add_line_numbers_to_results([r.to_dict() for r in results])
+                    if line_numbers
+                    else results,
+                    query,
+                ),
+            )
+        else:
+            # Rich table output
+            if not results:
+                if not quiet:
+                    console.print("[yellow]No results found.[/yellow]")
+                return
+
+            table = Table(title=f'Hybrid Search Results: "{escape(query)}"')
+            table.add_column("#", style="cyan", justify="right")
+            table.add_column("Score", style="green", justify="right")
+            table.add_column("Title", style="yellow")
+            table.add_column("Collection", style="blue")
+            table.add_column("Snippet", style="white")
+            if line_numbers and any(getattr(r, "content", None) for r in results):
+                table.add_column("Content", style="white")
+
+            for r in results:
+                row = [
+                    str(r.rank),
+                    f"{r.score:.4f}",
+                    escape(
+                        r.title[:_TITLE_MAX_LEN] + "..."
+                        if len(r.title) > _TITLE_MAX_LEN
+                        else r.title
+                    ),
+                    escape(r.collection_name),
+                    escape(_display_snippet(r)),
+                ]
+                if line_numbers and (content := getattr(r, "content", None)):
+                    content = prepend_line_numbers(content)
+                    if len(content) > _CONTENT_MAX_LEN:
+                        content = content[:_CONTENT_MAX_LEN] + "..."
+                    row.append(escape(content))
+                table.add_row(*row)
+
+            console.print(table)
+
+            if explain:
+                for r in results:
+                    scores_str = ", ".join(
+                        f"{k}={v:.4f}" for k, v in r.scores.items() if v is not None
+                    )
+                    if scores_str:
+                        console.print(f"[dim]{escape(r.title)}: {scores_str}[/dim]")

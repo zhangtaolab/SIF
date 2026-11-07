@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from io import StringIO
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from sif.mcp.protocol import MCPErrorCode
+from sif.mcp.transports import stdio
 from sif.mcp.transports.stdio import StdioTransport
 
 
@@ -164,3 +166,71 @@ async def test_run_loop_handles_exception() -> None:
     output = stdout.read()
     data = json.loads(output.strip())
     assert data["error"]["code"] == MCPErrorCode.INTERNAL_ERROR
+
+
+@pytest.mark.asyncio
+async def test_process_message_invalid_notification_is_contained() -> None:
+    """Malformed notifications are logged and ignored without a response."""
+    transport = StdioTransport(MagicMock(), stdin=StringIO(), stdout=StringIO())
+
+    result = await transport._process_message(
+        {"jsonrpc": "2.0", "method": "notifications/initialized", "params": "invalid"}
+    )
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_run_cancellation_resets_running_and_propagates() -> None:
+    """Cancellation follows asyncio semantics while restoring transport state."""
+    transport = StdioTransport(MagicMock(), stdin=StringIO(), stdout=StringIO())
+    transport._read_message = AsyncMock(side_effect=asyncio.CancelledError)
+
+    with pytest.raises(asyncio.CancelledError):
+        await transport.run()
+
+    assert transport._running is False
+
+
+@pytest.mark.asyncio
+async def test_run_read_failure_is_contained_and_resets_running() -> None:
+    """Unexpected input failures are logged and do not leave the loop active."""
+    transport = StdioTransport(MagicMock(), stdin=StringIO(), stdout=StringIO())
+    transport._read_message = AsyncMock(side_effect=OSError("stdin unavailable"))
+
+    await transport.run()
+
+    assert transport._running is False
+
+
+@pytest.mark.asyncio
+async def test_run_stdio_server_composes_components_without_subprocess() -> None:
+    """The async stdio entry point wires backend, tools, and in-memory transport."""
+    server = MagicMock()
+    transport = MagicMock()
+    transport.run = AsyncMock()
+    tools = [MagicMock()]
+
+    with (
+        patch.object(stdio, "SearchBackend", return_value="backend") as backend,
+        patch.object(stdio, "MCPServer", return_value=server) as server_type,
+        patch.object(stdio, "create_default_tools", return_value=tools),
+        patch.object(stdio, "StdioTransport", return_value=transport) as transport_type,
+    ):
+        await stdio.run_stdio_server("/tmp/sif-test.db")
+
+    backend.assert_called_once_with("/tmp/sif-test.db")
+    server_type.assert_called_once_with("backend")
+    server.register_tools.assert_called_once_with(tools)
+    transport_type.assert_called_once_with(server)
+    transport.run.assert_awaited_once_with()
+
+
+def test_run_stdio_server_sync_uses_asyncio_run() -> None:
+    """The synchronous entry point delegates to asyncio.run without a process."""
+    with patch.object(stdio.asyncio, "run") as run:
+        stdio.run_stdio_server_sync("/tmp/sif-test.db")
+
+    run.assert_called_once()
+    assert run.call_args.args[0].cr_code is stdio.run_stdio_server.__code__
+    run.call_args.args[0].close()

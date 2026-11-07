@@ -68,81 +68,81 @@ def bench_cmd(  # noqa: C901, PLR0913, PLR0915
     with open(fixture) as f:
         fixture_data = json.load(f)
 
-    db = Database(index_path)
-    db.init_schema()
+    with Database(index_path) as db:
+        db.init_schema()
 
-    # Build search function
-    settings = get_settings()
-    if model_type:
-        settings = settings.model_copy(update={"model_type": model_type})
+        # Build search function
+        settings = get_settings()
+        if model_type:
+            settings = settings.model_copy(update={"model_type": model_type})
 
-    # Load embedder
-    manager = None
-    embedding_dim = 384
-    try:
-        manager = EmbeddingManager.from_settings(settings)
-        manager.load_model()
-        embedding_dim = len(manager.embed_single("probe"))
-    except ImportError as e:
-        console.print(f"[yellow]Embedding backend not installed: {e}[/yellow]")
-    except Exception as e:
-        console.print(f"[yellow]Failed to load embedding model: {e}[/yellow]")
+        # Load embedder
+        manager = None
+        embedding_dim = 384
+        try:
+            manager = EmbeddingManager.from_settings(settings)
+            manager.load_model()
+            embedding_dim = len(manager.embed_single("probe"))
+        except ImportError as e:
+            console.print(f"[yellow]Embedding backend not installed: {e}[/yellow]")
+        except Exception as e:
+            console.print(f"[yellow]Failed to load embedding model: {e}[/yellow]")
 
-    def search_fn(query: str):
-        from sif.core.models import SearchOptions  # noqa: PLC0415
+        def search_fn(query: str):
+            from sif.core.models import SearchOptions  # noqa: PLC0415
 
-        options = SearchOptions(
-            limit=limit,
-            candidate_limit=candidate_limit,
-            include_content=False,
-            include_highlights=False,
-        )
-
-        # Get collection IDs if specified
-        if collection:
-            with db.connection:
-                repo = CollectionRepository(db.connection)
-                options.collection_ids = []
-                for name in collection:
-                    coll = repo.get_by_name(name)
-                    if coll:
-                        options.collection_ids.append(coll.id)
-        elif not search_all:
-            with db.connection:
-                repo = CollectionRepository(db.connection)
-                enabled = repo.list_enabled()
-                options.collection_ids = [c.id for c in enabled]
-
-        with db.connection:
-            pipeline = SearchPipeline(
-                db.connection,
-                embedder=manager._model if manager else None,  # noqa: SLF001
-                embedding_dim=embedding_dim,
+            options = SearchOptions(
+                limit=limit,
+                candidate_limit=candidate_limit,
+                include_content=False,
+                include_highlights=False,
             )
-            return pipeline.search(query, options)
 
-    # Run evaluation
-    evaluator = SearchEvaluator(fixture_data)
-    try:
-        metrics = evaluator.evaluate(search_fn)
-    except Exception as e:
-        raise click.ClickException(f"Benchmark failed: {e}") from e
+            # Get collection IDs if specified
+            if collection:
+                with db.connection:
+                    repo = CollectionRepository(db.connection)
+                    options.collection_ids = []
+                    for name in collection:
+                        coll = repo.get_by_name(name)
+                        if coll:
+                            options.collection_ids.append(coll.id)
+            elif not search_all:
+                with db.connection:
+                    repo = CollectionRepository(db.connection)
+                    enabled = repo.list_enabled()
+                    options.collection_ids = [c.id for c in enabled]
 
-    # Output results
-    if output_json:
-        click.echo(json.dumps(metrics, indent=2))
-    else:
-        table = Table(title=f"Benchmark Results: {fixture.name}")
-        table.add_column("Metric", style="cyan")
-        table.add_column("Value", style="green", justify="right")
+            with db.connection:
+                pipeline = SearchPipeline(
+                    db.connection,
+                    embedder=manager._model if manager else None,  # noqa: SLF001
+                    embedding_dim=embedding_dim,
+                )
+                return pipeline.search(query, options)
 
-        for key in sorted(metrics.keys()):
-            value = metrics[key]
-            if key == "num_queries":
-                table.add_row("Queries", f"{int(value)}")
-            elif key == "mrr":
-                table.add_row("MRR", f"{value:.4f}")
-            else:
-                table.add_row(key, f"{value:.4f}")
+        # Run evaluation
+        evaluator = SearchEvaluator(fixture_data)
+        try:
+            metrics = evaluator.evaluate(search_fn)
+        except Exception as e:
+            raise click.ClickException(f"Benchmark failed: {e}") from e
 
-        console.print(table)
+        # Output results
+        if output_json:
+            click.echo(json.dumps(metrics, indent=2))
+        else:
+            table = Table(title=f"Benchmark Results: {fixture.name}")
+            table.add_column("Metric", style="cyan")
+            table.add_column("Value", style="green", justify="right")
+
+            for key in sorted(metrics.keys()):
+                value = metrics[key]
+                if key == "num_queries":
+                    table.add_row("Queries", f"{int(value)}")
+                elif key == "mrr":
+                    table.add_row("MRR", f"{value:.4f}")
+                else:
+                    table.add_row(key, f"{value:.4f}")
+
+            console.print(table)

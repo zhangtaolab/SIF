@@ -7,7 +7,7 @@ import re
 import types
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import frontmatter
 
@@ -57,7 +57,7 @@ class MarkdownParser:
             metadata = {}
 
         # Extract title
-        title = metadata.get("title", "")
+        title = cast("str", metadata.get("title", ""))
         if not title:
             # Try to extract from first H1
             match = self.title_pattern.search(body)

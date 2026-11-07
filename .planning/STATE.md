@@ -1,19 +1,20 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_phase: 06
-current_phase_name: Documentation Audit & Refresh
-current_plan: Not started
-status: planning
-stopped_at: Quick task 260914-vyr complete (audit BLOCKER 2 closed)
-last_updated: "2026-09-14T15:11:42Z"
-state_head: c2a5302c16a03d11a6596f20cfd3529c907098d5
+status: Awaiting next milestone
+stopped_at: Phase 10.1 complete — all phases complete
+last_updated: "2026-11-06T22:48:12.150Z"
+last_activity: 2026-11-07
+last_activity_desc: Milestone v1.0 completed and archived
+state_head: df482bc48c67f06bf5af5cdf2cc30756f719de65
 progress:
-  total_phases: 9
-  completed_phases: 7
-  total_plans: 51
-  completed_plans: 51
+  total_phases: 11
+  completed_phases: 11
+  total_plans: 68
+  completed_plans: 68
 milestone_name: milestone
+current_phase: 10
+current_phase_name: "Address tech debt: path normalization + review findings CR-01/CR-02/WR-01 (INSERTED)"
 ---
 
 # DocSift — Project State
@@ -22,19 +23,15 @@ milestone_name: milestone
 
 - **Name:** DocSift
 - **Core Value:** 用户可以在自己的笔记和文档库中，用自然语言快速、准确地找到需要的信息——无论关键词是否匹配。
-- **Current Focus:** Phase 05 — Agent Context Experience
+- **Current Focus:** Milestone v1.0 complete (all 11 phases; 10.1 verification regenerated 2026-11-06, 16/16, fresh fingerprint) — ready for milestone close/archive.
 - **Tech Stack:** Python 3.10+, SQLite (FTS5 + sqlite-vec), Click, Pydantic, sentence-transformers, llama-cpp-python
 
 ## Current Position
 
-Phase: 05 (Agent Context Experience) — EXECUTING
-Current Plan: Not started
-Total Plans in Phase: 9
-
-- **Phase:** 06 — Documentation Audit & Refresh
-- **Plan:** 9 of 9
-- **Status:** Ready to plan
-- **Progress Bar:** `[████████████████████] 100%`
+Phase: Milestone v1.0 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-11-07 — Milestone v1.0 completed and archived
 
 ## Phase History
 
@@ -50,8 +47,8 @@ Total Plans in Phase: 9
 ## Performance Metrics
 
 - **Requirements mapped:** 31/31 v1 + 7 DOC requirements
-- **Phases defined:** 9
-- **Tests passing:** 675 passed, 0 failed (post 260914-vyr; suite's 5 conditional skips inactive in sqlite-vec-equipped env)
+- **Phases defined:** 10
+- **Tests passing:** 1011 passed, 0 failed (post 10.1 + phase-10 regeneration, fail_under=90 active)
 - **Known blockers:** 0
 
 **Per-Plan Metrics:**
@@ -60,6 +57,20 @@ Total Plans in Phase: 9
 |------|----------|-------|-------|
 | Phase 05 P08 | 17min | 2 tasks | 9 files |
 | Phase 05 P09 | 12min | 2 tasks | 5 files |
+| Phase 10 P01 | 6min | 2 tasks | 5 files |
+| Phase 10 P02 | 13min | 3 tasks | 3 files |
+| Phase 10 P03 | 19min | 2 tasks | 4 files |
+| Phase 10 P04 | 30min | 3 tasks | 10 files |
+| Phase 10 P05 | 11min | 3 tasks | 12 files |
+| Phase 10 P06 | 20min | 3 tasks | 9 files |
+| Phase 10 P07 | 198s | 2 tasks | 1 files |
+| Phase 10.1 P01 | 13min | 2 tasks | 6 files |
+| Phase 10.1 P02 | 9min | 2 tasks | 2 files |
+| Phase 10.1 P03 | 13min | 3 tasks | 2 files |
+| Phase 10.1 P04 | 16min | 3 tasks | 8 files |
+| Phase 05 P10 | 8min | 3 tasks | 2 files |
+| Phase 05 P11 | 12min | 2 tasks | 2 files |
+| Phase 05 P12 | 8min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -119,16 +130,50 @@ Total Plans in Phase: 9
 - [Phase 05]: 05-08: legacy verbatim context rows match on read — no contexts-table backfill migration; context_description is set only on match so RRF/rerank-carried descriptions are never clobbered; ORDER BY updated_at gives deterministic newest-wins for duplicate-normalizing targets
 - [Phase 05]: 05-09: context add path stores normalize_path(target) canonical form with dual-form upsert — legacy verbatim rows are re-pointed via new ContextRepository.update_target() on explicit re-add; no bulk backfill migration ever runs (re-normalize-on-read + merge-on-re-add closes WR-02/CTX-01)
 - [Phase 05]: 05-09: delete_orphaned_paths compares normalize_path on both sides in a Python set — SQL cannot call realpath so the raw-string NOT IN comparison is gone entirely; count semantics and D-12/D-13 explicit-command contract unchanged (closes CR-02/CTX-02)
+- [Phase 10]: 10-01: Applied D-01 exactly, deleting the approved dead-code cluster while preserving live CLI imports; measured post-deletion coverage at 81.48% (5320 statements, 985 missed).
+- [Phase 10]: 10-01: Kept pyproject.toml free of fail_under and coverage exclusions under D-04; final gate remains reserved for plan 10-07.
+- [Phase 10]: 10-02: D-06 isolated, both-order, and full-suite probes were green; no speculative repair or production change was made.
+- [Phase 10]: 10-02: Real-temp-DB CLI tests raised TOTAL coverage from 81.48% to 85.34%; collection 99.15%, main 86.99%, get 100%.
+- [Phase 10]: 10-03: Used real torch tensor math with constructor/downloader mocks for deterministic Qwen3 yes/no scoring; scoped ML module injection under D-07.
+- [Phase 10]: 10-03: Escaped XML query attributes and result fields so machine output strict-parses markup-sensitive content; search command reached 99.44% coverage.
+- [Phase 10]: 10-04: Real SQLite exposed and repaired stale external-content FTS delete triggers, lazy stats initialization, and multi-statement migration execution; repositories/schema/database/cache reached 100% and migrations 92%.
+- [Phase 10]: 10-05: Used real domain entities with repository Protocol doubles and scoped ModelScope/process-state isolation; all seven target files reached 100%.
+- [Phase 10]: 10-05: Behavior tests exposed and repaired custom logging formatter and indeterminate Rich progress defects; TOTAL coverage reached 93.48%.
+- [Phase 10]: 10-06: Real-file Unicode parsing, exact code-point chunk boundaries, and isolated MCP protocol tests raised TOTAL coverage to 96.16%.
+- [Phase 10]: 10-06: Behavior tests repaired fixed-size chunker forward progress and post-insertion MCP session LRU bounds.
+- [Phase 10]: 10-07: Zero long-tail tests required; Wave-2 combined TOTAL already 96.16% (>=90%). D-05 did not trigger; no candidate test file was modified.
+- [Phase 10]: 10-07: Landed [tool.coverage.report] fail_under=90 LAST per D-04/Pattern 6; no exclude_lines/exclude_also/--cov-branch, no business-logic pragma. Canonical suite green under active gate (958 passed, 96.16%).
+- [Phase 10.1]: DEBT-PN lookup order (OQ2): normalized-only for exact-path lookups; ID-first and bare-filename stay raw; globs raw-first-then-normalized
+- [Phase 10.1]: get/multi-get own Database lifecycle via with Database(index_path) (WR-01, 2 sites); nested with db.connection kept for commit sequencing
+- [Phase 10.1]: DEBT-PN-DOC lands in docstrings + make docs-generate output + sif-get skill note; no separate prose page (OQ3/A5)
+- [Phase 10.1]: 10.1-02: CR-01 closed via generalized _fts_trigger_is_legacy detector (direct-UPDATE FND-06 + direct-DELETE forms) migrating all four FTS sync triggers on create_all()
+- [Phase 10.1]: 10.1-02 OQ1: detection-gated FTS 'rebuild' purges entries orphaned by past broken deletes; gate is legacy detection alone, never needs_rebuild_*; fresh/migrated DBs pay nothing
+- [Phase 10.1]: 10.1-02: migration logic extracted to _drop_legacy_fts_triggers returning legacy-delete booleans (ruff C901 mccabe-10 cap)
+- [Phase 10.1]: 10.1-03: CR-02 closed — sanitizer is the XML 1.0 Char production complement transliterated (strip #x00-#x08/#x0B/#x0C/#x0E-#x1F/surrogates/#xFFFE-#xFFFF; keep tab/LF/CR; never strip #x7F-#x9F), applied BEFORE xml_escape/quoteattr which keep owning <>&'"
+- [Phase 10.1]: 10.1-03: WR-01 search.py — with Database(index_path) covers each command body from init_schema onward; all nine nested with db.connection: transaction blocks preserved
+- [Phase 10.1]: 10.1-03: closure doubles patch the import SOURCE for function-local imports — vsearch_cmd binds Database at call time, so its TrackingDatabase patches sif.database.database.Database; and real-Database doubles need settings.embedding_dim as a real int (init_schema resolves get_settings lazily per call)
+- [Phase 10.1]: 10.1-04: WR-01 closed for six CLI modules (21 sites) — with Database(index_path) ownership wraps each command body from init_schema onward; nested with db.connection/transaction blocks preserved verbatim (57→13 ResourceWarnings, remainder test-side)
+- [Phase 10.1]: 10.1-04: main.py ownership scopes sit INSIDE the existing try/except — exceptions close the Database via __exit__ before the ClickException handler runs
+- [Phase 10.1]: 10.1-04: lifecycle harness asserts non-vacuous closure (every test asserts >=1 TrackingDatabase captured) and covers index update (not index status, which delegates to main's status_cmd and would not exercise index.py's scope)
+- [Phase 05]: 05-10: truth-21 duplicate collapse centralized in _collapse_duplicate_path_rows — shared by exact-match branch, normalized branch, and upsert-hit path; exact-match branch gains the same landed-guard (update_target True before any deletion) as the normalized branch (T-05-16)
+- [Phase 05]: 05-10: CR-02 closed — context list wraps all three Rich table cells in rich.markup.escape AFTER truncation so the 50-char display cap applies to raw text; display-only, stored bytes untouched (mirrors 04-06 snippet precedent)
+- [Phase 05]: 05-11: CR-01 closed — rich.markup.escape at all 12 display sites (3 titles, 3 title cells, 3 collection cells, 3 content appends, 2 explain prints); display-layer only, machine outputs byte-unchanged
+- [Phase 05]: 05-11: escape-after-truncation ordering (truncate raw text, then escape the whole displayed expression incl. ellipsis) — mirrors the 05-10 context-list precedent; tests renamed to *_renders_markup_literally so -k markup_literal selects all five
+- [Phase 05]: 05-12: CR-03 closed — rich.markup.escape wraps display_target at both context add confirmation prints and context_id at the remove print; display-layer only, print placement inside the transaction and stored bytes unchanged (mirrors 05-10/05-11 precedents; 05-10-P3 now HOLDS at all three sites) — Bracket-named targets were permanently unaddable because the MarkupError from the confirmation print rolled back the open transaction; escaping removes the raising path while both write branches stay inside with db.transaction()
 
 ### Roadmap Evolution
 
 - Later-added phases: 07 Claude skills (2026-04-20), 08 rename DocSift→SIF (2026-04-27), 09 MCP server (2026-05-08)
+- Phase 10 added: Raise pytest coverage to 90% (2026-11-05; baseline 78% / 5587 stmts / 1220 missed — lowest: cli/config.py 0%, formatters 29%, collection 44%)
+- Phase 10.1 inserted after Phase 10: Address tech debt: path normalization + review findings CR-01/CR-02/WR-01 (URGENT)
 
 ### TODOs
 
 - [x] Plan Phase 06 documentation audit and refresh — 7 plans created and verified
 - [x] Phase 7: CLI Claude Skill — sif-search and sif-get skills created, symlinked, and committed
 - [ ] (Backlog) Phase 8: LLM-based query expansion — model tested (Qwen3.5-2B), awaiting v1.0 ship
+- [ ] (Backlog) Phase 10 regen code review: 10 warnings open (WR-01..WR-10, 0 critical) — ledger in 10-REVIEW-DISPOSITION.md; candidates for a future debt phase (precedent: 10.1 arose from 10's original review)
+- [ ] (Backlog) Phase 10.1 regen code review: 4 info findings open (IN-10..IN-13: stale test-count claims in docs/testing.md, invalid bare `sif search` in DESIGN.md, discarded `_collapse_duplicate_path_rows` return, duplicated test helpers) — ledger in 10.1-REVIEW-DISPOSITION.md
 
 ### Blockers
 
@@ -138,18 +183,6 @@ Total Plans in Phase: 9
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
-| 260905-hc3 | Fix G-04-1 snippet relevance: markdown line-aware SmartSnippetExtractor windows; stem-tolerant word-boundary term matching shared with BM25 highlights | 2026-09-05 | 89a8a5e | [260905-hc3-fix-g-04-1-snippet-relevance-markdown-li](./quick/260905-hc3-fix-g-04-1-snippet-relevance-markdown-li/) |
-| 260905-kmv | Fix G-04-2 reranker load crash: model-dir resolution prefers real model config over aux subdirs; CLI ClickException on reranker failure | 2026-09-05 | 0831f41 | [260905-kmv-fix-g-04-2-reranker-load-crash-model-dir](./quick/260905-kmv-fix-g-04-2-reranker-load-crash-model-dir/) |
-| 260905-sxc | Fix G-04-3 HyDE unreachable: add create_completion to LlamaCppEmbedder wrapping llama_cpp completion with openai-style return shape | 2026-09-05 | 67c9ecf | [260905-sxc-fix-g-04-3-hyde-unreachable-add-create-c](./quick/260905-sxc-fix-g-04-3-hyde-unreachable-add-create-c/) |
-| 260905-tax | Fix G-04-4 GGUF embed shape: unwrap llama_cpp list-of-embeddings, mean-pool token-level output before normalization | 2026-09-05 | 958262b | [260905-tax-fix-g-04-4-gguf-embed-shape-unwrap-llama](./quick/260905-tax-fix-g-04-4-gguf-embed-shape-unwrap-llama/) |
-| 260910-kps | Fix CLI machine-output corruption: emit --json/--csv/--md/--xml/--files via click.echo so Rich neither word-wraps nor markup-interprets; regression tests under forced COLUMNS=80 | 2026-09-10 | 4d4bb02 | [260910-kps-fix-json-output-emit-via-click-echo-no-w](./quick/260910-kps-fix-json-output-emit-via-click-echo-no-w/) |
-| 260914-g63 | Audit follow-up: fix deferred-items doc formats (05 resolved, 03 split), add missing sqlite3 import in cli/main.py, re-file mypy typing debt as open deferred item | 2026-09-14 | ae2cb6d | [260914-g63-audit-follow-up-fix-deferred-items-doc-f](./quick/260914-g63-audit-follow-up-fix-deferred-items-doc-f/) |
-| 260914-v5f | Fix exclude-all collection leak (audit BLOCKER 1): [] filters everything / None unfiltered sentinel guards in BM25+Vector searchers; 3 RED regression tests + 5 controls, suite 675 green | 2026-09-14 | b7381d6 | [260914-v5f-fix-exclude-all-collection-leak-empty-co](./quick/260914-v5f-fix-exclude-all-collection-leak-empty-co/) |
-| 260914-vyr | Rename distribution docsif→sif (audit BLOCKER 2): pyproject name/script/keywords, README installs, uv.lock root entry; new mcp/http extras (uvicorn only) so sif[mcp]/sif[http]/sif[embed] hints resolve; suite 675 green | 2026-09-14 | 4657ea8 | [260914-vyr-rename-distribution-docsif-to-sif-pyproj](./quick/260914-vyr-rename-distribution-docsif-to-sif-pyproj/) |
-| 260914-wxv | Fix stale command references (DOC-02/04): 5 CLI 'sif update' hints → real index-group commands, development.md 2 blocks + both live skills corrected; --help existence proofs + live hint verification, suite 675 green | 2026-09-14 | 484b82c | [260914-wxv-fix-stale-command-references-nonexistent](./quick/260914-wxv-fix-stale-command-references-nonexistent/) |
-| 260917-bo2 | Typing debt batch 1: search/rerank.py mypy strict-clean (22→0; TYPE_CHECKING imports, Optional annotations, narrowing asserts, 4 stale ignores removed) — zero behavior change, suite 676 green | 2026-09-17 | 1c1bec2 | [260917-bo2-typing-debt-batch-1-clear-search-rerank-](./quick/260917-bo2-typing-debt-batch-1-clear-search-rerank-/) |
-| 260917-dkf | Typing debt batch 2: watcher.py/manager.py/embedder.py mypy-clean (39→0; EmbeddingConfig Field defaults → keyword syntax, typed locals, os.fsdecode) — full-project 117→78, zero behavior change, suite 676 green | 2026-09-17 | e39d092 | [260917-dkf-typing-debt-batch-2-clear-indexing-watch](./quick/260917-dkf-typing-debt-batch-2-clear-indexing-watch/) |
-| 260917-kav | Typing debt batch 3: mcp/handlers.py + cli/commands/search.py + database/connection.py mypy-clean (32→0; ClassVar base attrs, generics, walrus narrowing, SearchPipeline reranker union widened) — full-project 78→46, zero behavior change, suite 676 green | 2026-09-17 | 4f24682 | [260917-kav-typing-debt-batch-3-clear-mcp-handlers-p](./quick/260917-kav-typing-debt-batch-3-clear-mcp-handlers-p/) |
 
 ### Overrides
 
@@ -157,8 +190,13 @@ Total Plans in Phase: 9
 
 ## Session Continuity
 
-- **Last session:** 2026-09-15T09:00:00Z
-- **Stopped at:** Typing debt batch 3 complete (handlers/search/connection mypy-clean)
-- **Resume file:** None
-- **Last action:** /gsd-quick 260917-kav → mcp/handlers.py + cli/commands/search.py + database/connection.py mypy-clean (32→0); full-project mypy 78→46 errors in 28 files; suite 676 green
-- **Next expected action:** Typing debt batches 4..N (~46 errors left across 28 files) or /gsd-complete-milestone accepting remaining debt
+**Last session:** 2026-11-07 (milestone v1.0 close)
+**Stopped at:** v1.0 shipped and archived — verified_closeout, zero overrides; 11/11 phases fresh-verified, 31/31 requirements, suite 1015 @ 96.20%
+**Resume file:** None
+
+- **Last action:** /gsd-complete-milestone v1.0 — four stale verifications regenerated (05/06/07/10.1) with 5 review criticals fixed along the way; archives at .planning/milestones/v1.0-*; tag v1.0.
+- **Next expected action:** `/gsd-new-milestone` — v1.0 已归档，规划下一版本。
+
+## Operator Next Steps
+
+- Start the next milestone with /gsd-new-milestone

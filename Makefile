@@ -1,7 +1,7 @@
 # Makefile for SIF project
 # Provides convenient commands for common development tasks
 
-.PHONY: help install install-dev install-all test test-verbose test-fast docs-test docs-generate lint lint-fix format format-check typecheck coverage clean build docs pre-commit security all ci dev-setup dev-check update-deps info
+.PHONY: help install install-dev install-all test test-verbose test-fast docs-test docs-generate lint lint-fix format format-check typecheck coverage clean clean-all build docs pre-commit security all ci dev-setup dev-check update-deps info
 
 # Default target
 help:
@@ -23,7 +23,7 @@ help:
 	@echo "Code Quality:"
 	@echo "  make lint         - Run linting (ruff check)"
 	@echo "  make format       - Format code (ruff format)"
-	@echo "  make typecheck    - Run type checking (mypy)"
+	@echo "  make typecheck    - Run type checking (ty)"
 	@echo "  make coverage     - Generate coverage report"
 	@echo "  make security     - Run security scan (bandit)"
 	@echo "  make pre-commit   - Run pre-commit hooks on all files"
@@ -66,7 +66,7 @@ test-fast:
 
 docs-test:
 	@echo "Running docs validation tests..."
-	pytest tests/test_docs.py -v
+	pytest tests/test_docs.py -v --no-cov
 
 docs-generate:
 	@echo "Regenerating CLI and configuration reference docs..."
@@ -92,8 +92,8 @@ format-check:
 
 # Type checking target
 typecheck:
-	@echo "Running mypy type checker..."
-	mypy src/sif
+	@echo "Running ty type checker..."
+	ty check src/sif
 
 # Coverage target
 coverage:
@@ -133,7 +133,6 @@ clean:
 	rm -rf *.egg-info/
 	rm -rf .eggs/
 	rm -rf .pytest_cache/
-	rm -rf .mypy_cache/
 	rm -rf .ruff_cache/
 	rm -rf htmlcov/
 	rm -f .coverage
@@ -177,4 +176,4 @@ info:
 	@echo "==========================="
 	@echo "Python version: $$(python --version)"
 	@echo "Installed packages:"
-	@pip list | grep -E "(sif|ruff|mypy|pytest|black|bandit)" || true
+	@pip list | grep -E "(sif|ruff|^ty|pytest|black|bandit)" || true

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import click
@@ -10,6 +9,7 @@ from rich.console import Console
 
 
 console = Console()
+console_err = Console(stderr=True)
 
 
 @click.group("mcp")
@@ -25,9 +25,8 @@ def mcp_stdio_cmd(ctx: click.Context) -> None:
     index_path = ctx.obj["index_path"]
 
     if not Path(index_path).exists():
-        console.print(
+        console_err.print(
             "[yellow]Warning: No index found. Some features may not work.[/yellow]",
-            file=sys.stderr,
         )
 
     try:

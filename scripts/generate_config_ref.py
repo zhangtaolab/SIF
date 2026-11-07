@@ -6,6 +6,7 @@ from __future__ import annotations
 import inspect
 import re
 import sys
+import types
 from pathlib import Path
 
 
@@ -21,6 +22,13 @@ def get_type_name(annotation: object) -> str:
     result = ""
     if annotation is None:
         result = ""
+    elif isinstance(annotation, types.UnionType):
+        # `X | None` unions must render stable short names on every Python version:
+        # str(UnionType) leaks version-specific module paths (pathlib._local.Path on
+        # 3.13+) and once UnionType grows __name__ the branch below would render a
+        # bare "Union" — either way the CI drift gate could not reproduce the output.
+        arg_names = ["None" if a is type(None) else get_type_name(a) for a in annotation.__args__]
+        result = " | ".join(arg_names) if arg_names else "None"
     elif isinstance(annotation, type) or hasattr(annotation, "__name__"):
         result = annotation.__name__
     elif hasattr(annotation, "__origin__"):
@@ -169,6 +177,41 @@ def _append_header(lines: list[str]) -> None:
     lines.append("")
 
 
+def _append_device_selection_note(lines: list[str]) -> None:
+    """Append the Device Selection note under the Embedding Model Settings table."""
+    lines.append("")
+    lines.append("#### Device Selection (CPU / GPU / MPS)")
+    lines.append("")
+    lines.append(
+        "SIF exposes no device setting — each embedding backend picks its "
+        "compute device automatically."
+    )
+    lines.append("")
+    lines.append("| Backend | Device behavior |")
+    lines.append("|---------|-----------------|")
+    lines.append(
+        "| `modelscope` (default), `sentence_transformers` | Device auto-detected "
+        "at model load via torch: CUDA GPU if available, else Apple Metal (MPS) "
+        "on arm64 macOS, else CPU. No configuration needed. |"
+    )
+    lines.append(
+        "| `gguf` | CPU only by default. `SIF_N_GPU_LAYERS` defaults to `0` "
+        "(all layers on CPU); values greater than `0` offload that many layers "
+        "via llama.cpp's GPU support (Metal on Apple Silicon — llama.cpp's own "
+        "path, not torch MPS). |"
+    )
+    lines.append(
+        "| `openai` | Embeddings are computed by the remote API; local hardware is unused. |"
+    )
+    lines.append("")
+    lines.append(
+        "BM25/FTS5 keyword search and sqlite-vec vector search always run on CPU "
+        "regardless of backend. MPS support ships in the torch wheel installed "
+        'by the `embed` extra (`pip install "sif[embed]"`); Apple\'s Neural '
+        "Engine (ANE/NPU) is not used by any backend."
+    )
+
+
 def _append_options_tables(lines: list[str]) -> None:
     """Append configuration options tables grouped by section."""
     validators = get_validators()
@@ -186,6 +229,8 @@ def _append_options_tables(lines: list[str]) -> None:
             field_info = model_fields[field_name]
             env_var = f"`SIF_{field_name.upper()}`"
             type_name = get_type_name(field_info.annotation)
+            # A `|` inside a type (union) would add a phantom column to the table row.
+            type_cell = type_name.replace("|", "\\|")
             default = field_info.default
             if default is None:
                 default = get_computed_default(field_name) or "None"
@@ -193,7 +238,10 @@ def _append_options_tables(lines: list[str]) -> None:
             description = field_info.description or ""
             if field_name in validators:
                 description += f" (validated by `{validators[field_name]}`)"
-            lines.append(f"| {env_var} | {type_name} | {default_str} | {description} |")
+            lines.append(f"| {env_var} | {type_cell} | {default_str} | {description} |")
+
+        if section_name == "Embedding Model Settings":
+            _append_device_selection_note(lines)
 
         lines.append("")
 

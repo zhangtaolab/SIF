@@ -75,9 +75,9 @@ Feature requests are welcome! Include:
 - [ ] Tests pass (`pytest`)
 - [ ] Code is formatted (`ruff format .`)
 - [ ] Code passes linting (`ruff check .`)
-- [ ] Type checking passes (`mypy src/sif`)
+- [ ] Type checking passes (`ty check src/sif`)
 - [ ] Documentation updated
-- [ ] CHANGELOG.md updated
+- [ ] Changelog updated (docs/changelog.md)
 - [ ] Commit messages follow conventions
 
 #### PR Template
@@ -147,7 +147,7 @@ ruff check --fix .
 ### Type Checking
 
 ```bash
-mypy src/sif
+ty check src/sif
 ```
 
 ### Testing
@@ -333,7 +333,7 @@ For significant documentation changes:
 Maintainers follow this process:
 
 1. Update version in `_version.py`
-2. Update CHANGELOG.md
+2. Update docs/changelog.md
 3. Create git tag
 4. Build and upload to PyPI
 5. Create GitHub release
@@ -355,6 +355,43 @@ Look for issues labeled:
 - **MCP Server**: New tools, transports
 - **Documentation**: Tutorials, examples
 
+## Continuous Integration
+
+The repository has one GitHub Actions workflow, `.github/workflows/docs.yml` ("Docs Validation"). It is triggered:
+
+- **On pull requests** that touch `docs/**`, `README.md`, `src/sif/cli/**`, `src/sif/config/**`, `scripts/generate_cli_ref.py`, `scripts/generate_config_ref.py`, or `tests/test_docs.py`
+- **On pushes** to `main`
+
+The workflow installs the package with `pip install -e ".[dev]"` on Python 3.11, runs `pytest tests/test_docs.py -v --no-cov`, then regenerates the reference docs via `scripts/generate_cli_ref.py` and `scripts/generate_config_ref.py` and fails if `git diff --exit-code docs/cli-reference.md docs/configuration.md` detects drift. In practice:
+
+> If you change CLI commands or configuration settings, regenerate the reference docs and commit the result, or CI will fail:
+>
+> ```bash
+> make docs-generate
+> ```
+
+Note: CI does **not** currently run the lint, format, type-check, or test suite — those checks are enforced locally only. Run the full quality suite before opening a PR (see [Coding Standards](#coding-standards) and the Makefile targets below).
+
+## Makefile Targets
+
+The `Makefile` wraps the common development commands:
+
+| Target | What it runs | Notes |
+|--------|--------------|-------|
+| `make install-dev` | `pip install -e ".[dev]"` + `pre-commit install` | See pre-commit caveat below |
+| `make test` | `pytest --cov=src/sif ...` | Coverage is also on by default via `pyproject.toml` `addopts` |
+| `make test-fast` | `pytest -x -q` | Coverage still applies via `addopts`; stops at first failure |
+| `make docs-test` | `pytest tests/test_docs.py -v --no-cov` | Same docs validation CI runs |
+| `make docs-generate` | `scripts/generate_cli_ref.py` + `scripts/generate_config_ref.py` | Regenerate reference docs before committing CLI/config changes |
+| `make lint` / `make lint-fix` | `ruff check .` / `ruff check --fix .` | |
+| `make format` / `make format-check` | `ruff format .` / `ruff format --check .` | |
+| `make typecheck` | `ty check src/sif` | ty is configured in `pyproject.toml` (`[tool.ty]`) |
+| `make security` | `bandit -r src/sif -c pyproject.toml` | bandit is not in the `[dev]` extras; install it separately |
+| `make all` | lint + typecheck + test | Quick combined check |
+| `make ci` | format-check + lint + typecheck + security + test | Full local CI-equivalent run |
+
+`make install-dev`, `make install-all`, and `make pre-commit` invoke the `pre-commit` tool, but no `.pre-commit-config.yaml` is committed to the repository. <!-- VERIFY: make install-dev/install-all/pre-commit reference .pre-commit-config.yaml, which is not in the repository -->
+
 ## Questions?
 
 - GitHub Discussions: [github.com/zhangtaolab/sif/discussions](https://github.com/zhangtaolab/sif/discussions)
@@ -364,13 +401,44 @@ Look for issues labeled:
 
 Contributors will be:
 
-- Listed in CONTRIBUTORS.md
 - Mentioned in release notes
 - Credited in documentation
 
 ## License
 
 By contributing, you agree that your contributions will be licensed under the MIT License.
+
+## Troubleshooting
+
+### Coverage gate fails on partial test runs
+
+`pyproject.toml` enables coverage on every `pytest` invocation (`addopts = "--cov=src/sif ..."` under `[tool.pytest.ini_options]`) and enforces a floor of 90% (`[tool.coverage.report] fail_under = 90`). Running a single test file therefore fails the run even when every test in it passes:
+
+```
+FAIL Required test coverage of 90.0% not reached. Total coverage: 12.96%
+```
+
+For subset runs during development, disable coverage explicitly:
+
+```bash
+pytest --no-cov tests/unit/test_collection.py
+```
+
+Before opening a PR, run the full suite (`make test`) so total coverage is measured against the 90% floor — the PR checklist item "Tests pass (`pytest`)" means the full suite with coverage, not a single file.
+
+### Tests fail with ANSI escape codes in assertions
+
+Some terminals and CI harnesses export `FORCE_COLOR`. Rich treats **any non-empty value — including `0` — as forced color**, so CLI output tests fail on plain-text assertions:
+
+```
+AssertionError: assert '   1: line1' in '\x1b[1;36ma.md\x1b[0m\n...'
+```
+
+Setting `FORCE_COLOR=0` does not help; the variable must be unset. Run the suite with styling suppressed:
+
+```bash
+env -u FORCE_COLOR NO_COLOR=1 pytest
+```
 
 ## Thank You!
 

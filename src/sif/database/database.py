@@ -37,14 +37,17 @@ class Database:
 
     def _enable_extensions(self) -> None:
         """Enable SQLite extensions."""
+        conn = self._connection
+        assert conn is not None
+
         # Enable FTS5
-        self._connection.execute("PRAGMA foreign_keys = ON")
+        conn.execute("PRAGMA foreign_keys = ON")
 
         # Load sqlite-vec extension
         try:
-            self._connection.enable_load_extension(True)
-            sqlite_vec.load(self._connection)
-            self._connection.enable_load_extension(False)
+            conn.enable_load_extension(True)
+            sqlite_vec.load(conn)
+            conn.enable_load_extension(False)
         except Exception:
             pass  # sqlite-vec is optional
 
@@ -88,6 +91,7 @@ class Database:
 
             settings = get_settings()
             self._schema = SchemaManager(self.connection, embedding_dim=settings.embedding_dim)
+            self._schema.create_all()
         return self._schema.get_stats()
 
     def reset(self) -> None:

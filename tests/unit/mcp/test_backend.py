@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -9,6 +11,7 @@ import pytest
 from sif.mcp.backend import SearchBackend, _truncate_content
 from sif.mcp.protocol import CollectionInfo, Document, SearchResult
 from sif.models.embedding import ModelType
+from sif.utils.paths import normalize_path
 
 
 @pytest.fixture
@@ -180,6 +183,71 @@ async def test_get_documents_by_pattern_max_bytes(backend):
     assert len(docs) == 0
     assert len(errors) == 1
     assert "Max bytes limit reached" in errors[0]
+
+
+@pytest.mark.asyncio
+async def test_get_document_alias_path_normalized(backend, tmp_path: Path):
+    """get_document canonicalizes a symlink-alias path before the path lookup."""
+    real_dir = tmp_path / "notes_real"
+    real_dir.mkdir()
+    (real_dir / "a.md").write_text("hello", encoding="utf-8")
+    alias_dir = tmp_path / "notes_alias"
+    os.symlink(real_dir, alias_dir)
+    alias_arg = str(alias_dir / "a.md")
+
+    mock_doc = MagicMock()
+    mock_doc.id = "doc1"
+    mock_doc.path = str(real_dir / "a.md")
+    mock_doc.title = "Test"
+    mock_doc.content = "Hello"
+    mock_doc.metadata = {}
+    mock_doc.collection_id = "coll1"
+
+    with (
+        patch("sif.mcp.backend.DocumentRepository") as mock_repo,
+        patch("sif.mcp.backend.CollectionRepository") as mock_coll_repo,
+    ):
+        mock_repo.return_value.get_by_id.return_value = None
+        mock_repo.return_value.get_by_path.return_value = mock_doc
+        mock_coll_repo.return_value.list_all.return_value = [MagicMock(id="coll1")]
+        result = await backend.get_document(alias_arg)
+
+    assert result is not None
+    assert result.doc_id == "doc1"
+    get_by_path_args = mock_repo.return_value.get_by_path.call_args.args
+    assert get_by_path_args[0] == normalize_path(alias_arg)
+    assert get_by_path_args[0] == str(real_dir / "a.md")
+
+
+@pytest.mark.asyncio
+async def test_get_documents_by_pattern_alias_prefix(backend, tmp_path: Path):
+    """A glob whose directory prefix is a symlink alias matches stored real paths."""
+    real_dir = tmp_path / "notes_real"
+    real_dir.mkdir()
+    (real_dir / "a.md").write_text("hello", encoding="utf-8")
+    alias_dir = tmp_path / "notes_alias"
+    os.symlink(real_dir, alias_dir)
+
+    mock_doc = MagicMock()
+    mock_doc.id = "doc1"
+    mock_doc.path = str(real_dir / "a.md")
+    mock_doc.filename = "a.md"
+    mock_doc.title = "Test"
+    mock_doc.content = "Hello"
+    mock_doc.metadata = {}
+    mock_doc.collection_id = "coll1"
+
+    with (
+        patch("sif.mcp.backend.CollectionRepository") as mock_coll_repo,
+        patch("sif.mcp.backend.DocumentRepository") as mock_doc_repo,
+    ):
+        mock_coll_repo.return_value.list_all.return_value = [MagicMock(id="coll1")]
+        mock_doc_repo.return_value.list_by_collection.return_value = [mock_doc]
+        docs, errors = await backend.get_documents_by_pattern(str(alias_dir / "*.md"))
+
+    assert len(docs) == 1
+    assert docs[0].path == str(real_dir / "a.md")
+    assert errors == []
 
 
 @pytest.mark.asyncio

@@ -66,13 +66,13 @@ sif search query "python decorators"
 ## Installation
 
 ```bash
-pip install sif
+pip install docsif
 ```
 
 For full functionality:
 
 ```bash
-pip install "sif[all]"
+pip install "docdocsif[all]"
 ```
 
 ## Quick Start

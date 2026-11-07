@@ -65,7 +65,7 @@ sif/
 │   ├── search/            # Search algorithms
 │   ├── indexing/          # Document indexing
 │   ├── embedding/         # Embedding models
-│   ├── mcp_server/        # MCP server
+│   ├── mcp/               # MCP server
 │   ├── cli/               # Command-line interface
 │   └── utils/             # Utilities
 ├── tests/                 # Test suite
@@ -117,7 +117,7 @@ ruff format .
 ruff check .
 
 # Type checking
-mypy src/sif
+ty check src/sif
 ```
 
 ### 5. Commit Changes
@@ -164,7 +164,7 @@ Configuration in `pyproject.toml`:
 ```toml
 [tool.ruff]
 line-length = 100
-target-version = "py39"
+target-version = "py310"
 ```
 
 ### Linting
@@ -224,13 +224,12 @@ tests/
 ├── conftest.py           # Shared fixtures
 ├── unit/                 # Unit tests
 │   ├── test_collection.py
-│   ├── test_document.py
-│   └── test_search.py
+│   ├── test_search.py
+│   └── ...               # Per-module subpackages (cli/, search/, database/, ...)
 ├── integration/          # Integration tests
-│   ├── test_indexing.py
-│   └── test_search.py
-└── e2e/                  # End-to-end tests
-    └── test_cli.py
+│   ├── test_embed_idempotency.py
+│   └── test_search_pipeline.py
+└── e2e/                  # End-to-end tests (placeholder — only __init__.py)
 ```
 
 ### Writing Tests
@@ -239,7 +238,9 @@ tests/
 # tests/unit/test_collection.py
 import pytest
 from sif.core.collection import Collection, CollectionManager
-from tests.mocks import MockCollectionRepository
+
+# MockCollectionRepository is defined inline in the real
+# tests/unit/test_collection.py as an in-memory fake.
 
 
 class TestCollection:
@@ -296,7 +297,7 @@ def sample_collection():
 
 @pytest.fixture
 def mock_repository():
-    from tests.mocks import MockCollectionRepository
+    from tests.unit.test_collection import MockCollectionRepository
     return MockCollectionRepository()
 ```
 
@@ -312,28 +313,28 @@ pytest --cov=sif --cov-report=html
 # Run specific test
 pytest tests/unit/test_collection.py::TestCollectionManager::test_create_collection
 
-# Run with markers
-pytest -m unit
-pytest -m integration
-pytest -m "not slow"
+# Run a subset by directory
+pytest tests/unit/
+pytest tests/integration/
 ```
 
-### Test Markers
+### Test Selection
+
+No custom pytest markers (`unit`, `integration`, `slow`) are registered in `pyproject.toml`
+and none are used in the test suite — select tests by directory instead:
+
+```bash
+# Unit tests only
+pytest tests/unit/
+
+# Integration tests only
+pytest tests/integration/
+```
+
+Built-in pytest markers such as `skip` are still available:
 
 ```python
 import pytest
-
-@pytest.mark.unit
-def test_simple_function():
-    pass
-
-@pytest.mark.integration
-def test_database_interaction():
-    pass
-
-@pytest.mark.slow
-def test_large_collection():
-    pass
 
 @pytest.mark.skip(reason="Not implemented")
 def test_future_feature():
@@ -526,7 +527,7 @@ class CustomModel(BaseModel):
 
 1. Update version in `src/sif/_version.py`
 
-2. Update CHANGELOG.md
+2. Update docs/changelog.md
 
 3. Create git tag:
 
@@ -573,8 +574,8 @@ pytest
 
 **Type checking errors:**
 ```bash
-# Update mypy cache
-mypy --clear-cache src/sif
+# Bypass ty's cache and re-check from scratch
+ty check --no-cache src/sif
 ```
 
 ## Resources
@@ -589,6 +590,123 @@ mypy --clear-cache src/sif
 
 - GitHub Issues: [github.com/zhangtaolab/sif/issues](https://github.com/zhangtaolab/sif/issues)
 - Discussions: [github.com/zhangtaolab/sif/discussions](https://github.com/zhangtaolab/sif/discussions)
+
+## Build Commands
+
+The [Makefile](../Makefile) defines convenience targets for every common development task. Run `make help` to see the full list from the command line.
+
+### Installation and Setup
+
+| Command | Description |
+|---------|-------------|
+| `make install` | Install the package with basic dependencies (`pip install -e .`) |
+| `make install-dev` | Install with development dependencies (`pip install -e ".[dev]"`) and pre-commit hooks |
+| `make install-all` | Install with all optional dependencies (`pip install -e ".[dev,all]"`) and pre-commit hooks |
+| `make dev-setup` | Alias for `make install-dev` |
+| `make update-deps` | Upgrade pip, reinstall all dependencies, run `pre-commit autoupdate` |
+
+### Testing and Quality
+
+| Command | Description |
+|---------|-------------|
+| `make test` | Run tests with coverage (terminal, HTML, and XML reports) |
+| `make test-verbose` | Run tests verbosely (`pytest -vvs --tb=short`) with coverage |
+| `make test-fast` | Run tests stopping at the first failure (`pytest -x -q`); coverage is still collected via `addopts` — the speed comes from `-x` and `-q`, not from skipping coverage |
+| `make lint` | Run the ruff linter (`ruff check .`) |
+| `make lint-fix` | Lint and auto-fix (`ruff check --fix .`) |
+| `make format` | Format code with ruff (`ruff format .`) |
+| `make format-check` | Check formatting without modifying files |
+| `make typecheck` | Type check with ty (`ty check src/sif`) |
+| `make coverage` | Generate an HTML coverage report at `htmlcov/index.html` |
+| `make security` | Run a bandit security scan (`bandit -r src/sif -c pyproject.toml`) |
+| `make pre-commit` | Run pre-commit hooks on all files |
+
+### Build and Maintenance
+
+| Command | Description |
+|---------|-------------|
+| `make build` | Build the sdist and wheel (`python -m build`), then verify them with twine |
+| `make clean` | Remove build artifacts, caches, and coverage output |
+| `make clean-all` | `make clean` plus removal of `venv/` and `.venv/` |
+| `make docs` | Placeholder — prints "Documentation build not yet configured" |
+| `make docs-test` | Run the documentation validation tests (`pytest tests/test_docs.py -v --no-cov`) |
+| `make docs-generate` | Regenerate `docs/cli-reference.md` and `docs/configuration.md` from source |
+| `make all` | Run `lint`, `typecheck`, and `test` |
+| `make ci` | Run all CI checks locally: `format-check`, `lint`, `typecheck`, `security`, `test` |
+| `make dev-check` | Format, lint with auto-fix, then type check |
+| `make info` | Print the Python version and installed tool versions |
+
+The pre-commit targets (`make install-dev`, `make install-all`, `make pre-commit`, `make update-deps`) require a pre-commit configuration file. <!-- VERIFY: make pre-commit / pre-commit install reference .pre-commit-config.yaml, which is not in the repository -->
+
+The `security` target requires `bandit`, and `make build` requires `build` and `twine`; none of these are included in the `[dev]` extras, so install them separately when needed.
+
+## Branch Conventions
+
+- The default branch is `main`: `origin/HEAD` points to `origin/main`, and pull requests are opened against it.
+- A `dev` branch carries in-progress work before it lands on `main`.
+- Name feature branches `feature/<short-description>` and bug fix branches `fix/<short-description>`, as shown in [Development Workflow](#development-workflow). No additional convention is formally documented.
+
+## PR Process
+
+- Push your branch and open the pull request against `main` on GitHub. There is no `.github/PULL_REQUEST_TEMPLATE.md`; follow the description template in [Contributing](contributing.md) (Description, Type of Change, Testing, Checklist).
+- Before requesting review, the [Contributing](contributing.md) checklist expects: `pytest` passes, `ruff format .` applied, `ruff check .` clean, `ty check src/sif` passes, and documentation (including docs/changelog.md) updated.
+- Commit messages follow Conventional Commits, as described in Commit Changes above.
+- PR CI only validates documentation: the "Docs Validation" workflow (`.github/workflows/docs.yml`) runs `pytest tests/test_docs.py` and regenerates `docs/cli-reference.md` and `docs/configuration.md` whenever a PR touches `docs/**`, `README.md`, `src/sif/cli/**`, `src/sif/config/**`, the generation scripts, or `tests/test_docs.py` — it fails if the committed reference docs are stale. No workflow runs the full test suite or linters on PRs, so run `make ci` locally before pushing.
+- Maintainers aim to review pull requests within a week; respond to comments and push follow-up commits to the same branch.
+
+## Coverage Requirements
+
+`pyproject.toml` enforces a coverage minimum on every pytest run:
+
+- `[tool.pytest.ini_options]` sets `addopts = "--cov=src/sif --cov-report=term-missing --cov-report=html --cov-report=xml"`, so coverage is collected on every invocation.
+- `[tool.coverage.report]` sets `fail_under = 90`: pytest-cov fails the run when total coverage of `src/sif` falls below 90%.
+
+Because the coverage flags live in `addopts`, they apply to the Makefile targets too — `make test-fast` runs `pytest -x -q`, which still collects coverage. The gate measures coverage across all of `src/sif`, not just the code under test, so a subset run fails even when all of its tests pass:
+
+```bash
+# Every test in the file passes, but the run still fails the gate:
+pytest tests/unit/test_collection.py -q
+# FAIL Required test coverage of 90.0% not reached. Total coverage: 12.96%
+```
+
+Append `--no-cov` when iterating on a narrow slice of the suite:
+
+```bash
+# Run one file without the coverage gate
+pytest tests/unit/test_collection.py --no-cov
+
+# Fast loop on a single test
+pytest tests/unit/search/test_bm25.py::TestBM25Searcher::test_search_executes_fts_query --no-cov
+```
+
+Before pushing, run the full suite (`pytest` or `make test`) so the 90% gate is evaluated over real totals. See [Testing](testing.md) for the suite layout, shared fixtures, and factories.
+
+## Generated Documentation
+
+Some documentation files are generated from source — edit the source, then regenerate; never edit the generated files by hand.
+
+| File | Generated by | How to refresh |
+|------|--------------|----------------|
+| `docs/cli-reference.md` | `scripts/generate_cli_ref.py` (Click introspection) | `make docs-generate` |
+| `docs/configuration.md` | `scripts/generate_config_ref.py` (Pydantic Settings introspection) | `make docs-generate` |
+| Mermaid package diagram in `docs/architecture.md` | `scripts/generate_arch_diagram.py` (source import scan) | Run `python scripts/generate_arch_diagram.py` and replace the diagram block with the printed output |
+
+The "Docs Validation" workflow (`.github/workflows/docs.yml`) regenerates `docs/cli-reference.md` and `docs/configuration.md` on every PR that touches `docs/**`, `README.md`, `src/sif/cli/**`, `src/sif/config/**`, the generator scripts, or `tests/test_docs.py`, then fails on any diff (`git diff --exit-code`). After changing the CLI or settings, run `make docs-generate` and commit the regenerated docs together with the code change. The architecture diagram script is not wired into `make docs-generate` or CI — regenerate it manually when package-level dependencies change.
+
+### Documentation Tests
+
+`make docs-test` (`pytest tests/test_docs.py -v --no-cov`) validates the code blocks in `README.md`, `docs/index.md`, `docs/cli-reference.md`, `docs/configuration.md`, `docs/quickstart.md`, `docs/mcp-server.md`, `docs/search-algorithms.md`, `docs/architecture.md`, and `docs/models.md`:
+
+- JSON blocks must parse, and JSON output examples must contain the expected keys.
+- Python blocks must be syntactically valid.
+- Every `sif` command in shell blocks must exist in the live Click tree — removed or renamed commands fail the suite.
+- Stale content is rejected: removed commands (for example `sif collection create`), outdated default model names, and bare `sif search <query>` (use `sif search search`, `sif search query`, or `sif search vsearch`).
+
+This file, `testing.md`, and `contributing.md` are not in the validated set.
+
+### Documentation Site
+
+Docs are wired for MkDocs with the Material theme (`mkdocs.yml`, source directory `docs/`). When you add a page under `docs/`, also list it in the `nav` mapping in `mkdocs.yml` so it appears in the site navigation. There is no configured site build yet — `make docs` prints "Documentation build not yet configured" — and the MkDocs toolchain is not part of any dependency extras in `pyproject.toml`.
 
 ## Related Documentation
 

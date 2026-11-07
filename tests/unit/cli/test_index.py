@@ -448,7 +448,9 @@ class TestEmbedCommand:
         mock_chunk_repo.get_by_document.return_value = [live_chunk_mock]
 
         mock_searcher = MagicMock()
-        mock_searcher.get_embedded_chunk_ids.return_value = set(embedded_chunk_ids)
+        mock_searcher.get_all_embedded_chunk_ids.return_value = {
+            d.id: set(embedded_chunk_ids) for d in docs
+        }
 
         mock_manager = MagicMock()
         mock_manager.embed.return_value = MagicMock(embeddings=[[0.1, 0.2]])
@@ -514,6 +516,10 @@ class TestEmbedCommand:
         mock_chunk_repo.delete_by_document.assert_not_called()
         mock_searcher.delete_embeddings_by_document.assert_not_called()
         mock_manager.embed.assert_not_called()
+        # O(N^2) guard: the loop must batch-read the completeness map once and
+        # never fall back to a per-document completeness lookup.
+        mock_searcher.get_all_embedded_chunk_ids.assert_called_once()
+        mock_searcher.get_embedded_chunk_ids.assert_not_called()
         # The skip line names the document
         assert "Already embedded" in result.output
         assert doc.path in result.output
@@ -538,6 +544,10 @@ class TestEmbedCommand:
         mock_searcher.delete_embeddings_by_document.assert_called_once_with(doc.id)
         mock_manager.embed.assert_called_once()
         mock_searcher.add_embeddings_batch.assert_called_once()
+        # O(N^2) guard: the loop must batch-read the completeness map once and
+        # never fall back to a per-document completeness lookup.
+        mock_searcher.get_all_embedded_chunk_ids.assert_called_once()
+        mock_searcher.get_embedded_chunk_ids.assert_not_called()
 
     def test_embed_cmd_force_reembeds_fully_embedded_document(self):
         """--force re-embeds even when the stored set exactly matches the live chunks."""
