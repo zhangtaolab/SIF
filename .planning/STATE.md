@@ -4,17 +4,17 @@ milestone: v1.1
 milestone_name: Live Index and Search Quality
 current_phase: 15
 current_phase_name: Search Quality Configuration (Hybrid Weights + Query Suggestions)
-status: executing
-stopped_at: Completed 15-02-PLAN.md
-last_updated: "2026-11-08T10:36:43.431Z"
+status: verifying
+stopped_at: Completed 15-03-PLAN.md
+last_updated: "2026-11-08T10:48:55.899Z"
 last_activity: 2026-11-08
 last_activity_desc: Phase 15 execution started
-state_head: 04d0d93a17034313d90bf880d1cb880a6659179d
+state_head: b90c5686a44de7fe008c94073f0efc8812dfe00c
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 16
-  completed_plans: 15
+  completed_plans: 16
 ---
 
 # DocSift — Project State
@@ -31,7 +31,7 @@ progress:
 
 Phase: 15 (Search Quality Configuration (Hybrid Weights + Query Suggestions)) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-11-08 — Phase 15 execution started
 
 Progress: [███████░░░] 67%
@@ -65,6 +65,7 @@ Progress: [███████░░░] 67%
 | Phase 14 P03 | 13min | 2 tasks | 2 files |
 | Phase 15 P01 | 21 min | 3 tasks | 17 files |
 | Phase 15 P02 | 20 min | 3 tasks | 11 files |
+| Phase 15 P03 | 10 min | 3 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -133,6 +134,9 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 - [Phase 15]: 15-02: DYM in-vocab predicate is prefix-range membership via bisect (locked Pitfall 4); an uncorrectable out-of-vocab word returns [] for the whole rewrite so every emitted suggestion has every word retrievable (SC2)
 - [Phase 15]: 15-02: difflib equal-ratio matches are re-sorted by (ratio desc, term asc) because get_close_matches uses heapq.nlargest (not input order); bucket test is a deterministic <10%-of-vocab spy, no wall-clock races
 - [Phase 15]: 15-02: history decay count x 2^(-age_days/14) over one GROUP BY aggregate; read gate is fail-soft (disabled/settings-failure/missing table -> []); query_log writes are short CRUD outside the flock with aware-UTC stamps
+- [Phase 15]: 15-03: suggestions ride HybridSearchResults(list[SearchResult]) so hybrid_search's list contract (and every existing mock) survives while QueryToolHandler explicitly remaps QueryOutput.suggestions
+- [Phase 15]: 15-03: zero-result JSON is conditional — plain [] preserved when no DYM, {query, results: [], suggestions} only when suggestions exist; SKILL.md documents both shapes
+- [Phase 15]: 15-03: DYM computed only when results are empty, on the already-open connection; query_log writes are one fail-soft call per executed CLI search, skipped entirely at SIF_QUERY_HISTORY_ENABLED=0, never written by MCP
 
 ### Pending Todos
 
@@ -153,8 +157,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 
 ## Session Continuity
 
-Last session: 2026-11-08T10:36:42.959Z
-Stopped at: Completed 15-02-PLAN.md
+Last session: 2026-11-08T10:48:55.481Z
+Stopped at: Completed 15-03-PLAN.md
 Resume file: None
 
 - **Next expected action:** `/gsd-discuss-phase 13` (Phase 13 needs context; research flags: daemon/service-install specifics already in research/STACK.md)

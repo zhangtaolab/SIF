@@ -25,9 +25,9 @@ Requirements for milestone v1.1. Each maps to roadmap phases (numbering continue
 ### Search Quality
 
 - [x] **QUAL-01**: `rrf_k`/`bm25_weight`/`vector_weight` 经 `SIF_` 设置 + per-query 参数配置；默认行为逐字节不变（k=60 等权）
-- [ ] **QUAL-02**: 零/少结果时给出 "Did you mean" 建议（词表 + 历史，仅建议不静默改写）
-- [ ] **QUAL-03**: 基于查询历史的建议（query_log 本地存储）
-- [ ] **QUAL-04**: `sif suggest` 命令（prefix 补全 + DYM + 历史）
+- [x] **QUAL-02**: 零/少结果时给出 "Did you mean" 建议（词表 + 历史，仅建议不静默改写）
+- [x] **QUAL-03**: 基于查询历史的建议（query_log 本地存储）
+- [x] **QUAL-04**: `sif suggest` 命令（prefix 补全 + DYM + 历史）
 - [ ] **QUAL-05**: reranker 候选上限（CPU 10-20）+ 相对阈值（≥top1×α）可配；skip-rerank 快路径保持交互延迟
 - **QUAL-06**: 分层更新深度下，向量滞后的搜索结果标记 staleness 状态
 
@@ -73,9 +73,9 @@ Requirements for milestone v1.1. Each maps to roadmap phases (numbering continue
 | LIVE-10 | Phase 14 | Complete |
 | LIVE-11 | Phase 12 | Complete |
 | QUAL-01 | Phase 15 | Complete |
-| QUAL-02 | Phase 15 | Pending |
-| QUAL-03 | Phase 15 | Pending |
-| QUAL-04 | Phase 15 | Pending |
+| QUAL-02 | Phase 15 | Complete |
+| QUAL-03 | Phase 15 | Complete |
+| QUAL-04 | Phase 15 | Complete |
 | QUAL-05 | Phase 16 | Pending |
 | QUAL-06 | Phase 14 | Complete |
 | EVAL-01 | Phase 16 | Pending |
