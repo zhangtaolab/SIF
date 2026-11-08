@@ -5,16 +5,16 @@ milestone_name: Live Index and Search Quality
 current_phase: 14
 current_phase_name: Freshness Floor (Pre-Command Refresh + Staleness Marking)
 status: executing
-stopped_at: Phase 14 context gathered
-last_updated: "2026-11-08T03:02:07.998Z"
-last_activity: 2026-11-07
-last_activity_desc: Phase 13 execution started
-state_head: 77490f31a96401097e075950ff1f88b1ad560ee6
+stopped_at: Completed 14-01-PLAN.md
+last_updated: "2026-11-08T03:32:59.500Z"
+last_activity: 2026-11-08
+last_activity_desc: Phase 14 execution started
+state_head: 3dede93bae5eb5aa757cab0130e520c60fc1d664
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 13
-  completed_plans: 10
+  completed_plans: 11
 ---
 
 # DocSift — Project State
@@ -29,10 +29,10 @@ progress:
 
 ## Current Position
 
-Phase: 14 (Freshness Floor (Pre-Command Refresh + Staleness Marking)) — READY TO EXECUTE
-Plan: 4 of 4
+Phase: 14 (Freshness Floor (Pre-Command Refresh + Staleness Marking)) — EXECUTING
+Plan: 2 of 3
 Status: Ready to execute
-Last activity: 2026-11-07 — Phase 13 execution started
+Last activity: 2026-11-08 — Phase 14 execution started
 
 Progress: [███░░░░░░░] 33%
 
@@ -59,6 +59,7 @@ Progress: [███░░░░░░░] 33%
 | Phase 13 P02 | 28min | 2 tasks | 7 files |
 | Phase 13 P03 | 18min | 2 tasks | 6 files |
 | Phase 13 P04 | 18min | 2 tasks | 8 files |
+| Phase 14 P01 | 24min | 2 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -111,6 +112,9 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 - [Phase 13]: 13-04: the service argv tail bakes exactly -c names + --embed-iff-embed-depth over an absolute interpreter and resolved --index path — the supervised process depends on neither user PATH nor cwd (SC3/D-11) — launchd sees no user environment, so a depth that arrived via SIF_WATCH_UPDATE_DEPTH in the installing shell is only replayable by baking the --embed flag into ProgramArguments/ExecStart
 - [Phase 13]: 13-04: launchctl bootout is asynchronous — production uninstall returns after issuing it (a re-install inside the window is covered by the Pitfall-5 bootout-then-bootstrap retry); tests deadline-poll the not-loaded state — The job leaves the gui domain only after the SIGTERM-ed watcher finishes its graceful flush + checkpoint, so an immediate launchctl print still succeeds; waiting belongs to outcome-asserting tests, not the uninstall UX
 - [Phase 13]: 13-04: manager binaries are invoked by bare name after a shutil.which gate — explicit argv lists only, never a shell (D-12); an AST-level unit test pins the discipline (no shell=True keyword, no string passed to the invocation helper) — Presence is gated once with a friendly typed ServiceManagerMissing surfaced as ClickException; the argv stays the documented literal form so fake-runner tests assert it exactly
+- [Phase 14]: 14-01: drift compare is mtime-primary — documents.file_size is frontmatter-stripped body length never refreshed on update (size compare would false-positive forever); derivation intent preserved (content changes always move mtime)
+- [Phase 14]: 14-01: silence-first cap decision in _pre_search_refresh — total_count==0 returns before the cap is consulted; settings-construction failure skips the check silently so unrelated bad config never breaks 'sif search' (query/vsearch surface it at their embedder touchpoints)
+- [Phase 14]: 14-01: refresh_drifted is the only lock acquisition (one window for all collections); clean search provably lockless — recording-lock spy asserts zero acquisitions
 
 ### Pending Todos
 
@@ -131,9 +135,9 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 
 ## Session Continuity
 
-Last session: 2026-11-08T02:00:17.470Z
-Stopped at: Phase 14 context gathered
-Resume file: .planning/phases/14-freshness-floor-pre-command-refresh-staleness-marking/14-CONTEXT.md
+Last session: 2026-11-08T03:32:59.219Z
+Stopped at: Completed 14-01-PLAN.md
+Resume file: None
 
 - **Next expected action:** `/gsd-discuss-phase 13` (Phase 13 needs context; research flags: daemon/service-install specifics already in research/STACK.md)
 - Research flags for later phases: Phase 13 (daemon/service-install specifics), Phase 16 (`SearchOptions.candidate_limit` audit + fixture design)
