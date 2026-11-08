@@ -97,3 +97,7 @@ class SuggestionEngine:
                 break
         matches.sort(key=lambda term: (-self._df.get(term, 0), term))
         return matches
+
+    def did_you_mean(self, query: str, n: int = 3) -> list[str]:
+        """Return up to ``n`` full rewritten queries per out-of-vocab word (D-07)."""
+        return []

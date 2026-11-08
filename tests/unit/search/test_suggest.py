@@ -9,7 +9,9 @@ searcher on a real DB built from the production DDL.
 
 from __future__ import annotations
 
+import difflib
 import sqlite3
+import time
 from datetime import datetime, timezone
 
 import pytest
@@ -65,6 +67,7 @@ def vocab_db():
         ("d1", "quantum machine learning algorithms"),
         ("d2", "quantum computing quick quantifiers"),
         ("d3", "studies of machine learning contexts"),
+        ("d4", "dreaming machines study patterns"),
     )
     yield conn
     conn.close()
@@ -121,6 +124,141 @@ class TestPrefixCompletions:
         """A prefix hitting nothing in the vocab degrades to an empty section."""
         engine = SuggestionEngine(vocab_db)
         assert engine.prefix_completions("zzzz", 5) == []
+
+
+class TestDidYouMean:
+    """D-07: per-word replacement into full rewritten queries; SC2 pinned.
+
+    The vocab stores porter STEMS, so replacements display stems (accepted,
+    RESEARCH A1); in-vocab words are kept as typed. The in-vocab predicate is
+    prefix-range membership (locked in plan Task 2, Pitfall 4): a token
+    "retrieves" when any vocab term starts with it or it starts with a vocab
+    term — only tokens whose prefix range hits nothing are DYM candidates.
+    """
+
+    def test_rewrites_full_query_per_out_of_vocab_word(self, vocab_db):
+        """D-07 shape: typo replaced by its close stem; in-vocab word kept as typed."""
+        engine = SuggestionEngine(vocab_db)
+        # 'machien' is out-of-vocab; 'quantum' retrieves (kept as typed). The
+        # replacement is the vocab stem 'machin' (stem display accepted).
+        assert engine.did_you_mean("quantum machien") == ["quantum machin"]
+
+    def test_variant_depth_follows_close_match_order(self):
+        """A token with two equal-ratio matches yields two variants, best-first."""
+        conn = _fixture_db(
+            ("v1", "corner store"),
+            ("v2", "cornet music"),
+        )
+        try:
+            engine = SuggestionEngine(conn)
+            # corner/cornet tie at ratio 10/12 >= 0.75; the sorted bucket
+            # resolves the tie stably (corner before cornet)
+            assert engine.did_you_mean("cornex") == ["corner", "cornet"]
+        finally:
+            conn.close()
+
+    def test_no_dym_when_every_word_retrieves(self, vocab_db):
+        """D-07: an all-retrievable query yields [] — never a forced suggestion."""
+        engine = SuggestionEngine(vocab_db)
+        # 'machines' retrieves: porter matches it to stem 'machin' through the
+        # quoted-prefix form, and 'machines' starts with the vocab term
+        # 'machin' (prefix-range membership, Pitfall 4)
+        assert engine.did_you_mean("quantum machines") == []
+
+    def test_every_suggestion_hits_as_query(self, vocab_db):
+        """SC2 pin: every DYM suggestion returns >= 1 result via a real BM25 query."""
+        engine = SuggestionEngine(vocab_db)
+        searcher = BM25Searcher(vocab_db)
+        for query in ("machien", "machien quantom"):
+            suggestions = engine.did_you_mean(query)
+            assert suggestions, f"expected suggestions for {query!r}"
+            for suggestion in suggestions:
+                results = searcher.search(suggestion, SearchOptions(limit=1))
+                assert results, f"suggestion {suggestion!r} returned zero hits (SC2)"
+
+    def test_uncorrectable_token_yields_no_suggestion(self, vocab_db):
+        """An out-of-vocab word with no close match yields [] (never fabricated)."""
+        engine = SuggestionEngine(vocab_db)
+        assert engine.did_you_mean("quantum xqzjw") == []
+        # One uncorrectable candidate poisons the whole rewrite: the emitted
+        # query must have every word retrievable (SC2 by construction)
+        assert engine.did_you_mean("machien xqzjw") == []
+
+    def test_repeated_calls_are_deterministic(self, vocab_db):
+        """Same vocab + query produce identical suggestion lists (tie stability)."""
+        engine = SuggestionEngine(vocab_db)
+        first = engine.did_you_mean("machien quantom")
+        assert first
+        for _ in range(3):
+            assert engine.did_you_mean("machien quantom") == first
+
+    def test_empty_and_metachar_only_queries_return_empty(self, vocab_db):
+        """No usable tokens -> no suggestions, no crash."""
+        engine = SuggestionEngine(vocab_db)
+        assert engine.did_you_mean("") == []
+        assert engine.did_you_mean('""" (( )) ^^') == []
+
+
+_CHARSET = "0123456789abcdefghijklmnopqrstuvwxyz"
+
+
+def _big_vocab_conn() -> sqlite3.Connection:
+    """Synthetic >= 60k-distinct-term vocab (research A2 recipe).
+
+    300 docs x 220 unique words (66k terms), first characters spread over
+    ``0-9a-z`` so the first-letter+-1 bucket is a small, measurable fraction
+    of the vocabulary.
+    """
+    conn = _fixture_db(*_big_vocab_docs())
+    return conn
+
+
+def _big_vocab_docs() -> list[tuple[str, str]]:
+    docs: list[tuple[str, str]] = []
+    for doc in range(300):
+        words = []
+        for i in range(220):
+            idx = doc * 220 + i
+            words.append(f"{_CHARSET[idx % 36]}{idx:05d}")
+        docs.append((f"d{doc:03d}", " ".join(words)))
+    return docs
+
+
+class TestCoreBudget:
+    """D-14: bucketed matching proven deterministically; generous wall bound."""
+
+    def test_bucketed_dym_under_budget_on_60k_vocab(self, vocab_db, monkeypatch):
+        """Core (prefix + DYM incl. vocab scan) < 1.0 s; bucket < 10% of vocab.
+
+        The bucket assertion is deterministic — it catches a full-scan
+        regression without timing races (plan Task 2, Test 5).
+        """
+        conn = _big_vocab_conn()
+        try:
+            vocab_size = conn.execute("SELECT COUNT(*) FROM documents_fts_v").fetchone()[0]
+            assert vocab_size >= 60_000
+
+            calls: list[int] = []
+            real = difflib.get_close_matches
+
+            def spy(word, possibilities, n=3, cutoff=0.6):  # type: ignore[no-untyped-def]
+                calls.append(len(possibilities))
+                return real(word, possibilities, n=n, cutoff=cutoff)
+
+            monkeypatch.setattr(difflib, "get_close_matches", spy)
+
+            engine = SuggestionEngine(conn)
+            start = time.perf_counter()
+            completions = engine.prefix_completions("m0", 5)
+            engine.did_you_mean("mzzzzz9 xzzzzz9")
+            elapsed = time.perf_counter() - start
+
+            assert completions, "expected 'm0' completions in the synthetic vocab"
+            assert calls, "DYM never consulted difflib"
+            assert max(calls) < vocab_size * 0.10
+            assert elapsed < 1.0
+        finally:
+            conn.close()
 
 
 class TestVocabDegradation:
