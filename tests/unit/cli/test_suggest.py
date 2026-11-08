@@ -88,8 +88,12 @@ def isolated_settings():
     """Hermetic Settings plus quiet-state cleanup around each invocation."""
     from sif.utils.logging import set_quiet
 
+    settings = Settings(_env_file=None, embedding_dim=8, model_name="test", cache_embeddings=False)
     get_settings.cache_clear()
-    with patch("sif.search.suggest.get_settings", lambda: Settings(_env_file=None)):
+    with (
+        patch("sif.config.settings.get_settings", return_value=settings),
+        patch("sif.search.suggest.get_settings", lambda: Settings(_env_file=None)),
+    ):
         yield
     get_settings.cache_clear()
     set_quiet(False)
@@ -112,9 +116,7 @@ class TestSuggestSections:
     def test_json_has_exactly_three_arrays(self, tmp_path: Path) -> None:
         db_path = _seed_index(tmp_path, history=("quantum notes",))
 
-        result = CliRunner().invoke(
-            suggest_cmd, ["quant", "--json"], obj={"index_path": db_path}
-        )
+        result = CliRunner().invoke(suggest_cmd, ["quant", "--json"], obj={"index_path": db_path})
 
         assert result.exit_code == 0, result.output
         payload = json.loads(result.stdout)
@@ -158,9 +160,7 @@ class TestClearHistory:
         )
         assert _history_count(db_path) == 3
 
-        result = CliRunner().invoke(
-            suggest_cmd, ["--clear-history"], obj={"index_path": db_path}
-        )
+        result = CliRunner().invoke(suggest_cmd, ["--clear-history"], obj={"index_path": db_path})
 
         assert result.exit_code == 0, result.output
         assert "Cleared" in result.output
@@ -197,9 +197,7 @@ class TestGuardsAndQuiet:
         assert "No index found" in result.output
         assert not index_path.exists()
 
-    def test_quiet_suppresses_table_and_suggest_never_writes_history(
-        self, tmp_path: Path
-    ) -> None:
+    def test_quiet_suppresses_table_and_suggest_never_writes_history(self, tmp_path: Path) -> None:
         db_path = _seed_index(tmp_path, history=("quantum notes", "machine learning"))
 
         result = CliRunner().invoke(suggest_cmd, ["quant", "-q"], obj={"index_path": db_path})

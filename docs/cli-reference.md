@@ -54,6 +54,7 @@ sif
 ├── ls              List indexed documents as a virtual file tree.
 ├── pull            Download a GGUF model file.
 ├── bench           Run benchmark evaluation against a fixture file.
+├── suggest         Show prefix completions, did-you-mean rewrites, and query history.
 ├── watch           Watch collections and keep the index current as files change.
 ├── status          Show index status.
 └── cleanup         Clean up the index (remove orphaned entries).
@@ -650,6 +651,29 @@ Show index status.
 ```bash
 sif status [OPTIONS]
 ```
+
+### `suggest`
+
+Show prefix completions, did-you-mean rewrites, and query history.
+
+```bash
+sif suggest [OPTIONS]
+```
+
+**Arguments:**
+
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `query` | text | No |  |
+
+**Options:**
+
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--limit` | `—` | integer range | `5` | Maximum entries per section |
+| `--json` | `—` | flag | `false` | Output as JSON |
+| `--quiet` | `-q` | flag | `false` | Suppress table output |
+| `--clear-history` | `—` | flag | `false` | Delete all recorded query history |
 
 ### `watch`
 
