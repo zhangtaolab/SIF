@@ -2478,6 +2478,44 @@ class TestPreSearchRefresh:
         assert second.stderr == ""
         assert "Heading Two" in second.output
 
+    def test_refresh_failure_warns_and_search_proceeds(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """D-05 failure leg: a refresh exception warns on stderr, exit 0, stale results.
+
+        The over-cap leg of the same prohibition is test-enforced elsewhere;
+        this exercises the ``except`` branch itself — a refresh failure must
+        never fail the search (exit 0, results from the current index).
+        """
+
+        def _boom(*_args: object, **_kwargs: object) -> None:
+            raise RuntimeError("simulated refresh failure")
+
+        db_path, notes, settings = self._seed_index(tmp_path, monkeypatch)
+        (notes / "a.md").write_text(
+            "# Heading Three\n\nZanzibar unique new term body. " * 10, encoding="utf-8"
+        )
+
+        with (
+            patch("sif.config.settings.get_settings", return_value=settings),
+            patch("sif.cli.commands.search.refresh_drifted", side_effect=_boom),
+        ):
+            result = CliRunner().invoke(search_cmd, ["heading"], obj={"index_path": db_path})
+
+        assert result.exit_code == 0
+        assert "Pre-search refresh failed; searching the current index" in result.stderr
+        # The search proceeded on the STALE index: the pre-edit document is
+        # still served (the new term exists only in the drifted content).
+        assert "Heading One" in result.output
+        assert "Heading Three" not in result.output
+
+        # Recovery: with the failure gone, the next search refreshes normally.
+        with patch("sif.config.settings.get_settings", return_value=settings):
+            recovered = CliRunner().invoke(search_cmd, ["zanzibar"], obj={"index_path": db_path})
+        assert recovered.exit_code == 0
+        assert "refreshed 1 files (bm25) before search" in recovered.stderr
+        assert "Heading Three" in recovered.output
+
     def test_touch_only_drift_converges_across_searches(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
