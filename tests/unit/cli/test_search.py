@@ -2039,20 +2039,21 @@ class TestStalenessFormatMarker:
         result = self._invoke_bm25(tmp_path, ["query"])
 
         assert result.exit_code == 0
-        assert "(stale vectors)" in result.output
+        # stdout: the D-13 hint rides stderr (mixed into .output by click >=8.2).
+        assert "(stale vectors)" in result.stdout
         # Exactly one annotation for one stale row; the fresh row stays clean.
-        assert result.output.count("(stale vectors)") == 1
-        assert "Fresh Doc" in result.output
+        assert result.stdout.count("(stale vectors)") == 1
+        assert "Fresh Doc" in result.stdout
         # D-12: no new column — the header row gains nothing.
-        assert "vectors_stale" not in result.output
+        assert "vectors_stale" not in result.stdout
 
     def test_query_table_marks_stale_result(self, tmp_path: Path) -> None:
         """The hybrid query table renders the same annotation on the stale title."""
         result = self._invoke_query(tmp_path, ["query"])
 
         assert result.exit_code == 0
-        assert "(stale vectors)" in result.output
-        assert result.output.count("(stale vectors)") == 1
+        assert "(stale vectors)" in result.stdout
+        assert result.stdout.count("(stale vectors)") == 1
 
     # ------------------------------------------------------------------
     # JSON (no formatter change — to_dict() carries the key since 14-02)
@@ -2086,7 +2087,9 @@ class TestStalenessFormatMarker:
         result = self._invoke_bm25(tmp_path, ["query", "--csv"])
 
         assert result.exit_code == 0
-        lines = result.output.splitlines()
+        # result.stdout: crafted stale rows also trigger the D-13 stderr hint,
+        # which click >=8.2 mixes into .output (14-01 JSON-purity precedent).
+        lines = result.stdout.splitlines()
         assert lines[0] == "rank,score,title,path,collection,vectors_stale"
         assert lines[1:] == [
             '"1","0.9000","Stale Doc","/notes/stale.md","notes","true"',
@@ -2098,7 +2101,7 @@ class TestStalenessFormatMarker:
         result = self._invoke_bm25(tmp_path, ["query", "--line-numbers", "--csv"])
 
         assert result.exit_code == 0
-        lines = result.output.splitlines()
+        lines = result.stdout.splitlines()
         assert lines[0].endswith(",vectors_stale")
         assert lines[1].endswith(',"true"')
         assert lines[2].endswith(',"false"')
@@ -2112,17 +2115,17 @@ class TestStalenessFormatMarker:
         result = self._invoke_bm25(tmp_path, ["query", "--md"])
 
         assert result.exit_code == 0
-        assert "## 1. Stale Doc (stale vectors)" in result.output
-        assert "## 2. Fresh Doc" in result.output
-        assert result.output.count("(stale vectors)") == 1
+        assert "## 1. Stale Doc (stale vectors)" in result.stdout
+        assert "## 2. Fresh Doc" in result.stdout
+        assert result.stdout.count("(stale vectors)") == 1
 
     def test_md_line_numbers_dict_shape_renders_marker(self, tmp_path: Path) -> None:
         """Dict rows (--line-numbers path) render the same annotation."""
         result = self._invoke_bm25(tmp_path, ["query", "--line-numbers", "--md"])
 
         assert result.exit_code == 0
-        assert "## 1. Stale Doc (stale vectors)" in result.output
-        assert result.output.count("(stale vectors)") == 1
+        assert "## 1. Stale Doc (stale vectors)" in result.stdout
+        assert result.stdout.count("(stale vectors)") == 1
 
     # ------------------------------------------------------------------
     # XML (fixed boolean attribute on the result element)
@@ -2133,8 +2136,8 @@ class TestStalenessFormatMarker:
         result = self._invoke_bm25(tmp_path, ["query", "--xml"])
 
         assert result.exit_code == 0
-        assert 'vectors_stale="true"' in result.output
-        assert 'vectors_stale="false"' in result.output
+        assert 'vectors_stale="true"' in result.stdout
+        assert 'vectors_stale="false"' in result.stdout
         root = ET.fromstring(result.stdout)
         elements = root.findall("result")
         assert [e.get("vectors_stale") for e in elements] == ["true", "false"]
@@ -2185,8 +2188,11 @@ class TestStalenessFormatMarker:
         assert "2 results have stale vectors — run 'sif index embed' to refresh" in normalized
         # Exactly one hint line — never one per result.
         assert result.stderr.count("have stale vectors") == 1
-        # D-13: stdout stays clean for pipes.
-        assert "stale vectors" not in result.stdout
+        # D-13: the hint never appears on stdout (the table's own D-12
+        # annotation legitimately contains 'stale vectors' there — the
+        # hint-specific fragments must not).
+        assert "have stale vectors" not in result.stdout
+        assert "run 'sif index embed'" not in result.stdout
 
     def test_remedy_hint_json_stdout_stays_clean(self, tmp_path: Path) -> None:
         """Under --json the hint rides stderr only; stdout parses as pure JSON."""
@@ -2236,7 +2242,7 @@ class TestStalenessFormatMarker:
 
         assert result.exit_code == 0
         assert self._hint_in_stderr(result)
-        assert "stale vectors" not in result.stdout
+        assert "have stale vectors" not in result.stdout
 
     def test_remedy_hint_fires_for_vsearch_cmd(self, tmp_path: Path) -> None:
         """The vsearch command body carries the same hint wiring (mocked hits)."""
@@ -2263,7 +2269,7 @@ class TestStalenessFormatMarker:
 
         assert result.exit_code == 0
         assert self._hint_in_stderr(result)
-        assert "stale vectors" not in result.stdout
+        assert "have stale vectors" not in result.stdout
 
 
 class TrackingDatabase(Database):

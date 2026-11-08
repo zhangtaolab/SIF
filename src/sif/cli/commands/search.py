@@ -198,6 +198,22 @@ def _pre_search_refresh(
             )
 
 
+def _warn_stale_results(results: list[Any], *, quiet: bool) -> None:
+    """Print the D-13 remedy hint after results when any result's vectors lag.
+
+    Exactly one stderr line (``console_err`` — stdout stays clean for
+    ``--json``/``--csv`` pipes); ``-q`` suppresses it, matching the 14-01
+    notice contract. The count uses the same dual-shape ``_field`` reader
+    as the format battery, so both SearchResult rows and dict rows count.
+    """
+    if quiet:
+        return
+    stale_count = sum(1 for r in results if _field(r, "vectors_stale"))
+    if stale_count:
+        hint = f"{stale_count} results have stale vectors — run 'sif index embed' to refresh"
+        console_err.print(f"[yellow]{hint}[/yellow]")
+
+
 def format_results_csv(results: list[Any]) -> str:
     """Format results as CSV.
 
@@ -442,6 +458,9 @@ def search_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 console.print(f"\n[dim]Query: {escape(query)}[/dim]")
                 console.print(f"[dim]Results: {len(results)}[/dim]")
 
+        # D-13: one stderr remedy hint after the results; -q suppresses it.
+        _warn_stale_results(results, quiet=quiet)
+
 
 @search_group.command("vsearch")
 @click.argument("query")
@@ -585,6 +604,9 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 table.add_row(*row)
 
             console.print(table)
+
+        # D-13: one stderr remedy hint after the results; -q suppresses it.
+        _warn_stale_results(results, quiet=quiet)
 
 
 @search_group.command("query")
@@ -824,3 +846,6 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                     )
                     if scores_str:
                         console.print(f"[dim]{escape(r.title)}: {scores_str}[/dim]")
+
+        # D-13: one stderr remedy hint after the results; -q suppresses it.
+        _warn_stale_results(results, quiet=quiet)
