@@ -1948,6 +1948,202 @@ class TestSearchOutputBranches:
         assert "Query: [/3]-notes" in plain.output
 
 
+class TestStalenessFormatMarker:
+    """D-12 (SC3): one crafted stale result is visibly marked in every output format.
+
+    A vector-stale doc surfaces only via the BM25/hybrid legs (its vector
+    was purged — a real vsearch hit cannot be stale), so the battery crafts
+    SearchResults carrying ``vectors_stale`` through the mock scaffolds;
+    vsearch's shared --json surface is covered by the same formatter code.
+    """
+
+    @staticmethod
+    def _result(stale: bool, **overrides: object) -> SearchResult:
+        """Craft one result; the stale flag and identity fields stay paired."""
+        fields: dict[str, object] = {
+            "document_id": "doc-stale" if stale else "doc-fresh",
+            "rank": 1 if stale else 2,
+            "score": 0.9 if stale else 0.8,
+            "title": "Stale Doc" if stale else "Fresh Doc",
+            "path": "/notes/stale.md" if stale else "/notes/fresh.md",
+            "collection_name": "notes",
+            "content": "line one\nline two",
+            "vectors_stale": stale,
+        }
+        fields.update(overrides)
+        return SearchResult(**fields)  # type: ignore[arg-type]
+
+    @staticmethod
+    def _rows() -> list[SearchResult]:
+        return [TestStalenessFormatMarker._result(stale=True), TestStalenessFormatMarker._result(stale=False)]
+
+    @staticmethod
+    def _index(tmp_path: Path) -> Path:
+        index = tmp_path / "index.db"
+        index.touch()
+        return index
+
+    def _invoke_bm25(self, tmp_path: Path, args: list[str]) -> object:
+        """Invoke search_cmd over the mock scaffold with the crafted rows."""
+        searcher = MagicMock()
+        searcher.search.return_value = self._rows()
+        repo = MagicMock()
+        repo.list_enabled.return_value = []
+        with (
+            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
+            patch("sif.cli.commands.search.BM25Searcher", return_value=searcher),
+        ):
+            return CliRunner().invoke(
+                search_cmd,
+                args,
+                env={"COLUMNS": "80"},
+                obj={"index_path": self._index(tmp_path)},
+            )
+
+    def _invoke_query(self, tmp_path: Path, args: list[str]) -> object:
+        """Invoke query_cmd over the pipeline mock scaffold with the crafted rows."""
+        repo = MagicMock()
+        repo.list_enabled.return_value = []
+        manager = MagicMock()
+        manager.embed_single.return_value = [0.0] * 4
+        manager._model = MagicMock()
+        pipeline = MagicMock()
+        pipeline.search.return_value = self._rows()
+        settings = MagicMock(reranker_model_name=None, reranker_model_path=None)
+        with (
+            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
+            patch("sif.cli.commands.search.SearchPipeline", return_value=pipeline),
+            patch("sif.embedding.manager.EmbeddingManager.from_settings", return_value=manager),
+            patch("sif.config.settings.get_settings", return_value=settings),
+        ):
+            return CliRunner().invoke(
+                query_cmd,
+                args,
+                env={"COLUMNS": "80"},
+                obj={"index_path": self._index(tmp_path)},
+            )
+
+    # ------------------------------------------------------------------
+    # Rich table (search_cmd + query_cmd bodies; vsearch shares the cell)
+    # ------------------------------------------------------------------
+
+    def test_table_marks_stale_result_not_fresh(self, tmp_path: Path) -> None:
+        """The stale result's Title cell carries the dim annotation; fresh does not."""
+        result = self._invoke_bm25(tmp_path, ["query"])
+
+        assert result.exit_code == 0
+        assert "(stale vectors)" in result.output
+        # Exactly one annotation for one stale row; the fresh row stays clean.
+        assert result.output.count("(stale vectors)") == 1
+        assert "Fresh Doc" in result.output
+        # D-12: no new column — the header row gains nothing.
+        assert "vectors_stale" not in result.output
+
+    def test_query_table_marks_stale_result(self, tmp_path: Path) -> None:
+        """The hybrid query table renders the same annotation on the stale title."""
+        result = self._invoke_query(tmp_path, ["query"])
+
+        assert result.exit_code == 0
+        assert "(stale vectors)" in result.output
+        assert result.output.count("(stale vectors)") == 1
+
+    # ------------------------------------------------------------------
+    # JSON (no formatter change — to_dict() carries the key since 14-02)
+    # ------------------------------------------------------------------
+
+    def test_json_carries_vectors_stale(self, tmp_path: Path) -> None:
+        """--json serializes the stale boolean for both rows."""
+        result = self._invoke_bm25(tmp_path, ["query", "--json"])
+
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert payload[0]["vectors_stale"] is True
+        assert payload[1]["vectors_stale"] is False
+
+    def test_json_line_numbers_dict_shape_preserves_key(self, tmp_path: Path) -> None:
+        """--line-numbers dict rows still carry vectors_stale (dual-shape reader)."""
+        result = self._invoke_bm25(tmp_path, ["query", "--line-numbers", "--json"])
+
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert payload[0]["line_numbers"] != ""
+        assert payload[0]["vectors_stale"] is True
+        assert payload[1]["vectors_stale"] is False
+
+    # ------------------------------------------------------------------
+    # CSV (one extra column)
+    # ------------------------------------------------------------------
+
+    def test_csv_column_carries_true_and_false(self, tmp_path: Path) -> None:
+        """The header gains a vectors_stale column; rows emit true/false."""
+        result = self._invoke_bm25(tmp_path, ["query", "--csv"])
+
+        assert result.exit_code == 0
+        lines = result.output.splitlines()
+        assert lines[0] == "rank,score,title,path,collection,vectors_stale"
+        assert lines[1:] == [
+            '"1","0.9000","Stale Doc","/notes/stale.md","notes","true"',
+            '"2","0.8000","Fresh Doc","/notes/fresh.md","notes","false"',
+        ]
+
+    def test_csv_line_numbers_dict_shape_renders_marker(self, tmp_path: Path) -> None:
+        """Dict rows (--line-numbers path) render the same true/false column."""
+        result = self._invoke_bm25(tmp_path, ["query", "--line-numbers", "--csv"])
+
+        assert result.exit_code == 0
+        lines = result.output.splitlines()
+        assert lines[0].endswith(",vectors_stale")
+        assert lines[1].endswith(',"true"')
+        assert lines[2].endswith(',"false"')
+
+    # ------------------------------------------------------------------
+    # Markdown (inline annotation on the per-result title line)
+    # ------------------------------------------------------------------
+
+    def test_md_annotation_on_stale_title_only(self, tmp_path: Path) -> None:
+        """The stale block's title line carries '(stale vectors)'; fresh does not."""
+        result = self._invoke_bm25(tmp_path, ["query", "--md"])
+
+        assert result.exit_code == 0
+        assert "## 1. Stale Doc (stale vectors)" in result.output
+        assert "## 2. Fresh Doc" in result.output
+        assert result.output.count("(stale vectors)") == 1
+
+    def test_md_line_numbers_dict_shape_renders_marker(self, tmp_path: Path) -> None:
+        """Dict rows (--line-numbers path) render the same annotation."""
+        result = self._invoke_bm25(tmp_path, ["query", "--line-numbers", "--md"])
+
+        assert result.exit_code == 0
+        assert "## 1. Stale Doc (stale vectors)" in result.output
+        assert result.output.count("(stale vectors)") == 1
+
+    # ------------------------------------------------------------------
+    # XML (fixed boolean attribute on the result element)
+    # ------------------------------------------------------------------
+
+    def test_xml_attribute_true_false_and_parseable(self, tmp_path: Path) -> None:
+        """The stale element carries vectors_stale="true"; output stays parseable."""
+        result = self._invoke_bm25(tmp_path, ["query", "--xml"])
+
+        assert result.exit_code == 0
+        assert 'vectors_stale="true"' in result.output
+        assert 'vectors_stale="false"' in result.output
+        root = ET.fromstring(result.stdout)
+        elements = root.findall("result")
+        assert [e.get("vectors_stale") for e in elements] == ["true", "false"]
+
+    def test_xml_line_numbers_dict_shape_renders_marker(self, tmp_path: Path) -> None:
+        """Dict rows (--line-numbers path) render the same attribute."""
+        result = self._invoke_bm25(tmp_path, ["query", "--line-numbers", "--xml"])
+
+        assert result.exit_code == 0
+        root = ET.fromstring(result.stdout)
+        elements = root.findall("result")
+        assert [e.get("vectors_stale") for e in elements] == ["true", "false"]
+
+
 class TrackingDatabase(Database):
     """Database double recording constructed instances for closure assertions."""
 
