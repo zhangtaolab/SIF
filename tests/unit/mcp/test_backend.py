@@ -71,6 +71,7 @@ async def test_hybrid_search_mocks(backend):
     mock_result.highlights = ["highlight"]
     mock_result.rank = 1
     mock_result.collection_name = "default"
+    mock_result.vectors_stale = True
 
     with patch("sif.mcp.backend.SearchPipeline") as mock_pipeline:
         mock_pipeline.return_value.search.return_value = [mock_result]
@@ -79,6 +80,11 @@ async def test_hybrid_search_mocks(backend):
     assert len(results) == 1
     assert isinstance(results[0], SearchResult)
     assert results[0].doc_id == "doc1"
+    # D-11 / RESEARCH B5: the backend re-maps core fields explicitly, so an
+    # unknown field is DROPPED at this boundary unless forwarded — the flag
+    # must ride the metadata dict with the core result's value.
+    assert results[0].metadata.get("vectors_stale") is True
+    assert results[0].metadata["rank"] == 1
 
 
 @pytest.mark.asyncio

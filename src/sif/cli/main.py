@@ -14,6 +14,7 @@ from rich.table import Table
 from sif import __version__
 from sif.config.settings import get_settings
 from sif.database.database import Database
+from sif.search.staleness import embedded_document_ids
 from sif.utils import daemon
 from sif.utils.logging import get_logger, setup_logging
 
@@ -129,6 +130,18 @@ def _watch_status_text(index_path: Path) -> str:
     return f"running — {payload['mode']} · PID {payload['pid']} · {payload['depth']}"
 
 
+def _vector_lag_text(conn: sqlite3.Connection) -> str:
+    """Vector-lag value for the status table (D-10).
+
+    Same derived signal as the result marker (D-08): a document lags the
+    vector index when it has no rows in ``document_embeddings``. ``None``
+    (vec0 table missing) renders ``n/a``; an embeddings-free index renders
+    the no-vectors state so pure-BM25 users are not nagged.
+    """
+    del conn  # RED skeleton: zero behavior; GREEN implements the probe.
+    return "n/a"
+
+
 @cli.command("status")
 @click.pass_context
 def status_cmd(ctx: click.Context) -> None:
@@ -171,6 +184,16 @@ def status_cmd(ctx: click.Context) -> None:
                 logger.debug("Watch status probe failed", exc_info=True)
                 watch_text = "not running"
             table.add_row("Watch", watch_text)
+
+            # Vector lag (D-10): index-level vector lag at a glance, derived
+            # from the same embedding scan as the result marker. Same
+            # degrade-never-fail contract as the Watch row above.
+            try:
+                vector_lag_text = _vector_lag_text(db.connection)
+            except Exception:
+                logger.debug("Vector lag probe failed", exc_info=True)
+                vector_lag_text = "n/a"
+            table.add_row("Vector lag", vector_lag_text)
 
             console.print(table)
 

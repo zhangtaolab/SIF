@@ -104,6 +104,27 @@ def _chunk_contents(db_path: Path, doc_path: str) -> list[str]:
         conn.close()
 
 
+def _embedding_count(db_path: Path) -> int:
+    """Count document_embeddings rows via a fresh connection.
+
+    The vec0 virtual table needs the sqlite-vec module loaded on the reading
+    connection; the count skips only when the extension itself is absent
+    (the same best-effort contract as the rest of the suite).
+    """
+    try:
+        import sqlite_vec
+    except ImportError:
+        pytest.skip("sqlite-vec not available")
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.enable_load_extension(True)
+        sqlite_vec.load(conn)
+        conn.enable_load_extension(False)
+        return conn.execute("SELECT COUNT(*) FROM document_embeddings").fetchone()[0]
+    finally:
+        conn.close()
+
+
 class TestIncrementalIndexer:
     """The per-file incremental loop extracted from update_cmd (SC3, D-04)."""
 
@@ -407,3 +428,49 @@ class TestUpdatePathsReplay:
 
         assert first == IncrementalResult(added=2, updated=0, removed=0, unchanged=0)
         assert second == IncrementalResult(added=0, updated=0, removed=0, unchanged=2)
+
+    def test_update_paths_purges_embeddings_of_modified_doc(self, tmp_path, monkeypatch) -> None:
+        """D-08 invariant regression (14-02): a BM25-only update leaves the modified
+        document embeddings-free AND chunk-free through a fresh connection.
+
+        The derived staleness signal (stale = no rows in document_embeddings)
+        rests on this purge: a future write path that kept stale embeddings
+        behind would silently un-mark lagging documents. Mirrors the chunk
+        purge test above, plus a real vec0 embedding seeded and asserted gone.
+        """
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "incr.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        doc_file = notes / "a.md"
+        doc_file.write_text(BODY_ALPHA, encoding="utf-8")
+        _seed_collection(db_path, notes)
+
+        # Index once, then seed a real embedding for the document.
+        indexer, db, coll = _open_indexer(db_path)
+        try:
+            assert indexer.update_collection(coll) == IncrementalResult(1, 0, 0)
+            doc_repo = DocumentRepository(db.connection)
+            doc = doc_repo.get_by_path(str(doc_file), coll.id)
+            assert doc is not None
+            from sif.search.vector import VectorSearcher
+
+            with db.connection:
+                VectorSearcher(db.connection, embedding_dim=8).add_embedding(
+                    f"e-{doc.id}", doc.id, f"c-{doc.id}", [0.1] * 8
+                )
+        finally:
+            db.close()
+        assert _embedding_count(db_path) == 1
+
+        # BM25-only refresh of the modified file: chunks AND embeddings purge.
+        doc_file.write_text(BODY_BETA, encoding="utf-8")
+        indexer, db, coll = _open_indexer(db_path)
+        try:
+            result = indexer.update_paths(coll, [doc_file])
+        finally:
+            db.close()
+
+        assert result == IncrementalResult(0, 1, 0)
+        assert _chunk_contents(db_path, str(doc_file)) == []
+        assert _embedding_count(db_path) == 0
