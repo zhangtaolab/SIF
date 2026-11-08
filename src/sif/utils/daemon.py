@@ -90,7 +90,11 @@ def write_pid_file(path: Path, *, pid: int, mode: str, depth: str) -> None:
     """Write the one-line JSON PID payload with mode 0600 (T-13-04).
 
     The payload carries what management needs: pid, host mode, update depth,
-    and a UTC start timestamp.
+    and a UTC start timestamp. Write-temp-then-rename (T-13-11 parity with
+    service._write_artifact): rename does not follow symlinks, so a
+    pre-planted ``<db>.watch.pid`` symlink is atomically replaced with the
+    real file instead of redirecting this write — and any later removal —
+    to an arbitrary path.
     """
     payload = {
         "pid": pid,
@@ -98,9 +102,15 @@ def write_pid_file(path: Path, *, pid: int, mode: str, depth: str) -> None:
         "depth": depth,
         "started": datetime.now(timezone.utc).isoformat(),
     }
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as handle:
-        handle.write(json.dumps(payload) + "\n")
+    tmp = path.with_name(f".{path.name}.tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload) + "\n")
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def read_pid_file(path: Path) -> dict[str, object] | None:

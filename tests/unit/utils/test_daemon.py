@@ -77,6 +77,24 @@ class TestPidPayload:
         assert payload["started"] != ""
         assert path.stat().st_mode & 0o777 == 0o600
 
+    def test_write_replaces_a_preplanted_symlink_without_following_it(
+        self, tmp_path: Path
+    ) -> None:
+        """Temp-then-rename hardening (IN-03): the symlink itself is replaced."""
+        victim = tmp_path / "victim.txt"
+        victim.write_text("do not touch", encoding="utf-8")
+        pid_file = tmp_path / "sif.db.watch.pid"
+        pid_file.symlink_to(victim)
+
+        daemon.write_pid_file(pid_file, pid=4242, mode="daemon", depth="bm25")
+
+        # The symlink was atomically replaced by a regular file, not followed.
+        assert not pid_file.is_symlink()
+        assert victim.read_text(encoding="utf-8") == "do not touch"
+        payload = daemon.read_pid_file(pid_file)
+        assert payload is not None
+        assert payload["pid"] == 4242
+
     def test_missing_file_reads_as_none(self, tmp_path: Path) -> None:
         assert daemon.read_pid_file(tmp_path / "absent.pid") is None
 
