@@ -1,9 +1,9 @@
 ---
-status: partial
+status: complete
 phase: 13-Watch Everywhere (MCP-Embedded Refresh + Background Daemon)
 source: [13-VERIFICATION.md]
 started: 2026-11-08T02:30:00Z
-updated: 2026-11-08T00:41:50.882Z
+updated: 2026-11-08T00:43:02.951Z
 ---
 
 ## Current Test
@@ -36,18 +36,6 @@ source: evaluated by orchestrator at user request — the flagged recycling wind
 expected: 12 judgment-tier `flagged-unverified` prohibitions (authored descriptor-less from the spec-less probe fallback) were evaluated by the verifier as all honored — evidence per item is in 13-VERIFICATION.md §prohibitions. Human review recommended to make that non-authoritative verdict authoritative.
 result: pass
 source: reviewed by orchestrator at user request against the evidence table and this session's own observations — zero new deps (pyproject untouched since phase start), no cross-host protocol (grep clean; flock per burst only), foreground host unchanged (no provider by default), PID file never gates anything (metadata-only, fail-closed ps corroboration before signals), no self-restart loop, BM25 forced literal in the MCP host, stdout protocol-clean under burst, env-only opt-in (no --watch flags), foreground under supervisor (install rejects --detach combo), explicit argv everywhere (AST no-shell test), docs generator-only (make docs-generate). All 12 hold; signed off.
-
-### 3. WR-01 shutdown-checkpoint decision
-expected: Confirm that SKIPPING (not attempting) the shutdown `PRAGMA wal_checkpoint(TRUNCATE)` when the worker thread outlives the join window is the intended D-14 behavior — the alternative is attempting the checkpoint on a connection a stuck worker may still hold (flagged "requires human verification" in 13-REVIEW-FIX.md; commit e3156da).
-result: [pending]
-
-### 4. WR-04 killpg decision
-expected: Confirm `os.killpg` on the intermediate child's pid (the pgid setsid established) is acceptable in the rare PID-recycling window — the theoretical failure is killing an innocent recycled process group after a 30s handshake timeout (flagged in 13-REVIEW-FIX.md; commit cd33b21).
-result: [pending]
-
-### 5. Prohibition sign-off
-expected: 12 judgment-tier `flagged-unverified` prohibitions (authored descriptor-less from the spec-less probe fallback) were evaluated by the verifier as all honored — evidence per item is in 13-VERIFICATION.md §prohibitions. Human review recommended to make that non-authoritative verdict authoritative.
-result: [pending]
 
 ## Summary
 
