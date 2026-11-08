@@ -125,9 +125,20 @@ def snapshot_verdict(snapshot: dict[str, Any]) -> str:
 
 
 @pytest.fixture(scope="module")
-def live_settings() -> Settings:
-    """Fresh Settings without any .env file — the shipped defaults (mod env)."""
-    return Settings(_env_file=None)
+def live_settings() -> Iterator[Settings]:
+    """Fresh Settings without any .env file — the shipped defaults.
+
+    Hermetic (WR-02): the fusion-knob env vars are cleared first so an
+    exported SIF_RRF_K / SIF_BM25_WEIGHT / SIF_VECTOR_WEIGHT in the
+    developer/CI shell cannot masquerade as changed defaults — the same
+    delenv discipline as tests/unit/config/test_settings.py
+    (test_fusion_defaults_match_prechange_behavior), made module-scoped via
+    MonkeyPatch.context (the built-in monkeypatch fixture is function-scoped).
+    """
+    with pytest.MonkeyPatch.context() as mp:
+        for var in ("SIF_RRF_K", "SIF_BM25_WEIGHT", "SIF_VECTOR_WEIGHT"):
+            mp.delenv(var, raising=False)
+        yield Settings(_env_file=None)
 
 
 @pytest.fixture(scope="module")
