@@ -468,8 +468,21 @@ def write_pack(out: Path, files: dict[str, str]) -> None:
         target.write_text(files[rel], encoding="utf-8")
 
 
+# Pack-root files committed alongside the generated pack (held-out evidence
+# snapshot and the hand-authored README). The generator does not produce
+# them, but the drift gate must accept them (WR-03).
+ALLOWED_EXTRA_FILES = {"heldout_defaults.json", "README.md"}
+
+
 def check_pack(out: Path, files: dict[str, str]) -> list[str]:
-    """Diff the committed pack against generator output; return drifting paths."""
+    """Diff the committed pack against generator output; return drifting paths.
+
+    Drift is bidirectional (WR-03): missing or drifted expected files AND
+    unexpected committed files anywhere under the pack root. A stray file
+    under ``corpus/`` silently changes every measured metric while a missing
+    one only fails loudly, so the gate must catch both — the
+    intentionally-committed evidence/README files are allowlisted instead.
+    """
     drift: list[str] = []
     for rel in sorted(files):
         target = out / rel
@@ -477,13 +490,13 @@ def check_pack(out: Path, files: dict[str, str]) -> list[str]:
             drift.append(f"missing: {rel}")
         elif target.read_text(encoding="utf-8") != files[rel]:
             drift.append(f"drifted: {rel}")
-    corpus_dir = out / "corpus"
-    if corpus_dir.is_dir():
-        expected = set(files)
-        for path in sorted(corpus_dir.rglob("*.md")):
-            rel = path.relative_to(out).as_posix()
-            if rel not in expected:
-                drift.append(f"unexpected: {rel}")
+    expected = set(files) | ALLOWED_EXTRA_FILES
+    for path in sorted(out.rglob("*")):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(out).as_posix()
+        if rel not in expected:
+            drift.append(f"unexpected: {rel}")
     return drift
 
 

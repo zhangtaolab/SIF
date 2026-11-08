@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
+from typing import ClassVar
 
+from scripts.generate_bench_fixture import build_pack, check_pack
 from sif.core.models import SearchOptions
 from sif.search.benchmark import (
     CATEGORIES,
@@ -318,3 +320,59 @@ class TestFixtureSplitNonInterference:
 
         assert tuning & heldout == set()
         assert tuning | heldout == everything
+
+
+class TestCheckPackDriftGate:
+    """WR-03: the --check gate flags unexpected files anywhere in the pack,
+    not just missing/drifted expected ones."""
+
+    GENERATED: ClassVar[dict[str, str]] = {
+        "queries.json": '{"version": 1}\n',
+        "corpus/keyword/a.md": "alpha doc\n",
+    }
+
+    def _write_pack(self, root: Path) -> None:
+        """Minimal pack on disk: the generated files plus the two pack-root
+        files that are intentionally committed (not generator output)."""
+        contents = dict(self.GENERATED)
+        contents.update({"heldout_defaults.json": "{}\n", "README.md": "pack readme\n"})
+        for rel, content in contents.items():
+            target = root / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
+
+    def test_clean_pack_with_allowed_root_files_has_no_drift(self, tmp_path: Path) -> None:
+        self._write_pack(tmp_path)
+
+        assert check_pack(tmp_path, self.GENERATED) == []
+
+    def test_stray_root_file_is_drift(self, tmp_path: Path) -> None:
+        self._write_pack(tmp_path)
+        (tmp_path / "notes.md").write_text("stray\n", encoding="utf-8")
+
+        assert "unexpected: notes.md" in check_pack(tmp_path, self.GENERATED)
+
+    def test_stray_non_md_file_under_corpus_is_drift(self, tmp_path: Path) -> None:
+        self._write_pack(tmp_path)
+        (tmp_path / "corpus" / "keyword" / "extra.txt").write_text("stray\n", encoding="utf-8")
+
+        drift = check_pack(tmp_path, self.GENERATED)
+
+        assert "unexpected: corpus/keyword/extra.txt" in drift
+
+    def test_stray_md_file_under_corpus_is_drift(self, tmp_path: Path) -> None:
+        """The evidence-integrity hole the gate exists to close: a stray .md
+        under corpus/ silently changes every measured metric."""
+        self._write_pack(tmp_path)
+        (tmp_path / "corpus" / "keyword" / "extra.md").write_text("stray\n", encoding="utf-8")
+
+        drift = check_pack(tmp_path, self.GENERATED)
+
+        assert "unexpected: corpus/keyword/extra.md" in drift
+
+    def test_committed_pack_passes_the_strengthened_gate(self) -> None:
+        """The real committed pack (seed 16, the generator default) stays
+        drift-free under the strengthened unexpected-file scan."""
+        files = build_pack(16)
+
+        assert check_pack(PACK_ROOT, files) == []
