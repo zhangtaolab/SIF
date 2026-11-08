@@ -5,16 +5,16 @@ milestone_name: Live Index and Search Quality
 current_phase: 15
 current_phase_name: Search Quality Configuration (Hybrid Weights + Query Suggestions)
 status: executing
-stopped_at: Phase 15 context gathered
-last_updated: "2026-11-08T09:47:38.965Z"
+stopped_at: Completed 15-01-PLAN.md
+last_updated: "2026-11-08T10:13:16.099Z"
 last_activity: 2026-11-08
-last_activity_desc: Phase 13 complete, transitioned to Phase 15
-state_head: ad2ef675a607ab6c849d071e76a1c939ad31a1ee
+last_activity_desc: Phase 15 execution started
+state_head: 899bfd764df16ef3818e74f37ae60b8ef7b08592
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 16
-  completed_plans: 13
+  completed_plans: 14
 ---
 
 # DocSift — Project State
@@ -29,10 +29,10 @@ progress:
 
 ## Current Position
 
-Phase: 15 (Search Quality Configuration (Hybrid Weights + Query Suggestions)) — READY TO EXECUTE
-Plan: Not started
+Phase: 15 (Search Quality Configuration (Hybrid Weights + Query Suggestions)) — EXECUTING
+Plan: 2 of 3
 Status: Ready to execute
-Last activity: 2026-11-08 — Phase 13 complete, transitioned to Phase 15
+Last activity: 2026-11-08 — Phase 15 execution started
 
 Progress: [███████░░░] 67%
 
@@ -63,6 +63,7 @@ Progress: [███████░░░] 67%
 | Phase 14 P02 | 14min | 2 tasks | 13 files |
 | Phase 14 P03 | 13min | 2 tasks | 2 files |
 | Phase 14 P03 | 13min | 2 tasks | 2 files |
+| Phase 15 P01 | 21 min | 3 tasks | 17 files |
 
 ## Accumulated Context
 
@@ -124,6 +125,9 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 - [Phase 14]: 14-03: one shared _title_cell helper serves all three command tables — the annotation is a constant string appended after the escape()d title (T-14-06), so a truncated title still annotates and search/vsearch/query render uniformly
 - [Phase 14]: 14-03: the D-13 hint sits at each command's output tail (not inside a formatter) so every output mode including --files fires it; the no-results early return naturally skips it (zero results means zero stale)
 - [Phase 14]: 14-03: stdout-purity tests assert hint-specific fragments ('have stale vectors') because the D-12 table annotation legitimately contains 'stale vectors' on stdout; format batteries read result.stdout (click >=8.2 mixes stderr into .output)
+- [Phase 15]: 15-01: fuse() keeps one code path (weights=None means 1.0 per list) — IEEE 1.0*x keeps defaults repr-exact; fuse_with_weights deleted (normalization trap, zero call sites), mismatch ValueError moved onto fuse
+- [Phase 15]: 15-01: k rides both fuse call sites (source + variant fusion), weights only at the source fusion (cross-query fusion is not source fusion, Pitfall 9); SIF_RRF_K removed from the docs phantom list once made real
+- [Phase 15]: 15-01: MCP weight ranges enforced by Pydantic on QueryInput (ge=1/gt=0, no bespoke handler checks); hand-written input_schema kept in sync; backend falls back to server SIF_ settings per D-04
 
 ### Pending Todos
 
@@ -144,9 +148,9 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 
 ## Session Continuity
 
-Last session: 2026-11-08T08:59:37.444Z
-Stopped at: Phase 15 context gathered
-Resume file: .planning/phases/15-search-quality-configuration-hybrid-weights-query-suggestions/15-CONTEXT.md
+Last session: 2026-11-08T10:13:15.674Z
+Stopped at: Completed 15-01-PLAN.md
+Resume file: None
 
 - **Next expected action:** `/gsd-discuss-phase 13` (Phase 13 needs context; research flags: daemon/service-install specifics already in research/STACK.md)
 - Research flags for later phases: Phase 13 (daemon/service-install specifics), Phase 16 (`SearchOptions.candidate_limit` audit + fixture design)
