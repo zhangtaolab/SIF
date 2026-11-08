@@ -226,6 +226,17 @@ class SchemaManager:
             )
         """)
 
+        # FTS5 vocab shadow (Phase 15, D-06): row mode = one row per distinct
+        # porter-stem term with its document frequency — the suggestion
+        # engine's term source, derived from the index (no sync maintenance).
+        # MUST live in the main schema: a temp-schema vocab cannot reference a
+        # main-schema FTS table (RESEARCH Pitfall 8). Idempotent; the suggest
+        # engine re-ensures it for connections that never ran init_schema.
+        self.db.execute("""
+            CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts_v
+            USING fts5vocab(documents_fts, 'row')
+        """)
+
         # Chunks FTS table with external content
         self.db.execute("""
             CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
@@ -386,6 +397,7 @@ class SchemaManager:
         tables = [
             "document_embeddings",
             "chunks_fts",
+            "documents_fts_v",
             "documents_fts",
             "document_chunks",
             "documents",
