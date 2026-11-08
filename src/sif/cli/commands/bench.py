@@ -12,7 +12,7 @@ from pydantic import ValidationError
 from rich.console import Console
 from rich.table import Table
 
-from sif.config.settings import Settings, get_settings
+from sif.config.settings import Settings, get_settings, resolve_candidate_limit
 from sif.core.models import Embedder, SearchOptions
 from sif.database.database import Database
 from sif.database.repositories import CollectionRepository
@@ -50,23 +50,28 @@ class BenchHarness:
 
 
 class CachedEmbedder:
-    """Embedder wrapper reserving the sweep's embedding-once seam (D-07).
+    """Memoizing Embedder wrapper: one embed per distinct query text (D-07).
 
-    RED skeleton: delegates to the inner embedder without memoization yet;
-    the GREEN step memoizes ``embed`` per distinct text so the sweep embeds
-    every query once per bench invocation (research Pattern 4).
+    The sweep re-runs BM25 and fusion for every configuration while query
+    embeddings are identical across configs; wrapping the loaded model
+    memoizes ``embed`` per text so each distinct query is embedded once per
+    bench invocation — for the baseline and the sweep alike (research
+    Pattern 4). No search-signature change.
     """
 
     def __init__(self, inner: Embedder) -> None:
         """Wrap ``inner``; the memo lives on the wrapper, never the model."""
         self._inner = inner
+        self._cache: dict[str, list[float]] = {}
 
     def embed(self, text: str) -> list[float]:
-        """Embed one text (memoization lands in GREEN)."""
-        return self._inner.embed(text)
+        """Embed one text, memoized (the model runs once per distinct text)."""
+        if text not in self._cache:
+            self._cache[text] = self._inner.embed(text)
+        return self._cache[text]
 
     def embed_batch(self, texts: list[str]) -> list[list[float]]:
-        """Embed multiple texts, one vector per text."""
+        """Embed multiple texts through the per-text cache."""
         return [self.embed(text) for text in texts]
 
     @property
@@ -172,11 +177,20 @@ def _tuning_evaluator(fixture_data: dict, fixture_path: Path) -> SearchEvaluator
     BEFORE any search call, so a sweep can never consult them while ranking
     configurations. Fixture metadata (relevance_key, corpus_root) is carried
     over so path-keyed relevance resolves identically.
+
+    A fixture with no tuning queries (legacy ``relevant_docids`` fixtures
+    carry no split at all) fails loudly: sweeping zero queries would yield an
+    empty, meaningless ranking reported as success.
     """
+    tuning_queries = [item for item in fixture_data["queries"] if item.get("split") == "tuning"]
+    if not tuning_queries:
+        raise click.ClickException(
+            "Sweep requires fixtures with split labels; this fixture has no "
+            "queries with split == 'tuning' (expected 'split': 'tuning' or "
+            "'heldout' per query)"
+        )
     tuning_fixture = {key: value for key, value in fixture_data.items() if key != "queries"}
-    tuning_fixture["queries"] = [
-        item for item in fixture_data["queries"] if item.get("split") == "tuning"
-    ]
+    tuning_fixture["queries"] = tuning_queries
     return SearchEvaluator(tuning_fixture, fixture_path=fixture_path)
 
 
@@ -211,12 +225,18 @@ def _run_sweep(
     harness: BenchHarness,
     base_options: SearchOptions,
     evaluator: SearchEvaluator,
-) -> SweepRanking:
-    """Measure every declared grid configuration and rank it (D-07/D-08).
+) -> tuple[SweepRanking, ConfigResult]:
+    """Measure every declared grid configuration and rank it (D-07/D-08/D-09).
 
     One hoisted pipeline serves all 45 configurations; only the fusion knobs
     (rrf_k/bm25_weight/vector_weight, the Phase 15 per-query override bridge)
     vary per config on top of the Plan 01 ``_build_options`` baseline.
+
+    The current-settings run is measured first through the same path as the
+    baseline row. When the settings configuration is a grid point (the
+    shipped default 60/1.0/1.0 always is), its measured ConfigResult is
+    reused for that grid slot so the baseline's deltas are exactly zero
+    (research Pitfall 7).
     """
     with harness.db.connection:
         pipeline = SearchPipeline(
@@ -224,20 +244,51 @@ def _run_sweep(
             embedder=harness.embedder,
             embedding_dim=harness.embedding_dim,
         )
-        results = [
-            _measure_config(
-                pipeline,
-                evaluator,
-                replace(
-                    base_options,
-                    rrf_k=grid.rrf_k,
-                    bm25_weight=grid.bm25_weight,
-                    vector_weight=grid.vector_weight,
-                ),
+        baseline = _measure_config(pipeline, evaluator, base_options)
+        baseline_key = (baseline.rrf_k, baseline.bm25_weight, baseline.vector_weight)
+        results: list[ConfigResult] = []
+        for grid in iter_grid():
+            if (grid.rrf_k, grid.bm25_weight, grid.vector_weight) == baseline_key:
+                results.append(baseline)
+                continue
+            results.append(
+                _measure_config(
+                    pipeline,
+                    evaluator,
+                    replace(
+                        base_options,
+                        rrf_k=grid.rrf_k,
+                        bm25_weight=grid.bm25_weight,
+                        vector_weight=grid.vector_weight,
+                    ),
+                )
             )
-            for grid in iter_grid()
-        ]
-    return rank_sweep(results)
+    return rank_sweep(results), baseline
+
+
+def _config_row(result: ConfigResult, baseline: ConfigResult) -> dict:
+    """One sweep JSON row: the config's serialization plus baseline deltas."""
+    row = result.to_dict()
+    row["ndcg_delta"] = result.ndcg_at_10 - baseline.ndcg_at_10
+    row["hit_delta"] = result.hit_at_10 - baseline.hit_at_10
+    row["p50_delta_ms"] = result.p50_ms - baseline.p50_ms
+    row["p95_delta_ms"] = result.p95_ms - baseline.p95_ms
+    return row
+
+
+def _sweep_payload(ranking: SweepRanking, baseline: ConfigResult) -> dict:
+    """Sweep JSON payload with baseline deltas and the baseline row (D-09).
+
+    Ranked configs and the tie group each carry per-metric deltas against
+    the current-settings baseline, alongside the winner-honesty fields.
+    """
+    return {
+        "configs": [_config_row(result, baseline) for result in ranking.ranked],
+        "tie_group": [_config_row(result, baseline) for result in ranking.tie_group],
+        "winner_declared": ranking.winner_declared,
+        "epsilon": ranking.epsilon,
+        "baseline": baseline.to_dict(),
+    }
 
 
 def _render_report(report: BenchReport, fixture_name: str, output_json: bool) -> None:
@@ -285,16 +336,22 @@ def _render_report(report: BenchReport, fixture_name: str, output_json: bool) ->
     console.print(table)
 
 
-def _render_sweep(ranking: SweepRanking, fixture_name: str, output_json: bool) -> None:
-    """Render the sweep as JSON or a Rich table.
+def _render_sweep(
+    ranking: SweepRanking,
+    baseline: ConfigResult,
+    fixture_name: str,
+    output_json: bool,
+) -> None:
+    """Render the sweep as JSON or a Rich table with the settings baseline.
 
     JSON goes through click.echo (never Rich) so it strict-parses at narrow
-    terminal widths. Every row — the tie group included — renders its four
-    per-category nDCG@10 columns so a win that quietly regresses one
-    category is visible (D-06).
+    terminal widths. Every row — the baseline and the tie group included —
+    renders its four per-category nDCG@10 columns so a win that quietly
+    regresses one category is visible (D-06), plus per-metric deltas against
+    the current-settings baseline (D-09).
     """
     if output_json:
-        click.echo(json.dumps(ranking.to_dict(), indent=2))
+        click.echo(json.dumps(_sweep_payload(ranking, baseline), indent=2))
         return
     table = Table(title=f"Parameter Sweep: {fixture_name}")
     table.add_column("rrf_k", justify="right")
@@ -302,28 +359,39 @@ def _render_sweep(ranking: SweepRanking, fixture_name: str, output_json: bool) -
     table.add_column("vec_w", justify="right")
     table.add_column("nDCG@10", justify="right")
     table.add_column("Hit@10", justify="right")
+    table.add_column("ΔnDCG", justify="right")
+    table.add_column("ΔHit", justify="right")
     table.add_column("p50", justify="right")
     table.add_column("p95", justify="right")
     for category in CATEGORIES:
         table.add_column(f"{category} nDCG@10", justify="right")
-    table.add_column("tie", justify="center")
-    tie_keys = {
-        (result.rrf_k, result.bm25_weight, result.vector_weight) for result in ranking.tie_group
-    }
-    for result in ranking.ranked:
+    table.add_column("note", justify="center")
+
+    def cells_for(result: ConfigResult, note: str) -> list[str]:
         cells = [
             str(result.rrf_k),
             f"{result.bm25_weight:g}",
             f"{result.vector_weight:g}",
             f"{result.ndcg_at_10:.4f}",
             f"{result.hit_at_10:.4f}",
+            f"{result.ndcg_at_10 - baseline.ndcg_at_10:+.4f}",
+            f"{result.hit_at_10 - baseline.hit_at_10:+.4f}",
             f"{result.p50_ms:.2f}",
             f"{result.p95_ms:.2f}",
         ]
         cells.extend(f"{result.categories[category].ndcg_at_10:.4f}" for category in CATEGORIES)
+        cells.append(note)
+        return cells
+
+    # The current SIF_ settings run leads the table as the baseline row; its
+    # deltas against itself are zero by construction.
+    table.add_row(*cells_for(baseline, "baseline"))
+    tie_keys = {
+        (result.rrf_k, result.bm25_weight, result.vector_weight) for result in ranking.tie_group
+    }
+    for result in ranking.ranked:
         key = (result.rrf_k, result.bm25_weight, result.vector_weight)
-        cells.append("*" if key in tie_keys else "")
-        table.add_row(*cells)
+        table.add_row(*cells_for(result, "*" if key in tie_keys else ""))
     console.print(table)
     if ranking.winner_declared:
         best = ranking.tie_group[0]
@@ -341,7 +409,18 @@ def _render_sweep(ranking: SweepRanking, fixture_name: str, output_json: bool) -
 @click.command("bench")
 @click.argument("fixture", type=click.Path(exists=True, path_type=Path))
 @click.option("-n", "--limit", default=10, help="Number of results per query")
-@click.option("-C", "--candidate-limit", default=20, help="Reranker candidate pool size")
+# A3 waiver (Plan 02): the shipped -C flag keeps its 1..200 Click range so
+# narrowing it stays a non-breaking change; the D-10 5..50 bound is enforced
+# at resolution through the same resolve_candidate_limit clamp the search
+# command uses, so no string and no 200 ever reaches SearchOptions.
+@click.option(
+    "-C",
+    "--candidate-limit",
+    default=None,
+    type=click.IntRange(1, 200),
+    help="Reranker candidate pool size "
+    "(default: SIF_RERANK_CANDIDATE_LIMIT or 20; clamped to 5-50)",
+)
 @click.option("-c", "--collection", multiple=True, help="Collection to search")
 @click.option("--all", "search_all", is_flag=True, help="Search all collections")
 @click.option("--sweep", is_flag=True, help="Sweep the declared rrf_k/weight grid")
@@ -356,7 +435,7 @@ def bench_cmd(  # noqa: PLR0913
     ctx: click.Context,
     fixture: Path,
     limit: int,
-    candidate_limit: int,
+    candidate_limit: int | None,
     collection: tuple,
     search_all: bool,
     sweep: bool,
@@ -409,24 +488,35 @@ def bench_cmd(  # noqa: PLR0913
         db.init_schema()
 
         manager, embedding_dim = _load_embedder(settings, model_type)
+        # One embedding-once wrapper per bench invocation serves the baseline
+        # and the sweep alike (D-07): every distinct query text is embedded
+        # exactly once, then reused across all measurements.
+        inner_embedder = manager._model if manager else None  # noqa: SLF001
         harness = BenchHarness(
             db=db,
-            embedder=manager._model if manager else None,  # noqa: SLF001
+            embedder=CachedEmbedder(inner_embedder) if inner_embedder is not None else None,
             embedding_dim=embedding_dim,
         )
         collection_ids = _resolve_collection_ids(db, collection, search_all)
-        options = _build_options(limit, candidate_limit, settings, collection_ids)
+        options = _build_options(
+            limit,
+            resolve_candidate_limit(candidate_limit, settings),
+            settings,
+            collection_ids,
+        )
         try:
             if sweep:
-                ranking = _run_sweep(
+                ranking, baseline = _run_sweep(
                     harness,
                     options,
                     _tuning_evaluator(fixture_data, fixture),
                 )
-                _render_sweep(ranking, fixture.name, output_json)
+                _render_sweep(ranking, baseline, fixture.name, output_json)
                 return
             evaluator = SearchEvaluator(fixture_data, fixture_path=fixture)
             report = _measure_state(harness, options, evaluator)
+        except click.ClickException:
+            raise
         except Exception as e:
             raise click.ClickException(f"Benchmark failed: {e}") from e
         _render_report(report, fixture.name, output_json)
