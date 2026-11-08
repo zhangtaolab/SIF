@@ -466,15 +466,15 @@ class RRFFusion:
         self,
         results_lists: list[list[SearchResult]],
         limit: int = 10,
-    ) -> list[SearchResult]: ...
-
-    def fuse_with_weights(
-        self,
-        results_lists: list[list[SearchResult]],
-        weights: list[float],
-        limit: int = 10,
+        weights: list[float] | None = None,
+        k: int | None = None,
     ) -> list[SearchResult]: ...
 ```
+
+`weights` is a per-list multiplier in multiply form — `weight * 1/(k + rank)`
+— and is never normalized. `weights=None` means `1.0` for every list (the
+byte-identical default). `k=None` falls back to the constructor `k`; a
+per-call `k` overrides it without mutating the instance.
 
 #### Function: `compute_rrf_score`
 
@@ -488,7 +488,15 @@ def compute_rrf_score(rank: int, k: int = 60) -> float:
 from sif.search.rrf import RRFFusion
 
 rrf = RRFFusion(k=60)
+# Default: equal weights, k=60 — byte-identical to plain RRF
 fused = rrf.fuse([bm25_results, vector_results], limit=10)
+# Weighted fusion (multiply form, never normalized)
+fused = rrf.fuse(
+    [bm25_results, vector_results],
+    limit=10,
+    weights=[0.7, 0.3],
+    k=40,
+)
 ```
 
 ## Database Module

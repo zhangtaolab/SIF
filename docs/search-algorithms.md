@@ -235,16 +235,26 @@ results = hybrid.search("python decorators", options)
 
 ### Weighted Fusion
 
-RRF supports optional per-source weights via the Python API (`RRFFusion.fuse_with_weights`).
-Weights scale each list's reciprocal-rank contribution — they multiply `1/(k + rank)`,
-never the raw scores:
+RRF supports optional per-source weights. Weights scale each list's reciprocal-rank
+contribution — they multiply `1/(k + rank)`, never the raw scores, and are never
+normalized (normalizing would halve every score at equal weights and break the
+byte-identical default):
 
 ```
 score = Σ weight_i / (k + rank_i)
 ```
 
-There is no weighted raw-score combination, and no CLI or environment knob selects weights:
-the CLI always fuses with equal weights.
+Defaults are equal weights (`1.0`) and `k = 60`; the unconfigured path is byte-identical
+to plain RRF. Weights and `k` can be selected per query through:
+
+- CLI (`sif search query --bm25-weight 0.7 --vector-weight 0.3 --rrf-k 40`)
+- Environment: `SIF_BM25_WEIGHT`, `SIF_VECTOR_WEIGHT`, `SIF_RRF_K`
+- Python: `RRFFusion.fuse(results_lists, limit, weights=[w_bm25, w_vector], k=...)`
+- MCP `query` tool: `bm25_weight`, `vector_weight`, `rrf_k` request fields
+
+Precedence is CLI flag / request field > `SIF_` setting > default. Only `query`
+(hybrid fusion) exposes the weights; `search` (BM25) and `vsearch` (vector) are
+single-source and take no weight flags.
 
 ## Query Expansion
 
