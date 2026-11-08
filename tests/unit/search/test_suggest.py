@@ -132,10 +132,10 @@ class TestDidYouMean:
     """D-07: per-word replacement into full rewritten queries; SC2 pinned.
 
     The vocab stores porter STEMS, so replacements display stems (accepted,
-    RESEARCH A1); in-vocab words are kept as typed. The in-vocab predicate is
-    prefix-range membership (locked in plan Task 2, Pitfall 4): a token
-    "retrieves" when any vocab term starts with it or it starts with a vocab
-    term — only tokens whose prefix range hits nothing are DYM candidates.
+    RESEARCH A1); in-vocab words are kept as typed. The in-vocab predicate
+    probes the index with the searcher's own quoted-prefix MATCH form (WR-01),
+    so porter stemming and prefix matching behave exactly as they will when
+    the user re-runs the suggestion.
     """
 
     def test_rewrites_full_query_per_out_of_vocab_word(self, vocab_db):
@@ -205,6 +205,37 @@ class TestDidYouMean:
             suggestions = engine.did_you_mean("alphx beta")
             assert suggestions == ["alpha beta"]
             assert searcher.search(suggestions[0], SearchOptions(limit=1))
+        finally:
+            conn.close()
+
+    def test_short_stem_prefix_does_not_suppress_correction(self):
+        """WR-01a: 'resturant' retrieves nothing, so it must be corrected.
+
+        The old prefix-substring predicate judged it retrievable because
+        ``"resturant".startswith("rest")`` — even though the searcher returns
+        zero rows for it.
+        """
+        conn = _fixture_db(("r1", "rest"), ("r2", "restaurant"))
+        try:
+            engine = SuggestionEngine(conn)
+            searcher = BM25Searcher(conn)
+            assert not searcher.search("resturant", SearchOptions(limit=1))
+            assert engine.did_you_mean("resturant") == ["restaur"]
+        finally:
+            conn.close()
+
+    def test_valid_inflected_word_is_not_corrected(self):
+        """WR-01b: 'happy' matches the porter stem 'happi', so it is not rewritten.
+
+        The old predicate compared surface strings against stems and rewrote
+        the valid word to ``happi``; ``"happy"*`` actually matches.
+        """
+        conn = _fixture_db(("h1", "happy day"), ("h2", "doggy bone"))
+        try:
+            engine = SuggestionEngine(conn)
+            searcher = BM25Searcher(conn)
+            assert searcher.search("happy", SearchOptions(limit=1))
+            assert engine.did_you_mean("happy dog") == []
         finally:
             conn.close()
 

@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 
 from sif.config.settings import Settings, get_settings
 from sif.database.repositories import QueryLogRepository
-from sif.search.bm25 import BM25Searcher, _FTS_METACHARS
+from sif.search.bm25 import _FTS_METACHARS, BM25Searcher
 from sif.utils.logging import get_logger
 
 
@@ -52,7 +52,6 @@ class SuggestionEngine:
         """Initialize with the searcher's connection (BM25Searcher shape)."""
         self.db = db
         self._terms: list[str] = []  # sorted stems (bisect domain)
-        self._term_set: set[str] = set()
         self._df: dict[str, int] = {}  # term -> documents containing it
         self._loaded = False
 
@@ -66,7 +65,6 @@ class SuggestionEngine:
         terms = [row[0] for row in rows]
         terms.sort()
         self._terms = terms
-        self._term_set = set(terms)
         self._df = {row[0]: row[1] for row in rows}
 
     def _ensure_loaded(self) -> None:
@@ -82,7 +80,6 @@ class SuggestionEngine:
                 exc_info=True,
             )
             self._terms = []
-            self._term_set = set()
             self._df = {}
         self._loaded = True
 
@@ -124,8 +121,24 @@ class SuggestionEngine:
             return []
         return [variant for variant in self._expand_variants(slots, n) if self._hits(variant)]
 
+    def _probe(self, fts_query: str) -> bool:
+        """Run one FTS MATCH existence probe; degrade to False on failure.
+
+        Fail-soft: a missing/locked ``documents_fts`` must yield no
+        suggestions, never an exception escaping a search command.
+        """
+        try:
+            row = self.db.execute(
+                "SELECT 1 FROM documents_fts WHERE documents_fts MATCH ? LIMIT 1",
+                (fts_query,),
+            ).fetchone()
+        except sqlite3.OperationalError:
+            logger.warning("suggestion probe unavailable; treating as no match", exc_info=True)
+            return False
+        return row is not None
+
     def _hits(self, variant: str) -> bool:
-        """Would this rewritten query retrieve at least one document? (CR-01)
+        """Would this rewritten query retrieve at least one document? (CR-01).
 
         The suggestion is an AND conjunction of quoted-prefix phrases, so
         each replacement term existing *somewhere* is not enough — the terms
@@ -134,12 +147,23 @@ class SuggestionEngine:
         ``BM25Searcher.search`` will run (SC2: every emitted suggestion
         returns >= 1 hit).
         """
-        fts_query = BM25Searcher(self.db)._build_fts_query(variant)
-        row = self.db.execute(
-            "SELECT 1 FROM documents_fts WHERE documents_fts MATCH ? LIMIT 1",
-            (fts_query,),
-        ).fetchone()
-        return row is not None
+        # SLF001: reuse the searcher's sanitizer so the probe cannot drift
+        # from the real query (porter stemming/quoting/AND join).
+        return self._probe(BM25Searcher(self.db)._build_fts_query(variant))  # noqa: SLF001
+
+    def _retrievable(self, token: str) -> bool:
+        """Would the searcher retrieve this token? Index probe (WR-01).
+
+        The searcher matches a token through the quoted-prefix form after
+        porter stemming, so the in-vocab test must ask the index rather than
+        compare strings. The old prefix-substring predicate was wrong in
+        both directions: ``"resturant".startswith("rest")`` suppressed a
+        legitimate correction, and ``"happy"`` was rewritten to the stem
+        ``happi`` even though ``"happy"*`` matches. Probing with the
+        searcher's own ``_build_fts_query`` makes the predicate exact.
+        """
+        # SLF001: same sanitizer as ``_hits`` — the exact query form.
+        return self._probe(BM25Searcher(self.db)._build_fts_query(token))  # noqa: SLF001
 
     def _dym_slots(self, tokens: list[str]) -> list[str | list[str]] | None:
         """Per-token plan: the kept token, or its close matches.
@@ -222,21 +246,6 @@ class SuggestionEngine:
             cleaned = _FTS_METACHARS.sub(" ", raw).strip().lower()
             tokens.extend(piece for piece in cleaned.split() if piece)
         return tokens
-
-    def _retrievable(self, token: str) -> bool:
-        """Would the searcher match this token? Prefix-range membership (Pitfall 4).
-
-        True when the token is a vocab term, any vocab term starts with it,
-        or it starts with a vocab term — retrievability semantics without a
-        Python porter stemmer (porter matches both directions through the
-        quoted-prefix form).
-        """
-        if token in self._term_set:
-            return True
-        index = bisect.bisect_left(self._terms, token)
-        if index < len(self._terms) and self._terms[index].startswith(token):
-            return True
-        return any(token[:size] in self._term_set for size in range(1, len(token)))
 
     def _close_matches(self, token: str) -> list[str]:
         """Close vocab matches for a candidate token over a first-letter±1 bucket.
