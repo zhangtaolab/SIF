@@ -1,25 +1,29 @@
 ---
 phase: 13-watch-everywhere-mcp-embedded-refresh-background-daemon
-fixed_at: 2026-11-08T00:09:41Z
+fixed_at: 2026-11-08T08:29:10Z
 review_path: .planning/phases/13-watch-everywhere-mcp-embedded-refresh-background-daemon/13-REVIEW.md
-iteration: 1
-findings_in_scope: 4
-fixed: 4
+iteration: 2
+findings_in_scope: 6
+fixed: 6
 skipped: 0
 status: all_fixed
 ---
 
 # Phase 13: Code Review Fix Report
 
-**Fixed at:** 2026-11-08T00:09:41Z
+**Fixed at:** 2026-11-08T08:29:10Z
 **Source review:** `.planning/phases/13-watch-everywhere-mcp-embedded-refresh-background-daemon/13-REVIEW.md`
-**Iteration:** 1 (round 2 of fixes on the same REVIEW.md — this round closed the 4 Info findings under `fix_scope=all`)
+**Iteration:** 2 (round 3 of fixes — the incremental re-review of the post-round-2
+tree found 2 new findings, WR-01 + IN-01; both fixed this round)
 
 **Summary:**
-- Findings in REVIEW.md: 9 total (1 critical, 4 warnings, 4 info)
-- Fixed in the prior round (fix_scope=critical_warning, commits 9acfd69, e3156da, 8039a3e, 191aa05, cd33b21 + lint 9756321): CR-01, WR-01, WR-02, WR-03, WR-04 — re-verified present in the current tree this round (see "Previously Fixed" below); not re-applied, not re-committed
-- Findings in scope this round: 4 (IN-01..IN-04)
-- Fixed this round: 4
+- Findings in REVIEW.md: 9 total (1 critical, 4 warnings, 4 info) in the original
+  review; the round-3 incremental re-review re-verified all 9 fixes present and
+  reported 2 NEW findings (1 warning, 1 info)
+- Fixed in round 1 (fix_scope=critical_warning, commits 9acfd69, e3156da, 8039a3e, 191aa05, cd33b21 + lint 9756321): CR-01, WR-01, WR-02, WR-03, WR-04 — re-verified present again in round 3 (see "Previously Fixed" below); not re-applied, not re-committed
+- Fixed in round 2 (fix_scope=all, commits 740b659, 1039c25, b1d7337, 6671ff8 + lint f418ff9): the original IN-01..IN-04
+- Findings in scope this round (round 3): 2 (the re-review's WR-01 and IN-01)
+- Fixed this round: 2
 - Skipped this round: 0
 
 **Mode note:** `workflow.use_worktrees=false`, so all edits and commits were made
@@ -27,7 +31,52 @@ directly in the main checkout on branch `dev`.
 
 ## Fixed Issues
 
-(All four findings below were fixed in this round; prior-round fixes are listed under Previously Fixed.)
+### WR-01: `write_pid_file` uses a process-shared temp name — concurrent detaches race on the same inode
+
+**Files modified:** `src/sif/utils/daemon.py`, `tests/unit/utils/test_daemon.py`
+**Commit:** e1bb7d1
+**Applied fix:** The temp artifact is now named per writer —
+`.{path.name}.{os.getpid()}.tmp` instead of the fixed `.{path.name}.tmp` — so two
+concurrent `sif watch --detach` armings on the same index never share a temp
+inode (the module's contract explicitly lets two daemons run simultaneously);
+each writer's create/write/rename sequence is independent, `os.replace` still
+lands atomically, and the IN-03 symlink hardening is unchanged (temp still mode
+0600, still unlinked on failure). New `TestPidFileConcurrentWriters` regression
+tests: (1) the rename source name carries the writer PID (patched to a sentinel)
+and no `.tmp` litter remains after the write; (2) the exact review interleaving —
+writer B performs a FULL write (temp create + payload + its own replace) inside
+writer A's rename window via an `os.replace` interleave hook, and both writes
+succeed with a well-formed final file (last rename wins, no leaked temps). Both
+tests were verified to FAIL against the pre-fix code (stash-and-run check) and
+pass after it; daemon suite: 32 passed.
+
+### IN-01: `_service_argv_tail` half-pins the depth — an unpinned BM25 install can still go embed in a divergent service environment
+
+**Files modified:** `src/sif/cli/commands/watch.py`, `tests/unit/cli/test_watch_cmd.py`
+**Commit:** f4057f6
+**Applied fix:** `_service_argv_tail` now bakes the depth pin unconditionally:
+`--embed` when `params.depth == "embed"`, and `--no-embed` for EVERY BM25
+install — the plain install (no flags, ambient `bm25`) included. The pin is a
+no-op at the BM25 runtime default and only bites when the service's own
+environment diverges from what was installed (e.g. a later `launchctl setenv
+SIF_WATCH_UPDATE_DEPTH=embed`, which persists for every LaunchAgent), so the
+WR-03 invariant holds in full: an installed-BM25 service must never start
+computing vectors — the service replays exactly what was installed. Because the
+resolved `params.depth` alone now determines the tail, the `settings` /
+`no_embed` parameters were dropped from `_service_argv_tail` (and from
+`_run_install_service`, whose only other use of them was that call) — they were
+the half-pin's inputs and would now be dead arguments (ruff ARG). Tests: the
+two depth-matrix unit tests were merged into
+`test_argv_tail_pins_the_installed_depth` (embed → `--embed`; bm25 →
+`--no-embed`, unconditionally); new CLI-plumbing test
+`test_install_plain_bm25_still_bakes_no_embed` proves a plain install (no depth
+flags, ambient bm25) bakes `--no-embed` end-to-end through `watch_cmd`; the
+WR-03 plumbing test (`test_install_bakes_no_embed_flag_under_ambient_embed_setting`)
+is unchanged and still passes — the unconditional pin strictly subsumes it.
+watch CLI suite: 35 passed.
+
+(Round 2 below — the four Info findings of the original REVIEW.md; the round-1
+CR/WR fixes are listed under Previously Fixed.)
 
 ### IN-01: `SIF_LOCK_WAIT_TIMEOUT` missing from the generated configuration reference; multi-field validators annotated on only their first field
 
@@ -148,13 +197,28 @@ this tree):**
 The full gate was re-run on the final tree (after the f418ff9 whitespace-only
 reformat) so the numbers above describe exactly the tree at HEAD.
 
+**Round 3 gate (WR-01 + IN-01; also run in the MAIN CHECKOUT, numbers
+reproducible from this tree):**
+
+- Per-fix: Tier 1 (re-read of every modified section) + Tier 2 (`ast.parse`
+  on each edited Python file; scoped pytest runs — daemon 32, watch CLI 35,
+  service + real-subprocess daemon e2e 19 — all green before each commit).
+  Both new daemon regression tests were additionally proven to fail against
+  the pre-fix code via a stash-and-run check.
+- `env -u FORCE_COLOR NO_COLOR=1 python -m pytest` — **1233 passed, 1 skipped**
+  (the pre-existing opt-in `SIF_TEST_LIVE_LAUNCHD` live launchd proof),
+  coverage 94.55% (fail_under=90 met)
+- `ruff check src tests` — All checks passed
+- `ruff format --check src tests` — 176 files already formatted
+- `ty check src/sif` — All checks passed
+
 ## Skipped Issues
 
-None this round — all 4 in-scope Info findings were fixed. No finding turned
-out to be wrong or unfixable as described.
+None in either round — all in-scope findings were fixed. Round 3: both of the
+re-review's new findings (WR-01, IN-01) were fixed as described above.
 
 ---
 
-_Fixed: 2026-11-08T00:09:41Z_
+_Fixed: 2026-11-08T08:29:10Z_
 _Fixer: Claude (gsd-code-fixer)_
-_Iteration: 1_
+_Iteration: 2_
