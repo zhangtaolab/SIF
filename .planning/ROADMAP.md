@@ -38,7 +38,7 @@ Full detail: `.planning/milestones/v1.0-ROADMAP.md`
 - [x] **Phase 12: `sif watch` Foreground MVP** - File changes auto-reindex with debounce, atomic-save/move handling, temp-file exclusion, tiered depth (`--embed`), missing-root protection (completed 2026-11-07)
 - [x] **Phase 13: Watch Everywhere (MCP-Embedded Refresh + Background Daemon)** - `SIF_MCP_WATCH=1` embedded refresh; `--detach` + launchd/systemd service install (completed 2026-11-08)
 - [x] **Phase 14: Freshness Floor (Pre-Command Refresh + Staleness Marking)** - Stat-based drift refresh before search with no daemon running; staleness markers on vector-lagging results (completed 2026-11-08)
-- [ ] **Phase 15: Search Quality Configuration (Weights + Suggestions)** - `rrf_k`/BM25/vector weights configurable with unchanged defaults; did-you-mean + history suggestions; `sif suggest`
+- [x] **Phase 15: Search Quality Configuration (Weights + Suggestions)** - `rrf_k`/BM25/vector weights configurable with unchanged defaults; did-you-mean + history suggestions; `sif suggest` (completed 2026-11-08)
 - [ ] **Phase 16: Bench Expansion + Reranker Tuning** - nDCG@k/Hit@k/p50-p95 metrics, ≥50-query tuning/held-out fixtures, `--sweep`, reranker cap + threshold
 
 ## Phase Details
@@ -131,7 +131,7 @@ Plans:
   2. Zero- or low-result searches display "Did you mean" suggestions built from indexed terms — every suggestion returns at least one hit, and queries are never silently rewritten
   3. Suggestions incorporate the user's query history (stored locally in query_log, with opt-out / clear available)
   4. `sif suggest` returns prefix completions, did-you-mean corrections, and history suggestions, responding within 100 ms on a realistic personal-KB vocabulary
-**Plans**: 3/3 plans executed
+**Plans**: 3/3 plans complete
 Plans:
 **Wave 1**
 - [x] 15-01-PLAN.md — Weighted RRF end-to-end tracer: SearchOptions/Settings/CLI/MCP weight knobs with SC1 byte-identical golden (QUAL-01)
@@ -162,7 +162,7 @@ Plans:
 | 12. `sif watch` Foreground MVP | v1.1 | 3/3 | Complete    | 2026-11-07 |
 | 13. Watch Everywhere (MCP + Daemon) | v1.1 | 4/4 | Complete    | 2026-11-08 |
 | 14. Freshness Floor (Pre-Command + Staleness) | v1.1 | 3/3 | Complete    | 2026-11-08 |
-| 15. Search Quality Configuration | v1.1 | 3/3 | In Progress | - |
+| 15. Search Quality Configuration | v1.1 | 3/3 | Complete    | 2026-11-08 |
 | 16. Bench Expansion + Reranker Tuning | v1.1 | 0/TBD | Not started | - |
 
 ---
