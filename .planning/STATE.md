@@ -5,16 +5,16 @@ milestone_name: Live Index and Search Quality
 current_phase: 16
 current_phase_name: Bench Expansion + Reranker Tuning
 status: executing
-stopped_at: Completed 16-03-PLAN.md
-last_updated: "2026-11-08T14:29:47.334Z"
+stopped_at: Completed 16-06-PLAN.md
+last_updated: "2026-11-08T14:50:31.163Z"
 last_activity: 2026-11-08
 last_activity_desc: Phase 16 execution started
-state_head: 2a4382fabef1c58a044bd8d5f455111ff8e2070d
+state_head: 6bac5bfbd61601f700ff11425ede223c0877f5eb
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 22
-  completed_plans: 18
+  completed_plans: 20
 ---
 
 # DocSift — Project State
@@ -30,7 +30,7 @@ progress:
 ## Current Position
 
 Phase: 16 (Bench Expansion + Reranker Tuning) — EXECUTING
-Plan: 5 of 6
+Plan: 6 of 6
 Status: Ready to execute
 Last activity: 2026-11-08 — Phase 16 execution started
 
@@ -70,6 +70,7 @@ Progress: [████████░░] 83%
 | Phase 16 P01 | 17 min | 3 tasks | 5 files |
 | Phase 16 P02 | 18 min | 3 tasks | 7 files |
 | Phase 16 P03 | 14 min | 3 tasks | 157 files |
+| Phase 16 P06 | 12 min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -152,6 +153,9 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 - [Phase 16]: 16-03: relevance keys are corpus-relative (declared corpus_root resolved once via resolve_corpus_root); build_bench_db stores resolved absolute paths so result keys join — never document ids (D-02, Pitfall 4)
 - [Phase 16]: 16-03: multilingual docs keep Chinese phrases as exact contiguous runs surrounded by non-CJK; queries reuse the exact run, never mid-run prefixes (Pitfall 3 porter constraint)
 - [Phase 16]: 16-03: pack split fixed in the generator at 9 tuning + 5 held-out per category (36/20); drift gate flags unexpected files too; _settings_mock carries the rerank fields inertly until 16-04 reads them
+- [Phase 16]: 16-06: rerank threshold = raw >= on top1*alpha after descending sort, before [:top_k] — exact half retained, no epsilon; 0.0 default keeps direct construction byte-identical
+- [Phase 16]: 16-06: over-fetch rides SearchOptions.limit via dataclasses.replace (max(limit+offset, candidate_limit)) reaching hybrid.search and the cross-query fuse; off path passes the caller's options object by identity (SC1-pinned byte-identical)
+- [Phase 16]: 16-06: create_reranker resolves rerank_relative_threshold with isinstance(float|int) after getattr — MagicMock settings fall back to 0.0, never leaking into the scoring path (Pitfall 10)
 
 ### Pending Todos
 
@@ -172,8 +176,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 
 ## Session Continuity
 
-Last session: 2026-11-08T14:29:46.750Z
-Stopped at: Completed 16-03-PLAN.md
+Last session: 2026-11-08T14:50:30.590Z
+Stopped at: Completed 16-06-PLAN.md
 Resume file: None
 
 - **Next expected action:** `/gsd-discuss-phase 13` (Phase 13 needs context; research flags: daemon/service-install specifics already in research/STACK.md)
