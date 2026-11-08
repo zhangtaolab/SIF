@@ -32,17 +32,26 @@ def _mean(values: Sequence[float]) -> float:
 
 
 def precision_at_k(relevance: Sequence[int], k: int) -> float:
-    """Precision@K: relevant items in top-K / K."""
+    """Precision@K: relevant items in top-K / K.
+
+    Relevance is binarized (grade > 0) so graded 0-3 fixtures can never push
+    precision above 1.0 while legacy 0/1 fixtures are unchanged (Pitfall 8).
+    """
     if k == 0:
         return 0.0
-    return sum(relevance[:k]) / k
+    binary = [1 if grade > 0 else 0 for grade in relevance[:k]]
+    return sum(binary) / k
 
 
 def recall_at_k(relevance: Sequence[int], total_relevant: int, k: int) -> float:
-    """Recall@K: relevant items retrieved / total relevant."""
+    """Recall@K: relevant items retrieved / total relevant.
+
+    Relevance is binarized (grade > 0), matching precision's semantics.
+    """
     if total_relevant == 0:
         return 0.0
-    return sum(relevance[:k]) / total_relevant
+    binary = [1 if grade > 0 else 0 for grade in relevance[:k]]
+    return sum(binary) / total_relevant
 
 
 def reciprocal_rank(relevance: Sequence[int]) -> float:
@@ -297,8 +306,11 @@ class SearchEvaluator:
         """Validate fixture format and parse query items."""
         if "queries" not in self.fixture:
             raise ValueError("Fixture must contain 'queries' key")
+        queries = self.fixture["queries"]
+        if not queries:
+            raise ValueError("Fixture must contain a non-empty 'queries' list")
         schema: str | None = None
-        for i, item in enumerate(self.fixture["queries"]):
+        for i, item in enumerate(queries):
             if "query" not in item:
                 raise ValueError(f"Query {i} missing 'query' field")
             has_legacy = "relevant_docids" in item
@@ -371,34 +383,36 @@ class SearchEvaluator:
     ) -> dict[str, float]:
         """Evaluate search quality.
 
+        Works for both fixture schemas: graded fixtures resolve retrieved
+        relevance through ``result_key`` and the item's grade map, legacy
+        fixtures through ``relevant_docids`` — both mapped to 1/0 for the
+        flat binary metrics.
+
         Args:
             search_fn: Function that takes a query string and returns SearchResult list
             k_values: List of k values for precision/recall@k. Default: [1, 5, 10]
 
         Returns:
-            Dictionary of averaged metrics
+            Dictionary of averaged metrics (same flat keys and shapes as
+            before this change)
         """
         k_values = k_values or [1, 5, 10]
         metrics: dict[str, list[float]] = {}
         all_relevance: list[Sequence[int]] = []
 
-        for query_item in self.fixture["queries"]:
-            query = query_item["query"]
-            relevant_ids = set(query_item["relevant_docids"])
-
+        for item in self.query_items:
             # Run search
-            results = search_fn(query)
-            result_ids = [r.document_id for r in results]
-
-            # Build relevance vector
-            relevance = [1 if rid in relevant_ids else 0 for rid in result_ids]
+            results = search_fn(item.query)
+            retrieved = self._grades_for(item, results)
+            relevance = [1 if grade > 0 else 0 for grade in retrieved]
             all_relevance.append(relevance)
+            total_relevant = sum(1 for grade in item.grades.values() if grade > 0)
 
             # Compute metrics for each k
             for k in k_values:
                 metrics.setdefault(f"precision@{k}", []).append(precision_at_k(relevance, k))
                 metrics.setdefault(f"recall@{k}", []).append(
-                    recall_at_k(relevance, len(relevant_ids), k),
+                    recall_at_k(relevance, total_relevant, k),
                 )
 
         # Average across queries
@@ -406,7 +420,7 @@ class SearchEvaluator:
         for key, values in metrics.items():
             averaged[key] = sum(values) / len(values) if values else 0.0
         averaged["mrr"] = mean_reciprocal_rank(all_relevance)
-        averaged["num_queries"] = float(len(self.fixture["queries"]))
+        averaged["num_queries"] = float(len(self.query_items))
 
         return averaged
 

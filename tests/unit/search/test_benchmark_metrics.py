@@ -16,6 +16,8 @@ from sif.search.benchmark import (
     measure_query_times,
     ndcg_at_k,
     percentile,
+    precision_at_k,
+    recall_at_k,
     resolve_corpus_root,
     result_key,
 )
@@ -276,6 +278,49 @@ class TestReportLegacyFixture:
         # all four keys remain present in declared order.
         assert [report.categories[c].count for c in CATEGORIES] == [0, 0, 0, 0]
         assert list(data["categories"].keys()) == list(CATEGORIES)
+
+
+class TestEmptyQueriesGuard:
+    def test_empty_queries_list_rejected(self) -> None:
+        with pytest.raises(ValueError, match="non-empty 'queries'"):
+            SearchEvaluator({"queries": []})
+
+
+class TestBinaryPrecisionRecall:
+    def test_graded_precision_never_exceeds_one(self) -> None:
+        assert precision_at_k([3, 3, 3], 3) == 1.0
+        assert precision_at_k([3, 2, 0], 3) == pytest.approx(2 / 3)
+        assert precision_at_k([3, 3, 3, 3, 3], 10) == 0.5
+
+    def test_graded_recall_never_exceeds_one(self) -> None:
+        assert recall_at_k([3, 3], 2, 2) == 1.0
+        assert recall_at_k([3, 0], 2, 2) == 0.5
+
+    def test_legacy_zero_one_vectors_unchanged(self) -> None:
+        assert precision_at_k([1, 0, 1, 0, 0], 4) == 0.5
+        assert recall_at_k([1, 0, 0, 1], 4, 4) == 0.5
+
+
+class TestEvaluateGradedFixture:
+    def test_evaluate_accepts_graded_fixture_flat_keys(self, tmp_path: Path) -> None:
+        fixture, fixture_path = _graded_fixture(tmp_path)
+        corpus = tmp_path / "corpus"
+
+        def search_fn(query: str) -> list[SearchResult]:
+            if query == "q1":
+                return [_result(str(corpus / "keyword" / "a.md"), "d1", 0.9)]
+            return [_result(str(corpus / "synonym" / "c.md"), "d3", 0.7)]
+
+        results = SearchEvaluator(fixture, fixture_path=fixture_path).evaluate(
+            search_fn,
+            k_values=[1, 5],
+        )
+        assert results["num_queries"] == 2.0
+        assert results["precision@1"] == 1.0
+        # q1 retrieves 1 of its 2 relevant docs; q2 retrieves its only one.
+        assert results["recall@5"] == pytest.approx(0.75)
+        assert results["mrr"] == 1.0
+        assert all(value <= 1.0 for key, value in results.items() if key != "num_queries")
 
 
 class TestPercentile:

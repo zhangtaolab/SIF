@@ -334,6 +334,39 @@ class TestBenchCommand:
         assert isinstance(output["cold_start_ms"], (int, float))
         assert output["cold_start_ms"] >= 0.0
 
+    def test_bench_empty_queries_exits_nonzero(self, tmp_path: Path) -> None:
+        """An empty queries list fails loudly instead of reporting zeros."""
+        runner = CliRunner()
+
+        fixture = {"queries": []}
+        fixture_path = tmp_path / "fixture.json"
+        fixture_path.write_text(json.dumps(fixture))
+
+        mock_pipeline = MagicMock()
+        mock_pipeline.search.return_value = []
+        mock_db = MagicMock()
+        mock_manager = MagicMock()
+        mock_manager.embed_single.return_value = [0.0] * 8
+        mock_manager._model = MagicMock()
+
+        with (
+            patch("sif.cli.commands.bench.Database", return_value=mock_db),
+            patch(
+                "sif.cli.commands.bench.EmbeddingManager.from_settings",
+                return_value=mock_manager,
+            ),
+            patch("sif.cli.commands.bench.SearchPipeline", return_value=mock_pipeline),
+            patch("sif.cli.commands.bench.get_settings", return_value=_settings_mock()),
+        ):
+            result = runner.invoke(
+                bench_cmd,
+                [str(fixture_path)],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code != 0
+        assert "non-empty 'queries'" in result.output
+
     def test_bench_invalid_settings_click_exception(self, tmp_path: Path) -> None:
         """A pydantic ValidationError from get_settings surfaces as a
         ClickException (non-zero exit), never a raw traceback."""
