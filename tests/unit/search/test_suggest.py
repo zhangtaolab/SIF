@@ -178,6 +178,36 @@ class TestDidYouMean:
                 results = searcher.search(suggestion, SearchOptions(limit=1))
                 assert results, f"suggestion {suggestion!r} returned zero hits (SC2)"
 
+    def test_cross_document_terms_drop_zero_hit_suggestions(self):
+        """CR-01/SC2: a conjunction whose terms live in different docs is not emitted.
+
+        "beta" retrieves on its own, so the per-token substitution looks
+        plausible; only the AND probe catches that "alpha beta" hits nothing.
+        The old co-occurring ``machien quantom`` fixture could not.
+        """
+        conn = _fixture_db(("d1", "alpha"), ("d2", "beta"))
+        try:
+            engine = SuggestionEngine(conn)
+            searcher = BM25Searcher(conn)
+            suggestions = engine.did_you_mean("alphx beta")
+            assert suggestions == []
+            for suggestion in suggestions:  # pragma: no cover - empty after fix
+                assert searcher.search(suggestion, SearchOptions(limit=1))
+        finally:
+            conn.close()
+
+    def test_co_occurring_rewrite_is_still_emitted(self):
+        """CR-01 positive: a validated co-occurring rewrite survives the probe."""
+        conn = _fixture_db(("d1", "alpha beta"))
+        try:
+            engine = SuggestionEngine(conn)
+            searcher = BM25Searcher(conn)
+            suggestions = engine.did_you_mean("alphx beta")
+            assert suggestions == ["alpha beta"]
+            assert searcher.search(suggestions[0], SearchOptions(limit=1))
+        finally:
+            conn.close()
+
     def test_uncorrectable_token_yields_no_suggestion(self, vocab_db):
         """An out-of-vocab word with no close match yields [] (never fabricated)."""
         engine = SuggestionEngine(vocab_db)

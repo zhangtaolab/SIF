@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 
 from sif.config.settings import Settings, get_settings
 from sif.database.repositories import QueryLogRepository
-from sif.search.bm25 import _FTS_METACHARS
+from sif.search.bm25 import BM25Searcher, _FTS_METACHARS
 from sif.utils.logging import get_logger
 
 
@@ -122,7 +122,24 @@ class SuggestionEngine:
         slots = self._dym_slots(self._tokens(query))
         if slots is None:
             return []
-        return self._expand_variants(slots, n)
+        return [variant for variant in self._expand_variants(slots, n) if self._hits(variant)]
+
+    def _hits(self, variant: str) -> bool:
+        """Would this rewritten query retrieve at least one document? (CR-01)
+
+        The suggestion is an AND conjunction of quoted-prefix phrases, so
+        each replacement term existing *somewhere* is not enough — the terms
+        must co-occur in one document. Probes with the searcher's own
+        ``_build_fts_query`` so the check is exactly the query
+        ``BM25Searcher.search`` will run (SC2: every emitted suggestion
+        returns >= 1 hit).
+        """
+        fts_query = BM25Searcher(self.db)._build_fts_query(variant)
+        row = self.db.execute(
+            "SELECT 1 FROM documents_fts WHERE documents_fts MATCH ? LIMIT 1",
+            (fts_query,),
+        ).fetchone()
+        return row is not None
 
     def _dym_slots(self, tokens: list[str]) -> list[str | list[str]] | None:
         """Per-token plan: the kept token, or its close matches.
