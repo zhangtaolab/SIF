@@ -347,9 +347,10 @@ class TestSearchLineNumbers:
 
         assert result.exit_code == 0
         lines = result.output.splitlines()
-        assert lines[0] == "rank,score,title,path,collection"
         # One line per result: dict rows must render identically to object rows
-        assert lines[1:] == ['"1","0.9500","Test Doc","/notes/test.md","notes"'] * 2
+        # (vectors_stale column added by 14-03 D-12; False is the field default).
+        assert lines[0] == "rank,score,title,path,collection,vectors_stale"
+        assert lines[1:] == ['"1","0.9500","Test Doc","/notes/test.md","notes","false"'] * 2
 
     def test_search_line_numbers_md(self):
         """CR-02 regression: --line-numbers --md exits 0.
@@ -426,7 +427,7 @@ class TestSearchLineNumbers:
             )
 
         assert result.exit_code == 0
-        assert '  <result rank="1" score="0.9500">' in result.output
+        assert '  <result rank="1" score="0.9500" vectors_stale="false">' in result.output
         assert "<title>Test Doc</title>" in result.output
         assert "<path>/notes/test.md</path>" in result.output
         assert "<collection>notes</collection>" in result.output
@@ -1316,8 +1317,8 @@ class TestMachineOutputNoWrap:
 
         assert result.exit_code == 0
         lines = result.output.splitlines()
-        assert lines[0] == "rank,score,title,path,collection"
-        assert lines[1:] == [f'"1","0.9500","{long_title}","{long_path}","notes"']
+        assert lines[0] == "rank,score,title,path,collection,vectors_stale"
+        assert lines[1:] == [f'"1","0.9500","{long_title}","{long_path}","notes","false"']
 
 
 class TestSearchOutputBranches:
@@ -1495,6 +1496,8 @@ class TestSearchOutputBranches:
                 "title": "知识 <笔记> & notes",
                 "path": "/notes/知识 & more.md",
                 "collection": "研究 & notes",
+                # D-12 (14-03): the staleness column; fixture rows default False.
+                "vectors_stale": "false",
             },
         ]
 
@@ -1975,7 +1978,8 @@ class TestStalenessFormatMarker:
 
     @staticmethod
     def _rows() -> list[SearchResult]:
-        return [TestStalenessFormatMarker._result(stale=True), TestStalenessFormatMarker._result(stale=False)]
+        cls = TestStalenessFormatMarker
+        return [cls._result(stale=True), cls._result(stale=False)]
 
     @staticmethod
     def _index(tmp_path: Path) -> Path:

@@ -80,6 +80,22 @@ def _field(r: Any, name: str) -> Any:
     return r.get(name, "") if isinstance(r, dict) else getattr(r, name, "")
 
 
+def _title_cell(r: Any) -> str:
+    """Build the Title cell for a Rich table row (D-12).
+
+    The title itself stays escape()d; a result whose vectors lag carries
+    the dim inline annotation beside it — no new column. The annotation
+    is a constant string (never document-derived text), so its markup is
+    ours to write unescaped; only the title passes through escape().
+    """
+    title = str(_field(r, "title"))
+    title = title[:_TITLE_MAX_LEN] + "..." if len(title) > _TITLE_MAX_LEN else title
+    cell = escape(title)
+    if _field(r, "vectors_stale"):
+        cell += " [dim](stale vectors)[/dim]"
+    return cell
+
+
 def _resolve_collections(
     db: Database,
     collection: tuple[str, ...],
@@ -190,7 +206,8 @@ def format_results_csv(results: list[Any]) -> str:
     embedded quotes and commas are escaped correctly.
     """
     buf = io.StringIO()
-    buf.write("rank,score,title,path,collection\n")
+    # D-12: one extra column carries the staleness boolean (fixed literal).
+    buf.write("rank,score,title,path,collection,vectors_stale\n")
     writer = csv.writer(buf, quoting=csv.QUOTE_ALL, lineterminator="\n")
     for r in results:
         writer.writerow(
@@ -200,6 +217,7 @@ def format_results_csv(results: list[Any]) -> str:
                 _field(r, "title"),
                 _field(r, "path"),
                 _field(r, "collection_name"),
+                "true" if _field(r, "vectors_stale") else "false",
             ],
         )
     return buf.getvalue().rstrip("\n")
@@ -209,7 +227,12 @@ def format_results_md(results: list[Any], query: str) -> str:
     """Format results as Markdown."""
     lines = [f"# Search Results: {query}", ""]
     for r in results:
-        lines.append(f"## {_field(r, 'rank')}. {_field(r, 'title')}")
+        # D-12: the stale result's title line carries the inline annotation
+        # (plain text, mirroring the Rich table's dim marker).
+        title = f"## {_field(r, 'rank')}. {_field(r, 'title')}"
+        if _field(r, "vectors_stale"):
+            title += " (stale vectors)"
+        lines.append(title)
         lines.append(f"- **Score:** {float(_field(r, 'score')):.4f}")
         lines.append(f"- **Path:** `{_field(r, 'path')}`")
         lines.append(f"- **Collection:** {_field(r, 'collection_name')}")
@@ -232,7 +255,13 @@ def format_results_xml(results: list[Any], query: str) -> str:
     ]
     for r in results:
         score = f"{float(_field(r, 'score')):.4f}"
-        lines.append(f'  <result rank="{_field(r, "rank")}" score="{score}">')
+        # D-12: fixed boolean literal attribute (T-14-06) — never
+        # document-derived text, so the _xml_sanitize/quoteattr discipline
+        # for the other attributes is untouched.
+        stale_attr = "true" if _field(r, "vectors_stale") else "false"
+        lines.append(
+            f'  <result rank="{_field(r, "rank")}" score="{score}" vectors_stale="{stale_attr}">'
+        )
         lines.append(f"    <title>{xml_escape(_xml_sanitize(str(_field(r, 'title'))))}</title>")
         lines.append(f"    <path>{xml_escape(_xml_sanitize(str(_field(r, 'path'))))}</path>")
         lines.append(
@@ -396,11 +425,7 @@ def search_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 row = [
                     str(r.rank),
                     f"{r.score:.4f}",
-                    escape(
-                        r.title[:_TITLE_MAX_LEN] + "..."
-                        if len(r.title) > _TITLE_MAX_LEN
-                        else r.title
-                    ),
+                    _title_cell(r),
                     escape(r.collection_name),
                     escape(_display_snippet(r)),
                 ]
@@ -549,11 +574,7 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 row = [
                     str(r.rank),
                     f"{r.score:.4f}",
-                    escape(
-                        r.title[:_TITLE_MAX_LEN] + "..."
-                        if len(r.title) > _TITLE_MAX_LEN
-                        else r.title
-                    ),
+                    _title_cell(r),
                     escape(r.collection_name),
                 ]
                 if line_numbers and (content := getattr(r, "content", None)):
@@ -783,11 +804,7 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 row = [
                     str(r.rank),
                     f"{r.score:.4f}",
-                    escape(
-                        r.title[:_TITLE_MAX_LEN] + "..."
-                        if len(r.title) > _TITLE_MAX_LEN
-                        else r.title
-                    ),
+                    _title_cell(r),
                     escape(r.collection_name),
                     escape(_display_snippet(r)),
                 ]
