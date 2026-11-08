@@ -1,0 +1,23 @@
+{
+  "corpus_root": "corpus",
+  "queries": [
+    {
+      "category": "keyword",
+      "query": "zephyr telemetry",
+      "relevance": {
+        "keyword/alpha.md": 3
+      },
+      "split": "tuning"
+    },
+    {
+      "category": "multilingual",
+      "query": "机器学习 fundamentals",
+      "relevance": {
+        "multilingual/gamma.md": 3
+      },
+      "split": "heldout"
+    }
+  ],
+  "relevance_key": "path",
+  "version": 1
+}
