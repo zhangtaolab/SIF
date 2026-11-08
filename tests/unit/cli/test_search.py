@@ -9,6 +9,7 @@ import sqlite3
 import xml.etree.ElementTree as ET
 from collections.abc import Generator
 from contextlib import ExitStack
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from typing import ClassVar
@@ -3259,3 +3260,300 @@ class TestQueryFusionWeightFlags:
         for flag in ("--rrf-k", "--bm25-weight", "--vector-weight"):
             result = CliRunner().invoke(cmd, ["foo", flag, "1.0"])
             assert result.exit_code != 0, f"{command} accepted {flag}"
+
+
+_SUGGEST_DOCS = [
+    ("d1", "quantum machine learning algorithms"),
+    ("d2", "quantum computing quick quantifiers"),
+    ("d3", "studies of machine learning contexts"),
+]
+
+
+def _seed_suggestion_index(tmp_path: Path) -> tuple[Path, Settings]:
+    """Real index DB whose porter vocabulary anchors the zero-result battery.
+
+    ``quantm machin`` is a DYM case (quantm has no prefix hit; machin is a
+    porter stem); ``quantum studi`` returns nothing while both tokens are
+    retrievable — the no-forced-DYM case (D-07).
+    """
+    settings = Settings(_env_file=None, embedding_dim=8, model_name="test", cache_embeddings=False)
+    db_path = tmp_path / "search-suggest.db"
+    with patch("sif.config.settings.get_settings", return_value=settings):
+        db = Database(db_path)
+        db.init_schema()
+        now = datetime.now(timezone.utc).isoformat()
+        with db.connection:
+            conn = db.connection
+            conn.execute(
+                "INSERT INTO collections (id, name, path, created_at, updated_at)"
+                " VALUES ('c1', 'notes', '/vault', ?, ?)",
+                (now, now),
+            )
+            conn.executemany(
+                "INSERT INTO documents (id, collection_id, path, filename, title,"
+                " content, checksum, mtime, created_at, updated_at)"
+                " VALUES (?, 'c1', ?, ?, ?, ?, ?, 1.0, ?, ?)",
+                [
+                    (
+                        doc_id,
+                        f"/vault/{doc_id}.md",
+                        f"{doc_id}.md",
+                        doc_id,
+                        body,
+                        f"ck-{doc_id}",
+                        now,
+                        now,
+                    )
+                    for doc_id, body in _SUGGEST_DOCS
+                ],
+            )
+        db.close()
+    return db_path, settings
+
+
+def _query_log_rows(db_path: Path) -> list[sqlite3.Row]:
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        return conn.execute(
+            "SELECT query, result_count, collections FROM query_log ORDER BY created_at"
+        ).fetchall()
+    finally:
+        conn.close()
+
+
+class TestZeroResultSuggestions:
+    """SC2/D-05: zero-result DYM on all three commands, stdout stays pure."""
+
+    @pytest.fixture(autouse=True)
+    def isolate_quiet_state(self) -> Generator[None, None, None]:
+        """Do not leak process-global quiet/settings state between tests."""
+        from sif.utils.logging import set_quiet
+
+        set_quiet(False)
+        get_settings.cache_clear()
+        yield
+        set_quiet(False)
+        get_settings.cache_clear()
+
+    @staticmethod
+    def _invoke_bm25(
+        db_path: Path,
+        settings: Settings,
+        args: list[str],
+        *,
+        env: dict[str, str] | None = None,
+    ) -> object:
+        with patch("sif.config.settings.get_settings", return_value=settings):
+            return CliRunner().invoke(
+                search_cmd, args, obj={"index_path": db_path}, env=env
+            )
+
+    @staticmethod
+    def _invoke_vsearch(db_path: Path, settings: Settings, args: list[str]) -> object:
+        manager = MagicMock()
+        manager.embed_single.return_value = [0.0] * 8
+        manager._model = MagicMock()
+        searcher = MagicMock()
+        searcher.search.return_value = []
+        with (
+            patch("sif.config.settings.get_settings", return_value=settings),
+            patch("sif.embedding.manager.EmbeddingManager.from_settings", return_value=manager),
+            patch("sif.search.vector.VectorSearcher", return_value=searcher),
+        ):
+            return CliRunner().invoke(vsearch_cmd, args, obj={"index_path": db_path})
+
+    @staticmethod
+    def _invoke_query(db_path: Path, settings: Settings, args: list[str]) -> object:
+        manager = MagicMock()
+        manager.embed_single.return_value = [0.0] * 8
+        manager._model = MagicMock()
+        pipeline = MagicMock()
+        pipeline.search.return_value = []
+        with (
+            patch("sif.config.settings.get_settings", return_value=settings),
+            patch("sif.embedding.manager.EmbeddingManager.from_settings", return_value=manager),
+            patch("sif.cli.commands.search.SearchPipeline", return_value=pipeline),
+        ):
+            return CliRunner().invoke(query_cmd, args, obj={"index_path": db_path})
+
+    def test_table_mode_shows_dym_after_no_results(self, tmp_path: Path) -> None:
+        """sif search: 'No results found.' then 'Did you mean: quantum machin'."""
+        db_path, settings = _seed_suggestion_index(tmp_path)
+
+        result = self._invoke_bm25(db_path, settings, ["quantm machin", "--no-refresh"])
+
+        assert result.exit_code == 0, result.output
+        assert "No results found." in result.stdout
+        assert "Did you mean: quantum machin" in result.stdout
+
+    def test_vsearch_table_mode_shows_dym(self, tmp_path: Path) -> None:
+        """vsearch shares the zero-result hook (vocab source, no embedder needed)."""
+        db_path, settings = _seed_suggestion_index(tmp_path)
+
+        result = self._invoke_vsearch(db_path, settings, ["quantm machin", "--no-refresh"])
+
+        assert result.exit_code == 0, result.output
+        assert "Did you mean: quantum machin" in result.stdout
+
+    def test_query_table_mode_shows_dym(self, tmp_path: Path) -> None:
+        """query shares the zero-result hook after the pipeline returns nothing."""
+        db_path, settings = _seed_suggestion_index(tmp_path)
+
+        result = self._invoke_query(db_path, settings, ["quantm machin", "--no-refresh"])
+
+        assert result.exit_code == 0, result.output
+        assert "Did you mean: quantum machin" in result.stdout
+
+    @pytest.mark.parametrize("flag", ["--csv", "--md", "--xml", "--files"])
+    def test_machine_modes_keep_suggestions_off_stdout(
+        self, tmp_path: Path, flag: str
+    ) -> None:
+        """CSV/MD/XML/files route the suggestion to stderr only (stdout purity)."""
+        db_path, settings = _seed_suggestion_index(tmp_path)
+
+        result = self._invoke_bm25(
+            db_path, settings, ["quantm machin", "--no-refresh", flag]
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "Did you mean" not in result.stdout
+        assert "Did you mean" in result.stderr
+
+    def test_zero_result_json_wraps_suggestions_or_keeps_plain_array(
+        self, tmp_path: Path
+    ) -> None:
+        """Conditional object with suggestions; plain [] when no DYM (Pitfall 5)."""
+        db_path, settings = _seed_suggestion_index(tmp_path)
+
+        with_suggestions = self._invoke_bm25(
+            db_path, settings, ["quantm machin", "--json", "--no-refresh"]
+        )
+        without_suggestions = self._invoke_bm25(
+            db_path, settings, ["quantum studi", "--json", "--no-refresh"]
+        )
+
+        assert with_suggestions.exit_code == 0, with_suggestions.output
+        payload = json.loads(with_suggestions.stdout)
+        assert payload["query"] == "quantm machin"
+        assert payload["results"] == []
+        assert payload["suggestions"] == ["quantum machin"]
+
+        assert without_suggestions.exit_code == 0, without_suggestions.output
+        assert json.loads(without_suggestions.stdout) == []
+
+    def test_quiet_zero_result_prints_no_dym(self, tmp_path: Path) -> None:
+        """-q gates the DYM line exactly like 'No results found.'."""
+        db_path, settings = _seed_suggestion_index(tmp_path)
+
+        result = self._invoke_bm25(db_path, settings, ["quantm machin", "-q", "--no-refresh"])
+
+        assert result.exit_code == 0
+        assert "Did you mean" not in result.output
+
+
+class TestQueryHistoryWrite:
+    """D-08/D-09: executed CLI searches log one row; opt-out and failures are safe."""
+
+    @pytest.fixture(autouse=True)
+    def isolate_quiet_state(self) -> Generator[None, None, None]:
+        from sif.utils.logging import set_quiet
+
+        set_quiet(False)
+        get_settings.cache_clear()
+        yield
+        set_quiet(False)
+        get_settings.cache_clear()
+
+    def test_search_writes_one_row_with_results_and_collections(self, tmp_path: Path) -> None:
+        """sif search 'quantum' logs (query, result count, collections)."""
+        db_path, settings = _seed_suggestion_index(tmp_path)
+
+        result = TestZeroResultSuggestions._invoke_bm25(
+            db_path, settings, ["quantum", "--no-refresh"]
+        )
+
+        assert result.exit_code == 0, result.output
+        rows = _query_log_rows(db_path)
+        assert len(rows) == 1
+        assert rows[0]["query"] == "quantum"
+        assert rows[0]["result_count"] == 2
+        assert json.loads(rows[0]["collections"]) == ["notes"]
+
+    @pytest.mark.parametrize("command", ["vsearch", "query"])
+    def test_vsearch_and_query_write_a_row(self, tmp_path: Path, command: str) -> None:
+        """The other two executed searches log exactly one row as well."""
+        db_path, settings = _seed_suggestion_index(tmp_path)
+        invoke = (
+            TestZeroResultSuggestions._invoke_vsearch
+            if command == "vsearch"
+            else TestZeroResultSuggestions._invoke_query
+        )
+
+        result = invoke(db_path, settings, ["quantum", "--no-refresh"])
+
+        assert result.exit_code == 0, result.output
+        rows = _query_log_rows(db_path)
+        assert len(rows) == 1
+        assert rows[0]["query"] == "quantum"
+        assert json.loads(rows[0]["collections"]) == ["notes"]
+
+    def test_quiet_search_still_writes(self, tmp_path: Path) -> None:
+        """-q only silences display; the search executed, so history logs."""
+        db_path, settings = _seed_suggestion_index(tmp_path)
+
+        result = TestZeroResultSuggestions._invoke_bm25(
+            db_path, settings, ["quantum", "-q", "--no-refresh"]
+        )
+
+        assert result.exit_code == 0
+        assert len(_query_log_rows(db_path)) == 1
+
+    def test_history_disabled_writes_nothing(self, tmp_path: Path) -> None:
+        """SIF_QUERY_HISTORY_ENABLED=0 skips the write entirely (D-10)."""
+        db_path, _settings = _seed_suggestion_index(tmp_path)
+        env = {
+            "SIF_EMBEDDING_DIM": "8",
+            "SIF_MODEL_NAME": "test",
+            "SIF_QUERY_HISTORY_ENABLED": "0",
+        }
+        try:
+            get_settings.cache_clear()
+            result = CliRunner().invoke(
+                search_cmd,
+                ["quantum", "--no-refresh"],
+                obj={"index_path": db_path},
+                env=env,
+            )
+        finally:
+            get_settings.cache_clear()
+
+        assert result.exit_code == 0, result.output
+        assert _query_log_rows(db_path) == []
+
+    def test_history_write_failure_never_fails_search(self, tmp_path: Path) -> None:
+        """A raising QueryLogRepository is fail-soft (Pitfall 10)."""
+        db_path, settings = _seed_suggestion_index(tmp_path)
+        broken = MagicMock()
+        broken.return_value.add.side_effect = RuntimeError("history unavailable")
+
+        with patch("sif.cli.commands.search.QueryLogRepository", broken):
+            result = TestZeroResultSuggestions._invoke_bm25(
+                db_path, settings, ["quantum", "--no-refresh"]
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "quantum" in result.stdout
+
+    def test_suggestion_failure_never_fails_zero_result_search(self, tmp_path: Path) -> None:
+        """An exploding engine degrades to no DYM; the notice still prints."""
+        db_path, settings = _seed_suggestion_index(tmp_path)
+
+        with patch("sif.cli.commands.search.SuggestionEngine", side_effect=RuntimeError("boom")):
+            result = TestZeroResultSuggestions._invoke_bm25(
+                db_path, settings, ["quantm machin", "--no-refresh"]
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "No results found." in result.stdout
+        assert "Did you mean" not in result.stdout
