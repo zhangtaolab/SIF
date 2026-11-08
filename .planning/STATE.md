@@ -5,11 +5,11 @@ milestone_name: Live Index and Search Quality
 current_phase: 16
 current_phase_name: Bench Expansion + Reranker Tuning
 status: executing
-stopped_at: Completed 16-01-PLAN.md
-last_updated: "2026-11-08T13:40:39.218Z"
+stopped_at: Completed 16-02-PLAN.md
+last_updated: "2026-11-08T14:06:14.538Z"
 last_activity: 2026-11-08
 last_activity_desc: Phase 16 execution started
-state_head: 8e78a1c63f4034759678af3e9a13e2c2c382dd96
+state_head: 08b9c70df48d4603970f7bd33f7367843497d9e8
 progress:
   total_phases: 6
   completed_phases: 5
@@ -30,7 +30,7 @@ progress:
 ## Current Position
 
 Phase: 16 (Bench Expansion + Reranker Tuning) — EXECUTING
-Plan: 3 of 6
+Plan: 4 of 6
 Status: Ready to execute
 Last activity: 2026-11-08 — Phase 16 execution started
 
@@ -68,6 +68,7 @@ Progress: [████████░░] 83%
 | Phase 15 P03 | 10 min | 3 tasks | 11 files |
 | Phase 16 P01 | 17 min | 3 tasks | 5 files |
 | Phase 16 P01 | 17 min | 3 tasks | 5 files |
+| Phase 16 P02 | 18 min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -143,6 +144,9 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 - [Phase 16]: [16-01] bench baseline resolves fusion knobs from current SIF_ settings (D-09, fixes Phase 15 IN-02); SearchPipeline built once per state inside the connection context; collection ids resolved once
 - [Phase 16]: [16-01] precision_at_k/recall_at_k binarize internally (grade > 0) so graded fixtures never exceed 1.0 while legacy 0/1 fixtures are byte-unchanged (Pitfall 8)
 - [Phase 16]: [16-01] path-keyed relevance: corpus_root resolved once (relative root joins fixture dir, absolute as-is, explicit ctor arg wins); result keys are corpus-relative POSIX with absolute fallback
+- [Phase 16]: [16-02] rerank gate = --rerank OR SIF_RERANK_ENABLED, checked BEFORE create_reranker — the off path never constructs a model or imports an optional backend (D-12)
+- [Phase 16]: [16-02] -C retained with default None; resolve_candidate_limit(explicit, settings) = explicit > setting > 20 (non-int falls back), always clamped 5..50 — the flag's Click range stays 1..200 and the A3 waiver is recorded beside the option; bench (16-04) imports the same resolver
+- [Phase 16]: [16-02] rerank_enabled doc description avoids 'sif search query;' — the docs bare-command gate (tests/test_docs.py) exempts 'query' only when followed by whitespace
 
 ### Pending Todos
 
@@ -163,8 +167,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 
 ## Session Continuity
 
-Last session: 2026-11-08T13:40:38.706Z
-Stopped at: Completed 16-01-PLAN.md
+Last session: 2026-11-08T14:06:13.976Z
+Stopped at: Completed 16-02-PLAN.md
 Resume file: None
 
 - **Next expected action:** `/gsd-discuss-phase 13` (Phase 13 needs context; research flags: daemon/service-install specifics already in research/STACK.md)
