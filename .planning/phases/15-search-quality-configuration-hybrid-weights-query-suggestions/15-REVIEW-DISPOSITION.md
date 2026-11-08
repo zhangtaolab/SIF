@@ -33,7 +33,7 @@ findings:
     title: "`docs/quickstart.md` jq example assumes `--json` is always an array"
   - id: IN-02
     severity: info
-    disposition: open
+    disposition: fixed
     title: "`sif bench` ignores the new global fusion settings"
   - id: IN-03
     severity: info
@@ -55,7 +55,7 @@ findings:
     severity: info
     disposition: open
     title: "Stale roadmap/architecture doc references for the delivered feature"
-open: 7
+open: 6
 total: 13
 recorded: 2026-11-08T11:09:06.704Z
 ---
@@ -71,7 +71,7 @@ recorded: 2026-11-08T11:09:06.704Z
 | WR-04 | warning | fixed | 15-REVIEW-FIX.md |
 | WR-05 | warning | fixed | 15-REVIEW-FIX.md |
 | IN-01 | info | open | - |
-| IN-02 | info | open | - |
+| IN-02 | info | fixed | 16-01 (D-09 bench reads current SIF_ settings) |
 | IN-03 | info | open | - |
 | IN-04 | info | open | - |
 | IN-05 | info | open | - |
