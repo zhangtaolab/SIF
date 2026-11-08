@@ -49,6 +49,32 @@ class BenchHarness:
     embedding_dim: int
 
 
+class CachedEmbedder:
+    """Embedder wrapper reserving the sweep's embedding-once seam (D-07).
+
+    RED skeleton: delegates to the inner embedder without memoization yet;
+    the GREEN step memoizes ``embed`` per distinct text so the sweep embeds
+    every query once per bench invocation (research Pattern 4).
+    """
+
+    def __init__(self, inner: Embedder) -> None:
+        """Wrap ``inner``; the memo lives on the wrapper, never the model."""
+        self._inner = inner
+
+    def embed(self, text: str) -> list[float]:
+        """Embed one text (memoization lands in GREEN)."""
+        return self._inner.embed(text)
+
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        """Embed multiple texts, one vector per text."""
+        return [self.embed(text) for text in texts]
+
+    @property
+    def dimension(self) -> int:
+        """Forward the inner model's dimensionality."""
+        return self._inner.dimension
+
+
 def _load_embedder(
     settings: Settings,
     model_type: str | None,

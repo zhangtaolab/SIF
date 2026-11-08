@@ -2,8 +2,10 @@
 
 import json
 from pathlib import Path
+from typing import ClassVar
 from unittest.mock import MagicMock, patch
 
+import pytest
 from click.testing import CliRunner
 from pydantic import BaseModel, ValidationError
 
@@ -61,6 +63,46 @@ def _graded_split_fixture(tmp_path: Path) -> tuple[Path, Path]:
     fixture_path = tmp_path / "fixture.json"
     fixture_path.write_text(json.dumps(fixture))
     return fixture_path, corpus
+
+
+class _CountingEmbedder:
+    """Embedder protocol spy counting every inner embed call per text."""
+
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def embed(self, text: str) -> list[float]:
+        self.calls.append(text)
+        return [0.0] * 8
+
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        return [self.embed(text) for text in texts]
+
+    @property
+    def dimension(self) -> int:
+        return 8
+
+
+class _SpyPipeline:
+    """SearchPipeline stand-in recording every query and exercising the embedder."""
+
+    seen: ClassVar[list[str]] = []
+
+    def __init__(
+        self,
+        _connection: object,
+        embedder: object | None = None,
+        _embedding_dim: int = 768,
+        _reranker: object | None = None,
+        **_kwargs: object,
+    ) -> None:
+        self.embedder = embedder
+
+    def search(self, query: str, _options: object) -> list:
+        _SpyPipeline.seen.append(query)
+        if self.embedder is not None:
+            self.embedder.embed(query)
+        return []
 
 
 class TestBenchCommand:
@@ -605,3 +647,290 @@ class TestBenchCommand:
         # wrap-safe fragments.)
         assert "Tie group of 45 configurations" in result.output
         assert "no single winner" in result.output
+
+
+class TestCachedEmbedder:
+    def test_embed_runs_the_inner_model_once_per_distinct_text(self) -> None:
+        from sif.cli.commands.bench import CachedEmbedder
+
+        counting = _CountingEmbedder()
+        cached = CachedEmbedder(counting)
+        first = cached.embed("query one")
+        second = cached.embed("query one")
+        assert first is second
+        assert counting.calls == ["query one"]
+        cached.embed("query two")
+        assert counting.calls == ["query one", "query two"]
+
+    def test_embed_batch_delegates_through_the_cache(self) -> None:
+        from sif.cli.commands.bench import CachedEmbedder
+
+        counting = _CountingEmbedder()
+        cached = CachedEmbedder(counting)
+        vectors = cached.embed_batch(["a", "b", "a"])
+        assert vectors == [[0.0] * 8] * 3
+        assert counting.calls == ["a", "b"]
+
+    def test_dimension_is_forwarded(self) -> None:
+        from sif.cli.commands.bench import CachedEmbedder
+
+        cached = CachedEmbedder(_CountingEmbedder())
+        assert cached.dimension == 8
+
+
+class TestBenchSweepDiscipline:
+    """Tuning-only ranking, embedding reuse, and the settings baseline (D-03/D-07/D-09)."""
+
+    def _invoke_sweep(
+        self, tmp_path: Path, extra_flags: list[str]
+    ) -> tuple[object, _CountingEmbedder]:
+        """Run bench --sweep over the spy pipeline; caller inspects the spies."""
+        fixture_path, _corpus = _graded_split_fixture(tmp_path)
+        counting = _CountingEmbedder()
+        _SpyPipeline.seen = []
+
+        mock_manager = MagicMock()
+        mock_manager.embed_single.return_value = [0.0] * 8
+        mock_manager._model = counting
+
+        with (
+            patch("sif.cli.commands.bench.Database", return_value=MagicMock()),
+            patch(
+                "sif.cli.commands.bench.EmbeddingManager.from_settings",
+                return_value=mock_manager,
+            ),
+            patch("sif.cli.commands.bench.SearchPipeline", _SpyPipeline),
+            patch("sif.cli.commands.bench.get_settings", return_value=_settings_mock()),
+        ):
+            result = CliRunner().invoke(
+                bench_cmd,
+                [str(fixture_path), "--sweep", *extra_flags],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+        return result, counting
+
+    def test_bench_sweep_never_searches_heldout_queries(self, tmp_path: Path) -> None:
+        """T-16-06: the held-out sentinel string never reaches the searcher."""
+        result, _counting = self._invoke_sweep(tmp_path, [])
+        assert result.exit_code == 0, result.output
+        assert "heldout sentinel" not in _SpyPipeline.seen
+        assert "tuning one" in _SpyPipeline.seen
+        assert "tuning two" in _SpyPipeline.seen
+
+    def test_bench_sweep_embeds_each_query_once(self, tmp_path: Path) -> None:
+        """D-07: one inner embed per distinct query text across all 45 configs.
+
+        Without memoization the spy pipeline drives 2 queries x 45 configs x
+        2 passes (warm-up + timed) = 180 inner embed calls; the cache must
+        collapse that to exactly one per distinct tuning query.
+        """
+        result, counting = self._invoke_sweep(tmp_path, [])
+        assert result.exit_code == 0, result.output
+        assert sorted(set(counting.calls)) == ["tuning one", "tuning two"]
+        assert counting.calls.count("tuning one") == 1
+        assert counting.calls.count("tuning two") == 1
+
+    def test_bench_sweep_json_baseline_and_deltas(self, tmp_path: Path) -> None:
+        """D-09: the settings run is the baseline row; config deltas are relative."""
+        runner = CliRunner()
+        fixture_path, corpus = _graded_split_fixture(tmp_path)
+
+        def config_aware_search(_query: str, options: object) -> list:
+            # Only rrf_k == 80 (the mocked settings value) ranks the relevant
+            # doc first, so configs measurably differ across the grid.
+            if options.rrf_k == 80:
+                return [MagicMock(document_id="d1", path=str(corpus / "keyword" / "a.md"))]
+            return []
+
+        mock_pipeline = MagicMock()
+        mock_pipeline.search.side_effect = config_aware_search
+
+        mock_db = MagicMock()
+        mock_manager = MagicMock()
+        mock_manager.embed_single.return_value = [0.0] * 8
+        mock_manager._model = MagicMock()
+
+        with (
+            patch("sif.cli.commands.bench.Database", return_value=mock_db),
+            patch(
+                "sif.cli.commands.bench.EmbeddingManager.from_settings",
+                return_value=mock_manager,
+            ),
+            patch("sif.cli.commands.bench.SearchPipeline", return_value=mock_pipeline),
+            patch(
+                "sif.cli.commands.bench.get_settings",
+                return_value=_settings_mock(rrf_k=80, bm25_weight=2.0, vector_weight=0.5),
+            ),
+        ):
+            result = runner.invoke(
+                bench_cmd,
+                [str(fixture_path), "--sweep", "--json"],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code == 0, result.output
+        output = json.loads(result.output.strip())
+        baseline = output["baseline"]
+        assert (baseline["rrf_k"], baseline["bm25_weight"], baseline["vector_weight"]) == (
+            80,
+            2.0,
+            0.5,
+        )
+        # The baseline carries the four-category breakdown like every config.
+        assert list(baseline["categories"].keys()) == [
+            "keyword",
+            "synonym",
+            "multilingual",
+            "rival",
+        ]
+        for config in output["configs"]:
+            assert {"ndcg_delta", "hit_delta", "p50_delta_ms", "p95_delta_ms"} <= set(config)
+        # The settings configuration is a grid point, so its row's deltas are
+        # exactly zero (the baseline measurement is reused).
+        matching = [
+            c
+            for c in output["configs"]
+            if (c["rrf_k"], c["bm25_weight"], c["vector_weight"]) == (80, 2.0, 0.5)
+        ]
+        assert len(matching) == 1
+        assert matching[0]["ndcg_delta"] == 0.0
+        assert matching[0]["hit_delta"] == 0.0
+        # Deltas are relative to the baseline, not zero-filled: an rrf_k=20
+        # config scores 0 ndcg against the baseline's 0.5.
+        zero_config = next(c for c in output["configs"] if c["rrf_k"] == 20)
+        assert zero_config["ndcg_delta"] == pytest.approx(-baseline["ndcg_at_10"])
+
+    def test_bench_sweep_json_parses_at_narrow_width(self, tmp_path: Path) -> None:
+        """--sweep --json strict-parses at COLUMNS=80 (click.echo, never Rich)."""
+        result, _counting = self._invoke_sweep(tmp_path, ["--json"])
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert len(output["configs"]) == 45
+
+    def test_bench_sweep_legacy_fixture_names_missing_split(self, tmp_path: Path) -> None:
+        """A fixture without split labels exits non-zero naming the split
+        requirement instead of reporting an empty sweep as success."""
+        runner = CliRunner()
+        fixture = {"queries": [{"query": "test", "relevant_docids": ["doc-1"]}]}
+        fixture_path = tmp_path / "fixture.json"
+        fixture_path.write_text(json.dumps(fixture))
+
+        with (
+            patch("sif.cli.commands.bench.Database", return_value=MagicMock()),
+            patch(
+                "sif.cli.commands.bench.EmbeddingManager.from_settings",
+                return_value=MagicMock(
+                    embed_single=MagicMock(return_value=[0.0] * 8),
+                    _model=MagicMock(),
+                ),
+            ),
+            patch("sif.cli.commands.bench.SearchPipeline", return_value=MagicMock()),
+            patch("sif.cli.commands.bench.get_settings", return_value=_settings_mock()),
+        ):
+            result = runner.invoke(
+                bench_cmd,
+                [str(fixture_path), "--sweep"],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code != 0
+        assert "Sweep requires fixtures with split labels" in result.output
+        assert "split == 'tuning'" in result.output
+
+    def test_bench_sweep_all_heldout_fixture_names_missing_split(self, tmp_path: Path) -> None:
+        """A graded fixture whose queries are ALL held-out is just as empty a
+        tuning set: non-zero exit naming the split requirement."""
+        runner = CliRunner()
+        fixture = {
+            "corpus_root": "corpus",
+            "relevance_key": "path",
+            "queries": [
+                {
+                    "query": "only heldout",
+                    "category": "rival",
+                    "split": "heldout",
+                    "relevance": {"rival/c.md": 3},
+                },
+            ],
+        }
+        fixture_path = tmp_path / "fixture.json"
+        fixture_path.write_text(json.dumps(fixture))
+
+        with (
+            patch("sif.cli.commands.bench.Database", return_value=MagicMock()),
+            patch(
+                "sif.cli.commands.bench.EmbeddingManager.from_settings",
+                return_value=MagicMock(
+                    embed_single=MagicMock(return_value=[0.0] * 8),
+                    _model=MagicMock(),
+                ),
+            ),
+            patch("sif.cli.commands.bench.SearchPipeline", return_value=MagicMock()),
+            patch("sif.cli.commands.bench.get_settings", return_value=_settings_mock()),
+        ):
+            result = runner.invoke(
+                bench_cmd,
+                [str(fixture_path), "--sweep"],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code != 0
+        assert "Sweep requires fixtures with split labels" in result.output
+
+
+class TestBenchCandidateLimit:
+    """bench's -C resolves through Plan 02's shared clamp (D-10)."""
+
+    def _options_for(
+        self,
+        tmp_path: Path,
+        flags: list[str],
+        settings_overrides: dict[str, object] | None = None,
+    ) -> object:
+        fixture = {"queries": [{"query": "test", "relevant_docids": ["doc-1"]}]}
+        fixture_path = tmp_path / "fixture.json"
+        fixture_path.write_text(json.dumps(fixture))
+
+        mock_pipeline = MagicMock()
+        mock_pipeline.search.return_value = [MagicMock(document_id="doc-1")]
+        mock_db = MagicMock()
+        mock_manager = MagicMock()
+        mock_manager.embed_single.return_value = [0.0] * 8
+        mock_manager._model = MagicMock()
+
+        with (
+            patch("sif.cli.commands.bench.Database", return_value=mock_db),
+            patch(
+                "sif.cli.commands.bench.EmbeddingManager.from_settings",
+                return_value=mock_manager,
+            ),
+            patch("sif.cli.commands.bench.SearchPipeline", return_value=mock_pipeline),
+            patch(
+                "sif.cli.commands.bench.get_settings",
+                return_value=_settings_mock(**(settings_overrides or {})),
+            ),
+        ):
+            result = CliRunner().invoke(
+                bench_cmd,
+                [str(fixture_path), *flags],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+        assert result.exit_code == 0, result.output
+        return mock_pipeline.search.call_args[0][1]
+
+    def test_candidate_limit_200_clamps_to_50(self, tmp_path: Path) -> None:
+        options = self._options_for(tmp_path, ["-C", "200", "--json"])
+        assert options.candidate_limit == 50
+
+    def test_candidate_limit_5_arrives_as_int_five(self, tmp_path: Path) -> None:
+        options = self._options_for(tmp_path, ["-C", "5", "--json"])
+        assert options.candidate_limit == 5
+        assert isinstance(options.candidate_limit, int)
+
+    def test_candidate_limit_omitted_resolves_from_settings(self, tmp_path: Path) -> None:
+        options = self._options_for(
+            tmp_path,
+            ["--json"],
+            settings_overrides={"rerank_candidate_limit": 33},
+        )
+        assert options.candidate_limit == 33

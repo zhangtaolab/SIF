@@ -104,3 +104,34 @@ class TestRankSweep:
         assert list(config["categories"].keys()) == list(CATEGORIES)
         for metrics in config["categories"].values():
             assert {"ndcg_at_10", "hit_at_10"} <= set(metrics)
+
+
+class TestRankSweepTieBoundary:
+    """Pin the strict tie boundary on the 6-decimal-rounded delta (D-08).
+
+    Implementation and tests share ONE arithmetic rule —
+    round(best - ndcg_at_10, 6) < EPSILON — so a nominal 0.01 whose raw
+    IEEE-754 subtraction yields 0.009999... is exactly 0.01 and never a tie.
+    """
+
+    def test_exactly_epsilon_apart_is_not_a_tie(self) -> None:
+        ranking = rank_sweep([_config(20, 0.5, 0.5, 0.500), _config(40, 0.5, 0.5, 0.510)])
+        assert ranking.winner_declared is True
+        assert len(ranking.tie_group) == 1
+
+    def test_just_inside_epsilon_is_a_tie(self) -> None:
+        ranking = rank_sweep([_config(20, 0.5, 0.5, 0.500), _config(40, 0.5, 0.5, 0.5099)])
+        assert ranking.winner_declared is False
+        assert len(ranking.tie_group) == 2
+
+    def test_representation_noise_delta_is_not_a_tie(self) -> None:
+        """0.29 - 0.28 is 0.009999999999999953 in raw IEEE-754 arithmetic.
+
+        A naive ``best - ndcg < EPSILON`` comparison misreads that as a tie;
+        the rounded-delta rule calls it exactly 0.01 (signal, not noise).
+        """
+        assert repr(0.29 - 0.28) == "0.009999999999999953"
+        ranking = rank_sweep([_config(20, 0.5, 0.5, 0.28), _config(40, 0.5, 0.5, 0.29)])
+        assert ranking.ranked[0].ndcg_at_10 == 0.29
+        assert ranking.winner_declared is True
+        assert len(ranking.tie_group) == 1
