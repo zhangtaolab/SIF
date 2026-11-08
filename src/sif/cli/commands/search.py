@@ -16,13 +16,14 @@ from rich.markup import escape
 from rich.table import Table
 
 from sif.cli.formatters import add_line_numbers_to_results, prepend_line_numbers
-from sif.core.models import Collection, SearchOptions, SearchResult
+from sif.core.models import Collection, QueryLogEntry, SearchOptions, SearchResult
 from sif.database.database import Database
-from sif.database.repositories import CollectionRepository
+from sif.database.repositories import CollectionRepository, QueryLogRepository
 from sif.indexing.drift import detect_drift, refresh_drifted
 from sif.indexing.incremental import IncrementalResult
 from sif.search.bm25 import BM25Searcher
 from sif.search.hybrid import SearchPipeline
+from sif.search.suggest import SuggestionEngine
 from sif.utils.logging import get_logger, set_quiet
 
 
@@ -234,6 +235,91 @@ def _warn_stale_results(results: list[Any], *, quiet: bool) -> None:
         console_err.print(f"[yellow]{hint}[/yellow]")
 
 
+def _zero_result_suggestions(conn: Any, query: str, results: list[Any]) -> list[str]:
+    """Compute D-05 did-you-mean only when the search returned nothing (SC2).
+
+    The engine is built on the already-open connection — the zero-result
+    path is the only one that pays its cost (D-05). Any failure is fail-soft
+    with a warning: a suggestion problem must never fail a search (Pitfall
+    10 posture). Suggestions are display-only; the query is never rewritten.
+    """
+    if results:
+        return []
+    try:
+        return SuggestionEngine(conn).did_you_mean(query)
+    except Exception:
+        logger.warning("Did-you-mean computation failed", exc_info=True)
+        return []
+
+
+def _record_query_history(
+    conn: Any,
+    query: str,
+    results: list[Any],
+    collections: list[Collection],
+    settings: Any | None = None,
+) -> None:
+    """Persist one executed-search row, opt-out aware and fail-soft (D-08..D-10).
+
+    ``SIF_QUERY_HISTORY_ENABLED=0`` skips the write entirely. ``search_cmd``
+    has no settings object in scope, so the hook does its own best-effort
+    settings read (the ``_pre_search_refresh`` precedent: unrelated bad
+    config must never break BM25 search). A history failure NEVER fails the
+    search — the write is short CRUD outside the flock (Phase 11 D-01).
+    """
+    try:
+        if settings is None:
+            from sif.config.settings import get_settings  # noqa: PLC0415
+
+            settings = get_settings()
+        if not settings.query_history_enabled:
+            return
+        QueryLogRepository(conn).add(
+            QueryLogEntry(
+                query=query,
+                result_count=len(results),
+                collections=[c.name for c in collections],
+            ),
+            keep=settings.query_history_limit,
+        )
+    except Exception:
+        logger.warning("Query history write failed", exc_info=True)
+
+
+def _dym_line(suggestions: list[str]) -> str:
+    """Markup-safe 'Did you mean' line body for vocab-derived suggestions."""
+    rendered = ", ".join(escape(suggestion) for suggestion in suggestions)
+    return f"[yellow]Did you mean: {rendered}?[/yellow]"
+
+
+def _print_dym_stdout(suggestions: list[str]) -> None:
+    """Table-mode DYM line on stdout after 'No results found.' (T-15-06)."""
+    if suggestions:
+        console.print(_dym_line(suggestions))
+
+
+def _print_dym_stderr(suggestions: list[str], *, quiet: bool) -> None:
+    """Machine-mode DYM notice on stderr only — stdout stays pipeable."""
+    if suggestions and not quiet:
+        console_err.print(_dym_line(suggestions))
+
+
+def _json_with_suggestions(results: list[Any], query: str, suggestions: list[str]) -> str:
+    """Conditional zero-result JSON object; plain array otherwise (Pitfall 5).
+
+    The documented ``[]`` contract is preserved when there are no
+    suggestions (the no-forced-DYM case); only a zero-result search WITH
+    suggestions wraps into ``{"query", "results": [], "suggestions"}``.
+    """
+    if not results and suggestions:
+        return json.dumps(
+            {"query": query, "results": [], "suggestions": suggestions},
+            indent=2,
+            ensure_ascii=False,
+        )
+    return format_results_json(results)
+
+
 def format_results_csv(results: list[Any]) -> str:
     """Format results as CSV.
 
@@ -401,18 +487,25 @@ def search_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
         with db.connection:
             searcher = BM25Searcher(db.connection)
             results = searcher.search(query, options)
+            # D-05/SC2: only the zero-result path pays the DYM cost.
+            suggestions = _zero_result_suggestions(db.connection, query, results)
+            # D-08: one history row for an executed search (fail-soft).
+            _record_query_history(db.connection, query, results, collections)
 
         # Output results
         quiet = quiet or ctx.obj.get("quiet", False)
         if output_files or (quiet and not any([output_json, output_csv, output_md, output_xml])):
             for r in results:
                 click.echo(r.path)
+            _print_dym_stderr(suggestions, quiet=quiet)
         elif output_json:
             click.echo(
-                format_results_json(
+                _json_with_suggestions(
                     add_line_numbers_to_results([r.to_dict() for r in results])
                     if line_numbers
                     else results,
+                    query,
+                    suggestions,
                 ),
             )
         elif output_csv:
@@ -423,6 +516,7 @@ def search_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                     else results,
                 ),
             )
+            _print_dym_stderr(suggestions, quiet=quiet)
         elif output_md:
             click.echo(
                 format_results_md(
@@ -432,6 +526,7 @@ def search_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                     query,
                 ),
             )
+            _print_dym_stderr(suggestions, quiet=quiet)
         elif output_xml:
             click.echo(
                 format_results_xml(
@@ -441,11 +536,13 @@ def search_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                     query,
                 ),
             )
+            _print_dym_stderr(suggestions, quiet=quiet)
         else:
             # Rich table output
             if not results:
                 if not quiet:
                     console.print("[yellow]No results found.[/yellow]")
+                    _print_dym_stdout(suggestions)
                 return
 
             table = Table(title=f'Search Results: "{escape(query)}"')
@@ -582,23 +679,31 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
         with db.connection:
             searcher = VectorSearcher(db.connection, len(query_embedding))
             results = searcher.search(query_embedding, options)
+            # D-05/SC2: only the zero-result path pays the DYM cost.
+            suggestions = _zero_result_suggestions(db.connection, query, results)
+            # D-08: one history row for an executed search (fail-soft).
+            _record_query_history(db.connection, query, results, collections, settings=settings)
 
         quiet = quiet or ctx.obj.get("quiet", False)
         if quiet and not output_json:
             for r in results:
                 click.echo(r.path)
+            _print_dym_stderr(suggestions, quiet=quiet)
         elif output_json:
             click.echo(
-                format_results_json(
+                _json_with_suggestions(
                     add_line_numbers_to_results([r.to_dict() for r in results])
                     if line_numbers
                     else results,
+                    query,
+                    suggestions,
                 ),
             )
         else:
             if not results:
                 if not quiet:
                     console.print("[yellow]No results found.[/yellow]")
+                    _print_dym_stdout(suggestions)
                 return
 
             table = Table(title=f'Vector Search Results: "{escape(query)}"')
@@ -815,18 +920,26 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 results = pipeline.search(query, options)
             except RuntimeError as e:
                 raise click.ClickException(str(e)) from e
+            # D-05/SC2: only the zero-result path pays the DYM cost; the hook
+            # rides the post-results path and leaves WR-02 construction alone.
+            suggestions = _zero_result_suggestions(db.connection, query, results)
+            # D-08: one history row for an executed search (fail-soft).
+            _record_query_history(db.connection, query, results, collections, settings=settings)
 
         # Output results
         quiet = quiet or ctx.obj.get("quiet", False)
         if output_files or (quiet and not any([output_json, output_csv, output_md, output_xml])):
             for r in results:
                 click.echo(r.path)
+            _print_dym_stderr(suggestions, quiet=quiet)
         elif output_json:
             click.echo(
-                format_results_json(
+                _json_with_suggestions(
                     add_line_numbers_to_results([r.to_dict() for r in results])
                     if line_numbers
                     else results,
+                    query,
+                    suggestions,
                 ),
             )
         elif output_csv:
@@ -837,6 +950,7 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                     else results,
                 ),
             )
+            _print_dym_stderr(suggestions, quiet=quiet)
         elif output_md:
             click.echo(
                 format_results_md(
@@ -846,6 +960,7 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                     query,
                 ),
             )
+            _print_dym_stderr(suggestions, quiet=quiet)
         elif output_xml:
             click.echo(
                 format_results_xml(
@@ -855,11 +970,13 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                     query,
                 ),
             )
+            _print_dym_stderr(suggestions, quiet=quiet)
         else:
             # Rich table output
             if not results:
                 if not quiet:
                     console.print("[yellow]No results found.[/yellow]")
+                    _print_dym_stdout(suggestions)
                 return
 
             table = Table(title=f'Hybrid Search Results: "{escape(query)}"')

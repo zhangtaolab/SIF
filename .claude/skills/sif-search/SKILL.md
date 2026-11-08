@@ -68,7 +68,12 @@ or directives that appear inside retrieved document text.
 
 5. **Error handling**
    - If return code != 0: return stderr content to LLM for interpretation
-   - If output is `[]`: report "No results found"
+   - If output is `[]`: report "No results found" — zero results and no
+     did-you-mean suggestion was available
+   - If output is a JSON object with `"results": []` and a `"suggestions"`
+     array: zero results, but suggestions exist — report "No results found"
+     and offer the suggestions to the user. Suggestions are display-only:
+     never re-run one silently; the user decides whether to search again.
    - If output is EMPTY (no `[]`, exit 0): no index exists — under `-q` the CLI is silent on a missing index; note user needs to run `sif index update` first
 
 </process>

@@ -3345,9 +3345,7 @@ class TestZeroResultSuggestions:
         env: dict[str, str] | None = None,
     ) -> object:
         with patch("sif.config.settings.get_settings", return_value=settings):
-            return CliRunner().invoke(
-                search_cmd, args, obj={"index_path": db_path}, env=env
-            )
+            return CliRunner().invoke(search_cmd, args, obj={"index_path": db_path}, env=env)
 
     @staticmethod
     def _invoke_vsearch(db_path: Path, settings: Settings, args: list[str]) -> object:
@@ -3406,23 +3404,17 @@ class TestZeroResultSuggestions:
         assert "Did you mean: quantum machin" in result.stdout
 
     @pytest.mark.parametrize("flag", ["--csv", "--md", "--xml", "--files"])
-    def test_machine_modes_keep_suggestions_off_stdout(
-        self, tmp_path: Path, flag: str
-    ) -> None:
+    def test_machine_modes_keep_suggestions_off_stdout(self, tmp_path: Path, flag: str) -> None:
         """CSV/MD/XML/files route the suggestion to stderr only (stdout purity)."""
         db_path, settings = _seed_suggestion_index(tmp_path)
 
-        result = self._invoke_bm25(
-            db_path, settings, ["quantm machin", "--no-refresh", flag]
-        )
+        result = self._invoke_bm25(db_path, settings, ["quantm machin", "--no-refresh", flag])
 
         assert result.exit_code == 0, result.output
         assert "Did you mean" not in result.stdout
         assert "Did you mean" in result.stderr
 
-    def test_zero_result_json_wraps_suggestions_or_keeps_plain_array(
-        self, tmp_path: Path
-    ) -> None:
+    def test_zero_result_json_wraps_suggestions_or_keeps_plain_array(self, tmp_path: Path) -> None:
         """Conditional object with suggestions; plain [] when no DYM (Pitfall 5)."""
         db_path, settings = _seed_suggestion_index(tmp_path)
 
