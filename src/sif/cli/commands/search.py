@@ -749,6 +749,11 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     type=click.IntRange(1, 200),
     help="Reranker candidate pool size",
 )
+@click.option(
+    "--rerank",
+    is_flag=True,
+    help="Rerank results (default: SIF_RERANK_ENABLED or false)",
+)
 @click.option("--intent", help="Search intent hint for query expansion")
 @click.option(
     "--rrf-k",
@@ -804,6 +809,7 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     vector_weight: float | None = None,
     model_type: str | None = None,
     no_refresh: bool = False,
+    rerank: bool = False,
     quiet: bool = False,
 ) -> None:
     """Search documents using hybrid approach (BM25 + Vector + RRF).
@@ -890,7 +896,11 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
         query_expander = QueryExpansion(embedding_manager=manager)
 
         reranker = None
-        if settings.reranker_model_name or settings.reranker_model_path:
+        # D-12 (Phase 16): rerank is an explicit opt-in. The gate is checked
+        # BEFORE create_reranker so the off path is zero-cost by construction —
+        # no model load, no optional-backend import, no weights.
+        rerank_requested = rerank or settings.rerank_enabled
+        if rerank_requested:
             try:
                 reranker = create_reranker(settings)
             except ImportError:

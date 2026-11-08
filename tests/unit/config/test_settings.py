@@ -49,6 +49,21 @@ def test_reranker_model_type_validation_rejects_invalid_values() -> None:
         Settings(reranker_model_type="cross-encoder")
 
 
+def test_rerank_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """D-12: rerank is opt-in — the default keeps the skip-rerank fast path free."""
+    monkeypatch.delenv("SIF_RERANK_ENABLED", raising=False)
+    settings = Settings(_env_file=None)
+    assert settings.rerank_enabled is False
+
+
+def test_rerank_enabled_via_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """SIF_RERANK_ENABLED=1 opts into reranker construction (the D-12 channel)."""
+    with monkeypatch.context() as m:
+        m.setenv("SIF_RERANK_ENABLED", "1")
+        settings = Settings(_env_file=None)
+        assert settings.rerank_enabled is True
+
+
 def test_api_base_validation_accepts_https_url() -> None:
     """Test that api_base accepts HTTPS URLs."""
     settings = Settings(api_base="https://api.openai.com/v1")

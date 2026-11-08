@@ -34,6 +34,25 @@ from sif.database.repositories import CollectionRepository
 from sif.indexing.incremental import IncrementalIndexer
 
 
+def _query_settings_mock(**overrides: object) -> MagicMock:
+    """Explicit settings mock enumerating every field query_cmd reads.
+
+    Pitfall 10 (Phase 16) guard: an unset attribute on a wide-open MagicMock
+    is truthy, so a mock without ``rerank_enabled=False`` would silently flip
+    the D-12 gate onto the enabled path and construct a reranker. Tests whose
+    subject IS the enabled path override ``rerank_enabled=True`` explicitly.
+    """
+    fields: dict[str, object] = {
+        "model_name": "all-MiniLM-L6-v2",
+        "reranker_model_name": None,
+        "reranker_model_path": None,
+        "rerank_enabled": False,
+        "model_dump": lambda: {"model_name": "all-MiniLM-L6-v2"},
+    }
+    fields.update(overrides)
+    return MagicMock(**fields)
+
+
 class TestSearchFiltering:
     """Tests for search collection filtering."""
 
@@ -151,12 +170,7 @@ class TestSearchFiltering:
             ),
             patch(
                 "sif.config.settings.get_settings",
-                return_value=MagicMock(
-                    model_name="all-MiniLM-L6-v2",
-                    reranker_model_name=None,
-                    reranker_model_path=None,
-                    model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"},
-                ),
+                return_value=_query_settings_mock(),
             ),
         ):
             result = runner.invoke(
@@ -467,12 +481,7 @@ class TestSearchLineNumbers:
             ),
             patch(
                 "sif.config.settings.get_settings",
-                return_value=MagicMock(
-                    model_name="all-MiniLM-L6-v2",
-                    reranker_model_name=None,
-                    reranker_model_path=None,
-                    model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"},
-                ),
+                return_value=_query_settings_mock(),
             ),
         ):
             result = runner.invoke(
@@ -584,12 +593,7 @@ class TestQueryNewFlags:
             ),
             patch(
                 "sif.config.settings.get_settings",
-                return_value=MagicMock(
-                    model_name="all-MiniLM-L6-v2",
-                    reranker_model_name=None,
-                    reranker_model_path=None,
-                    model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"},
-                ),
+                return_value=_query_settings_mock(),
             ),
         ):
             result = runner.invoke(
@@ -632,12 +636,7 @@ class TestQueryNewFlags:
             ),
             patch(
                 "sif.config.settings.get_settings",
-                return_value=MagicMock(
-                    model_name="all-MiniLM-L6-v2",
-                    reranker_model_name=None,
-                    reranker_model_path=None,
-                    model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"},
-                ),
+                return_value=_query_settings_mock(),
             ),
         ):
             result = runner.invoke(
@@ -682,12 +681,7 @@ class TestQueryNewFlags:
             ),
             patch(
                 "sif.config.settings.get_settings",
-                return_value=MagicMock(
-                    model_name="all-MiniLM-L6-v2",
-                    reranker_model_name=None,
-                    reranker_model_path=None,
-                    model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"},
-                ),
+                return_value=_query_settings_mock(),
             ),
         ):
             result = runner.invoke(
@@ -866,12 +860,7 @@ class TestSnippetDisplay:
             ),
             patch(
                 "sif.config.settings.get_settings",
-                return_value=MagicMock(
-                    model_name="all-MiniLM-L6-v2",
-                    reranker_model_name=None,
-                    reranker_model_path=None,
-                    model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"},
-                ),
+                return_value=_query_settings_mock(),
             ),
         ):
             return runner.invoke(
@@ -987,12 +976,7 @@ class TestQueryPipelineErrorHandling:
             ),
             patch(
                 "sif.config.settings.get_settings",
-                return_value=MagicMock(
-                    model_name="all-MiniLM-L6-v2",
-                    reranker_model_name=None,
-                    reranker_model_path=None,
-                    model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"},
-                ),
+                return_value=_query_settings_mock(),
             ),
         ):
             return runner.invoke(
@@ -1099,10 +1083,11 @@ class TestQueryRerankerConfigError:
     def test_factory_value_error_becomes_click_exception(self):
         """Defense in depth: a create_reranker ValueError renders as a clean error."""
         runner = CliRunner()
-        mock_settings = MagicMock(
-            model_name="all-MiniLM-L6-v2",
+        # rerank_enabled=True: with the D-12 default the gate would skip
+        # create_reranker entirely and this side_effect would be unreachable.
+        mock_settings = _query_settings_mock(
             reranker_model_name="q-reranker",
-            reranker_model_path=None,
+            rerank_enabled=True,
         )
         # create_reranker is imported inside query_cmd's body, so patch the
         # module attribute — the function-local import resolves it at call time.
@@ -1128,6 +1113,120 @@ class TestQueryRerankerConfigError:
         assert "Error:" in result.output
         assert "Unknown reranker model_type" in result.output
         assert not isinstance(result.exception, ValueError)
+
+
+class TestRerankOptIn:
+    """D-12 (Phase 16): `sif search query` constructs a reranker only on request.
+
+    The off path must be zero-cost by construction — create_reranker is never
+    called, so no model is loaded and no optional backend is imported — and
+    SearchPipeline receives reranker=None. --rerank or SIF_RERANK_ENABLED=1
+    each open the gate exactly once.
+    """
+
+    @staticmethod
+    def _result() -> SearchResult:
+        return SearchResult(
+            document_id="doc-1",
+            rank=1,
+            score=0.5,
+            title="T",
+            path="/notes/t.md",
+            collection_name="c",
+        )
+
+    def _invoke(
+        self,
+        tmp_path: Path,
+        args: list[str],
+        settings: object = None,
+    ) -> tuple[object, MagicMock, MagicMock]:
+        """Invoke query_cmd; return (result, SearchPipeline class, create_reranker)."""
+        repo = MagicMock()
+        repo.list_enabled.return_value = []
+        manager = MagicMock()
+        manager.embed_single.return_value = [0.0] * 4
+        manager._model = MagicMock()
+        pipeline = MagicMock()
+        pipeline.search.return_value = [self._result()]
+        create_reranker = MagicMock(return_value=MagicMock(name="reranker"))
+        index = tmp_path / "index.db"
+        index.touch()
+        with (
+            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
+            patch("sif.cli.commands.search.SearchPipeline", return_value=pipeline) as pipeline_cls,
+            patch("sif.embedding.manager.EmbeddingManager.from_settings", return_value=manager),
+            patch(
+                "sif.config.settings.get_settings",
+                return_value=settings if settings is not None else _query_settings_mock(),
+            ),
+            patch("sif.search.rerank.create_reranker", new=create_reranker),
+        ):
+            result = CliRunner().invoke(query_cmd, args, obj={"index_path": index})
+        return result, pipeline_cls, create_reranker
+
+    def test_off_by_default_constructs_no_reranker(self, tmp_path: Path) -> None:
+        """No flag + rerank_enabled=False: create_reranker never runs, pipeline gets None."""
+        result, pipeline_cls, create_reranker = self._invoke(tmp_path, ["query"])
+
+        assert result.exit_code == 0, result.output
+        create_reranker.assert_not_called()
+        assert pipeline_cls.call_args.kwargs["reranker"] is None
+
+    def test_rerank_flag_constructs_reranker_once(self, tmp_path: Path) -> None:
+        """--rerank opens the D-12 gate: exactly one construction, wired to the pipeline."""
+        settings = _query_settings_mock()
+        result, pipeline_cls, create_reranker = self._invoke(
+            tmp_path, ["query", "--rerank"], settings=settings
+        )
+
+        assert result.exit_code == 0, result.output
+        create_reranker.assert_called_once_with(settings)
+        assert pipeline_cls.call_args.kwargs["reranker"] is create_reranker.return_value
+
+    def test_enabled_setting_constructs_without_flag(self, tmp_path: Path) -> None:
+        """SIF_RERANK_ENABLED surfaced via settings.rerank_enabled: same single call."""
+        result, pipeline_cls, create_reranker = self._invoke(
+            tmp_path, ["query"], settings=_query_settings_mock(rerank_enabled=True)
+        )
+
+        assert result.exit_code == 0, result.output
+        create_reranker.assert_called_once()
+        assert pipeline_cls.call_args.kwargs["reranker"] is create_reranker.return_value
+
+    def test_env_setting_enables_rerank(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """SIF_RERANK_ENABLED=1 through the real Settings channel opens the gate."""
+        monkeypatch.setenv("SIF_RERANK_ENABLED", "1")
+        repo = MagicMock()
+        repo.list_enabled.return_value = []
+        manager = MagicMock()
+        manager.embed_single.return_value = [0.0] * 4
+        manager._model = MagicMock()
+        pipeline = MagicMock()
+        pipeline.search.return_value = [self._result()]
+        index = tmp_path / "index.db"
+        index.touch()
+        try:
+            get_settings.cache_clear()
+            with (
+                patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+                patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
+                patch("sif.cli.commands.search.SearchPipeline", return_value=pipeline),
+                patch(
+                    "sif.embedding.manager.EmbeddingManager.from_settings",
+                    return_value=manager,
+                ),
+                patch("sif.search.rerank.create_reranker") as create_reranker,
+            ):
+                result = CliRunner().invoke(query_cmd, ["query"], obj={"index_path": index})
+        finally:
+            get_settings.cache_clear()
+
+        assert result.exit_code == 0, result.output
+        create_reranker.assert_called_once()
 
 
 class TestMachineOutputNoWrap:
@@ -1188,12 +1287,7 @@ class TestMachineOutputNoWrap:
             ),
             patch(
                 "sif.config.settings.get_settings",
-                return_value=MagicMock(
-                    model_name="all-MiniLM-L6-v2",
-                    reranker_model_name=None,
-                    reranker_model_path=None,
-                    model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"},
-                ),
+                return_value=_query_settings_mock(),
             ),
         ):
             return runner.invoke(
@@ -1410,10 +1504,7 @@ class TestSearchOutputBranches:
             pipeline.search.return_value = results
         elif not pipeline.search.side_effect:
             pipeline.search.return_value = [self._result()]
-        settings = settings or MagicMock(
-            reranker_model_name=None,
-            reranker_model_path=None,
-        )
+        settings = settings or _query_settings_mock()
         patches = [
             patch("sif.cli.commands.search.Database", return_value=MagicMock()),
             patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
@@ -1731,7 +1822,7 @@ class TestSearchOutputBranches:
         assert result.output == ""
 
     def test_query_explicit_collection_and_model_override(self, tmp_path: Path) -> None:
-        settings = MagicMock(reranker_model_name=None, reranker_model_path=None)
+        settings = _query_settings_mock()
         settings.model_copy.return_value = settings
         repo = MagicMock()
         repo.get_by_name.side_effect = [Collection(id="c1", name="known", path="notes"), None]
@@ -1765,7 +1856,9 @@ class TestSearchOutputBranches:
         settings.model_copy.assert_called_once_with(update={"model_type": "openai"})
 
     def test_query_optional_reranker_import_error_warns(self, tmp_path: Path) -> None:
-        settings = MagicMock(reranker_model_name="reranker", reranker_model_path=None)
+        # rerank_enabled=True opens the D-12 gate so the patched ImportError
+        # from create_reranker is actually raised on this enabled path.
+        settings = _query_settings_mock(reranker_model_name="reranker", rerank_enabled=True)
 
         result, _ = self._invoke_query(
             tmp_path,
@@ -2017,7 +2110,7 @@ class TestStalenessFormatMarker:
         manager._model = MagicMock()
         pipeline = MagicMock()
         pipeline.search.return_value = self._rows()
-        settings = MagicMock(reranker_model_name=None, reranker_model_path=None)
+        settings = _query_settings_mock()
         with (
             patch("sif.cli.commands.search.Database", return_value=MagicMock()),
             patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
@@ -2339,11 +2432,7 @@ class TestDatabaseClosure:
         manager._model = MagicMock()
         # embedding_dim must be a real int: init_schema() resolves get_settings
         # lazily per call, so this mock feeds the real SchemaManager's vec0 DDL.
-        settings = MagicMock(
-            reranker_model_name=None,
-            reranker_model_path=None,
-            embedding_dim=4,
-        )
+        settings = _query_settings_mock(embedding_dim=4)
         with (
             patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
             patch("sif.cli.commands.search.SearchPipeline", return_value=pipeline),
@@ -3053,13 +3142,7 @@ class TestQueryFusionWeightFlags:
 
     def test_flags_fill_search_options(self, tmp_path: Path) -> None:
         """Explicit flags flow verbatim into the SearchOptions the pipeline gets."""
-        settings = MagicMock(
-            rrf_k=99,
-            bm25_weight=9.0,
-            vector_weight=9.0,
-            reranker_model_name=None,
-            reranker_model_path=None,
-        )
+        settings = _query_settings_mock(rrf_k=99, bm25_weight=9.0, vector_weight=9.0)
 
         result, pipeline = self._invoke(
             tmp_path,
@@ -3083,13 +3166,7 @@ class TestQueryFusionWeightFlags:
 
     def test_settings_fill_when_no_flag(self, tmp_path: Path) -> None:
         """Absent flags fall back to the SIF_ settings layer (patched here)."""
-        settings = MagicMock(
-            rrf_k=7,
-            bm25_weight=2.0,
-            vector_weight=0.5,
-            reranker_model_name=None,
-            reranker_model_path=None,
-        )
+        settings = _query_settings_mock(rrf_k=7, bm25_weight=2.0, vector_weight=0.5)
 
         result, pipeline = self._invoke(tmp_path, ["query"], settings=settings)
 
@@ -3198,13 +3275,7 @@ class TestQueryFusionWeightFlags:
     )
     def test_invalid_flag_values_rejected(self, tmp_path: Path, flag: list[str]) -> None:
         """Out-of-range flags die as Click usage errors (non-zero exit)."""
-        settings = MagicMock(
-            rrf_k=60,
-            bm25_weight=1.0,
-            vector_weight=1.0,
-            reranker_model_name=None,
-            reranker_model_path=None,
-        )
+        settings = _query_settings_mock(rrf_k=60, bm25_weight=1.0, vector_weight=1.0)
 
         result, pipeline = self._invoke(tmp_path, ["query", *flag], settings=settings)
 

@@ -145,6 +145,14 @@ class Settings(BaseSettings):
     )
 
     # Reranker settings
+    # D-12 (Phase 16): rerank is opt-in. The False default keeps `sif search
+    # query` on the zero-cost skip-rerank fast path — no reranker model is
+    # constructed unless --rerank or SIF_RERANK_ENABLED=1 requests it.
+    rerank_enabled: bool = Field(
+        default=False,
+        description="Enable reranking on `sif search query`; the default keeps the "
+        "zero-cost skip-rerank fast path (pass --rerank or set 1 to enable)",
+    )
     reranker_model_name: str = Field(
         default="Qwen/Qwen3-Reranker-0.6B",
         description="Reranker model name",
