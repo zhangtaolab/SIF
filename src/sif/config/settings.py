@@ -157,8 +157,12 @@ class Settings(BaseSettings):
     # constructed unless --rerank or SIF_RERANK_ENABLED=1 requests it.
     rerank_enabled: bool = Field(
         default=False,
-        description="Enable reranking on `sif search query`; the default keeps the "
-        "zero-cost skip-rerank fast path (pass --rerank or set 1 to enable)",
+        # Phrasing note: "sif search query" must be followed by whitespace or
+        # the docs gate's bare-command regex (tests/test_docs.py) trips on the
+        # generated configuration.md row.
+        description="Enable reranking on the sif search query command "
+        "(the default keeps the zero-cost skip-rerank fast path; "
+        "pass --rerank or set 1 to enable)",
     )
     # D-10 (Phase 16): candidate cap for the enabled rerank path.
     rerank_candidate_limit: int = Field(

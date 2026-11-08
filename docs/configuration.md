@@ -86,6 +86,9 @@ BM25/FTS5 keyword search and sqlite-vec vector search always run on CPU regardle
 | `SIF_RERANKER_MODEL_PATH` | Path \| None | `None` | Path to local reranker model file |
 | `SIF_RERANKER_MODEL_TYPE` | str | `sentence_transformers` | Reranker model type (gguf, sentence_transformers) (validated by `validate_reranker_model_type`) |
 | `SIF_RERANKER_BATCH_SIZE` | int | `32` | Batch size for reranker inference |
+| `SIF_RERANK_ENABLED` | bool | `False` | Enable reranking on the sif search query command (the default keeps the zero-cost skip-rerank fast path; pass --rerank or set 1 to enable) |
+| `SIF_RERANK_CANDIDATE_LIMIT` | int | `20` | Maximum candidates passed to the reranker when reranking is enabled; the pipeline over-fetches to this size before capping |
+| `SIF_RERANK_RELATIVE_THRESHOLD` | float | `0.5` | Keep reranker candidates scoring at least top_score * alpha (0 < alpha <= 1); applied after score normalization |
 
 ### Chunking Settings
 
@@ -149,6 +152,8 @@ SIF validates configuration on startup. Invalid values will raise errors:
 | `chunk_size` | Minimum 100 | `ensure this value is greater than or equal to 100` |
 | `chunk_overlap` | Minimum 0 | `ensure this value is greater than or equal to 0` |
 | `default_limit` | 1 to 100 | `ensure this value is less than or equal to 100` |
+| `rerank_candidate_limit` | 5 to 50 | `ensure this value is less than or equal to 50` |
+| `rerank_relative_threshold` | Greater than 0 and at most 1 | `ensure this value is less than or equal to 1` |
 | `mcp_port` | 1 to 65535 | `ensure this value is less than or equal to 65535` |
 
 ## Complete .env Example
@@ -167,6 +172,9 @@ SIF_BATCH_SIZE=32
 SIF_RERANKER_MODEL_NAME=Qwen/Qwen3-Reranker-0.6B
 SIF_RERANKER_MODEL_TYPE=sentence_transformers
 SIF_RERANKER_BATCH_SIZE=32
+SIF_RERANK_ENABLED=false
+SIF_RERANK_CANDIDATE_LIMIT=20
+SIF_RERANK_RELATIVE_THRESHOLD=0.5
 
 # API (for OpenAI-compatible backends)
 # SIF_API_KEY=your-api-key

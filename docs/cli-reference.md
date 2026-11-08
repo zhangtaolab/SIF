@@ -435,7 +435,8 @@ sif search query [OPTIONS]
 | `--min-score` | `—` | float | `0.0` | Minimum score threshold |
 | `--full` | `—` | flag | `false` | Include full content |
 | `--explain` | `—` | flag | `false` | Show score breakdowns across pipeline stages |
-| `--candidate-limit` | `-C` | integer range | `20` | Reranker candidate pool size |
+| `--candidate-limit` | `-C` | integer range | — | Reranker candidate pool size (default: SIF_RERANK_CANDIDATE_LIMIT or 20; clamped to 5-50) |
+| `--rerank` | `—` | flag | `false` | Rerank results (default: SIF_RERANK_ENABLED or false) |
 | `--intent` | `—` | text | — | Search intent hint for query expansion |
 | `--rrf-k` | `—` | integer range | — | RRF k constant for hybrid fusion (default: SIF_RRF_K or 60) |
 | `--bm25-weight` | `—` | float range | — | BM25 fusion weight (default: SIF_BM25_WEIGHT or 1.0) |
@@ -573,6 +574,11 @@ Fixture format (JSON):
             }
         ]
     }
+
+Graded fixtures (Phase 16) instead declare corpus_root/relevance_key and
+per-query category/split/relevance; the report layers nDCG@10, Hit@10,
+warmed p50/p95 latency and a per-category breakdown over the legacy flat
+metrics.
 
 ```bash
 sif bench [OPTIONS]

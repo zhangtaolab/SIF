@@ -170,6 +170,9 @@ SECTIONS: list[tuple[str, list[str]]] = [
             "reranker_model_path",
             "reranker_model_type",
             "reranker_batch_size",
+            "rerank_enabled",
+            "rerank_candidate_limit",
+            "rerank_relative_threshold",
         ],
     ),
     ("Chunking Settings", ["chunk_size", "chunk_overlap"]),
@@ -352,6 +355,13 @@ def _append_validation_rules(lines: list[str], validator_choices: dict[str, list
     lines.append(
         "| `default_limit` | 1 to 100 | `ensure this value is less than or equal to 100` |"
     )
+    lines.append(
+        "| `rerank_candidate_limit` | 5 to 50 | `ensure this value is less than or equal to 50` |"
+    )
+    lines.append(
+        "| `rerank_relative_threshold` | Greater than 0 and at most 1 | "
+        "`ensure this value is less than or equal to 1` |"
+    )
     lines.append("| `mcp_port` | 1 to 65535 | `ensure this value is less than or equal to 65535` |")
     lines.append("")
 
@@ -376,6 +386,9 @@ def _append_env_example(lines: list[str]) -> None:
     lines.append("SIF_RERANKER_MODEL_NAME=Qwen/Qwen3-Reranker-0.6B")
     lines.append(f"SIF_RERANKER_MODEL_TYPE={reranker_type_default}")
     lines.append("SIF_RERANKER_BATCH_SIZE=32")
+    lines.append("SIF_RERANK_ENABLED=false")
+    lines.append("SIF_RERANK_CANDIDATE_LIMIT=20")
+    lines.append("SIF_RERANK_RELATIVE_THRESHOLD=0.5")
     lines.append("")
     lines.append("# API (for OpenAI-compatible backends)")
     lines.append("# SIF_API_KEY=your-api-key")
