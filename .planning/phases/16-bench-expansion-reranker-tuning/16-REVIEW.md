@@ -1,6 +1,6 @@
 ---
 phase: 16-bench-expansion-reranker-tuning
-reviewed: 2026-11-08T15:59:23Z
+reviewed: 2026-11-08T16:33:03Z
 depth: standard
 files_reviewed: 30
 files_reviewed_list:
@@ -35,143 +35,94 @@ files_reviewed_list:
   - docs/configuration.md
   - docs/cli-reference.md
 findings:
-  critical: 1
-  warning: 3
-  info: 4
-  total: 8
+  critical: 0
+  warning: 0
+  info: 6
+  total: 6
   necessity: 0
 status: issues_found
 ---
 
-# Phase 16: Code Review Report
+# Phase 16: Code Review Report (Re-review, Fix Iteration 2)
 
-**Reviewed:** 2026-11-08T15:59:23Z
+**Reviewed:** 2026-11-08T16:33:03Z
 **Depth:** standard
 **Files Reviewed:** 30
-**Status:** issues_found
+**Status:** issues_found (Critical/Warning tiers clear; 6 Info items, 4 carried forward)
 
 ## Summary
 
-Phase 16 (bench expansion + reranker tuning) was reviewed at standard depth: all 30 listed source/test/doc files read, the git diff against `eea2bf0a` used to scope phase-introduced changes, and the phase gates re-executed (fixture drift gate `OK: 151 files`, generated `docs/configuration.md` byte-equal to generator output, targeted suites green: 75 + 13 + 117 + 182 tests passed under `env -u FORCE_COLOR NO_COLOR=1`).
+This is iteration 2 of the fix loop: a fresh standard-depth review of the current state of all 30 scoped files, with the five fix commits (7d5d788, 77e6511, 3562dac, 62aeacb, f3a9700) re-verified against the cited code rather than the fix report.
 
-All ten phase-critical properties in the review focus were verified to hold in the actual code:
+**All four blocking findings from the previous review (16-REVIEW.iter2.md) are genuinely resolved.** Each fix was independently reproduced, not just read:
 
-1. `resolve_candidate_limit` (`src/sif/config/settings.py:399-415`) clamps on both the flag path (`-C 200` → 50, exercised end-to-end in `tests/unit/cli/test_search.py` and `tests/unit/cli/test_bench.py`) and the settings path; a non-int attr resolves to 20.
-2. The rerank-off path constructs no reranker: `query_cmd` checks `rerank_requested = rerank or settings.rerank_enabled` before `create_reranker` (`src/sif/cli/commands/search.py:913-916`); bench's `_load_reranker` returns `None` before the factory call (`src/sif/cli/commands/bench.py:184-186`); pinned by `TestRerankOptIn` and `test_bench_off_only_json_states_additive_no_reranker`.
-3. Over-fetch reaches both `self.hybrid.search(q, fetch_options)` (`src/sif/search/hybrid.py:244`) and the cross-query `rrf.fuse(all_results, fetch_options.limit, ...)` (line 255); `results[: options.candidate_limit]` slices the over-fetched set (line 259).
-4. The relative-threshold filter is `pair[1] >= cutoff`, applied after the descending sort and before `[:top_k]`, in the single `_sort_and_build_results` shared by all three backends (`src/sif/search/rerank.py:43-48`).
-5. `rank_sweep` uses `round(best - result.ndcg_at_10, 6) < epsilon` (`src/sif/search/benchmark.py:385`) on the tuning split only (held-out filtered in `_tuning_evaluator` before any search call); `winner_declared = len(tie_group) == 1`.
-6. Off-only `bench --json` keeps every flat top-level key with `states` added alongside (`_render_report`, `src/sif/cli/commands/bench.py:408-413`).
-7. The snapshot lock derives from `Settings(_env_file=None)` and asserts defaults equality and metric equality in one test (`tests/unit/search/test_bench_snapshot.py:190-214`); editing only the snapshot defaults fails.
-8. `percentile` handles empty (0.0) and single-element inputs (`src/sif/search/benchmark.py:104-112`); both pinned.
-9. Path-keyed relevance cannot escape `corpus_root`: `result_key` resolves and `relative_to`s, falling back to a non-matching full path on `ValueError`; relevance keys are never opened as files (verified `src/sif/search/benchmark.py:186-199`, plus `TestFixtureContractPaths`).
-10. No new runtime dependencies: `pyproject.toml` untouched in the diff; new code uses stdlib + click/pydantic/rich only (numpy import in rerank.py is lazy and pre-declared).
+1. **CR-01 (resolved):** `console_err = Console(stderr=True)` now exists at `src/sif/cli/commands/bench.py:44`, and all four soft-fail warning sites route through it — embedder `ImportError` (line 111), embedder generic `Exception` (line 113), reranker `ImportError` (line 192), reranker generic `Exception` (line 198). Two new tests pin stream separation on both degradation paths (`test_bench_embedder_soft_fail_warning_stays_off_json_stdout`, `test_bench_rerank_missing_backend_warning_stays_off_json_stdout`) using `result.stdout`/`result.stderr` — which under installed Click 8.3.2 are genuinely separate streams (verified: Click ≥8.2's `Result.output` mixes, `Result.stdout`/`Result.stderr` do not). `json.loads(result.stdout)` succeeds and the warning text is asserted absent from stdout and present in stderr.
+2. **WR-01 (resolved):** `class TestMachineOutputNoWrap:` is restored at `tests/unit/cli/test_search.py:1324`. Verified two ways: `pytest --collect-only` shows exactly 4 tests under `TestMachineOutputNoWrap` and exactly 4 under `TestCandidateLimitResolution`, and an AST scan for orphaned docstrings (the WR-01/IN-02 accident family) across all 12 changed test/support files reports zero orphans in this file.
+3. **WR-02 (resolved):** `live_settings` (`tests/unit/search/test_bench_snapshot.py:127-141`) is now a module-scoped generator using `pytest.MonkeyPatch.context()` to `delenv` `SIF_RRF_K`/`SIF_BM25_WEIGHT`/`SIF_VECTOR_WEIGHT` before constructing `Settings(_env_file=None)` inside the context (`Iterator` is imported at line 21). Reproduced live: the full snapshot module passes with `SIF_RRF_K=99` exported into the test environment — the exact spurious-failure scenario the finding described.
+4. **WR-03 (resolved):** `check_pack` (`scripts/generate_bench_fixture.py:477-500`) now walks every file under the pack root via `out.rglob("*")` and flags anything not in `set(files) | ALLOWED_EXTRA_FILES` (`{"heldout_defaults.json", "README.md"}`), so stray root files and non-`.md` strays under `corpus/` are both caught. Five new tests cover clean-pack, stray root file, stray non-`.md` under corpus, stray `.md` under corpus, and the real committed pack; the doc claim at `docs/benchmarking.md:50` ("unexpected files included") is now true.
 
-The defects found are one machine-output contract violation on a supported degradation path (Critical), a botched test-file edit that deleted a class header (Warning), an environment-sensitive snapshot fixture (Warning), and a drift-gate/doc overstatement (Warning), plus four Info items.
+No new defects were introduced by the fixes: the CR-01 stream change touches only the warning sites, the WR-01 header insertion is placement-only, the WR-02 fixture is correctly scoped, and the WR-03 scan has no false positives against the real pack.
 
-## Critical Issues
+Phase gates re-executed during this review, all green: `python scripts/generate_bench_fixture.py --check` → `OK: 151 files`; `docs/configuration.md` byte-equal to `scripts/generate_config_ref.py` output; `ruff check` / `ruff format --check` / `ty check src/sif` all clean; full suite `env -u FORCE_COLOR NO_COLOR=1 python -m pytest -q` → 1501 passed, 1 skipped, coverage 94.95%.
 
-### CR-01: Bench soft-fail warnings print to stdout and corrupt `--json` output
+Remaining: the four Info findings from iteration 1 (out of fix scope) are still present and carried forward below at unchanged severity, plus two new Info-level stream-consistency notes found in this fresh pass (IN-05, IN-06). Nothing at Critical or Warning severity remains.
 
-**File:** `src/sif/cli/commands/bench.py:41,108-110,189-197`
-**Issue:** The module-level `console = Console()` writes to stdout. On the explicitly supported soft-fail paths — embedding backend not installed / model load failure (`_load_embedder`, lines 108/110) and reranker backend missing / model load failure (`_load_reranker`, lines 189-197, added this phase) — a Rich `[yellow]` warning is printed to **stdout** and then execution continues (exit 0) to emit the JSON payload via `click.echo`. Any `sif bench fixture.json --json | jq .` (the exact recipe in `docs/benchmarking.md` "Commands and Reproduction") fails to parse on these paths. The phase's own `_render_report` docstring claims "JSON goes through click.echo (never Rich) so it strict-parses" and the narrow-width tests pin strict parsing — but only against Rich *wrapping*, not stream separation. `src/sif/cli/commands/search.py:31-33` already established the correct contract for this exact problem ("D-07 stderr contract: refresh notices/warnings must never pollute stdout, which stays clean for --json/--csv piping") via `console_err = Console(stderr=True)`; bench was not given the same treatment, and the new `_load_reranker` warnings (used with the new `--rerank --json` mode) extend the violation. The `_load_embedder` half pre-exists at the diff base, but this phase both added new warning sites and made the strict-parse JSON contract central to the command. The existing tests cannot catch this: `test_bench_rerank_missing_backend_degrades_to_off_only` uses table mode, and CliRunner's `result.output` merges stdout and stderr anyway.
-**Fix:**
-```python
-# src/sif/cli/commands/bench.py — mirror search.py's D-07 stderr contract
-from rich.console import Console
+## Fix Verification Detail
 
-console = Console()                    # table rendering (human mode only)
-console_err = Console(stderr=True)     # warnings — never pollute --json stdout
-
-# in _load_embedder / _load_reranker:
-console_err.print(f"[yellow]Embedding backend not installed: {e}[/yellow]")
-console_err.print(
-    f"[yellow]Reranker backend not available, measuring the off state only: {e}[/yellow]"
-)
-```
-Then add a test that runs `bench --json` with `create_reranker` raising `ImportError` and asserts `json.loads(result.stdout)` succeeds (CliRunner supports `mix_stderr=False`).
-
-## Warnings
-
-### WR-01: Deleted `class TestMachineOutputNoWrap:` header silently merges two test classes
-
-**File:** `tests/unit/cli/test_search.py:1310-1349`
-**Issue:** This phase's insertion of `TestRerankOptIn`/`TestCandidateLimitResolution` replaced the `class TestMachineOutputNoWrap:` line (see the diff hunk at old line ~1117): the deleted class's docstring now sits as an orphaned no-op string at line 1323 inside `TestCandidateLimitResolution`, and the entire former class body (`LONG_TEXT`, `LONG_PATH`, `_make_result`, `_invoke_query`, and its four machine-format tests) was silently absorbed into `TestCandidateLimitResolution`. Verified by collection: `pytest --collect-only` reports `TestCandidateLimitResolution::test_search_json_parses_at_narrow_width`, `::test_query_json_parses_at_narrow_width`, `::test_search_files_long_path_single_line`, `::test_search_csv_rows_single_line` — 8 tests under a class whose name promises only candidate-limit resolution. `grep -rn TestMachineOutputNoWrap` finds the class nowhere in the repo. Tests still run today, but the file structure is corrupted: the class boundary is gone, the docstring is dead code, and future edits (e.g. moving a helper, adding a class attribute, or `-m`/`-k` selection by class) will misfire. This is the same edit-accident family as the stray docstring at `tests/unit/inference/test_reranker.py:305` (pre-existing, see IN-02).
-**Fix:** Re-insert the class header immediately before the orphaned docstring:
-```python
-        assert isinstance(options.candidate_limit, int)
-
-
-class TestMachineOutputNoWrap:
-    """Machine-format output must be byte-faithful regardless of width (CLI-JSON-WRAP).
-    ...
-    """
-```
-(i.e. restore line `class TestMachineOutputNoWrap:` above current line 1323 so the docstring and the absorbed members belong to their own class again).
-
-### WR-02: Snapshot-lock fixture reads real environment variables — non-hermetic against `SIF_RRF_K`/`SIF_BM25_WEIGHT`/`SIF_VECTOR_WEIGHT`
-
-**File:** `tests/unit/search/test_bench_snapshot.py:127-130,91-108`
-**Issue:** `live_settings` builds `Settings(_env_file=None)` and the comment concedes "(mod env)". Unlike every hermetic sibling in `tests/unit/config/test_settings.py` (e.g. `test_fusion_defaults_match_prechange_behavior`, which `monkeypatch.delenv`s exactly these three vars), this module does not clear them. With any of `SIF_RRF_K`, `SIF_BM25_WEIGHT`, or `SIF_VECTOR_WEIGHT` exported in the developer/CI shell, `_assert_defaults_lock` fails with a message instructing the user to *regenerate* `tests/fixtures/bench/heldout_defaults.json` — actively misleading, since the correct remedy is to unset the env var — and `test_settings_default_change_without_metric_regeneration_fails` / `test_candidate_is_ranked_winner...` inherit the same sensitivity. This project has a documented history of environment-sensitive spurious test failures (FORCE_COLOR memory note), so this is a realistic flake source for the exact tests that gate shipped defaults.
-**Fix:** Make the fixture hermetic with a module-scoped monkeypatch (or clear the vars in the fixture):
-```python
-@pytest.fixture(scope="module")
-def live_settings(monkeypatch_session) -> Settings:
-    for var in ("SIF_RRF_K", "SIF_BM25_WEIGHT", "SIF_VECTOR_WEIGHT", "SIF_RERANK_ENABLED"):
-        monkeypatch_session.delenv(var, raising=False)
-    return Settings(_env_file=None)
-```
-(`pytest.MonkeyPatch()` can be instantiated directly for a module-scoped hand-rolled fixture; alternatively pin the three knobs by constructing `Settings(_env_file=None, rrf_k=60, bm25_weight=1.0, vector_weight=1.0)` and asserting the *class defaults* equal those literals, which keeps the lock testing the shipped defaults rather than the shell.)
-
-### WR-03: `--check` drift gate does not detect unexpected files outside `corpus/**/*.md`, but `docs/benchmarking.md` claims it does
-
-**File:** `scripts/generate_bench_fixture.py:471-487` (claim: `docs/benchmarking.md:50`)
-**Issue:** `check_pack()` flags missing/drifted expected files, but the unexpected-file scan only walks `out/corpus` with `rglob("*.md")`. A stray file at the pack root (e.g. `tests/fixtures/bench/notes.md`, or a leftover `corpus/keyword/extra.txt`) is silently accepted. `docs/benchmarking.md:50` states "The `--check` gate exits non-zero on any drift (**unexpected files included**)" — a verification guarantee the code does not provide. Since the drift gate's whole purpose is "snapshot drift can only come from code, never the pack", an undetected stray corpus file (which `build_bench_db` indexes via `rglob("*.md")` — actually no: build_bench_db walks `corpus_root`, so a root-level stray is inert, but a stray `.md` under `corpus/` silently changes every measured metric while `--check` stays green) can invalidate the committed evidence without any gate firing. Note `heldout_defaults.json` and `README.md` at the pack root are intentionally committed, so the scan cannot simply flag everything unexpected — it needs an allowlist.
-**Fix:** Either strengthen the gate:
-```python
-ALLOWED_ROOT = {"queries.json", "heldout_defaults.json", "README.md"}
-for path in sorted(out.iterdir()):
-    rel = path.relative_to(out).as_posix()
-    if rel not in expected and rel not in ALLOWED_ROOT:
-        drift.append(f"unexpected: {rel}")
-for path in sorted(corpus_dir.rglob("*")) if corpus_dir.is_dir() else []:
-    if path.is_file() and path.suffix != ".md":
-        drift.append(f"unexpected: {path.relative_to(out).as_posix()}")
-```
-— or soften the doc sentence to "unexpected `corpus/**/*.md` files included". Prefer the former; the corpus-stray case is a real evidence-integrity hole.
+| Prior ID | Status | Evidence |
+|---|---|---|
+| CR-01 | Fixed | `bench.py:44,111,113,192,198`; both new stderr-purity tests pass; Click 8.3.2 stream semantics confirmed |
+| WR-01 | Fixed | `test_search.py:1324`; collection shows 4+4 tests in the correct classes; AST orphan scan clean |
+| WR-02 | Fixed | `test_bench_snapshot.py:127-141`; module passes with `SIF_RRF_K=99` exported |
+| WR-03 | Fixed | `generate_bench_fixture.py:471-500` + `TestCheckPackDriftGate` (5 tests); drift gate green on the committed pack |
 
 ## Info
 
-### IN-01: `_sort_and_build_results` drops `vectors_stale` when rebuilding SearchResult
+### IN-01: `_sort_and_build_results` drops `vectors_stale` when rebuilding SearchResult (carried forward)
 
 **File:** `src/sif/search/rerank.py:52-66`
-**Issue:** The rebuild passes `document_id ... context_description` but not `vectors_stale`, so any rerank resets the flag to its `False` default. Not a live bug on the pipeline path — `SearchPipeline.search` re-attaches staleness *after* reranking (`hybrid.py:269` → `mark_vector_staleness`, which sets unconditionally), and `vectors_stale` is `False` at rerank time anyway. But `reranker.rerank()` is a public API (documented in `docs/api-reference.md` / `docs/search-algorithms.md` "Implementation" examples that rerank already-attached results); any such caller silently loses stale-vector markers.
+**Issue:** The rebuild passes `document_id ... context_description` but not `vectors_stale`, so any rerank resets the flag to its `False` default. Not a live bug on the pipeline path — `SearchPipeline.search` re-attaches staleness after reranking (`hybrid.py:269` → `mark_vector_staleness`, which sets unconditionally) — but `reranker.rerank()` is a public API documented with usage examples in `docs/api-reference.md` and `docs/search-algorithms.md:319-332`; any such caller reranking already-attached results silently loses stale-vector markers.
 **Fix:** Add `vectors_stale=result.vectors_stale` to the `SearchResult(...)` construction in the rebuild loop.
 
-### IN-02: Stray class docstring inside `TestCrossEncoderRerankerLoad` (pre-existing)
+### IN-02: Stray class docstring inside `TestCrossEncoderRerankerLoad` (carried forward, pre-existing)
 
 **File:** `tests/unit/inference/test_reranker.py:305`
-**Issue:** A bare `"""Tests for CrossEncoderReranker reranking."""` sits mid-class after `test_download_failure_falls_back_to_model_id` — the `TestCrossEncoderRerankerRerank` class header it once introduced is missing, so the `test_rerank_*` methods below it live under the "Load" test class and the string is a dead no-op expression. Pre-existing at the diff base (not introduced by this phase), but it is the same accident family WR-01 proves is recurring in this repo; worth fixing while in the area.
+**Issue:** A bare `"""Tests for CrossEncoderReranker reranking."""` sits mid-class after `test_download_failure_falls_back_to_model_id` — the `TestCrossEncoderRerankerRerank` class header it once introduced is missing, so the `test_rerank_*` methods below it live under the "Load" class and the string is a dead no-op expression. Confirmed still present by AST scan in this review (the only remaining orphan in the changed files). Same accident family as the (now-fixed) WR-01.
 **Fix:** Replace the bare string at line 305 with `class TestCrossEncoderRerankerRerank:` followed by the docstring.
 
-### IN-03: `Qwen3Reranker.load` duplicates the whole model-loading body across quiet/non-quiet branches (pre-existing)
+### IN-03: `Qwen3Reranker.load` duplicates the whole model-loading body across quiet/non-quiet branches (carried forward, pre-existing)
 
 **File:** `src/sif/search/rerank.py:327-357`
-**Issue:** The quiet and non-quiet branches repeat tokenization, model construction, device movement, and token-id setup verbatim; the only difference is the `suppress_output()` wrapper. Duplication in a file this phase modified (threshold plumbing) — a future edit to one branch (e.g. dtype or device policy) can silently miss the other. Pre-existing shape, retained through this phase's edits.
-**Fix:** Extract a `_load_model(...) -> None` helper and call it once inside `if is_quiet(): with suppress_output(): ... else: ...`, or wrap only the load statements in a context manager selected by `is_quiet()`.
+**Issue:** The quiet and non-quiet branches repeat tokenization, model construction, device movement, and token-id setup verbatim; the only difference is the `suppress_output()` wrapper. A future edit to one branch (dtype or device policy) can silently miss the other.
+**Fix:** Extract a `_load_model(...) -> None` helper and call it once, wrapping only the load statements in `suppress_output()` when `is_quiet()`.
 
-### IN-04: Benchmarking doc gaps: grade-1 legend missing; `SIF_RERANK_ENABLED=1` implied to enable bench rerank state
+### IN-04: Benchmarking doc gaps: grade-1 legend missing; `SIF_RERANK_ENABLED=1` implied to enable bench rerank state (carried forward)
 
-**File:** `docs/benchmarking.md:56,147-155`
-**Issue:** (a) The grade legend says "3 = authoritative answer, 2 = supporting, 0 = a rival" but omits `1 = partial`, which the fixture README and `SearchEvaluator` accept — a hand-authored doc gap in an otherwise precise metric contract. (b) The "Rerank States" section opens with "Reranking is explicit opt-in and defaults off: pass `--rerank` **or set `SIF_RERANK_ENABLED=1`**", but `sif bench` honors only the `--rerank` flag (`_load_reranker(rerank, settings)` returns `None` whenever the flag is absent, ignoring `settings.rerank_enabled`, `src/sif/cli/commands/bench.py:184-186`); a user who exports `SIF_RERANK_ENABLED=1` and runs `sif bench --json` gets the off-only report with no warning. The sentence is accurate for `sif search query` but reads as bench guidance in this section.
-**Fix:** (a) Add `1 = partial` to the legend. (b) Reword to scope the env-var sentence to `sif search query` and state that `sif bench` measures the on state only via `--rerank` (deliberate per D-12: bench is diagnostic and explicit).
+**File:** `docs/benchmarking.md:56,147`
+**Issue:** (a) Line 56 says grades are "3 = authoritative answer, 2 = supporting, 0 = a rival" but omits `1 = partial`, which the fixture README (`tests/fixtures/bench/README.md:44`) and `SearchEvaluator` both accept — the generator currently emits no grade-1 keys, so the gap is latent rather than wrong. (b) Line 147 opens the bench-facing "Rerank States" section with "pass `--rerank` **or set `SIF_RERANK_ENABLED=1`**", but `sif bench` honors only the `--rerank` flag (`_load_reranker` returns `None` whenever the flag is absent, ignoring `settings.rerank_enabled`, `src/sif/cli/commands/bench.py:187-188`); a user who exports the variable and runs `sif bench --json` gets the off-only report with no warning. The sentence is accurate for `sif search query` (and is correctly scoped there in `docs/search-algorithms.md:286-287`) but reads as bench guidance in this section.
+**Fix:** (a) Add `1 = partial` to the legend. (b) Reword line 147 to scope the env-var alternative to `sif search query` and state that `sif bench` measures the on state only via `--rerank` (deliberate per D-12: bench is diagnostic and explicit).
+
+### IN-05: `bench` no-index warning prints to stdout and exits 0 — `--json` consumers get non-JSON stdout with a success exit code (new this review, pre-existing line)
+
+**File:** `src/sif/cli/commands/bench.py:617-619`
+**Issue:** `if not index_path.exists(): console.print("[yellow]No index found...")` writes to **stdout** via the module-level `console` and returns with **exit code 0**, emitting no JSON. A `sif bench fixture.json --json | jq .` on such a machine feeds jq the Rich-formatted warning line; the pipeline exit status comes from jq's parse failure, not from sif. This is the same D-07 stream-contract family CR-01 addressed, on the one remaining stdout warning site in the command — but the line predates the phase diff base (present verbatim at base `eea2bf0a`), is the established pattern across every CLI command (`search.py:830-833` does the same for all trio commands), and is pinned as intended behavior by `test_bench_no_index` (`tests/unit/cli/test_bench.py:354-370`, asserts exit 0 + message in output). Info rather than Warning for those reasons; under Click ≥8.2 the existing test keeps passing even if the message moves to `console_err` (`result.output` mixes streams).
+**Fix:** Route the notice through `console_err` and consider a non-zero exit (e.g. `raise click.ClickException(...)` or `ctx.exit(1)`) so machine consumers can detect the missing index without parsing stdout — as a codebase-wide follow-up, not a Phase 16 fix.
+
+### IN-06: `query_cmd` reranker-unavailable degradation warning still targets stdout `console` (new this review, pre-existing line; currently unreachable in production)
+
+**File:** `src/sif/cli/commands/search.py:917-922`
+**Issue:** The `except ImportError` handler around `create_reranker` prints "Reranker not available. Install with..." via `console` (**stdout**), violating the module's own D-07 stderr contract (its `console_err` docstring at lines 31-33) if ever reached in a `--rerank --json` invocation. Today the branch is production-unreachable: `create_reranker` (`src/sif/search/rerank.py:424-463`) performs no eager optional-backend imports (all `sentence_transformers`/`llama_cpp`/`transformers` imports are lazy inside `load()`), so an ImportError can only be injected by the test seams at `tests/unit/cli/test_search.py:3070,3168,3299,3342`. It is a latent trap: the moment `create_reranker` gains an eager import, `sif search query --rerank --json` on a machine without the backend gets stdout pollution identical to CR-01.
+**Fix:** Switch the `console.print(...)` at lines 919-922 to `console_err.print(...)` — a one-word change that aligns the defensive branch with the module's established contract before it can become live.
+
+## Necessity Review
+
+`$HOME/.claude/gsd-core/references/necessity-review.md` was read and applied. Zero necessity findings. Re-examined this iteration: the MagicMock-tolerance guards (`resolve_candidate_limit`'s non-int fallback, `create_reranker`'s non-numeric threshold fallback, `_state_metrics`' numeric check) each defend states that committed tests instantiate through the production path (the project's documented "Pitfall 10" test-seam convention — excluded from necessity by the rubric's test-seam carve-out), and no impossible-state, already-defended, cargo-culted, phantom, or single-instantiation generality was provable from the repository.
 
 ---
 
-Necessity review (`$HOME/.claude/gsd-core/references/necessity-review.md`) was read and applied. Zero necessity findings: the MagicMock-tolerance guards (`resolve_candidate_limit`'s non-int fallback, `create_reranker`'s non-numeric threshold fallback, `_state_metrics`' numeric check) were considered and **not** flagged — each guarded state is instantiated by committed tests exercising the production path (the project's documented "Pitfall 10" convention), so they defend against states that occur in this stack, and none qualifies as an impossible-state/already-defended finding.
+Phase gates re-verified during this review: drift gate `OK: 151 files`; `docs/configuration.md` byte-equal to generator output; `ruff check` + `ruff format --check` + `ty check src/sif` clean; full suite 1501 passed / 1 skipped, coverage 94.95% (`env -u FORCE_COLOR NO_COLOR=1`).
 
-Phase gates re-verified during review: `python scripts/generate_bench_fixture.py --check` → `OK: 151 files`; `docs/configuration.md` byte-equal to `scripts/generate_config_ref.py` output; targeted suites green (test_sweep + test_benchmark_metrics + test_bench_fixture: 75 passed; test_bench_snapshot: 13 passed; test_bench + test_settings + test_rerank + test_hybrid: 117 passed; test_search + test_database_lifecycle + test_docs: 182 passed).
-
-_Reviewed: 2026-11-08T15:59:23Z_
+_Reviewed: 2026-11-08T16:33:03Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
+_Iteration: 2 (re-review after CR-01/WR-01/WR-02/WR-03 fixes; all four confirmed resolved)_
