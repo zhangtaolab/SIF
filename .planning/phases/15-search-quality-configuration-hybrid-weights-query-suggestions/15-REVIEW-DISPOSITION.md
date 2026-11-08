@@ -5,27 +5,27 @@ titles: json
 findings:
   - id: CR-01
     severity: critical
-    disposition: open
+    disposition: fixed
     title: "DYM suggestions are never validated as a conjunction — emitted suggestions can return zero hits (SC2 violated)"
   - id: WR-01
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "`_retrievable` prefix-substring test is unsound — suppresses real corrections and invents spurious ones"
   - id: WR-02
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "`sif suggest --limit` does not cap the \"Did you mean\" section"
   - id: WR-03
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "Docs still advertise the deleted `RRFFusion.fuse_with_weights` and deny the new knobs"
   - id: WR-04
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "`docs/mcp-server.md` query tool contract not updated for the new params/response field"
   - id: WR-05
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "`sif suggest --json` writes human text to stdout when the index is missing (and `-q` does not suppress it)"
   - id: IN-01
     severity: info
@@ -55,21 +55,21 @@ findings:
     severity: info
     disposition: open
     title: "Stale roadmap/architecture doc references for the delivered feature"
-open: 13
+open: 7
 total: 13
-recorded: 2026-11-08T11:03:11.454Z
+recorded: 2026-11-08T11:09:06.704Z
 ---
 
 # Phase 15: Code Review Disposition
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| CR-01 | critical | open | - |
-| WR-01 | warning | open | - |
-| WR-02 | warning | open | - |
-| WR-03 | warning | open | - |
-| WR-04 | warning | open | - |
-| WR-05 | warning | open | - |
+| CR-01 | critical | fixed | 15-REVIEW-FIX.md |
+| WR-01 | warning | fixed | 15-REVIEW-FIX.md |
+| WR-02 | warning | fixed | 15-REVIEW-FIX.md |
+| WR-03 | warning | fixed | 15-REVIEW-FIX.md |
+| WR-04 | warning | fixed | 15-REVIEW-FIX.md |
+| WR-05 | warning | fixed | 15-REVIEW-FIX.md |
 | IN-01 | info | open | - |
 | IN-02 | info | open | - |
 | IN-03 | info | open | - |
