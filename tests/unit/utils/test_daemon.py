@@ -77,9 +77,7 @@ class TestPidPayload:
         assert payload["started"] != ""
         assert path.stat().st_mode & 0o777 == 0o600
 
-    def test_write_replaces_a_preplanted_symlink_without_following_it(
-        self, tmp_path: Path
-    ) -> None:
+    def test_write_replaces_a_preplanted_symlink_without_following_it(self, tmp_path: Path) -> None:
         """Temp-then-rename hardening (IN-03): the symlink itself is replaced."""
         victim = tmp_path / "victim.txt"
         victim.write_text("do not touch", encoding="utf-8")
