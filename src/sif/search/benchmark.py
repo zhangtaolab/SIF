@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -86,18 +87,57 @@ def hit_at_k(retrieved: Sequence[int], k: int) -> float:
 
 def percentile(values: Sequence[float], p: float) -> float:
     """Percentile via linear interpolation between closest ranks; p in [0, 100]."""
-    _ = (len(values), p)
-    return 0.0
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    pos = (len(ordered) - 1) * (p / 100.0)
+    lo = math.floor(pos)
+    hi = min(lo + 1, len(ordered) - 1)
+    return ordered[lo] + (ordered[hi] - ordered[lo]) * (pos - lo)
 
 
 def measure_query_times(
     search_fn: Callable[[str], list[SearchResult]],
     queries: Sequence[str],
-    clock: Callable[[], float],
+    clock: Callable[[], float] = time.perf_counter,
 ) -> tuple[list[float], list[list[SearchResult]]]:
-    """Warmed per-query latency: discard one warm-up pass, then time each query."""
-    _ = (search_fn, queries, clock)
-    return [], []
+    """Warmed per-query latency: discard one warm-up pass, then time each query.
+
+    The warm-up pass (model load, caches hot) is fully discarded so it never
+    enters the percentile samples (D-05); each timed sample is one search
+    call's wall-clock duration in milliseconds, with the results retained.
+    """
+    for query in queries:  # warm-up: results discarded
+        search_fn(query)
+    samples: list[float] = []
+    outputs: list[list[SearchResult]] = []
+    for query in queries:
+        start = clock()
+        outputs.append(search_fn(query))
+        samples.append((clock() - start) * 1000.0)
+    return samples, outputs
+
+
+def _cold_start_wrapper(
+    search_fn: Callable[[str], list[SearchResult]],
+    clock: Callable[[], float],
+) -> tuple[Callable[[str], list[SearchResult]], list[float]]:
+    """Wrap search_fn so the very first call's duration is captured separately.
+
+    The captured sample is the cold start (first warm-up call) and never
+    joins the warmed p50/p95 samples.
+    """
+    samples: list[float] = []
+
+    def wrapped(query: str) -> list[SearchResult]:
+        if not samples:
+            start = clock()
+            results = search_fn(query)
+            samples.append((clock() - start) * 1000.0)
+            return results
+        return search_fn(query)
+
+    return wrapped, samples
 
 
 def resolve_corpus_root(fixture: dict, fixture_path: Path | None) -> Path | None:
@@ -375,19 +415,31 @@ class SearchEvaluator:
         search_fn: Callable[[str], list[SearchResult]],
         k: int = DEFAULT_K,
         k_values: Sequence[int] = LEGACY_K_VALUES,
+        clock: Callable[[], float] | None = None,
     ) -> BenchReport:
-        """Run every fixture query once and produce a graded BenchReport.
+        """Run every fixture query and produce a graded BenchReport.
 
-        Exactly one ``search_fn`` call per query supplies both the graded
-        metrics (nDCG@k / Hit@k) and the legacy flat metrics. Global metrics
-        include every query; the category breakdown aggregates only items
-        whose category is one of CATEGORIES, with all four keys always
+        Exactly one ``search_fn`` result list per query supplies both the
+        graded metrics (nDCG@k / Hit@k) and the legacy flat metrics. Global
+        metrics include every query; the category breakdown aggregates only
+        items whose category is one of CATEGORIES, with all four keys always
         present in declared order (legacy items leave every count at 0).
-        Warmed latency measurement (p50/p95 and a separate cold start, via
-        an injectable clock) is layered on in the next task.
+
+        With a ``clock``, latency is warmed: one discarded warm-up pass runs
+        first (its first call is reported separately as the cold start and
+        never enters the p50/p95 samples, D-05), then the timed pass supplies
+        both the metrics and the percentile samples. Without a clock the
+        latency fields keep their defaults.
         """
         queries = [item.query for item in self.query_items]
-        results_by_query = [search_fn(query) for query in queries]
+        times: list[float] = []
+        cold_start_ms: float | None = None
+        if clock is not None:
+            timed_fn, cold_samples = _cold_start_wrapper(search_fn, clock)
+            times, results_by_query = measure_query_times(timed_fn, queries, clock)
+            cold_start_ms = cold_samples[0] if cold_samples else None
+        else:
+            results_by_query = [search_fn(query) for query in queries]
 
         ndcgs: list[float] = []
         hits: list[float] = []
@@ -436,5 +488,8 @@ class SearchEvaluator:
             hit_at_10=_mean(hits),
             num_queries=len(self.query_items),
             categories=categories,
+            cold_start_ms=cold_start_ms,
+            p50_ms=percentile(times, 50),
+            p95_ms=percentile(times, 95),
             legacy_metrics=legacy_metrics,
         )

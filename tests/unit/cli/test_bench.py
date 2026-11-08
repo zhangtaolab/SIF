@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
+from pydantic import BaseModel, ValidationError
 
 from sif.cli.commands.bench import bench_cmd
 
@@ -332,3 +333,33 @@ class TestBenchCommand:
         assert output["p50_ms"] <= output["p95_ms"]
         assert isinstance(output["cold_start_ms"], (int, float))
         assert output["cold_start_ms"] >= 0.0
+
+    def test_bench_invalid_settings_click_exception(self, tmp_path: Path) -> None:
+        """A pydantic ValidationError from get_settings surfaces as a
+        ClickException (non-zero exit), never a raw traceback."""
+        runner = CliRunner()
+
+        fixture = {"queries": [{"query": "t", "relevant_docids": ["doc-1"]}]}
+        fixture_path = tmp_path / "fixture.json"
+        fixture_path.write_text(json.dumps(fixture))
+
+        class _Strict(BaseModel):
+            value: int
+
+        try:
+            _Strict(value="not-an-int")
+        except ValidationError as error:
+            invalid = error
+
+        with patch(
+            "sif.cli.commands.bench.get_settings",
+            side_effect=invalid,
+        ):
+            result = runner.invoke(
+                bench_cmd,
+                [str(fixture_path)],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code != 0
+        assert "int" in result.output
