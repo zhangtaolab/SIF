@@ -47,6 +47,8 @@ def _query_settings_mock(**overrides: object) -> MagicMock:
         "reranker_model_name": None,
         "reranker_model_path": None,
         "rerank_enabled": False,
+        "rerank_candidate_limit": 20,
+        "rerank_relative_threshold": 0.5,
         "model_dump": lambda: {"model_name": "all-MiniLM-L6-v2"},
     }
     fields.update(overrides)

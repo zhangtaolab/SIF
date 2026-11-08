@@ -742,12 +742,18 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
 @click.option("--min-score", default=0.0, help="Minimum score threshold")
 @click.option("--full", is_flag=True, help="Include full content")
 @click.option("--explain", is_flag=True, help="Show score breakdowns across pipeline stages")
+# A3 waiver (D-10 calls the cap setting-only): the -C flag pre-exists in the
+# shipped CLI, so it is RETAINED with a settings-resolving default (None ->
+# SIF_RERANK_CANDIDATE_LIMIT) rather than removed, and no other cap flag is
+# added. The 1..200 Click range stays — narrowing it would be a user-visible
+# breaking change — so the D-10 bound is enforced at resolution instead.
 @click.option(
     "-C",
     "--candidate-limit",
-    default=20,
+    default=None,
     type=click.IntRange(1, 200),
-    help="Reranker candidate pool size",
+    help="Reranker candidate pool size "
+    "(default: SIF_RERANK_CANDIDATE_LIMIT or 20; clamped to 5-50)",
 )
 @click.option(
     "--rerank",
@@ -796,7 +802,7 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     min_score: float,
     full: bool,
     explain: bool,
-    candidate_limit: int,
+    candidate_limit: int | None,
     intent: str | None,
     line_numbers: bool,
     output_json: bool,
@@ -835,7 +841,10 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
         # settings touchpoint and must convert invalid config itself (WR-09).
         from pydantic import ValidationError  # noqa: PLC0415
 
-        from sif.config.settings import get_settings  # noqa: PLC0415
+        from sif.config.settings import (  # noqa: PLC0415
+            get_settings,
+            resolve_candidate_limit,
+        )
 
         try:
             settings = get_settings()
@@ -844,14 +853,16 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
 
         # Build options; fusion knobs resolve flag > SIF_ setting > default.
         # Flag defaults are None (never the literal) or precedence dies
-        # (RESEARCH Pattern 3).
+        # (RESEARCH Pattern 3). candidate_limit resolves through the same
+        # clamp the bench command uses (Plan 04), so a mocked settings object
+        # can never inject a non-int into the plain SearchOptions dataclass.
         options = SearchOptions(
             limit=limit,
             min_score=min_score,
             include_content=full,
             include_highlights=True,
             explain=explain,
-            candidate_limit=candidate_limit,
+            candidate_limit=resolve_candidate_limit(candidate_limit, settings),
             intent=intent,
             rrf_k=rrf_k if rrf_k is not None else settings.rrf_k,
             bm25_weight=bm25_weight if bm25_weight is not None else settings.bm25_weight,

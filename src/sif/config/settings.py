@@ -9,6 +9,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from sif.config.constants import APP_NAME, DEFAULT_CHUNK_OVERLAP, DEFAULT_CHUNK_SIZE
 
 
+# Reranker candidate cap bounds (Phase 16, D-10). The Settings field and
+# every CLI resolution path clamp into this range, so no rerank invocation
+# can exceed the 50-candidate maximum (the shipped -C Click range is wider).
+RERANK_CANDIDATE_LIMIT_MIN: int = 5
+RERANK_CANDIDATE_LIMIT_MAX: int = 50
+
+
 class Settings(BaseSettings):
     """Application settings using Pydantic Settings.
 
@@ -156,12 +163,16 @@ class Settings(BaseSettings):
     # D-10 (Phase 16): candidate cap for the enabled rerank path.
     rerank_candidate_limit: int = Field(
         default=20,
+        ge=RERANK_CANDIDATE_LIMIT_MIN,
+        le=RERANK_CANDIDATE_LIMIT_MAX,
         description="Maximum candidates passed to the reranker when reranking is "
         "enabled; the pipeline over-fetches to this size before capping",
     )
     # D-11 (Phase 16): relative score threshold for the enabled rerank path.
     rerank_relative_threshold: float = Field(
         default=0.5,
+        gt=0,
+        le=1,
         description="Keep reranker candidates scoring at least top_score * alpha "
         "(0 < alpha <= 1); applied after score normalization",
     )
@@ -384,9 +395,17 @@ def get_settings() -> Settings:
 def resolve_candidate_limit(explicit: int | None, settings: object) -> int:
     """Resolve the reranker candidate cap: an explicit flag wins, else the setting.
 
-    RED skeleton (Phase 16 Task 2): accepts any int as-is — the D-10 clamp
-    into 5..50 is not implemented yet. A non-int settings value (e.g. a
-    MagicMock cap, research Pitfall 10) resolves to the default 20.
+    The value is clamped into ``RERANK_CANDIDATE_LIMIT_MIN..MAX`` where it
+    becomes a request — the shipped ``-C`` Click range is 1..200 and must not
+    put 200 candidates into ``SearchOptions`` — so the bound lives here, not
+    only in the flag declaration. For a real ``Settings`` the clamp is a no-op
+    (Pydantic already enforces 5..50); for anything else a non-int value
+    (e.g. a MagicMock cap, research Pitfall 10) resolves to the default 20
+    instead of leaking into the plain dataclass.
     """
-    value = explicit if explicit is not None else getattr(settings, "rerank_candidate_limit", 20)
-    return value if isinstance(value, int) else 20
+    value: object = (
+        explicit if explicit is not None else getattr(settings, "rerank_candidate_limit", 20)
+    )
+    if not isinstance(value, int):
+        value = 20
+    return min(max(value, RERANK_CANDIDATE_LIMIT_MIN), RERANK_CANDIDATE_LIMIT_MAX)
