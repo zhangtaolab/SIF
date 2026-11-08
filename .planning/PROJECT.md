@@ -54,12 +54,13 @@ DocSift 是 [qmd](https://github.com/tobi/qmd) 的 Python 重构版本，一个�
 
 - ✓ Live Index：`sif watch` 前台命令（增量重索引 + 防抖） — Validated in Phase 12
 - ✓ Live Index：更新深度可配置（默认 BM25/FTS，`--embed` 开启向量自动更新） — Validated in Phase 12（与 MCP 内嵌刷新项合并验证 LIVE-05 深度矩阵）
+- ✓ Live Index：搜索命令前自动增量检测兜底（LIVE-10 stat 漂移检测 + 上限 + 干净零成本） — Validated in Phase 14（2026-11-08，UAT 2/2 含 3000 文档实测 +105ms）
+- ✓ 搜索质量：分层更新深度下向量滞后结果标记 staleness（QUAL-06，五格式 + MCP + status 行） — Validated in Phase 14
 
 ### Active
 
 - [ ] Live Index：MCP server 内嵌 watch 刷新
 - [ ] Live Index：后台守护进程（--detach / launchd / systemd）
-- [ ] Live Index：搜索命令前自动增量检测兜底
 - [ ] 搜索质量：混合权重（BM25/向量/RRF k）可配置
 - [ ] 搜索质量：Query suggestions（did-you-mean）
 - [ ] 搜索质量：Reranker 调优（阈值/延迟）
@@ -134,4 +135,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-11-07 after Phase 12（`sif watch` Foreground MVP 完成）*
+*Last updated: 2026-11-08 after Phase 14（Freshness Floor 完成：LIVE-10 + QUAL-06）*
