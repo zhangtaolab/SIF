@@ -652,6 +652,45 @@ class TestCreateReranker:
         assert isinstance(reranker, CrossEncoderReranker)
         assert reranker._cache_dir is None
 
+    @pytest.mark.parametrize(
+        ("model_type", "model_name"),
+        [
+            ("gguf", "model.gguf"),
+            ("sentence_transformers", "cross-encoder/ms-marco-MiniLM-L-6-v2"),
+            ("sentence_transformers", "Qwen/Qwen3-Reranker-0.6B"),
+        ],
+    )
+    def test_create_reranker_forwards_relative_threshold(
+        self,
+        model_type: str,
+        model_name: str,
+    ) -> None:
+        """SIF_RERANK_RELATIVE_THRESHOLD reaches every backend constructor (D-11)."""
+        settings = MagicMock()
+        settings.reranker_model_type = model_type
+        settings.reranker_model_name = model_name
+        settings.reranker_model_path = None
+        settings.reranker_batch_size = 8
+        settings.rerank_relative_threshold = 0.7
+
+        reranker = create_reranker(settings)
+
+        assert reranker._relative_threshold == 0.7
+
+    def test_create_reranker_magic_settings_threshold_falls_back_to_zero(self) -> None:
+        """A wide-open MagicMock settings object resolves to 0.0, never a MagicMock."""
+        settings = MagicMock()
+        settings.reranker_model_type = "gguf"
+        settings.reranker_model_name = "model.gguf"
+        settings.reranker_model_path = None
+        settings.reranker_batch_size = 8
+        # rerank_relative_threshold stays an auto-MagicMock attribute (Pitfall 10).
+
+        reranker = create_reranker(settings)
+
+        assert isinstance(reranker._relative_threshold, float)
+        assert reranker._relative_threshold == 0.0
+
 
 # =============================================================================
 # Backwards Compatibility Tests

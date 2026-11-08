@@ -25,10 +25,24 @@ def _sort_and_build_results(
     results: list[SearchResult],
     scores: list[float],
     top_k: int,
+    relative_threshold: float = 0.0,
 ) -> list[SearchResult]:
-    """Sort results by score descending and rebuild SearchResult objects."""
+    """Sort results by score descending and rebuild SearchResult objects.
+
+    D-11 (Phase 16): when ``relative_threshold`` > 0, candidates scoring
+    below ``top_score * relative_threshold`` are dropped AFTER the descending
+    stable sort and BEFORE the ``top_k`` truncation. The comparison is >= on
+    raw IEEE-754 doubles (no epsilon), so a score exactly equal to the
+    cutoff — an exact half of the top score — is retained and the top result
+    always survives. A threshold of 0.0 (the default) disables filtering so
+    direct construction reproduces the pre-change output byte-for-byte.
+    """
     scored = list(zip(results, scores, strict=True))
     scored.sort(key=lambda x: x[1], reverse=True)
+
+    if scored and relative_threshold > 0.0 and scored[0][1] > 0.0:
+        cutoff = scored[0][1] * relative_threshold
+        scored = [pair for pair in scored if pair[1] >= cutoff]
 
     reranked: list[SearchResult] = []
     for rank, (result, score) in enumerate(scored[:top_k], 1):
@@ -90,13 +104,14 @@ def _resolve_model_dir(downloaded: Path) -> Path:
 class LlamaCppReranker:
     """Rerank search results using a GGUF cross-encoder via llama-cpp-python."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         model_path: str | None = None,
         model_name: str = "",
         n_ctx: int = 512,
         n_threads: int | None = None,
         batch_size: int = 32,
+        relative_threshold: float = 0.0,
     ) -> None:
         """Initialize GGUF cross-encoder reranker."""
         self._model_path = model_path
@@ -104,6 +119,7 @@ class LlamaCppReranker:
         self._n_ctx = n_ctx
         self._n_threads = n_threads
         self._batch_size = batch_size
+        self._relative_threshold = relative_threshold
         self._model: Llama | None = None
 
     def load(self) -> None:
@@ -163,19 +179,25 @@ class LlamaCppReranker:
         # Normalize to [0, 1] via sigmoid
         normalized = [1.0 / (1.0 + math.exp(-s)) for _, s in scored]
 
-        return _sort_and_build_results([r for r, _ in scored], normalized, top_k)
+        return _sort_and_build_results(
+            [r for r, _ in scored],
+            normalized,
+            top_k,
+            self._relative_threshold,
+        )
 
 
 class CrossEncoderReranker:
     """Rerank search results using sentence-transformers CrossEncoder."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2",
         model_path: str | None = None,
         device: str | None = None,
         batch_size: int = 32,
         cache_dir: str | None = None,
+        relative_threshold: float = 0.0,
     ) -> None:
         """Initialize sentence-transformers CrossEncoder reranker."""
         self._model_name = model_name
@@ -183,6 +205,7 @@ class CrossEncoderReranker:
         self._device = device
         self._batch_size = batch_size
         self._cache_dir = cache_dir
+        self._relative_threshold = relative_threshold
         self._model: CrossEncoder | None = None
 
     def load(self) -> None:
@@ -246,7 +269,7 @@ class CrossEncoderReranker:
         # Normalize scores to [0, 1] using sigmoid
         normalized = [1.0 / (1.0 + math.exp(-float(s))) for s in raw_scores]
 
-        return _sort_and_build_results(results, normalized, top_k)
+        return _sort_and_build_results(results, normalized, top_k, self._relative_threshold)
 
 
 class Qwen3Reranker:
@@ -265,6 +288,7 @@ class Qwen3Reranker:
         batch_size: int = 8,
         cache_dir: str | None = None,
         max_length: int = 8192,
+        relative_threshold: float = 0.0,
     ) -> None:
         """Initialize Qwen3 reranker with transformers backend."""
         self._model_name = model_name
@@ -273,6 +297,7 @@ class Qwen3Reranker:
         self._batch_size = batch_size
         self._cache_dir = cache_dir
         self._max_length = max_length
+        self._relative_threshold = relative_threshold
         self._model: AutoModelForCausalLM | None = None
         self._tokenizer: AutoTokenizer | None = None
         self._token_true_id: int | None = None
@@ -393,7 +418,7 @@ class Qwen3Reranker:
             scores = batch_probs[:, 1].tolist()
             all_scores.extend(scores)
 
-        return _sort_and_build_results(results, all_scores, top_k)
+        return _sort_and_build_results(results, all_scores, top_k, self._relative_threshold)
 
 
 def create_reranker(
@@ -403,6 +428,12 @@ def create_reranker(
     model_type = getattr(settings, "reranker_model_type", "gguf")
     model_name = getattr(settings, "reranker_model_name", "")
     cache_dir = str(settings.get_cache_dir()) if hasattr(settings, "get_cache_dir") else None
+    # D-11 (Phase 16): forward SIF_RERANK_RELATIVE_THRESHOLD to every backend.
+    # A non-numeric value (e.g. a wide-open MagicMock settings attribute,
+    # research Pitfall 10) falls back to 0.0 instead of leaking into the
+    # scoring path.
+    threshold_value = getattr(settings, "rerank_relative_threshold", 0.0)
+    relative_threshold = threshold_value if isinstance(threshold_value, float | int) else 0.0
 
     # Auto-detect Qwen3 reranker models
     if "qwen3-reranker" in model_name.lower() or "qwen3_reranker" in model_name.lower():
@@ -411,6 +442,7 @@ def create_reranker(
             model_path=str(settings.reranker_model_path) if settings.reranker_model_path else None,
             batch_size=settings.reranker_batch_size,
             cache_dir=cache_dir,
+            relative_threshold=relative_threshold,
         )
 
     if model_type == "gguf":
@@ -418,6 +450,7 @@ def create_reranker(
             model_path=str(settings.reranker_model_path) if settings.reranker_model_path else None,
             model_name=settings.reranker_model_name,
             batch_size=settings.reranker_batch_size,
+            relative_threshold=relative_threshold,
         )
     if model_type == "sentence_transformers":
         return CrossEncoderReranker(
@@ -425,6 +458,7 @@ def create_reranker(
             model_path=str(settings.reranker_model_path) if settings.reranker_model_path else None,
             batch_size=settings.reranker_batch_size,
             cache_dir=cache_dir,
+            relative_threshold=relative_threshold,
         )
     raise ValueError(f"Unknown reranker model_type: {model_type}")
 

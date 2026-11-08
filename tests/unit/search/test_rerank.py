@@ -8,7 +8,12 @@ from unittest.mock import MagicMock
 import pytest
 
 from sif.core.models import SearchResult
-from sif.search.rerank import CrossEncoderReranker, LlamaCppReranker, _resolve_model_dir
+from sif.search.rerank import (
+    CrossEncoderReranker,
+    LlamaCppReranker,
+    _resolve_model_dir,
+    _sort_and_build_results,
+)
 
 
 class TestModelScopeRootLayout:
@@ -136,3 +141,76 @@ class TestRerankerBehavior:
         assert ranked[0].scores["reranker_score"] == pytest.approx(
             1.0 / (1.0 + math.exp(-(1.0 / (1.0 + 1e-8)))),
         )
+
+
+class TestRelativeThreshold:
+    """D-11 (Phase 16): keep candidates scoring >= top1 * alpha.
+
+    The threshold applies after the descending stable sort and before the
+    top_k truncation, with a raw >= comparison (no epsilon).
+    """
+
+    @staticmethod
+    def _result(doc_id: str, score: float = 0.1) -> SearchResult:
+        return SearchResult(
+            document_id=doc_id,
+            path=f"/path/to/{doc_id}.md",
+            title=doc_id,
+            collection_name="notes",
+            score=score,
+            content=f"content of {doc_id}",
+        )
+
+    def test_relative_threshold_retains_exact_half_drops_below(self) -> None:
+        """[0.9, 0.45, 0.44] with alpha=0.5 keeps the exact half 0.45, drops 0.44."""
+        results = [self._result("low"), self._result("top"), self._result("half")]
+
+        ranked = _sort_and_build_results(results, [0.44, 0.9, 0.45], 10, relative_threshold=0.5)
+
+        assert [r.document_id for r in ranked] == ["top", "half"]
+        assert [r.score for r in ranked] == [0.9, 0.45]
+
+    def test_relative_threshold_zero_and_one_boundaries(self) -> None:
+        """alpha=0.0 keeps everything; alpha=1.0 keeps only scores equal to top1."""
+        results = [self._result("a"), self._result("b"), self._result("c"), self._result("d")]
+
+        zero = _sort_and_build_results(results, [0.5, 0.9, 0.9, 0.1], 10, relative_threshold=0.0)
+        one = _sort_and_build_results(results, [0.5, 0.9, 0.9, 0.1], 10, relative_threshold=1.0)
+
+        assert [r.document_id for r in zero] == ["b", "c", "a", "d"]
+        assert [r.document_id for r in one] == ["b", "c"]
+
+    def test_relative_threshold_zero_reproduces_default_output(self) -> None:
+        """An explicit 0.0 threshold is byte-identical to the default (no filtering)."""
+        results = [self._result(f"doc-{i}") for i in range(4)]
+        scores = [0.8, 0.2, 0.6, 0.4]
+
+        default_call = _sort_and_build_results(results, scores, 3)
+        zero_call = _sort_and_build_results(results, scores, 3, relative_threshold=0.0)
+
+        assert [r.to_dict() for r in zero_call] == [r.to_dict() for r in default_call]
+
+    def test_relative_threshold_filters_before_top_k_truncation(self) -> None:
+        """3 survivors with top_k=2 return 2 survivors; the dropped score never returns."""
+        results = [self._result(f"doc-{i}") for i in range(4)]
+        scores = [0.9, 0.6, 0.5, 0.44]  # cutoff 0.45 -> survivors 0.9, 0.6, 0.5
+
+        capped = _sort_and_build_results(results, scores, 2, relative_threshold=0.5)
+        uncapped = _sort_and_build_results(results, scores, 5, relative_threshold=0.5)
+
+        assert [r.document_id for r in capped] == ["doc-0", "doc-1"]
+        assert [r.document_id for r in uncapped] == ["doc-0", "doc-1", "doc-2"]
+
+    def test_relative_threshold_end_to_end_cross_encoder(self) -> None:
+        """The constructor kwarg reaches the rerank scoring path end-to-end."""
+        model = MagicMock()
+        model.predict.return_value = [6.0, 0.0, -6.0]  # sigmoid: ~0.9975, 0.5, ~0.0025
+        reranker = CrossEncoderReranker(relative_threshold=0.5)
+        reranker._model = model
+        results = [self._result(f"doc-{i}") for i in range(3)]
+
+        ranked = reranker.rerank("query", results, top_k=10)
+
+        assert reranker._relative_threshold == 0.5
+        assert [r.document_id for r in ranked] == ["doc-0", "doc-1"]
+        assert all("reranker_score" in r.scores for r in ranked)
