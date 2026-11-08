@@ -1,0 +1,45 @@
+{
+  "candidate": {
+    "bm25_weight": 1.0,
+    "hit_at_10": 0.85,
+    "ndcg_at_10": 0.8186413102772627,
+    "rrf_k": 20,
+    "vector_weight": 0.5
+  },
+  "defaults": {
+    "bm25_weight": 1.0,
+    "rrf_k": 60,
+    "vector_weight": 1.0
+  },
+  "generated": "2026-11-08",
+  "heldout": {
+    "hit_at_10": 0.85,
+    "ndcg_at_10": 0.8120158986791898,
+    "num_queries": 20,
+    "per_category": {
+      "keyword": {
+        "count": 5,
+        "hit_at_10": 1.0,
+        "ndcg_at_10": 0.9734983536077081
+      },
+      "multilingual": {
+        "count": 5,
+        "hit_at_10": 1.0,
+        "ndcg_at_10": 1.0
+      },
+      "rival": {
+        "count": 5,
+        "hit_at_10": 1.0,
+        "ndcg_at_10": 1.0
+      },
+      "synonym": {
+        "count": 5,
+        "hit_at_10": 0.4,
+        "ndcg_at_10": 0.2745652411090509
+      }
+    }
+  },
+  "heldout_delta": 0.00662541159807295,
+  "verdict": "unchanged",
+  "version": 1
+}

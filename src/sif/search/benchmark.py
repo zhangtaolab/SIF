@@ -391,6 +391,22 @@ def rank_sweep(results: Sequence[ConfigResult], epsilon: float = EPSILON) -> Swe
     )
 
 
+def warrants_default_change(
+    baseline_ndcg: float,
+    candidate_ndcg: float,
+    delta: float = EPSILON,
+) -> bool:
+    """Held-out evidence rule (EVAL-04): does a candidate justify new defaults?
+
+    Inclusive at exactly ``delta`` under the same rounded-delta arithmetic
+    rank_sweep uses — ``round(candidate - baseline, 6) >= delta`` — so a
+    nominal 0.01 whose raw IEEE-754 subtraction yields 0.009999... still
+    warrants, while sub-delta noise (0.0099) never does. Tuning-set results
+    alone can never satisfy this; the caller passes HELD-OUT nDCG@10 values.
+    """
+    return round(candidate_ndcg - baseline_ndcg, 6) >= delta
+
+
 class SearchEvaluator:
     """Evaluate search quality against a benchmark fixture."""
 
