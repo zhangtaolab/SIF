@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -12,7 +13,9 @@ from sif.search.benchmark import (
     CATEGORIES,
     SearchEvaluator,
     hit_at_k,
+    measure_query_times,
     ndcg_at_k,
+    percentile,
     resolve_corpus_root,
     result_key,
 )
@@ -273,3 +276,74 @@ class TestReportLegacyFixture:
         # all four keys remain present in declared order.
         assert [report.categories[c].count for c in CATEGORIES] == [0, 0, 0, 0]
         assert list(data["categories"].keys()) == list(CATEGORIES)
+
+
+class TestPercentile:
+    def test_p50_interpolates_between_closest_ranks(self) -> None:
+        values = [float(i) for i in range(1, 11)]
+        assert percentile(values, 50) == pytest.approx(5.5)
+
+    def test_p95_interpolates_between_closest_ranks(self) -> None:
+        values = [float(i) for i in range(1, 11)]
+        assert percentile(values, 95) == pytest.approx(9.55)
+
+    def test_empty_values_return_zero(self) -> None:
+        assert percentile([], 50) == 0.0
+
+    def test_single_value_returns_itself(self) -> None:
+        assert percentile([3.0], 95) == 3.0
+
+
+def _stepping_clock(step: float = 0.001) -> Callable[[], float]:
+    """Injectable clock advancing a fixed step per call.
+
+    Every clock-delimited span (one search call) therefore measures
+    ``step * 1000`` milliseconds, so latency assertions are structural
+    rather than wall-clock (research Pitfall 6).
+    """
+    state = {"now": 0.0}
+
+    def clock() -> float:
+        state["now"] += step
+        return state["now"]
+
+    return clock
+
+
+class TestMeasureQueryTimes:
+    def test_warmup_pass_contributes_no_samples(self) -> None:
+        calls: list[str] = []
+
+        def fake_search(query: str) -> list[SearchResult]:
+            calls.append(query)
+            return [_result("/1", document_id="d1")]
+
+        times, outputs = measure_query_times(fake_search, ["a", "b"], _stepping_clock())
+        # Warm-up pass first (results discarded), then the timed pass.
+        assert calls == ["a", "b", "a", "b"]
+        assert len(times) == 2
+        assert times == pytest.approx([1.0, 1.0])
+        assert [len(out) for out in outputs] == [1, 1]
+
+
+class TestReportLatency:
+    def test_report_with_injected_clock(self, tmp_path: Path) -> None:
+        fixture, fixture_path = _graded_fixture(tmp_path)
+        corpus = tmp_path / "corpus"
+
+        def search_fn(query: str) -> list[SearchResult]:
+            if query == "q1":
+                return [_result(str(corpus / "keyword" / "a.md"), "d1", 0.9)]
+            return [_result(str(corpus / "synonym" / "c.md"), "d3", 0.7)]
+
+        evaluator = SearchEvaluator(fixture, fixture_path=fixture_path)
+        report = evaluator.report(search_fn, clock=_stepping_clock())
+
+        assert report.p50_ms <= report.p95_ms
+        assert report.p50_ms == pytest.approx(1.0)
+        assert report.p95_ms == pytest.approx(1.0)
+        # Cold start is the first warm-up call, reported separately and never
+        # a p50/p95 sample (D-05).
+        assert report.cold_start_ms == pytest.approx(1.0)
+        # Metrics still come from the timed pass results.
+        assert report.ndcg_at_10 > 0.0

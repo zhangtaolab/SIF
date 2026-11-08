@@ -84,6 +84,22 @@ def hit_at_k(retrieved: Sequence[int], k: int) -> float:
     return 1.0 if any(grade > 0 for grade in retrieved[:k]) else 0.0
 
 
+def percentile(values: Sequence[float], p: float) -> float:
+    """Percentile via linear interpolation between closest ranks; p in [0, 100]."""
+    _ = (len(values), p)
+    return 0.0
+
+
+def measure_query_times(
+    search_fn: Callable[[str], list[SearchResult]],
+    queries: Sequence[str],
+    clock: Callable[[], float],
+) -> tuple[list[float], list[list[SearchResult]]]:
+    """Warmed per-query latency: discard one warm-up pass, then time each query."""
+    _ = (search_fn, queries, clock)
+    return [], []
+
+
 def resolve_corpus_root(fixture: dict, fixture_path: Path | None) -> Path | None:
     """Resolve the fixture's corpus root — the single corpus-root rule.
 

@@ -9,6 +9,22 @@ from click.testing import CliRunner
 from sif.cli.commands.bench import bench_cmd
 
 
+def _settings_mock(**overrides: object) -> MagicMock:
+    """Settings mock with REAL numeric fusion fields (research Pitfall 10).
+
+    A bare MagicMock() makes settings.rrf_k/bm25_weight/vector_weight MagicMock
+    objects that the plain SearchOptions dataclass accepts, so a
+    settings-baseline assertion would pass for the wrong reason.
+    """
+    fields: dict[str, object] = {
+        "rrf_k": 60,
+        "bm25_weight": 1.0,
+        "vector_weight": 1.0,
+    }
+    fields.update(overrides)
+    return MagicMock(**fields)
+
+
 class TestBenchCommand:
     def test_bench_requires_fixture(self) -> None:
         runner = CliRunner()
@@ -48,7 +64,7 @@ class TestBenchCommand:
                 return_value=mock_manager,
             ),
             patch("sif.cli.commands.bench.SearchPipeline", return_value=mock_pipeline),
-            patch("sif.cli.commands.bench.get_settings", return_value=MagicMock()),
+            patch("sif.cli.commands.bench.get_settings", return_value=_settings_mock()),
         ):
             result = runner.invoke(
                 bench_cmd,
@@ -85,7 +101,7 @@ class TestBenchCommand:
                 return_value=mock_manager,
             ),
             patch("sif.cli.commands.bench.SearchPipeline", return_value=mock_pipeline),
-            patch("sif.cli.commands.bench.get_settings", return_value=MagicMock()),
+            patch("sif.cli.commands.bench.get_settings", return_value=_settings_mock()),
         ):
             result = runner.invoke(
                 bench_cmd,
@@ -133,7 +149,7 @@ class TestBenchCommand:
                 "sif.cli.commands.bench.SearchEvaluator",
                 return_value=mock_evaluator,
             ),
-            patch("sif.cli.commands.bench.get_settings", return_value=MagicMock()),
+            patch("sif.cli.commands.bench.get_settings", return_value=_settings_mock()),
         ):
             result = runner.invoke(
                 bench_cmd,
@@ -183,7 +199,7 @@ class TestBenchCommand:
                 return_value=mock_manager,
             ),
             patch("sif.cli.commands.bench.SearchPipeline", return_value=mock_pipeline),
-            patch("sif.cli.commands.bench.get_settings", return_value=MagicMock()),
+            patch("sif.cli.commands.bench.get_settings", return_value=_settings_mock()),
         ):
             result = runner.invoke(
                 bench_cmd,
@@ -223,3 +239,96 @@ class TestBenchCommand:
         fixture_path.unlink(missing_ok=True)
         assert result.exit_code == 0
         assert "No index found" in result.output
+
+    def test_bench_settings_baseline_and_single_pipeline(self, tmp_path: Path) -> None:
+        """IN-02 fixed: bench options carry the current SIF_ fusion settings,
+        and the pipeline is constructed once per state, not once per query."""
+        runner = CliRunner()
+
+        fixture = {
+            "queries": [
+                {"query": "a", "relevant_docids": ["doc-1"]},
+                {"query": "b", "relevant_docids": ["doc-2"]},
+            ],
+        }
+        fixture_path = tmp_path / "fixture.json"
+        fixture_path.write_text(json.dumps(fixture))
+
+        mock_pipeline = MagicMock()
+        mock_pipeline.search.return_value = []
+        pipeline_cls = MagicMock(return_value=mock_pipeline)
+
+        mock_db = MagicMock()
+        mock_manager = MagicMock()
+        mock_manager.embed_single.return_value = [0.0] * 8
+        mock_manager._model = MagicMock()
+
+        with (
+            patch("sif.cli.commands.bench.Database", return_value=mock_db),
+            patch(
+                "sif.cli.commands.bench.EmbeddingManager.from_settings",
+                return_value=mock_manager,
+            ),
+            patch("sif.cli.commands.bench.SearchPipeline", pipeline_cls),
+            patch(
+                "sif.cli.commands.bench.get_settings",
+                return_value=_settings_mock(rrf_k=80, bm25_weight=2.0, vector_weight=0.5),
+            ),
+        ):
+            result = runner.invoke(
+                bench_cmd,
+                [str(fixture_path)],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code == 0, result.output
+        # One pipeline per measured state (hoisted out of the query loop).
+        assert pipeline_cls.call_count == 1
+        options = mock_pipeline.search.call_args[0][1]
+        assert options.rrf_k == 80
+        assert options.bm25_weight == 2.0
+        assert options.vector_weight == 0.5
+
+    def test_bench_json_latency_metrics(self, tmp_path: Path) -> None:
+        """bench --json reports warmed p50/p95 and a separate cold start."""
+        runner = CliRunner()
+
+        fixture = {
+            "queries": [
+                {"query": "test", "relevant_docids": ["doc-1"]},
+            ],
+        }
+        fixture_path = tmp_path / "fixture.json"
+        fixture_path.write_text(json.dumps(fixture))
+
+        mock_pipeline = MagicMock()
+        mock_pipeline.search.return_value = [MagicMock(document_id="doc-1")]
+
+        mock_db = MagicMock()
+        mock_manager = MagicMock()
+        mock_manager.embed_single.return_value = [0.0] * 8
+        mock_manager._model = MagicMock()
+
+        with (
+            patch("sif.cli.commands.bench.Database", return_value=mock_db),
+            patch(
+                "sif.cli.commands.bench.EmbeddingManager.from_settings",
+                return_value=mock_manager,
+            ),
+            patch("sif.cli.commands.bench.SearchPipeline", return_value=mock_pipeline),
+            patch("sif.cli.commands.bench.get_settings", return_value=_settings_mock()),
+        ):
+            result = runner.invoke(
+                bench_cmd,
+                [str(fixture_path), "--json"],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code == 0
+        output = json.loads(result.output.strip())
+        assert "p50_ms" in output
+        assert "p95_ms" in output
+        assert "cold_start_ms" in output
+        assert output["p50_ms"] <= output["p95_ms"]
+        assert isinstance(output["cold_start_ms"], (int, float))
+        assert output["cold_start_ms"] >= 0.0
