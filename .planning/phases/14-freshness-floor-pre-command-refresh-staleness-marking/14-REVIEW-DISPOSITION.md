@@ -5,7 +5,7 @@ titles: json
 findings:
   - id: WR-01
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "Parse-failed drifted files never converge and their errors are silently swallowed — every search re-locks, re-fails, and prints \"refreshed 0 files (bm25) before search\" forever"
   - id: WR-02
     severity: warning
@@ -31,16 +31,16 @@ findings:
     severity: warning
     disposition: open
     title: "`vsearch`/`query` crash with a raw RuntimeError traceback when sqlite-vec is absent (ClickException convention violated)"
-open: 6
+open: 5
 total: 7
-recorded: 2026-11-08T05:09:12.146Z
+recorded: 2026-11-08T05:17:36.066Z
 ---
 
 # Phase 14: Code Review Disposition
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| WR-01 | warning | open | - |
+| WR-01 | warning | fixed | 14-REVIEW-FIX.md |
 | WR-02 | warning | open | - |
 | IN-01 | info | open | - |
 | IN-02 | info | open | - |
