@@ -5,16 +5,16 @@ milestone_name: Live Index and Search Quality
 current_phase: 14
 current_phase_name: Freshness Floor (Pre-Command Refresh + Staleness Marking)
 status: executing
-stopped_at: Completed 14-01-PLAN.md
-last_updated: "2026-11-08T03:32:59.500Z"
+stopped_at: Completed 14-02-PLAN.md
+last_updated: "2026-11-08T03:53:03.782Z"
 last_activity: 2026-11-08
 last_activity_desc: Phase 14 execution started
-state_head: 3dede93bae5eb5aa757cab0130e520c60fc1d664
+state_head: 337a68ebf6e04d6576f1b880e7ebbe9c2eb75463
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 13
-  completed_plans: 11
+  completed_plans: 12
 ---
 
 # DocSift — Project State
@@ -30,7 +30,7 @@ progress:
 ## Current Position
 
 Phase: 14 (Freshness Floor (Pre-Command Refresh + Staleness Marking)) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-11-08 — Phase 14 execution started
 
@@ -60,6 +60,7 @@ Progress: [███░░░░░░░] 33%
 | Phase 13 P03 | 18min | 2 tasks | 6 files |
 | Phase 13 P04 | 18min | 2 tasks | 8 files |
 | Phase 14 P01 | 24min | 2 tasks | 10 files |
+| Phase 14 P02 | 14min | 2 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -115,6 +116,9 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 - [Phase 14]: 14-01: drift compare is mtime-primary — documents.file_size is frontmatter-stripped body length never refreshed on update (size compare would false-positive forever); derivation intent preserved (content changes always move mtime)
 - [Phase 14]: 14-01: silence-first cap decision in _pre_search_refresh — total_count==0 returns before the cap is consulted; settings-construction failure skips the check silently so unrelated bad config never breaks 'sif search' (query/vsearch surface it at their embedder touchpoints)
 - [Phase 14]: 14-01: refresh_drifted is the only lock acquisition (one window for all collections); clean search provably lockless — recording-lock spy asserts zero acquisitions
+- [Phase 14]: 14-02: staleness formula corrected to 'no rows in document_embeddings' (BM25 updates purge chunks AND embeddings — 'chunks without embeddings' never fires for the real lag state); display gate marks nothing until the index has >= 1 embedding
+- [Phase 14]: 14-02: MCP backend re-maps core fields explicitly — vectors_stale must be forwarded into metadata by hand (B5); status Vector lag row counts lag via documents-id membership scan, robust to orphan embedding ids
+- [Phase 14]: 14-02: lag-state e2e keeps a keeper doc embedded so the purge leaves the display gate armed; vec0 v0.1.9 rejects NULL TEXT metadata on INSERT so fixtures seed real chunk_id strings
 
 ### Pending Todos
 
@@ -135,8 +139,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 
 ## Session Continuity
 
-Last session: 2026-11-08T03:32:59.219Z
-Stopped at: Completed 14-01-PLAN.md
+Last session: 2026-11-08T03:53:03.489Z
+Stopped at: Completed 14-02-PLAN.md
 Resume file: None
 
 - **Next expected action:** `/gsd-discuss-phase 13` (Phase 13 needs context; research flags: daemon/service-install specifics already in research/STACK.md)

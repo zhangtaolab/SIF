@@ -113,11 +113,11 @@ Plans:
   1. With no watch or daemon running, a search command detects drifted files (stat-based mtime/size check) and refreshes them before searching
   2. A clean index pays near-zero pre-command cost (no refresh work, no perceptible latency), and drift refresh is capped so a branch switch never becomes a hidden full reindex
   3. Search results for documents whose vectors lag behind BM25/FTS (tiered depth without `--embed`) carry a visible staleness marker in both table and JSON output
-**Plans**: 1/3 plans executed
+**Plans**: 2/3 plans executed
 Plans:
 **Wave 1**
 - [x] 14-01-PLAN.md — LIVE-10 pre-command drift refresh: drift helper + stat snapshot + cap skip-warn + trio wiring (`--no-refresh`) + settings/docs (SC1/SC2, D-01..D-07)
-- [ ] 14-02-PLAN.md — QUAL-06 staleness core: derived no-embeddings signal at the searcher enrichment seam + SearchResult.vectors_stale + MCP forwarding + `sif status` Vector lag row (D-08..D-11)
+- [x] 14-02-PLAN.md — QUAL-06 staleness core: derived no-embeddings signal at the searcher enrichment seam + SearchResult.vectors_stale + MCP forwarding + `sif status` Vector lag row (D-08..D-11)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 14-03-PLAN.md — QUAL-06 presentation: marker on all five output formats (table/JSON/CSV/MD/XML) + `sif embed` remedy hint on stderr (SC3, D-12/D-13)
@@ -152,7 +152,7 @@ Plans:
 | 11. Live-Index Foundation | v1.1 | 3/3 | Complete    | 2026-11-07 |
 | 12. `sif watch` Foreground MVP | v1.1 | 3/3 | Complete    | 2026-11-07 |
 | 13. Watch Everywhere (MCP + Daemon) | v1.1 | 4/4 | In Progress | - |
-| 14. Freshness Floor (Pre-Command + Staleness) | v1.1 | 1/3 | In Progress | - |
+| 14. Freshness Floor (Pre-Command + Staleness) | v1.1 | 2/3 | In Progress | - |
 | 15. Search Quality Configuration | v1.1 | 0/TBD | Not started | - |
 | 16. Bench Expansion + Reranker Tuning | v1.1 | 0/TBD | Not started | - |
 
