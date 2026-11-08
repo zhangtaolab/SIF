@@ -792,3 +792,34 @@ class TestHybridSC1PipelineGolden:
         options = SearchOptions(rrf_k=60, bm25_weight=1.0, vector_weight=1.0)
 
         assert self._search(options) == self.SNAPSHOT
+
+    def test_pipeline_weights_visibly_reorder_fused_ranking(self) -> None:
+        """Weights honored end-to-end: heavy BM25 lifts the bm25-only doc.
+
+        At limit=2 the sides are bm25=[d3,d1], vector=[d2,d3]. Defaults give
+        d2 (vector rank 1) the second spot; bm25-heavy 5.0/0.2 lifts d1
+        (bm25-only, 5/62) over d2 (0.2/61) — a visible reorder vs defaults
+        and vs the vector-heavy ordering.
+        """
+        default_ids = [r["document_id"] for r in self._search(SearchOptions(limit=2))]
+        bm25_heavy = [
+            r["document_id"]
+            for r in self._search(SearchOptions(limit=2, bm25_weight=5.0, vector_weight=0.2))
+        ]
+        vector_heavy = [
+            r["document_id"]
+            for r in self._search(SearchOptions(limit=2, bm25_weight=0.2, vector_weight=5.0))
+        ]
+
+        assert default_ids == ["d3", "d2"]
+        assert bm25_heavy == ["d3", "d1"]
+        assert bm25_heavy != vector_heavy
+
+    def test_pipeline_k_changes_fused_scores_per_formula(self) -> None:
+        """rrf_k honored end-to-end: d3 fuses to 1/2 + 1/3 at k=1 (accumulation order)."""
+        k60 = self._search(SearchOptions(limit=2))
+        k1 = self._search(SearchOptions(limit=2, rrf_k=1))
+
+        assert k1[0]["document_id"] == "d3"
+        assert k1[0]["scores"]["rrf_score"] == 1 / 2 + 1 / 3
+        assert k60[0]["scores"]["rrf_score"] == 1 / 61 + 1 / 62
