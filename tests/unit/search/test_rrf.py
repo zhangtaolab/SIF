@@ -7,6 +7,8 @@ This module tests the RRF fusion implementation including:
 - Edge cases and boundary conditions
 """
 
+import copy
+
 import pytest
 
 from sif.core.models import SearchResult
@@ -446,6 +448,83 @@ class TestRRFWeightedFusion:
         # Act & Assert
         with pytest.raises(ValueError, match="weights"):
             rrf_fusion.fuse_with_weights(result_lists, weights=weights)
+
+
+# =============================================================================
+# SC1 Golden Tests (Phase 15 — byte-identical default fusion)
+# =============================================================================
+
+
+def _fresh_lists(
+    bm25_results: list[SearchResult],
+    vector_results: list[SearchResult],
+) -> list[list[SearchResult]]:
+    """Deep-copy fixture lists so one fuse call never feeds on another's mutations.
+
+    fuse() mutates its inputs (score/rank reassignment, scores-dict merges),
+    so golden comparisons need independent copies per call.
+    """
+    return [copy.deepcopy(bm25_results), copy.deepcopy(vector_results)]
+
+
+class TestRRFSC1Golden:
+    """SC1: explicit default weights/k must reproduce plain fuse to the last bit.
+
+    Phase 15's compat bar (D-01): unconfigured fusion is byte-identical to the
+    pre-change arithmetic. The multiply form ``weight * (1.0 / (k + rank))``
+    with weight 1.0 is IEEE-exact (``1.0 * x == x``), so repr(rrf_score)
+    equality is the pinned invariant — no normalization, ever.
+    """
+
+    def test_fuse_default_weights_byte_identical(
+        self,
+        rrf_fusion: RRFFusion,
+        bm25_results: list[SearchResult],
+        vector_results: list[SearchResult],
+    ) -> None:
+        """fuse(..., weights=[1.0, 1.0], k=60) == plain fuse, repr-exact.
+
+        Arrange: Two independent copies of the fixture lists
+        Act: Fuse one plainly, one with explicit default weights/k
+        Assert: document_id order, ranks, and repr of rrf_score all equal
+        """
+        # Arrange
+        plain = rrf_fusion.fuse(_fresh_lists(bm25_results, vector_results), 10)
+        weighted = rrf_fusion.fuse(
+            _fresh_lists(bm25_results, vector_results),
+            10,
+            weights=[1.0, 1.0],
+            k=60,
+        )
+
+        # Assert
+        assert [
+            (r.document_id, r.rank, repr(r.scores["rrf_score"])) for r in plain
+        ] == [(r.document_id, r.rank, repr(r.scores["rrf_score"])) for r in weighted]
+
+    def test_fuse_weights_none_matches_explicit_defaults(
+        self,
+        rrf_fusion: RRFFusion,
+        bm25_results: list[SearchResult],
+        vector_results: list[SearchResult],
+    ) -> None:
+        """weights=None (the unconfigured path) matches explicit [1.0, 1.0].
+
+        Arrange: Two independent copies of the fixture lists
+        Act: Fuse one with weights=None, one with weights=[1.0, 1.0]
+        Assert: Fused scores are exactly equal (float ==, not approx)
+        """
+        # Arrange
+        unconfigured = rrf_fusion.fuse(_fresh_lists(bm25_results, vector_results), 10)
+        explicit = rrf_fusion.fuse(
+            _fresh_lists(bm25_results, vector_results),
+            10,
+            weights=[1.0, 1.0],
+        )
+
+        # Assert
+        assert [r.score for r in unconfigured] == [r.score for r in explicit]
+        assert [r.document_id for r in unconfigured] == [r.document_id for r in explicit]
 
 
 # =============================================================================

@@ -1,5 +1,7 @@
 """Unit tests for hybrid search and search pipeline."""
 
+import sqlite3
+from typing import ClassVar
 from unittest.mock import MagicMock, create_autospec
 
 import pytest
@@ -608,3 +610,185 @@ class TestPipelineSnippetRoutes:
 
         assert results[0].snippet is None
         feed.assert_not_called()
+
+
+# =============================================================================
+# SC1 Pipeline Golden Tests (Phase 15 — byte-identical default fusion)
+# =============================================================================
+
+
+class _FakeEmbedder:
+    """Deterministic embedder keyed on exact text (SC1 golden fixture)."""
+
+    DOC_EMBEDDINGS: ClassVar[dict[str, list[float]]] = {
+        "d1": [0.20, 0.90],
+        "d2": [0.95, 0.10],
+        "d3": [0.50, 0.50],
+        "d4": [0.10, 0.20],
+    }
+    QUERY = "apple"
+    QUERY_EMBEDDING: ClassVar[list[float]] = [1.0, 0.0]
+
+    def embed(self, text: str) -> list[float]:
+        """Map the fixture query to [1.0, 0.0]; docs to their fixed vectors."""
+        if text == self.QUERY:
+            return self.QUERY_EMBEDDING
+        return self.DOC_EMBEDDINGS.get(text, [0.0, 1.0])
+
+
+class TestHybridSC1PipelineGolden:
+    """SC1: HybridSearcher defaults stay byte-identical across the weights change.
+
+    The snapshot below was captured from the PRE-change code on this exact
+    fixture (real schema + FTS + vec0, deterministic fake embedder). BM25
+    ranks d3,d1 (both contain "apple"); vector ranks d2,d3,d1,d4 — the two
+    sources disagree, so the snapshot exercises real RRF merging on two
+    both-sources documents. Post-change, both the implicit defaults and the
+    explicit ``SearchOptions(rrf_k=60, bm25_weight=1.0, vector_weight=1.0)``
+    must reproduce it field-for-field.
+    """
+
+    SNAPSHOT: ClassVar[list[dict[str, object]]] = [
+        {
+            "document_id": "d3",
+            "title": "Apple Quantum",
+            "path": "/notes/apple-quantum.md",
+            "collection_name": "notes",
+            "score": 0.03252247488101534,
+            "content": None,
+            "highlights": ["apple quantum entangled fruit"],
+            "rank": 1,
+            "scores": {
+                "bm25_score": 0.9999989753435158,
+                "vector_score": 0.6464466154575348,
+                "rrf_score": 0.03252247488101534,
+            },
+            "snippet": None,
+            "context_description": None,
+            "vectors_stale": False,
+        },
+        {
+            "document_id": "d1",
+            "title": "Apple Pie",
+            "path": "/notes/apple-pie.md",
+            "collection_name": "notes",
+            "score": 0.031754032258064516,
+            "content": None,
+            "highlights": ["apple pie recipe sweet dessert"],
+            "rank": 2,
+            "scores": {
+                "bm25_score": 0.9999990673325406,
+                "vector_score": 0.39792025089263916,
+                "rrf_score": 0.031754032258064516,
+            },
+            "snippet": None,
+            "context_description": None,
+            "vectors_stale": False,
+        },
+        {
+            "document_id": "d2",
+            "title": "Quantum Physics",
+            "path": "/notes/quantum.md",
+            "collection_name": "notes",
+            "score": 0.01639344262295082,
+            "content": None,
+            "highlights": [],
+            "rank": 3,
+            "scores": {
+                "vector_score": 0.9440982975065708,
+                "rrf_score": 0.01639344262295082,
+            },
+            "snippet": None,
+            "context_description": None,
+            "vectors_stale": False,
+        },
+        {
+            "document_id": "d4",
+            "title": "Gardening",
+            "path": "/notes/gardening.md",
+            "collection_name": "notes",
+            "score": 0.015873015873015872,
+            "content": None,
+            "highlights": [],
+            "rank": 4,
+            "scores": {
+                "vector_score": 0.5390227735042572,
+                "rrf_score": 0.015873015873015872,
+            },
+            "snippet": None,
+            "context_description": None,
+            "vectors_stale": False,
+        },
+    ]
+
+    @staticmethod
+    def _build_db() -> sqlite3.Connection:
+        """Real in-memory DB: full schema, FTS via triggers, vec0 embeddings."""
+        import sqlite_vec
+
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            conn.enable_load_extension(True)
+            sqlite_vec.load(conn)
+            conn.enable_load_extension(False)
+        except Exception:
+            conn.close()
+            pytest.skip("sqlite-vec not available")
+
+        from sif.database.schema import SchemaManager
+
+        SchemaManager(conn, embedding_dim=2).create_all()
+        now = "2026-11-08T00:00:00+00:00"
+        conn.execute(
+            "INSERT INTO collections (id, name, path, created_at, updated_at)"
+            " VALUES ('c1', 'notes', '/notes', ?, ?)",
+            (now, now),
+        )
+        docs = [
+            ("d1", "Apple Pie", "/notes/apple-pie.md", "apple pie recipe sweet dessert"),
+            ("d2", "Quantum Physics", "/notes/quantum.md", "quantum physics computing theory"),
+            ("d3", "Apple Quantum", "/notes/apple-quantum.md", "apple quantum entangled fruit"),
+            ("d4", "Gardening", "/notes/gardening.md", "unrelated gardening tips soil"),
+        ]
+        for did, title, path, content in docs:
+            conn.execute(
+                "INSERT INTO documents (id, collection_id, path, filename, title, content,"
+                " checksum, mtime, created_at, updated_at) VALUES (?, 'c1', ?, ?, ?, ?, 'x',"
+                " 1.0, ?, ?)",
+                (did, path, path.split("/")[-1], title, content, now, now),
+            )
+            conn.execute(
+                "INSERT INTO document_chunks (id, document_id, sequence, content, created_at)"
+                " VALUES (?, ?, 0, ?, ?)",
+                (f"chunk-{did}", did, content, now),
+            )
+        searcher = VectorSearcher(conn, embedding_dim=2)
+        searcher.add_embeddings_batch(
+            [
+                (f"e-{did}", did, f"chunk-{did}", vec)
+                for did, vec in _FakeEmbedder.DOC_EMBEDDINGS.items()
+            ]
+        )
+        return conn
+
+    def _search(self, options: SearchOptions) -> list[dict[str, object]]:
+        conn = self._build_db()
+        try:
+            results = HybridSearcher(conn, embedder=_FakeEmbedder(), embedding_dim=2).search(
+                _FakeEmbedder.QUERY,
+                options,
+            )
+            return [r.to_dict() for r in results]
+        finally:
+            conn.close()
+
+    def test_default_options_match_prechange_snapshot(self) -> None:
+        """SC1: plain SearchOptions() reproduces the captured pre-change output."""
+        assert self._search(SearchOptions()) == self.SNAPSHOT
+
+    def test_explicit_default_weights_match_prechange_snapshot(self) -> None:
+        """SC1: explicit rrf_k=60/bm25_weight=1.0/vector_weight=1.0 reproduces it too."""
+        options = SearchOptions(rrf_k=60, bm25_weight=1.0, vector_weight=1.0)
+
+        assert self._search(options) == self.SNAPSHOT
