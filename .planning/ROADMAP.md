@@ -37,7 +37,7 @@ Full detail: `.planning/milestones/v1.0-ROADMAP.md`
 - [x] **Phase 11: Live-Index Foundation (Concurrent DB + Incremental Core)** - WAL/busy_timeout/BEGIN IMMEDIATE hardening, IncrementalIndexer extraction, flock single-writer arbitration (completed 2026-11-07)
 - [x] **Phase 12: `sif watch` Foreground MVP** - File changes auto-reindex with debounce, atomic-save/move handling, temp-file exclusion, tiered depth (`--embed`), missing-root protection (completed 2026-11-07)
 - [ ] **Phase 13: Watch Everywhere (MCP-Embedded Refresh + Background Daemon)** - `SIF_MCP_WATCH=1` embedded refresh; `--detach` + launchd/systemd service install
-- [ ] **Phase 14: Freshness Floor (Pre-Command Refresh + Staleness Marking)** - Stat-based drift refresh before search with no daemon running; staleness markers on vector-lagging results
+- [x] **Phase 14: Freshness Floor (Pre-Command Refresh + Staleness Marking)** - Stat-based drift refresh before search with no daemon running; staleness markers on vector-lagging results (completed 2026-11-08)
 - [ ] **Phase 15: Search Quality Configuration (Weights + Suggestions)** - `rrf_k`/BM25/vector weights configurable with unchanged defaults; did-you-mean + history suggestions; `sif suggest`
 - [ ] **Phase 16: Bench Expansion + Reranker Tuning** - nDCG@k/Hit@k/p50-p95 metrics, ≥50-query tuning/held-out fixtures, `--sweep`, reranker cap + threshold
 
@@ -113,7 +113,7 @@ Plans:
   1. With no watch or daemon running, a search command detects drifted files (stat-based mtime/size check) and refreshes them before searching
   2. A clean index pays near-zero pre-command cost (no refresh work, no perceptible latency), and drift refresh is capped so a branch switch never becomes a hidden full reindex
   3. Search results for documents whose vectors lag behind BM25/FTS (tiered depth without `--embed`) carry a visible staleness marker in both table and JSON output
-**Plans**: 3/3 plans executed
+**Plans**: 3/3 plans complete
 Plans:
 **Wave 1**
 - [x] 14-01-PLAN.md — LIVE-10 pre-command drift refresh: drift helper + stat snapshot + cap skip-warn + trio wiring (`--no-refresh`) + settings/docs (SC1/SC2, D-01..D-07)
@@ -152,7 +152,7 @@ Plans:
 | 11. Live-Index Foundation | v1.1 | 3/3 | Complete    | 2026-11-07 |
 | 12. `sif watch` Foreground MVP | v1.1 | 3/3 | Complete    | 2026-11-07 |
 | 13. Watch Everywhere (MCP + Daemon) | v1.1 | 4/4 | In Progress | - |
-| 14. Freshness Floor (Pre-Command + Staleness) | v1.1 | 3/3 | In Progress | - |
+| 14. Freshness Floor (Pre-Command + Staleness) | v1.1 | 3/3 | Complete    | 2026-11-08 |
 | 15. Search Quality Configuration | v1.1 | 0/TBD | Not started | - |
 | 16. Bench Expansion + Reranker Tuning | v1.1 | 0/TBD | Not started | - |
 
