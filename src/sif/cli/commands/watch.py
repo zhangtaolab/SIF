@@ -421,22 +421,18 @@ def _service_manager() -> str:
     return service.LAUNCHD_MANAGER if sys.platform == "darwin" else service.SYSTEMD_MANAGER
 
 
-def _service_argv_tail(
-    params: WatchHostParams,
-    collections: tuple[str, ...],
-    settings: Settings,
-    no_embed: bool,
-) -> list[str]:
+def _service_argv_tail(params: WatchHostParams, collections: tuple[str, ...]) -> list[str]:
     """The baked tail (D-11): ``-c`` names plus the exact depth pin.
 
-    ``--embed`` is baked when the installed depth embeds. ``--no-embed`` is
-    baked when the installer ran BM25 against an embedding ambient setting
-    (the flag forced it off, or ``SIF_WATCH_UPDATE_DEPTH=embed`` would
-    otherwise re-derive embed inside the service's own environment at
-    runtime — LIVE-05/WR-03: launchd/systemd environments are not the
-    installing shell's, so an installed-BM25 service must never start
-    computing vectors). With neither flag nor an opting-in setting, the
-    runtime default is already BM25-only and nothing is baked.
+    ``--embed`` is baked when the installed depth embeds. EVERY BM25 install
+    bakes ``--no-embed`` — unconditionally (WR-03/IN-01): launchd/systemd
+    environments are not the installing shell's, and a later
+    ``SIF_WATCH_UPDATE_DEPTH=embed`` in the service's own environment (a
+    ``launchctl setenv`` persists for every LaunchAgent) would otherwise
+    re-derive embed at service start. The pin is a no-op at the BM25
+    runtime default and only bites when the service environment diverges
+    from what was installed, so an installed-BM25 service must never start
+    computing vectors.
 
     The service replays exactly what was installed — an absolute interpreter
     and absolute index path come from the service module, so the supervised
@@ -447,24 +443,19 @@ def _service_argv_tail(
         tail.extend(["-c", name])
     if params.depth == "embed":
         tail.append("--embed")
-    elif no_embed or settings.watch_update_depth == "embed":
+    else:
         tail.append("--no-embed")
     return tail
 
 
-def _run_install_service(
-    params: WatchHostParams,
-    collections: tuple[str, ...],
-    no_embed: bool,
-    settings: Settings,
-) -> None:
+def _run_install_service(params: WatchHostParams, collections: tuple[str, ...]) -> None:
     """Install path (D-11/D-12/D-13): generate, write, enable, start, verify."""
     abs_db = Path(params.index_path).expanduser().resolve()
     manager = _service_manager()
     try:
         result = service.install_watch_service(
             abs_db,
-            _service_argv_tail(params, collections, settings, no_embed),
+            _service_argv_tail(params, collections),
             manager=manager,
         )
     except (service.ServiceManagerMissing, service.ServiceCommandError) as e:
@@ -629,7 +620,7 @@ def watch_cmd(  # noqa: PLR0913
     )
 
     if install_service:
-        _run_install_service(params, collections, no_embed, settings)
+        _run_install_service(params, collections)
         return
 
     if detach:

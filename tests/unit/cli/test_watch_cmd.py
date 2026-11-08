@@ -408,32 +408,15 @@ class TestServiceFlags:
         assert result.exit_code != 0
         assert "mutually exclusive" in result.output
 
-    def test_argv_tail_bakes_no_embed_against_ambient_embed_setting(self) -> None:
-        """WR-03/LIVE-05: an installed-BM25 service must never start embedding.
+    def test_argv_tail_pins_the_installed_depth(self) -> None:
+        """WR-03/IN-01: embed installs bake --embed; EVERY BM25 install bakes
+        --no-embed — unconditionally.
 
-        When the installer's effective depth is bm25 but the ambient
-        ``watch_update_depth`` is embed (or --no-embed forced it off), the
-        tail bakes --no-embed so the service's own runtime environment —
-        which is not the installing shell's — cannot re-derive embed."""
-        params = WatchHostParams(
-            index_path="/tmp/watch.db",
-            debounce_interval=0.5,
-            lock_timeout=30.0,
-            depth="bm25",
-            restat_interval=5.0,
-        )
-        settings = _test_settings(watch_update_depth="embed")
-
-        with_flag = _service_argv_tail(params, ("notes",), settings, no_embed=True)
-        without_flag = _service_argv_tail(params, ("notes",), settings, no_embed=False)
-
-        assert with_flag == ["-c", "notes", "--no-embed"]
-        assert without_flag == ["-c", "notes", "--no-embed"]
-
-    def test_argv_tail_bakes_embed_and_plain_bm25_bakes_no_depth_flag(self) -> None:
-        """The depth matrix: embed installs bake --embed; a plain BM25 default
-        (no flags, ambient setting bm25) needs no pin — the runtime default
-        is already BM25-only."""
+        The BM25 pin is a no-op at the BM25 runtime default and only bites
+        when the service's own environment — which is not the installing
+        shell's — later carries ``SIF_WATCH_UPDATE_DEPTH=embed`` (a
+        ``launchctl setenv`` persists for every LaunchAgent), so an
+        installed-BM25 service must never start computing vectors."""
         embed_params = WatchHostParams(
             index_path="/tmp/watch.db",
             debounce_interval=0.5,
@@ -448,13 +431,12 @@ class TestServiceFlags:
             depth="bm25",
             restat_interval=5.0,
         )
-        settings = _test_settings()
 
-        embed_tail = _service_argv_tail(embed_params, ("notes",), settings, no_embed=False)
-        plain_tail = _service_argv_tail(bm25_params, ("notes",), settings, no_embed=False)
+        embed_tail = _service_argv_tail(embed_params, ("notes",))
+        bm25_tail = _service_argv_tail(bm25_params, ("notes",))
 
         assert embed_tail == ["-c", "notes", "--embed"]
-        assert plain_tail == ["-c", "notes"]
+        assert bm25_tail == ["-c", "notes", "--no-embed"]
 
     def test_install_bakes_no_embed_flag_under_ambient_embed_setting(
         self, tmp_path, monkeypatch
@@ -480,6 +462,35 @@ class TestServiceFlags:
             result = CliRunner().invoke(
                 watch_mod.watch_cmd,
                 ["--install-service", "-c", "notes", "--no-embed"],
+                obj={"index_path": tmp_path / "watch.db"},
+            )
+
+        assert result.exit_code == 0
+        assert captured["tail"] == ["-c", "notes", "--no-embed"]
+
+    def test_install_plain_bm25_still_bakes_no_embed(self, tmp_path, monkeypatch) -> None:
+        """CLI plumbing (IN-01): a plain BM25 install — no depth flags, ambient
+        setting bm25 — still bakes --no-embed, so a service environment that
+        later carries SIF_WATCH_UPDATE_DEPTH=embed (launchctl setenv persists
+        for every LaunchAgent) can never upgrade the service to embed."""
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        fake_result = InstallResult(
+            artifact_path=tmp_path / "Library" / "LaunchAgents" / "com.docsif.watch.plist",
+            log_location=str(tmp_path / "logs" / "watch.log"),
+            verify_command="launchctl print gui/501/com.docsif.watch",
+        )
+        captured: dict[str, Any] = {}
+
+        def fake_install(_db_path, argv_tail, **_kwargs):
+            captured["tail"] = list(argv_tail)
+            return fake_result
+
+        monkeypatch.setattr(watch_mod.service, "install_watch_service", fake_install)
+
+        with patch("sif.config.settings.get_settings", return_value=_test_settings()):
+            result = CliRunner().invoke(
+                watch_mod.watch_cmd,
+                ["--install-service", "-c", "notes"],
                 obj={"index_path": tmp_path / "watch.db"},
             )
 
