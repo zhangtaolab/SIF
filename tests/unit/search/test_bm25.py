@@ -37,12 +37,15 @@ class TestBM25Searcher:
                 },
             ],
         )
-        # Add a context cursor for the _attach_contexts call
+        # Add a context cursor for the _attach_contexts call, and a staleness
+        # scan cursor (empty iteration → display gate → results unmarked)
         context_cursor = MagicMock()
         context_cursor.fetchall.return_value = []
+        staleness_cursor = MagicMock()
         mock_db.execute.side_effect = [
             mock_db.execute.return_value,
             context_cursor,
+            staleness_cursor,
         ]
 
         searcher = BM25Searcher(mock_db)
@@ -76,12 +79,15 @@ class TestBM25Searcher:
                 },
             ],
         )
-        # Add a context cursor for the _attach_contexts call
+        # Add a context cursor for the _attach_contexts call, and a staleness
+        # scan cursor (empty iteration → display gate → results unmarked)
         context_cursor = MagicMock()
         context_cursor.fetchall.return_value = []
+        staleness_cursor = MagicMock()
         mock_db.execute.side_effect = [
             mock_db.execute.return_value,
             context_cursor,
+            staleness_cursor,
         ]
 
         searcher = BM25Searcher(mock_db)
@@ -114,12 +120,15 @@ class TestBM25Searcher:
                 },
             ],
         )
-        # Add a context cursor for the _attach_contexts call
+        # Add a context cursor for the _attach_contexts call, and a staleness
+        # scan cursor (empty iteration → display gate → results unmarked)
         context_cursor = MagicMock()
         context_cursor.fetchall.return_value = []
+        staleness_cursor = MagicMock()
         mock_db.execute.side_effect = [
             mock_db.execute.return_value,
             context_cursor,
+            staleness_cursor,
         ]
 
         searcher = BM25Searcher(mock_db)
@@ -183,10 +192,12 @@ class TestBM25Searcher:
         content_cursor.fetchone.return_value = ["document content"]
         context_cursor = MagicMock()
         context_cursor.fetchall.return_value = []
+        staleness_cursor = MagicMock()
         mock_db.execute.side_effect = [
             mock_db.execute.return_value,
             content_cursor,
             context_cursor,
+            staleness_cursor,
         ]
 
         searcher = BM25Searcher(mock_db)
@@ -215,11 +226,13 @@ class TestBM25Searcher:
         content_cursor.fetchone.return_value = ["test query content"]
         context_cursor = MagicMock()
         context_cursor.fetchall.return_value = []
+        staleness_cursor = MagicMock()
         mock_db.execute.side_effect = [
             mock_db.execute.return_value,
             chunk_cursor,
             content_cursor,
             context_cursor,
+            staleness_cursor,
         ]
 
         searcher = BM25Searcher(mock_db)
@@ -385,7 +398,8 @@ class TestBM25ContextAttachment:
         search_cursor.fetchall.return_value = search_rows
         context_cursor = MagicMock()
         context_cursor.fetchall.return_value = context_rows
-        mock_db.execute.side_effect = [search_cursor, context_cursor]
+        staleness_cursor = MagicMock()
+        mock_db.execute.side_effect = [search_cursor, context_cursor, staleness_cursor]
 
         searcher = BM25Searcher(mock_db)
         options = SearchOptions(include_highlights=False)
@@ -410,7 +424,8 @@ class TestBM25ContextAttachment:
         search_cursor.fetchall.return_value = search_rows
         context_cursor = MagicMock()
         context_cursor.fetchall.return_value = []
-        mock_db.execute.side_effect = [search_cursor, context_cursor]
+        staleness_cursor = MagicMock()
+        mock_db.execute.side_effect = [search_cursor, context_cursor, staleness_cursor]
 
         searcher = BM25Searcher(mock_db)
         options = SearchOptions(include_highlights=False)

@@ -125,15 +125,16 @@ class TestVectorSearcher:
         ]
         ctx_cursor = MagicMock()
         ctx_cursor.fetchall.return_value = []
-        # vec_version() in __init__, search query, context query
-        mock_db.execute.side_effect = [MagicMock(), search_cursor, ctx_cursor]
+        staleness_cursor = MagicMock()
+        # vec_version() in __init__, search query, context query, staleness scan
+        mock_db.execute.side_effect = [MagicMock(), search_cursor, ctx_cursor, staleness_cursor]
 
         searcher = VectorSearcher(mock_db)
         searcher._vec_available = True
 
         results = searcher.search([0.1, 0.2], SearchOptions(limit=-1))
 
-        # call_args is the context query; the search call is the second one
+        # call_args is the staleness scan; the search call is the second one
         search_call = mock_db.execute.call_args_list[1]
         params = search_call[0][1]
         assert params[1] == 50  # fetch floor
@@ -179,7 +180,8 @@ class TestVectorSearcher:
         ]
         ctx_cursor = MagicMock()
         ctx_cursor.fetchall.return_value = []
-        mock_db.execute.side_effect = [vec_cursor, doc_cursor, ctx_cursor]
+        staleness_cursor = MagicMock()
+        mock_db.execute.side_effect = [vec_cursor, doc_cursor, ctx_cursor, staleness_cursor]
 
         searcher = VectorSearcher(mock_db)
         searcher._vec_available = True
@@ -213,7 +215,8 @@ class TestVectorSearcher:
         ]
         ctx_cursor = MagicMock()
         ctx_cursor.fetchall.return_value = []
-        mock_db.execute.side_effect = [vec_cursor, doc_cursor, ctx_cursor]
+        staleness_cursor = MagicMock()
+        mock_db.execute.side_effect = [vec_cursor, doc_cursor, ctx_cursor, staleness_cursor]
 
         searcher = VectorSearcher(mock_db)
         searcher._vec_available = True
@@ -241,9 +244,17 @@ class TestVectorSearcher:
         content_cursor.fetchone.return_value = ("document content",)
         context_cursor = MagicMock()
         context_cursor.fetchall.return_value = []
+        staleness_cursor = MagicMock()
         # First execute is vec_version() in __init__, second is search query,
-        # third is content lookup, fourth is context lookup
-        mock_db.execute.side_effect = [MagicMock(), mock_cursor, content_cursor, context_cursor]
+        # third is content lookup, fourth is context lookup, fifth is the
+        # staleness scan
+        mock_db.execute.side_effect = [
+            MagicMock(),
+            mock_cursor,
+            content_cursor,
+            context_cursor,
+            staleness_cursor,
+        ]
 
         searcher = VectorSearcher(mock_db)
         searcher._vec_available = True
@@ -513,8 +524,14 @@ class TestVectorContextAttachment:
         search_cursor.fetchall.return_value = search_rows
         context_cursor = MagicMock()
         context_cursor.fetchall.return_value = context_rows
-        # vec_version in __init__, search query, context query
-        mock_db.execute.side_effect = [MagicMock(), search_cursor, context_cursor]
+        staleness_cursor = MagicMock()
+        # vec_version in __init__, search query, context query, staleness scan
+        mock_db.execute.side_effect = [
+            MagicMock(),
+            search_cursor,
+            context_cursor,
+            staleness_cursor,
+        ]
 
         searcher = VectorSearcher(mock_db)
         searcher._vec_available = True
@@ -541,8 +558,14 @@ class TestVectorContextAttachment:
         search_cursor.fetchall.return_value = search_rows
         context_cursor = MagicMock()
         context_cursor.fetchall.return_value = []
-        # vec_version in __init__, search query, context query
-        mock_db.execute.side_effect = [MagicMock(), search_cursor, context_cursor]
+        staleness_cursor = MagicMock()
+        # vec_version in __init__, search query, context query, staleness scan
+        mock_db.execute.side_effect = [
+            MagicMock(),
+            search_cursor,
+            context_cursor,
+            staleness_cursor,
+        ]
 
         searcher = VectorSearcher(mock_db)
         searcher._vec_available = True

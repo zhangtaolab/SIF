@@ -187,9 +187,7 @@ class TestMarkVectorStaleness:
 class TestLagStateEndToEnd:
     """The real tiered-depth lag state: BM25 refresh purges embeddings (D-10)."""
 
-    def test_bm25_refreshed_after_embed_doc_is_marked_stale(
-        self, tmp_path, monkeypatch
-    ) -> None:
+    def test_bm25_refreshed_after_embed_doc_is_marked_stale(self, tmp_path, monkeypatch) -> None:
         """Embed → modify → update_paths purge → the doc's BM25 results are marked.
 
         The lag state is produced by the REAL purge (update_paths), not by
@@ -210,6 +208,11 @@ class TestLagStateEndToEnd:
         notes.mkdir()
         doc_file = notes / "a.md"
         doc_file.write_text("# Alpha\n\nalpha needle text\n", encoding="utf-8")
+        # A second document that stays embedded: the display gate needs the
+        # index to retain >= 1 embedding after a.md's purge, else nothing is
+        # marked (the gate is the plan-time resolution of RESEARCH OQ2).
+        keeper_file = notes / "b.md"
+        keeper_file.write_text("# Beta\n\nbeta other text\n", encoding="utf-8")
 
         db = Database(db_path)
         with patch("sif.config.settings.get_settings", return_value=settings):
@@ -218,32 +221,39 @@ class TestLagStateEndToEnd:
                 coll = Coll(name="notes", path=str(notes))
                 CollectionRepository(db.connection).create(coll)
         try:
-            # Index once (BM25), then embed the document for real.
+            # Index once (BM25), then embed both documents for real.
             indexer = IncrementalIndexer(db.connection)
-            assert indexer.update_collection(coll).added == 1
+            assert indexer.update_collection(coll).added == 2
             doc_repo = DocumentRepository(db.connection)
             doc = doc_repo.get_by_path(str(doc_file), coll.id)
+            keeper = doc_repo.get_by_path(str(keeper_file), coll.id)
             assert doc is not None
+            assert keeper is not None
             with db.connection:
-                VectorSearcher(db.connection, embedding_dim=2).add_embedding(
-                    f"e-{doc.id}", doc.id, f"c-{doc.id}", [0.1, 0.2]
-                )
-            assert embedded_document_ids(db.connection) == {doc.id}
+                embedder = VectorSearcher(db.connection, embedding_dim=2)
+                embedder.add_embedding(f"e-{doc.id}", doc.id, f"c-{doc.id}", [0.1, 0.2])
+                embedder.add_embedding(f"e-{keeper.id}", keeper.id, f"c-{keeper.id}", [0.2, 0.1])
+            assert embedded_document_ids(db.connection) == {doc.id, keeper.id}
 
-            # Before drift: embedded document → unmarked results.
+            # Before drift: embedded documents → unmarked results.
             clean = BM25Searcher(db.connection).search("alpha", SearchOptions(limit=5))
-            assert clean and clean[0].vectors_stale is False
+            assert clean
+            assert clean[0].vectors_stale is False
 
-            # Drift: modify the file, BM25-refresh through the per-path seam —
-            # the purge removes the embedding and produces the real lag state.
+            # Drift: modify a.md, BM25-refresh through the per-path seam —
+            # the purge removes ITS embedding and produces the real lag state
+            # (b.md's embedding survives, arming the display gate).
             doc_file.write_text("# Alpha changed\n\nalpha needle text v2\n", encoding="utf-8")
             counts = indexer.update_paths(coll, [doc_file])
             assert counts.updated == 1
-            assert embedded_document_ids(db.connection) == set()
+            assert embedded_document_ids(db.connection) == {keeper.id}
 
             lagging = BM25Searcher(db.connection).search("alpha", SearchOptions(limit=5))
             assert lagging
             assert lagging[0].vectors_stale is True
+            keeper_hits = BM25Searcher(db.connection).search("beta", SearchOptions(limit=5))
+            assert keeper_hits
+            assert keeper_hits[0].vectors_stale is False
         finally:
             db.close()
 
@@ -266,16 +276,12 @@ class TestSearcherDelegation:
         bm25_results = [_result("d-b")]
         bm25_searcher._attach_contexts(bm25_results)
 
-        monkeypatch.setattr(
-            "sif.search.vector.mark_vector_staleness", recording_wrapper("vector")
-        )
+        monkeypatch.setattr("sif.search.vector.mark_vector_staleness", recording_wrapper("vector"))
         vector_searcher = VectorSearcher(MagicMock())
         vector_results = [_result("d-v")]
         vector_searcher._attach_contexts(vector_results)
 
-        monkeypatch.setattr(
-            "sif.search.hybrid.mark_vector_staleness", recording_wrapper("hybrid")
-        )
+        monkeypatch.setattr("sif.search.hybrid.mark_vector_staleness", recording_wrapper("hybrid"))
         hybrid_searcher = HybridSearcher(MagicMock(), embedder=None)
         hybrid_results = [_result("d-h")]
         hybrid_searcher._attach_contexts(hybrid_results)
