@@ -209,8 +209,7 @@ def _big_vocab_conn() -> sqlite3.Connection:
     ``0-9a-z`` so the first-letter+-1 bucket is a small, measurable fraction
     of the vocabulary.
     """
-    conn = _fixture_db(*_big_vocab_docs())
-    return conn
+    return _fixture_db(*_big_vocab_docs())
 
 
 def _big_vocab_docs() -> list[tuple[str, str]]:
@@ -227,7 +226,7 @@ def _big_vocab_docs() -> list[tuple[str, str]]:
 class TestCoreBudget:
     """D-14: bucketed matching proven deterministically; generous wall bound."""
 
-    def test_bucketed_dym_under_budget_on_60k_vocab(self, vocab_db, monkeypatch):
+    def test_bucketed_dym_under_budget_on_60k_vocab(self, monkeypatch):
         """Core (prefix + DYM incl. vocab scan) < 1.0 s; bucket < 10% of vocab.
 
         The bucket assertion is deterministic — it catches a full-scan
