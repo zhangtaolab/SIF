@@ -1,7 +1,7 @@
 ---
 phase: 16-bench-expansion-reranker-tuning
 verified: 2026-11-08T16:45:16Z
-status: human_needed
+status: passed
 score: 20/20 must-haves verified
 covered_files:
   - .planning/phases/16-bench-expansion-reranker-tuning/16-01-PLAN.md
