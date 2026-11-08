@@ -214,3 +214,19 @@ class TestRelativeThreshold:
         assert reranker._relative_threshold == 0.5
         assert [r.document_id for r in ranked] == ["doc-0", "doc-1"]
         assert all("reranker_score" in r.scores for r in ranked)
+
+    def test_equal_scores_deterministic_across_runs(self) -> None:
+        """Equal scores keep a deterministic (stable-sort) document order across runs."""
+
+        def build() -> list[SearchResult]:
+            return [self._result(f"doc-{i}") for i in range(6)]
+
+        model = MagicMock()
+        model.predict.return_value = [0.0] * 6  # sigmoid(0) == 0.5 for every candidate
+        reranker = CrossEncoderReranker()
+        reranker._model = model
+
+        first = [r.document_id for r in reranker.rerank("query", build(), top_k=6)]
+        second = [r.document_id for r in reranker.rerank("query", build(), top_k=6)]
+
+        assert first == second == [f"doc-{i}" for i in range(6)]

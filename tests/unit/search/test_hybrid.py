@@ -9,6 +9,7 @@ import pytest
 from sif.core.models import SearchOptions, SearchResult, SearchType
 from sif.search.bm25 import BM25Searcher
 from sif.search.hybrid import HybridSearcher, SearchPipeline
+from sif.search.rerank import _sort_and_build_results
 from sif.search.snippets import SmartSnippetExtractor
 from sif.search.vector import VectorSearcher
 
@@ -996,3 +997,108 @@ class TestCandidateFetch:
             assert [r.to_dict() for r in results] == TestHybridSC1PipelineGolden.SNAPSHOT
         finally:
             conn.close()
+
+
+# =============================================================================
+# Composition proofs (Phase 16 — cap -> threshold -> top_k ordering)
+# =============================================================================
+
+
+class _ThresholdRerankSpy:
+    """Apply the production relative-threshold filter, recording the hand-off."""
+
+    def __init__(self, alpha: float) -> None:
+        self.alpha = alpha
+        self.query = ""
+        self.received = 0
+        self.top_k = -1
+
+    def rerank(
+        self,
+        query: str,
+        results: list[SearchResult],
+        top_k: int = 10,
+    ) -> list[SearchResult]:
+        self.query = query
+        self.received = len(results)
+        self.top_k = top_k
+        return _sort_and_build_results(
+            results,
+            [float(r.score) for r in results],
+            top_k,
+            self.alpha,
+        )
+
+
+class TestRerankComposition:
+    """Pin the layer ordering end-to-end: cap first, threshold second, top_k last."""
+
+    @staticmethod
+    def _results(scores: list[float]) -> list[SearchResult]:
+        return [
+            SearchResult(
+                document_id=f"doc-{i}",
+                path=f"/{i}.md",
+                title=f"Doc {i}",
+                collection_name="default",
+                score=score,
+            )
+            for i, score in enumerate(scores)
+        ]
+
+    def _pipeline_with_spy(
+        self,
+        mock_db: MagicMock,
+        spy: _ThresholdRerankSpy,
+        scores: list[float],
+    ) -> SearchPipeline:
+        pipeline = SearchPipeline(mock_db, reranker=spy)
+        pipeline.hybrid.bm25 = create_autospec(BM25Searcher, instance=True)
+        pipeline.hybrid.bm25.search.return_value = self._results(scores)
+        return pipeline
+
+    def test_cap_then_threshold_then_top_k_ordering(self, mock_db: MagicMock) -> None:
+        """Equal-score candidates: cap hands exactly candidate_limit, threshold keeps
+        >= top1 * alpha, and the final count is min(top_k, survivors)."""
+        # 25 candidates; first 10 carry equal scores (doc-1/doc-2 both 0.8).
+        scores = [1.0, 0.8, 0.8, 0.7, 0.6, *([0.1] * 20)]
+        spy = _ThresholdRerankSpy(alpha=0.5)
+        pipeline = self._pipeline_with_spy(mock_db, spy, scores)
+
+        results = pipeline.search("test", SearchOptions(limit=3, candidate_limit=10))
+
+        assert spy.received == 10  # cap: exactly candidate_limit candidates handed over
+        assert spy.top_k == 3
+        assert len(results) == 3  # min(top_k=3, survivors=5)
+        assert [r.document_id for r in results] == ["doc-0", "doc-1", "doc-2"]
+
+    def test_threshold_survivors_below_top_k_return_all_survivors(
+        self,
+        mock_db: MagicMock,
+    ) -> None:
+        """Fewer survivors than top_k: the final count is min(top_k, survivors)."""
+        scores = [1.0, 0.6, *([0.1] * 23)]  # cutoff 0.5 -> survivors doc-0, doc-1
+        spy = _ThresholdRerankSpy(alpha=0.5)
+        pipeline = self._pipeline_with_spy(mock_db, spy, scores)
+
+        results = pipeline.search("test", SearchOptions(limit=3, candidate_limit=10))
+
+        assert len(results) == 2  # min(top_k=3, survivors=2)
+        assert [r.document_id for r in results] == ["doc-0", "doc-1"]
+
+    def test_off_path_passes_original_options_without_overfetch(
+        self,
+        mock_db: MagicMock,
+    ) -> None:
+        """reranker=None: the searchers receive the caller's options object untouched."""
+        pipeline = SearchPipeline(mock_db)
+        pipeline.hybrid.bm25 = create_autospec(BM25Searcher, instance=True)
+        pipeline.hybrid.bm25.search.return_value = self._results([0.9, 0.8])
+        options = SearchOptions(limit=3, candidate_limit=20)
+
+        pipeline.search("test", options)
+
+        # Identity check: no dataclasses.replace copy, no over-fetch — the
+        # rerank-off path is provably unreachable from the fetch logic.
+        assert pipeline.hybrid.bm25.search.call_args[0][1] is options
+        assert options.limit == 3
