@@ -3,6 +3,7 @@
 import csv
 import io
 import json
+import os
 import re
 import sqlite3
 import xml.etree.ElementTree as ET
@@ -2476,6 +2477,41 @@ class TestPreSearchRefresh:
         assert second.exit_code == 0
         assert second.stderr == ""
         assert "Heading Two" in second.output
+
+    def test_touch_only_drift_converges_across_searches(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """CR-01 regression: a same-content touch refreshes once, then stays clean.
+
+        A ``git checkout`` of identical content (or archive extract / no-op
+        save) moves mtimes without changing bytes. The first search
+        converges the stored mtime; the second must pay nothing — no
+        refresh burst (the ONLY lock acquirer), no notice, no drift.
+        """
+        db_path, notes, settings = self._seed_index(tmp_path, monkeypatch)
+        doc = notes / "a.md"
+        os.utime(doc, (1_700_000_000, 1_700_000_000))
+
+        with patch("sif.config.settings.get_settings", return_value=settings):
+            first = CliRunner().invoke(search_cmd, ["alpha"], obj={"index_path": db_path})
+
+        assert first.exit_code == 0
+        # A refresh burst ran (exact count wording is WR-02's subject).
+        assert "(bm25) before search" in first.stderr
+        # The fresh mtime was persisted on the checksum-skip path.
+        assert self._document_snapshot(db_path)[str(doc.resolve())][1] == 1_700_000_000.0
+
+        with (
+            patch("sif.config.settings.get_settings", return_value=settings),
+            patch("sif.cli.commands.search.refresh_drifted") as spy,
+        ):
+            second = CliRunner().invoke(search_cmd, ["alpha"], obj={"index_path": db_path})
+
+        assert second.exit_code == 0
+        assert "Heading One" in second.output
+        assert second.stderr == ""
+        # No refresh burst → no index_lock window on the clean second search.
+        spy.assert_not_called()
 
     def test_search_finds_new_file_and_drops_deleted_file(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

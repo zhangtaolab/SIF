@@ -268,6 +268,44 @@ class TestRefreshDrifted:
         finally:
             db2.close()
 
+    def test_refresh_converges_touch_only_drift(self, tmp_path, monkeypatch) -> None:
+        """CR-01 regression: a touched-but-unchanged file converges after ONE refresh.
+
+        ``detect_drift`` is mtime-primary, so the checksum-skip path must
+        persist the fresh mtime — otherwise a same-content touch (git
+        checkout, archive extract, no-op save) is re-detected as drift on
+        every subsequent search forever (the eternal lock+notice loop).
+        """
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "drift.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        doc = notes / "a.md"
+        doc.write_text(BODY_ALPHA, encoding="utf-8")
+        _seed_and_index(db_path, notes)
+        os.utime(doc, (TOUCH_MTIME, TOUCH_MTIME))
+
+        db, coll = _open(db_path)
+        try:
+            report = detect_drift(db.connection, [coll])
+            assert report.total_count == 1
+            result = refresh_drifted(
+                db_path, db.connection, {coll.id: coll}, report, lock_timeout=5.0
+            )
+        finally:
+            db.close()
+
+        # Checksum skip (content unchanged), but the fresh mtime was persisted.
+        assert result == IncrementalResult(added=0, updated=0, removed=0, unchanged=1)
+        assert _doc_stats(db_path)[str(doc.resolve())] == float(TOUCH_MTIME)
+
+        # Convergence: a fresh walk after the refresh finds zero drift.
+        db2, coll2 = _open(db_path)
+        try:
+            assert detect_drift(db2.connection, [coll2]).total_count == 0
+        finally:
+            db2.close()
+
     def test_refresh_adds_new_and_removes_deleted_documents(self, tmp_path, monkeypatch) -> None:
         """A drifted set mixing new and deleted paths lands both outcomes."""
         _delenv_settings_vars(monkeypatch)

@@ -272,6 +272,20 @@ class IncrementalIndexer:
         if existing:
             # Check if changed
             if existing.checksum == parsed.checksum and not force:
+                # Drift-compare convergence (14 REVIEW CR-01): detect_drift
+                # is mtime-primary, so the skip must still persist a moved
+                # mtime — a touched-but-unchanged file (git checkout of
+                # identical content, archive extract, no-op save) would
+                # otherwise be re-detected as drift on every subsequent
+                # search forever. Only the mtime column: the checksum covers
+                # the body alone, so a whole-row update could smuggle a new
+                # frontmatter title/metadata through this skip.
+                if existing.mtime != parsed.mtime:
+                    with self._conn:
+                        self._conn.execute(
+                            "UPDATE documents SET mtime = ? WHERE id = ?",
+                            (parsed.mtime, existing.id),
+                        )
                 self._notify(progress, f"unchanged {file_path.name}")
                 return "skipped"
 
