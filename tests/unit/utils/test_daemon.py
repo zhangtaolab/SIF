@@ -10,6 +10,7 @@ behavior, and the fail-closed corroboration outcomes (Pitfall 3, T-13-03).
 
 from __future__ import annotations
 
+import os
 import signal
 from pathlib import Path
 from types import SimpleNamespace
@@ -112,6 +113,68 @@ class TestPidPayload:
         path.write_bytes(content)
 
         assert daemon.read_pid_file(path) is None
+
+
+class TestPidFileConcurrentWriters:
+    """WR-01: per-process temp names — two ``sif watch --detach`` arming on the
+    same index never share a temp inode (the module's contract: two daemons
+    may run simultaneously), so a healthy second armer never fails its rename
+    and never corrupts the first writer's payload."""
+
+    def test_temp_name_carries_the_writer_pid(self, tmp_path: Path, monkeypatch) -> None:
+        """The temp artifact is ``.<name>.<pid>.tmp`` — a fixed function of the
+        WRITER, not of the final path, so concurrent writers cannot collide."""
+        path = tmp_path / "sif.db.watch.pid"
+        replaced: list[str] = []
+        real_replace = os.replace
+        monkeypatch.setattr(daemon.os, "getpid", lambda: 31337)
+
+        def _capture(src, dst) -> None:
+            replaced.append(str(src))
+            real_replace(src, dst)
+
+        monkeypatch.setattr(daemon.os, "replace", _capture)
+
+        daemon.write_pid_file(path, pid=4242, mode="daemon", depth="bm25")
+
+        assert replaced == [str(tmp_path / ".sif.db.watch.pid.31337.tmp")]
+        assert not list(tmp_path.glob("*.tmp"))  # rename consumed the temp
+        assert daemon.read_pid_file(path) is not None
+
+    def test_second_writer_between_create_and_rename_still_succeeds(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """The exact WR-01 interleaving: writer B arms while writer A sits
+        between its temp create and its rename. Per-process temp names keep
+        the two create/write/rename sequences independent — both renames
+        land (last writer wins) and neither writer raises. The shared fixed
+        temp name made A's rename raise FileNotFoundError: a healthy daemon
+        reported "failed to start"."""
+        path = tmp_path / "sif.db.watch.pid"
+        current = {"pid": 1111}
+        first_rename = {"done": False}
+        real_replace = os.replace
+        monkeypatch.setattr(daemon.os, "getpid", lambda: current["pid"])
+
+        def _interleave(src, dst) -> None:
+            if not first_rename["done"]:
+                first_rename["done"] = True
+                # Inside A's rename window: B runs a FULL concurrent write —
+                # temp create, payload write, and its own rename — against
+                # the same PID path before A's rename proceeds.
+                current["pid"] = 2222
+                daemon.write_pid_file(path, pid=2222, mode="daemon", depth="bm25")
+                current["pid"] = 1111
+            real_replace(src, dst)
+
+        monkeypatch.setattr(daemon.os, "replace", _interleave)
+
+        daemon.write_pid_file(path, pid=1111, mode="daemon", depth="bm25")
+
+        payload = daemon.read_pid_file(path)
+        assert payload is not None
+        assert payload["pid"] == 1111  # A's rename resumed after B's — last wins
+        assert not list(tmp_path.glob("*.tmp"))  # neither writer leaked a temp
 
 
 class TestCorroboratePid:

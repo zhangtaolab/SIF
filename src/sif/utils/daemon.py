@@ -94,7 +94,11 @@ def write_pid_file(path: Path, *, pid: int, mode: str, depth: str) -> None:
     service._write_artifact): rename does not follow symlinks, so a
     pre-planted ``<db>.watch.pid`` symlink is atomically replaced with the
     real file instead of redirecting this write — and any later removal —
-    to an arbitrary path.
+    to an arbitrary path. The temp name carries the writer's PID (WR-01):
+    the module's contract lets two daemons arm on one index concurrently,
+    and a shared fixed temp name would make the loser's ``os.replace`` race
+    on the same inode — a per-process temp keeps each writer's
+    create/write/rename sequence independent.
     """
     payload = {
         "pid": pid,
@@ -102,7 +106,7 @@ def write_pid_file(path: Path, *, pid: int, mode: str, depth: str) -> None:
         "depth": depth,
         "started": datetime.now(timezone.utc).isoformat(),
     }
-    tmp = path.with_name(f".{path.name}.tmp")
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
