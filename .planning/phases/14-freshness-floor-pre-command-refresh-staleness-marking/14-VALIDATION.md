@@ -3,9 +3,9 @@ phase: "14"
 slug: "freshness-floor-pre-command-refresh-staleness-marking"
 # status lifecycle: draft (seeded by plan-phase) → validated (set by validate-phase §6)
 # audit-milestone §5.5 distinguishes NOT-VALIDATED (draft) from PARTIAL (validated + nyquist_compliant: false) (#2117)
-status: draft
-nyquist_compliant: false
-wave_0_complete: false
+status: validated
+nyquist_compliant: true
+wave_0_complete: true
 created: "2026-11-08"
 ---
 
@@ -40,20 +40,19 @@ Env prefix per project memory: agent shells must **unset** `FORCE_COLOR` (`env -
 
 ## Per-Task Verification Map
 
-Seeded from RESEARCH.md's requirement→test map at requirement level; task IDs to be filled by the validate-phase audit after execution.
+Audited 2026-11-08 by /gsd-validate-phase (post-execution): task IDs resolved from the executed plans, every battery re-run green on the final tree (post code-review fixes bd63c78/c30bc22/b39164d, post-validation additions 1062afc/2307ba8). Post-seed coverage additions ride inside the counted batteries: D-05 refresh-failure leg (1062afc), WR-01 parse-failure surfacing (2307ba8), CR-01/WR-01/WR-02 convergence regressions (bd63c78/c30bc22/b39164d).
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| TBD | TBD | 0 | LIVE-10 | — | N/A | unit (drift helper: mtime/new/deleted detection; missing-root skip; resolve-consistent compares) | `env -u FORCE_COLOR NO_COLOR=1 python -m pytest tests/unit/indexing/test_drift.py -x -q` | ❌ W0 | ⬜ pending |
-| TBD | TBD | 0 | LIVE-10 | — | N/A | unit (cap boundary: N refreshed / N+1 skipped+warned; count-first — no parse when over cap) | `env -u FORCE_COLOR NO_COLOR=1 python -m pytest tests/unit/indexing/test_drift.py -x -q` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | LIVE-10 (SC2) | — | clean search never creates/touches the lock file | unit (clean index: zero writes, no lock file, no notice) | `env -u FORCE_COLOR NO_COLOR=1 python -m pytest tests/unit/cli/test_search.py -k refresh -x -q` | ✅ extend | ⬜ pending |
-| TBD | TBD | TBD | LIVE-10 | — | notices on stderr, never stdout (JSON/CSV piping stays clean) | unit (CliRunner: trio integration, `-q` suppression, setting/flag opt-out, stderr separation) | `env -u FORCE_COLOR NO_COLOR=1 python -m pytest tests/unit/cli/test_search.py -x -q` | ✅ extend | ⬜ pending |
-| TBD | TBD | TBD | LIVE-10 | — | N/A | subprocess/unit (refresh burst under flock vs held lock — 11-D08 parent-holds-lock pattern) | `env -u FORCE_COLOR NO_COLOR=1 python -m pytest tests/unit/cli/test_index_locking.py -x -q` | ✅ extend | ⬜ pending |
-| TBD | TBD | 0 | QUAL-06 | — | N/A | unit (staleness enrichment: embedded→unmarked; never-embedded/BM25-refreshed→marked; vec0-missing→no markers) | `env -u FORCE_COLOR NO_COLOR=1 python -m pytest tests/unit/search/test_staleness.py -x -q` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | QUAL-06 (SC3) | — | N/A | unit (format battery: JSON key incl. `--line-numbers`, CSV column, MD/XML annotation, table render) | `env -u FORCE_COLOR NO_COLOR=1 python -m pytest tests/unit/cli/test_search.py -k stale -x -q` | ✅ extend | ⬜ pending |
-| TBD | TBD | TBD | QUAL-06 | — | N/A | unit (MCP forwarding: backend.hybrid_search mapping carries the flag) | `env -u FORCE_COLOR NO_COLOR=1 python -m pytest tests/unit/mcp -k stale -x -q` | ✅ extend | ⬜ pending |
-| TBD | TBD | TBD | QUAL-06 (D-08 invariant) | — | N/A | unit (regression: BM25-only update leaves doc embeddings-free — the invariant the derived signal rests on) | `env -u FORCE_COLOR NO_COLOR=1 python -m pytest tests/unit/indexing/test_incremental.py -x -q` | ✅ extend | ⬜ pending |
-| TBD | TBD | TBD | QUAL-06 (D-10) | — | N/A | unit (`sif status` Vector lag row; degraded rendering when vec0 missing) | `env -u FORCE_COLOR NO_COLOR=1 python -m pytest tests/unit/cli/test_status.py -x -q` | ✅ extend | ⬜ pending |
+| 14-01 T1/T2 | 14-01 | 1 | LIVE-10 | T-14-01 / T-14-02 | resolved-path compare; walk scoped to registered roots | unit (drift helper: mtime/new/deleted detection; missing-root skip; cap boundary N/N+1 count-first; touch-only + predicate-excluded + parse-fail convergence) | `env -u FORCE_COLOR NO_COLOR=1 python -m pytest tests/unit/indexing/test_drift.py -x -q --no-cov` | ✅ | ✅ green (13 passed) |
+| 14-01 T1 | 14-01 | 1 | LIVE-10 (SC2) | T-14-02 | clean search never creates/touches the lock file | unit (clean index: zero writes, no lock file, no notice — lock spy) | `env -u FORCE_COLOR NO_COLOR=1 python -m pytest tests/unit/cli/test_search.py -k refresh -x -q --no-cov` | ✅ | ✅ green (19 passed) |
+| 14-01 T2 | 14-01 | 1 | LIVE-10 | T-14-03 | notices on stderr, never stdout (JSON/CSV piping stays clean) | unit (CliRunner: trio integration, `-q` suppression, setting/flag opt-out, stderr separation, D-05 refresh-failure leg) | `env -u FORCE_COLOR NO_COLOR=1 python -m pytest tests/unit/cli/test_search.py -x -q --no-cov` | ✅ | ✅ green (125 passed) |
+| 14-01 T2 | 14-01 | 1 | LIVE-10 | — | N/A | unit (refresh burst under flock vs held lock — 11-D08 parent-holds-lock pattern) | `env -u FORCE_COLOR NO_COLOR=1 python -m pytest tests/unit/cli/test_index_locking.py -x -q --no-cov` | ✅ | ✅ green (5 passed) |
+| 14-02 T1 | 14-02 | 1 | QUAL-06 | T-14-04 / T-14-05 | computed boolean + count only; vec0-missing degrade | unit (staleness enrichment: embedded→unmarked; never-embedded/BM25-refreshed→marked; vec0-missing→no markers) | `env -u FORCE_COLOR NO_COLOR=1 python -m pytest tests/unit/search/test_staleness.py -x -q --no-cov` | ✅ | ✅ green (12 passed) |
+| 14-03 T1 | 14-03 | 2 | QUAL-06 (SC3) | T-14-06 | XML/CSV marker is a fixed boolean literal, never document-derived text | unit (format battery: JSON key incl. `--line-numbers`, CSV column, MD/XML annotation, table render) | `env -u FORCE_COLOR NO_COLOR=1 python -m pytest tests/unit/cli/test_search.py -k stale -x -q --no-cov` | ✅ | ✅ green (16 passed) |
+| 14-02 T2 | 14-02 | 1 | QUAL-06 | — | N/A | unit (MCP forwarding: backend.hybrid_search metadata carries `vectors_stale`; selector corrected at audit — the seeded `-k stale` selected nothing) | `env -u FORCE_COLOR NO_COLOR=1 python -m pytest "tests/unit/mcp/test_backend.py::test_hybrid_search_mocks" -x -q --no-cov` | ✅ | ✅ green (1 passed; assert at test_backend.py:86) |
+| 14-02 T2 | 14-02 | 1 | QUAL-06 (D-08 invariant) | T-14-05 | N/A | unit (regression: BM25-only update leaves doc embeddings-free — the invariant the derived signal rests on) | `env -u FORCE_COLOR NO_COLOR=1 python -m pytest tests/unit/indexing/test_incremental.py -x -q --no-cov` | ✅ | ✅ green (10 passed) |
+| 14-02 T2 | 14-02 | 1 | QUAL-06 (D-10) | — | N/A | unit (`sif status` Vector lag row; degraded rendering when vec0 missing) | `env -u FORCE_COLOR NO_COLOR=1 python -m pytest tests/unit/cli/test_status.py -x -q --no-cov` | ✅ | ✅ green (11 passed) |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -61,8 +60,8 @@ Seeded from RESEARCH.md's requirement→test map at requirement level; task IDs 
 
 ## Wave 0 Requirements
 
-- [ ] `tests/unit/indexing/test_drift.py` — drift helper + cap behavior stubs (LIVE-10)
-- [ ] `tests/unit/search/test_staleness.py` — staleness enrichment seam stubs (QUAL-06)
+- [x] `tests/unit/indexing/test_drift.py` — drift helper + cap behavior (LIVE-10; created by 14-01 T1, 13 tests)
+- [x] `tests/unit/search/test_staleness.py` — staleness enrichment seam (QUAL-06; created by 14-02 T1, 12 tests)
 - [ ] No new framework/config needed — existing infrastructure covers the phase
 
 ---
@@ -83,3 +82,11 @@ All phase behaviors have automated verification.
 - [ ] `nyquist_compliant: true` set in frontmatter
 
 **Approval:** pending
+
+## Validation Audit 2026-11-08
+
+| Metric | Count |
+|---|---|
+| Gaps found | 1 |
+| Resolved | 1 |
+| Escalated | 0 |
