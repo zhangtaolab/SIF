@@ -33,10 +33,10 @@ Requirements for milestone v1.1. Each maps to roadmap phases (numbering continue
 
 ### Evaluation
 
-- [ ] **EVAL-01**: `sif bench` 输出 nDCG@k、Hit@k、p50/p95 延迟
-- [ ] **EVAL-02**: 基准 fixture ≥50 条分类查询（关键词/同义改写/多语言/竞争笔记）+ tuning/held-out 分割
-- [ ] **EVAL-03**: `sif bench --sweep` 网格扫描权重/k，噪声内差异（<0.01）不判胜
-- [ ] **EVAL-04**: 出厂默认权重经 held-out 数据论证，不因调优集过拟合而改变
+- [x] **EVAL-01**: `sif bench` 输出 nDCG@k、Hit@k、p50/p95 延迟
+- [x] **EVAL-02**: 基准 fixture ≥50 条分类查询（关键词/同义改写/多语言/竞争笔记）+ tuning/held-out 分割
+- [x] **EVAL-03**: `sif bench --sweep` 网格扫描权重/k，噪声内差异（<0.01）不判胜
+- [x] **EVAL-04**: 出厂默认权重经 held-out 数据论证，不因调优集过拟合而改变
 
 ## Future Requirements (v2+)
 
@@ -78,10 +78,10 @@ Requirements for milestone v1.1. Each maps to roadmap phases (numbering continue
 | QUAL-04 | Phase 15 | Complete |
 | QUAL-05 | Phase 16 | Complete |
 | QUAL-06 | Phase 14 | Complete |
-| EVAL-01 | Phase 16 | Pending |
-| EVAL-02 | Phase 16 | Pending |
-| EVAL-03 | Phase 16 | Pending |
-| EVAL-04 | Phase 16 | Pending |
+| EVAL-01 | Phase 16 | Complete |
+| EVAL-02 | Phase 16 | Complete |
+| EVAL-03 | Phase 16 | Complete |
+| EVAL-04 | Phase 16 | Complete |
 
 **Coverage:**
 - v1.1 requirements: 21 total (11 LIVE + 6 QUAL + 4 EVAL; earlier count of 22 was a miscount — no requirement ID is missing)

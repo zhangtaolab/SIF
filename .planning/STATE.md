@@ -4,17 +4,17 @@ milestone: v1.1
 milestone_name: Live Index and Search Quality
 current_phase: 16
 current_phase_name: Bench Expansion + Reranker Tuning
-status: executing
-stopped_at: Completed 16-04-PLAN.md
-last_updated: "2026-11-08T15:24:44.670Z"
+status: verifying
+stopped_at: Completed 16-05-PLAN.md
+last_updated: "2026-11-08T15:43:52.845Z"
 last_activity: 2026-11-08
 last_activity_desc: Phase 16 execution started
-state_head: e6baa38cd92931ad6dc9c989ea36d3208d62b325
+state_head: a55738344f035a45bcb99b59d27f488386ce6cec
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 22
-  completed_plans: 21
+  completed_plans: 22
 ---
 
 # DocSift — Project State
@@ -31,7 +31,7 @@ progress:
 
 Phase: 16 (Bench Expansion + Reranker Tuning) — EXECUTING
 Plan: 6 of 6
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-11-08 — Phase 16 execution started
 
 Progress: [████████░░] 83%
@@ -72,6 +72,8 @@ Progress: [████████░░] 83%
 | Phase 16 P03 | 14 min | 3 tasks | 157 files |
 | Phase 16 P06 | 12 min | 3 tasks | 5 files |
 | Phase 16 P04 | 27 min | 3 tasks | 5 files |
+| Phase 16 P05 | 13 min | 3 tasks | 9 files |
+| Phase 16 P05 | 13 min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -161,6 +163,9 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 - [Phase 16]: [16-04] tie rule = round(best - ndcg_at_10, 6) < 0.01 strict; exactly-0.01 (incl. 0.29-vs-0.28 raw 0.009999...953) is signal, 0.0099 is noise; grid order is the tie-break; the settings baseline measurement is REUSED for its grid slot so baseline deltas are exactly zero
 - [Phase 16]: [16-04] rerank states are strictly additive on no-sweep --json (pinned flat keys stay top-level mirroring off); sweep rows carry states only under --rerank; off-only never calls create_reranker; missing backend/model-load degrades to off-only, factory ValueError stays ClickException
 - [Phase 16]: [16-04] bench -C typed IntRange(1,200) default None resolves through resolve_candidate_limit (-C 200 -> 50); one CachedEmbedder per invocation shares embeddings across baseline and sweep (D-07)
+- [Phase 16]: [16-05] warrants_default_change = round(candidate - baseline, 6) >= 0.01 — inclusive at exactly 0.01 under rank_sweep's rounded-delta arithmetic; tuning results alone can never change defaults
+- [Phase 16]: [16-05] Measured verdict is "unchanged": sweep winner (20, 1.0, 0.5) held-out delta +0.0066 < 0.01, so shipped defaults 60/1.0/1.0 stay — the no-change-documented outcome EVAL-04 permits; change-warranted follow-up route named in docs, never executed in-plan
+- [Phase 16]: [16-05] Held-out evidence lock: snapshot recomputation + Settings defaults lock in ONE test; vector_weight is the drift-probe knob (rrf_k alone does not move held-out nDCG on this pack); manual real-model row honestly "not yet measured" (WINDOWS id 10)
 
 ### Pending Todos
 
@@ -181,8 +186,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 
 ## Session Continuity
 
-Last session: 2026-11-08T15:24:44.091Z
-Stopped at: Completed 16-04-PLAN.md
+Last session: 2026-11-08T15:43:52.230Z
+Stopped at: Completed 16-05-PLAN.md
 Resume file: None
 
 - **Next expected action:** `/gsd-discuss-phase 13` (Phase 13 needs context; research flags: daemon/service-install specifics already in research/STACK.md)

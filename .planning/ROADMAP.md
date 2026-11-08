@@ -152,7 +152,7 @@ Plans:
   3. `sif bench --sweep` grids over weights and k, and differences within noise (<0.01) are explicitly not declared winners
   4. Shipped defaults are justified by held-out results and documented — defaults change only if held-out data (not the tuning set) warrants it
   5. The reranker honors a candidate cap (10-20 on CPU) and a configurable relative threshold (score ≥ top1 × α), and the skip-rerank fast path keeps `sif search query` interactive
-**Plans**: 5/6 plans executed
+**Plans**: 6/6 plans executed
 Plans:
 **Wave 1**
 - [x] 16-01-PLAN.md — Graded bench report core: nDCG@10/Hit@10/p50-p95, path-keyed relevance with fixture-relative corpus root, legacy flat-metric compatibility, settings baseline (EVAL-01, EVAL-02)
@@ -166,7 +166,7 @@ Plans:
 - [x] 16-04-PLAN.md — Sweep engine: 45-config grid, strict <0.01 tie groups, tuning-only guard, embedding reuse, rerank off/on states (EVAL-03, QUAL-05)
 
 **Wave 4** *(blocked on Waves 1-3 completion)*
-- [ ] 16-05-PLAN.md — Held-out evidence snapshot + defaults lock, benchmarking docs, Phase 15 IN-02 closure, full phase gate (EVAL-04)
+- [x] 16-05-PLAN.md — Held-out evidence snapshot + defaults lock, benchmarking docs, Phase 15 IN-02 closure, full phase gate (EVAL-04)
 
 ## Progress
 
@@ -177,7 +177,7 @@ Plans:
 | 13. Watch Everywhere (MCP + Daemon) | v1.1 | 4/4 | Complete    | 2026-11-08 |
 | 14. Freshness Floor (Pre-Command + Staleness) | v1.1 | 3/3 | Complete    | 2026-11-08 |
 | 15. Search Quality Configuration | v1.1 | 3/3 | Complete    | 2026-11-08 |
-| 16. Bench Expansion + Reranker Tuning | v1.1 | 5/6 | Planning | - |
+| 16. Bench Expansion + Reranker Tuning | v1.1 | 6/6 | Planning | - |
 
 ---
 *Roadmap created 2026-11-07 for milestone v1.1 — phase numbering continues from v1.0's Phase 10.1 (11 phases shipped).*
