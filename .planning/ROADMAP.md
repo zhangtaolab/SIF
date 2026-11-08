@@ -39,7 +39,7 @@ Full detail: `.planning/milestones/v1.0-ROADMAP.md`
 - [x] **Phase 13: Watch Everywhere (MCP-Embedded Refresh + Background Daemon)** - `SIF_MCP_WATCH=1` embedded refresh; `--detach` + launchd/systemd service install (completed 2026-11-08)
 - [x] **Phase 14: Freshness Floor (Pre-Command Refresh + Staleness Marking)** - Stat-based drift refresh before search with no daemon running; staleness markers on vector-lagging results (completed 2026-11-08)
 - [x] **Phase 15: Search Quality Configuration (Weights + Suggestions)** - `rrf_k`/BM25/vector weights configurable with unchanged defaults; did-you-mean + history suggestions; `sif suggest` (completed 2026-11-08)
-- [ ] **Phase 16: Bench Expansion + Reranker Tuning** - nDCG@k/Hit@k/p50-p95 metrics, ≥50-query tuning/held-out fixtures, `--sweep`, reranker cap + threshold
+- [x] **Phase 16: Bench Expansion + Reranker Tuning** - nDCG@k/Hit@k/p50-p95 metrics, ≥50-query tuning/held-out fixtures, `--sweep`, reranker cap + threshold (completed 2026-11-09)
 
 ## Phase Details
 
@@ -152,7 +152,7 @@ Plans:
   3. `sif bench --sweep` grids over weights and k, and differences within noise (<0.01) are explicitly not declared winners
   4. Shipped defaults are justified by held-out results and documented — defaults change only if held-out data (not the tuning set) warrants it
   5. The reranker honors a candidate cap (10-20 on CPU) and a configurable relative threshold (score ≥ top1 × α), and the skip-rerank fast path keeps `sif search query` interactive
-**Plans**: 6/6 plans executed
+**Plans**: 6/6 plans complete
 Plans:
 **Wave 1**
 - [x] 16-01-PLAN.md — Graded bench report core: nDCG@10/Hit@10/p50-p95, path-keyed relevance with fixture-relative corpus root, legacy flat-metric compatibility, settings baseline (EVAL-01, EVAL-02)
@@ -177,7 +177,7 @@ Plans:
 | 13. Watch Everywhere (MCP + Daemon) | v1.1 | 4/4 | Complete    | 2026-11-08 |
 | 14. Freshness Floor (Pre-Command + Staleness) | v1.1 | 3/3 | Complete    | 2026-11-08 |
 | 15. Search Quality Configuration | v1.1 | 3/3 | Complete    | 2026-11-08 |
-| 16. Bench Expansion + Reranker Tuning | v1.1 | 6/6 | Planning | - |
+| 16. Bench Expansion + Reranker Tuning | v1.1 | 6/6 | Complete    | 2026-11-09 |
 
 ---
 *Roadmap created 2026-11-07 for milestone v1.1 — phase numbering continues from v1.0's Phase 10.1 (11 phases shipped).*
