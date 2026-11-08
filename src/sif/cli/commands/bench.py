@@ -13,7 +13,7 @@ from sif.config.settings import get_settings
 from sif.database.database import Database
 from sif.database.repositories import CollectionRepository
 from sif.embedding.manager import EmbeddingManager
-from sif.search.benchmark import SearchEvaluator
+from sif.search.benchmark import CATEGORIES, LEGACY_K_VALUES, SearchEvaluator
 from sif.search.hybrid import SearchPipeline
 from sif.utils.logging import get_logger
 
@@ -121,28 +121,46 @@ def bench_cmd(  # noqa: C901, PLR0913, PLR0915
                 )
                 return pipeline.search(query, options)
 
-        # Run evaluation
-        evaluator = SearchEvaluator(fixture_data)
+        # Run evaluation: the graded report layers nDCG@10 / Hit@10 and the
+        # per-category breakdown over the legacy flat metrics (D-13).
         try:
-            metrics = evaluator.evaluate(search_fn)
+            evaluator = SearchEvaluator(fixture_data, fixture_path=fixture)
+            report = evaluator.report(search_fn)
         except Exception as e:
             raise click.ClickException(f"Benchmark failed: {e}") from e
 
-        # Output results
+        # Output results. JSON uses click.echo (never Rich) so it
+        # strict-parses at narrow terminal widths.
         if output_json:
-            click.echo(json.dumps(metrics, indent=2))
+            click.echo(json.dumps(report.to_dict(), indent=2))
         else:
             table = Table(title=f"Benchmark Results: {fixture.name}")
             table.add_column("Metric", style="cyan")
             table.add_column("Value", style="green", justify="right")
 
-            for key in sorted(metrics.keys()):
-                value = metrics[key]
-                if key == "num_queries":
-                    table.add_row("Queries", f"{int(value)}")
-                elif key == "mrr":
-                    table.add_row("MRR", f"{value:.4f}")
-                else:
-                    table.add_row(key, f"{value:.4f}")
+            table.add_row("Queries", f"{report.num_queries}")
+            table.add_row("NDCG@10", f"{report.ndcg_at_10:.4f}")
+            table.add_row("Hit@10", f"{report.hit_at_10:.4f}")
+            table.add_row("MRR", f"{report.legacy_metrics.get('mrr', 0.0):.4f}")
+            for metric_k in LEGACY_K_VALUES:
+                precision_key = f"precision@{metric_k}"
+                recall_key = f"recall@{metric_k}"
+                if precision_key in report.legacy_metrics:
+                    table.add_row(
+                        f"Precision@{metric_k}",
+                        f"{report.legacy_metrics[precision_key]:.4f}",
+                    )
+                if recall_key in report.legacy_metrics:
+                    table.add_row(
+                        f"Recall@{metric_k}",
+                        f"{report.legacy_metrics[recall_key]:.4f}",
+                    )
+            for category in CATEGORIES:
+                metrics = report.categories.get(category)
+                if metrics is None:
+                    continue
+                table.add_row(f"{category} nDCG@10", f"{metrics.ndcg_at_10:.4f}")
+                table.add_row(f"{category} Hit@10", f"{metrics.hit_at_10:.4f}")
+                table.add_row(f"{category} queries", f"{metrics.count}")
 
             console.print(table)

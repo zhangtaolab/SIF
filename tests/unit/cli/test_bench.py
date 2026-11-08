@@ -112,8 +112,9 @@ class TestBenchCommand:
 
         # 120 chars with spaces so Rich word-wrapping bites pre-fix
         long_note = "lorem ipsum " * 10
+        # bench consumes the graded report; the stub's to_dict() feeds --json.
         mock_evaluator = MagicMock()
-        mock_evaluator.evaluate.return_value = {"mrr": 1.0, "note": long_note}
+        mock_evaluator.report.return_value.to_dict.return_value = {"mrr": 1.0, "note": long_note}
 
         mock_pipeline = MagicMock()
         mock_db = MagicMock()
@@ -144,6 +145,66 @@ class TestBenchCommand:
         assert result.exit_code == 0
         output = json.loads(result.output)
         assert output["note"] == long_note
+
+    def test_bench_json_graded_metrics(self, tmp_path: Path) -> None:
+        """Graded path-keyed fixtures report nDCG/Hit plus all category keys."""
+        runner = CliRunner()
+
+        corpus = tmp_path / "corpus"
+        fixture = {
+            "corpus_root": "corpus",
+            "relevance_key": "path",
+            "queries": [
+                {
+                    "query": "q1",
+                    "category": "keyword",
+                    "split": "tuning",
+                    "relevance": {"keyword/a.md": 3},
+                },
+            ],
+        }
+        fixture_path = tmp_path / "fixture.json"
+        fixture_path.write_text(json.dumps(fixture))
+
+        mock_pipeline = MagicMock()
+        mock_pipeline.search.return_value = [
+            MagicMock(document_id="d1", path=str(corpus / "keyword" / "a.md")),
+        ]
+
+        mock_db = MagicMock()
+        mock_manager = MagicMock()
+        mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager._model = MagicMock()
+
+        with (
+            patch("sif.cli.commands.bench.Database", return_value=mock_db),
+            patch(
+                "sif.cli.commands.bench.EmbeddingManager.from_settings",
+                return_value=mock_manager,
+            ),
+            patch("sif.cli.commands.bench.SearchPipeline", return_value=mock_pipeline),
+            patch("sif.cli.commands.bench.get_settings", return_value=MagicMock()),
+        ):
+            result = runner.invoke(
+                bench_cmd,
+                [str(fixture_path), "--json"],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code == 0
+        output = json.loads(result.output.strip())
+        assert output["ndcg_at_10"] == 1.0
+        assert output["hit_at_10"] == 1.0
+        assert list(output["categories"].keys()) == [
+            "keyword",
+            "synonym",
+            "multilingual",
+            "rival",
+        ]
+        assert output["categories"]["keyword"]["count"] == 1
+        # Legacy flat keys keep their names beside the graded metrics.
+        assert "mrr" in output
+        assert "precision@1" in output
 
     def test_bench_no_index(self) -> None:
         runner = CliRunner()
