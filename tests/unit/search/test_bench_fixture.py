@@ -6,7 +6,14 @@ import sqlite3
 from pathlib import Path
 
 from sif.core.models import SearchOptions
-from sif.search.benchmark import SearchEvaluator, result_key
+from sif.search.benchmark import (
+    CATEGORIES,
+    GRADE_MAX,
+    SPLITS,
+    SearchEvaluator,
+    resolve_corpus_root,
+    result_key,
+)
 from sif.search.hybrid import SearchPipeline
 from tests.support.bench import (
     EMBEDDING_DIM,
@@ -156,3 +163,158 @@ class TestCommittedPackEndToEnd:
             assert keys[0] == grade3_key
         finally:
             conn.close()
+
+
+class TestFixtureContractCounts:
+    def test_contract_counts_56_queries_36_tuning_20_heldout(self) -> None:
+        """D-03: >=50 queries, >=20 held-out, tuning is the remainder."""
+        queries = load_fixture_queries(FIXTURE_PATH)["queries"]
+
+        total = len(queries)
+        heldout = sum(1 for q in queries if q["split"] == "heldout")
+        tuning = sum(1 for q in queries if q["split"] == "tuning")
+
+        assert total >= 50
+        assert heldout >= 20
+        assert tuning == total - heldout
+        assert (total, tuning, heldout) == (56, 36, 20)
+
+    def test_contract_evaluator_loads_every_query_without_drops(self) -> None:
+        """No query is silently dropped by SearchEvaluator's parsing."""
+        fixture = load_fixture_queries(FIXTURE_PATH)
+
+        evaluator = SearchEvaluator(fixture, fixture_path=FIXTURE_PATH)
+
+        assert len(evaluator.query_items) == len(fixture["queries"])
+
+
+class TestFixtureContractSplitsAndCategories:
+    def test_contract_every_query_carries_exactly_one_valid_split(self) -> None:
+        queries = load_fixture_queries(FIXTURE_PATH)["queries"]
+
+        for q in queries:
+            assert q["split"] in SPLITS, q
+
+    def test_contract_every_category_appears(self) -> None:
+        queries = load_fixture_queries(FIXTURE_PATH)["queries"]
+        seen = {q["category"] for q in queries}
+
+        for category in CATEGORIES:
+            assert category in seen, category
+
+    def test_contract_every_category_has_heldout_coverage(self) -> None:
+        """A category losing held-out coverage would blind EVAL-04 for it."""
+        queries = load_fixture_queries(FIXTURE_PATH)["queries"]
+
+        for category in CATEGORIES:
+            heldout = [q for q in queries if q["category"] == category and q["split"] == "heldout"]
+            assert heldout, f"category {category} has no held-out queries"
+
+
+class TestFixtureContractGrades:
+    def test_contract_grades_are_ints_in_range_with_3_and_2_per_query(self) -> None:
+        queries = load_fixture_queries(FIXTURE_PATH)["queries"]
+
+        for q in queries:
+            grades = q["relevance"]
+            assert grades, q["query"]
+            for key, grade in grades.items():
+                assert isinstance(grade, int), (q["query"], key)
+                assert not isinstance(grade, bool), (q["query"], key)
+                assert 0 <= grade <= GRADE_MAX, (q["query"], key, grade)
+            assert 3 in grades.values(), q["query"]
+            assert 2 in grades.values(), q["query"]
+
+    def test_contract_relevance_maps_capped_at_five_entries(self) -> None:
+        queries = load_fixture_queries(FIXTURE_PATH)["queries"]
+
+        for q in queries:
+            assert len(q["relevance"]) <= 5, q["query"]
+
+    def test_contract_rival_queries_carry_a_zero_neighbor(self) -> None:
+        queries = load_fixture_queries(FIXTURE_PATH)["queries"]
+
+        for q in queries:
+            if q["category"] == "rival":
+                assert 0 in q["relevance"].values(), q["query"]
+
+
+class TestFixtureContractPaths:
+    def test_contract_keys_are_relative_posix_paths(self) -> None:
+        """No absolute keys, no '..' segments (T-16-05)."""
+        queries = load_fixture_queries(FIXTURE_PATH)["queries"]
+
+        for q in queries:
+            for key in q["relevance"]:
+                assert not key.startswith("/"), key
+                assert "\\" not in key, key
+                assert ".." not in Path(key).parts, key
+
+    def test_contract_keys_resolve_under_the_declared_root_and_name_files(self) -> None:
+        """resolve_corpus_root (never fixture_path.parent alone) is the single
+        root rule; every key stays inside it and names a committed corpus file."""
+        fixture = load_fixture_queries(FIXTURE_PATH)
+
+        root = resolve_corpus_root(fixture, FIXTURE_PATH)
+
+        assert root == CORPUS_ROOT.resolve()
+        for q in fixture["queries"]:
+            for key in q["relevance"]:
+                resolved = (root / key).resolve()
+                assert resolved.is_relative_to(root), key  # never escapes the root
+                assert resolved.is_file(), key  # names a committed corpus file
+
+
+class TestFixtureRetrievalIntegrity:
+    def test_retrieval_every_query_returns_at_least_one_result(self) -> None:
+        """On the deterministic in-memory index every fixture query retrieves
+        at least one result — including the multilingual category, whose CJK
+        terms are exact contiguous runs under the porter tokenizer."""
+        fixture = load_fixture_queries(FIXTURE_PATH)
+        conn = build_bench_db(CORPUS_ROOT, ConceptEmbedder())
+        try:
+            pipeline = SearchPipeline(
+                conn,
+                embedder=ConceptEmbedder(),
+                embedding_dim=EMBEDDING_DIM,
+            )
+            options = SearchOptions(limit=10, include_content=False, include_highlights=False)
+
+            for q in fixture["queries"]:
+                results = pipeline.search(q["query"], options)
+                assert results, q["query"]
+        finally:
+            conn.close()
+
+    def test_retrieval_multilingual_queries_return_results(self) -> None:
+        """Explicit multilingual assertion (CJK/FTS porter constraint): the
+        Chinese runs are exact contiguous tokens present in the documents."""
+        fixture = load_fixture_queries(FIXTURE_PATH)
+        conn = build_bench_db(CORPUS_ROOT, ConceptEmbedder())
+        try:
+            pipeline = SearchPipeline(
+                conn,
+                embedder=ConceptEmbedder(),
+                embedding_dim=EMBEDDING_DIM,
+            )
+            options = SearchOptions(limit=10, include_content=False, include_highlights=False)
+
+            multilingual = [q for q in fixture["queries"] if q["category"] == "multilingual"]
+            assert multilingual
+            for q in multilingual:
+                assert pipeline.search(q["query"], options), q["query"]
+        finally:
+            conn.close()
+
+
+class TestFixtureSplitNonInterference:
+    def test_split_query_sets_are_disjoint_and_exhaustive(self) -> None:
+        """A tuning query never contributes to held-out metrics and vice
+        versa: the two split sets partition the full query set."""
+        queries = load_fixture_queries(FIXTURE_PATH)["queries"]
+        tuning = {q["query"] for q in queries if q["split"] == "tuning"}
+        heldout = {q["query"] for q in queries if q["split"] == "heldout"}
+        everything = {q["query"] for q in queries}
+
+        assert tuning & heldout == set()
+        assert tuning | heldout == everything

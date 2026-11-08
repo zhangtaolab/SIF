@@ -15,12 +15,17 @@ def _settings_mock(**overrides: object) -> MagicMock:
 
     A bare MagicMock() makes settings.rrf_k/bm25_weight/vector_weight MagicMock
     objects that the plain SearchOptions dataclass accepts, so a
-    settings-baseline assertion would pass for the wrong reason.
+    settings-baseline assertion would pass for the wrong reason. The rerank
+    fields are enumerated too: bench's rerank states (16-04) read them, and a
+    wide-open mock would leak MagicMock values into SearchOptions.
     """
     fields: dict[str, object] = {
         "rrf_k": 60,
         "bm25_weight": 1.0,
         "vector_weight": 1.0,
+        "rerank_enabled": False,
+        "rerank_candidate_limit": 20,
+        "rerank_relative_threshold": 0.5,
     }
     fields.update(overrides)
     return MagicMock(**fields)
@@ -428,3 +433,49 @@ class TestBenchCommand:
 
         assert result.exit_code != 0
         assert "int" in result.output
+
+    def test_cli_bench_committed_pack_nonzero_ndcg(self) -> None:
+        """CLI-level join proof: bench_cmd on the EXACT committed pack file
+        (no tmp_path copy, no explicit corpus root) resolves the fixture's
+        declared corpus_root, runs the deterministic index end to end, and
+        reports non-zero ndcg_at_10 and hit_at_10.
+
+        Skips when sqlite-vec is unavailable (build_bench_db's discipline).
+        Flag-minimal by design: no --sweep/--rerank, so this stays a pure
+        no-sweep join proof even when bench gains flags in later plans.
+        """
+        from tests.support.bench import EMBEDDING_DIM, ConceptEmbedder, build_bench_db
+
+        embedder = ConceptEmbedder()
+        conn = build_bench_db(Path("tests/fixtures/bench/corpus"), embedder)
+        try:
+            mock_db = MagicMock()
+            mock_db.__enter__.return_value.connection = conn
+            mock_manager = MagicMock()
+            mock_manager._model = embedder
+            mock_manager.embed_single.return_value = [0.0] * EMBEDDING_DIM
+
+            runner = CliRunner()
+            with (
+                patch("sif.cli.commands.bench.Database", return_value=mock_db),
+                patch(
+                    "sif.cli.commands.bench.EmbeddingManager.from_settings",
+                    return_value=mock_manager,
+                ),
+                patch(
+                    "sif.cli.commands.bench.get_settings",
+                    return_value=_settings_mock(),
+                ),
+            ):
+                result = runner.invoke(
+                    bench_cmd,
+                    [str(Path("tests/fixtures/bench/queries.json")), "--json"],
+                    obj={"index_path": MagicMock(exists=lambda: True)},
+                )
+
+            assert result.exit_code == 0, result.output
+            output = json.loads(result.output.strip())
+            assert output["ndcg_at_10"] > 0.0
+            assert output["hit_at_10"] > 0.0
+        finally:
+            conn.close()
