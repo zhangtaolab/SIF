@@ -173,7 +173,15 @@ SECTIONS: list[tuple[str, list[str]]] = [
         ],
     ),
     ("Chunking Settings", ["chunk_size", "chunk_overlap"]),
-    ("Search Settings", ["default_search_type", "default_limit"]),
+    (
+        "Search Settings",
+        [
+            "default_search_type",
+            "default_limit",
+            "search_refresh_enabled",
+            "search_refresh_max_files",
+        ],
+    ),
     (
         "Watch Settings",
         [

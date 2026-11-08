@@ -278,9 +278,7 @@ class TestPreSearchRefreshCoexistence:
             runner = CliRunner()
             started = time.monotonic()
             with patch("sif.config.settings.get_settings", return_value=settings):
-                result = runner.invoke(
-                    search_cmd, ["zanzibar"], obj={"index_path": db_path}
-                )
+                result = runner.invoke(search_cmd, ["zanzibar"], obj={"index_path": db_path})
             elapsed = time.monotonic() - started
         finally:
             os.close(fd)

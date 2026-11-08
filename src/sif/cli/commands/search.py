@@ -107,6 +107,81 @@ def _resolve_collections(
         return repo.list_enabled()
 
 
+def _pre_search_refresh(
+    db: Database,
+    index_path: Path,
+    collections: list[Collection],
+    *,
+    quiet: bool,
+    no_refresh: bool = False,
+) -> None:
+    """Run the LIVE-10 pre-search drift check for one search command (D-01..D-07).
+
+    One read-only stat walk decides; only an under-cap drift burst ever
+    writes or opens the index lock. All notices ride stderr (``console_err``)
+    so ``--json``/``--csv`` stdout stays pipeable, and ``-q`` suppresses
+    them. ``no_refresh`` (the ``--no-refresh`` flag) and
+    ``SIF_SEARCH_REFRESH_ENABLED=0`` skip the check entirely. Drift is
+    never a search error (D-05): even a refresh failure only warns and the
+    search proceeds on the current index.
+    """
+    if no_refresh:
+        return
+    from sif.config.settings import get_settings  # noqa: PLC0415
+
+    try:
+        settings = get_settings()
+    except Exception:
+        # The check is best-effort: bad global config (e.g. an invalid
+        # reranker type irrelevant to BM25 search) must not break
+        # `sif search`, which never touched settings before this check.
+        # query/vsearch surface the same error cleanly at their own embedder
+        # settings touchpoints.
+        logger.debug("Pre-search refresh skipped: settings unavailable", exc_info=True)
+        return
+    if not settings.search_refresh_enabled:
+        return
+    try:
+        report = detect_drift(db.connection, collections)
+        if report.total_count == 0:
+            # SC2 clean path: silence, no writes, no lock — decided before
+            # the cap is ever consulted.
+            return
+        if report.total_count > settings.search_refresh_max_files:
+            # D-05/D-06 count-first: no refresh, no lock — warn and search.
+            if not quiet:
+                console_err.print(
+                    f"[yellow]index drift: {report.total_count} changed files "
+                    f"exceeds the pre-search refresh cap "
+                    f"({settings.search_refresh_max_files}) — run "
+                    "'sif index update' to refresh; searching the current "
+                    "index[/yellow]",
+                )
+        else:
+            refresh_drifted(
+                index_path,
+                db.connection,
+                {c.id: c for c in collections},
+                report,
+                lock_timeout=settings.lock_wait_timeout,
+            )
+            if not quiet:
+                console_err.print(
+                    f"[dim]refreshed {report.total_count} files (bm25) before search[/dim]",
+                )
+    except Exception:
+        # D-05: a refresh failure surfaces as a warning; the search itself
+        # proceeds on the current index.
+        logger.warning(
+            "Pre-search drift refresh failed; searching current index",
+            exc_info=True,
+        )
+        if not quiet:
+            console_err.print(
+                "[yellow]Pre-search refresh failed; searching the current index[/yellow]",
+            )
+
+
 def format_results_csv(results: list[Any]) -> str:
     """Format results as CSV.
 
@@ -198,6 +273,7 @@ def search_group() -> None:
 @click.option("--md", "output_md", is_flag=True, help="Output as Markdown")
 @click.option("--xml", "output_xml", is_flag=True, help="Output as XML")
 @click.option("--files", "output_files", is_flag=True, help="Output file paths only")
+@click.option("--no-refresh", is_flag=True, help="Skip the pre-search drift refresh check")
 @click.option("-q", "--quiet", is_flag=True, help="Suppress non-error output")
 @click.pass_context
 def search_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
@@ -215,6 +291,7 @@ def search_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     output_md: bool,
     output_xml: bool,
     output_files: bool,
+    no_refresh: bool,
     quiet: bool,
 ) -> None:
     """Search documents using BM25."""
@@ -244,49 +321,16 @@ def search_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
         collections = _resolve_collections(db, collection, search_all)
         options.collection_ids = None if search_all else [c.id for c in collections]
 
-        # Pre-search drift refresh (LIVE-10, D-01..D-07): one read-only stat
-        # walk decides; only an under-cap drift burst ever writes or opens
-        # the index lock. Notices ride stderr so --json/--csv stdout stays
-        # pipeable; drift is never a search error (D-05).
-        from sif.config.settings import get_settings  # noqa: PLC0415
-
-        settings = get_settings()
-        if settings.search_refresh_enabled:
-            try:
-                report = detect_drift(db.connection, collections)
-                if report.total_count > settings.search_refresh_max_files:
-                    # D-05/D-06: count-first — no refresh, no lock, warn + search.
-                    if not quiet:
-                        console_err.print(
-                            f"[yellow]index drift: {report.total_count} changed files "
-                            f"exceeds the pre-search refresh cap "
-                            f"({settings.search_refresh_max_files}) — run "
-                            "'sif index update' to refresh; searching the current "
-                            "index[/yellow]",
-                        )
-                elif report.total_count > 0:
-                    refresh_drifted(
-                        Path(index_path),
-                        db.connection,
-                        {c.id: c for c in collections},
-                        report,
-                        lock_timeout=settings.lock_wait_timeout,
-                    )
-                    if not quiet:
-                        console_err.print(
-                            f"[dim]refreshed {report.total_count} files (bm25) before search[/dim]",
-                        )
-            except Exception:
-                # D-05: a refresh failure surfaces as a warning; the search
-                # itself proceeds on the current index.
-                logger.warning(
-                    "Pre-search drift refresh failed; searching current index",
-                    exc_info=True,
-                )
-                if not quiet:
-                    console_err.print(
-                        "[yellow]Pre-search refresh failed; searching the current index[/yellow]",
-                    )
+        # Pre-search drift refresh (LIVE-10): after resolution, before
+        # searcher construction (D-01 CLI-layer placement — bench and the
+        # MCP server never see this check).
+        _pre_search_refresh(
+            db,
+            Path(index_path),
+            collections,
+            quiet=quiet,
+            no_refresh=no_refresh,
+        )
 
         # Search
         with db.connection:
@@ -388,6 +432,7 @@ def search_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     type=click.Choice(["sentence_transformers", "gguf", "openai", "modelscope"]),
     help="Embedding model type override",
 )
+@click.option("--no-refresh", is_flag=True, help="Skip the pre-search drift refresh check")
 @click.option("-q", "--quiet", is_flag=True, help="Suppress non-error output")
 @click.pass_context
 def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
@@ -401,6 +446,7 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     line_numbers: bool,
     output_json: bool,
     model_type: str | None = None,
+    no_refresh: bool = False,
     quiet: bool = False,
 ) -> None:
     """Search documents using vector similarity."""
@@ -421,7 +467,6 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
 
     from sif.config.settings import get_settings  # noqa: PLC0415
     from sif.database.database import Database  # noqa: PLC0415
-    from sif.database.repositories import CollectionRepository  # noqa: PLC0415
     from sif.embedding.manager import EmbeddingManager  # noqa: PLC0415
     from sif.search.vector import VectorSearcher  # noqa: PLC0415
 
@@ -453,19 +498,22 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             include_highlights=True,
         )
 
-        if collection:
-            with db.connection:
-                repo = CollectionRepository(db.connection)
-                options.collection_ids = []
-                for name in collection:
-                    coll = repo.get_by_name(name)
-                    if coll:
-                        options.collection_ids.append(coll.id)
-        elif not search_all:
-            with db.connection:
-                repo = CollectionRepository(db.connection)
-                enabled = repo.list_enabled()
-                options.collection_ids = [c.id for c in enabled]
+        # Collection scope (D-04): resolve once for both the search filter
+        # and the pre-search drift walk; --all keeps the search unfiltered.
+        collections = _resolve_collections(db, collection, search_all)
+        options.collection_ids = None if search_all else [c.id for c in collections]
+
+        # Pre-search drift refresh (LIVE-10): always run even when a watch
+        # or daemon is live (D-03 — the check doubles as the event-overflow
+        # backstop; when watch already handled everything, the stat-decides
+        # walk finds zero drift).
+        _pre_search_refresh(
+            db,
+            Path(index_path),
+            collections,
+            quiet=quiet,
+            no_refresh=no_refresh,
+        )
 
         with db.connection:
             searcher = VectorSearcher(db.connection, len(query_embedding))
@@ -545,6 +593,7 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     type=click.Choice(["sentence_transformers", "gguf", "openai", "modelscope"]),
     help="Embedding model type override",
 )
+@click.option("--no-refresh", is_flag=True, help="Skip the pre-search drift refresh check")
 @click.option("-q", "--quiet", is_flag=True, help="Suppress non-error output")
 @click.pass_context
 def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
@@ -565,6 +614,7 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     output_xml: bool,
     output_files: bool,
     model_type: str | None = None,
+    no_refresh: bool = False,
     quiet: bool = False,
 ) -> None:
     """Search documents using hybrid approach (BM25 + Vector + RRF).
@@ -595,20 +645,22 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             intent=intent,
         )
 
-        # Get collection IDs if specified
-        if collection:
-            with db.connection:
-                repo = CollectionRepository(db.connection)
-                options.collection_ids = []
-                for name in collection:
-                    coll = repo.get_by_name(name)
-                    if coll:
-                        options.collection_ids.append(coll.id)
-        elif not search_all:
-            with db.connection:
-                repo = CollectionRepository(db.connection)
-                enabled = repo.list_enabled()
-                options.collection_ids = [c.id for c in enabled]
+        # Collection scope (D-04): resolve once for both the search filter
+        # and the pre-search drift walk; --all keeps the search unfiltered.
+        collections = _resolve_collections(db, collection, search_all)
+        options.collection_ids = None if search_all else [c.id for c in collections]
+
+        # Pre-search drift refresh (LIVE-10): always run even when a watch
+        # or daemon is live (D-03 — the check doubles as the event-overflow
+        # backstop; when watch already handled everything, the stat-decides
+        # walk finds zero drift).
+        _pre_search_refresh(
+            db,
+            Path(index_path),
+            collections,
+            quiet=quiet,
+            no_refresh=no_refresh,
+        )
 
         # Load embedder for hybrid search
         from pydantic import ValidationError  # noqa: PLC0415

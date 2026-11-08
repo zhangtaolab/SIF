@@ -443,6 +443,7 @@ sif search query [OPTIONS]
 | `--xml` | `—` | flag | `false` | Output as XML |
 | `--files` | `—` | flag | `false` | Output file paths only |
 | `--model-type` | `—` | choice [sentence_transformers|gguf|openai|modelscope] | — | Embedding model type override |
+| `--no-refresh` | `—` | flag | `false` | Skip the pre-search drift refresh check |
 | `--quiet` | `-q` | flag | `false` | Suppress non-error output |
 
 ### `search search`
@@ -475,6 +476,7 @@ sif search search [OPTIONS]
 | `--md` | `—` | flag | `false` | Output as Markdown |
 | `--xml` | `—` | flag | `false` | Output as XML |
 | `--files` | `—` | flag | `false` | Output file paths only |
+| `--no-refresh` | `—` | flag | `false` | Skip the pre-search drift refresh check |
 | `--quiet` | `-q` | flag | `false` | Suppress non-error output |
 
 ### `search vsearch`
@@ -503,6 +505,7 @@ sif search vsearch [OPTIONS]
 | `--line-numbers` | `—` | flag | `false` | Show line numbers in content |
 | `--json` | `—` | flag | `false` | Output as JSON |
 | `--model-type` | `—` | choice [sentence_transformers|gguf|openai|modelscope] | — | Embedding model type override |
+| `--no-refresh` | `—` | flag | `false` | Skip the pre-search drift refresh check |
 | `--quiet` | `-q` | flag | `false` | Suppress non-error output |
 
 ## MCP Commands

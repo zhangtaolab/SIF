@@ -193,7 +193,7 @@ class TestSearchFiltering:
         with (
             patch("sif.database.database.Database", return_value=mock_db),
             patch(
-                "sif.database.repositories.CollectionRepository",
+                "sif.cli.commands.search.CollectionRepository",
                 return_value=mock_repo,
             ),
             patch(
@@ -500,7 +500,7 @@ class TestSearchLineNumbers:
         with (
             patch("sif.database.database.Database", return_value=mock_db),
             patch(
-                "sif.database.repositories.CollectionRepository",
+                "sif.cli.commands.search.CollectionRepository",
                 return_value=mock_repo,
             ),
             patch(
@@ -733,7 +733,7 @@ class TestVsearchNewFlags:
         with (
             patch("sif.database.database.Database", return_value=mock_db),
             patch(
-                "sif.database.repositories.CollectionRepository",
+                "sif.cli.commands.search.CollectionRepository",
                 return_value=mock_repo,
             ),
             patch(
@@ -782,7 +782,7 @@ class TestVsearchNewFlags:
         with (
             patch("sif.database.database.Database", return_value=mock_db),
             patch(
-                "sif.database.repositories.CollectionRepository",
+                "sif.cli.commands.search.CollectionRepository",
                 return_value=mock_repo,
             ),
             patch(
@@ -1453,7 +1453,7 @@ class TestSearchOutputBranches:
         settings = settings or MagicMock()
         with (
             patch("sif.database.database.Database", return_value=MagicMock()),
-            patch("sif.database.repositories.CollectionRepository", return_value=repo),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
             patch("sif.search.vector.VectorSearcher", return_value=searcher),
             patch("sif.embedding.manager.EmbeddingManager.from_settings", return_value=manager),
             patch(
@@ -1843,7 +1843,7 @@ class TestSearchOutputBranches:
         manager.embed_single.return_value = [0.0] * 4
         with (
             patch("sif.database.database.Database", return_value=MagicMock()),
-            patch("sif.database.repositories.CollectionRepository", return_value=repo),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
             patch("sif.search.vector.VectorSearcher", return_value=searcher),
             patch("sif.embedding.manager.EmbeddingManager.from_settings", return_value=manager),
             patch("sif.config.settings.get_settings", return_value=settings),
@@ -2056,7 +2056,7 @@ class TestDatabaseClosure:
         # embedding_dim must be a real int (see query closure test note).
         settings = MagicMock(embedding_dim=4)
         with (
-            patch("sif.database.repositories.CollectionRepository", return_value=repo),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
             patch("sif.search.vector.VectorSearcher", return_value=searcher),
             patch("sif.embedding.manager.EmbeddingManager.from_settings", return_value=manager),
             patch("sif.config.settings.get_settings", return_value=settings),
@@ -2283,10 +2283,7 @@ class TestPreSearchRefresh:
         assert result.exit_code == 0
         # Normalize whitespace: Rich soft-wraps the warning at console width.
         flat_stderr = " ".join(result.stderr.split())
-        assert (
-            "index drift: 3 changed files exceeds the pre-search refresh cap (2)"
-            in flat_stderr
-        )
+        assert "index drift: 3 changed files exceeds the pre-search refresh cap (2)" in flat_stderr
         assert "run 'sif index update' to refresh" in flat_stderr
         # Nothing was refreshed and the lock file was never created.
         assert self._document_snapshot(db_path) == before
@@ -2367,9 +2364,7 @@ class TestPreSearchRefresh:
         (notes / "a.md").write_text(
             "# Heading Two\n\nZanzibar unique new term body. " * 10, encoding="utf-8"
         )
-        command = {"search": search_cmd, "vsearch": vsearch_cmd, "query": query_cmd}[
-            command_name
-        ]
+        command = {"search": search_cmd, "vsearch": vsearch_cmd, "query": query_cmd}[command_name]
         manager = MagicMock()
         manager.embed_single.return_value = [0.0] * 8
         manager._model = MagicMock()
@@ -2436,9 +2431,7 @@ class TestPreSearchRefresh:
         monkeypatch.setenv("SIF_SEARCH_REFRESH_MAX_FILES", "2")
 
         before = self._document_snapshot(db_path)
-        result = CliRunner().invoke(
-            search_cmd, ["alpha", "--quiet"], obj={"index_path": db_path}
-        )
+        result = CliRunner().invoke(search_cmd, ["alpha", "--quiet"], obj={"index_path": db_path})
 
         assert result.exit_code == 0
         assert result.stderr == ""
