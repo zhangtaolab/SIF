@@ -428,6 +428,85 @@ class TestSchemaRealSQLiteCoverage:
             conn.close()
 
 
+class TestVocabShadowTable:
+    """Phase 15 D-06: the fts5vocab row-mode shadow of documents_fts.
+
+    ``documents_fts_v`` is the suggestion engine's term source: one row per
+    distinct porter-stem term with its document frequency, derived from the
+    index (no sync maintenance). It must be created by ``create_all`` in the
+    main schema (a temp-schema vocab cannot reference main FTS, Pitfall 8)
+    and dropped by ``drop_all`` for test isolation.
+    """
+
+    def test_create_all_creates_vocab_table_enumerating_stems(self):
+        """create_all creates documents_fts_v listing real porter stems + doc counts."""
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            SchemaManager(conn, embedding_dim=8).create_all()
+            now = datetime.now(timezone.utc).isoformat()
+            conn.execute(
+                "INSERT INTO collections (id, name, path, created_at, updated_at) "
+                "VALUES ('c1', 'notes', '/vault', ?, ?)",
+                (now, now),
+            )
+            conn.execute(
+                "INSERT INTO documents (id, collection_id, path, filename, title, content, "
+                "checksum, mtime, created_at, updated_at) VALUES "
+                "('d1', 'c1', '/vault/a.md', 'a.md', 'T', "
+                "'machines are learning', 'ck1', 1.0, ?, ?)",
+                (now, now),
+            )
+            conn.execute(
+                "INSERT INTO documents (id, collection_id, path, filename, title, content, "
+                "checksum, mtime, created_at, updated_at) VALUES "
+                "('d2', 'c1', '/vault/b.md', 'b.md', 'T', "
+                "'machines dreaming', 'ck2', 1.0, ?, ?)",
+                (now, now),
+            )
+            conn.commit()
+
+            try:
+                terms = {row[0] for row in conn.execute("SELECT term FROM documents_fts_v")}
+            except sqlite3.OperationalError:
+                terms = None
+            assert terms is not None, "documents_fts_v missing after create_all"
+            # tokenize='porter': vocab rows are stems (machines->machin, are->ar)
+            assert {"machin", "ar", "learn"} <= terms
+            # row mode: doc = number of documents containing the term
+            row = conn.execute(
+                "SELECT doc, cnt FROM documents_fts_v WHERE term = 'machin'"
+            ).fetchone()
+            assert row is not None
+            assert row[0] == 2
+        finally:
+            conn.close()
+
+    def test_drop_all_removes_vocab_table(self):
+        """drop_all drops documents_fts_v alongside the FTS tables (isolation)."""
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            manager = SchemaManager(conn, embedding_dim=8)
+            manager.create_all()
+            assert (
+                conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE name = 'documents_fts_v'"
+                ).fetchone()
+                is not None
+            ), "documents_fts_v missing after create_all"
+
+            manager.drop_all()
+            assert (
+                conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE name = 'documents_fts_v'"
+                ).fetchone()
+                is None
+            )
+        finally:
+            conn.close()
+
+
 class TestFtsUpdateTrigger:
     """FND-06 / CR-01: external-content FTS5 sync triggers must not write directly.
 
