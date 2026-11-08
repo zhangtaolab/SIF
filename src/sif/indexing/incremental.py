@@ -41,12 +41,18 @@ logger = get_logger(__name__)
 
 @dataclass
 class IncrementalResult:
-    """Counts reported by one incremental update pass over a collection."""
+    """Counts reported by one incremental update pass over a collection.
+
+    ``failed`` counts paths whose parse raised (unreadable bytes, permission
+    loss): nothing was written for them, so they stay drift-visible — the
+    failure is reported, never silently converged away (14 REVIEW WR-01).
+    """
 
     added: int = 0
     updated: int = 0
     removed: int = 0
     unchanged: int = 0
+    failed: int = 0
 
 
 def _embedding_purger(conn: sqlite3.Connection) -> VectorSearcher | None:
@@ -102,11 +108,12 @@ class IncrementalIndexer:
                 render without the core importing any UI library:
                 ``"scan <n>"`` (scan finished with n files),
                 ``"unchanged <name>"`` (checksum-skip fired),
-                ``"error <message>"`` (per-file parse failure, file skipped),
+                ``"error <message>"`` (per-file parse failure; counted as
+                ``failed``),
                 ``"indexed <name>"`` (file added or updated).
 
         Returns:
-            Counts of added, updated, and removed documents.
+            Counts of added, updated, removed, and failed documents.
         """
         # D-11: a missing collection root must never be read as mass
         # deletion — rglob on a missing root yields no files, which the
@@ -136,6 +143,7 @@ class IncrementalIndexer:
 
         added = 0
         updated = 0
+        failed = 0
 
         for file_path in scan_result.files:
             scanned_paths.add(str(file_path))
@@ -150,6 +158,8 @@ class IncrementalIndexer:
                 added += 1
             elif outcome == "updated":
                 updated += 1
+            elif outcome == "error":
+                failed += 1
 
         removed = self._sweep_removed(existing_docs, scanned_paths)
 
@@ -159,7 +169,7 @@ class IncrementalIndexer:
             collection.last_indexed_at = datetime.now(timezone.utc)
             self._coll_repo.update(collection)
 
-        return IncrementalResult(added=added, updated=updated, removed=removed)
+        return IncrementalResult(added=added, updated=updated, removed=removed, failed=failed)
 
     def update_paths(
         self,
@@ -174,7 +184,12 @@ class IncrementalIndexer:
         Cost is proportional to ``len(paths)``; the collection tree is never
         scanned (D-06). A path may arrive from both sides of a folded event
         burst; it is processed once and disk state decides the outcome.
-        Unchanged paths (checksum skip) count as ``unchanged``. A stored
+        Unchanged paths (checksum skip) count as ``unchanged``. A path whose
+        parse raises counts as ``failed`` and is deliberately left
+        mtime-unconverged — the stored content is genuinely stale, so it
+        stays drift-visible and hosts re-report the failure on every pass
+        until the file is fixed or removed (14 REVIEW WR-01; never a silent
+        eternal loop). A stored
         document whose path now fails the shared scan predicate (e.g. a
         later ignore-pattern setting) is removed, mirroring the
         ``update_collection`` sweep so every writer agrees on removal
@@ -190,7 +205,7 @@ class IncrementalIndexer:
                 :meth:`update_collection` plus ``"missing <name>"``.
 
         Returns:
-            Counts of added, updated, removed, and unchanged documents.
+            Counts of added, updated, removed, unchanged, and failed documents.
         """
         # D-11: same missing-root guard as update_collection — a burst of
         # delete-shaped events from a vanished root must not remove anything.
@@ -209,6 +224,7 @@ class IncrementalIndexer:
         updated = 0
         removed = 0
         unchanged = 0
+        failed = 0
 
         for path in sorted(resolved):
             if not scanner.matches(
@@ -242,9 +258,10 @@ class IncrementalIndexer:
                     added += 1
                 elif outcome == "updated":
                     updated += 1
+                elif outcome == "error":
+                    failed += 1
                 else:
-                    # Checksum skip (or a parse failure already reported via
-                    # an "error" event): nothing to write for this path.
+                    # Checksum skip: nothing to write for this path.
                     unchanged += 1
             elif existing is not None:
                 self._remove_document(existing)
@@ -257,7 +274,9 @@ class IncrementalIndexer:
             collection.last_indexed_at = datetime.now(timezone.utc)
             self._coll_repo.update(collection)
 
-        return IncrementalResult(added=added, updated=updated, removed=removed, unchanged=unchanged)
+        return IncrementalResult(
+            added=added, updated=updated, removed=removed, unchanged=unchanged, failed=failed
+        )
 
     @staticmethod
     def _notify(progress: Callable[[str], None] | None, event: str) -> None:
@@ -274,13 +293,21 @@ class IncrementalIndexer:
         force: bool,
         progress: Callable[[str], None] | None,
     ) -> str:
-        """Process one scanned file; returns "added", "updated", or "skipped"."""
+        """Process one scanned file; returns "added", "updated", "skipped", or "error"."""
         # Parse document
         try:
             parsed = self._parser.parse(file_path)
         except Exception as e:
+            # 14 REVIEW WR-01: report AND count — never fold into "skipped".
+            # The logger call matters most on callback-less hosts (the
+            # pre-search drift refresh passes no progress callback, so
+            # _notify alone would swallow the error entirely). The mtime is
+            # deliberately NOT converged: the stored content is genuinely
+            # stale, so the path stays drift-visible and every later pass
+            # re-reports it as a counted failure instead of a silent no-op.
+            logger.warning("Error parsing %s: %s", file_path, e)
             self._notify(progress, f"error Error parsing {file_path}: {e}")
-            return "skipped"
+            return "error"
 
         if existing:
             # Check if changed

@@ -2717,6 +2717,58 @@ class TestPreSearchRefresh:
         # No refresh burst → no index_lock window on the clean second search.
         spy.assert_not_called()
 
+    def test_unparseable_drift_warns_each_search_and_never_converges(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """WR-01 regression: invalid-UTF-8 drift warns with a count, exit 0, results served.
+
+        The mtime decision, made explicit: a parse-failed file deliberately
+        never converges — the stored content is genuinely stale — so it
+        re-warns on EVERY search until the file is fixed or removed. The fix
+        makes that loop visible (a counted "failed to parse" warning) and
+        honest (no "refreshed 0 files" masquerading as a clean refresh).
+        """
+        db_path, notes, settings = self._seed_index(tmp_path, monkeypatch)
+        doc = notes / "a.md"
+        # Deterministic, content-based unreadability: invalid UTF-8 bytes
+        # plus a forced distinct mtime (no chmod platform flakiness).
+        doc.write_bytes(b"\xff\xfe\x00 not utf-8 \xff\xfe")
+        os.utime(doc, (1_700_000_000, 1_700_000_000))
+
+        with patch("sif.config.settings.get_settings", return_value=settings):
+            first = CliRunner().invoke(search_cmd, ["alpha"], obj={"index_path": db_path})
+
+        assert first.exit_code == 0
+        # The failure is named and counted in the notice — not a silent
+        # "refreshed 0 files" that reads as a clean refresh.
+        assert "refreshed 0 files, 1 failed to parse (bm25) before search" in first.stderr
+        # The search proceeded on the current (stale) index: still served.
+        assert "Heading One" in first.output
+
+        # Deliberate non-convergence: the SECOND search re-drifts and warns
+        # again — the loop is now visible instead of silent.
+        with patch("sif.config.settings.get_settings", return_value=settings):
+            second = CliRunner().invoke(search_cmd, ["alpha"], obj={"index_path": db_path})
+
+        assert second.exit_code == 0
+        assert "1 failed to parse" in second.stderr
+        assert "Heading One" in second.output
+
+        # The stored row was untouched: stale content, unconverged mtime.
+        assert self._document_snapshot(db_path)[str(doc.resolve())][1] != 1_700_000_000.0
+        assert "Alpha" in self._stored_content(db_path, doc)
+
+        # D-07: -q suppresses the notice/warning line (the underlying
+        # logger.warning may still ride stderr — logging is error output).
+        with patch("sif.config.settings.get_settings", return_value=settings):
+            quiet = CliRunner().invoke(
+                search_cmd, ["alpha", "--quiet"], obj={"index_path": db_path}
+            )
+
+        assert quiet.exit_code == 0
+        assert "failed to parse" not in quiet.stderr
+        assert "(bm25) before search" not in quiet.stderr
+
     def test_over_cap_drift_skips_refresh_and_warns(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

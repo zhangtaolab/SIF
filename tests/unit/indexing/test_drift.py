@@ -371,6 +371,48 @@ class TestRefreshDrifted:
         assert result.removed == 1
         assert _doc_paths(db_path) == {str((notes / "a.md").resolve())}
 
+    def test_unparseable_drift_counts_failed_and_stays_drift_visible(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """WR-01 regression: invalid-UTF-8 drift is counted as ``failed``, never converged.
+
+        The mtime decision, made explicit: a parse-failed file deliberately
+        does NOT converge its stored mtime — the stored content is genuinely
+        stale and pretending fresh would hide it — so it stays drift-visible
+        and every later pass re-reports it as a counted failure. What the
+        fix removes is the *silence*: the loop is a visible warning, not a
+        "refreshed 0 files" no-op the user cannot distinguish from clean.
+        """
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "drift.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        doc = notes / "a.md"
+        doc.write_text(BODY_ALPHA, encoding="utf-8")
+        _seed_and_index(db_path, notes)
+        # Deterministic drift: invalid UTF-8 bytes (parse raises) + a forced
+        # distinct mtime — content-based, no chmod platform flakiness.
+        doc.write_bytes(b"\xff\xfe\x00 not utf-8 \xff\xfe")
+        os.utime(doc, (TOUCH_MTIME, TOUCH_MTIME))
+
+        db, coll = _open(db_path)
+        try:
+            report = detect_drift(db.connection, [coll])
+            assert report.total_count == 1
+            result = refresh_drifted(
+                db_path, db.connection, {coll.id: coll}, report, lock_timeout=5.0
+            )
+            # Deliberate non-convergence: the unreadable file is still drift.
+            assert detect_drift(db.connection, [coll]).total_count == 1
+        finally:
+            db.close()
+
+        assert result == IncrementalResult(added=0, updated=0, removed=0, unchanged=0, failed=1)
+        # Nothing was written for the failed path: stale content and the old
+        # mtime remain (no silent pretend-fresh).
+        assert _doc_stats(db_path)[str(doc.resolve())] != float(TOUCH_MTIME)
+        assert _doc_content(db_path, str(doc.resolve())) == BODY_ALPHA.rstrip()
+
     def test_refresh_creates_the_lock_file_only_when_working(self, tmp_path, monkeypatch) -> None:
         """index_lock lives inside refresh_drifted: present after a real burst, absent on empty."""
         _delenv_settings_vars(monkeypatch)

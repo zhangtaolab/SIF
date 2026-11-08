@@ -148,5 +148,6 @@ def refresh_drifted(
             totals.updated += result.updated
             totals.removed += result.removed
             totals.unchanged += result.unchanged
+            totals.failed += result.failed
 
     return totals

@@ -129,11 +129,15 @@ def _refresh_notice(result: IncrementalResult) -> str:
 
     Names what the refresh really did — added+updated files were refreshed,
     removed documents were removed — instead of the pre-refresh drift count,
-    which claimed deletions and no-op checksum skips as "refreshed".
+    which claimed deletions and no-op checksum skips as "refreshed". Parse
+    failures are named too (WR-01): a refresh that could not re-read a
+    drifted file must never be announced as a clean one.
     """
     parts = [f"refreshed {result.added + result.updated} files"]
     if result.removed:
         parts.append(f"removed {result.removed}")
+    if result.failed:
+        parts.append(f"{result.failed} failed to parse")
     return f"{', '.join(parts)} (bm25) before search"
 
 
@@ -196,7 +200,11 @@ def _pre_search_refresh(
                 lock_timeout=settings.lock_wait_timeout,
             )
             if not quiet:
-                console_err.print(f"[dim]{_refresh_notice(result)}[/dim]")
+                # WR-01: parse failures turn the dim notice into a yellow
+                # warning — still exactly one stderr line (D-07), stdout
+                # untouched, -q-suppressible, silent on the clean path.
+                style = "yellow" if result.failed else "dim"
+                console_err.print(f"[{style}]{_refresh_notice(result)}[/{style}]")
     except Exception:
         # D-05: a refresh failure surfaces as a warning; the search itself
         # proceeds on the current index.
