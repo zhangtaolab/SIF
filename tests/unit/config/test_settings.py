@@ -1,9 +1,11 @@
 """Unit tests for SIF Settings configuration."""
 
+from unittest.mock import MagicMock
+
 import pytest
 from pydantic import ValidationError
 
-from sif.config.settings import Settings
+from sif.config.settings import Settings, resolve_candidate_limit
 
 
 def test_default_model_type_is_modelscope(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -62,6 +64,78 @@ def test_rerank_enabled_via_env(monkeypatch: pytest.MonkeyPatch) -> None:
         m.setenv("SIF_RERANK_ENABLED", "1")
         settings = Settings(_env_file=None)
         assert settings.rerank_enabled is True
+
+
+def test_rerank_candidate_limit_defaults_to_20(monkeypatch: pytest.MonkeyPatch) -> None:
+    """D-10: the unconfigured cap is 20."""
+    monkeypatch.delenv("SIF_RERANK_CANDIDATE_LIMIT", raising=False)
+    settings = Settings(_env_file=None)
+    assert settings.rerank_candidate_limit == 20
+
+
+def test_rerank_candidate_limit_accepts_boundaries() -> None:
+    """D-10: 5 and 50 are the inclusive bounds."""
+    assert Settings(_env_file=None, rerank_candidate_limit=5).rerank_candidate_limit == 5
+    assert Settings(_env_file=None, rerank_candidate_limit=50).rerank_candidate_limit == 50
+
+
+@pytest.mark.parametrize("value", ["4", "51"])
+def test_rerank_candidate_limit_rejects_out_of_range(
+    value: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """SIF_RERANK_CANDIDATE_LIMIT outside 5..50 fails validation naming the field (D-10)."""
+    with monkeypatch.context() as m:
+        m.setenv("SIF_RERANK_CANDIDATE_LIMIT", value)
+        with pytest.raises(ValidationError, match="rerank_candidate_limit"):
+            Settings(_env_file=None)
+
+
+def test_rerank_relative_threshold_defaults_to_half(monkeypatch: pytest.MonkeyPatch) -> None:
+    """D-11: the unconfigured threshold keeps candidates scoring >= top_score * 0.5."""
+    monkeypatch.delenv("SIF_RERANK_RELATIVE_THRESHOLD", raising=False)
+    settings = Settings(_env_file=None)
+    assert settings.rerank_relative_threshold == 0.5
+
+
+def test_rerank_relative_threshold_accepts_boundaries() -> None:
+    """D-11: the open-lower/closed-upper interval (0, 1] accepts 0.5 and 1.0."""
+    assert Settings(_env_file=None, rerank_relative_threshold=0.5).rerank_relative_threshold == 0.5
+    assert Settings(_env_file=None, rerank_relative_threshold=1.0).rerank_relative_threshold == 1.0
+
+
+@pytest.mark.parametrize("value", ["0.0", "1.1"])
+def test_rerank_relative_threshold_rejects_out_of_range(
+    value: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """SIF_RERANK_RELATIVE_THRESHOLD outside (0, 1] fails validation naming the field (D-11)."""
+    with monkeypatch.context() as m:
+        m.setenv("SIF_RERANK_RELATIVE_THRESHOLD", value)
+        with pytest.raises(ValidationError, match="rerank_relative_threshold"):
+            Settings(_env_file=None)
+
+
+def test_resolve_candidate_limit_explicit_wins_over_setting() -> None:
+    """An explicit -C value bypasses the settings cap entirely (then clamps)."""
+    settings = Settings(_env_file=None, rerank_candidate_limit=30)
+    assert resolve_candidate_limit(40, settings) == 40
+
+
+def test_resolve_candidate_limit_omitted_uses_setting() -> None:
+    """Without an explicit flag the SIF_RERANK_CANDIDATE_LIMIT value applies."""
+    settings = Settings(_env_file=None, rerank_candidate_limit=30)
+    assert resolve_candidate_limit(None, settings) == 30
+
+
+def test_resolve_candidate_limit_clamps_explicit_into_bounds() -> None:
+    """D-10: the shipped -C range is 1..200, so -C 200 -> 50 and -C 1 -> 5 at resolution."""
+    settings = Settings(_env_file=None)
+    assert resolve_candidate_limit(200, settings) == 50
+    assert resolve_candidate_limit(1, settings) == 5
+
+
+def test_resolve_candidate_limit_mock_settings_falls_back_to_20() -> None:
+    """Pitfall 10: a MagicMock cap is truthy but not an int — it must resolve to 20."""
+    assert resolve_candidate_limit(None, MagicMock()) == 20
 
 
 def test_api_base_validation_accepts_https_url() -> None:

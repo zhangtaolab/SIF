@@ -153,6 +153,18 @@ class Settings(BaseSettings):
         description="Enable reranking on `sif search query`; the default keeps the "
         "zero-cost skip-rerank fast path (pass --rerank or set 1 to enable)",
     )
+    # D-10 (Phase 16): candidate cap for the enabled rerank path.
+    rerank_candidate_limit: int = Field(
+        default=20,
+        description="Maximum candidates passed to the reranker when reranking is "
+        "enabled; the pipeline over-fetches to this size before capping",
+    )
+    # D-11 (Phase 16): relative score threshold for the enabled rerank path.
+    rerank_relative_threshold: float = Field(
+        default=0.5,
+        description="Keep reranker candidates scoring at least top_score * alpha "
+        "(0 < alpha <= 1); applied after score normalization",
+    )
     reranker_model_name: str = Field(
         default="Qwen/Qwen3-Reranker-0.6B",
         description="Reranker model name",
@@ -367,3 +379,14 @@ def get_settings() -> Settings:
     Uses lru_cache to ensure settings are loaded only once.
     """
     return Settings()
+
+
+def resolve_candidate_limit(explicit: int | None, settings: object) -> int:
+    """Resolve the reranker candidate cap: an explicit flag wins, else the setting.
+
+    RED skeleton (Phase 16 Task 2): accepts any int as-is — the D-10 clamp
+    into 5..50 is not implemented yet. A non-int settings value (e.g. a
+    MagicMock cap, research Pitfall 10) resolves to the default 20.
+    """
+    value = explicit if explicit is not None else getattr(settings, "rerank_candidate_limit", 20)
+    return value if isinstance(value, int) else 20

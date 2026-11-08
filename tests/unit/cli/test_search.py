@@ -1229,7 +1229,95 @@ class TestRerankOptIn:
         create_reranker.assert_called_once()
 
 
-class TestMachineOutputNoWrap:
+class TestCandidateLimitResolution:
+    """D-10 (Phase 16): -C resolves flag > SIF_RERANK_CANDIDATE_LIMIT, clamped to 5..50.
+
+    The shipped Click range stays 1..200 (no user-visible narrowing); the
+    bound is enforced where the value becomes a request — resolve_candidate_limit.
+    """
+
+    @staticmethod
+    def _result() -> SearchResult:
+        return SearchResult(
+            document_id="doc-1",
+            rank=1,
+            score=0.5,
+            title="T",
+            path="/notes/t.md",
+            collection_name="c",
+        )
+
+    def _invoke(
+        self,
+        tmp_path: Path,
+        args: list[str],
+        settings: object = None,
+    ) -> tuple[object, MagicMock]:
+        """Invoke query_cmd; return (result, pipeline) for SearchOptions asserts."""
+        repo = MagicMock()
+        repo.list_enabled.return_value = []
+        manager = MagicMock()
+        manager.embed_single.return_value = [0.0] * 4
+        manager._model = MagicMock()
+        pipeline = MagicMock()
+        pipeline.search.return_value = [self._result()]
+        index = tmp_path / "index.db"
+        index.touch()
+        with (
+            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
+            patch("sif.cli.commands.search.SearchPipeline", return_value=pipeline),
+            patch("sif.embedding.manager.EmbeddingManager.from_settings", return_value=manager),
+            # rerank stays off unless a test opens it via the settings mock.
+            patch("sif.search.rerank.create_reranker"),
+            patch(
+                "sif.config.settings.get_settings",
+                return_value=settings
+                if settings is not None
+                else _query_settings_mock(rerank_candidate_limit=33),
+            ),
+        ):
+            result = CliRunner().invoke(query_cmd, args, obj={"index_path": index})
+        return result, pipeline
+
+    def test_omitted_flag_resolves_from_setting(self, tmp_path: Path) -> None:
+        """No -C: SearchOptions.candidate_limit comes from SIF_RERANK_CANDIDATE_LIMIT."""
+        result, pipeline = self._invoke(tmp_path, ["query"])
+
+        assert result.exit_code == 0, result.output
+        # 33 is non-default so the assertion cannot pass via a literal flag default.
+        assert pipeline.search.call_args.args[1].candidate_limit == 33
+
+    def test_explicit_flag_beats_setting(self, tmp_path: Path) -> None:
+        """An explicit -C inside the bounds wins over the setting (D-10 precedence)."""
+        result, pipeline = self._invoke(tmp_path, ["query", "-C", "7"])
+
+        assert result.exit_code == 0, result.output
+        assert pipeline.search.call_args.args[1].candidate_limit == 7
+
+    def test_flag_range_stays_wide_but_resolution_clamps(self, tmp_path: Path) -> None:
+        """-C 200 and -C 1 are accepted by Click (range 1..200) but resolve to 50 and 5."""
+        wide, pipeline_wide = self._invoke(tmp_path, ["query", "-C", "200"])
+        assert wide.exit_code == 0, wide.output
+        assert pipeline_wide.search.call_args.args[1].candidate_limit == 50
+
+        narrow, pipeline_narrow = self._invoke(tmp_path, ["query", "-C", "1"])
+        assert narrow.exit_code == 0, narrow.output
+        assert pipeline_narrow.search.call_args.args[1].candidate_limit == 5
+
+    def test_wide_open_mock_settings_keeps_candidate_limit_int(self, tmp_path: Path) -> None:
+        """Pitfall 10: a MagicMock cap can never leak into the plain SearchOptions dataclass.
+
+        A wide-open MagicMock is truthy, so rerank_enabled opens the gate too —
+        create_reranker is patched; the assertion is the int-ness of the cap.
+        """
+        result, pipeline = self._invoke(tmp_path, ["query"], settings=MagicMock())
+
+        assert result.exit_code == 0, result.output
+        options = pipeline.search.call_args.args[1]
+        assert options.candidate_limit == 20
+        assert isinstance(options.candidate_limit, int)
+
     """Machine-format output must be byte-faithful regardless of width (CLI-JSON-WRAP).
 
     Rich console.print word-wraps at the terminal width and inserts REAL newline
