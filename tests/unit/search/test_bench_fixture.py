@@ -109,8 +109,8 @@ class TestBuildBenchDb:
             conn.close()
 
 
-class TestMinimalPackEndToEnd:
-    def test_minimal_pack_end_to_end_report_nonzero_ndcg(self) -> None:
+class TestCommittedPackEndToEnd:
+    def test_committed_pack_end_to_end_report_nonzero_ndcg(self) -> None:
         fixture = load_fixture_queries(FIXTURE_PATH)
         conn = build_bench_db(CORPUS_ROOT, ConceptEmbedder())
         try:
@@ -124,17 +124,20 @@ class TestMinimalPackEndToEnd:
 
             report = evaluator.report(lambda query: pipeline.search(query, options))
 
-            assert report.num_queries == 2
-            assert report.categories["keyword"].count == 1
-            assert report.categories["multilingual"].count == 1
+            assert report.num_queries == len(fixture["queries"])
+            for category in ("keyword", "synonym", "multilingual", "rival"):
+                assert report.categories[category].count > 0, category
             assert report.ndcg_at_10 > 0.0
             assert report.hit_at_10 > 0.0
         finally:
             conn.close()
 
-    def test_minimal_pack_end_to_end_results_keyed_by_corpus_relative_path(self) -> None:
+    def test_committed_pack_end_to_end_results_keyed_by_corpus_relative_path(self) -> None:
         """Path-keyed join: relevance keys and result keys resolve against the
         same corpus root derived from the fixture's declared corpus_root."""
+        fixture = load_fixture_queries(FIXTURE_PATH)
+        first = fixture["queries"][0]
+        grade3_key = next(key for key, grade in first["relevance"].items() if grade == 3)
         conn = build_bench_db(CORPUS_ROOT, ConceptEmbedder())
         try:
             pipeline = SearchPipeline(
@@ -144,15 +147,12 @@ class TestMinimalPackEndToEnd:
             )
             options = SearchOptions(limit=10, include_content=False, include_highlights=False)
 
-            results = pipeline.search("zephyr telemetry", options)
-            corpus_root = SearchEvaluator(
-                load_fixture_queries(FIXTURE_PATH),
-                fixture_path=FIXTURE_PATH,
-            ).corpus_root
+            results = pipeline.search(first["query"], options)
+            corpus_root = SearchEvaluator(fixture, fixture_path=FIXTURE_PATH).corpus_root
             assert corpus_root is not None
 
             keys = [result_key(r, "path", corpus_root) for r in results]
 
-            assert keys[0] == "keyword/alpha.md"
+            assert keys[0] == grade3_key
         finally:
             conn.close()
