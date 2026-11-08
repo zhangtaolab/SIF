@@ -89,6 +89,13 @@ Hybrid search combining BM25 full-text search, vector semantic search, and reran
 | `collections` | array | No | Collection names to search |
 | `limit` | integer | No | Maximum results (default: 10) |
 | `min_score` | number | No | Minimum score threshold (default: 0.0) |
+| `rrf_k` | integer | No | RRF k constant for hybrid fusion (>= 1; default: server `SIF_RRF_K` or 60) |
+| `bm25_weight` | number | No | BM25 fusion weight (> 0; default: server `SIF_BM25_WEIGHT` or 1.0) |
+| `vector_weight` | number | No | Vector fusion weight (> 0; default: server `SIF_VECTOR_WEIGHT` or 1.0) |
+
+The three fusion overrides are optional: omitting them uses the server process's
+`SIF_` settings. Weights are multiply-form and never normalized; a request field
+overrides the setting for that query only.
 
 **Example:**
 ```json
@@ -115,9 +122,14 @@ Hybrid search combining BM25 full-text search, vector semantic search, and reran
       "highlights": ["decorators are a powerful"],
       "metadata": {}
     }
-  ]
+  ],
+  "suggestions": []
 }
 ```
+
+`suggestions` is a flat list of display-only rewritten queries. It is empty for
+any query that returned results; on a zero-result query it carries did-you-mean
+candidates (each one returns at least one hit when re-run).
 
 ### get
 
