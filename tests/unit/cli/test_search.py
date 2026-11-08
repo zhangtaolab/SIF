@@ -2496,8 +2496,8 @@ class TestPreSearchRefresh:
             first = CliRunner().invoke(search_cmd, ["alpha"], obj={"index_path": db_path})
 
         assert first.exit_code == 0
-        # A refresh burst ran (exact count wording is WR-02's subject).
-        assert "(bm25) before search" in first.stderr
+        # Nothing was refreshed (checksum skip; only the mtime converged).
+        assert "refreshed 0 files (bm25) before search" in first.stderr
         # The fresh mtime was persisted on the checksum-skip path.
         assert self._document_snapshot(db_path)[str(doc.resolve())][1] == 1_700_000_000.0
 
@@ -2528,7 +2528,9 @@ class TestPreSearchRefresh:
             gone = CliRunner().invoke(search_cmd, ["alpha"], obj={"index_path": db_path})
 
         assert result.exit_code == 0
-        assert "refreshed 2 files (bm25) before search" in result.stderr
+        # WR-02: the notice names the actual outcome — the new file was
+        # refreshed, the deleted one removed — not the raw drift count.
+        assert "refreshed 1 files, removed 1 (bm25) before search" in result.stderr
         assert "Brand New" in result.output
         assert gone.exit_code == 0
         assert "No results found" in gone.output
@@ -2654,8 +2656,8 @@ class TestPreSearchRefresh:
             first = CliRunner().invoke(search_cmd, ["seekrit"], obj={"index_path": db_path})
 
         assert first.exit_code == 0
-        # A refresh burst ran (exact count wording is WR-02's subject)...
-        assert "(bm25) before search" in first.stderr
+        # WR-02: nothing was refreshed — the excluded doc was REMOVED.
+        assert "refreshed 0 files, removed 1 (bm25) before search" in first.stderr
         # ...and it REMOVED the excluded doc, mirroring `sif index update`.
         conn = sqlite3.connect(str(db_path))
         try:

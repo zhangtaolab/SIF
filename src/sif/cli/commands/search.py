@@ -20,6 +20,7 @@ from sif.core.models import Collection, SearchOptions, SearchResult
 from sif.database.database import Database
 from sif.database.repositories import CollectionRepository
 from sif.indexing.drift import detect_drift, refresh_drifted
+from sif.indexing.incremental import IncrementalResult
 from sif.search.bm25 import BM25Searcher
 from sif.search.hybrid import SearchPipeline
 from sif.utils.logging import get_logger, set_quiet
@@ -123,6 +124,19 @@ def _resolve_collections(
         return repo.list_enabled()
 
 
+def _refresh_notice(result: IncrementalResult) -> str:
+    """Build the D-07 under-cap refresh notice from actual outcomes (WR-02).
+
+    Names what the refresh really did — added+updated files were refreshed,
+    removed documents were removed — instead of the pre-refresh drift count,
+    which claimed deletions and no-op checksum skips as "refreshed".
+    """
+    parts = [f"refreshed {result.added + result.updated} files"]
+    if result.removed:
+        parts.append(f"removed {result.removed}")
+    return f"{', '.join(parts)} (bm25) before search"
+
+
 def _pre_search_refresh(
     db: Database,
     index_path: Path,
@@ -174,7 +188,7 @@ def _pre_search_refresh(
                     "index[/yellow]",
                 )
         else:
-            refresh_drifted(
+            result = refresh_drifted(
                 index_path,
                 db.connection,
                 {c.id: c for c in collections},
@@ -182,9 +196,7 @@ def _pre_search_refresh(
                 lock_timeout=settings.lock_wait_timeout,
             )
             if not quiet:
-                console_err.print(
-                    f"[dim]refreshed {report.total_count} files (bm25) before search[/dim]",
-                )
+                console_err.print(f"[dim]{_refresh_notice(result)}[/dim]")
     except Exception:
         # D-05: a refresh failure surfaces as a warning; the search itself
         # proceeds on the current index.
