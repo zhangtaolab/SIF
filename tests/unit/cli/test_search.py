@@ -2086,13 +2086,18 @@ class TestPreSearchRefresh:
         get_settings.cache_clear()
 
     @staticmethod
-    def _seed_index(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path, Settings]:
-        """Create a real indexed collection holding one alpha-term document.
+    def _seed_index(
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        files: dict[str, str] | None = None,
+    ) -> tuple[Path, Path, Settings]:
+        """Create a real indexed collection; default one alpha-term document.
 
         Returns (db_path, notes, settings); every invoke must run under
         ``patch("sif.config.settings.get_settings", return_value=settings)``
         so the schema's vec0 dimension check and the drift check share the
-        same hermetic settings (embedding_dim=8, TestDatabaseClosure culture).
+        same hermetic settings (embedding_dim=8, TestDatabaseClosure culture)
+        — unless the test drives the real env-var path instead.
         """
         for var in (
             "SIF_EMBEDDING_DIM",
@@ -2106,9 +2111,12 @@ class TestPreSearchRefresh:
         db_path = tmp_path / "search.db"
         notes = tmp_path / "notes"
         notes.mkdir()
-        (notes / "a.md").write_text(
-            "# Heading One\n\nAlpha paragraph text for search. " * 10, encoding="utf-8"
-        )
+        if files is None:
+            files = {
+                "a.md": "# Heading One\n\nAlpha paragraph text for search. " * 10,
+            }
+        for name, body in files.items():
+            (notes / name).write_text(body, encoding="utf-8")
         db = Database(db_path)
         with patch("sif.config.settings.get_settings", return_value=settings):
             db.init_schema()
@@ -2213,3 +2221,275 @@ class TestPreSearchRefresh:
         assert len(payload) == 1
         assert payload[0]["title"] == "Heading Two"
         assert "refreshed 1 files (bm25) before search" in result.stderr
+
+    # ------------------------------------------------------------------
+    # Task 2: cap boundary, opt-outs, and the rest of the trio
+    # ------------------------------------------------------------------
+
+    THREE_FILES: ClassVar[dict[str, str]] = {
+        "a.md": "# Doc A\n\nAlpha paragraph text for search. " * 10,
+        "b.md": "# Doc B\n\nBravo paragraph text for search. " * 10,
+        "c.md": "# Doc C\n\nCharlie paragraph text for search. " * 10,
+    }
+
+    @classmethod
+    def _drift_three(cls, notes: Path) -> None:
+        """Rewrite all three files so every stored mtime goes stale."""
+        for name, body in cls.THREE_FILES.items():
+            (notes / name).write_text(
+                body.replace("paragraph text", "zanzibar drifted text"),
+                encoding="utf-8",
+            )
+
+    @staticmethod
+    def _stored_content(db_path: Path, doc: Path) -> str:
+        """Read one document's stored content through a fresh connection."""
+        conn = sqlite3.connect(str(db_path))
+        try:
+            row = conn.execute(
+                "SELECT content FROM documents WHERE path = ?", (str(doc.resolve()),)
+            ).fetchone()
+            assert row is not None, f"no stored document for {doc}"
+            return row[0]
+        finally:
+            conn.close()
+
+    def _document_snapshot(self, db_path: Path) -> dict[str, tuple[str, float]]:
+        """Snapshot {path: (checksum, mtime)} via a fresh connection."""
+        conn = sqlite3.connect(str(db_path))
+        try:
+            return {
+                row[0]: (row[1], row[2])
+                for row in conn.execute("SELECT path, checksum, mtime FROM documents")
+            }
+        finally:
+            conn.close()
+
+    def test_over_cap_drift_skips_refresh_and_warns(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """D-05/D-06: 3 drifted files over cap=2 — no refresh, no lock, warn + stale hits."""
+        db_path, notes, _settings = self._seed_index(
+            tmp_path, monkeypatch, files=dict(self.THREE_FILES)
+        )
+        self._drift_three(notes)
+        # Real env-var settings path: cap 2, dim 8 matching the seeded vec0.
+        monkeypatch.setenv("SIF_EMBEDDING_DIM", "8")
+        monkeypatch.setenv("SIF_SEARCH_REFRESH_MAX_FILES", "2")
+
+        before = self._document_snapshot(db_path)
+        result = CliRunner().invoke(search_cmd, ["alpha"], obj={"index_path": db_path})
+
+        assert result.exit_code == 0
+        # Normalize whitespace: Rich soft-wraps the warning at console width.
+        flat_stderr = " ".join(result.stderr.split())
+        assert (
+            "index drift: 3 changed files exceeds the pre-search refresh cap (2)"
+            in flat_stderr
+        )
+        assert "run 'sif index update' to refresh" in flat_stderr
+        # Nothing was refreshed and the lock file was never created.
+        assert self._document_snapshot(db_path) == before
+        assert not Path(str(db_path) + ".lock").exists()
+        # The stale index still answers: old content remains searchable.
+        assert "Doc A" in result.output
+
+    def test_cap_boundary_count_equal_to_cap_refreshes(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """D-06 exact boundary: count == cap still refreshes (only count > cap skips)."""
+        db_path, notes, _settings = self._seed_index(
+            tmp_path, monkeypatch, files=dict(self.THREE_FILES)
+        )
+        self._drift_three(notes)
+        monkeypatch.setenv("SIF_EMBEDDING_DIM", "8")
+        monkeypatch.setenv("SIF_SEARCH_REFRESH_MAX_FILES", "3")
+
+        result = CliRunner().invoke(search_cmd, ["zanzibar"], obj={"index_path": db_path})
+
+        assert result.exit_code == 0
+        assert "refreshed 3 files (bm25) before search" in result.stderr
+        assert "Doc A" in result.output
+
+    def test_over_cap_never_parses_candidates(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """D-05 count-first: the over-cap decision precedes any candidate parsing."""
+        db_path, notes, _settings = self._seed_index(
+            tmp_path, monkeypatch, files=dict(self.THREE_FILES)
+        )
+        self._drift_three(notes)
+        capped = Settings(
+            embedding_dim=8,
+            model_name="test",
+            cache_embeddings=False,
+            search_refresh_max_files=2,
+        )
+
+        with (
+            patch("sif.config.settings.get_settings", return_value=capped),
+            patch("sif.indexing.drift.IncrementalIndexer") as mock_indexer,
+        ):
+            result = CliRunner().invoke(search_cmd, ["alpha"], obj={"index_path": db_path})
+
+        assert result.exit_code == 0
+        mock_indexer.assert_not_called()
+
+    def test_setting_disabled_skips_detection_entirely(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """SIF_SEARCH_REFRESH_ENABLED=0: detect_drift is never invoked; search proceeds."""
+        db_path, notes, _settings = self._seed_index(tmp_path, monkeypatch)
+        (notes / "a.md").write_text(
+            "# Heading Two\n\nZanzibar unique new term body. " * 10, encoding="utf-8"
+        )
+        monkeypatch.setenv("SIF_EMBEDDING_DIM", "8")
+        monkeypatch.setenv("SIF_SEARCH_REFRESH_ENABLED", "0")
+
+        with patch("sif.cli.commands.search.detect_drift") as spy:
+            result = CliRunner().invoke(search_cmd, ["alpha"], obj={"index_path": db_path})
+
+        assert result.exit_code == 0
+        spy.assert_not_called()
+        assert result.stderr == ""
+        # No refresh: the stale index still serves the old content.
+        assert "Heading One" in result.output
+
+    @pytest.mark.parametrize("command_name", ["search", "vsearch", "query"])
+    def test_no_refresh_flag_skips_check_on_all_trio_commands(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        command_name: str,
+    ) -> None:
+        """--no-refresh on each trio command skips the drift check entirely."""
+        db_path, notes, settings = self._seed_index(tmp_path, monkeypatch)
+        (notes / "a.md").write_text(
+            "# Heading Two\n\nZanzibar unique new term body. " * 10, encoding="utf-8"
+        )
+        command = {"search": search_cmd, "vsearch": vsearch_cmd, "query": query_cmd}[
+            command_name
+        ]
+        manager = MagicMock()
+        manager.embed_single.return_value = [0.0] * 8
+        manager._model = MagicMock()
+        downstream = {
+            "search": [],
+            "vsearch": [
+                patch(
+                    "sif.search.vector.VectorSearcher",
+                    return_value=MagicMock(search=MagicMock(return_value=[])),
+                ),
+            ],
+            "query": [
+                patch(
+                    "sif.cli.commands.search.SearchPipeline",
+                    return_value=MagicMock(search=MagicMock(return_value=[])),
+                ),
+                patch("sif.search.rerank.create_reranker", side_effect=ImportError("x")),
+            ],
+        }[command_name]
+
+        with (
+            patch("sif.config.settings.get_settings", return_value=settings),
+            patch("sif.embedding.manager.EmbeddingManager.from_settings", return_value=manager),
+            patch("sif.cli.commands.search.detect_drift") as spy,
+            ExitStack() as stack,
+        ):
+            for patcher in downstream:
+                stack.enter_context(patcher)
+            result = CliRunner().invoke(
+                command, ["alpha", "--no-refresh"], obj={"index_path": db_path}
+            )
+
+        assert result.exit_code == 0, result.output
+        spy.assert_not_called()
+        assert result.stderr == ""
+
+    def test_quiet_suppresses_notice_but_refresh_still_happens(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """D-07: -q silences the notice while the under-cap refresh still runs."""
+        db_path, notes, settings = self._seed_index(tmp_path, monkeypatch)
+        (notes / "a.md").write_text(
+            "# Heading Two\n\nZanzibar unique new term body. " * 10, encoding="utf-8"
+        )
+
+        with patch("sif.config.settings.get_settings", return_value=settings):
+            result = CliRunner().invoke(
+                search_cmd, ["zanzibar", "--quiet"], obj={"index_path": db_path}
+            )
+
+        assert result.exit_code == 0
+        assert result.stderr == ""
+        assert "Zanzibar" in self._stored_content(db_path, notes / "a.md")
+
+    def test_quiet_suppresses_over_cap_warning(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """D-07: -q silences the over-cap warning too; nothing is refreshed."""
+        db_path, notes, _settings = self._seed_index(
+            tmp_path, monkeypatch, files=dict(self.THREE_FILES)
+        )
+        self._drift_three(notes)
+        monkeypatch.setenv("SIF_EMBEDDING_DIM", "8")
+        monkeypatch.setenv("SIF_SEARCH_REFRESH_MAX_FILES", "2")
+
+        before = self._document_snapshot(db_path)
+        result = CliRunner().invoke(
+            search_cmd, ["alpha", "--quiet"], obj={"index_path": db_path}
+        )
+
+        assert result.exit_code == 0
+        assert result.stderr == ""
+        assert self._document_snapshot(db_path) == before
+
+    def test_vsearch_refreshes_drifted_file_before_search(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """D-01 trio: vsearch runs the same drift check before its searcher."""
+        db_path, notes, settings = self._seed_index(tmp_path, monkeypatch)
+        (notes / "a.md").write_text(
+            "# Heading Two\n\nZanzibar unique new term body. " * 10, encoding="utf-8"
+        )
+        manager = MagicMock()
+        manager.embed_single.return_value = [0.0] * 8
+        searcher = MagicMock()
+        searcher.search.return_value = []
+
+        with (
+            patch("sif.config.settings.get_settings", return_value=settings),
+            patch("sif.embedding.manager.EmbeddingManager.from_settings", return_value=manager),
+            patch("sif.search.vector.VectorSearcher", return_value=searcher),
+        ):
+            result = CliRunner().invoke(vsearch_cmd, ["zanzibar"], obj={"index_path": db_path})
+
+        assert result.exit_code == 0, result.output
+        assert "refreshed 1 files (bm25) before search" in result.stderr
+        assert "Zanzibar" in self._stored_content(db_path, notes / "a.md")
+
+    def test_query_refreshes_drifted_file_before_search(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """D-01 trio: query runs the same drift check before pipeline construction."""
+        db_path, notes, settings = self._seed_index(tmp_path, monkeypatch)
+        (notes / "a.md").write_text(
+            "# Heading Two\n\nZanzibar unique new term body. " * 10, encoding="utf-8"
+        )
+        manager = MagicMock()
+        manager.embed_single.return_value = [0.0] * 8
+        manager._model = MagicMock()
+        pipeline = MagicMock()
+        pipeline.search.return_value = []
+
+        with (
+            patch("sif.config.settings.get_settings", return_value=settings),
+            patch("sif.embedding.manager.EmbeddingManager.from_settings", return_value=manager),
+            patch("sif.cli.commands.search.SearchPipeline", return_value=pipeline),
+            patch("sif.search.rerank.create_reranker", side_effect=ImportError("x")),
+        ):
+            result = CliRunner().invoke(query_cmd, ["zanzibar"], obj={"index_path": db_path})
+
+        assert result.exit_code == 0, result.output
+        assert "refreshed 1 files (bm25) before search" in result.stderr
+        assert "Zanzibar" in self._stored_content(db_path, notes / "a.md")

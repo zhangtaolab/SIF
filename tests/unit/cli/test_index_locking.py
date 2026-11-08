@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import fcntl
 import os
+import sqlite3
 import time
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
@@ -26,10 +27,12 @@ import pytest
 from click.testing import CliRunner
 
 from sif.cli.commands.index import embed_cmd, update_cmd
+from sif.cli.commands.search import search_cmd
 from sif.config.settings import Settings, get_settings
 from sif.core.models import Collection, Document
 from sif.database.database import Database
 from sif.database.repositories import CollectionRepository, DocumentRepository
+from sif.indexing.incremental import IncrementalIndexer
 
 
 DIM = 8
@@ -209,3 +212,112 @@ class TestHeldLockProceeds:
         assert elapsed >= 0.19
         # D-02: the loser proceeded with its own work — nothing was dropped.
         assert "Added: 1" in result.output
+
+
+def _recording_drift_lock(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Replace index_lock in the drift module with a recording wrapper."""
+    import sif.indexing.drift as drift_mod
+
+    real_lock = drift_mod.index_lock
+    events: list[str] = []
+
+    @contextmanager
+    def recording_lock(
+        db_path: Path,
+        timeout_s: float,
+        on_wait: Callable[[], None] | None = None,
+    ) -> Generator[None, None, None]:
+        events.append("acquire")
+        with real_lock(db_path, timeout_s, on_wait=on_wait):
+            events.append("enter")
+            yield
+        events.append("release")
+
+    monkeypatch.setattr(drift_mod, "index_lock", recording_lock)
+    return events
+
+
+class TestPreSearchRefreshCoexistence:
+    """D-03: the pre-search refresh burst is another invoker under the flock contract."""
+
+    def _seed_indexed_notes(
+        self, db_path: Path, settings: Settings, root: Path, *, drift: bool
+    ) -> None:
+        """Create, index, and optionally drift the one-file notes collection."""
+        _seed_collection_with_file(db_path, settings, root)
+        db = Database(db_path)
+        with patch("sif.config.settings.get_settings", return_value=settings):
+            coll = CollectionRepository(db.connection).get_by_name("notes")
+            assert coll is not None
+            IncrementalIndexer(db.connection).update_collection(coll)
+        db.close()
+        if drift:
+            (root / "a.md").write_text(
+                "# Lock Note Two\n\nZanzibar drifted body text. " * 10, encoding="utf-8"
+            )
+
+    def test_search_refresh_waits_out_held_lock_then_proceeds(
+        self,
+        tmp_path: Path,
+        monkeypatch,
+    ) -> None:
+        """Under-cap drift vs a held flock: wait out the deadline, then refresh anyway."""
+        _delenv_settings_vars(monkeypatch)
+        settings = _test_settings(lock_wait_timeout=0.2)
+        db_path = tmp_path / "presearch-held.db"
+        root = tmp_path / "notes"
+        root.mkdir()
+        self._seed_indexed_notes(db_path, settings, root, drift=True)
+
+        # The test process is the incumbent writer for the whole invocation.
+        resolved = db_path.expanduser().resolve()
+        lock_path = resolved.with_name(resolved.name + ".lock")
+        fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            runner = CliRunner()
+            started = time.monotonic()
+            with patch("sif.config.settings.get_settings", return_value=settings):
+                result = runner.invoke(
+                    search_cmd, ["zanzibar"], obj={"index_path": db_path}
+                )
+            elapsed = time.monotonic() - started
+        finally:
+            os.close(fd)
+
+        assert result.exit_code == 0, result.output
+        assert "refreshed 1 files (bm25) before search" in result.stderr
+        # The loser waited out (at least) nearly the whole 0.2s deadline.
+        assert elapsed >= 0.19
+        # D-02 wait-then-run: the loser's own refresh ran anyway.
+        conn = sqlite3.connect(str(db_path))
+        try:
+            content = conn.execute(
+                "SELECT content FROM documents WHERE path = ?",
+                (str((root / "a.md").resolve()),),
+            ).fetchone()[0]
+        finally:
+            conn.close()
+        assert "Zanzibar drifted body" in content
+
+    def test_clean_search_never_enters_index_lock(
+        self,
+        tmp_path: Path,
+        monkeypatch,
+    ) -> None:
+        """SC2 spy proof: a clean search performs zero lock acquisitions."""
+        events = _recording_drift_lock(monkeypatch)
+        _delenv_settings_vars(monkeypatch)
+        settings = _test_settings()
+        db_path = tmp_path / "presearch-clean.db"
+        root = tmp_path / "notes"
+        root.mkdir()
+        self._seed_indexed_notes(db_path, settings, root, drift=False)
+
+        runner = CliRunner()
+        with patch("sif.config.settings.get_settings", return_value=settings):
+            result = runner.invoke(search_cmd, ["body"], obj={"index_path": db_path})
+
+        assert result.exit_code == 0, result.output
+        assert result.stderr == ""
+        assert events == []
