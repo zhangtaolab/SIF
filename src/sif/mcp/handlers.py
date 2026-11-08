@@ -84,7 +84,14 @@ class QueryToolHandler(ToolHandler):
             bm25_weight=input_data.bm25_weight,
             vector_weight=input_data.vector_weight,
         )
-        output = QueryOutput(results=results)
+        output = QueryOutput(
+            results=results,
+            # D-05 boundary remap: hybrid_search attaches the zero-result
+            # suggestions to the returned collection; an unlisted field is
+            # silently dropped here, so it is read explicitly. getattr keeps
+            # mocked/legacy plain-list returns working (empty suggestions).
+            suggestions=getattr(results, "suggestions", []),
+        )
         return ToolsCallResult(
             content=[
                 ToolContentItem(

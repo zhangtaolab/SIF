@@ -254,6 +254,10 @@ class QueryOutput(BaseModel):
     """Output for query tool."""
 
     results: list[SearchResult] = Field(default_factory=list)
+    # Phase 15 (D-05/A6): zero-result did-you-mean queries cross the MCP
+    # boundary as a flat list of display-only rewritten query strings. Empty
+    # for any query that returned results.
+    suggestions: list[str] = Field(default_factory=list)
 
 
 class LexSearchInput(BaseModel):

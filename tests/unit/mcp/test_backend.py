@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import json
 import os
+import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from pydantic import ValidationError
 
-from sif.mcp.backend import SearchBackend, _truncate_content
+from sif.config.settings import Settings
+from sif.database.database import Database
+from sif.mcp.backend import HybridSearchResults, SearchBackend, _truncate_content
 from sif.mcp.protocol import CollectionInfo, Document, QueryInput, SearchResult
 from sif.models.embedding import ModelType
 from sif.utils.paths import normalize_path
@@ -435,3 +440,147 @@ class TestQueryToolHandlerWeightPassThrough:
         assert props["rrf_k"]["type"] == "integer"
         assert props["bm25_weight"]["type"] == "number"
         assert props["vector_weight"]["type"] == "number"
+
+
+# =============================================================================
+# Zero-result suggestions (Phase 15, D-05/D-08)
+# =============================================================================
+
+_SUGGEST_DOCS = [
+    ("d1", "quantum machine learning algorithms"),
+    ("d2", "quantum computing quick quantifiers"),
+    ("d3", "studies of machine learning contexts"),
+]
+
+
+def _seed_suggestion_db(tmp_path: Path) -> tuple[Path, Settings]:
+    """Real DB (production DDL) whose porter vocabulary anchors DYM tests."""
+    settings = Settings(
+        _env_file=None,
+        embedding_dim=8,
+        model_name="test",
+        cache_embeddings=False,
+    )
+    db_path = tmp_path / "mcp-suggest.db"
+    with patch("sif.config.settings.get_settings", return_value=settings):
+        db = Database(db_path)
+        db.init_schema()
+        now = datetime.now(timezone.utc).isoformat()
+        with db.connection:
+            conn = db.connection
+            conn.execute(
+                "INSERT INTO collections (id, name, path, created_at, updated_at)"
+                " VALUES ('c1', 'notes', '/vault', ?, ?)",
+                (now, now),
+            )
+            conn.executemany(
+                "INSERT INTO documents (id, collection_id, path, filename, title,"
+                " content, checksum, mtime, created_at, updated_at)"
+                " VALUES (?, 'c1', ?, ?, ?, ?, ?, 1.0, ?, ?)",
+                [
+                    (
+                        doc_id,
+                        f"/vault/{doc_id}.md",
+                        f"{doc_id}.md",
+                        doc_id,
+                        body,
+                        f"ck-{doc_id}",
+                        now,
+                        now,
+                    )
+                    for doc_id, body in _SUGGEST_DOCS
+                ],
+            )
+        db.close()
+    return db_path, settings
+
+
+def _suggestion_backend(db_path: Path, settings: Settings) -> SearchBackend:
+    """Backend with no embedder load (the pipeline is mocked per test)."""
+    with patch("sif.mcp.backend.EmbeddingModelFactory", side_effect=RuntimeError("no embedder")):
+        return SearchBackend(str(db_path), settings=settings)
+
+
+def _query_log_count(db_path: Path) -> int:
+    conn = sqlite3.connect(db_path)
+    try:
+        return int(conn.execute("SELECT COUNT(*) FROM query_log").fetchone()[0])
+    finally:
+        conn.close()
+
+
+class TestZeroResultSuggestions:
+    """QueryOutput.suggestions is populated explicitly on the zero-result path."""
+
+    @pytest.mark.asyncio
+    async def test_zero_result_query_carries_suggestions(self, tmp_path: Path) -> None:
+        """A zero-result MCP query returns DYM strings built from the vocab."""
+        db_path, settings = _seed_suggestion_db(tmp_path)
+        backend = _suggestion_backend(db_path, settings)
+
+        with patch("sif.mcp.backend.SearchPipeline") as mock_pipeline:
+            mock_pipeline.return_value.search.return_value = []
+            results = await backend.hybrid_search("quantm machin")
+
+        assert isinstance(results, HybridSearchResults)
+        assert list(results) == []
+        assert results.suggestions == ["quantum machin"]
+
+    @pytest.mark.asyncio
+    async def test_result_present_query_has_empty_suggestions(self, tmp_path: Path) -> None:
+        """Non-zero-result responses carry an empty suggestion list."""
+        db_path, settings = _seed_suggestion_db(tmp_path)
+        backend = _suggestion_backend(db_path, settings)
+
+        with patch("sif.mcp.backend.SearchPipeline") as mock_pipeline:
+            mock_pipeline.return_value.search.return_value = [_weight_result()]
+            results = await backend.hybrid_search("quantum")
+
+        assert results
+        assert results.suggestions == []
+
+    @pytest.mark.asyncio
+    async def test_engine_failure_degrades_to_empty_suggestions(self, tmp_path: Path) -> None:
+        """An exploding engine never fails the MCP query (Pitfall 10 posture)."""
+        db_path, settings = _seed_suggestion_db(tmp_path)
+        backend = _suggestion_backend(db_path, settings)
+
+        with (
+            patch("sif.mcp.backend.SearchPipeline") as mock_pipeline,
+            patch("sif.mcp.backend.SuggestionEngine", side_effect=RuntimeError("boom")),
+        ):
+            mock_pipeline.return_value.search.return_value = []
+            results = await backend.hybrid_search("quantm machin")
+
+        assert list(results) == []
+        assert results.suggestions == []
+
+    @pytest.mark.asyncio
+    async def test_mcp_query_never_writes_query_log(self, tmp_path: Path) -> None:
+        """D-08: assistant tool-queries never pollute personal history."""
+        db_path, settings = _seed_suggestion_db(tmp_path)
+        backend = _suggestion_backend(db_path, settings)
+
+        with patch("sif.mcp.backend.SearchPipeline") as mock_pipeline:
+            mock_pipeline.return_value.search.return_value = []
+            await backend.hybrid_search("quantm machin")
+            mock_pipeline.return_value.search.return_value = [_weight_result()]
+            await backend.hybrid_search("quantum")
+
+        assert _query_log_count(db_path) == 0
+
+    @pytest.mark.asyncio
+    async def test_handler_carries_suggestions_into_query_output(self) -> None:
+        """The handler explicitly remaps the list attribute into QueryOutput."""
+        from sif.mcp.handlers import QueryToolHandler
+
+        mock_backend = MagicMock()
+        mock_backend.hybrid_search = AsyncMock(
+            return_value=HybridSearchResults([], ["quantum machin"]),
+        )
+
+        result = await QueryToolHandler().handle({"query": "quantm machin"}, mock_backend)
+
+        payload = json.loads(result.content[0].text)
+        assert payload["results"] == []
+        assert payload["suggestions"] == ["quantum machin"]

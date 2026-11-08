@@ -15,6 +15,7 @@ from sif.embedding.factory import EmbeddingModelFactory
 from sif.embedding.model import ModelType
 from sif.mcp.protocol import CollectionInfo, Document, SearchResult
 from sif.search.hybrid import SearchPipeline
+from sif.search.suggest import SuggestionEngine
 from sif.utils.logging import get_logger
 from sif.utils.paths import normalize_path
 
@@ -23,6 +24,50 @@ logger = get_logger(__name__)
 
 
 T = TypeVar("T")
+
+
+class HybridSearchResults(list[SearchResult]):
+    """Search results carrying zero-result suggestions across the MCP boundary.
+
+    ``hybrid_search`` keeps its ``list[SearchResult]`` contract — every
+    caller indexes and iterates it unchanged. The suggestions ride the
+    returned collection itself because the MCP boundary re-maps core fields
+    one by one; an attribute that is not read explicitly would be silently
+    dropped. The query handler reads it with ``getattr`` so mocked or
+    third-party list returns keep working with an empty list.
+    """
+
+    suggestions: list[str]
+
+    def __init__(
+        self,
+        results: list[SearchResult],
+        suggestions: list[str] | None = None,
+    ) -> None:
+        """Wrap ``results`` and attach the (display-only) suggestions."""
+        super().__init__(results)
+        self.suggestions = suggestions or []
+
+
+def _with_suggestions(
+    conn: Any,
+    query: str,
+    results: list[SearchResult],
+) -> HybridSearchResults:
+    """Attach D-05 suggestions on the zero-result path only, fail-soft.
+
+    The engine is built on the connection already in scope; only an empty
+    result set pays its cost. Any failure degrades to no suggestions — a
+    suggestion problem must never fail an MCP query (Pitfall 10 posture).
+    """
+    if results:
+        return HybridSearchResults(results)
+    try:
+        suggestions = SuggestionEngine(conn).did_you_mean(query)
+    except Exception:
+        logger.warning("MCP did-you-mean computation failed", exc_info=True)
+        suggestions = []
+    return HybridSearchResults(results, suggestions)
 
 
 def _truncate_content(content: str, max_size: int = 100 * 1024) -> str:
@@ -105,7 +150,7 @@ class SearchBackend:
                 repo = CollectionRepository(conn)
                 matched = [c.id for c in (repo.get_by_name(n) for n in collections) if c]
                 if not matched:
-                    return []
+                    return _with_suggestions(conn, query, [])
                 options.collection_ids = matched
             pipeline = SearchPipeline(
                 conn,
@@ -113,7 +158,7 @@ class SearchBackend:
                 embedding_dim=self.settings.embedding_dim,
             )
             core_results = pipeline.search(query, options)
-            return [
+            mapped = [
                 SearchResult(
                     doc_id=r.document_id,
                     path=r.path,
@@ -134,6 +179,9 @@ class SearchBackend:
                 )
                 for r in core_results
             ]
+            # Same boundary rule for D-05: suggestions are attached explicitly
+            # on the zero-result path; MCP queries never write query_log (D-08).
+            return _with_suggestions(conn, query, mapped)
 
         return await self._run_in_db(_search)
 
