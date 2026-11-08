@@ -823,3 +823,174 @@ class TestHybridSC1PipelineGolden:
         assert k1[0]["document_id"] == "d3"
         assert k1[0]["scores"]["rrf_score"] == 1 / 2 + 1 / 3
         assert k60[0]["scores"]["rrf_score"] == 1 / 61 + 1 / 62
+
+
+# =============================================================================
+# Candidate fetch tests (Phase 16, D-10 — the cap must actually bind)
+# =============================================================================
+
+
+class _SpyReranker:
+    """Record the candidate count/top_k a reranker receives, pass results through."""
+
+    def __init__(self) -> None:
+        self.seen = 0
+        self.top_k = -1
+
+    def rerank(
+        self,
+        query: str,
+        results: list[SearchResult],
+        top_k: int = 10,
+    ) -> list[SearchResult]:
+        self.seen = len(results)
+        self.top_k = top_k
+        return results[:top_k]
+
+
+class TestCandidateFetch:
+    """The rerank path over-fetches to max(limit + offset, candidate_limit).
+
+    Before Phase 16 the fused list was at most options.limit (BM25 SQL-LIMITs
+    to it, vector trims to it, RRF truncates at it), so a candidate_limit
+    above limit could never bind — research Pitfall 1.
+    """
+
+    @staticmethod
+    def _build_candidate_db() -> sqlite3.Connection:
+        """Real in-memory DB with 20 apple-matching documents (BM25-only)."""
+        import sqlite_vec
+
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            conn.enable_load_extension(True)
+            sqlite_vec.load(conn)
+            conn.enable_load_extension(False)
+        except Exception:
+            conn.close()
+            pytest.skip("sqlite-vec not available")
+
+        from sif.database.schema import SchemaManager
+
+        SchemaManager(conn, embedding_dim=2).create_all()
+        now = "2026-11-08T00:00:00+00:00"
+        conn.execute(
+            "INSERT INTO collections (id, name, path, created_at, updated_at)"
+            " VALUES ('c1', 'notes', '/notes', ?, ?)",
+            (now, now),
+        )
+        for i in range(20):
+            did = f"d{i}"
+            conn.execute(
+                "INSERT INTO documents (id, collection_id, path, filename, title, content,"
+                " checksum, mtime, created_at, updated_at) VALUES (?, 'c1', ?, ?, ?, ?, 'x',"
+                " 1.0, ?, ?)",
+                (
+                    did,
+                    f"/notes/n{i}.md",
+                    f"n{i}.md",
+                    f"Note {i}",
+                    f"apple note number {i}",
+                    now,
+                    now,
+                ),
+            )
+            conn.execute(
+                "INSERT INTO document_chunks (id, document_id, sequence, content, created_at)"
+                " VALUES (?, ?, 0, ?, ?)",
+                (f"chunk-{did}", did, f"apple note number {i}", now),
+            )
+        return conn
+
+    def test_candidate_fetch_reranker_receives_full_cap(self) -> None:
+        """20 indexed docs, limit=3, candidate_limit=20 -> reranker receives 20, top_k=3."""
+        conn = self._build_candidate_db()
+        try:
+            spy = _SpyReranker()
+            pipeline = SearchPipeline(conn, reranker=spy)
+
+            results = pipeline.search("apple", SearchOptions(limit=3, candidate_limit=20))
+
+            assert spy.seen == 20
+            assert spy.top_k == 3
+            assert len(results) == 3
+        finally:
+            conn.close()
+
+    def test_candidate_fetch_limit_is_max_of_limit_offset_and_cap(
+        self,
+        mock_db: MagicMock,
+    ) -> None:
+        """fetch limit = max(limit + offset, candidate_limit) reaches the searchers."""
+        cases = [((3, 2, 20), 20), ((10, 5, 12), 15)]
+        for (limit, offset, cap), expected_fetch in cases:
+            spy = MagicMock()
+            spy.rerank.return_value = []
+            pipeline = SearchPipeline(mock_db, reranker=spy)
+            pipeline.hybrid.bm25 = create_autospec(BM25Searcher, instance=True)
+            pipeline.hybrid.bm25.search.return_value = [
+                SearchResult(
+                    document_id=f"doc-{i}",
+                    path=f"/{i}.md",
+                    title=f"Doc {i}",
+                    collection_name="default",
+                    score=0.9 - i * 0.01,
+                )
+                for i in range(25)
+            ]
+            options = SearchOptions(limit=limit, offset=offset, candidate_limit=cap)
+
+            pipeline.search("test", options)
+
+            passed = pipeline.hybrid.bm25.search.call_args[0][1]
+            assert passed.limit == expected_fetch
+            assert spy.rerank.call_args.kwargs["top_k"] == limit
+            # dataclasses.replace copies: the caller's options object is untouched.
+            assert options.limit == limit
+
+    def test_candidate_fetch_cross_query_fuse_uses_fetch_limit(
+        self,
+        mock_db: MagicMock,
+    ) -> None:
+        """The cross-query variant fusion truncates at the fetch limit, not options.limit."""
+        mock_expander = MagicMock()
+        mock_expander.expand.return_value = ["variant"]
+        spy = MagicMock()
+        spy.rerank.return_value = []
+        pipeline = SearchPipeline(
+            mock_db,
+            query_expander=mock_expander,
+            reranker=spy,
+        )
+        variant_results = [
+            SearchResult(
+                document_id=f"doc-{i}",
+                path=f"/{i}.md",
+                title=f"Doc {i}",
+                collection_name="default",
+                score=0.9 - i * 0.01,
+            )
+            for i in range(5)
+        ]
+        pipeline.hybrid.bm25 = create_autospec(BM25Searcher, instance=True)
+        pipeline.hybrid.bm25.search.return_value = variant_results
+        pipeline.hybrid.rrf = MagicMock()
+        pipeline.hybrid.rrf.fuse.return_value = variant_results
+
+        pipeline.search("test", SearchOptions(limit=3, candidate_limit=20))
+
+        assert pipeline.hybrid.rrf.fuse.call_args.args[1] == 20
+        assert pipeline.hybrid.rrf.fuse.call_args.kwargs == {"k": 60}
+
+    def test_candidate_fetch_off_path_matches_sc1_snapshot(self) -> None:
+        """reranker=None: no over-fetch, pipeline output equals the SC1 pre-change golden."""
+        conn = TestHybridSC1PipelineGolden._build_db()
+        try:
+            pipeline = SearchPipeline(conn, embedder=_FakeEmbedder(), embedding_dim=2)
+
+            results = pipeline.search(_FakeEmbedder.QUERY, SearchOptions())
+
+            assert [r.to_dict() for r in results] == TestHybridSC1PipelineGolden.SNAPSHOT
+        finally:
+            conn.close()
