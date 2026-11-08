@@ -5,16 +5,16 @@ milestone_name: Live Index and Search Quality
 current_phase: 16
 current_phase_name: Bench Expansion + Reranker Tuning
 status: executing
-stopped_at: Completed 16-02-PLAN.md
-last_updated: "2026-11-08T14:06:14.538Z"
+stopped_at: Completed 16-03-PLAN.md
+last_updated: "2026-11-08T14:29:47.334Z"
 last_activity: 2026-11-08
 last_activity_desc: Phase 16 execution started
-state_head: 08b9c70df48d4603970f7bd33f7367843497d9e8
+state_head: 2a4382fabef1c58a044bd8d5f455111ff8e2070d
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 22
-  completed_plans: 17
+  completed_plans: 18
 ---
 
 # DocSift — Project State
@@ -30,7 +30,7 @@ progress:
 ## Current Position
 
 Phase: 16 (Bench Expansion + Reranker Tuning) — EXECUTING
-Plan: 4 of 6
+Plan: 5 of 6
 Status: Ready to execute
 Last activity: 2026-11-08 — Phase 16 execution started
 
@@ -69,6 +69,7 @@ Progress: [████████░░] 83%
 | Phase 16 P01 | 17 min | 3 tasks | 5 files |
 | Phase 16 P01 | 17 min | 3 tasks | 5 files |
 | Phase 16 P02 | 18 min | 3 tasks | 7 files |
+| Phase 16 P03 | 14 min | 3 tasks | 157 files |
 
 ## Accumulated Context
 
@@ -147,6 +148,10 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 - [Phase 16]: [16-02] rerank gate = --rerank OR SIF_RERANK_ENABLED, checked BEFORE create_reranker — the off path never constructs a model or imports an optional backend (D-12)
 - [Phase 16]: [16-02] -C retained with default None; resolve_candidate_limit(explicit, settings) = explicit > setting > 20 (non-int falls back), always clamped 5..50 — the flag's Click range stays 1..200 and the A3 waiver is recorded beside the option; bench (16-04) imports the same resolver
 - [Phase 16]: [16-02] rerank_enabled doc description avoids 'sif search query;' — the docs bare-command gate (tests/test_docs.py) exempts 'query' only when followed by whitespace
+- [Phase 16]: 16-03: ConceptEmbedder = blake2b-seeded per-token unit vectors summed and L2-normalized, CJK runs kept whole — deterministic on every platform, no embedding model in CI (D-01)
+- [Phase 16]: 16-03: relevance keys are corpus-relative (declared corpus_root resolved once via resolve_corpus_root); build_bench_db stores resolved absolute paths so result keys join — never document ids (D-02, Pitfall 4)
+- [Phase 16]: 16-03: multilingual docs keep Chinese phrases as exact contiguous runs surrounded by non-CJK; queries reuse the exact run, never mid-run prefixes (Pitfall 3 porter constraint)
+- [Phase 16]: 16-03: pack split fixed in the generator at 9 tuning + 5 held-out per category (36/20); drift gate flags unexpected files too; _settings_mock carries the rerank fields inertly until 16-04 reads them
 
 ### Pending Todos
 
@@ -167,8 +172,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 
 ## Session Continuity
 
-Last session: 2026-11-08T14:06:13.976Z
-Stopped at: Completed 16-02-PLAN.md
+Last session: 2026-11-08T14:29:46.750Z
+Stopped at: Completed 16-03-PLAN.md
 Resume file: None
 
 - **Next expected action:** `/gsd-discuss-phase 13` (Phase 13 needs context; research flags: daemon/service-install specifics already in research/STACK.md)
