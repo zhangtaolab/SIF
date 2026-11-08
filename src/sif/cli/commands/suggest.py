@@ -39,6 +39,14 @@ _CELL_MAX_LEN = 80
 
 SECTION_TITLES = ("Prefix completions", "Did you mean", "History")
 
+# Empty three-section payload for machine output when there is nothing to
+# report (a missing index): --json is always a parseable document (WR-05).
+_EMPTY_SECTIONS: dict[str, list[str]] = {
+    "completions": [],
+    "did_you_mean": [],
+    "history": [],
+}
+
 
 def _cell(text: str) -> str:
     """Truncate then escape one vocab/user-derived cell (T-15-06)."""
@@ -135,7 +143,13 @@ def suggest_cmd(  # noqa: PLR0913 — Click requires one parameter per option
     _validate_modes(query, clear_history)
 
     if not index_path.exists():
-        console.print("[yellow]No index found.[/yellow]")
+        # Machine output must stay parseable on a fresh install (WR-05): a
+        # --json consumer gets the documented empty three-array document, not
+        # a human notice on stdout. -q suppresses the human notice.
+        if output_json:
+            click.echo(json.dumps(_EMPTY_SECTIONS, ensure_ascii=False))
+        elif not quiet:
+            console.print("[yellow]No index found.[/yellow]")
         return
 
     if clear_history:

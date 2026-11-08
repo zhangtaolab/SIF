@@ -5,7 +5,8 @@ Database and reads the vocab shadow plus ``query_log``, so mocks would not
 exercise the contract. The table mode labels three sections in fixed order
 (D-11); ``--json`` carries exactly the three arrays (D-12); ``--clear-history``
 is the single clear entry point and is mutually exclusive with QUERY (D-10);
-a missing index never materializes a DB and a quiet run prints no table.
+a missing index never materializes a DB, and --json stays parseable there
+(WR-05); a quiet run prints no table.
 """
 
 from __future__ import annotations
@@ -223,6 +224,32 @@ class TestGuardsAndQuiet:
         assert result.exit_code == 0
         assert "No index found" in result.output
         assert not index_path.exists()
+
+    def test_missing_index_json_is_parseable_empty_document(self, tmp_path: Path) -> None:
+        """WR-05: --json on a fresh install is JSON, never human text on stdout."""
+        index_path = tmp_path / "absent.db"
+
+        result = CliRunner().invoke(
+            suggest_cmd, ["quant", "--json"], obj={"index_path": index_path}
+        )
+
+        assert result.exit_code == 0
+        assert json.loads(result.stdout) == {
+            "completions": [],
+            "did_you_mean": [],
+            "history": [],
+        }
+        assert "No index found" not in result.output
+        assert not index_path.exists()
+
+    def test_missing_index_quiet_suppresses_notice(self, tmp_path: Path) -> None:
+        """WR-05: -q silences the human notice on the missing-index path."""
+        index_path = tmp_path / "absent.db"
+
+        result = CliRunner().invoke(suggest_cmd, ["quant", "-q"], obj={"index_path": index_path})
+
+        assert result.exit_code == 0
+        assert "No index found" not in result.output
 
     def test_quiet_suppresses_table_and_suggest_never_writes_history(self, tmp_path: Path) -> None:
         db_path = _seed_index(tmp_path, history=("quantum notes", "machine learning"))
