@@ -446,17 +446,18 @@ os.utime(path_b, (1_700_000_000, 1_700_000_000))    # pure touch drift, determin
 | A3 | Marking never-embedded docs as stale (in addition to BM25-refreshed docs) is acceptable UX, optionally gated on index-has-embeddings | Findings B1/Pitfall 3 | Medium — if unwelcome, users who never embed see markers on every result; the gate option mitigates; needs a decision at plan time (discretion area) |
 | A4 | A file touched-but-unchanged (mtime moved, content same) counts as drift and refreshes to `unchanged` at cost of one parse | Pattern 2 | Low — self-consistent behavior; alternative (checksum in the walk) re-reads files, defeating the cheap gate |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Does the size half of "mtime/size" need to exist at all?**
+All three resolved at plan time; decisions encoded in 14-01-PLAN.md / 14-02-PLAN.md.
+
+1. **Does the size half of "mtime/size" need to exist at all?** — RESOLVED: mtime-only.
    - What we know: `documents.file_size` is body-byte-length, stale on updates (Pitfall 1); mtime alone is exact and sufficient.
-   - What's unclear: whether the user wants `st_size` persisted for future use (shared-core change).
-   - Recommendation: mtime-only this phase; note the size column's semantics in the drift helper's docstring.
-2. **Marker on never-embedded docs — ungated or gated on index-has-embeddings?**
+   - Resolution (14-01): drift compare is mtime-primary; `st_size` is NOT persisted; the size column's misleading semantics are noted in the drift helper's docstring. Capability unchanged — content changes always move mtime.
+2. **Marker on never-embedded docs — ungated or gated on index-has-embeddings?** — RESOLVED: gated on index-has-embeddings.
    - What we know: both are schema-free derivations; ungated is maximally honest, gated avoids nagging pure-BM25 users (A3).
-   - Recommendation: pick one at plan time; either satisfies QUAL-06's letter; tests must match the choice.
-3. **`--no-refresh` flag in addition to the setting?**
-   - Discretion area; cost is one Click option per command (~3 sites); recommend yes for symmetry with `--embed`-style explicit control, but not required.
+   - Resolution (14-02): markers activate only when the index has at least one embedding; either reading satisfies QUAL-06's letter; tests assert the gate (zero-embedding index → no markers, no remedy hint).
+3. **`--no-refresh` flag in addition to the setting?** — RESOLVED: yes.
+   - Resolution (14-01 Task 2): `--no-refresh` added to all three trio commands, for symmetry with explicit-control flags; `SIF_SEARCH_REFRESH_ENABLED` remains the master off-switch.
 
 ## Environment Availability
 
@@ -486,7 +487,7 @@ os.utime(path_b, (1_700_000_000, 1_700_000_000))    # pure touch drift, determin
 |--------|----------|-----------|-------------------|-------------|
 | LIVE-10 | Drift helper: mtime/new/deleted detection; missing-root skip; resolve-consistent compares | unit | `pytest tests/unit/indexing/test_drift.py -x` | ❌ Wave 0 |
 | LIVE-10 | Cap boundary: N refreshed / N+1 skipped+warned; count-first (no parse when over cap) | unit | `pytest tests/unit/indexing/test_drift.py -x` | ❌ Wave 0 |
-| LIVE-10 | Clean index: zero writes, no lock file created, no notice (SC2) | unit | `pytest tests/unit/cli/test_search.py -k refresh -x` | ✅ extend (65 existing tests) |
+| LIVE-10 | Clean index: zero writes, no lock file created, no notice (SC2) | unit | `pytest tests/unit/cli/test_search.py -k refresh -x` | ✅ extend |
 | LIVE-10 | Trio integration: search/vsearch/query refresh drifted docs before searching; `-q` and setting/flag opt-out honored; stderr-not-stdout notices (CliRunner `mix_stderr=False`-style separation) | unit (CliRunner) | `pytest tests/unit/cli/test_search.py -x` | ✅ extend |
 | LIVE-10 | Coexistence: refresh burst under flock vs a held lock (wait-then-run) — reuse the 11-D08 parent-holds-lock pattern | subprocess/unit | `pytest tests/unit/cli/test_index_locking.py -x` (pattern home) | ✅ extend |
 | QUAL-06 | Staleness enrichment: embedded→unmarked; never-embedded/BM25-refreshed→marked; vec0-missing→no markers | unit | `pytest tests/unit/search/test_staleness.py -x` | ❌ Wave 0 |
