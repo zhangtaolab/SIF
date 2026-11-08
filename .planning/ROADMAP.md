@@ -152,17 +152,20 @@ Plans:
   3. `sif bench --sweep` grids over weights and k, and differences within noise (<0.01) are explicitly not declared winners
   4. Shipped defaults are justified by held-out results and documented — defaults change only if held-out data (not the tuning set) warrants it
   5. The reranker honors a candidate cap (10-20 on CPU) and a configurable relative threshold (score ≥ top1 × α), and the skip-rerank fast path keeps `sif search query` interactive
-**Plans**: 5 plans
+**Plans**: 6 plans
 Plans:
 **Wave 1**
-- [ ] 16-01-PLAN.md — Graded bench report core: nDCG@10/Hit@10/p50-p95, path-keyed relevance, per-category breakdown, settings baseline (EVAL-01, EVAL-02)
-- [ ] 16-02-PLAN.md — Reranker cost control: opt-in SIF_RERANK_ENABLED/--rerank, binding candidate cap, relative threshold, generated docs (QUAL-05)
+- [ ] 16-01-PLAN.md — Graded bench report core: nDCG@10/Hit@10/p50-p95, path-keyed relevance with fixture-relative corpus root, legacy flat-metric compatibility, settings baseline (EVAL-01, EVAL-02)
+- [ ] 16-02-PLAN.md — Reranker config/CLI surface: opt-in SIF_RERANK_ENABLED/--rerank, validated cap + threshold settings, -C resolution, generated docs (QUAL-05)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 16-03-PLAN.md — Committed synthetic fixture pack (56 queries, 4 categories, tuning/held-out), deterministic ConceptEmbedder + DB builder, contract tests (EVAL-02)
-- [ ] 16-04-PLAN.md — Sweep engine: 45-config grid, strict <0.01 tie groups, tuning-only guard, embedding reuse, rerank off/on states (EVAL-03, QUAL-05)
+- [ ] 16-03-PLAN.md — Committed synthetic fixture pack (56 queries, 4 categories, tuning/held-out), deterministic ConceptEmbedder + DB builder, contract tests, CLI-level committed-pack nDCG proof (EVAL-02)
+- [ ] 16-06-PLAN.md — Reranker runtime: relative threshold in the scoring path, binding over-fetch candidate cap, off-path equivalence (QUAL-05)
 
 **Wave 3** *(blocked on Waves 1-2 completion)*
+- [ ] 16-04-PLAN.md — Sweep engine: 45-config grid, strict <0.01 tie groups, tuning-only guard, embedding reuse, rerank off/on states (EVAL-03, QUAL-05)
+
+**Wave 4** *(blocked on Waves 1-3 completion)*
 - [ ] 16-05-PLAN.md — Held-out evidence snapshot + defaults lock, benchmarking docs, Phase 15 IN-02 closure, full phase gate (EVAL-04)
 
 ## Progress

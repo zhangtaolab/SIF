@@ -561,32 +561,37 @@ def evaluate_config(pipeline: SearchPipeline, queries: Sequence[QueryItem],
 
 **If this table is non-empty:** these are the decisions the planner/discuss-phase should confirm before locking.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Absolute interactive-latency target**
    - What we know: D-05 excludes CLI startup and measures warmed per-query time; Phase 14 UAT measured a +105 ms pre-command walk on a 3000-doc corpus.
    - What's unclear: whether SC5 needs a numeric threshold or just relative off/on evidence.
    - Recommendation: define and document `p95(rerank off) < 500 ms` on the reference corpus, but do not gate CI on it; report both states.
+   - **Resolution:** adopted — docs/benchmarking.md documents p95(rerank off) < 500 ms as a target and Plan 04/05 report both states; no CI threshold (16-04, 16-05).
 
 2. **Rerank-on state in bench**
    - What we know: D-12 requires two measured states; `--rerank` is the explicit request.
    - What's unclear: whether `SIF_RERANK_ENABLED=1` should make bench automatically measure the on state.
    - Recommendation: bench always measures off; `--rerank` adds on. The setting governs `sif query`, not bench.
+   - **Resolution:** adopted — bench measures off always and on only with `--rerank`; `SIF_RERANK_ENABLED` governs `sif search query` (16-02, 16-04).
 
 3. **Where the held-out evidence lives**
    - What we know: EVAL-04 requires "documented"; docs are partly generator-owned.
    - What's unclear: user-facing `docs/benchmarking.md` vs a phase report.
    - Recommendation: `docs/benchmarking.md` for the method + evidence table, plus the raw JSON/console output in the phase verification artifact.
+   - **Resolution:** adopted — `docs/benchmarking.md` carries the method/evidence table and `tests/fixtures/bench/heldout_defaults.json` carries the machine-checked snapshot (16-05).
 
 4. **Should defaults change if held-out warrants?**
    - What we know: defaults move only at Δ≥0.01 held-out.
    - What's unclear: whether the tuning set will produce a >0.01 held-out win on the synthetic pack.
    - Recommendation: treat "no change, documented" as a valid outcome; update the snapshot only with the evidence.
+   - **Resolution:** adopted — the snapshot records the sweep-winner candidate's held-out delta and a verdict; "unchanged" is valid and "change-warranted" requires updating defaults in-phase (16-05).
 
 5. **How the committed pack's index is built for a real run**
    - What we know: `sif bench` needs an existing index; the pack can be indexed through normal commands.
    - What's unclear: whether to add a `--corpus` convenience flag.
-   - Recommendation: document `sif collection add` + `sif index update` (and `sif embed` for the vector leg) in `docs/benchmarking.md`; add no new flag unless the user asks.
+   - Recommendation: document `sif collection add` + `sif index update` (and `sif index embed` for the vector leg) in `docs/benchmarking.md`; add no new flag unless the user asks.
+   - **Resolution:** adopted — `sif collection add` + `sif index update` + `sif index embed` + `sif bench` are documented; no `--corpus` flag is added (16-05). Note: `sif embed` is a removed command (tests/test_docs.py), so the vector leg is `sif index embed`.
 
 ## Environment Availability
 
