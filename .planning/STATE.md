@@ -5,16 +5,16 @@ milestone_name: Live Index and Search Quality
 current_phase: 16
 current_phase_name: Bench Expansion + Reranker Tuning
 status: executing
-stopped_at: Completed 16-06-PLAN.md
-last_updated: "2026-11-08T14:50:31.163Z"
+stopped_at: Completed 16-04-PLAN.md
+last_updated: "2026-11-08T15:24:44.670Z"
 last_activity: 2026-11-08
 last_activity_desc: Phase 16 execution started
-state_head: 6bac5bfbd61601f700ff11425ede223c0877f5eb
+state_head: e6baa38cd92931ad6dc9c989ea36d3208d62b325
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 22
-  completed_plans: 20
+  completed_plans: 21
 ---
 
 # DocSift — Project State
@@ -71,6 +71,7 @@ Progress: [████████░░] 83%
 | Phase 16 P02 | 18 min | 3 tasks | 7 files |
 | Phase 16 P03 | 14 min | 3 tasks | 157 files |
 | Phase 16 P06 | 12 min | 3 tasks | 5 files |
+| Phase 16 P04 | 27 min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -156,6 +157,10 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 - [Phase 16]: 16-06: rerank threshold = raw >= on top1*alpha after descending sort, before [:top_k] — exact half retained, no epsilon; 0.0 default keeps direct construction byte-identical
 - [Phase 16]: 16-06: over-fetch rides SearchOptions.limit via dataclasses.replace (max(limit+offset, candidate_limit)) reaching hybrid.search and the cross-query fuse; off path passes the caller's options object by identity (SC1-pinned byte-identical)
 - [Phase 16]: 16-06: create_reranker resolves rerank_relative_threshold with isinstance(float|int) after getattr — MagicMock settings fall back to 0.0, never leaking into the scoring path (Pitfall 10)
+- [Phase 16]: [16-04] sweep ranking is tuning-only by construction: _tuning_evaluator filters split == 'tuning' before any search call (T-16-06); empty tuning set (legacy/all-heldout fixtures) raises a ClickException naming the missing split
+- [Phase 16]: [16-04] tie rule = round(best - ndcg_at_10, 6) < 0.01 strict; exactly-0.01 (incl. 0.29-vs-0.28 raw 0.009999...953) is signal, 0.0099 is noise; grid order is the tie-break; the settings baseline measurement is REUSED for its grid slot so baseline deltas are exactly zero
+- [Phase 16]: [16-04] rerank states are strictly additive on no-sweep --json (pinned flat keys stay top-level mirroring off); sweep rows carry states only under --rerank; off-only never calls create_reranker; missing backend/model-load degrades to off-only, factory ValueError stays ClickException
+- [Phase 16]: [16-04] bench -C typed IntRange(1,200) default None resolves through resolve_candidate_limit (-C 200 -> 50); one CachedEmbedder per invocation shares embeddings across baseline and sweep (D-07)
 
 ### Pending Todos
 
@@ -176,8 +181,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 
 ## Session Continuity
 
-Last session: 2026-11-08T14:50:30.590Z
-Stopped at: Completed 16-06-PLAN.md
+Last session: 2026-11-08T15:24:44.091Z
+Stopped at: Completed 16-04-PLAN.md
 Resume file: None
 
 - **Next expected action:** `/gsd-discuss-phase 13` (Phase 13 needs context; research flags: daemon/service-install specifics already in research/STACK.md)
