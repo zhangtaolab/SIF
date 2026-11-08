@@ -26,6 +26,7 @@ DOCS_FILES = [
     Path("docs/quickstart.md"),
     Path("docs/mcp-server.md"),
     Path("docs/search-algorithms.md"),
+    Path("docs/benchmarking.md"),
     Path("docs/architecture.md"),
     Path("docs/models.md"),
 ]

@@ -242,42 +242,40 @@ class SearchType(str, Enum):
 #### Class: `SearchOptions`
 
 ```python
-class SearchOptions(BaseModel):
-    limit: int = Field(10, ge=1, le=100)
-    offset: int = Field(0, ge=0)
-    threshold: float = Field(0.0, ge=0, le=1)
-    include_chunks: bool = True
-    include_metadata: bool = True
-    highlight_matches: bool = True
-    
-    # BM25 options
-    bm25_k1: float = Field(1.5, ge=0.1, le=3.0)
-    bm25_b: float = Field(0.75, ge=0.1, le=1.0)
-    
-    # Vector options
-    vector_weight: float = Field(0.7, ge=0, le=1)
-    
-    # Hybrid options
-    bm25_weight: float = Field(0.3, ge=0, le=1)
-    rrf_k: int = Field(60, ge=1)
-    
-    # Query expansion
-    expand_query: bool = False
-    expansion_factor: int = Field(3, ge=1, le=10)
-    
-    # Reranking
-    rerank: bool = False
-    rerank_top_k: int = Field(20, ge=1, le=100)
+from sif.core.models import SearchOptions
+from dataclasses import dataclass
+
+@dataclass
+class SearchOptions:
+    limit: int = 10
+    offset: int = 0
+    # None = no collection filter; [] = exclude all collections
+    collection_ids: list[str] | None = None
+    min_score: float = 0.0
+    include_content: bool = False
+    include_highlights: bool = True
+    max_highlights: int = 3
+    explain: bool = False
+    # Reranker candidate pool (over-fetch target, clamped 5-50; default 20)
+    candidate_limit: int = 20
+    intent: str | None = None
+    snippet_max_length: int = 300
+    # Hybrid fusion tunables (Phase 15): settings/flags resolve INTO these
+    rrf_k: int = 60
+    bm25_weight: float = 1.0
+    vector_weight: float = 1.0
 ```
 
 **Usage:**
 ```python
-options = SearchOptions(
-    limit=20,
-    threshold=0.5,
-    expand_query=True,
-    rerank=True
-)
+# Equal weights and k=60 reproduce the unweighted default (byte-identical)
+options = SearchOptions(limit=10, include_highlights=False)
+
+# Weighted fusion, resolved from SIF_ settings or per-query flags
+options = SearchOptions(limit=10, rrf_k=40, bm25_weight=0.7, vector_weight=0.3)
+
+# Reranker over-fetch pool (used only on the enabled --rerank path)
+options = SearchOptions(limit=10, candidate_limit=30)
 ```
 
 #### Class: `SearchQuery`
@@ -498,6 +496,79 @@ fused = rrf.fuse(
     k=40,
 )
 ```
+
+## Benchmark Module
+
+```python
+from sif.search.benchmark import (
+    BenchReport, ConfigResult, QueryItem, SearchEvaluator, SweepRanking,
+    dcg_at_k, hit_at_k, iter_grid, ndcg_at_k, percentile, rank_sweep,
+    warrants_default_change,
+)
+```
+
+Graded metric helpers (pure functions):
+
+```python
+# Exponential-gain DCG/nDCG; the ideal comes from the FULL judgment set
+dcg_at_k([3, 0, 2], 10)          # 8.5
+ndcg_at_k([3, 0, 2], [3, 2], 10)  # 0.95583058934618
+
+# Hit@k: 1.0 iff any of the top-k grades is positive
+hit_at_k([0, 3], 10)             # 1.0
+
+# Linear-interpolation percentile; p in [0, 100]
+percentile([10.0, 20.0, 30.0, 40.0], 50)  # 25.0
+```
+
+The held-out defaults rule (inclusive at exactly 0.01 on the delta rounded to
+6 decimals — the same arithmetic the sweep tie rule uses):
+
+```python
+warrants_default_change(0.500, 0.510)    # True  (delta exactly 0.01)
+warrants_default_change(0.500, 0.5099)   # False (sub-delta noise)
+```
+
+#### Class: `SearchEvaluator`
+
+```python
+evaluator = SearchEvaluator(fixture, fixture_path=Path("tests/fixtures/bench/queries.json"))
+report = evaluator.report(lambda query: pipeline.search(query, options), k=10)
+# report.ndcg_at_10 / report.hit_at_10 / report.num_queries
+# report.categories["keyword"].ndcg_at_10  (per-category breakdown)
+# report.p50_ms / report.p95_ms warmed; report.cold_start_ms separate
+```
+
+`fixture_path` (never a bare corpus root) lets `resolve_corpus_root` join the
+fixture's declared `corpus_root` so path-keyed relevance joins result paths.
+
+#### Dataclasses: `QueryItem`, `BenchReport`, `ConfigResult`, `SweepRanking`
+
+- `QueryItem` — one query with category, split, and its grade map
+- `BenchReport` — graded report with per-category `CategoryMetrics` and legacy
+  flat metrics merged by `to_dict()`
+- `ConfigResult` — one measured sweep configuration (four-category breakdown,
+  optional rerank `states`); `to_dict()` serializes all four category keys
+- `SweepRanking` — ranked configs plus the explicit tie group and
+  `winner_declared` honesty flag
+
+#### Sweep Engine
+
+```python
+results = [...]  # list[ConfigResult], measured on the tuning split only
+ranking = rank_sweep(results)   # strict < 0.01 tie rule on round(delta, 6)
+ranking.ranked[0]               # best: declared grid order breaks ties
+ranking.tie_group               # configs within 0.01 of the best
+ranking.winner_declared         # False whenever the tie group is plural
+
+list(iter_grid())               # the 45 declared configurations, grid order
+```
+
+CLI surfaces: `sif bench FIXTURE --json` (current-settings baseline),
+`sif bench FIXTURE --sweep --json` (tuning-only grid ranking), and
+`sif bench FIXTURE --sweep --rerank --json` (off/on rerank states per
+configuration). See [Benchmarking](benchmarking.md) for the measurement
+contract and the committed evidence snapshot.
 
 ## Database Module
 

@@ -281,6 +281,28 @@ expanded = expander.expand("python decorators")
 
 Reranking improves result quality using a more sophisticated model.
 
+### Opt-In, Off by Default
+
+Reranking is an explicit opt-in: enable it per invocation with
+`sif search query --rerank` (or set `SIF_RERANK_ENABLED=1`). The default keeps
+the zero-cost skip-rerank fast path —
+no reranker model is constructed unless reranking is requested.
+
+### Over-Fetch and the Candidate Cap
+
+When enabled, the pipeline over-fetches to `max(limit + offset, candidate_limit)`
+candidates before fusion so the reranker sees a deeper pool than the page it
+returns. `candidate_limit` resolves through one shared clamp (5-50, default 20;
+`SIF_RERANK_CANDIDATE_LIMIT`, or `-C` on the CLI).
+
+### Normalized-Score Relative Threshold
+
+After sorting candidates by descending reranker score, only candidates scoring
+at least `top_score * alpha` are kept (`SIF_RERANK_RELATIVE_THRESHOLD`,
+default 0.5, `0 < alpha <= 1`), applied before truncation to `top_k`. The
+threshold is relative to the top score, not absolute — no per-model
+score-distribution tuning needed.
+
 ### Cross-Encoder Reranking
 
 ```
@@ -308,6 +330,9 @@ reranked = reranker.rerank(
     top_k=10,
 )
 ```
+
+See [Benchmarking](benchmarking.md) for measuring rerank off/on as two states
+with `sif bench --rerank`.
 
 ## Search Pipeline
 
