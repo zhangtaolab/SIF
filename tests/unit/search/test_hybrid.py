@@ -831,9 +831,10 @@ class TestHybridSC1PipelineGolden:
 
 
 class _SpyReranker:
-    """Record the candidate count/top_k a reranker receives, pass results through."""
+    """Record the query/candidate count/top_k a reranker receives, pass results through."""
 
     def __init__(self) -> None:
+        self.query = ""
         self.seen = 0
         self.top_k = -1
 
@@ -843,6 +844,7 @@ class _SpyReranker:
         results: list[SearchResult],
         top_k: int = 10,
     ) -> list[SearchResult]:
+        self.query = query
         self.seen = len(results)
         self.top_k = top_k
         return results[:top_k]

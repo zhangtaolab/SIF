@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from dataclasses import replace
 from typing import TYPE_CHECKING, cast
 
 from sif.core.models import Embedder, SearchOptions, SearchResult, SearchType
@@ -220,10 +221,27 @@ class SearchPipeline:
             except Exception as e:
                 logger.warning(f"Query expansion failed: {e}")
 
+        # Candidate-cap over-fetch (Phase 16, D-10): BM25 SQL-LIMITs to
+        # options.limit, vector trims to it, and RRF truncates at it — so
+        # without over-fetching, a candidate_limit above limit can never bind
+        # and the cap is a no-op (research Pitfall 1). When a reranker is
+        # enabled, fetch to max(limit + offset, candidate_limit) and slice to
+        # the cap before reranking. options.candidate_limit is already
+        # validated (every CLI path resolves it through Plan 02's clamped
+        # resolve_candidate_limit); the off path keeps the original options so
+        # it stays byte-identical.
+        if self.reranker is not None:
+            fetch_options = replace(
+                options,
+                limit=max(options.limit + options.offset, options.candidate_limit),
+            )
+        else:
+            fetch_options = options
+
         # Search with each query
         all_results = []
         for q in queries:
-            results = self.hybrid.search(q, options)
+            results = self.hybrid.search(q, fetch_options)
             if results:
                 all_results.append(results)
 
@@ -234,7 +252,7 @@ class SearchPipeline:
             # Fuse results from multiple queries (cross-query VARIANT fusion —
             # not source fusion: k rides options, weights are meaningless here
             # and must never be passed (Pitfall 9 / assumption A7))
-            results = self.hybrid.rrf.fuse(all_results, options.limit, k=options.rrf_k)
+            results = self.hybrid.rrf.fuse(all_results, fetch_options.limit, k=options.rrf_k)
 
         # Apply candidate limit before reranking
         if self.reranker is not None and len(results) > 0:
