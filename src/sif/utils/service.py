@@ -46,6 +46,14 @@ _LOG_BASENAME = "watch"
 _THROTTLE_INTERVAL_S = 10
 _RESTART_SEC = 5
 
+# Every manager invocation is deadline-bounded (IN-02), mirroring the ps-probe
+# precedent in daemon.py (_PS_TIMEOUT_SECONDS). Larger than that probe's 5s
+# because stopping a service (launchctl bootout, systemctl disable --now)
+# legitimately blocks on the supervised watch process's own bounded shutdown
+# (SIGTERM + flush joins can take ~20s); a wedged manager must still fail the
+# CLI with a typed error instead of hanging it forever.
+_RUN_TIMEOUT_SECONDS = 30.0
+
 # The manager binaries are invoked by bare name (resolved through PATH —
 # their presence is gated by shutil.which first); never a string command
 # line, never a shell (D-12).
@@ -196,8 +204,21 @@ def _gate_manager(manager: str) -> None:
 
 
 def _run(runner: Runner, argv: list[str]) -> subprocess.CompletedProcess[Any]:
-    """Invoke a manager binary with an explicit argv list (D-12, never a shell)."""
-    return runner(argv, capture_output=True, text=True, check=False)
+    """Invoke a manager binary with an explicit argv list (D-12, never a shell).
+
+    Deadline-bounded (IN-02): a manager that never returns raises a typed
+    :class:`ServiceCommandError` instead of hanging the CLI indefinitely.
+    """
+    try:
+        return runner(
+            argv,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=_RUN_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise ServiceCommandError(argv, f"timed out after {_RUN_TIMEOUT_SECONDS:.0f}s") from exc
 
 
 def _detail(result: subprocess.CompletedProcess[Any]) -> str:

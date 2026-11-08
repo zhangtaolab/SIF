@@ -24,6 +24,7 @@ from sif.utils import service
 from sif.utils.service import (
     SERVICE_LABEL,
     UNIT_NAME,
+    ServiceCommandError,
     ServiceManagerMissing,
     build_plist,
     install_watch_service,
@@ -252,6 +253,41 @@ class TestMissingManager:
 
         with pytest.raises(ServiceManagerMissing):
             uninstall_watch_service(manager="launchd", dest_dir=tmp_path, runner=_RecordingRunner())
+
+
+class TestRunTimeout:
+    """Every manager invocation is deadline-bounded (IN-02)."""
+
+    def test_run_passes_the_bounded_timeout_to_the_runner(self) -> None:
+        seen: dict[str, Any] = {}
+
+        def runner(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+            seen.update(kwargs)
+            return _ok(argv)
+
+        service._run(runner, ["launchctl", "print", "gui/501/x"])
+
+        assert seen["timeout"] == service._RUN_TIMEOUT_SECONDS
+
+    def test_timeout_maps_to_service_command_error(self, tmp_path, monkeypatch) -> None:
+        _fake_which(monkeypatch)
+
+        def runner(argv: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+            raise subprocess.TimeoutExpired(cmd=argv, timeout=service._RUN_TIMEOUT_SECONDS)
+
+        with pytest.raises(ServiceCommandError) as exc_info:
+            install_watch_service(
+                tmp_path / "sif.db",
+                [],
+                manager="launchd",
+                python="/usr/bin/python3",
+                dest_dir=tmp_path / "LaunchAgents",
+                log_dir=tmp_path / "logs",
+                runner=runner,
+            )
+
+        assert "timed out" in str(exc_info.value)
+        assert "launchctl bootstrap" in str(exc_info.value)
 
 
 class TestUninstallArgv:
