@@ -5,16 +5,16 @@ milestone_name: Live Index and Search Quality
 current_phase: 16
 current_phase_name: Bench Expansion + Reranker Tuning
 status: executing
-stopped_at: Phase 16 context gathered
-last_updated: "2026-11-08T13:08:54.487Z"
+stopped_at: Completed 16-01-PLAN.md
+last_updated: "2026-11-08T13:40:39.218Z"
 last_activity: 2026-11-08
-last_activity_desc: Phase 15 complete, transitioned to Phase 16
-state_head: cdc89f2c587fd19eb451f9b53ca4dd3aa4d8c676
+last_activity_desc: Phase 16 execution started
+state_head: 8e78a1c63f4034759678af3e9a13e2c2c382dd96
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 22
-  completed_plans: 16
+  completed_plans: 17
 ---
 
 # DocSift — Project State
@@ -29,10 +29,10 @@ progress:
 
 ## Current Position
 
-Phase: 16 (Bench Expansion + Reranker Tuning) — READY TO EXECUTE
-Plan: Not started
+Phase: 16 (Bench Expansion + Reranker Tuning) — EXECUTING
+Plan: 3 of 6
 Status: Ready to execute
-Last activity: 2026-11-08 — Phase 15 complete, transitioned to Phase 16
+Last activity: 2026-11-08 — Phase 16 execution started
 
 Progress: [████████░░] 83%
 
@@ -66,6 +66,8 @@ Progress: [████████░░] 83%
 | Phase 15 P01 | 21 min | 3 tasks | 17 files |
 | Phase 15 P02 | 20 min | 3 tasks | 11 files |
 | Phase 15 P03 | 10 min | 3 tasks | 11 files |
+| Phase 16 P01 | 17 min | 3 tasks | 5 files |
+| Phase 16 P01 | 17 min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -137,6 +139,10 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 - [Phase 15]: 15-03: suggestions ride HybridSearchResults(list[SearchResult]) so hybrid_search's list contract (and every existing mock) survives while QueryToolHandler explicitly remaps QueryOutput.suggestions
 - [Phase 15]: 15-03: zero-result JSON is conditional — plain [] preserved when no DYM, {query, results: [], suggestions} only when suggestions exist; SKILL.md documents both shapes
 - [Phase 15]: 15-03: DYM computed only when results are empty, on the already-open connection; query_log writes are one fail-soft call per executed CLI search, skipped entirely at SIF_QUERY_HISTORY_ENABLED=0, never written by MCP
+- [Phase 16]: [16-01] report(clock=...) measures warmed latency via measure_query_times; cold start = single first warm-up call, never a p50/p95 sample (D-05)
+- [Phase 16]: [16-01] bench baseline resolves fusion knobs from current SIF_ settings (D-09, fixes Phase 15 IN-02); SearchPipeline built once per state inside the connection context; collection ids resolved once
+- [Phase 16]: [16-01] precision_at_k/recall_at_k binarize internally (grade > 0) so graded fixtures never exceed 1.0 while legacy 0/1 fixtures are byte-unchanged (Pitfall 8)
+- [Phase 16]: [16-01] path-keyed relevance: corpus_root resolved once (relative root joins fixture dir, absolute as-is, explicit ctor arg wins); result keys are corpus-relative POSIX with absolute fallback
 
 ### Pending Todos
 
@@ -157,9 +163,9 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 
 ## Session Continuity
 
-Last session: 2026-11-08T11:50:02.202Z
-Stopped at: Phase 16 context gathered
-Resume file: .planning/phases/16-bench-expansion-reranker-tuning/16-CONTEXT.md
+Last session: 2026-11-08T13:40:38.706Z
+Stopped at: Completed 16-01-PLAN.md
+Resume file: None
 
 - **Next expected action:** `/gsd-discuss-phase 13` (Phase 13 needs context; research flags: daemon/service-install specifics already in research/STACK.md)
 - Research flags for later phases: Phase 13 (daemon/service-install specifics), Phase 16 (`SearchOptions.candidate_limit` audit + fixture design)
