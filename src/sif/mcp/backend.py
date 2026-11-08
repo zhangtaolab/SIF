@@ -106,7 +106,16 @@ class SearchBackend:
                     content=r.content,
                     score=r.score,
                     highlights=r.highlights,
-                    metadata={"rank": r.rank, "collection_name": r.collection_name},
+                    # vectors_stale forwarded explicitly (D-11 / RESEARCH B5):
+                    # this boundary re-maps core fields one by one, so an
+                    # unlisted field is silently dropped — the derived
+                    # staleness flag must ride the metadata dict to reach MCP
+                    # clients (zero protocol change; model_dump() serializes).
+                    metadata={
+                        "rank": r.rank,
+                        "collection_name": r.collection_name,
+                        "vectors_stale": r.vectors_stale,
+                    },
                 )
                 for r in core_results
             ]

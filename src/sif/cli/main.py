@@ -136,10 +136,24 @@ def _vector_lag_text(conn: sqlite3.Connection) -> str:
     Same derived signal as the result marker (D-08): a document lags the
     vector index when it has no rows in ``document_embeddings``. ``None``
     (vec0 table missing) renders ``n/a``; an embeddings-free index renders
-    the no-vectors state so pure-BM25 users are not nagged.
+    the no-vectors state so pure-BM25 users are not nagged. The documents
+    scan is iterated one row at a time and the embedded set is read via the
+    shared :func:`embedded_document_ids` (one batched scan — the vec0
+    batching rule).
     """
-    del conn  # RED skeleton: zero behavior; GREEN implements the probe.
-    return "n/a"
+    embedded = embedded_document_ids(conn)
+    if embedded is None:
+        return "n/a"
+    if not embedded:
+        return "none (no vectors indexed)"
+    lagging = 0
+    cursor = conn.execute("SELECT id FROM documents")
+    for row in cursor:
+        if row[0] not in embedded:
+            lagging += 1
+    if lagging == 1:
+        return "1 document"
+    return f"{lagging} documents"
 
 
 @cli.command("status")

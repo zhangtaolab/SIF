@@ -231,7 +231,7 @@ class TestVectorLag:
             tmp_path / "sif.db",
             monkeypatch,
             embedded={"d-embedded"},
-            doc_ids=["d-embedded", "d-lag-1", "d-lag-2"],
+            doc_ids=[("d-embedded",), ("d-lag-1",), ("d-lag-2",)],
         )
 
         assert result.exit_code == 0
