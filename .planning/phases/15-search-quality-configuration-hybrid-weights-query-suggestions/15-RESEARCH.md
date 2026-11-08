@@ -328,7 +328,7 @@ class SuggestionEngine:
 Design notes:
 - **In-vocab membership must compare against STEMS.** A raw user word "machines" is not in the vocab (`machin` is). Since `"machines"*` already MATCHES (A4), an inflected-but-correct word must NOT trigger DYM. Cheapest correct test: the token's own stem is in the set — but SIF has no Python porter stemmer; the pragmatic approximation is prefix-tolerant membership (any vocab term starts with the token, or the token starts with a vocab term — bisect range check, ~free) or accept slight over-triggering (a word whose prefix hits nothing is the true zero-result cause anyway). Flag for planner: the exact in-vocab predicate determines DYM noise.
 - **cutoff 0.75 over the default 0.6** — 0.6 is difflib's generic default [CITED: docs.python.org]; typo correction wants higher precision (discretion per CONTEXT).
-- **Display gap:** suggestions built from the vocab display STEMS ("quantum machin", not "quantum machine"). D-07's illustrative example implies surface forms, but the vocab cannot produce them without a corpus rescan or a new mapping table (both violate D-06's no-new-maintenance spirit). Recommendation: display the stem; keep tokens the user typed when they already match. This is a real UX trade-off the plan should state explicitly (see Open Questions).
+- **Display gap:** suggestions built from the vocab display STEMS ("quantum machin", not "quantum machine"). D-07's illustrative example implies surface forms, but the vocab cannot produce them without a corpus rescan or a new mapping table (both violate D-06's no-new-maintenance spirit). Recommendation: display the stem; keep tokens the user typed when they already match. This is a real UX trade-off the plan should state explicitly (see Open Questions (RESOLVED) — stem display ships, per 15-02 flagged_assumptions).
 - **≥1-hit pin test (SC2):** for every emitted suggestion, run `BM25Searcher.search(suggestion, SearchOptions(limit=1))` and assert non-empty — structurally guaranteed because each suggested term came from the vocab and `"stem"*` matches its contributing doc(s) (A4).
 
 ### Pattern 6: query_log — schema, repository, write hook
@@ -588,17 +588,17 @@ class QueryLogRepository:
 | A6 | MCP suggestions field is a flat `suggestions: list[str]` of DYM query strings (not the three-section structure) | Pattern 8 | Assistants get less structure; three-array shape is the alternative at equal cost |
 | A7 | `k` (rrf_k) applies to both fuse call sites; weights only to the source fusion (hybrid.py:74) | Pitfall 9 | Semantics judgment call; alternative is options.rrf_k honored only at source fusion |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **DYM display form (stems vs surface)**
+All three questions were decided during Phase 15 planning — none remain open.
+
+1. **DYM display form (stems vs surface)** — RESOLVED: ship stem display (decided in 15-02 flagged_assumptions, adopting A1); surface-form mapping deferred to v2, limitation surfaced for UAT.
    - What we know: vocab = porter stems (verified); stems query correctly; D-07's example shows a surface form the vocab cannot produce.
-   - What's unclear: whether the user accepts "Did you mean: quantum machin".
-   - Recommendation: ship stem display (A1), state the limitation in UAT; surface mapping is a v2 candidate.
-2. **Exact in-vocab predicate for D-07's "no DYM when every word is in vocab"**
+   - What was unclear: whether the user accepts "Did you mean: quantum machin".
+2. **Exact in-vocab predicate for D-07's "no DYM when every word is in vocab"** — RESOLVED: prefix-range membership via bisect, the recommended option (locked in 15-02 Task 2, action step 2); revisit only if UAT shows noise.
    - What we know: raw-word membership against stems misfires both ways (Pitfall 4).
-   - What's unclear: prefix-tolerant membership vs a small python porter-stemming approximation for the predicate only.
-   - Recommendation: bisect prefix-range membership (cheap, matches retrievability semantics); revisit only if UAT shows noise.
-3. **Zero-result JSON wrap shape (A4)** — recommend conditional object; planner decides and updates the skill doc in-plan.
+   - What was unclear: prefix-tolerant membership vs a small python porter-stemming approximation for the predicate only.
+3. **Zero-result JSON wrap shape (A4)** — RESOLVED: conditional object (decided in 15-03 Task 2 + 15-03 flagged_assumptions) — plain `[]` when no suggestions, `{"query", "results": [], "suggestions"}` when suggestions exist; `.claude/skills/sif-search/SKILL.md` updated in-plan.
 
 ## Environment Availability
 
