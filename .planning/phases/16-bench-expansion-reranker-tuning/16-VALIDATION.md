@@ -30,7 +30,8 @@ created: "2026-11-08"
 ## Sampling Rate
 
 - **After every task commit:** Run `env -u FORCE_COLOR NO_COLOR=1 pytest <touched-module> -x --no-cov`
-- **After every plan wave:** Run `ruff check src tests && ruff format --check src tests && env -u FORCE_COLOR NO_COLOR=1 pytest`
+- **After every plan (CLAUDE.md GSD rule, 16-01..16-06):** Run `ruff check src tests && ruff format --check src tests && env -u FORCE_COLOR NO_COLOR=1 pytest`
+- **After every plan wave:** Confirm the per-plan full-suite runs above are green (`ruff` + full `pytest`)
 - **Before `/gsd-verify-work`:** Full suite must be green, plus `make docs-generate && git diff --exit-code docs/cli-reference.md docs/configuration.md`
 - **Max feedback latency:** 120 seconds
 
@@ -40,20 +41,24 @@ created: "2026-11-08"
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| 16-01-01 | 01 | 1 | EVAL-01 | — | N/A | unit | `pytest tests/unit/search/test_benchmark_metrics.py -x --no-cov` | ❌ W0 | ⬜ pending |
-| 16-01-02 | 01 | 1 | EVAL-01 | — | N/A | unit | `pytest tests/unit/search/test_benchmark_metrics.py -k percentile -x --no-cov` | ❌ W0 | ⬜ pending |
-| 16-01-03 | 01 | 1 | EVAL-01 | — | N/A | integration | `pytest tests/unit/cli/test_bench.py -k metrics -x --no-cov` | ✅ extend | ⬜ pending |
-| 16-02-01 | 02 | 1 | EVAL-02 | — | N/A | unit | `pytest tests/unit/search/test_benchmark_metrics.py -k fixture_contract -x --no-cov` | ❌ W0 | ⬜ pending |
-| 16-02-02 | 02 | 1 | EVAL-02 | — | N/A | integration | `pytest tests/unit/search/test_bench_fixture.py -x --no-cov` | ❌ W0 | ⬜ pending |
-| 16-03-01 | 03 | 2 | EVAL-03, SC3 | — | N/A | unit | `pytest tests/unit/search/test_sweep.py -k tie -x --no-cov` | ❌ W0 | ⬜ pending |
-| 16-03-02 | 03 | 2 | EVAL-03 | — | N/A | unit (spy) | `pytest tests/unit/search/test_sweep.py -k split -x --no-cov` | ❌ W0 | ⬜ pending |
-| 16-04-01 | 04 | 2 | EVAL-04 | — | N/A | integration | `pytest tests/unit/search/test_bench_snapshot.py -x --no-cov` | ❌ W0 | ⬜ pending |
-| 16-04-02 | 04 | 2 | EVAL-04 | — | N/A | integration | `pytest tests/unit/search/test_bench_snapshot.py -k default_lock -x --no-cov` | ❌ W0 | ⬜ pending |
-| 16-05-01 | 05 | 3 | QUAL-05 | T-16-01 | Reranker receives bounded `candidate_limit` (5-50) — no unbounded candidate fan-out | unit | `pytest tests/unit/search/test_hybrid.py -k candidate_fetch -x --no-cov` | ✅ extend | ⬜ pending |
-| 16-05-02 | 05 | 3 | QUAL-05 | — | N/A | unit | `pytest tests/unit/inference/test_reranker.py -k relative_threshold -x --no-cov` | ✅ extend | ⬜ pending |
-| 16-05-03 | 05 | 3 | QUAL-05 | — | N/A | unit | `pytest tests/unit/config/test_settings.py -k rerank -x --no-cov` | ✅ extend | ⬜ pending |
-| 16-05-04 | 05 | 3 | QUAL-05 | — | N/A | integration | `pytest tests/unit/cli/test_search.py -k rerank_off -x --no-cov` | ✅ extend | ⬜ pending |
-| 16-06-01 | 06 | 3 | EVAL-01, QUAL-05 | — | N/A | structural | `pytest tests/unit/search/test_benchmark_metrics.py -k latency -x --no-cov` | ❌ W0 | ⬜ pending |
+| 16-01-01 | 01 | 1 | EVAL-01 | — | N/A | unit | `pytest tests/unit/search/test_benchmark_metrics.py tests/unit/cli/test_bench.py -k "ndcg or hit or report or metrics" -x --no-cov` | ❌ W0 | ⬜ pending |
+| 16-01-02 | 01 | 1 | EVAL-01, EVAL-02 | — | N/A | unit | `pytest tests/unit/search/test_benchmark_metrics.py -k "percentile or latency" -x --no-cov` | ❌ W0 | ⬜ pending |
+| 16-01-03 | 01 | 1 | EVAL-02 | — | N/A | integration | `pytest tests/unit/search/test_benchmark.py tests/unit/cli/test_bench.py tests/unit/cli/test_database_lifecycle.py -x --no-cov` | ✅ extend | ⬜ pending |
+| 16-02-01 | 02 | 1 | QUAL-05 | — | Rerank-off path constructs no reranker | unit | `pytest tests/unit/cli/test_search.py -k rerank -x --no-cov` | ✅ extend | ⬜ pending |
+| 16-02-02 | 02 | 1 | QUAL-05 | T-16-09 | `-C 200` resolves to candidate_limit 50; non-int settings fall back to 20 | unit | `pytest tests/unit/config/test_settings.py -k rerank -x --no-cov` + `pytest tests/unit/cli/test_search.py -k "candidate_limit or rerank"` | ✅ extend | ⬜ pending |
+| 16-02-03 | 02 | 1 | QUAL-05 | — | N/A | structural | `make docs-generate && git diff --exit-code docs/configuration.md docs/cli-reference.md` | ✅ generated | ⬜ pending |
+| 16-03-01 | 03 | 2 | EVAL-02 | — | N/A | integration | `pytest tests/unit/search/test_bench_fixture.py -k "end_to_end or embedder or build" -x --no-cov` | ❌ W0 | ⬜ pending |
+| 16-03-02 | 03 | 2 | EVAL-02 | T-16-04 | Synthetic-only corpus; deterministic regeneration | structural | `python scripts/generate_bench_fixture.py --check` | ❌ W0 | ⬜ pending |
+| 16-03-03 | 03 | 2 | EVAL-02 | T-16-05 | Relevance keys cannot escape corpus_root | integration | `pytest tests/unit/search/test_bench_fixture.py tests/unit/cli/test_bench.py -x --no-cov` | ❌ W0 | ⬜ pending |
+| 16-06-01 | 06 | 2 | QUAL-05 | — | N/A | unit | `pytest tests/unit/search/test_rerank.py tests/unit/inference/test_reranker.py -k "threshold or rerank" -x --no-cov` | ✅ extend | ⬜ pending |
+| 16-06-02 | 06 | 2 | QUAL-05 | T-16-01 | Reranker receives bounded candidates (<=50) — no unbounded fan-out | unit | `pytest tests/unit/search/test_hybrid.py -k "candidate_fetch or snapshot" -x --no-cov` | ✅ extend | ⬜ pending |
+| 16-06-03 | 06 | 2 | QUAL-05 | T-16-01 | Cap after threshold, before top_k; deterministic ordering | unit | `pytest tests/unit/search/test_hybrid.py tests/unit/search/test_rerank.py -x --no-cov` | ✅ extend | ⬜ pending |
+| 16-04-01 | 04 | 3 | EVAL-03 | — | N/A | unit | `pytest tests/unit/search/test_sweep.py tests/unit/cli/test_bench.py -k "sweep or grid or tie" -x --no-cov` | ❌ W0 | ⬜ pending |
+| 16-04-02 | 04 | 3 | EVAL-03, QUAL-05 | T-16-06 | Held-out split never searched during a sweep; `-C 200` clamps to 50 | unit (spy) | `pytest tests/unit/search/test_sweep.py -k "tie or split or cached or baseline"` + `pytest tests/unit/cli/test_bench.py -k "sweep_json or delta"` | ❌ W0 | ⬜ pending |
+| 16-04-03 | 04 | 3 | QUAL-05 | — | Rerank-off state never constructs a model | integration | `pytest tests/unit/cli/test_bench.py -k rerank -x --no-cov` + `make docs-generate && git diff --exit-code docs/cli-reference.md` | ✅ extend | ⬜ pending |
+| 16-05-01 | 05 | 4 | EVAL-04 | T-16-08 | Held-out snapshot cannot be edited to mask a regression | integration | `pytest tests/unit/search/test_bench_snapshot.py -x --no-cov` | ❌ W0 | ⬜ pending |
+| 16-05-02 | 05 | 4 | EVAL-04 | — | N/A | structural | `pytest tests/test_docs.py -x --no-cov` + docs drift diff | ✅ extend | ⬜ pending |
+| 16-05-03 | 05 | 4 | EVAL-01..04 | — | N/A | structural | full `pytest` + `ruff check src tests` + `ruff format --check src tests` + `ty check src/sif` + docs drift diff | ✅ | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
