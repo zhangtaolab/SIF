@@ -36,7 +36,7 @@ Full detail: `.planning/milestones/v1.0-ROADMAP.md`
 
 - [x] **Phase 11: Live-Index Foundation (Concurrent DB + Incremental Core)** - WAL/busy_timeout/BEGIN IMMEDIATE hardening, IncrementalIndexer extraction, flock single-writer arbitration (completed 2026-11-07)
 - [x] **Phase 12: `sif watch` Foreground MVP** - File changes auto-reindex with debounce, atomic-save/move handling, temp-file exclusion, tiered depth (`--embed`), missing-root protection (completed 2026-11-07)
-- [ ] **Phase 13: Watch Everywhere (MCP-Embedded Refresh + Background Daemon)** - `SIF_MCP_WATCH=1` embedded refresh; `--detach` + launchd/systemd service install
+- [x] **Phase 13: Watch Everywhere (MCP-Embedded Refresh + Background Daemon)** - `SIF_MCP_WATCH=1` embedded refresh; `--detach` + launchd/systemd service install (completed 2026-11-08)
 - [x] **Phase 14: Freshness Floor (Pre-Command Refresh + Staleness Marking)** - Stat-based drift refresh before search with no daemon running; staleness markers on vector-lagging results (completed 2026-11-08)
 - [ ] **Phase 15: Search Quality Configuration (Weights + Suggestions)** - `rrf_k`/BM25/vector weights configurable with unchanged defaults; did-you-mean + history suggestions; `sif suggest`
 - [ ] **Phase 16: Bench Expansion + Reranker Tuning** - nDCG@k/Hit@k/p50-p95 metrics, ≥50-query tuning/held-out fixtures, `--sweep`, reranker cap + threshold
@@ -93,7 +93,7 @@ Plans:
   2. `sif watch --detach` runs in the background with working lifecycle controls — PID reported at detach, `--stop` terminates cleanly, `status` reports running state
   3. A launchd LaunchAgent (macOS) or systemd user unit (Linux) can be generated and installed so watch survives login sessions (no forking under the supervisor)
   4. A daemon killed with SIGKILL leaves no stale lock — a restart succeeds immediately (flock, not PID-file, arbitration)
-**Plans**: 4/4 plans executed
+**Plans**: 4/4 plans complete
 Plans:
 **Wave 1**
 - [x] 13-01-PLAN.md — FileWatcher long-lived-host growth: live rescope (D-15), idle WAL checkpoint (D-16), schedule-failure warn (D-17), mcp_watch + interval settings
@@ -151,7 +151,7 @@ Plans:
 |-------|-----------|----------------|--------|-----------|
 | 11. Live-Index Foundation | v1.1 | 3/3 | Complete    | 2026-11-07 |
 | 12. `sif watch` Foreground MVP | v1.1 | 3/3 | Complete    | 2026-11-07 |
-| 13. Watch Everywhere (MCP + Daemon) | v1.1 | 4/4 | In Progress | - |
+| 13. Watch Everywhere (MCP + Daemon) | v1.1 | 4/4 | Complete    | 2026-11-08 |
 | 14. Freshness Floor (Pre-Command + Staleness) | v1.1 | 3/3 | Complete    | 2026-11-08 |
 | 15. Search Quality Configuration | v1.1 | 0/TBD | Not started | - |
 | 16. Bench Expansion + Reranker Tuning | v1.1 | 0/TBD | Not started | - |
