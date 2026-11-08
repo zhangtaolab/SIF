@@ -45,6 +45,7 @@ SIF_LOG_LEVEL=INFO
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
 | `SIF_DB_PATH` | Path \| None | `~/.local/share/sif/sif.db (computed)` | Path to SQLite database file (validated by `expand_path`) |
+| `SIF_LOCK_WAIT_TIMEOUT` | float | `30.0` | Seconds an index writer waits for a competing writer's lock before proceeding with its own pass anyway |
 
 ### Embedding Model Settings
 
@@ -124,7 +125,7 @@ BM25/FTS5 keyword search and sqlite-vec vector search always run on CPU regardle
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
-| `SIF_CACHE_DIR` | Path \| None | `~/.cache/sif (computed)` | Cache directory path |
+| `SIF_CACHE_DIR` | Path \| None | `~/.cache/sif (computed)` | Cache directory path (validated by `expand_path`) |
 | `SIF_CACHE_EMBEDDINGS` | bool | `True` | Whether to cache embeddings |
 
 ## Validation Rules

@@ -51,21 +51,34 @@ def get_type_name(annotation: object) -> str:
 
 
 def get_validators() -> dict[str, str]:
-    """Extract field_validator methods and map them to field names."""
+    """Extract field_validator methods and map them to field names.
+
+    A decorator naming several fields (e.g. ``@field_validator("db_path",
+    "cache_dir", mode="before")``) registers EVERY field it names — splitting
+    on commas — so each row in docs/configuration.md carries its validator
+    annotation, not just the first field of the decorator (IN-01). Keyword
+    arguments such as ``mode="before"`` are skipped: they are not fields.
+    """
     validators: dict[str, str] = {}
     # Scan source for field_validator decorators
     source_lines = inspect.getsource(Settings).splitlines()
-    current_field: str | None = None
+    current_fields: list[str] = []
     for line in source_lines:
         stripped = line.strip()
         if stripped.startswith("@field_validator("):
             inner = stripped[len("@field_validator(") : stripped.rfind(")")]
-            inner = inner.strip().strip("\"'").strip()
-            current_field = inner.split(",")[0].strip().strip("\"'")
-        elif current_field and stripped.startswith("def "):
+            current_fields = []
+            for part in inner.split(","):
+                if "=" in part:
+                    continue  # keyword argument, not a field name
+                name = part.strip().strip("\"'")
+                if name:
+                    current_fields.append(name)
+        elif current_fields and stripped.startswith("def "):
             method_name = stripped[4 : stripped.find("(")]
-            validators[current_field] = method_name
-            current_field = None
+            for field_name in current_fields:
+                validators[field_name] = method_name
+            current_fields = []
     return validators
 
 
@@ -136,7 +149,7 @@ def get_computed_default(field_name: str) -> str | None:
 
 SECTIONS: list[tuple[str, list[str]]] = [
     ("Application Settings", ["app_name", "debug", "log_level"]),
-    ("Database Settings", ["db_path"]),
+    ("Database Settings", ["db_path", "lock_wait_timeout"]),
     (
         "Embedding Model Settings",
         [
