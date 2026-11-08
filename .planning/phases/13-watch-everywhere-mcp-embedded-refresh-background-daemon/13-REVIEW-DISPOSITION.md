@@ -3,14 +3,18 @@ phase: 13
 review: 13-REVIEW.md
 titles: json
 findings:
+  - id: WR-01
+    severity: warning
+    disposition: open
+    title: "`write_pid_file` uses a process-shared temp name — concurrent detaches race on the same inode"
+  - id: IN-01
+    severity: info
+    disposition: open
+    title: "`_service_argv_tail` half-pins the depth — an unpinned BM25 install can still go embed in a divergent service environment"
   - id: CR-01
     severity: critical
     disposition: fixed
     title: "MCP HTTP transport crashes at startup — lifespan passed as invoked context manager, not a factory"
-  - id: WR-01
-    severity: warning
-    disposition: fixed
-    title: "Shutdown WAL checkpoint bypasses the worker-liveness gate — can execute on the same sqlite connection as a still-live worker"
   - id: WR-02
     severity: warning
     disposition: fixed
@@ -23,10 +27,6 @@ findings:
     severity: warning
     disposition: fixed
     title: "Detach handshake timeout produces the \"silent maybe-detach\" SC2 explicitly forbids"
-  - id: IN-01
-    severity: info
-    disposition: fixed
-    title: "`SIF_LOCK_WAIT_TIMEOUT` missing from the generated configuration reference; multi-field validators annotated on only their first field"
   - id: IN-02
     severity: info
     disposition: fixed
@@ -39,24 +39,25 @@ findings:
     severity: info
     disposition: fixed
     title: "`SESSION_MAX_AGE` is dead — sessions never expire by age"
-open: 0
+open: 2
 total: 9
-recorded: 2026-11-08T00:17:24.207Z
+recorded: 2026-11-08T08:21:33.028Z
 ---
 
 # Phase 13: Code Review Disposition
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| CR-01 | critical | fixed | 13-REVIEW-FIX.md |
-| WR-01 | warning | fixed | 13-REVIEW-FIX.md (title truncated in fix report; verified: commit e3156da) |
-| WR-02 | warning | fixed | 13-REVIEW-FIX.md (title truncated in fix report; verified: commit 8039a3e) |
-| WR-03 | warning | fixed | 13-REVIEW-FIX.md |
-| WR-04 | warning | fixed | 13-REVIEW-FIX.md |
-| IN-01 | info | fixed | 13-REVIEW-FIX.md |
-| IN-02 | info | fixed | 13-REVIEW-FIX.md |
-| IN-03 | info | fixed | 13-REVIEW-FIX.md |
-| IN-04 | info | fixed | 13-REVIEW-FIX.md |
+| WR-01 | warning | open | - |
+| IN-01 | info | open | - |
+| CR-01 | critical | fixed | 13-REVIEW-FIX.md (not in the current review) |
+| WR-02 | warning | fixed | 13-REVIEW-FIX.md (title truncated in fix report; verified: commit 8039a3e) (not in the current review) |
+| WR-03 | warning | fixed | 13-REVIEW-FIX.md (not in the current review) |
+| WR-04 | warning | fixed | 13-REVIEW-FIX.md (not in the current review) |
+| IN-02 | info | fixed | 13-REVIEW-FIX.md (not in the current review) |
+| IN-03 | info | fixed | 13-REVIEW-FIX.md (not in the current review) |
+| IN-04 | info | fixed | 13-REVIEW-FIX.md (not in the current review) |
 
 Dispositions: `open` (recorded, not yet triaged), `fixed`, `skipped`, `deferred`.
-Set `deferred` by hand and put the reason in the Source cell; both are preserved.
+Set `deferred` by hand and put the reason in the Source cell; both are preserved. A `|` in the reason is kept as prose and escaped on the next run.
+Re-running the gate keeps every row it can. A row the current review no longer reports is kept and its Source cell flagged, so a finding does not leave this record silently. ONE exception: when a finding id is REUSED by a different finding, the earlier decision cannot keep a row — the id is taken — and it is dropped. A RECORDED decision (anything but `open`) is named on the console when that happens; a row still at `open` is replaced silently, because `open` records no decision to lose.
