@@ -1320,6 +1320,8 @@ class TestCandidateLimitResolution:
         assert options.candidate_limit == 20
         assert isinstance(options.candidate_limit, int)
 
+
+class TestMachineOutputNoWrap:
     """Machine-format output must be byte-faithful regardless of width (CLI-JSON-WRAP).
 
     Rich console.print word-wraps at the terminal width and inserts REAL newline
