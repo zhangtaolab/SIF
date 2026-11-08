@@ -3,6 +3,7 @@
 import csv
 import io
 import json
+import sqlite3
 import xml.etree.ElementTree as ET
 from collections.abc import Generator
 from contextlib import ExitStack
@@ -23,9 +24,11 @@ from sif.cli.commands.search import (
     search_cmd,
     vsearch_cmd,
 )
-from sif.config.settings import get_settings
+from sif.config.settings import Settings, get_settings
 from sif.core.models import Collection, SearchResult
 from sif.database.database import Database
+from sif.database.repositories import CollectionRepository
+from sif.indexing.incremental import IncrementalIndexer
 
 
 class TestSearchFiltering:
@@ -2064,3 +2067,160 @@ class TestDatabaseClosure:
         assert TrackingDatabase.created, "vsearch must construct its Database"
         for instance in TrackingDatabase.created:
             assert instance._connection is None
+
+
+class TestPreSearchRefresh:
+    """SC1/SC2: search_cmd's pre-command drift refresh (LIVE-10, D-01..D-07).
+
+    Real-DB CliRunner end-to-end: index a tmp_path collection, drift it
+    deterministically (content writes / unlink — never sleep), and prove the
+    search finds refreshed content with the notice on stderr and stdout
+    clean. A clean index pays nothing: no lock file, no notice, no writes.
+    """
+
+    @pytest.fixture(autouse=True)
+    def isolated_settings(self) -> Generator[None, None, None]:
+        """Real Settings must not leak a cached instance between invocations."""
+        get_settings.cache_clear()
+        yield
+        get_settings.cache_clear()
+
+    @staticmethod
+    def _seed_index(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> tuple[Path, Path, Settings]:
+        """Create a real indexed collection holding one alpha-term document.
+
+        Returns (db_path, notes, settings); every invoke must run under
+        ``patch("sif.config.settings.get_settings", return_value=settings)``
+        so the schema's vec0 dimension check and the drift check share the
+        same hermetic settings (embedding_dim=8, TestDatabaseClosure culture).
+        """
+        for var in (
+            "SIF_EMBEDDING_DIM",
+            "SIF_MODEL_TYPE",
+            "SIF_MODEL_NAME",
+            "SIF_SEARCH_REFRESH_ENABLED",
+            "SIF_SEARCH_REFRESH_MAX_FILES",
+        ):
+            monkeypatch.delenv(var, raising=False)
+        settings = Settings(embedding_dim=8, model_name="test", cache_embeddings=False)
+        db_path = tmp_path / "search.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        (notes / "a.md").write_text(
+            "# Heading One\n\nAlpha paragraph text for search. " * 10, encoding="utf-8"
+        )
+        db = Database(db_path)
+        with patch("sif.config.settings.get_settings", return_value=settings):
+            db.init_schema()
+            with db.connection:
+                CollectionRepository(db.connection).create(
+                    Collection(name="notes", path=str(notes))
+                )
+            coll = CollectionRepository(db.connection).get_by_name("notes")
+            assert coll is not None
+            IncrementalIndexer(db.connection).update_collection(coll)
+        db.close()
+        return db_path, notes, settings
+
+    def test_search_finds_modified_content_and_notifies_on_stderr(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """SC1: a post-index edit is BM25-refreshed before searching; notice on stderr."""
+        db_path, notes, settings = self._seed_index(tmp_path, monkeypatch)
+        (notes / "a.md").write_text(
+            "# Heading Two\n\nZanzibar unique new term body. " * 10, encoding="utf-8"
+        )
+
+        with patch("sif.config.settings.get_settings", return_value=settings):
+            result = CliRunner().invoke(
+                search_cmd, ["zanzibar"], obj={"index_path": db_path}
+            )
+
+        assert result.exit_code == 0
+        assert "refreshed 1 files (bm25) before search" in result.stderr
+        assert "Heading Two" in result.output
+
+        # Stat-decides no-op: the second identical search is silent, still finds it.
+        with patch("sif.config.settings.get_settings", return_value=settings):
+            second = CliRunner().invoke(
+                search_cmd, ["zanzibar"], obj={"index_path": db_path}
+            )
+        assert second.exit_code == 0
+        assert second.stderr == ""
+        assert "Heading Two" in second.output
+
+    def test_search_finds_new_file_and_drops_deleted_file(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """SC1: a new file becomes searchable and a deleted file stops hitting."""
+        db_path, notes, settings = self._seed_index(tmp_path, monkeypatch)
+        (notes / "b.md").write_text(
+            "# Brand New\n\nFreshnote unique new file term. " * 10, encoding="utf-8"
+        )
+        (notes / "a.md").unlink()
+
+        with patch("sif.config.settings.get_settings", return_value=settings):
+            result = CliRunner().invoke(
+                search_cmd, ["freshnote"], obj={"index_path": db_path}
+            )
+            gone = CliRunner().invoke(
+                search_cmd, ["alpha"], obj={"index_path": db_path}
+            )
+
+        assert result.exit_code == 0
+        assert "refreshed 2 files (bm25) before search" in result.stderr
+        assert "Brand New" in result.output
+        assert gone.exit_code == 0
+        assert "No results found" in gone.output
+
+    def test_clean_search_is_lockless_silent_and_writeless(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """SC2: a clean index costs a read-only walk — no lock file, no notice, no writes."""
+        db_path, _notes, settings = self._seed_index(tmp_path, monkeypatch)
+
+        def snapshot() -> dict[str, tuple[str, float]]:
+            conn = sqlite3.connect(str(db_path))
+            try:
+                return {
+                    row[0]: (row[1], row[2])
+                    for row in conn.execute(
+                        "SELECT path, checksum, mtime FROM documents"
+                    )
+                }
+            finally:
+                conn.close()
+
+        before = snapshot()
+        with patch("sif.config.settings.get_settings", return_value=settings):
+            result = CliRunner().invoke(
+                search_cmd, ["alpha"], obj={"index_path": db_path}
+            )
+
+        assert result.exit_code == 0
+        assert "Heading One" in result.output
+        assert result.stderr == ""
+        assert "refreshed" not in result.output
+        assert not Path(str(db_path) + ".lock").exists()
+        assert snapshot() == before
+
+    def test_json_stdout_stays_clean_with_refresh_notice_on_stderr(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """D-07: under --json the notice rides stderr; stdout parses as pure JSON."""
+        db_path, notes, settings = self._seed_index(tmp_path, monkeypatch)
+        (notes / "a.md").write_text(
+            "# Heading Two\n\nZanzibar unique new term body. " * 10, encoding="utf-8"
+        )
+
+        with patch("sif.config.settings.get_settings", return_value=settings):
+            result = CliRunner().invoke(
+                search_cmd, ["zanzibar", "--json"], obj={"index_path": db_path}
+            )
+
+        assert result.exit_code == 0
+        payload = json.loads(result.output)
+        assert payload and payload[0]["title"] == "Heading Two"
+        assert "refreshed 1 files (bm25) before search" in result.stderr
