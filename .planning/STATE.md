@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 milestone: v1.1
 milestone_name: Live Index and Search Quality
-current_phase: 13
-current_phase_name: Watch Everywhere (MCP-Embedded Refresh + Background Daemon)
-status: verifying
+current_phase: 14
+current_phase_name: Freshness Floor (Pre-Command Refresh + Staleness Marking)
+status: executing
 stopped_at: Phase 14 context gathered
-last_updated: "2026-11-08T02:00:17.993Z"
+last_updated: "2026-11-08T03:02:07.998Z"
 last_activity: 2026-11-07
 last_activity_desc: Phase 13 execution started
-state_head: 0cd3cbe78dce4ac99ccd3c3cf2689782f68524fa
+state_head: 77490f31a96401097e075950ff1f88b1ad560ee6
 progress:
   total_phases: 6
   completed_phases: 2
-  total_plans: 10
+  total_plans: 13
   completed_plans: 10
 ---
 
@@ -29,9 +29,9 @@ progress:
 
 ## Current Position
 
-Phase: 13 (Watch Everywhere (MCP-Embedded Refresh + Background Daemon)) — EXECUTING
+Phase: 14 (Freshness Floor (Pre-Command Refresh + Staleness Marking)) — READY TO EXECUTE
 Plan: 4 of 4
-Status: Phase complete — ready for verification
+Status: Ready to execute
 Last activity: 2026-11-07 — Phase 13 execution started
 
 Progress: [███░░░░░░░] 33%
