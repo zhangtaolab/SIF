@@ -57,6 +57,13 @@ class QueryToolHandler(ToolHandler):
             "collections": {"type": "array", "items": {"type": "string"}},
             "limit": {"type": "integer", "default": 10},
             "min_score": {"type": "number", "default": 0.0},
+            # Phase 15 fusion overrides (D-04): omitted = server SIF_ settings.
+            # The hand-written schema and the pydantic model must stay in
+            # sync — omitting these hides the params from MCP tool discovery
+            # while the model still accepts them.
+            "rrf_k": {"type": "integer"},
+            "bm25_weight": {"type": "number"},
+            "vector_weight": {"type": "number"},
         },
         "required": ["query"],
     }
@@ -73,6 +80,9 @@ class QueryToolHandler(ToolHandler):
             collections=input_data.collections,
             limit=input_data.limit,
             min_score=input_data.min_score,
+            rrf_k=input_data.rrf_k,
+            bm25_weight=input_data.bm25_weight,
+            vector_weight=input_data.vector_weight,
         )
         output = QueryOutput(results=results)
         return ToolsCallResult(

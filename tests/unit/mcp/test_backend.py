@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from pydantic import ValidationError
 
 from sif.mcp.backend import SearchBackend, _truncate_content
-from sif.mcp.protocol import CollectionInfo, Document, SearchResult
+from sif.mcp.protocol import CollectionInfo, Document, QueryInput, SearchResult
 from sif.models.embedding import ModelType
 from sif.utils.paths import normalize_path
 
@@ -290,3 +291,147 @@ def test_content_truncation():
     result = _truncate_content(large)
     assert len(result.encode("utf-8")) <= 100 * 1024 + 20
     assert result.endswith("... [truncated]")
+
+
+# =============================================================================
+# Hybrid fusion weight overrides (Phase 15, D-03/D-04)
+# =============================================================================
+
+
+def _weight_result() -> MagicMock:
+    """A mock core result carrying the fields hybrid_search re-maps."""
+    mock_result = MagicMock()
+    mock_result.document_id = "doc1"
+    mock_result.path = "/test.md"
+    mock_result.title = "Test"
+    mock_result.content = None
+    mock_result.score = 0.9
+    mock_result.highlights = ["highlight"]
+    mock_result.rank = 1
+    mock_result.collection_name = "default"
+    mock_result.vectors_stale = False
+    return mock_result
+
+
+def _settings_backend() -> SearchBackend:
+    """Backend whose server settings pin rrf_k=7 / 2.0 / 0.5 (D-04 fallback)."""
+    settings = MagicMock(
+        embedding_dim=1024,
+        rrf_k=7,
+        bm25_weight=2.0,
+        vector_weight=0.5,
+    )
+    with patch("sif.mcp.backend.get_settings", return_value=settings):
+        return SearchBackend("/tmp/test.db")
+
+
+class TestHybridSearchWeightOverrides:
+    """Request weight fields reach SearchOptions; absent ones hit settings."""
+
+    @pytest.mark.asyncio
+    async def test_request_weights_flow_into_options(self, backend) -> None:
+        """Explicit rrf_k/bm25_weight/vector_weight ride SearchOptions verbatim."""
+        with patch("sif.mcp.backend.SearchPipeline") as mock_pipeline:
+            mock_pipeline.return_value.search.return_value = [_weight_result()]
+            await backend.hybrid_search(
+                "test query",
+                rrf_k=5,
+                bm25_weight=3.0,
+                vector_weight=0.5,
+            )
+
+        options = mock_pipeline.return_value.search.call_args[0][1]
+        assert options.rrf_k == 5
+        assert options.bm25_weight == 3.0
+        assert options.vector_weight == 0.5
+
+    @pytest.mark.asyncio
+    async def test_absent_fields_fall_back_to_server_settings(self) -> None:
+        """No weight params -> the server process's SIF_ settings fill options."""
+        backend = _settings_backend()
+
+        with patch("sif.mcp.backend.SearchPipeline") as mock_pipeline:
+            mock_pipeline.return_value.search.return_value = [_weight_result()]
+            await backend.hybrid_search("test query")
+
+        options = mock_pipeline.return_value.search.call_args[0][1]
+        assert options.rrf_k == 7
+        assert options.bm25_weight == 2.0
+        assert options.vector_weight == 0.5
+
+    @pytest.mark.asyncio
+    async def test_request_field_overrides_settings(self) -> None:
+        """A request field beats the server setting; unset knobs still fall back."""
+        backend = _settings_backend()
+
+        with patch("sif.mcp.backend.SearchPipeline") as mock_pipeline:
+            mock_pipeline.return_value.search.return_value = [_weight_result()]
+            await backend.hybrid_search("test query", rrf_k=3)
+
+        options = mock_pipeline.return_value.search.call_args[0][1]
+        assert options.rrf_k == 3  # request wins
+        assert options.bm25_weight == 2.0  # untouched knob keeps the settings value
+        assert options.vector_weight == 0.5
+
+
+class TestQueryInputWeightValidation:
+    """QueryInput enforces the D-03 ranges at the MCP boundary (ASVS V5)."""
+
+    def test_rrf_k_zero_rejected(self) -> None:
+        """rrf_k must be >= 1."""
+        with pytest.raises(ValidationError, match="rrf_k"):
+            QueryInput(query="q", rrf_k=0)
+
+    def test_negative_bm25_weight_rejected(self) -> None:
+        """bm25_weight must be > 0."""
+        with pytest.raises(ValidationError, match="bm25_weight"):
+            QueryInput(query="q", bm25_weight=-1.0)
+
+    def test_zero_vector_weight_rejected(self) -> None:
+        """vector_weight must be > 0."""
+        with pytest.raises(ValidationError, match="vector_weight"):
+            QueryInput(query="q", vector_weight=0.0)
+
+    def test_large_vector_weight_accepted(self) -> None:
+        """No upper bound — the Phase 16 sweep grid must not be capped."""
+        data = QueryInput(query="q", vector_weight=1000.0)
+        assert data.vector_weight == 1000.0
+
+    def test_defaults_are_none(self) -> None:
+        """Unset fields are None (the settings-fallback sentinel), not literals."""
+        data = QueryInput(query="q")
+        assert data.rrf_k is None
+        assert data.bm25_weight is None
+        assert data.vector_weight is None
+
+
+class TestQueryToolHandlerWeightPassThrough:
+    """The handler forwards weight params into backend.hybrid_search (D-04)."""
+
+    @pytest.mark.asyncio
+    async def test_handle_passes_weight_kwargs(self) -> None:
+        """QueryToolHandler.handle forwards rrf_k/bm25_weight/vector_weight."""
+        from sif.mcp.handlers import QueryToolHandler
+
+        mock_backend = MagicMock()
+        mock_backend.hybrid_search = AsyncMock(return_value=[])
+
+        await QueryToolHandler().handle(
+            {"query": "q", "rrf_k": 5, "bm25_weight": 3.0, "vector_weight": 0.5},
+            mock_backend,
+        )
+
+        call = mock_backend.hybrid_search.call_args
+        assert call.kwargs["rrf_k"] == 5
+        assert call.kwargs["bm25_weight"] == 3.0
+        assert call.kwargs["vector_weight"] == 0.5
+
+    @pytest.mark.asyncio
+    async def test_input_schema_declares_weight_properties(self) -> None:
+        """The hand-written schema lists the weight params (tool discovery)."""
+        from sif.mcp.handlers import QueryToolHandler
+
+        props = QueryToolHandler.input_schema["properties"]
+        assert props["rrf_k"]["type"] == "integer"
+        assert props["bm25_weight"]["type"] == "number"
+        assert props["vector_weight"]["type"] == "number"

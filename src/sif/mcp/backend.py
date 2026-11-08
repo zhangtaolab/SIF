@@ -70,14 +70,24 @@ class SearchBackend:
 
         return await asyncio.to_thread(_run)
 
-    async def hybrid_search(
+    async def hybrid_search(  # noqa: PLR0913 — weight overrides are per-request
+        # params by design (D-04: request field ≈ CLI flag); a params object
+        # would divorce the signature from the QueryInput fields it mirrors.
         self,
         query: str,
         collections: list[str] | None = None,
         limit: int = 10,
         min_score: float = 0.0,
+        rrf_k: int | None = None,
+        bm25_weight: float | None = None,
+        vector_weight: float | None = None,
     ) -> list[SearchResult]:
-        """Perform hybrid search."""
+        """Perform hybrid search.
+
+        Weight overrides (Phase 15, D-04): each ``None`` falls back to the
+        server process's ``SIF_`` settings (request field ≈ CLI flag); the
+        resolved values ride SearchOptions into the pipeline.
+        """
 
         def _search(conn: Any) -> list[SearchResult]:
             options = SearchOptions(
@@ -85,6 +95,11 @@ class SearchBackend:
                 min_score=min_score,
                 include_content=False,
                 include_highlights=True,
+                rrf_k=rrf_k if rrf_k is not None else self.settings.rrf_k,
+                bm25_weight=(bm25_weight if bm25_weight is not None else self.settings.bm25_weight),
+                vector_weight=(
+                    vector_weight if vector_weight is not None else self.settings.vector_weight
+                ),
             )
             if collections:
                 repo = CollectionRepository(conn)

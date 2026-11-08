@@ -242,6 +242,12 @@ class QueryInput(BaseModel):
     collections: list[str] | None = None
     limit: int = Field(default=10, ge=1)
     min_score: float = Field(default=0.0, ge=0.0)
+    # Fusion overrides (Phase 15, D-03/D-04): None falls back to the server
+    # process's SIF_ settings; ranges are enforced here (ASVS V5) so
+    # out-of-range requests fail validation before options construction.
+    rrf_k: int | None = Field(default=None, ge=1)
+    bm25_weight: float | None = Field(default=None, gt=0.0)
+    vector_weight: float | None = Field(default=None, gt=0.0)
 
 
 class QueryOutput(BaseModel):
