@@ -5,15 +5,15 @@ titles: json
 findings:
   - id: CR-01
     severity: critical
-    disposition: open
+    disposition: fixed
     title: "mtime-only drift never converges — every search re-locks, re-refreshes a no-op, and prints a false notice, forever"
   - id: WR-01
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "Drift refresh silently skips stored documents the shared predicate excludes — divergence from `sif index update` produces a second permanent drift loop"
   - id: WR-02
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "\"refreshed N files\" notice reports the pre-refresh drift count and discards the actual refresh result"
   - id: WR-03
     severity: warning
@@ -31,18 +31,18 @@ findings:
     severity: info
     disposition: open
     title: "Unknown `-c` collection names are silently dropped; an all-unknown `-c` list yields \"No results found\" with no diagnostic"
-open: 7
+open: 4
 total: 7
-recorded: 2026-11-08T04:24:00.981Z
+recorded: 2026-11-08T04:34:04.053Z
 ---
 
 # Phase 14: Code Review Disposition
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| CR-01 | critical | open | - |
-| WR-01 | warning | open | - |
-| WR-02 | warning | open | - |
+| CR-01 | critical | fixed | 14-REVIEW-FIX.md |
+| WR-01 | warning | fixed | 14-REVIEW-FIX.md |
+| WR-02 | warning | fixed | 14-REVIEW-FIX.md |
 | WR-03 | warning | open | - |
 | WR-04 | warning | open | - |
 | IN-01 | info | open | - |
