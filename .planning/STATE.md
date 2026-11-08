@@ -23,9 +23,9 @@ progress:
 
 - **Name:** DocSift (package `sif`)
 - **Core Value:** 用户可以在自己的笔记和文档库中，用自然语言快速、准确地找到需要的信息——无论关键词是否匹配。
-- **Current Focus:** v1.1 Live Index and Search Quality — Phase 13 (Watch Everywhere: MCP-Embedded Refresh + Background Daemon) ready to discuss
+- **Current Focus:** v1.1 Live Index and Search Quality — all 6 phases complete; milestone ready for audit/close
 - **Tech Stack:** Python 3.10+, SQLite (FTS5 + sqlite-vec), Click, Pydantic, sentence-transformers, llama-cpp-python
-- See: .planning/PROJECT.md (updated 2026-11-07)
+- See: .planning/PROJECT.md (updated 2026-11-09)
 
 ## Current Position
 
@@ -91,6 +91,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 - Zero new runtime dependencies; only change is watchdog cap `>=4.0.0,<7.0.0`
 - Search-quality track (Phases 15-16) is orthogonal to watch hosts (12-14); only Phase 11 is shared
 - QUAL-06 staleness marking slotted with pre-command staleness detection (Phase 14)
+- [Phase 16]: rerank is explicit opt-in (`SIF_RERANK_ENABLED` default off + `--rerank`); candidate cap clamped 5-50 in ONE shared `resolve_candidate_limit`; over-fetch `max(limit+offset, cap)` makes the cap bind
+- [Phase 16]: sweep honesty = rounded-delta tie rule (`round(best-ndcg,6) < 0.01`), tuning-split-only ranking, per-category breakdown on every config; held-out delta +0.0066 < 0.01 → shipped defaults UNCHANGED, honestly documented
 - Bench expansion + held-out split lands together with the tuning conclusions it arbitrates (Phase 16)
 - [Phase 11]: Legacy duplicate DatabaseConnection (database.py) routed through the factory ahead of its 11-03 retirement: deleting the sqlite_vec import (plan-mandated) while leaving the class untouched would break ruff F821 and two patch-target tests
 - [Phase 11]: index_lock deadline expiry breaks to the yield instead of returning - a pre-yield return from a contextmanager raises RuntimeError and crashes the D-02 loser path (caught by the 11-01 Task 3 RED test)
@@ -186,7 +188,7 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 
 ## Session Continuity
 
-Last session: 2026-11-08T15:43:52.230Z
+Last session: 2026-11-09T00:50:00+08:00
 Stopped at: Phase 16 complete — all phases complete
 Resume file: None
 

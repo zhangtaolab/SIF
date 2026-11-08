@@ -48,6 +48,8 @@ DocSift 是 [qmd](https://github.com/tobi/qmd) 的 Python 重构版本，一个�
 - ✓ 统一 MCP 服务器实现（`src/sif/mcp/`，stdio + Streamable HTTP） — Validated in Phase 09
 - ✓ 上下文描述：path/collection/global 三种作用域，context CLI 全命令集，搜索结果自动附加描述 — Validated in Phase 05（2026-11-06 重新验证 24/24 通过，第五次陈旧验证再生）
 - ✓ 测试覆盖率常驻门禁：TOTAL 96.22%（1011 项测试），`[tool.coverage.report] fail_under = 90` 落地且无任何豁免行 — Validated in Phase 10（2026-11-06 重新验证 35/35 通过，fresh fingerprint）
+- ✓ 搜索质量：bench 基准集扩充（nDCG@10/Hit@10/p50-p95、56 条分类查询 36/20 分割、45 配置扫描、held-out 默认值锁定，诚实结论：默认值不变） — Validated in Phase 16
+- ✓ 搜索质量：Reranker 调优（显式 opt-in `SIF_RERANK_ENABLED`/`--rerank`、候选上限 5-50 夹取、相对阈值 α=0.5、over-fetch 让上限真正生效） — Validated in Phase 16
 - ✓ 技术债收口：symlink/别名路径经 `get`/`multi-get`/MCP `get_document` 解析到已索引文档（DEBT-PN）；旧版 FTS 触发器迁移 + 检测门控 rebuild 清除陈旧索引（CR-01）；`--xml` 输出恒为良构 XML（CR-02）；全部 26 处 CLI Database 构造点上下文管理器持有、异常路径确定性关闭（WR-01） — Validated in Phase 10.1（2026-11-06 重新验证 16/16 通过，fresh fingerprint）
 
 ### Validated（v1.1 进行中）
@@ -64,8 +66,6 @@ DocSift 是 [qmd](https://github.com/tobi/qmd) 的 Python 重构版本，一个�
 
 ### Active
 
-- [ ] 搜索质量：Reranker 调优（阈值/延迟）
-- [ ] 搜索质量：bench 基准集扩充
 
 ### Out of Scope
 
@@ -136,4 +136,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-11-08 after Phase 15（搜索质量轨道：权重 + 建议完成，Phase 16 为最后一项）*
+*Last updated: 2026-11-09 after Phase 16（v1.1 全部 6 阶段完成）*
