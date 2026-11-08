@@ -131,13 +131,13 @@ Plans:
   2. Zero- or low-result searches display "Did you mean" suggestions built from indexed terms — every suggestion returns at least one hit, and queries are never silently rewritten
   3. Suggestions incorporate the user's query history (stored locally in query_log, with opt-out / clear available)
   4. `sif suggest` returns prefix completions, did-you-mean corrections, and history suggestions, responding within 100 ms on a realistic personal-KB vocabulary
-**Plans**: 1/3 plans executed
+**Plans**: 2/3 plans executed
 Plans:
 **Wave 1**
 - [x] 15-01-PLAN.md — Weighted RRF end-to-end tracer: SearchOptions/Settings/CLI/MCP weight knobs with SC1 byte-identical golden (QUAL-01)
 
 **Wave 2** *(blocked on Wave 1 — shares models.py/settings.py surfaces)*
-- [ ] 15-02-PLAN.md — Suggestion engine core (documents_fts_v vocab + bucketed difflib DYM) + query_log storage/history ranking (QUAL-02/03/04 core)
+- [x] 15-02-PLAN.md — Suggestion engine core (documents_fts_v vocab + bucketed difflib DYM) + query_log storage/history ranking (QUAL-02/03/04 core)
 
 **Wave 3** *(blocked on Waves 1-2 — hosts the engine across search.py/MCP surfaces)*
 - [ ] 15-03-PLAN.md — Suggestion hosts: `sif suggest` command, zero-result DYM + query_log hooks on the search trio, MCP suggestions, phase gate (QUAL-02/03/04)
@@ -162,7 +162,7 @@ Plans:
 | 12. `sif watch` Foreground MVP | v1.1 | 3/3 | Complete    | 2026-11-07 |
 | 13. Watch Everywhere (MCP + Daemon) | v1.1 | 4/4 | Complete    | 2026-11-08 |
 | 14. Freshness Floor (Pre-Command + Staleness) | v1.1 | 3/3 | Complete    | 2026-11-08 |
-| 15. Search Quality Configuration | v1.1 | 1/3 | In Progress | - |
+| 15. Search Quality Configuration | v1.1 | 2/3 | In Progress | - |
 | 16. Bench Expansion + Reranker Tuning | v1.1 | 0/TBD | Not started | - |
 
 ---

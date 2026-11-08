@@ -5,16 +5,16 @@ milestone_name: Live Index and Search Quality
 current_phase: 15
 current_phase_name: Search Quality Configuration (Hybrid Weights + Query Suggestions)
 status: executing
-stopped_at: Completed 15-01-PLAN.md
-last_updated: "2026-11-08T10:13:16.099Z"
+stopped_at: Completed 15-02-PLAN.md
+last_updated: "2026-11-08T10:36:43.431Z"
 last_activity: 2026-11-08
 last_activity_desc: Phase 15 execution started
-state_head: 899bfd764df16ef3818e74f37ae60b8ef7b08592
+state_head: 04d0d93a17034313d90bf880d1cb880a6659179d
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 16
-  completed_plans: 14
+  completed_plans: 15
 ---
 
 # DocSift — Project State
@@ -30,7 +30,7 @@ progress:
 ## Current Position
 
 Phase: 15 (Search Quality Configuration (Hybrid Weights + Query Suggestions)) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-11-08 — Phase 15 execution started
 
@@ -64,6 +64,7 @@ Progress: [███████░░░] 67%
 | Phase 14 P03 | 13min | 2 tasks | 2 files |
 | Phase 14 P03 | 13min | 2 tasks | 2 files |
 | Phase 15 P01 | 21 min | 3 tasks | 17 files |
+| Phase 15 P02 | 20 min | 3 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -128,6 +129,10 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 - [Phase 15]: 15-01: fuse() keeps one code path (weights=None means 1.0 per list) — IEEE 1.0*x keeps defaults repr-exact; fuse_with_weights deleted (normalization trap, zero call sites), mismatch ValueError moved onto fuse
 - [Phase 15]: 15-01: k rides both fuse call sites (source + variant fusion), weights only at the source fusion (cross-query fusion is not source fusion, Pitfall 9); SIF_RRF_K removed from the docs phantom list once made real
 - [Phase 15]: 15-01: MCP weight ranges enforced by Pydantic on QueryInput (ge=1/gt=0, no bespoke handler checks); hand-written input_schema kept in sync; backend falls back to server SIF_ settings per D-04
+- [Phase 15]: 15-02: documents_fts_v is main-schema and lazily re-ensured by SuggestionEngine (temp fts5vocab cannot reference main FTS; old DBs/MCP never run init_schema); prefix completions rank df desc then lexical
+- [Phase 15]: 15-02: DYM in-vocab predicate is prefix-range membership via bisect (locked Pitfall 4); an uncorrectable out-of-vocab word returns [] for the whole rewrite so every emitted suggestion has every word retrievable (SC2)
+- [Phase 15]: 15-02: difflib equal-ratio matches are re-sorted by (ratio desc, term asc) because get_close_matches uses heapq.nlargest (not input order); bucket test is a deterministic <10%-of-vocab spy, no wall-clock races
+- [Phase 15]: 15-02: history decay count x 2^(-age_days/14) over one GROUP BY aggregate; read gate is fail-soft (disabled/settings-failure/missing table -> []); query_log writes are short CRUD outside the flock with aware-UTC stamps
 
 ### Pending Todos
 
@@ -148,8 +153,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 
 ## Session Continuity
 
-Last session: 2026-11-08T10:13:15.674Z
-Stopped at: Completed 15-01-PLAN.md
+Last session: 2026-11-08T10:36:42.959Z
+Stopped at: Completed 15-02-PLAN.md
 Resume file: None
 
 - **Next expected action:** `/gsd-discuss-phase 13` (Phase 13 needs context; research flags: daemon/service-install specifics already in research/STACK.md)
