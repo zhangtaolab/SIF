@@ -5,11 +5,11 @@ milestone_name: Live Index and Search Quality
 current_phase: 13
 current_phase_name: Watch Everywhere (MCP-Embedded Refresh + Background Daemon)
 status: verifying
-stopped_at: Completed 13-04-PLAN.md
-last_updated: "2026-11-07T16:49:25.741Z"
+stopped_at: Phase 14 context gathered
+last_updated: "2026-11-08T02:00:17.993Z"
 last_activity: 2026-11-07
 last_activity_desc: Phase 13 execution started
-state_head: 1a98e9e6adfea88bb2323310e208c92be06a985f
+state_head: 0cd3cbe78dce4ac99ccd3c3cf2689782f68524fa
 progress:
   total_phases: 6
   completed_phases: 2
@@ -131,9 +131,9 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 
 ## Session Continuity
 
-Last session: 2026-11-07T16:49:06.992Z
-Stopped at: Completed 13-04-PLAN.md
-Resume file: None
+Last session: 2026-11-08T02:00:17.470Z
+Stopped at: Phase 14 context gathered
+Resume file: .planning/phases/14-freshness-floor-pre-command-refresh-staleness-marking/14-CONTEXT.md
 
 - **Next expected action:** `/gsd-discuss-phase 13` (Phase 13 needs context; research flags: daemon/service-install specifics already in research/STACK.md)
 - Research flags for later phases: Phase 13 (daemon/service-install specifics), Phase 16 (`SearchOptions.candidate_limit` audit + fixture design)
