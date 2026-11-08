@@ -5,17 +5,16 @@ milestone_name: Live Index and Search Quality
 current_phase: 16
 current_phase_name: Bench Expansion + Reranker Tuning
 status: planning
-stopped_at: Phase 15 complete, ready to plan Phase 16
-last_updated: "2026-11-08T11:27:05.922Z"
+stopped_at: Phase 16 context gathered
+last_updated: "2026-11-08T11:50:02.871Z"
 last_activity: 2026-11-08
 last_activity_desc: Phase 15 complete, transitioned to Phase 16
-state_head: 20c239ff2055629a8c2b14ba9912a0c6cdca2a31
+state_head: 7a3c199fd417d02fb346a2551b3dd1d5cc6880f3
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 16
   completed_plans: 16
-  percent: 83
 ---
 
 # DocSift — Project State
@@ -158,9 +157,9 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 
 ## Session Continuity
 
-Last session: 2026-11-08T10:48:55.481Z
-Stopped at: Phase 15 complete, ready to plan Phase 16
-Resume file: None
+Last session: 2026-11-08T11:50:02.202Z
+Stopped at: Phase 16 context gathered
+Resume file: .planning/phases/16-bench-expansion-reranker-tuning/16-CONTEXT.md
 
 - **Next expected action:** `/gsd-discuss-phase 13` (Phase 13 needs context; research flags: daemon/service-install specifics already in research/STACK.md)
 - Research flags for later phases: Phase 13 (daemon/service-install specifics), Phase 16 (`SearchOptions.candidate_limit` audit + fixture design)
