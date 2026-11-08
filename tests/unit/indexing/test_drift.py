@@ -331,6 +331,46 @@ class TestRefreshDrifted:
         assert result.removed == 1
         assert _doc_paths(db_path) == {str((notes / "b.md").resolve())}
 
+    def test_predicate_excluded_stored_doc_removed_and_converges(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """WR-01 regression: a doc the shared predicate later excludes converges.
+
+        ``detect_drift`` counts a stored-but-unseen path as deleted drift;
+        the refresh must REMOVE it (mirroring ``_sweep_removed`` / ``sif
+        index update``) instead of skipping it at the ``matches`` gate —
+        otherwise the path is drift on every search forever.
+        """
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "drift.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        (notes / "a.md").write_text(BODY_ALPHA, encoding="utf-8")
+        (notes / "secret.md").write_text(BODY_BETA, encoding="utf-8")
+        _seed_and_index(db_path, notes)
+
+        ignoring = Settings(
+            embedding_dim=8,
+            model_name="test",
+            cache_embeddings=False,
+            watch_ignore_patterns=["secret*"],
+        )
+        with patch("sif.config.settings.get_settings", return_value=ignoring):
+            db, coll = _open(db_path)
+            try:
+                report = detect_drift(db.connection, [coll])
+                assert report.total_count == 1
+                result = refresh_drifted(
+                    db_path, db.connection, {coll.id: coll}, report, lock_timeout=5.0
+                )
+                # Converged within the same settings regime: zero drift left.
+                assert detect_drift(db.connection, [coll]).total_count == 0
+            finally:
+                db.close()
+
+        assert result.removed == 1
+        assert _doc_paths(db_path) == {str((notes / "a.md").resolve())}
+
     def test_refresh_creates_the_lock_file_only_when_working(self, tmp_path, monkeypatch) -> None:
         """index_lock lives inside refresh_drifted: present after a real burst, absent on empty."""
         _delenv_settings_vars(monkeypatch)

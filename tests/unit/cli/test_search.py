@@ -2625,6 +2625,58 @@ class TestPreSearchRefresh:
         finally:
             conn.close()
 
+    def test_ignored_stored_doc_converges_across_searches(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """WR-01 regression: a later ignore pattern converges instead of looping.
+
+        A stored document that ``SIF_WATCH_IGNORE_PATTERNS`` retroactively
+        excludes is deleted-shaped drift; the refresh must remove it the
+        way ``sif index update`` would, so the SECOND search is clean —
+        not an eternal drift/lock/notice loop.
+        """
+        db_path, notes, _settings = self._seed_index(
+            tmp_path,
+            monkeypatch,
+            files={
+                "a.md": "# Heading One\n\nAlpha paragraph text for search. " * 10,
+                "secret.md": "# Secret Doc\n\nSeekrit hidden body text. " * 10,
+            },
+        )
+        ignoring = Settings(
+            embedding_dim=8,
+            model_name="test",
+            cache_embeddings=False,
+            watch_ignore_patterns=["secret*"],
+        )
+
+        with patch("sif.config.settings.get_settings", return_value=ignoring):
+            first = CliRunner().invoke(search_cmd, ["seekrit"], obj={"index_path": db_path})
+
+        assert first.exit_code == 0
+        # A refresh burst ran (exact count wording is WR-02's subject)...
+        assert "(bm25) before search" in first.stderr
+        # ...and it REMOVED the excluded doc, mirroring `sif index update`.
+        conn = sqlite3.connect(str(db_path))
+        try:
+            stored = {row[0] for row in conn.execute("SELECT path FROM documents")}
+        finally:
+            conn.close()
+        assert stored == {str((notes / "a.md").resolve())}
+        assert "No results found" in first.output
+
+        with (
+            patch("sif.config.settings.get_settings", return_value=ignoring),
+            patch("sif.cli.commands.search.refresh_drifted") as spy,
+        ):
+            second = CliRunner().invoke(search_cmd, ["alpha"], obj={"index_path": db_path})
+
+        assert second.exit_code == 0
+        assert "Heading One" in second.output
+        assert second.stderr == ""
+        # No refresh burst → no index_lock window on the clean second search.
+        spy.assert_not_called()
+
     def test_over_cap_drift_skips_refresh_and_warns(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

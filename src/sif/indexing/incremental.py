@@ -174,7 +174,11 @@ class IncrementalIndexer:
         Cost is proportional to ``len(paths)``; the collection tree is never
         scanned (D-06). A path may arrive from both sides of a folded event
         burst; it is processed once and disk state decides the outcome.
-        Unchanged paths (checksum skip) count as ``unchanged``; a missing
+        Unchanged paths (checksum skip) count as ``unchanged``. A stored
+        document whose path now fails the shared scan predicate (e.g. a
+        later ignore-pattern setting) is removed, mirroring the
+        ``update_collection`` sweep so every writer agrees on removal
+        semantics; never-indexed paths stay harmless no-ops. A missing
         collection root warns and returns zero counts without touching any
         document (D-11).
 
@@ -207,14 +211,23 @@ class IncrementalIndexer:
         unchanged = 0
 
         for path in sorted(resolved):
-            # Never-indexable paths (temp noise, pattern misses) are skipped:
-            # a fold remove-hint for a never-indexed path is a harmless no-op.
             if not scanner.matches(
                 root,
                 path,
                 pattern=collection.pattern,
                 ignore_patterns=collection.ignore_patterns,
             ):
+                # Never-indexable paths with no stored document (temp
+                # noise, fold remove-hints for never-indexed paths) are
+                # harmless no-ops. A STORED document the shared predicate
+                # now excludes (e.g. a later SIF_WATCH_IGNORE_PATTERNS
+                # entry) is removed — mirroring _sweep_removed / `sif index
+                # update` — so drift refreshes converge instead of
+                # re-detecting the path as deleted drift forever (WR-01).
+                excluded = self._doc_repo.get_by_path(str(path), collection.id)
+                if excluded is not None:
+                    self._remove_document(excluded)
+                    removed += 1
                 continue
             existing = self._doc_repo.get_by_path(str(path), collection.id)
             if path.exists():
