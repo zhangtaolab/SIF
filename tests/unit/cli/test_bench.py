@@ -204,9 +204,7 @@ class TestBenchCommand:
         assert "mrr" in output
         assert "precision@1" in output
 
-    def test_bench_embedder_soft_fail_warning_stays_off_json_stdout(
-        self, tmp_path: Path
-    ) -> None:
+    def test_bench_embedder_soft_fail_warning_stays_off_json_stdout(self, tmp_path: Path) -> None:
         """CR-01: the embedder soft-fail warning goes to stderr (never the
         JSON stdout stream), so the BM25-only degradation path still parses."""
         runner = CliRunner()
