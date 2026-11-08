@@ -209,9 +209,13 @@ def bench_cmd(  # noqa: PLR0913
         console.print("[yellow]No index found. Run 'sif index update' first.[/yellow]")
         return
 
-    # Load fixture
-    with open(fixture) as f:
-        fixture_data = json.load(f)
+    # Load fixture (T-16-02): malformed JSON is untrusted input and must
+    # surface as a ClickException (non-zero exit), never a raw traceback.
+    try:
+        with open(fixture) as f:
+            fixture_data = json.load(f)
+    except (OSError, ValueError) as e:
+        raise click.ClickException(f"Benchmark failed: {e}") from e
 
     # A no-sweep bench run uses the current SIF_ settings as its
     # configuration (D-09, fixes Phase 15 IN-02); invalid config surfaces as
