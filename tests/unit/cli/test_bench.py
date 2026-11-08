@@ -105,6 +105,16 @@ class _SpyPipeline:
         return []
 
 
+class _SpyReranker:
+    """Reranker spy: records (candidate count, top_k) per call; reorders and trims."""
+
+    calls: ClassVar[list[tuple[int, int]]] = []
+
+    def rerank(self, _query: str, results: list, top_k: int = 10) -> list:
+        _SpyReranker.calls.append((len(results), top_k))
+        return list(reversed(results))[:top_k]
+
+
 class TestBenchCommand:
     def test_bench_requires_fixture(self) -> None:
         runner = CliRunner()
@@ -602,6 +612,9 @@ class TestBenchCommand:
                 "ndcg_at_10",
                 "hit_at_10",
             } <= set(config)
+            # Off-only sweep rows never construct a states mapping: the flat
+            # fields ARE the off state (D-12).
+            assert "states" not in config
             assert list(config["categories"].keys()) == [
                 "keyword",
                 "synonym",
@@ -934,3 +947,250 @@ class TestBenchCandidateLimit:
             settings_overrides={"rerank_candidate_limit": 33},
         )
         assert options.candidate_limit == 33
+
+
+class TestBenchRerankStates:
+    """Rerank off/on as two measured states, strictly additive (D-12/D-13)."""
+
+    @classmethod
+    def _legacy_fixture(cls, tmp_path: Path) -> Path:
+        fixture = {"queries": [{"query": "test", "relevant_docids": ["doc-1"]}]}
+        fixture_path = tmp_path / "fixture.json"
+        fixture_path.write_text(json.dumps(fixture))
+        return fixture_path
+
+    def test_bench_off_only_json_states_additive_no_reranker(self, tmp_path: Path) -> None:
+        """Without --rerank: create_reranker is never called, and states.off
+        sits ALONGSIDE the untouched flat top-level keys (never a wrapper)."""
+        runner = CliRunner()
+        fixture_path = self._legacy_fixture(tmp_path)
+
+        mock_pipeline = MagicMock()
+        mock_pipeline.search.return_value = [MagicMock(document_id="doc-1")]
+        mock_db = MagicMock()
+        mock_manager = MagicMock()
+        mock_manager.embed_single.return_value = [0.0] * 8
+        mock_manager._model = MagicMock()
+
+        with (
+            patch("sif.cli.commands.bench.Database", return_value=mock_db),
+            patch(
+                "sif.cli.commands.bench.EmbeddingManager.from_settings",
+                return_value=mock_manager,
+            ),
+            patch("sif.cli.commands.bench.SearchPipeline", return_value=mock_pipeline),
+            patch("sif.cli.commands.bench.get_settings", return_value=_settings_mock()),
+            patch("sif.cli.commands.bench.create_reranker") as create_spy,
+        ):
+            result = runner.invoke(
+                bench_cmd,
+                [str(fixture_path), "--json"],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code == 0, result.output
+        create_spy.assert_not_called()
+        output = json.loads(result.output.strip())
+        # The pinned flat keys stay top-level and unchanged.
+        assert "ndcg_at_10" in output
+        assert "mrr" in output
+        assert "precision@1" in output
+        # states.off is added alongside; the on state is never constructed.
+        assert set(output["states"]) == {"off"}
+        assert set(output["states"]["off"]) == {"ndcg_at_10", "hit_at_10", "p50_ms", "p95_ms"}
+
+    def test_bench_rerank_states_measured_with_spy_reranker(self) -> None:
+        """--rerank measures both states through the real pipeline; the spy
+        receives top_k=limit and never more than settings.rerank_candidate_limit
+        candidates."""
+        from tests.support.bench import EMBEDDING_DIM, ConceptEmbedder, build_bench_db
+
+        embedder = ConceptEmbedder()
+        conn = build_bench_db(Path("tests/fixtures/bench/corpus"), embedder)
+        _SpyReranker.calls = []
+        try:
+            mock_db = MagicMock()
+            mock_db.__enter__.return_value.connection = conn
+            mock_manager = MagicMock()
+            mock_manager._model = embedder
+            mock_manager.embed_single.return_value = [0.0] * EMBEDDING_DIM
+
+            runner = CliRunner()
+            with (
+                patch("sif.cli.commands.bench.Database", return_value=mock_db),
+                patch(
+                    "sif.cli.commands.bench.EmbeddingManager.from_settings",
+                    return_value=mock_manager,
+                ),
+                patch(
+                    "sif.cli.commands.bench.get_settings",
+                    return_value=_settings_mock(),
+                ),
+                patch(
+                    "sif.cli.commands.bench.create_reranker",
+                    return_value=_SpyReranker(),
+                ) as create_spy,
+            ):
+                result = runner.invoke(
+                    bench_cmd,
+                    [str(Path("tests/fixtures/bench/queries.json")), "--rerank", "--json"],
+                    obj={"index_path": MagicMock(exists=lambda: True)},
+                )
+
+            assert result.exit_code == 0, result.output
+            create_spy.assert_called_once()
+            output = json.loads(result.output.strip())
+            assert output["ndcg_at_10"] > 0.0
+            # Both states exist with metrics and latency each.
+            assert set(output["states"]) == {"off", "on"}
+            for state in output["states"].values():
+                assert set(state) == {"ndcg_at_10", "hit_at_10", "p50_ms", "p95_ms"}
+            # The spy reranker ran (two passes per query on the on pipeline)
+            # and the candidate cap + top_k contract held on every call.
+            assert len(_SpyReranker.calls) >= 2
+            assert all(top_k == 10 for _candidates, top_k in _SpyReranker.calls)
+            assert all(1 <= candidates <= 20 for candidates, _top_k in _SpyReranker.calls)
+        finally:
+            conn.close()
+
+    def test_bench_sweep_rerank_states_per_config(self, tmp_path: Path) -> None:
+        """Sweep + --rerank: every config row (and the baseline) carries both
+        states with metrics and latency (D-12)."""
+        runner = CliRunner()
+        fixture_path, corpus = _graded_split_fixture(tmp_path)
+
+        mock_pipeline = MagicMock()
+        mock_pipeline.search.return_value = [
+            MagicMock(document_id="d1", path=str(corpus / "keyword" / "a.md")),
+        ]
+        mock_db = MagicMock()
+        mock_manager = MagicMock()
+        mock_manager.embed_single.return_value = [0.0] * 8
+        mock_manager._model = MagicMock()
+
+        with (
+            patch("sif.cli.commands.bench.Database", return_value=mock_db),
+            patch(
+                "sif.cli.commands.bench.EmbeddingManager.from_settings",
+                return_value=mock_manager,
+            ),
+            patch("sif.cli.commands.bench.SearchPipeline", return_value=mock_pipeline),
+            patch("sif.cli.commands.bench.get_settings", return_value=_settings_mock()),
+            patch("sif.cli.commands.bench.create_reranker", return_value=MagicMock()),
+        ):
+            result = runner.invoke(
+                bench_cmd,
+                [str(fixture_path), "--sweep", "--rerank", "--json"],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code == 0, result.output
+        output = json.loads(result.output.strip())
+        assert len(output["configs"]) == 45
+        for row in [*output["configs"], output["baseline"]]:
+            assert set(row["states"]) == {"off", "on"}
+            for state in row["states"].values():
+                assert set(state) == {"ndcg_at_10", "hit_at_10", "p50_ms", "p95_ms"}
+
+    def test_bench_rerank_missing_backend_degrades_to_off_only(self, tmp_path: Path) -> None:
+        """A missing reranker backend warns and measures off-only (exit 0)."""
+        runner = CliRunner()
+        fixture_path = self._legacy_fixture(tmp_path)
+
+        mock_pipeline = MagicMock()
+        mock_pipeline.search.return_value = [MagicMock(document_id="doc-1")]
+        mock_db = MagicMock()
+        mock_manager = MagicMock()
+        mock_manager.embed_single.return_value = [0.0] * 8
+        mock_manager._model = MagicMock()
+
+        with (
+            patch("sif.cli.commands.bench.Database", return_value=mock_db),
+            patch(
+                "sif.cli.commands.bench.EmbeddingManager.from_settings",
+                return_value=mock_manager,
+            ),
+            patch("sif.cli.commands.bench.SearchPipeline", return_value=mock_pipeline),
+            patch("sif.cli.commands.bench.get_settings", return_value=_settings_mock()),
+            patch(
+                "sif.cli.commands.bench.create_reranker",
+                side_effect=ImportError("No module named 'transformers'"),
+            ),
+        ):
+            result = runner.invoke(
+                bench_cmd,
+                [str(fixture_path), "--rerank"],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "Reranker backend not available" in result.output
+        assert "MRR" in result.output
+
+    def test_bench_rerank_model_load_failure_degrades_to_off_only(self, tmp_path: Path) -> None:
+        """A model-load failure warns and measures off-only (fail-soft)."""
+        runner = CliRunner()
+        fixture_path = self._legacy_fixture(tmp_path)
+
+        mock_pipeline = MagicMock()
+        mock_pipeline.search.return_value = [MagicMock(document_id="doc-1")]
+        mock_db = MagicMock()
+        mock_manager = MagicMock()
+        mock_manager.embed_single.return_value = [0.0] * 8
+        mock_manager._model = MagicMock()
+
+        with (
+            patch("sif.cli.commands.bench.Database", return_value=mock_db),
+            patch(
+                "sif.cli.commands.bench.EmbeddingManager.from_settings",
+                return_value=mock_manager,
+            ),
+            patch("sif.cli.commands.bench.SearchPipeline", return_value=mock_pipeline),
+            patch("sif.cli.commands.bench.get_settings", return_value=_settings_mock()),
+            patch(
+                "sif.cli.commands.bench.create_reranker",
+                side_effect=RuntimeError("weights download failed"),
+            ),
+        ):
+            result = runner.invoke(
+                bench_cmd,
+                [str(fixture_path), "--rerank"],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "Failed to load reranker model" in result.output
+
+    def test_bench_rerank_factory_value_error_is_click_exception(self, tmp_path: Path) -> None:
+        """A factory ValueError stays a ClickException (non-zero exit)."""
+        runner = CliRunner()
+        fixture_path = self._legacy_fixture(tmp_path)
+
+        mock_pipeline = MagicMock()
+        mock_pipeline.search.return_value = [MagicMock(document_id="doc-1")]
+        mock_db = MagicMock()
+        mock_manager = MagicMock()
+        mock_manager.embed_single.return_value = [0.0] * 8
+        mock_manager._model = MagicMock()
+
+        with (
+            patch("sif.cli.commands.bench.Database", return_value=mock_db),
+            patch(
+                "sif.cli.commands.bench.EmbeddingManager.from_settings",
+                return_value=mock_manager,
+            ),
+            patch("sif.cli.commands.bench.SearchPipeline", return_value=mock_pipeline),
+            patch("sif.cli.commands.bench.get_settings", return_value=_settings_mock()),
+            patch(
+                "sif.cli.commands.bench.create_reranker",
+                side_effect=ValueError("Unknown reranker model type"),
+            ),
+        ):
+            result = runner.invoke(
+                bench_cmd,
+                [str(fixture_path), "--rerank"],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code != 0
+        assert "Unknown reranker model type" in result.output

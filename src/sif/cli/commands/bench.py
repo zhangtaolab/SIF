@@ -28,11 +28,22 @@ from sif.search.benchmark import (
     rank_sweep,
 )
 from sif.search.hybrid import SearchPipeline
+from sif.search.rerank import (
+    CrossEncoderReranker,
+    LlamaCppReranker,
+    Qwen3Reranker,
+    create_reranker,
+)
 from sif.utils.logging import get_logger
 
 
 logger = get_logger(__name__)
 console = Console()
+
+# The four keys every rerank state carries (D-12): metrics plus latency.
+_STATE_METRIC_KEYS: tuple[str, ...] = ("ndcg_at_10", "hit_at_10", "p50_ms", "p95_ms")
+
+_Reranker = LlamaCppReranker | CrossEncoderReranker | Qwen3Reranker
 
 
 @dataclass
@@ -147,22 +158,65 @@ def _build_options(
     )
 
 
+def _state_metrics(report: BenchReport) -> dict[str, float] | None:
+    """Four-key rerank-state summary (metrics plus latency, D-12).
+
+    None when the report's fields are not numeric: a fully mocked report
+    (the narrow-width JSON pin substitutes one) must not leak MagicMock
+    objects into the JSON payload — states are omitted there instead.
+    """
+    values = {key: getattr(report, key) for key in _STATE_METRIC_KEYS}
+    if not all(isinstance(value, (int, float)) for value in values.values()):
+        return None
+    return values
+
+
+def _load_reranker(rerank: bool, settings: Settings) -> _Reranker | None:
+    """Load the reranker for the on state — an explicit opt-in (D-12).
+
+    Without --rerank the gate never calls create_reranker, so the off state
+    is zero-cost by construction: no model load, no optional-backend import.
+    A missing backend or a model-load failure degrades to off-only with a
+    warning (bench is diagnostic — the same fail-soft the embedder loader
+    uses), while a factory ValueError is a configuration error and stays a
+    ClickException.
+    """
+    if not rerank:
+        return None
+    try:
+        return create_reranker(settings)
+    except ImportError as e:
+        console.print(
+            f"[yellow]Reranker backend not available, measuring the off state only: {e}[/yellow]"
+        )
+    except ValueError as e:
+        raise click.ClickException(str(e)) from e
+    except Exception as e:
+        console.print(
+            f"[yellow]Failed to load reranker model, measuring the off state only: {e}[/yellow]"
+        )
+    return None
+
+
 def _measure_state(
     harness: BenchHarness,
     options: SearchOptions,
     evaluator: SearchEvaluator,
+    reranker: _Reranker | None = None,
 ) -> BenchReport:
-    """Measure one configuration: one hoisted pipeline, warmed per-query timing.
+    """Measure one state: one hoisted pipeline, warmed per-query timing.
 
     The pipeline is built once per measured state inside the connection
     context (never per query), so latency measures search rather than
-    pipeline re-initialization.
+    pipeline re-initialization. The off state passes ``reranker=None`` — it
+    never constructs a reranker model (D-12).
     """
     with harness.db.connection:
         pipeline = SearchPipeline(
             harness.db.connection,
             embedder=harness.embedder,
             embedding_dim=harness.embedding_dim,
+            reranker=reranker,
         )
         return evaluator.report(
             lambda query: pipeline.search(query, options),
@@ -198,17 +252,31 @@ def _measure_config(
     pipeline: SearchPipeline,
     evaluator: SearchEvaluator,
     options: SearchOptions,
+    rerank_pipeline: SearchPipeline | None = None,
 ) -> ConfigResult:
     """Measure one configuration's tuning metrics into a ConfigResult.
 
     The per-category breakdown comes from the same report() grouping the
     baseline uses — computed from the per-query values already in hand, with
-    zero extra search calls (D-06).
+    zero extra search calls (D-06). With a ``rerank_pipeline`` (D-12), the
+    rerank-on state is measured through the same options and both states ride
+    the ConfigResult; without one the flat fields ARE the off state and no
+    ``states`` mapping is constructed.
     """
     report = evaluator.report(
         lambda query: pipeline.search(query, options),
         clock=time.perf_counter,
     )
+    states: dict[str, dict[str, float]] | None = None
+    if rerank_pipeline is not None:
+        on_report = evaluator.report(
+            lambda query: rerank_pipeline.search(query, options),
+            clock=time.perf_counter,
+        )
+        off_state = _state_metrics(report)
+        on_state = _state_metrics(on_report)
+        if off_state is not None and on_state is not None:
+            states = {"off": off_state, "on": on_state}
     return ConfigResult(
         rrf_k=options.rrf_k,
         bm25_weight=options.bm25_weight,
@@ -218,6 +286,7 @@ def _measure_config(
         p50_ms=report.p50_ms,
         p95_ms=report.p95_ms,
         categories=report.categories,
+        states=states,
     )
 
 
@@ -225,12 +294,15 @@ def _run_sweep(
     harness: BenchHarness,
     base_options: SearchOptions,
     evaluator: SearchEvaluator,
+    reranker: _Reranker | None = None,
 ) -> tuple[SweepRanking, ConfigResult]:
     """Measure every declared grid configuration and rank it (D-07/D-08/D-09).
 
     One hoisted pipeline serves all 45 configurations; only the fusion knobs
     (rrf_k/bm25_weight/vector_weight, the Phase 15 per-query override bridge)
-    vary per config on top of the Plan 01 ``_build_options`` baseline.
+    vary per config on top of the Plan 01 ``_build_options`` baseline. With a
+    ``reranker``, a second hoisted pipeline measures the rerank-on state per
+    configuration (D-12).
 
     The current-settings run is measured first through the same path as the
     baseline row. When the settings configuration is a grid point (the
@@ -244,7 +316,17 @@ def _run_sweep(
             embedder=harness.embedder,
             embedding_dim=harness.embedding_dim,
         )
-        baseline = _measure_config(pipeline, evaluator, base_options)
+        rerank_pipeline = (
+            SearchPipeline(
+                harness.db.connection,
+                embedder=harness.embedder,
+                embedding_dim=harness.embedding_dim,
+                reranker=reranker,
+            )
+            if reranker is not None
+            else None
+        )
+        baseline = _measure_config(pipeline, evaluator, base_options, rerank_pipeline)
         baseline_key = (baseline.rrf_k, baseline.bm25_weight, baseline.vector_weight)
         results: list[ConfigResult] = []
         for grid in iter_grid():
@@ -261,6 +343,7 @@ def _run_sweep(
                         bm25_weight=grid.bm25_weight,
                         vector_weight=grid.vector_weight,
                     ),
+                    rerank_pipeline,
                 )
             )
     return rank_sweep(results), baseline
@@ -291,15 +374,54 @@ def _sweep_payload(ranking: SweepRanking, baseline: ConfigResult) -> dict:
     }
 
 
-def _render_report(report: BenchReport, fixture_name: str, output_json: bool) -> None:
+def _rerank_states(
+    report: BenchReport,
+    on_report: BenchReport | None,
+) -> dict[str, dict[str, float]]:
+    """Rerank states mapping for the report: off always, on only when measured."""
+    states: dict[str, dict[str, float]] = {}
+    off_state = _state_metrics(report)
+    if off_state is not None:
+        states["off"] = off_state
+    if on_report is not None:
+        on_state = _state_metrics(on_report)
+        if on_state is not None:
+            states["on"] = on_state
+    return states
+
+
+def _render_report(
+    report: BenchReport,
+    on_report: BenchReport | None,
+    fixture_name: str,
+    output_json: bool,
+) -> None:
     """Render the report as JSON or a Rich table.
 
     JSON goes through click.echo (never Rich) so it strict-parses at narrow
-    terminal widths; the table carries the per-category breakdown.
+    terminal widths; the table carries the per-category breakdown. Rerank
+    states (D-12) are STRICTLY ADDITIVE on the JSON output: every flat
+    top-level key Plan 01 pins stays top-level and keeps mirroring the
+    always-measured off state, with ``states`` added alongside — never a
+    replacement wrapper.
     """
+    states = _rerank_states(report, on_report)
     if output_json:
-        click.echo(json.dumps(report.to_dict(), indent=2))
+        payload = report.to_dict()
+        if states:
+            payload["states"] = states
+        click.echo(json.dumps(payload, indent=2))
         return
+    console.print(_report_table(report, on_report, states, fixture_name))
+
+
+def _report_table(
+    report: BenchReport,
+    on_report: BenchReport | None,
+    states: dict[str, dict[str, float]],
+    fixture_name: str,
+) -> Table:
+    """Metric table with the per-category breakdown and on/off comparison."""
     table = Table(title=f"Benchmark Results: {fixture_name}")
     table.add_column("Metric", style="cyan")
     table.add_column("Value", style="green", justify="right")
@@ -332,8 +454,15 @@ def _render_report(report: BenchReport, fixture_name: str, output_json: bool) ->
         table.add_row(f"{category} nDCG@10", f"{metrics.ndcg_at_10:.4f}")
         table.add_row(f"{category} Hit@10", f"{metrics.hit_at_10:.4f}")
         table.add_row(f"{category} queries", f"{metrics.count}")
-
-    console.print(table)
+    # On/off comparison (D-12): only rendered when the on state was measured —
+    # without --rerank the flat rows above ARE the off state.
+    if on_report is not None and "on" in states:
+        for label, measured in (("off", report), ("on", on_report)):
+            table.add_row(f"Rerank {label} nDCG@10", f"{measured.ndcg_at_10:.4f}")
+            table.add_row(f"Rerank {label} Hit@10", f"{measured.hit_at_10:.4f}")
+            table.add_row(f"Rerank {label} p50 (ms)", f"{measured.p50_ms:.2f}")
+            table.add_row(f"Rerank {label} p95 (ms)", f"{measured.p95_ms:.2f}")
+    return table
 
 
 def _render_sweep(
@@ -365,6 +494,13 @@ def _render_sweep(
     table.add_column("p95", justify="right")
     for category in CATEGORIES:
         table.add_column(f"{category} nDCG@10", justify="right")
+    # Rerank states (D-12): an on-state nDCG column appears only when the
+    # sweep also measured the rerank-on pipeline per configuration.
+    has_states = baseline.states is not None or any(
+        result.states is not None for result in ranking.ranked
+    )
+    if has_states:
+        table.add_column("on nDCG@10", justify="right")
     table.add_column("note", justify="center")
 
     def cells_for(result: ConfigResult, note: str) -> list[str]:
@@ -380,6 +516,10 @@ def _render_sweep(
             f"{result.p95_ms:.2f}",
         ]
         cells.extend(f"{result.categories[category].ndcg_at_10:.4f}" for category in CATEGORIES)
+        if has_states:
+            cells.append(
+                f"{result.states['on']['ndcg_at_10']:.4f}" if result.states is not None else ""
+            )
         cells.append(note)
         return cells
 
@@ -425,6 +565,11 @@ def _render_sweep(
 @click.option("--all", "search_all", is_flag=True, help="Search all collections")
 @click.option("--sweep", is_flag=True, help="Sweep the declared rrf_k/weight grid")
 @click.option(
+    "--rerank",
+    is_flag=True,
+    help="Also measure the rerank-on state (default: off only)",
+)
+@click.option(
     "--model-type",
     type=click.Choice(["sentence_transformers", "gguf", "openai", "modelscope"]),
     help="Embedding model type override",
@@ -439,6 +584,7 @@ def bench_cmd(  # noqa: PLR0913
     collection: tuple,
     search_all: bool,
     sweep: bool,
+    rerank: bool,
     model_type: str | None,
     output_json: bool,
 ) -> None:
@@ -460,7 +606,8 @@ def bench_cmd(  # noqa: PLR0913
     warmed p50/p95 latency and a per-category breakdown over the legacy flat
     metrics. With --sweep, the 45-configuration declared grid
     (rrf_k x bm25_weight x vector_weight) is measured on the tuning split
-    only and ranked with the 0.01 tie-group rule.
+    only and ranked with the 0.01 tie-group rule. With --rerank, the
+    rerank-on state is measured beside the always-measured off state.
     """
     index_path = ctx.obj["index_path"]
 
@@ -483,6 +630,10 @@ def bench_cmd(  # noqa: PLR0913
         settings = get_settings()
     except ValidationError as e:
         raise click.ClickException(str(e)) from e
+
+    # Rerank is an explicit opt-in (D-12); _load_reranker never calls
+    # create_reranker without the flag, so the off state is zero-cost.
+    reranker = _load_reranker(rerank, settings)
 
     with Database(index_path) as db:
         db.init_schema()
@@ -510,13 +661,19 @@ def bench_cmd(  # noqa: PLR0913
                     harness,
                     options,
                     _tuning_evaluator(fixture_data, fixture),
+                    reranker,
                 )
                 _render_sweep(ranking, baseline, fixture.name, output_json)
                 return
             evaluator = SearchEvaluator(fixture_data, fixture_path=fixture)
             report = _measure_state(harness, options, evaluator)
+            on_report = (
+                _measure_state(harness, options, evaluator, reranker=reranker)
+                if reranker is not None
+                else None
+            )
         except click.ClickException:
             raise
         except Exception as e:
             raise click.ClickException(f"Benchmark failed: {e}") from e
-        _render_report(report, fixture.name, output_json)
+        _render_report(report, on_report, fixture.name, output_json)

@@ -578,7 +578,10 @@ Fixture format (JSON):
 Graded fixtures (Phase 16) instead declare corpus_root/relevance_key and
 per-query category/split/relevance; the report layers nDCG@10, Hit@10,
 warmed p50/p95 latency and a per-category breakdown over the legacy flat
-metrics.
+metrics. With --sweep, the 45-configuration declared grid
+(rrf_k x bm25_weight x vector_weight) is measured on the tuning split
+only and ranked with the 0.01 tie-group rule. With --rerank, the
+rerank-on state is measured beside the always-measured off state.
 
 ```bash
 sif bench [OPTIONS]
@@ -595,9 +598,11 @@ sif bench [OPTIONS]
 | Option | Short | Type | Default | Description |
 |--------|-------|------|---------|-------------|
 | `--limit` | `-n` | integer | `10` | Number of results per query |
-| `--candidate-limit` | `-C` | integer | `20` | Reranker candidate pool size |
+| `--candidate-limit` | `-C` | integer range | — | Reranker candidate pool size (default: SIF_RERANK_CANDIDATE_LIMIT or 20; clamped to 5-50) |
 | `--collection` | `-c` | text[] | — | Collection to search |
 | `--all` | `—` | flag | `false` | Search all collections |
+| `--sweep` | `—` | flag | `false` | Sweep the declared rrf_k/weight grid |
+| `--rerank` | `—` | flag | `false` | Also measure the rerank-on state (default: off only) |
 | `--model-type` | `—` | choice [sentence_transformers|gguf|openai|modelscope] | — | Embedding model type override |
 | `--json` | `—` | flag | `false` | Output as JSON |
 

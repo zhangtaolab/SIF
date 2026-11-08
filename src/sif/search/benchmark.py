@@ -286,6 +286,10 @@ class ConfigResult:
     categories: dict[str, CategoryMetrics] = field(
         default_factory=lambda: {category: CategoryMetrics(0.0, 0.0, 0) for category in CATEGORIES}
     )
+    # Rerank off/on states (D-12), serialized only when measured: None on the
+    # off-only path (the flat fields ARE the off state), {"off": ..., "on": ...}
+    # when the sweep also measured a rerank-on pipeline per configuration.
+    states: dict[str, dict[str, float]] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize with categories in CATEGORIES order (all four keys present)."""
@@ -297,7 +301,7 @@ class ConfigResult:
             }
             for category in CATEGORIES
         }
-        return {
+        data: dict[str, Any] = {
             "rrf_k": self.rrf_k,
             "bm25_weight": self.bm25_weight,
             "vector_weight": self.vector_weight,
@@ -307,6 +311,9 @@ class ConfigResult:
             "p95_ms": self.p95_ms,
             "categories": categories,
         }
+        if self.states is not None:
+            data["states"] = self.states
+        return data
 
 
 @dataclass
