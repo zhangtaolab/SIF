@@ -16,8 +16,12 @@ from __future__ import annotations
 
 import bisect
 import difflib
+import math
 import sqlite3
+from datetime import datetime, timezone
 
+from sif.config.settings import Settings, get_settings
+from sif.database.repositories import QueryLogRepository
 from sif.search.bm25 import _FTS_METACHARS
 from sif.utils.logging import get_logger
 
@@ -35,6 +39,10 @@ _VOCAB_DDL = """
 # Prefix completions below this length would enumerate huge ranges for
 # near-zero signal (planner discretion, pinned by test).
 MIN_PREFIX_LEN = 2
+
+# History ranking half-life (planner discretion, D-13): a query's weight
+# halves every 14 days of age.
+_HISTORY_HALF_LIFE_DAYS = 14.0
 
 
 class SuggestionEngine:
@@ -157,6 +165,34 @@ class SuggestionEngine:
             variants.append(" ".join(parts))
         return variants[:n]
 
+    def history_suggestions(self, prefix: str = "", n: int = 5) -> list[str]:
+        """Rank recent queries by frequency x recency decay (D-13).
+
+        Read gate (D-10): ``SIF_QUERY_HISTORY_ENABLED=0`` or a settings
+        failure returns []; a missing ``query_log`` table (old DB) degrades to
+        [] with a warning. Cold start (empty table) is empty. Ranking is one
+        aggregate read: ``count x exp(-ln(2) x age_days / 14)``, ties broken
+        count desc, last_used desc, then lexical — deterministic.
+        """
+        settings = self._history_settings()
+        if settings is None or not settings.query_history_enabled:
+            return []
+        try:
+            rows = QueryLogRepository(self.db).history()
+        except sqlite3.OperationalError:
+            logger.warning("query history unavailable; returning no suggestions", exc_info=True)
+            return []
+        return _rank_history(rows, prefix, datetime.now(timezone.utc))[:n]
+
+    @staticmethod
+    def _history_settings() -> Settings | None:
+        """Best-effort settings read for the D-10 read gate (never raises)."""
+        try:
+            return get_settings()
+        except Exception:
+            logger.warning("history suggestions skipped: settings unavailable", exc_info=True)
+            return None
+
     def _tokens(self, query: str) -> list[str]:
         """Tokenize like the searcher matches: whitespace split + metachar strip.
 
@@ -207,3 +243,32 @@ class SuggestionEngine:
 def _ratio(left: str, right: str) -> float:
     """Similarity ratio for two short strings (tie-break ordering)."""
     return difflib.SequenceMatcher(None, left, right).ratio()
+
+
+def _rank_history(
+    rows: list[tuple[str, int, str]],
+    prefix: str,
+    now: datetime,
+) -> list[str]:
+    """Order aggregated history rows by frequency x recency decay (D-13).
+
+    ``count x 2^(-age_days / 14)`` — a fresh single use outranks a stale
+    burst. Ties break count desc, last_used desc, then lexical asc via
+    successive stable sorts (deterministic for a fixed table).
+    """
+    lowered = prefix.lower()
+    scored: list[tuple[float, int, str, str]] = []
+    for query, count, last_used in rows:
+        if lowered and not query.lower().startswith(lowered):
+            continue
+        used_at = datetime.fromisoformat(last_used)
+        if used_at.tzinfo is None:
+            used_at = used_at.replace(tzinfo=timezone.utc)
+        age_days = max((now - used_at).total_seconds(), 0.0) / 86400.0
+        score = count * math.exp(-math.log(2) * age_days / _HISTORY_HALF_LIFE_DAYS)
+        scored.append((score, count, last_used, query))
+    scored.sort(key=lambda item: item[3])
+    scored.sort(key=lambda item: item[2], reverse=True)
+    scored.sort(key=lambda item: item[1], reverse=True)
+    scored.sort(key=lambda item: item[0], reverse=True)
+    return [query for _, _, _, query in scored]

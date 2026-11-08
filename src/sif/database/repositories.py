@@ -11,6 +11,7 @@ from sif.core.models import (
     Document,
     DocumentChunk,
     PathContext,
+    QueryLogEntry,
 )
 from sif.utils.paths import normalize_path
 
@@ -572,4 +573,60 @@ class LLMCacheRepository:
             "DELETE FROM llm_cache WHERE expires_at IS NOT NULL AND expires_at <= ?",
             (datetime.now(timezone.utc).isoformat(),),
         )
+        return cursor.rowcount
+
+
+class QueryLogRepository:
+    """Repository for local query history (Phase 15, D-08/D-09).
+
+    Writes are the Phase 11 D-01 "short CRUD outside the flock" class —
+    ``busy_timeout`` + ``BEGIN IMMEDIATE`` arbitrate them; no index lock.
+    :meth:`add` pairs the INSERT with a trim-in-write DELETE so the table
+    never exceeds ``keep`` rows (T-15-05), both on the caller's transaction.
+    All SQL is parameterized.
+    """
+
+    def __init__(self, db: sqlite3.Connection) -> None:
+        """Initialize the query-log repository."""
+        self.db = db
+
+    def add(self, entry: QueryLogEntry, keep: int) -> None:
+        """Insert one entry, then trim to the most-recent ``keep`` rows (D-09)."""
+        self.db.execute(
+            """
+            INSERT INTO query_log (id, query, result_count, collections, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                entry.id,
+                entry.query,
+                entry.result_count,
+                json.dumps(entry.collections),
+                entry.created_at.isoformat(),
+            ),
+        )
+        self.db.execute(
+            """
+            DELETE FROM query_log WHERE id NOT IN
+                (SELECT id FROM query_log ORDER BY created_at DESC LIMIT ?)
+            """,
+            (keep,),
+        )
+
+    def history(self) -> list[tuple[str, int, str]]:
+        """Aggregate per query string as ``(query, count, last_used)`` (D-13).
+
+        One GROUP BY over the capped table (<= ``SIF_QUERY_HISTORY_LIMIT``
+        rows); the recency decay is applied in Python by the suggest engine.
+        """
+        return [
+            (str(row[0]), int(row[1]), str(row[2]))
+            for row in self.db.execute(
+                "SELECT query, COUNT(*), MAX(created_at) FROM query_log GROUP BY query"
+            ).fetchall()
+        ]
+
+    def clear(self) -> int:
+        """Delete every history row; returns the number of rows removed."""
+        cursor = self.db.execute("DELETE FROM query_log")
         return cursor.rowcount

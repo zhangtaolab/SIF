@@ -132,3 +132,30 @@ def test_vector_weight_has_no_upper_bound(monkeypatch: pytest.MonkeyPatch) -> No
         m.setenv("SIF_VECTOR_WEIGHT", "1000")
         settings = Settings(_env_file=None)
         assert settings.vector_weight == 1000.0
+
+
+def test_query_history_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Phase 15 D-09/D-10: history defaults are enabled with a 500-row cap."""
+    for var in ("SIF_QUERY_HISTORY_ENABLED", "SIF_QUERY_HISTORY_LIMIT"):
+        monkeypatch.delenv(var, raising=False)
+    settings = Settings(_env_file=None)
+    assert settings.query_history_enabled is True
+    assert settings.query_history_limit == 500
+
+
+def test_query_history_enabled_env_opt_out(monkeypatch: pytest.MonkeyPatch) -> None:
+    """SIF_QUERY_HISTORY_ENABLED=0 reaches the settings (the D-10 read gate)."""
+    with monkeypatch.context() as m:
+        m.setenv("SIF_QUERY_HISTORY_ENABLED", "0")
+        settings = Settings(_env_file=None)
+        assert settings.query_history_enabled is False
+
+
+def test_query_history_limit_rejects_zero_naming_the_field(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SIF_QUERY_HISTORY_LIMIT=0 fails validation with the field named (ge=1)."""
+    with monkeypatch.context() as m:
+        m.setenv("SIF_QUERY_HISTORY_LIMIT", "0")
+        with pytest.raises(ValidationError, match="query_history_limit"):
+            Settings(_env_file=None)

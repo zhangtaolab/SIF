@@ -103,6 +103,8 @@ BM25/FTS5 keyword search and sqlite-vec vector search always run on CPU regardle
 | `SIF_RRF_K` | int | `60` | RRF constant k for hybrid fusion (1/(k + rank)); smaller values differentiate top ranks more aggressively |
 | `SIF_BM25_WEIGHT` | float | `1.0` | BM25 source weight in hybrid RRF fusion; 1.0 with an equal vector weight reproduces the unweighted default |
 | `SIF_VECTOR_WEIGHT` | float | `1.0` | Vector source weight in hybrid RRF fusion; 1.0 with an equal BM25 weight reproduces the unweighted default |
+| `SIF_QUERY_HISTORY_ENABLED` | bool | `True` | Log executed searches (query, result count, collections) locally to power history suggestions; 0 disables both the write and the read side globally |
+| `SIF_QUERY_HISTORY_LIMIT` | int | `500` | Most-recent query_log rows kept; on insert overflow the oldest rows are deleted in the same write (trim-in-write) |
 | `SIF_SEARCH_REFRESH_ENABLED` | bool | `True` | Stat-walk the searched collections before `sif search`/`vsearch`/`query` and BM25-refresh drifted files (never embeddings); disable to search the index exactly as stored |
 | `SIF_SEARCH_REFRESH_MAX_FILES` | int | `100` | Upper bound on drifted files one pre-search refresh may re-index; above it nothing is refreshed and search proceeds on the current index with a warning (so a branch switch never becomes a hidden full reindex) |
 

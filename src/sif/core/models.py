@@ -205,6 +205,32 @@ class PathContext:
 
 
 @dataclass
+class QueryLogEntry:
+    """A logged executed search (Phase 15, D-08).
+
+    Stores the query string, its result count, and the collections searched —
+    never document content (T-15-04). ``created_at`` is aware UTC (WR-03 is
+    the cautionary naive-local finding); ranking and trim order depend on it.
+    """
+
+    query: str
+    result_count: int = 0
+    collections: list[str] = field(default_factory=list)
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "id": self.id,
+            "query": self.query,
+            "result_count": self.result_count,
+            "collections": list(self.collections),
+            "created_at": self.created_at.isoformat(),
+        }
+
+
+@dataclass
 class SearchResult:
     """A search result."""
 

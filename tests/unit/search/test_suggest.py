@@ -12,11 +12,13 @@ from __future__ import annotations
 import difflib
 import sqlite3
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from sif.core.models import SearchOptions
+from sif.config.settings import Settings
+from sif.core.models import QueryLogEntry, SearchOptions
+from sif.database.repositories import QueryLogRepository
 from sif.database.schema import SchemaManager
 from sif.search.bm25 import BM25Searcher
 from sif.search.suggest import SuggestionEngine
@@ -286,3 +288,116 @@ class TestVocabDegradation:
         """Vocab creation failing (read-only DB) degrades to empty, never raises."""
         engine = SuggestionEngine(_ReadOnlyVocabConnection(vocab_db))
         assert engine.prefix_completions("quant", 5) == []
+
+
+def _entry(
+    query: str,
+    created_at: datetime | None = None,
+    collections: list[str] | None = None,
+) -> QueryLogEntry:
+    return QueryLogEntry(
+        query=query,
+        result_count=0,
+        collections=collections if collections is not None else ["notes"],
+        created_at=created_at or datetime.now(timezone.utc),
+    )
+
+
+def _add_history(conn: sqlite3.Connection, *entries: QueryLogEntry) -> None:
+    repo = QueryLogRepository(conn)
+    for entry in entries:
+        repo.add(entry, keep=500)
+    conn.commit()
+
+
+class TestHistory:
+    """D-13/D-10: frequency x recency ranking, prefix filter, read gate."""
+
+    def test_history_ranks_frequency_times_recency(self, vocab_db, monkeypatch):
+        """count x 2^(-age_days/14): fresh repeated use beats a stale burst."""
+        monkeypatch.setattr("sif.search.suggest.get_settings", lambda: Settings(_env_file=None))
+        now = datetime.now(timezone.utc)
+        stale = now - timedelta(days=100)
+        _add_history(
+            vocab_db,
+            *[_entry("quantum notes", created_at=now) for _ in range(3)],
+            _entry("machine learning", created_at=now),
+            *[_entry("old query", created_at=stale) for _ in range(10)],
+        )
+
+        engine = SuggestionEngine(vocab_db)
+
+        assert engine.history_suggestions() == [
+            "quantum notes",
+            "machine learning",
+            "old query",
+        ]
+
+    def test_history_prefix_filter_is_case_insensitive(self, vocab_db, monkeypatch):
+        """A non-empty prefix filters queries case-insensitively."""
+        monkeypatch.setattr("sif.search.suggest.get_settings", lambda: Settings(_env_file=None))
+        now = datetime.now(timezone.utc)
+        _add_history(
+            vocab_db,
+            _entry("quantum notes", created_at=now),
+            _entry("quantum notes", created_at=now),
+            _entry("Quantum Field", created_at=now),
+            _entry("machine learning", created_at=now),
+        )
+
+        engine = SuggestionEngine(vocab_db)
+
+        assert engine.history_suggestions(prefix="QUANT") == ["quantum notes", "Quantum Field"]
+
+    def test_history_tie_breaks_last_used_then_lexical(self, vocab_db, monkeypatch):
+        """Recency scores first; fully tied entries fall back to lexical asc."""
+        monkeypatch.setattr("sif.search.suggest.get_settings", lambda: Settings(_env_file=None))
+        now = datetime.now(timezone.utc)
+        _add_history(
+            vocab_db,
+            _entry("beta query", created_at=now - timedelta(hours=2)),
+            _entry("alpha query", created_at=now),
+            _entry("gamma query", created_at=now - timedelta(hours=2)),
+        )
+
+        engine = SuggestionEngine(vocab_db)
+
+        assert engine.history_suggestions() == ["alpha query", "beta query", "gamma query"]
+
+    def test_history_cold_start_is_empty(self, vocab_db, monkeypatch):
+        """D-13: an empty query_log leaves the section empty."""
+        monkeypatch.setattr("sif.search.suggest.get_settings", lambda: Settings(_env_file=None))
+        engine = SuggestionEngine(vocab_db)
+        assert engine.history_suggestions() == []
+
+    def test_history_read_gate_disabled_returns_empty(self, vocab_db, monkeypatch):
+        """D-10: SIF_QUERY_HISTORY_ENABLED=0 empties the history read."""
+        monkeypatch.setattr(
+            "sif.search.suggest.get_settings",
+            lambda: Settings(_env_file=None, query_history_enabled=False),
+        )
+        _add_history(vocab_db, _entry("quantum notes"))
+        engine = SuggestionEngine(vocab_db)
+        assert engine.history_suggestions() == []
+
+    def test_history_settings_failure_returns_empty(self, vocab_db, monkeypatch):
+        """A settings-construction failure is fail-soft, never a crash."""
+
+        def _boom() -> Settings:
+            raise RuntimeError("bad config")
+
+        monkeypatch.setattr("sif.search.suggest.get_settings", _boom)
+        _add_history(vocab_db, _entry("quantum notes"))
+        engine = SuggestionEngine(vocab_db)
+        assert engine.history_suggestions() == []
+
+    def test_history_missing_table_degrades_to_empty(self, monkeypatch):
+        """An old DB without query_log degrades to [], never OperationalError."""
+        monkeypatch.setattr("sif.search.suggest.get_settings", lambda: Settings(_env_file=None))
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            engine = SuggestionEngine(conn)
+            assert engine.history_suggestions() == []
+        finally:
+            conn.close()

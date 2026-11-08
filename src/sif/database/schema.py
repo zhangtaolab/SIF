@@ -23,6 +23,7 @@ class SchemaManager:
         self._migrate_path_contexts()
         self._create_contexts_table()
         self._create_llm_cache_table()
+        self._create_query_log_table()
         self._create_fts_tables()
         self._create_vector_tables()
         self._create_indexes()
@@ -143,6 +144,29 @@ class SchemaManager:
                 expires_at TEXT,
                 UNIQUE(model_name, prompt_hash)
             )
+        """)
+
+    def _create_query_log_table(self) -> None:
+        """Create the local query-history table (Phase 15, D-08/D-09).
+
+        Stores executed-search metadata only — query string, result count,
+        collections searched — never document content (T-15-04). Writers trim
+        to the most-recent ``SIF_QUERY_HISTORY_LIMIT`` rows in the same
+        transaction (trim-in-write, D-09), so the table never grows
+        unboundedly; ``created_at`` is aware-UTC ISO text.
+        """
+        self.db.execute("""
+            CREATE TABLE IF NOT EXISTS query_log (
+                id TEXT PRIMARY KEY,
+                query TEXT NOT NULL,
+                result_count INTEGER NOT NULL DEFAULT 0,
+                collections TEXT NOT NULL DEFAULT '[]',
+                created_at TEXT NOT NULL
+            )
+        """)
+        self.db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_query_log_created
+            ON query_log(created_at DESC)
         """)
 
     def _fts_trigger_is_legacy(self, trigger_name: str, fts_table: str) -> bool:
@@ -403,6 +427,7 @@ class SchemaManager:
             "documents",
             "contexts",
             "llm_cache",
+            "query_log",
             "collections",
         ]
         for table in tables:

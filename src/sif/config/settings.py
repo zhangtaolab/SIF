@@ -208,6 +208,22 @@ class Settings(BaseSettings):
         description="Vector source weight in hybrid RRF fusion; 1.0 with an "
         "equal BM25 weight reproduces the unweighted default",
     )
+    # Query history (Phase 15, D-09/D-10): executed searches are logged
+    # locally to power history suggestions. SIF_QUERY_HISTORY_ENABLED=0
+    # disables both the write and the read side globally (a single opt-out);
+    # the limit caps the table via trim-in-write so it never grows unbounded.
+    query_history_enabled: bool = Field(
+        default=True,
+        description="Log executed searches (query, result count, collections) "
+        "locally to power history suggestions; 0 disables both the write and "
+        "the read side globally",
+    )
+    query_history_limit: int = Field(
+        default=500,
+        ge=1,
+        description="Most-recent query_log rows kept; on insert overflow the "
+        "oldest rows are deleted in the same write (trim-in-write)",
+    )
 
     # MCP server settings
     mcp_host: str = Field(
