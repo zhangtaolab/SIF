@@ -33,7 +33,11 @@ _DOCS = [
 ]
 
 
-def _seed_index(tmp_path: Path, history: tuple[str, ...] = ()) -> Path:
+def _seed_index(
+    tmp_path: Path,
+    history: tuple[str, ...] = (),
+    docs: list[tuple[str, str]] = _DOCS,
+) -> Path:
     """Real index DB (production DDL) with a quant/machine vocabulary."""
     settings = Settings(_env_file=None, embedding_dim=8, model_name="test", cache_embeddings=False)
     db_path = tmp_path / "suggest.db"
@@ -63,7 +67,7 @@ def _seed_index(tmp_path: Path, history: tuple[str, ...] = ()) -> Path:
                         now,
                         now,
                     )
-                    for doc_id, body in _DOCS
+                    for doc_id, body in docs
                 ],
             )
         if history:
@@ -148,6 +152,29 @@ class TestSuggestSections:
         assert json.loads(json_result.stdout)["history"] == []
         assert table_result.exit_code == 0
         assert "History" in table_result.output
+
+    def test_limit_caps_did_you_mean_section(self, tmp_path: Path) -> None:
+        """WR-02: --limit is "Maximum entries per section" — DYM included.
+
+        Three equal-ratio close matches for ``cornex`` exist (one per doc);
+        ``--limit 1`` must emit one, ``--limit 10`` all three.
+        """
+        docs = [("d1", "corner"), ("d2", "cornet"), ("d3", "cornel")]
+        db_path = _seed_index(tmp_path, docs=docs)
+
+        def dym(limit: int) -> list[str]:
+            result = CliRunner().invoke(
+                suggest_cmd,
+                ["cornex", "--json", "--limit", str(limit)],
+                obj={"index_path": db_path},
+            )
+            assert result.exit_code == 0, result.output
+            return json.loads(result.stdout)["did_you_mean"]
+
+        one = dym(1)
+        assert len(one) == 1
+        assert one[0] in {"corner", "cornel", "cornet"}
+        assert dym(10) == ["cornel", "corner", "cornet"]
 
 
 class TestClearHistory:

@@ -116,7 +116,7 @@ class SuggestionEngine:
         or when the query has no usable tokens.
         """
         self._ensure_loaded()
-        slots = self._dym_slots(self._tokens(query))
+        slots = self._dym_slots(self._tokens(query), n)
         if slots is None:
             return []
         return [variant for variant in self._expand_variants(slots, n) if self._hits(variant)]
@@ -165,7 +165,7 @@ class SuggestionEngine:
         # SLF001: same sanitizer as ``_hits`` — the exact query form.
         return self._probe(BM25Searcher(self.db)._build_fts_query(token))  # noqa: SLF001
 
-    def _dym_slots(self, tokens: list[str]) -> list[str | list[str]] | None:
+    def _dym_slots(self, tokens: list[str], n: int = 3) -> list[str | list[str]] | None:
         """Per-token plan: the kept token, or its close matches.
 
         None means no suggestion: no usable tokens, one uncorrectable
@@ -179,7 +179,7 @@ class SuggestionEngine:
             if self._retrievable(token):
                 slots.append(token)
                 continue
-            matches = self._close_matches(token)
+            matches = self._close_matches(token, n)
             if not matches:
                 return None
             slots.append(matches)
@@ -247,20 +247,23 @@ class SuggestionEngine:
             tokens.extend(piece for piece in cleaned.split() if piece)
         return tokens
 
-    def _close_matches(self, token: str) -> list[str]:
+    def _close_matches(self, token: str, n: int = 3) -> list[str]:
         """Close vocab matches for a candidate token over a first-letter±1 bucket.
 
-        Full-vocab difflib costs ~46 ms/word at 73k terms (measured); the
-        bucket prefilter cuts that to ~11 ms at a documented recall cost
-        (first-letter typos ≥ 2 letters away escape the bucket — Pitfall 2).
-        Equal-ratio matches resolve in sorted-term order: difflib's internal
-        ``nlargest`` breaks ties by heap mechanics, so the returned matches
-        are re-sorted here by (ratio desc, term asc) for a stable,
-        reproducible order across interpreters.
+        ``n`` bounds each candidate's alternate matches and, through
+        ``_expand_variants``, the DYM section — ``sif suggest --limit`` flows
+        here so every section honours the flag (WR-02). Full-vocab difflib
+        costs ~46 ms/word at 73k terms (measured); the bucket prefilter cuts
+        that to ~11 ms at a documented recall cost (first-letter typos ≥ 2
+        letters away escape the bucket — Pitfall 2). Equal-ratio matches
+        resolve in sorted-term order: difflib's internal ``nlargest`` breaks
+        ties by heap mechanics, so the returned matches are re-sorted here by
+        (ratio desc, term asc) for a stable, reproducible order across
+        interpreters.
         """
         first = ord(token[0])
         bucket = [term for term in self._terms if abs(ord(term[0]) - first) <= 1]
-        matches = difflib.get_close_matches(token, bucket, n=3, cutoff=0.75)
+        matches = difflib.get_close_matches(token, bucket, n=n, cutoff=0.75)
         if len(matches) > 1:
             matches.sort(key=lambda term: (-_ratio(term, token), term))
         return matches

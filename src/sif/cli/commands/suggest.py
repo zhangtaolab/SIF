@@ -96,7 +96,7 @@ def _collect(
             with db.connection:
                 engine = SuggestionEngine(db.connection)
                 completions = engine.prefix_completions(query, limit)
-                did_you_mean = engine.did_you_mean(query)
+                did_you_mean = engine.did_you_mean(query, limit)
                 history = engine.history_suggestions(query, limit)
         except Exception:
             logger.warning("Suggestion computation failed", exc_info=True)
