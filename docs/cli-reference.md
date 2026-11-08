@@ -436,6 +436,9 @@ sif search query [OPTIONS]
 | `--explain` | `—` | flag | `false` | Show score breakdowns across pipeline stages |
 | `--candidate-limit` | `-C` | integer range | `20` | Reranker candidate pool size |
 | `--intent` | `—` | text | — | Search intent hint for query expansion |
+| `--rrf-k` | `—` | integer range | — | RRF k constant for hybrid fusion (default: SIF_RRF_K or 60) |
+| `--bm25-weight` | `—` | float range | — | BM25 fusion weight (default: SIF_BM25_WEIGHT or 1.0) |
+| `--vector-weight` | `—` | float range | — | Vector fusion weight (default: SIF_VECTOR_WEIGHT or 1.0) |
 | `--line-numbers` | `—` | flag | `false` | Show line numbers in content |
 | `--json` | `—` | flag | `false` | Output as JSON |
 | `--csv` | `—` | flag | `false` | Output as CSV |

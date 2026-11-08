@@ -393,7 +393,9 @@ class TestDocsCodeBlocks:
             "SIF_LOG_FILE",
             "SIF_BM25_K1",
             "SIF_BM25_B",
-            "SIF_RRF_K",
+            # SIF_RRF_K was a phantom until Phase 15 made it a real Settings
+            # field (src/sif/config/settings.py) registered in the generator's
+            # Search Settings section — documenting it is now correct.
             "SIF_ENV_FILE",
         ]
         found = [p for p in phantoms if p in content]

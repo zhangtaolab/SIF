@@ -178,6 +178,9 @@ SECTIONS: list[tuple[str, list[str]]] = [
         [
             "default_search_type",
             "default_limit",
+            "rrf_k",
+            "bm25_weight",
+            "vector_weight",
             "search_refresh_enabled",
             "search_refresh_max_files",
         ],
