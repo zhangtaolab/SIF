@@ -1,6 +1,7 @@
 """Unit tests for SIF Settings configuration."""
 
 import pytest
+from pydantic import ValidationError
 
 from sif.config.settings import Settings
 
@@ -87,3 +88,47 @@ def test_model_type_env_var_override(monkeypatch: pytest.MonkeyPatch) -> None:
         m.setenv("SIF_MODEL_TYPE", "openai")
         settings = Settings()
         assert settings.model_type == "openai"
+
+
+def test_fusion_defaults_match_prechange_behavior(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Phase 15 SC1: unconfigured fusion settings equal the hardcoded past (60/1.0/1.0)."""
+    for var in ("SIF_RRF_K", "SIF_BM25_WEIGHT", "SIF_VECTOR_WEIGHT"):
+        monkeypatch.delenv(var, raising=False)
+    settings = Settings(_env_file=None)
+    assert settings.rrf_k == 60
+    assert settings.bm25_weight == 1.0
+    assert settings.vector_weight == 1.0
+
+
+def test_rrf_k_env_reaches_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """SIF_RRF_K=10 loads into the settings field (the D-03 settings channel)."""
+    with monkeypatch.context() as m:
+        m.setenv("SIF_RRF_K", "10")
+        settings = Settings(_env_file=None)
+        assert settings.rrf_k == 10
+
+
+def test_rrf_k_rejects_zero_naming_the_field(monkeypatch: pytest.MonkeyPatch) -> None:
+    """SIF_RRF_K=0 fails Pydantic validation with rrf_k named (ge=1, D-03)."""
+    with monkeypatch.context() as m:
+        m.setenv("SIF_RRF_K", "0")
+        with pytest.raises(ValidationError, match="rrf_k"):
+            Settings(_env_file=None)
+
+
+def test_bm25_weight_rejects_negative_naming_the_field(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SIF_BM25_WEIGHT=-1 fails validation with bm25_weight named (gt=0, D-03)."""
+    with monkeypatch.context() as m:
+        m.setenv("SIF_BM25_WEIGHT", "-1")
+        with pytest.raises(ValidationError, match="bm25_weight"):
+            Settings(_env_file=None)
+
+
+def test_vector_weight_has_no_upper_bound(monkeypatch: pytest.MonkeyPatch) -> None:
+    """SIF_VECTOR_WEIGHT=1000 is accepted — the Phase 16 sweep grid is not capped."""
+    with monkeypatch.context() as m:
+        m.setenv("SIF_VECTOR_WEIGHT", "1000")
+        settings = Settings(_env_file=None)
+        assert settings.vector_weight == 1000.0

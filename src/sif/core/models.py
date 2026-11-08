@@ -259,6 +259,13 @@ class SearchOptions:
     candidate_limit: int = 20
     intent: str | None = None
     snippet_max_length: int = 300
+    # Fusion tunables (Phase 15, D-03): defaults equal today's hardcoded
+    # behavior (k=60, equal weights), so every existing construction site and
+    # unconfigured query stays byte-identical (SC1). CLI flags and MCP request
+    # fields resolve INTO these fields; settings never bypass SearchOptions.
+    rrf_k: int = 60
+    bm25_weight: float = 1.0
+    vector_weight: float = 1.0
 
 
 @dataclass

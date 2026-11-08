@@ -645,6 +645,24 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     help="Reranker candidate pool size",
 )
 @click.option("--intent", help="Search intent hint for query expansion")
+@click.option(
+    "--rrf-k",
+    type=click.IntRange(1, None),
+    default=None,
+    help="RRF k constant for hybrid fusion (default: SIF_RRF_K or 60)",
+)
+@click.option(
+    "--bm25-weight",
+    type=click.FloatRange(0, min_open=True),
+    default=None,
+    help="BM25 fusion weight (default: SIF_BM25_WEIGHT or 1.0)",
+)
+@click.option(
+    "--vector-weight",
+    type=click.FloatRange(0, min_open=True),
+    default=None,
+    help="Vector fusion weight (default: SIF_VECTOR_WEIGHT or 1.0)",
+)
 @click.option("--line-numbers", is_flag=True, help="Show line numbers in content")
 @click.option("--json", "output_json", is_flag=True, help="Output as JSON")
 @click.option("--csv", "output_csv", is_flag=True, help="Output as CSV")
@@ -676,6 +694,9 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     output_md: bool,
     output_xml: bool,
     output_files: bool,
+    rrf_k: int | None = None,
+    bm25_weight: float | None = None,
+    vector_weight: float | None = None,
     model_type: str | None = None,
     no_refresh: bool = False,
     quiet: bool = False,
@@ -697,7 +718,22 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     with Database(index_path) as db:
         db.init_schema()
 
-        # Build options
+        # Settings touchpoint (Phase 15: loaded above the options build so the
+        # fusion knobs can resolve flag > SIF_ setting > default, D-03). When
+        # --index IS passed the group default never runs, so this is the first
+        # settings touchpoint and must convert invalid config itself (WR-09).
+        from pydantic import ValidationError  # noqa: PLC0415
+
+        from sif.config.settings import get_settings  # noqa: PLC0415
+
+        try:
+            settings = get_settings()
+        except ValidationError as e:
+            raise click.ClickException(str(e)) from e
+
+        # Build options; fusion knobs resolve flag > SIF_ setting > default.
+        # Flag defaults are None (never the literal) or precedence dies
+        # (RESEARCH Pattern 3).
         options = SearchOptions(
             limit=limit,
             min_score=min_score,
@@ -706,6 +742,9 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             explain=explain,
             candidate_limit=candidate_limit,
             intent=intent,
+            rrf_k=rrf_k if rrf_k is not None else settings.rrf_k,
+            bm25_weight=bm25_weight if bm25_weight is not None else settings.bm25_weight,
+            vector_weight=(vector_weight if vector_weight is not None else settings.vector_weight),
         )
 
         # Collection scope (D-04): resolve once for both the search filter
@@ -726,21 +765,11 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
         )
 
         # Load embedder for hybrid search
-        from pydantic import ValidationError  # noqa: PLC0415
-
-        from sif.config.settings import get_settings  # noqa: PLC0415
         from sif.embedding.manager import EmbeddingManager  # noqa: PLC0415
         from sif.search.expansion import QueryExpansion  # noqa: PLC0415
         from sif.search.rerank import create_reranker  # noqa: PLC0415
         from sif.search.snippets import SmartSnippetExtractor  # noqa: PLC0415
 
-        # When --index IS passed the group default never runs, so this is the
-        # first settings touchpoint and must convert invalid config itself
-        # (REVIEW WR-09).
-        try:
-            settings = get_settings()
-        except ValidationError as e:
-            raise click.ClickException(str(e)) from e
         if model_type:
             settings = settings.model_copy(update={"model_type": model_type})
 

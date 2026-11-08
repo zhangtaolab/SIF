@@ -2990,3 +2990,272 @@ class TestPreSearchRefresh:
         assert result.exit_code == 0, result.output
         assert "refreshed 1 files (bm25) before search" in result.stderr
         assert "Zanzibar" in self._stored_content(db_path, notes / "a.md")
+
+
+class TestQueryFusionWeightFlags:
+    """--rrf-k/--bm25-weight/--vector-weight plumbing (Phase 15, D-02/D-03).
+
+    Precedence per knob: CLI flag > SIF_ setting > default. Flags exist on
+    query_cmd ONLY (hybrid fusion is the only place weights mean anything).
+    """
+
+    @staticmethod
+    def _result() -> SearchResult:
+        return SearchResult(
+            document_id="doc-1",
+            rank=1,
+            score=0.5,
+            title="T",
+            path="/notes/t.md",
+            collection_name="c",
+        )
+
+    @staticmethod
+    def _index(tmp_path: Path) -> Path:
+        index = tmp_path / "index.db"
+        index.touch()
+        return index
+
+    def _invoke(
+        self,
+        tmp_path: Path,
+        args: list[str],
+        settings: object = None,
+    ) -> tuple[object, MagicMock]:
+        """Invoke query_cmd with everything mocked except (optionally) settings."""
+        repo = MagicMock()
+        repo.list_enabled.return_value = []
+        manager = MagicMock()
+        manager.embed_single.return_value = [0.0] * 4
+        manager._model = MagicMock()
+        pipeline = MagicMock()
+        pipeline.search.return_value = [self._result()]
+        patches = [
+            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
+            patch("sif.cli.commands.search.SearchPipeline", return_value=pipeline),
+            patch("sif.embedding.manager.EmbeddingManager.from_settings", return_value=manager),
+        ]
+        if settings is not None:
+            patches.append(
+                patch("sif.config.settings.get_settings", return_value=settings),
+            )
+        with ExitStack() as stack:
+            for patcher in patches:
+                stack.enter_context(patcher)
+            result = CliRunner().invoke(
+                query_cmd,
+                args,
+                obj={"index_path": self._index(tmp_path)},
+            )
+        return result, pipeline
+
+    def test_flags_fill_search_options(self, tmp_path: Path) -> None:
+        """Explicit flags flow verbatim into the SearchOptions the pipeline gets."""
+        settings = MagicMock(
+            rrf_k=99,
+            bm25_weight=9.0,
+            vector_weight=9.0,
+            reranker_model_name=None,
+            reranker_model_path=None,
+        )
+
+        result, pipeline = self._invoke(
+            tmp_path,
+            [
+                "query",
+                "--rrf-k",
+                "5",
+                "--bm25-weight",
+                "3.0",
+                "--vector-weight",
+                "0.5",
+            ],
+            settings=settings,
+        )
+
+        assert result.exit_code == 0, result.output
+        options = pipeline.search.call_args[0][1]
+        assert options.rrf_k == 5
+        assert options.bm25_weight == 3.0
+        assert options.vector_weight == 0.5
+
+    def test_settings_fill_when_no_flag(self, tmp_path: Path) -> None:
+        """Absent flags fall back to the SIF_ settings layer (patched here)."""
+        settings = MagicMock(
+            rrf_k=7,
+            bm25_weight=2.0,
+            vector_weight=0.5,
+            reranker_model_name=None,
+            reranker_model_path=None,
+        )
+
+        result, pipeline = self._invoke(tmp_path, ["query"], settings=settings)
+
+        assert result.exit_code == 0, result.output
+        options = pipeline.search.call_args[0][1]
+        assert options.rrf_k == 7
+        assert options.bm25_weight == 2.0
+        assert options.vector_weight == 0.5
+
+    def test_env_setting_reaches_options_with_real_settings(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """SIF_RRF_K=7 with no flag yields options.rrf_k == 7 (real Settings)."""
+        monkeypatch.setenv("SIF_RRF_K", "7")
+        # Keep the real settings off the reranker path (default name is truthy).
+        monkeypatch.setenv("SIF_RERANKER_MODEL_NAME", "")
+        monkeypatch.setenv("SIF_RERANKER_MODEL_PATH", "")
+        repo = MagicMock()
+        repo.list_enabled.return_value = []
+        manager = MagicMock()
+        manager.embed_single.return_value = [0.0] * 4
+        manager._model = MagicMock()
+        pipeline = MagicMock()
+        pipeline.search.return_value = [self._result()]
+
+        try:
+            get_settings.cache_clear()
+            with (
+                patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+                patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
+                patch("sif.cli.commands.search.SearchPipeline", return_value=pipeline),
+                patch(
+                    "sif.embedding.manager.EmbeddingManager.from_settings",
+                    return_value=manager,
+                ),
+                patch("sif.search.rerank.create_reranker", side_effect=ImportError("x")),
+            ):
+                result = CliRunner().invoke(
+                    query_cmd,
+                    ["query"],
+                    obj={"index_path": self._index(tmp_path)},
+                )
+        finally:
+            get_settings.cache_clear()
+
+        assert result.exit_code == 0, result.output
+        options = pipeline.search.call_args[0][1]
+        assert options.rrf_k == 7
+        assert options.bm25_weight == 1.0
+        assert options.vector_weight == 1.0
+
+    def test_flag_beats_env_setting(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """--rrf-k 5 overrides SIF_RRF_K=7 (flag > SIF_ > default, D-03)."""
+        monkeypatch.setenv("SIF_RRF_K", "7")
+        monkeypatch.setenv("SIF_RERANKER_MODEL_NAME", "")
+        monkeypatch.setenv("SIF_RERANKER_MODEL_PATH", "")
+        repo = MagicMock()
+        repo.list_enabled.return_value = []
+        manager = MagicMock()
+        manager.embed_single.return_value = [0.0] * 4
+        manager._model = MagicMock()
+        pipeline = MagicMock()
+        pipeline.search.return_value = [self._result()]
+
+        try:
+            get_settings.cache_clear()
+            with (
+                patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+                patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
+                patch("sif.cli.commands.search.SearchPipeline", return_value=pipeline),
+                patch(
+                    "sif.embedding.manager.EmbeddingManager.from_settings",
+                    return_value=manager,
+                ),
+                patch("sif.search.rerank.create_reranker", side_effect=ImportError("x")),
+            ):
+                result = CliRunner().invoke(
+                    query_cmd,
+                    ["query", "--rrf-k", "5", "--bm25-weight", "3.0"],
+                    obj={"index_path": self._index(tmp_path)},
+                )
+        finally:
+            get_settings.cache_clear()
+
+        assert result.exit_code == 0, result.output
+        options = pipeline.search.call_args[0][1]
+        assert options.rrf_k == 5
+        assert options.bm25_weight == 3.0
+        assert options.vector_weight == 1.0  # untouched knob keeps the SIF_/default value
+
+    @pytest.mark.parametrize(
+        "flag",
+        [
+            ["--rrf-k", "0"],
+            ["--bm25-weight", "0"],
+            ["--bm25-weight", "-1"],
+            ["--vector-weight", "0"],
+            ["--vector-weight", "-0.5"],
+        ],
+    )
+    def test_invalid_flag_values_rejected(self, tmp_path: Path, flag: list[str]) -> None:
+        """Out-of-range flags die as Click usage errors (non-zero exit)."""
+        settings = MagicMock(
+            rrf_k=60,
+            bm25_weight=1.0,
+            vector_weight=1.0,
+            reranker_model_name=None,
+            reranker_model_path=None,
+        )
+
+        result, pipeline = self._invoke(tmp_path, ["query", *flag], settings=settings)
+
+        assert result.exit_code != 0
+        pipeline.search.assert_not_called()
+
+    def test_invalid_env_rrf_k_surfaces_clean_error(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """SIF_RRF_K=0 fails Pydantic validation naming rrf_k, as a ClickException."""
+        monkeypatch.setenv("SIF_RRF_K", "0")
+        monkeypatch.setenv("SIF_RERANKER_MODEL_NAME", "")
+        monkeypatch.setenv("SIF_RERANKER_MODEL_PATH", "")
+        repo = MagicMock()
+        repo.list_enabled.return_value = []
+        manager = MagicMock()
+        manager.embed_single.return_value = [0.0] * 4
+        manager._model = MagicMock()
+        pipeline = MagicMock()
+        pipeline.search.return_value = [self._result()]
+
+        try:
+            get_settings.cache_clear()
+            with (
+                patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+                patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
+                patch("sif.cli.commands.search.SearchPipeline", return_value=pipeline),
+                patch(
+                    "sif.embedding.manager.EmbeddingManager.from_settings",
+                    return_value=manager,
+                ),
+            ):
+                result = CliRunner().invoke(
+                    query_cmd,
+                    ["query"],
+                    obj={"index_path": self._index(tmp_path)},
+                )
+        finally:
+            get_settings.cache_clear()
+
+        assert result.exit_code == 1
+        assert "rrf_k" in result.stderr or "rrf_k" in result.output
+        assert "Traceback" not in result.output
+
+    @pytest.mark.parametrize("command", ["search", "vsearch"])
+    def test_single_source_commands_have_no_weight_flags(self, command: str) -> None:
+        """search/vsearch reject the weight flags (D-02 — no-op flags mislead)."""
+        from sif.cli.commands.search import search_cmd as bm25_cmd, vsearch_cmd as vec_cmd
+
+        cmd = bm25_cmd if command == "search" else vec_cmd
+        for flag in ("--rrf-k", "--bm25-weight", "--vector-weight"):
+            result = CliRunner().invoke(cmd, ["foo", flag, "1.0"])
+            assert result.exit_code != 0, f"{command} accepted {flag}"

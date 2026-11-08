@@ -186,6 +186,28 @@ class Settings(BaseSettings):
         le=100,
         description="Default search result limit",
     )
+    # Hybrid fusion tunables (Phase 15, D-03): SIF_ settings are the global
+    # layer; per-query CLI flags / MCP request fields override them, and the
+    # field defaults equal the pre-change hardcoded behavior (SC1). NO upper
+    # bound on the weights — the Phase 16 sweep grid must not be capped.
+    rrf_k: int = Field(
+        default=60,
+        ge=1,
+        description="RRF constant k for hybrid fusion (1/(k + rank)); smaller "
+        "values differentiate top ranks more aggressively",
+    )
+    bm25_weight: float = Field(
+        default=1.0,
+        gt=0,
+        description="BM25 source weight in hybrid RRF fusion; 1.0 with an "
+        "equal vector weight reproduces the unweighted default",
+    )
+    vector_weight: float = Field(
+        default=1.0,
+        gt=0,
+        description="Vector source weight in hybrid RRF fusion; 1.0 with an "
+        "equal BM25 weight reproduces the unweighted default",
+    )
 
     # MCP server settings
     mcp_host: str = Field(

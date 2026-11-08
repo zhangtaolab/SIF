@@ -70,8 +70,15 @@ class HybridSearcher:
         if not bm25_results:
             return self._attach_contexts(vector_results)
 
-        # Fuse results using RRF
-        fused_results = self.rrf.fuse([bm25_results, vector_results], options.limit)
+        # Fuse results using RRF (Phase 15: per-query weights/k ride options —
+        # the ONLY weights call site; k also flows to the pipeline's
+        # cross-query variant fusion, weights must NOT (Pitfall 9/A7))
+        fused_results = self.rrf.fuse(
+            [bm25_results, vector_results],
+            options.limit,
+            weights=[options.bm25_weight, options.vector_weight],
+            k=options.rrf_k,
+        )
 
         # Re-fetch content and highlights if needed
         if options.include_content or options.include_highlights:
@@ -224,8 +231,10 @@ class SearchPipeline:
         if len(all_results) <= 1:
             results = all_results[0] if all_results else []
         else:
-            # Fuse results from multiple queries
-            results = self.hybrid.rrf.fuse(all_results, options.limit)
+            # Fuse results from multiple queries (cross-query VARIANT fusion —
+            # not source fusion: k rides options, weights are meaningless here
+            # and must never be passed (Pitfall 9 / assumption A7))
+            results = self.hybrid.rrf.fuse(all_results, options.limit, k=options.rrf_k)
 
         # Apply candidate limit before reranking
         if self.reranker is not None and len(results) > 0:
