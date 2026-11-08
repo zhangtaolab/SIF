@@ -30,7 +30,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from sif.core.models import Collection
-from sif.indexing.incremental import IncrementalResult
+from sif.database.locking import index_lock
+from sif.database.repositories import DocumentRepository
+from sif.indexing.incremental import IncrementalIndexer, IncrementalResult
+from sif.indexing.scanner import FileScanner
+from sif.utils.logging import get_logger
+
+
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -58,8 +65,56 @@ def detect_drift(conn: sqlite3.Connection, collections: list[Collection]) -> Dri
     one read-only walk). A collection whose root is missing is skipped with
     a warning instead of reporting every stored document as deleted drift
     (the 12-D11 phantom-mass-delete guard, applied in the walk).
+
+    Walk paths are resolved before comparing because stored ``documents``
+    .path`` values are resolved — an unresolved compare mismatches on
+    symlinked roots (macOS ``/tmp`` vs ``/private/tmp``).
     """
-    return DriftReport()
+    if not collections:
+        return DriftReport()
+
+    report = DriftReport()
+    doc_repo = DocumentRepository(conn)
+    scanner = FileScanner()
+
+    for collection in collections:
+        root = Path(collection.path)
+        # D-11 mirror: rglob on a missing root yields nothing, which the
+        # deleted-file branch below would read as "every file vanished".
+        if not root.exists():
+            logger.warning(
+                "Collection root %s does not exist; skipping drift walk (all documents preserved)",
+                collection.path,
+            )
+            continue
+
+        scan_result = scanner.scan(
+            root,
+            pattern=collection.pattern,
+            ignore_patterns=collection.ignore_patterns,
+        )
+        stored = doc_repo.list_stat_by_collection(collection.id)
+        seen: set[str] = set()
+
+        for file_path in scan_result.files:
+            try:
+                mtime = file_path.stat().st_mtime
+            except OSError:
+                # Vanished between walk and stat: leave it unseen so the
+                # deleted branch decides its fate from the stored side.
+                continue
+            key = str(file_path.resolve())
+            seen.add(key)
+            # Covers new files (path not stored → None != mtime) and
+            # mtime-mismatched files in one bit-exact float compare.
+            if stored.get(key) != mtime:
+                report.paths_by_collection.setdefault(collection.id, set()).add(file_path)
+
+        for key in stored:
+            if key not in seen:
+                report.paths_by_collection.setdefault(collection.id, set()).add(Path(key))
+
+    return report
 
 
 def refresh_drifted(
@@ -73,6 +128,25 @@ def refresh_drifted(
 
     The ONLY place the pre-search check acquires ``index_lock``; the caller
     invokes it solely when ``0 < report.total_count <= cap`` so a clean
-    search never creates the lock file (Pitfall 6).
+    search never creates the lock file (Pitfall 6). One window covers all
+    drifted collections; inside it, each collection's paths go through
+    ``IncrementalIndexer.update_paths`` — never a second write path.
     """
-    return IncrementalResult()
+    totals = IncrementalResult()
+    if report.total_count == 0:
+        return totals
+
+    with index_lock(db_path, lock_timeout):
+        indexer = IncrementalIndexer(conn)
+        for coll_id in sorted(report.paths_by_collection):
+            collection = collections_by_id.get(coll_id)
+            if collection is None:
+                logger.warning("Drift report names unknown collection %s; skipping", coll_id)
+                continue
+            result = indexer.update_paths(collection, report.paths_by_collection[coll_id])
+            totals.added += result.added
+            totals.updated += result.updated
+            totals.removed += result.removed
+            totals.unchanged += result.unchanged
+
+    return totals

@@ -84,6 +84,22 @@ class Settings(BaseSettings):
         "hosts; 0 disables (shutdown checkpointing stays the final word)",
     )
 
+    # Pre-search drift refresh (Phase 14 freshness floor, LIVE-10)
+    search_refresh_enabled: bool = Field(
+        default=True,
+        description="Stat-walk the searched collections before `sif search`/"
+        "`vsearch`/`query` and BM25-refresh drifted files (never embeddings); "
+        "disable to search the index exactly as stored",
+    )
+    search_refresh_max_files: int = Field(
+        default=100,
+        ge=1,
+        description="Upper bound on drifted files one pre-search refresh may "
+        "re-index; above it nothing is refreshed and search proceeds on the "
+        "current index with a warning (so a branch switch never becomes a "
+        "hidden full reindex)",
+    )
+
     # Model settings
     model_path: Path | None = Field(
         default=None,

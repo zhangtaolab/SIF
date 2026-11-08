@@ -197,6 +197,20 @@ class DocumentRepository:
         )
         return [self._row_to_document(row) for row in cursor.fetchall()]
 
+    def list_stat_by_collection(self, collection_id: str) -> dict[str, float]:
+        """Return {resolved path: mtime} for a collection without loading content.
+
+        The lightweight stat snapshot the pre-search drift walk compares
+        against (LIVE-10): never calls ``_row_to_document`` — that would
+        materialize every document's full text for a path/mtime compare the
+        ``idx_documents_collection`` index already serves.
+        """
+        cursor = self.db.execute(
+            "SELECT path, mtime FROM documents WHERE collection_id = ?",
+            (collection_id,),
+        )
+        return {row[0]: row[1] for row in cursor.fetchall()}
+
     def update(self, document: Document) -> Document:
         """Update a document."""
         document.updated_at = datetime.now(timezone.utc)

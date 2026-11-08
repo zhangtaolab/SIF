@@ -6,6 +6,7 @@ import csv
 import io
 import json
 import re
+from pathlib import Path
 from typing import Any
 from xml.sax.saxutils import escape as xml_escape, quoteattr
 
@@ -15,15 +16,20 @@ from rich.markup import escape
 from rich.table import Table
 
 from sif.cli.formatters import add_line_numbers_to_results, prepend_line_numbers
-from sif.core.models import SearchOptions, SearchResult
+from sif.core.models import Collection, SearchOptions, SearchResult
 from sif.database.database import Database
 from sif.database.repositories import CollectionRepository
+from sif.indexing.drift import detect_drift, refresh_drifted
 from sif.search.bm25 import BM25Searcher
 from sif.search.hybrid import SearchPipeline
-from sif.utils.logging import set_quiet
+from sif.utils.logging import get_logger, set_quiet
 
 
 console = Console()
+# D-07 stderr contract: refresh notices/warnings must never pollute stdout,
+# which stays clean for --json/--csv piping (mcp.py console_err precedent).
+console_err = Console(stderr=True)
+logger = get_logger(__name__)
 
 # Display truncation constants
 _TITLE_MAX_LEN = 50
@@ -72,6 +78,33 @@ def format_results_json(results: list[Any]) -> str:
 def _field(r: Any, name: str) -> Any:
     """Read a result field from a dict (--line-numbers path) or object row."""
     return r.get(name, "") if isinstance(r, dict) else getattr(r, name, "")
+
+
+def _resolve_collections(
+    db: Database,
+    collection: tuple[str, ...],
+    search_all: bool,
+) -> list[Collection]:
+    """Resolve the collections a search targets, preserving trio semantics (D-04).
+
+    ``-c`` resolves names via ``get_by_name`` (unknown names silently
+    skipped — today's behavior), ``--all`` resolves every collection while
+    the search itself stays unfiltered, and the default targets enabled
+    collections. The returned objects feed both the search's
+    ``collection_ids`` and the pre-search drift walk.
+    """
+    with db.connection:
+        repo = CollectionRepository(db.connection)
+        if collection:
+            resolved: list[Collection] = []
+            for name in collection:
+                coll = repo.get_by_name(name)
+                if coll:
+                    resolved.append(coll)
+            return resolved
+        if search_all:
+            return repo.list_all()
+        return repo.list_enabled()
 
 
 def format_results_csv(results: list[Any]) -> str:
@@ -206,20 +239,54 @@ def search_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             include_highlights=True,
         )
 
-        # Get collection IDs if specified
-        if collection:
-            with db.connection:
-                repo = CollectionRepository(db.connection)
-                options.collection_ids = []
-                for name in collection:
-                    coll = repo.get_by_name(name)
-                    if coll:
-                        options.collection_ids.append(coll.id)
-        elif not search_all:
-            with db.connection:
-                repo = CollectionRepository(db.connection)
-                enabled = repo.list_enabled()
-                options.collection_ids = [c.id for c in enabled]
+        # Collection scope (D-04): resolve once for both the search filter
+        # and the pre-search drift walk; --all keeps the search unfiltered.
+        collections = _resolve_collections(db, collection, search_all)
+        options.collection_ids = None if search_all else [c.id for c in collections]
+
+        # Pre-search drift refresh (LIVE-10, D-01..D-07): one read-only stat
+        # walk decides; only an under-cap drift burst ever writes or opens
+        # the index lock. Notices ride stderr so --json/--csv stdout stays
+        # pipeable; drift is never a search error (D-05).
+        from sif.config.settings import get_settings  # noqa: PLC0415
+
+        settings = get_settings()
+        if settings.search_refresh_enabled:
+            try:
+                report = detect_drift(db.connection, collections)
+                if report.total_count > settings.search_refresh_max_files:
+                    # D-05/D-06: count-first — no refresh, no lock, warn + search.
+                    if not quiet:
+                        console_err.print(
+                            f"[yellow]index drift: {report.total_count} changed files "
+                            f"exceeds the pre-search refresh cap "
+                            f"({settings.search_refresh_max_files}) — run "
+                            "'sif index update' to refresh; searching the current "
+                            "index[/yellow]",
+                        )
+                elif report.total_count > 0:
+                    refresh_drifted(
+                        Path(index_path),
+                        db.connection,
+                        {c.id: c for c in collections},
+                        report,
+                        lock_timeout=settings.lock_wait_timeout,
+                    )
+                    if not quiet:
+                        console_err.print(
+                            f"[dim]refreshed {report.total_count} files (bm25) before search[/dim]",
+                        )
+            except Exception:
+                # D-05: a refresh failure surfaces as a warning; the search
+                # itself proceeds on the current index.
+                logger.warning(
+                    "Pre-search drift refresh failed; searching current index",
+                    exc_info=True,
+                )
+                if not quiet:
+                    console_err.print(
+                        "[yellow]Pre-search refresh failed; searching the current index[/yellow]",
+                    )
 
         # Search
         with db.connection:

@@ -2086,9 +2086,7 @@ class TestPreSearchRefresh:
         get_settings.cache_clear()
 
     @staticmethod
-    def _seed_index(
-        tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> tuple[Path, Path, Settings]:
+    def _seed_index(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path, Settings]:
         """Create a real indexed collection holding one alpha-term document.
 
         Returns (db_path, notes, settings); every invoke must run under
@@ -2134,9 +2132,7 @@ class TestPreSearchRefresh:
         )
 
         with patch("sif.config.settings.get_settings", return_value=settings):
-            result = CliRunner().invoke(
-                search_cmd, ["zanzibar"], obj={"index_path": db_path}
-            )
+            result = CliRunner().invoke(search_cmd, ["zanzibar"], obj={"index_path": db_path})
 
         assert result.exit_code == 0
         assert "refreshed 1 files (bm25) before search" in result.stderr
@@ -2144,9 +2140,7 @@ class TestPreSearchRefresh:
 
         # Stat-decides no-op: the second identical search is silent, still finds it.
         with patch("sif.config.settings.get_settings", return_value=settings):
-            second = CliRunner().invoke(
-                search_cmd, ["zanzibar"], obj={"index_path": db_path}
-            )
+            second = CliRunner().invoke(search_cmd, ["zanzibar"], obj={"index_path": db_path})
         assert second.exit_code == 0
         assert second.stderr == ""
         assert "Heading Two" in second.output
@@ -2162,12 +2156,8 @@ class TestPreSearchRefresh:
         (notes / "a.md").unlink()
 
         with patch("sif.config.settings.get_settings", return_value=settings):
-            result = CliRunner().invoke(
-                search_cmd, ["freshnote"], obj={"index_path": db_path}
-            )
-            gone = CliRunner().invoke(
-                search_cmd, ["alpha"], obj={"index_path": db_path}
-            )
+            result = CliRunner().invoke(search_cmd, ["freshnote"], obj={"index_path": db_path})
+            gone = CliRunner().invoke(search_cmd, ["alpha"], obj={"index_path": db_path})
 
         assert result.exit_code == 0
         assert "refreshed 2 files (bm25) before search" in result.stderr
@@ -2186,18 +2176,14 @@ class TestPreSearchRefresh:
             try:
                 return {
                     row[0]: (row[1], row[2])
-                    for row in conn.execute(
-                        "SELECT path, checksum, mtime FROM documents"
-                    )
+                    for row in conn.execute("SELECT path, checksum, mtime FROM documents")
                 }
             finally:
                 conn.close()
 
         before = snapshot()
         with patch("sif.config.settings.get_settings", return_value=settings):
-            result = CliRunner().invoke(
-                search_cmd, ["alpha"], obj={"index_path": db_path}
-            )
+            result = CliRunner().invoke(search_cmd, ["alpha"], obj={"index_path": db_path})
 
         assert result.exit_code == 0
         assert "Heading One" in result.output
@@ -2221,6 +2207,9 @@ class TestPreSearchRefresh:
             )
 
         assert result.exit_code == 0
-        payload = json.loads(result.output)
-        assert payload and payload[0]["title"] == "Heading Two"
+        # result.stdout is the pure stdout stream (click >=8.2 mixes both in
+        # .output); it must parse as JSON untouched by the stderr notice.
+        payload = json.loads(result.stdout)
+        assert len(payload) == 1
+        assert payload[0]["title"] == "Heading Two"
         assert "refreshed 1 files (bm25) before search" in result.stderr

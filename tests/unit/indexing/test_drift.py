@@ -47,9 +47,7 @@ def _seed_and_index(db_path: Path, notes: Path) -> None:
     with patch("sif.config.settings.get_settings", return_value=_test_settings()):
         db.init_schema()
         with db.connection:
-            CollectionRepository(db.connection).create(
-                Collection(name="notes", path=str(notes))
-            )
+            CollectionRepository(db.connection).create(Collection(name="notes", path=str(notes)))
         coll = CollectionRepository(db.connection).get_by_name("notes")
         assert coll is not None
         IncrementalIndexer(db.connection).update_collection(coll)
@@ -86,9 +84,7 @@ def _doc_content(db_path: Path, path: str) -> str | None:
     """Read one document's stored content through a fresh connection."""
     conn = sqlite3.connect(str(db_path))
     try:
-        row = conn.execute(
-            "SELECT content FROM documents WHERE path = ?", (path,)
-        ).fetchone()
+        row = conn.execute("SELECT content FROM documents WHERE path = ?", (path,)).fetchone()
         return row[0] if row else None
     finally:
         conn.close()
@@ -132,9 +128,7 @@ class TestDetectDrift:
         finally:
             db.close()
 
-        assert {str(p) for p in report.paths_by_collection[coll.id]} == {
-            str(doc.resolve())
-        }
+        assert {str(p) for p in report.paths_by_collection[coll.id]} == {str(doc.resolve())}
         assert report.total_count == 1
 
     def test_content_edit_drift_detected(self, tmp_path, monkeypatch) -> None:
@@ -154,9 +148,7 @@ class TestDetectDrift:
         finally:
             db.close()
 
-        assert {str(p) for p in report.paths_by_collection[coll.id]} == {
-            str(doc.resolve())
-        }
+        assert {str(p) for p in report.paths_by_collection[coll.id]} == {str(doc.resolve())}
 
     def test_new_file_detected(self, tmp_path, monkeypatch) -> None:
         """A file created after indexing is drift."""
@@ -195,9 +187,7 @@ class TestDetectDrift:
         finally:
             db.close()
 
-        assert {str(p) for p in report.paths_by_collection[coll.id]} == {
-            str(doc.resolve())
-        }
+        assert {str(p) for p in report.paths_by_collection[coll.id]} == {str(doc.resolve())}
 
     def test_missing_root_skips_collection_without_phantom_deletion(
         self, tmp_path, monkeypatch
@@ -245,9 +235,7 @@ class TestDetectDrift:
 class TestRefreshDrifted:
     """The flock-wrapped BM25 burst over the drifted path set."""
 
-    def test_refresh_updates_content_and_converges_mtime(
-        self, tmp_path, monkeypatch
-    ) -> None:
+    def test_refresh_updates_content_and_converges_mtime(self, tmp_path, monkeypatch) -> None:
         """An edited file is re-indexed; the stored mtime then matches disk (no re-drift)."""
         _delenv_settings_vars(monkeypatch)
         db_path = tmp_path / "drift.db"
@@ -280,9 +268,7 @@ class TestRefreshDrifted:
         finally:
             db2.close()
 
-    def test_refresh_adds_new_and_removes_deleted_documents(
-        self, tmp_path, monkeypatch
-    ) -> None:
+    def test_refresh_adds_new_and_removes_deleted_documents(self, tmp_path, monkeypatch) -> None:
         """A drifted set mixing new and deleted paths lands both outcomes."""
         _delenv_settings_vars(monkeypatch)
         db_path = tmp_path / "drift.db"
@@ -307,9 +293,7 @@ class TestRefreshDrifted:
         assert result.removed == 1
         assert _doc_paths(db_path) == {str((notes / "b.md").resolve())}
 
-    def test_refresh_creates_the_lock_file_only_when_working(
-        self, tmp_path, monkeypatch
-    ) -> None:
+    def test_refresh_creates_the_lock_file_only_when_working(self, tmp_path, monkeypatch) -> None:
         """index_lock lives inside refresh_drifted: present after a real burst, absent on empty."""
         _delenv_settings_vars(monkeypatch)
         db_path = tmp_path / "drift.db"
@@ -333,9 +317,7 @@ class TestRefreshDrifted:
         db2, coll2 = _open(db_path)
         try:
             report = detect_drift(db2.connection, [coll2])
-            refresh_drifted(
-                db_path, db2.connection, {coll2.id: coll2}, report, lock_timeout=5.0
-            )
+            refresh_drifted(db_path, db2.connection, {coll2.id: coll2}, report, lock_timeout=5.0)
         finally:
             db2.close()
         assert Path(str(db_path) + ".lock").exists()
