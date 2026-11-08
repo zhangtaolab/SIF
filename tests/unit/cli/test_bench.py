@@ -204,6 +204,47 @@ class TestBenchCommand:
         assert "mrr" in output
         assert "precision@1" in output
 
+    def test_bench_embedder_soft_fail_warning_stays_off_json_stdout(
+        self, tmp_path: Path
+    ) -> None:
+        """CR-01: the embedder soft-fail warning goes to stderr (never the
+        JSON stdout stream), so the BM25-only degradation path still parses."""
+        runner = CliRunner()
+
+        fixture = {
+            "queries": [
+                {"query": "test", "relevant_docids": ["doc-1"]},
+            ],
+        }
+        fixture_path = tmp_path / "fixture.json"
+        fixture_path.write_text(json.dumps(fixture))
+
+        mock_pipeline = MagicMock()
+        mock_pipeline.search.return_value = [MagicMock(document_id="doc-1")]
+        mock_db = MagicMock()
+
+        with (
+            patch("sif.cli.commands.bench.Database", return_value=mock_db),
+            patch(
+                "sif.cli.commands.bench.EmbeddingManager.from_settings",
+                side_effect=ImportError("No module named 'sentence_transformers'"),
+            ),
+            patch("sif.cli.commands.bench.SearchPipeline", return_value=mock_pipeline),
+            patch("sif.cli.commands.bench.get_settings", return_value=_settings_mock()),
+        ):
+            result = runner.invoke(
+                bench_cmd,
+                [str(fixture_path), "--json"],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code == 0, result.output
+        # stdout alone strict-parses: the warning never rode the JSON stream.
+        output = json.loads(result.stdout)
+        assert "mrr" in output
+        assert "Embedding backend not installed" not in result.stdout
+        assert "Embedding backend not installed" in result.stderr
+
     def test_bench_json_parses_at_narrow_width(self, tmp_path: Path) -> None:
         """bench --json strict-parses even when a metric string exceeds the width."""
         runner = CliRunner()
@@ -1126,6 +1167,47 @@ class TestBenchRerankStates:
         assert result.exit_code == 0, result.output
         assert "Reranker backend not available" in result.output
         assert "MRR" in result.output
+
+    def test_bench_rerank_missing_backend_warning_stays_off_json_stdout(
+        self, tmp_path: Path
+    ) -> None:
+        """CR-01: the soft-fail reranker warning goes to stderr, so
+        `sif bench --json | jq` strict-parses on the degradation path."""
+        runner = CliRunner()
+        fixture_path = self._legacy_fixture(tmp_path)
+
+        mock_pipeline = MagicMock()
+        mock_pipeline.search.return_value = [MagicMock(document_id="doc-1")]
+        mock_db = MagicMock()
+        mock_manager = MagicMock()
+        mock_manager.embed_single.return_value = [0.0] * 8
+        mock_manager._model = MagicMock()
+
+        with (
+            patch("sif.cli.commands.bench.Database", return_value=mock_db),
+            patch(
+                "sif.cli.commands.bench.EmbeddingManager.from_settings",
+                return_value=mock_manager,
+            ),
+            patch("sif.cli.commands.bench.SearchPipeline", return_value=mock_pipeline),
+            patch("sif.cli.commands.bench.get_settings", return_value=_settings_mock()),
+            patch(
+                "sif.cli.commands.bench.create_reranker",
+                side_effect=ImportError("No module named 'transformers'"),
+            ),
+        ):
+            result = runner.invoke(
+                bench_cmd,
+                [str(fixture_path), "--rerank", "--json"],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code == 0, result.output
+        # stdout alone strict-parses: the warning never rode the JSON stream.
+        output = json.loads(result.stdout)
+        assert "ndcg_at_10" in output
+        assert "Reranker backend not available" not in result.stdout
+        assert "Reranker backend not available" in result.stderr
 
     def test_bench_rerank_model_load_failure_degrades_to_off_only(self, tmp_path: Path) -> None:
         """A model-load failure warns and measures off-only (fail-soft)."""

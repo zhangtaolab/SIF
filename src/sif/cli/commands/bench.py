@@ -39,6 +39,9 @@ from sif.utils.logging import get_logger
 
 logger = get_logger(__name__)
 console = Console()
+# D-07 stderr contract (search.py precedent): soft-fail warnings must never
+# pollute stdout, which stays clean for --json piping (`sif bench --json | jq`).
+console_err = Console(stderr=True)
 
 # The four keys every rerank state carries (D-12): metrics plus latency.
 _STATE_METRIC_KEYS: tuple[str, ...] = ("ndcg_at_10", "hit_at_10", "p50_ms", "p95_ms")
@@ -105,9 +108,9 @@ def _load_embedder(
         manager.load_model()
         embedding_dim = len(manager.embed_single("probe"))
     except ImportError as e:
-        console.print(f"[yellow]Embedding backend not installed: {e}[/yellow]")
+        console_err.print(f"[yellow]Embedding backend not installed: {e}[/yellow]")
     except Exception as e:
-        console.print(f"[yellow]Failed to load embedding model: {e}[/yellow]")
+        console_err.print(f"[yellow]Failed to load embedding model: {e}[/yellow]")
     return manager, embedding_dim
 
 
@@ -186,13 +189,13 @@ def _load_reranker(rerank: bool, settings: Settings) -> _Reranker | None:
     try:
         return create_reranker(settings)
     except ImportError as e:
-        console.print(
+        console_err.print(
             f"[yellow]Reranker backend not available, measuring the off state only: {e}[/yellow]"
         )
     except ValueError as e:
         raise click.ClickException(str(e)) from e
     except Exception as e:
-        console.print(
+        console_err.print(
             f"[yellow]Failed to load reranker model, measuring the off state only: {e}[/yellow]"
         )
     return None
