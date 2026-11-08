@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -24,6 +24,13 @@ LEGACY_K_VALUES: tuple[int, ...] = (1, 5, 10)
 GRADE_MIN = 0
 GRADE_MAX = 3
 DEFAULT_K = 10
+# Sweep grid (Phase 16, D-07): the fixed declared grid of 45 configurations —
+# rrf_k x bm25_weight x vector_weight. The shipped baseline (60, 1.0, 1.0) is
+# a grid point, and the declared enumeration order is the tie-break order for
+# rank_sweep, so repeated runs over the same fixture produce identical output.
+GRID_RRF_K: tuple[int, ...] = (20, 40, 60, 80, 100)
+GRID_WEIGHTS: tuple[float, ...] = (0.5, 1.0, 2.0)
+EPSILON = 0.01
 
 
 def _mean(values: Sequence[float]) -> float:
@@ -257,6 +264,124 @@ class BenchReport:
         }
         data.update(self.legacy_metrics)
         return data
+
+
+@dataclass(frozen=True)
+class ConfigResult:
+    """One measured sweep configuration (D-06/D-07).
+
+    ``categories`` carries the fixed four-category breakdown — all four
+    CATEGORIES keys in declared order, nDCG@10 and Hit@10 each — so a tuning
+    win that quietly regresses one category is visible on every swept
+    configuration, the baseline included.
+    """
+
+    rrf_k: int
+    bm25_weight: float
+    vector_weight: float
+    ndcg_at_10: float
+    hit_at_10: float
+    p50_ms: float = 0.0
+    p95_ms: float = 0.0
+    categories: dict[str, CategoryMetrics] = field(
+        default_factory=lambda: {category: CategoryMetrics(0.0, 0.0, 0) for category in CATEGORIES}
+    )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize with categories in CATEGORIES order (all four keys present)."""
+        categories: dict[str, Any] = {
+            category: {
+                "ndcg_at_10": self.categories[category].ndcg_at_10,
+                "hit_at_10": self.categories[category].hit_at_10,
+                "count": self.categories[category].count,
+            }
+            for category in CATEGORIES
+        }
+        return {
+            "rrf_k": self.rrf_k,
+            "bm25_weight": self.bm25_weight,
+            "vector_weight": self.vector_weight,
+            "ndcg_at_10": self.ndcg_at_10,
+            "hit_at_10": self.hit_at_10,
+            "p50_ms": self.p50_ms,
+            "p95_ms": self.p95_ms,
+            "categories": categories,
+        }
+
+
+@dataclass
+class SweepRanking:
+    """Ranked sweep with its explicit tie group (D-08 honesty rule).
+
+    ``winner_declared`` is False whenever the tie group holds more than one
+    configuration: differences within ``epsilon`` of the best are noise-sized
+    and never produce a single winner.
+    """
+
+    ranked: list[ConfigResult]
+    tie_group: list[ConfigResult]
+    winner_declared: bool
+    epsilon: float
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize the ranking: every config, the tie group, winner honesty."""
+        return {
+            "configs": [result.to_dict() for result in self.ranked],
+            "tie_group": [result.to_dict() for result in self.tie_group],
+            "winner_declared": self.winner_declared,
+            "epsilon": self.epsilon,
+        }
+
+
+def iter_grid() -> Iterator[ConfigResult]:
+    """Yield the 45 declared configurations in grid order (D-07).
+
+    Order is rrf_k ascending, then bm25_weight ascending, then vector_weight
+    ascending — the declared order rank_sweep uses as its tie-break.
+    """
+    for rrf_k in GRID_RRF_K:
+        for bm25_weight in GRID_WEIGHTS:
+            for vector_weight in GRID_WEIGHTS:
+                yield ConfigResult(
+                    rrf_k=rrf_k,
+                    bm25_weight=bm25_weight,
+                    vector_weight=vector_weight,
+                    ndcg_at_10=0.0,
+                    hit_at_10=0.0,
+                )
+
+
+def rank_sweep(results: Sequence[ConfigResult], epsilon: float = EPSILON) -> SweepRanking:
+    """Rank configurations by mean tuning nDCG@10 with the strict tie rule.
+
+    Ordering is deterministic: nDCG@10 descending, ties broken by declared
+    grid order (rrf_k, then bm25_weight, then vector_weight, ascending). The
+    tie boundary is strict ``<`` evaluated on the delta rounded to 6 decimal
+    places — ``round(best - result.ndcg_at_10, 6) < epsilon`` — so a nominal
+    0.01 difference whose raw IEEE-754 subtraction yields 0.009999... counts
+    as exactly 0.01 and is NOT a tie, independent of float representation
+    (D-08). Ranking reads tuning-split results only; the caller guarantees
+    the split (T-16-06).
+    """
+    if not results:
+        raise ValueError("rank_sweep requires at least one ConfigResult")
+    ranked = sorted(
+        results,
+        key=lambda result: (
+            -result.ndcg_at_10,
+            result.rrf_k,
+            result.bm25_weight,
+            result.vector_weight,
+        ),
+    )
+    best = ranked[0].ndcg_at_10
+    tie_group = [result for result in ranked if round(best - result.ndcg_at_10, 6) < epsilon]
+    return SweepRanking(
+        ranked=ranked,
+        tie_group=tie_group,
+        winner_declared=len(tie_group) == 1,
+        epsilon=epsilon,
+    )
 
 
 class SearchEvaluator:

@@ -31,6 +31,38 @@ def _settings_mock(**overrides: object) -> MagicMock:
     return MagicMock(**fields)
 
 
+def _graded_split_fixture(tmp_path: Path) -> tuple[Path, Path]:
+    """Graded path-keyed fixture with two tuning and one held-out query."""
+    corpus = tmp_path / "corpus"
+    fixture = {
+        "corpus_root": "corpus",
+        "relevance_key": "path",
+        "queries": [
+            {
+                "query": "tuning one",
+                "category": "keyword",
+                "split": "tuning",
+                "relevance": {"keyword/a.md": 3},
+            },
+            {
+                "query": "tuning two",
+                "category": "synonym",
+                "split": "tuning",
+                "relevance": {"synonym/b.md": 2},
+            },
+            {
+                "query": "heldout sentinel",
+                "category": "rival",
+                "split": "heldout",
+                "relevance": {"rival/c.md": 3},
+            },
+        ],
+    }
+    fixture_path = tmp_path / "fixture.json"
+    fixture_path.write_text(json.dumps(fixture))
+    return fixture_path, corpus
+
+
 class TestBenchCommand:
     def test_bench_requires_fixture(self) -> None:
         runner = CliRunner()
@@ -479,3 +511,97 @@ class TestBenchCommand:
             assert output["hit_at_10"] > 0.0
         finally:
             conn.close()
+
+    def test_bench_sweep_json_shape(self, tmp_path: Path) -> None:
+        """--sweep --json emits configs/tie_group/winner_declared, every config
+        carrying the four-category breakdown in declared order (D-06)."""
+        runner = CliRunner()
+        fixture_path, corpus = _graded_split_fixture(tmp_path)
+
+        mock_pipeline = MagicMock()
+        mock_pipeline.search.return_value = [
+            MagicMock(document_id="d1", path=str(corpus / "keyword" / "a.md")),
+        ]
+
+        mock_db = MagicMock()
+        mock_manager = MagicMock()
+        mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager._model = MagicMock()
+
+        with (
+            patch("sif.cli.commands.bench.Database", return_value=mock_db),
+            patch(
+                "sif.cli.commands.bench.EmbeddingManager.from_settings",
+                return_value=mock_manager,
+            ),
+            patch("sif.cli.commands.bench.SearchPipeline", return_value=mock_pipeline),
+            patch("sif.cli.commands.bench.get_settings", return_value=_settings_mock()),
+        ):
+            result = runner.invoke(
+                bench_cmd,
+                [str(fixture_path), "--sweep", "--json"],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code == 0, result.output
+        output = json.loads(result.output.strip())
+        assert {"configs", "tie_group", "winner_declared"} <= set(output)
+        # All 45 declared configurations are measured.
+        assert len(output["configs"]) == 45
+        # The mocked pipeline returns identical results for every config, so
+        # the whole grid ties and no single winner may be declared (D-08).
+        assert len(output["tie_group"]) == 45
+        assert output["winner_declared"] is False
+        for config in output["configs"]:
+            assert {
+                "rrf_k",
+                "bm25_weight",
+                "vector_weight",
+                "ndcg_at_10",
+                "hit_at_10",
+            } <= set(config)
+            assert list(config["categories"].keys()) == [
+                "keyword",
+                "synonym",
+                "multilingual",
+                "rival",
+            ]
+            for metrics in config["categories"].values():
+                assert "ndcg_at_10" in metrics
+                assert "hit_at_10" in metrics
+
+    def test_bench_sweep_table_renders_tie_honesty(self, tmp_path: Path) -> None:
+        """--sweep (no --json) renders the sweep table plus the tie note."""
+        runner = CliRunner()
+        fixture_path, _corpus = _graded_split_fixture(tmp_path)
+
+        mock_pipeline = MagicMock()
+        mock_pipeline.search.return_value = []
+
+        mock_db = MagicMock()
+        mock_manager = MagicMock()
+        mock_manager.embed_single.return_value = [0.0] * 8
+        mock_manager._model = MagicMock()
+
+        with (
+            patch("sif.cli.commands.bench.Database", return_value=mock_db),
+            patch(
+                "sif.cli.commands.bench.EmbeddingManager.from_settings",
+                return_value=mock_manager,
+            ),
+            patch("sif.cli.commands.bench.SearchPipeline", return_value=mock_pipeline),
+            patch("sif.cli.commands.bench.get_settings", return_value=_settings_mock()),
+        ):
+            result = runner.invoke(
+                bench_cmd,
+                [str(fixture_path), "--sweep"],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "Parameter Sweep" in result.output
+        # Identical (zero) metrics across the grid -> full tie group, no winner.
+        # (Rich may wrap the footer at the terminal width, so assert on
+        # wrap-safe fragments.)
+        assert "Tie group of 45 configurations" in result.output
+        assert "no single winner" in result.output

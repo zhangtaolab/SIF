@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import time
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import click
@@ -12,17 +13,40 @@ from rich.console import Console
 from rich.table import Table
 
 from sif.config.settings import Settings, get_settings
-from sif.core.models import SearchOptions
+from sif.core.models import Embedder, SearchOptions
 from sif.database.database import Database
 from sif.database.repositories import CollectionRepository
 from sif.embedding.manager import EmbeddingManager
-from sif.search.benchmark import CATEGORIES, LEGACY_K_VALUES, BenchReport, SearchEvaluator
+from sif.search.benchmark import (
+    CATEGORIES,
+    LEGACY_K_VALUES,
+    BenchReport,
+    ConfigResult,
+    SearchEvaluator,
+    SweepRanking,
+    iter_grid,
+    rank_sweep,
+)
 from sif.search.hybrid import SearchPipeline
 from sif.utils.logging import get_logger
 
 
 logger = get_logger(__name__)
 console = Console()
+
+
+@dataclass
+class BenchHarness:
+    """DB + embedder wiring shared by every measured bench state.
+
+    Bundles the trio every measurement path needs (db, embedder, dim) so the
+    measurement helpers stay under the argument-count limit without noqa
+    exemptions (house pattern, Phase 12 WatchConfig).
+    """
+
+    db: Database
+    embedder: Embedder | None
+    embedding_dim: int
 
 
 def _load_embedder(
@@ -93,9 +117,7 @@ def _build_options(
 
 
 def _measure_state(
-    db: Database,
-    manager: EmbeddingManager | None,
-    embedding_dim: int,
+    harness: BenchHarness,
     options: SearchOptions,
     evaluator: SearchEvaluator,
 ) -> BenchReport:
@@ -105,16 +127,91 @@ def _measure_state(
     context (never per query), so latency measures search rather than
     pipeline re-initialization.
     """
-    with db.connection:
+    with harness.db.connection:
         pipeline = SearchPipeline(
-            db.connection,
-            embedder=manager._model if manager else None,  # noqa: SLF001
-            embedding_dim=embedding_dim,
+            harness.db.connection,
+            embedder=harness.embedder,
+            embedding_dim=harness.embedding_dim,
         )
         return evaluator.report(
             lambda query: pipeline.search(query, options),
             clock=time.perf_counter,
         )
+
+
+def _tuning_evaluator(fixture_data: dict, fixture_path: Path) -> SearchEvaluator:
+    """Evaluator over the tuning split only — the sweep's ranking set.
+
+    D-03/EVAL-04 guard: held-out queries are filtered out of the fixture
+    BEFORE any search call, so a sweep can never consult them while ranking
+    configurations. Fixture metadata (relevance_key, corpus_root) is carried
+    over so path-keyed relevance resolves identically.
+    """
+    tuning_fixture = {key: value for key, value in fixture_data.items() if key != "queries"}
+    tuning_fixture["queries"] = [
+        item for item in fixture_data["queries"] if item.get("split") == "tuning"
+    ]
+    return SearchEvaluator(tuning_fixture, fixture_path=fixture_path)
+
+
+def _measure_config(
+    pipeline: SearchPipeline,
+    evaluator: SearchEvaluator,
+    options: SearchOptions,
+) -> ConfigResult:
+    """Measure one configuration's tuning metrics into a ConfigResult.
+
+    The per-category breakdown comes from the same report() grouping the
+    baseline uses — computed from the per-query values already in hand, with
+    zero extra search calls (D-06).
+    """
+    report = evaluator.report(
+        lambda query: pipeline.search(query, options),
+        clock=time.perf_counter,
+    )
+    return ConfigResult(
+        rrf_k=options.rrf_k,
+        bm25_weight=options.bm25_weight,
+        vector_weight=options.vector_weight,
+        ndcg_at_10=report.ndcg_at_10,
+        hit_at_10=report.hit_at_10,
+        p50_ms=report.p50_ms,
+        p95_ms=report.p95_ms,
+        categories=report.categories,
+    )
+
+
+def _run_sweep(
+    harness: BenchHarness,
+    base_options: SearchOptions,
+    evaluator: SearchEvaluator,
+) -> SweepRanking:
+    """Measure every declared grid configuration and rank it (D-07/D-08).
+
+    One hoisted pipeline serves all 45 configurations; only the fusion knobs
+    (rrf_k/bm25_weight/vector_weight, the Phase 15 per-query override bridge)
+    vary per config on top of the Plan 01 ``_build_options`` baseline.
+    """
+    with harness.db.connection:
+        pipeline = SearchPipeline(
+            harness.db.connection,
+            embedder=harness.embedder,
+            embedding_dim=harness.embedding_dim,
+        )
+        results = [
+            _measure_config(
+                pipeline,
+                evaluator,
+                replace(
+                    base_options,
+                    rrf_k=grid.rrf_k,
+                    bm25_weight=grid.bm25_weight,
+                    vector_weight=grid.vector_weight,
+                ),
+            )
+            for grid in iter_grid()
+        ]
+    return rank_sweep(results)
 
 
 def _render_report(report: BenchReport, fixture_name: str, output_json: bool) -> None:
@@ -162,12 +259,66 @@ def _render_report(report: BenchReport, fixture_name: str, output_json: bool) ->
     console.print(table)
 
 
+def _render_sweep(ranking: SweepRanking, fixture_name: str, output_json: bool) -> None:
+    """Render the sweep as JSON or a Rich table.
+
+    JSON goes through click.echo (never Rich) so it strict-parses at narrow
+    terminal widths. Every row — the tie group included — renders its four
+    per-category nDCG@10 columns so a win that quietly regresses one
+    category is visible (D-06).
+    """
+    if output_json:
+        click.echo(json.dumps(ranking.to_dict(), indent=2))
+        return
+    table = Table(title=f"Parameter Sweep: {fixture_name}")
+    table.add_column("rrf_k", justify="right")
+    table.add_column("bm25_w", justify="right")
+    table.add_column("vec_w", justify="right")
+    table.add_column("nDCG@10", justify="right")
+    table.add_column("Hit@10", justify="right")
+    table.add_column("p50", justify="right")
+    table.add_column("p95", justify="right")
+    for category in CATEGORIES:
+        table.add_column(f"{category} nDCG@10", justify="right")
+    table.add_column("tie", justify="center")
+    tie_keys = {
+        (result.rrf_k, result.bm25_weight, result.vector_weight) for result in ranking.tie_group
+    }
+    for result in ranking.ranked:
+        cells = [
+            str(result.rrf_k),
+            f"{result.bm25_weight:g}",
+            f"{result.vector_weight:g}",
+            f"{result.ndcg_at_10:.4f}",
+            f"{result.hit_at_10:.4f}",
+            f"{result.p50_ms:.2f}",
+            f"{result.p95_ms:.2f}",
+        ]
+        cells.extend(f"{result.categories[category].ndcg_at_10:.4f}" for category in CATEGORIES)
+        key = (result.rrf_k, result.bm25_weight, result.vector_weight)
+        cells.append("*" if key in tie_keys else "")
+        table.add_row(*cells)
+    console.print(table)
+    if ranking.winner_declared:
+        best = ranking.tie_group[0]
+        console.print(
+            f"[green]Winner declared: rrf_k={best.rrf_k} bm25_w={best.bm25_weight:g} "
+            f"vec_w={best.vector_weight:g} is beyond the {ranking.epsilon} tie rule[/green]"
+        )
+    else:
+        console.print(
+            f"[yellow]Tie group of {len(ranking.tie_group)} configurations within "
+            f"{ranking.epsilon} of the best: no single winner declared[/yellow]"
+        )
+
+
 @click.command("bench")
 @click.argument("fixture", type=click.Path(exists=True, path_type=Path))
 @click.option("-n", "--limit", default=10, help="Number of results per query")
 @click.option("-C", "--candidate-limit", default=20, help="Reranker candidate pool size")
 @click.option("-c", "--collection", multiple=True, help="Collection to search")
 @click.option("--all", "search_all", is_flag=True, help="Search all collections")
+@click.option("--sweep", is_flag=True, help="Sweep the declared rrf_k/weight grid")
 @click.option(
     "--model-type",
     type=click.Choice(["sentence_transformers", "gguf", "openai", "modelscope"]),
@@ -182,6 +333,7 @@ def bench_cmd(  # noqa: PLR0913
     candidate_limit: int,
     collection: tuple,
     search_all: bool,
+    sweep: bool,
     model_type: str | None,
     output_json: bool,
 ) -> None:
@@ -201,7 +353,9 @@ def bench_cmd(  # noqa: PLR0913
     Graded fixtures (Phase 16) instead declare corpus_root/relevance_key and
     per-query category/split/relevance; the report layers nDCG@10, Hit@10,
     warmed p50/p95 latency and a per-category breakdown over the legacy flat
-    metrics.
+    metrics. With --sweep, the 45-configuration declared grid
+    (rrf_k x bm25_weight x vector_weight) is measured on the tuning split
+    only and ranked with the 0.01 tie-group rule.
     """
     index_path = ctx.obj["index_path"]
 
@@ -229,11 +383,24 @@ def bench_cmd(  # noqa: PLR0913
         db.init_schema()
 
         manager, embedding_dim = _load_embedder(settings, model_type)
+        harness = BenchHarness(
+            db=db,
+            embedder=manager._model if manager else None,  # noqa: SLF001
+            embedding_dim=embedding_dim,
+        )
         collection_ids = _resolve_collection_ids(db, collection, search_all)
         options = _build_options(limit, candidate_limit, settings, collection_ids)
         try:
+            if sweep:
+                ranking = _run_sweep(
+                    harness,
+                    options,
+                    _tuning_evaluator(fixture_data, fixture),
+                )
+                _render_sweep(ranking, fixture.name, output_json)
+                return
             evaluator = SearchEvaluator(fixture_data, fixture_path=fixture)
-            report = _measure_state(db, manager, embedding_dim, options, evaluator)
+            report = _measure_state(harness, options, evaluator)
         except Exception as e:
             raise click.ClickException(f"Benchmark failed: {e}") from e
         _render_report(report, fixture.name, output_json)
