@@ -77,7 +77,7 @@ Requirements for milestone v1.1. Each maps to roadmap phases (numbering continue
 | QUAL-03 | Phase 15 | Pending |
 | QUAL-04 | Phase 15 | Pending |
 | QUAL-05 | Phase 16 | Pending |
-| QUAL-06 | Phase 14 | Pending |
+| QUAL-06 | Phase 14 | Complete |
 | EVAL-01 | Phase 16 | Pending |
 | EVAL-02 | Phase 16 | Pending |
 | EVAL-03 | Phase 16 | Pending |

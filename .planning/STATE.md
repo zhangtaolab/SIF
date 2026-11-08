@@ -4,17 +4,17 @@ milestone: v1.1
 milestone_name: Live Index and Search Quality
 current_phase: 14
 current_phase_name: Freshness Floor (Pre-Command Refresh + Staleness Marking)
-status: executing
-stopped_at: Completed 14-02-PLAN.md
-last_updated: "2026-11-08T03:53:03.782Z"
+status: verifying
+stopped_at: Completed 14-03-PLAN.md
+last_updated: "2026-11-08T04:10:14.113Z"
 last_activity: 2026-11-08
 last_activity_desc: Phase 14 execution started
-state_head: 337a68ebf6e04d6576f1b880e7ebbe9c2eb75463
+state_head: 6aeda91aef7b1ecfd85a48139e0d96b2796bb081
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 13
-  completed_plans: 12
+  completed_plans: 13
 ---
 
 # DocSift — Project State
@@ -31,7 +31,7 @@ progress:
 
 Phase: 14 (Freshness Floor (Pre-Command Refresh + Staleness Marking)) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-11-08 — Phase 14 execution started
 
 Progress: [███░░░░░░░] 33%
@@ -61,6 +61,8 @@ Progress: [███░░░░░░░] 33%
 | Phase 13 P04 | 18min | 2 tasks | 8 files |
 | Phase 14 P01 | 24min | 2 tasks | 10 files |
 | Phase 14 P02 | 14min | 2 tasks | 13 files |
+| Phase 14 P03 | 13min | 2 tasks | 2 files |
+| Phase 14 P03 | 13min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -119,6 +121,9 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 - [Phase 14]: 14-02: staleness formula corrected to 'no rows in document_embeddings' (BM25 updates purge chunks AND embeddings — 'chunks without embeddings' never fires for the real lag state); display gate marks nothing until the index has >= 1 embedding
 - [Phase 14]: 14-02: MCP backend re-maps core fields explicitly — vectors_stale must be forwarded into metadata by hand (B5); status Vector lag row counts lag via documents-id membership scan, robust to orphan embedding ids
 - [Phase 14]: 14-02: lag-state e2e keeps a keeper doc embedded so the purge leaves the display gate armed; vec0 v0.1.9 rejects NULL TEXT metadata on INSERT so fixtures seed real chunk_id strings
+- [Phase 14]: 14-03: one shared _title_cell helper serves all three command tables — the annotation is a constant string appended after the escape()d title (T-14-06), so a truncated title still annotates and search/vsearch/query render uniformly
+- [Phase 14]: 14-03: the D-13 hint sits at each command's output tail (not inside a formatter) so every output mode including --files fires it; the no-results early return naturally skips it (zero results means zero stale)
+- [Phase 14]: 14-03: stdout-purity tests assert hint-specific fragments ('have stale vectors') because the D-12 table annotation legitimately contains 'stale vectors' on stdout; format batteries read result.stdout (click >=8.2 mixes stderr into .output)
 
 ### Pending Todos
 
@@ -139,8 +144,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 
 ## Session Continuity
 
-Last session: 2026-11-08T03:53:03.489Z
-Stopped at: Completed 14-02-PLAN.md
+Last session: 2026-11-08T04:10:07.010Z
+Stopped at: Completed 14-03-PLAN.md
 Resume file: None
 
 - **Next expected action:** `/gsd-discuss-phase 13` (Phase 13 needs context; research flags: daemon/service-install specifics already in research/STACK.md)
