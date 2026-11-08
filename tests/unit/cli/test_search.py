@@ -3,6 +3,7 @@
 import csv
 import io
 import json
+import re
 import sqlite3
 import xml.etree.ElementTree as ET
 from collections.abc import Generator
@@ -2146,6 +2147,123 @@ class TestStalenessFormatMarker:
         root = ET.fromstring(result.stdout)
         elements = root.findall("result")
         assert [e.get("vectors_stale") for e in elements] == ["true", "false"]
+
+    # ------------------------------------------------------------------
+    # D-13: the post-results stderr remedy hint
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _hint_in_stderr(result: object) -> bool:
+        """Whitespace-normalized containment (Rich wraps at console width)."""
+        return "have stale vectors" in re.sub(r"\s+", " ", result.stderr)  # type: ignore[attr-defined]
+
+    def test_remedy_hint_one_stderr_line_names_count(self, tmp_path: Path) -> None:
+        """>=1 stale result -> exactly one stderr line naming the count + remedy."""
+        rows = [
+            self._result(stale=True),
+            self._result(stale=True, rank=2, title="Also Stale", path="/notes/stale2.md"),
+            self._result(stale=False),
+        ]
+        searcher = MagicMock()
+        searcher.search.return_value = rows
+        repo = MagicMock()
+        repo.list_enabled.return_value = []
+        with (
+            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
+            patch("sif.cli.commands.search.BM25Searcher", return_value=searcher),
+        ):
+            result = CliRunner().invoke(
+                search_cmd,
+                ["query"],
+                env={"COLUMNS": "80"},
+                obj={"index_path": self._index(tmp_path)},
+            )
+
+        assert result.exit_code == 0
+        normalized = re.sub(r"\s+", " ", result.stderr)
+        assert "2 results have stale vectors — run 'sif index embed' to refresh" in normalized
+        # Exactly one hint line — never one per result.
+        assert result.stderr.count("have stale vectors") == 1
+        # D-13: stdout stays clean for pipes.
+        assert "stale vectors" not in result.stdout
+
+    def test_remedy_hint_json_stdout_stays_clean(self, tmp_path: Path) -> None:
+        """Under --json the hint rides stderr only; stdout parses as pure JSON."""
+        result = self._invoke_bm25(tmp_path, ["query", "--json"])
+
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert len(payload) == 2
+        assert self._hint_in_stderr(result)
+        assert "stale vectors" not in result.stdout
+
+    def test_quiet_suppresses_hint_but_json_renders(self, tmp_path: Path) -> None:
+        """-q suppresses the hint while the --json results still render."""
+        result = self._invoke_bm25(tmp_path, ["query", "--json", "-q"])
+
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert len(payload) == 2
+        assert payload[0]["vectors_stale"] is True
+        assert not self._hint_in_stderr(result)
+
+    def test_zero_stale_results_no_hint(self, tmp_path: Path) -> None:
+        """No stale results -> no hint line (and clean stderr)."""
+        rows = [self._result(stale=False)]
+        searcher = MagicMock()
+        searcher.search.return_value = rows
+        repo = MagicMock()
+        repo.list_enabled.return_value = []
+        with (
+            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
+            patch("sif.cli.commands.search.BM25Searcher", return_value=searcher),
+        ):
+            result = CliRunner().invoke(
+                search_cmd,
+                ["query"],
+                env={"COLUMNS": "80"},
+                obj={"index_path": self._index(tmp_path)},
+            )
+
+        assert result.exit_code == 0
+        assert result.stderr == ""
+
+    def test_remedy_hint_fires_for_query_cmd(self, tmp_path: Path) -> None:
+        """The hybrid query command emits the same hint after its results."""
+        result = self._invoke_query(tmp_path, ["query"])
+
+        assert result.exit_code == 0
+        assert self._hint_in_stderr(result)
+        assert "stale vectors" not in result.stdout
+
+    def test_remedy_hint_fires_for_vsearch_cmd(self, tmp_path: Path) -> None:
+        """The vsearch command body carries the same hint wiring (mocked hits)."""
+        searcher = MagicMock()
+        searcher.search.return_value = self._rows()
+        repo = MagicMock()
+        repo.list_enabled.return_value = []
+        manager = MagicMock()
+        manager.embed_single.return_value = [0.0] * 4
+        settings = MagicMock()
+        with (
+            patch("sif.database.database.Database", return_value=MagicMock()),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
+            patch("sif.search.vector.VectorSearcher", return_value=searcher),
+            patch("sif.embedding.manager.EmbeddingManager.from_settings", return_value=manager),
+            patch("sif.config.settings.get_settings", return_value=settings),
+        ):
+            result = CliRunner().invoke(
+                vsearch_cmd,
+                ["query"],
+                env={"COLUMNS": "80"},
+                obj={"index_path": self._index(tmp_path)},
+            )
+
+        assert result.exit_code == 0
+        assert self._hint_in_stderr(result)
+        assert "stale vectors" not in result.stdout
 
 
 class TrackingDatabase(Database):
