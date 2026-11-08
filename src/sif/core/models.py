@@ -219,6 +219,10 @@ class SearchResult:
     scores: dict[str, float | None] = field(default_factory=dict)
     snippet: str | None = None
     context_description: str | None = None
+    # Derived at query time (D-08): True when this result's document has no
+    # rows in document_embeddings — the tiered-depth vector lag. Defaulted so
+    # every constructor stays valid; rides to_dict() into --json output.
+    vectors_stale: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
@@ -234,6 +238,7 @@ class SearchResult:
             "scores": self.scores,
             "snippet": self.snippet,
             "context_description": self.context_description,
+            "vectors_stale": self.vectors_stale,
         }
 
 

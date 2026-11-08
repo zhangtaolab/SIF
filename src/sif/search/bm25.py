@@ -7,6 +7,7 @@ import sqlite3
 
 from sif.core.models import SearchOptions, SearchResult
 from sif.search.context_attach import attach_path_contexts
+from sif.search.staleness import mark_vector_staleness
 from sif.search.term_match import find_first_match
 
 
@@ -117,8 +118,8 @@ class BM25Searcher:
         return self._attach_contexts(results)
 
     def _attach_contexts(self, results: list[SearchResult]) -> list[SearchResult]:
-        """Attach path context descriptions to search results via batch query."""
-        return attach_path_contexts(self.db, results)
+        """Attach path contexts, then mark derived vector staleness (one scan each)."""
+        return mark_vector_staleness(self.db, attach_path_contexts(self.db, results))
 
     def search_chunks(
         self,

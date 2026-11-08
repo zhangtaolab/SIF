@@ -9,6 +9,7 @@ from sif.core.models import Embedder, SearchOptions, SearchResult, SearchType
 from sif.search.bm25 import BM25Searcher
 from sif.search.context_attach import attach_path_contexts
 from sif.search.rrf import RRFFusion
+from sif.search.staleness import mark_vector_staleness
 from sif.search.vector import VectorSearcher
 from sif.utils.logging import get_logger
 
@@ -110,8 +111,8 @@ class HybridSearcher:
         return deduped
 
     def _attach_contexts(self, results: list[SearchResult]) -> list[SearchResult]:
-        """Attach path context descriptions to search results via batch query."""
-        return attach_path_contexts(self.db, results)
+        """Attach path contexts, then mark derived vector staleness (one scan each)."""
+        return mark_vector_staleness(self.db, attach_path_contexts(self.db, results))
 
     def _get_document_content(self, document_id: str) -> str | None:
         """Get document content."""
