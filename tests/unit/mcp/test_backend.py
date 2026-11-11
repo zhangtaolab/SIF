@@ -21,22 +21,22 @@ from sif.utils.paths import normalize_path
 
 
 @pytest.fixture
-def backend():
+def backend(tmp_path: Path):
     """Create a SearchBackend with mocked settings."""
     with patch("sif.mcp.backend.get_settings") as mock_settings:
         mock_settings.return_value = MagicMock(embedding_dim=1024)
-        return SearchBackend("/tmp/test.db")
+        return SearchBackend(str(tmp_path / "test.db"))
 
 
 @pytest.mark.asyncio
-async def test_search_backend_init(backend):
+async def test_search_backend_init(backend, tmp_path: Path):
     """Verify SearchBackend stores db_path and settings."""
-    assert backend.db_path == "/tmp/test.db"
+    assert backend.db_path == str(tmp_path / "test.db")
     assert backend.settings is not None
 
 
 @pytest.mark.asyncio
-async def test_search_backend_forwards_api_settings_to_factory():
+async def test_search_backend_forwards_api_settings_to_factory(tmp_path: Path):
     """Verify SearchBackend passes api_key/api_base/dim/cache_dir to the factory."""
     mock_embedder = MagicMock()
     settings = MagicMock(
@@ -54,7 +54,7 @@ async def test_search_backend_forwards_api_settings_to_factory():
         patch("sif.mcp.backend.EmbeddingModelFactory") as mock_factory_cls,
     ):
         mock_factory_cls.return_value.create_model.return_value = mock_embedder
-        backend = SearchBackend("/tmp/test.db")
+        backend = SearchBackend(str(tmp_path / "test.db"))
 
     call = mock_factory_cls.return_value.create_model.call_args
     assert call.args[0] == ModelType.OPENAI
@@ -318,7 +318,7 @@ def _weight_result() -> MagicMock:
     return mock_result
 
 
-def _settings_backend() -> SearchBackend:
+def _settings_backend(db_path: Path) -> SearchBackend:
     """Backend whose server settings pin rrf_k=7 / 2.0 / 0.5 (D-04 fallback)."""
     settings = MagicMock(
         embedding_dim=1024,
@@ -327,7 +327,7 @@ def _settings_backend() -> SearchBackend:
         vector_weight=0.5,
     )
     with patch("sif.mcp.backend.get_settings", return_value=settings):
-        return SearchBackend("/tmp/test.db")
+        return SearchBackend(str(db_path))
 
 
 class TestHybridSearchWeightOverrides:
@@ -351,9 +351,9 @@ class TestHybridSearchWeightOverrides:
         assert options.vector_weight == 0.5
 
     @pytest.mark.asyncio
-    async def test_absent_fields_fall_back_to_server_settings(self) -> None:
+    async def test_absent_fields_fall_back_to_server_settings(self, tmp_path: Path) -> None:
         """No weight params -> the server process's SIF_ settings fill options."""
-        backend = _settings_backend()
+        backend = _settings_backend(tmp_path / "test.db")
 
         with patch("sif.mcp.backend.SearchPipeline") as mock_pipeline:
             mock_pipeline.return_value.search.return_value = [_weight_result()]
@@ -365,9 +365,9 @@ class TestHybridSearchWeightOverrides:
         assert options.vector_weight == 0.5
 
     @pytest.mark.asyncio
-    async def test_request_field_overrides_settings(self) -> None:
+    async def test_request_field_overrides_settings(self, tmp_path: Path) -> None:
         """A request field beats the server setting; unset knobs still fall back."""
-        backend = _settings_backend()
+        backend = _settings_backend(tmp_path / "test.db")
 
         with patch("sif.mcp.backend.SearchPipeline") as mock_pipeline:
             mock_pipeline.return_value.search.return_value = [_weight_result()]
