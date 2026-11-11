@@ -45,7 +45,7 @@ findings:
     title: "Embedding-dimension mismatch error recommends `sif cleanup`, which cannot fix the mismatch"
   - id: IN-01
     severity: info
-    disposition: open
+    disposition: fixed
     title: "Identical if/else branches under a comment promising syntax highlighting that doesn't exist"
   - id: IN-02
     severity: info
@@ -85,13 +85,13 @@ findings:
     title: "Backend tests construct a real `DatabaseConnection(\"/tmp/test.db\")` outside tmp_path"
   - id: CR-01
     severity: critical
-    disposition: open
+    disposition: fixed
     title: "Legacy direct-DELETE triggers not migrated in schema.py:148-163,188-191,236-242,261-267 — deleted content remains searchable on legacy DBs"
   - id: CR-02
     severity: critical
-    disposition: open
+    disposition: fixed
     title: "XML-forbidden control characters not stripped in cli/commands/search.py:104-121 — title containing \\x0b produces non-well-formed XML"
-open: 13
+open: 10
 total: 22
 recorded: 2026-11-06T12:37:58.492Z
 ---
@@ -110,7 +110,7 @@ recorded: 2026-11-06T12:37:58.492Z
 | WR-08 | warning | open | - |
 | WR-09 | warning | fixed | quick 261111-rqq (cleanup delegates to LLMCacheRepository.clear_expired with parsed-datetime comparison; cache expiry written as aware-UTC; legacy naive-local rows interpreted as system-local; regression tests) |
 | WR-10 | warning | fixed | quick 261111-l7p (dimension-mismatch remediation message plus regression test) |
-| IN-01 | info | open | - |
+| IN-01 | info | fixed | quick 261111-tip (triage close: byte-identical markdown/else display branches collapsed to a single console.print(content, markup=False) in get.py, commit c52f489; raw-print regression tests green) |
 | IN-02 | info | open | - |
 | IN-03 | info | open | - |
 | IN-04 | info | open | - |
@@ -120,8 +120,8 @@ recorded: 2026-11-06T12:37:58.492Z
 | IN-08 | info | fixed | quick 261111-rqp (disk-fallback read_text pinned to explicit UTF-8 encoding plus read_text-contract regression test) |
 | IN-09 | info | open | - |
 | IN-10 | info | open | - |
-| CR-01 | critical | open | - (not in the current review) |
-| CR-02 | critical | open | - (not in the current review) |
+| CR-01 | critical | fixed | quick 261111-tip (triage close: schema.py detects and drops legacy direct-DELETE/UPDATE FTS sync triggers, recreates delete-command forms with gated rebuild, Phase 10.1-02 commit 7622985; legacy-delete migration regression tests green) |
+| CR-02 | critical | fixed | quick 261111-tip (triage close: search.py strips XML-1.0-forbidden control characters via _XML_1_0_INVALID/_xml_sanitize on query/title/path/collection/line_numbers, Phase 10.1-03 commit f78ef4a; round-trip parse regression tests green) |
 
 Dispositions: `open` (recorded, not yet triaged), `fixed`, `skipped`, `deferred`.
 Set `deferred` by hand and put the reason in the Source cell; both are preserved. A `|` in the reason is kept as prose and escaped on the next run.
