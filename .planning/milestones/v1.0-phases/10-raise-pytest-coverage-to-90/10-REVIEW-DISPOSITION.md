@@ -81,7 +81,7 @@ findings:
     title: "api-reference example uses `sqlite3.connect(\"~/...\")` — tilde is not expanded"
   - id: IN-10
     severity: info
-    disposition: open
+    disposition: fixed
     title: "Backend tests construct a real `DatabaseConnection(\"/tmp/test.db\")` outside tmp_path"
   - id: CR-01
     severity: critical
@@ -91,7 +91,7 @@ findings:
     severity: critical
     disposition: fixed
     title: "XML-forbidden control characters not stripped in cli/commands/search.py:104-121 — title containing \\x0b produces non-well-formed XML"
-open: 9
+open: 8
 total: 22
 recorded: 2026-11-06T12:37:58.492Z
 ---
@@ -119,7 +119,7 @@ recorded: 2026-11-06T12:37:58.492Z
 | IN-07 | info | open | - |
 | IN-08 | info | fixed | quick 261111-rqp (disk-fallback read_text pinned to explicit UTF-8 encoding plus read_text-contract regression test) |
 | IN-09 | info | open | - |
-| IN-10 | info | open | - |
+| IN-10 | info | fixed | quick 261111-tir (backend fixture and direct constructions use tmp_path-scoped DB paths; sentinel-verified no shared /tmp database creation) |
 | CR-01 | critical | fixed | quick 261111-tip (triage close: schema.py detects and drops legacy direct-DELETE/UPDATE FTS sync triggers, recreates delete-command forms with gated rebuild, Phase 10.1-02 commit 7622985; legacy-delete migration regression tests green) |
 | CR-02 | critical | fixed | quick 261111-tip (triage close: search.py strips XML-1.0-forbidden control characters via _XML_1_0_INVALID/_xml_sanitize on query/title/path/collection/line_numbers, Phase 10.1-03 commit f78ef4a; round-trip parse regression tests green) |
 
