@@ -237,6 +237,36 @@ class TestGetRetrieval(RealDatabaseTestCase):
         assert "line three" not in result.output
         assert "line five" not in result.output
 
+    def test_disk_fallback_read_text_pins_utf8_encoding(
+        self, indexed_documents: tuple[Path, list[Document]], tmp_path: Path
+    ) -> None:
+        """Pin IN-08 via a locale-independent read_text contract.
+
+        A functional non-ASCII test would be vacuous on UTF-8 locales (the
+        locale default already decodes UTF-8), so this spies on Path.read_text
+        and asserts the disk-fallback read carries encoding="utf-8".
+        """
+        db_path, _ = indexed_documents
+        local_file = tmp_path / "local.md"
+        local_file.write_text("café 中文 😀\nsecond line", encoding="utf-8")
+
+        real_read_text = Path.read_text
+        recorded: list[dict] = []
+
+        def spy_read_text(self: Path, *args: object, **kwargs: object) -> str:
+            """Record the fallback read's kwargs; delegate every call unchanged."""
+            if os.fspath(self) == str(local_file):
+                recorded.append(dict(kwargs))
+            return real_read_text(self, *args, **kwargs)
+
+        with patch.object(Path, "read_text", spy_read_text):
+            result = self._invoke(db_path, "get", str(local_file))
+
+        assert result.exit_code == 0, result.output
+        assert "café 中文 😀" in result.output
+        assert len(recorded) == 1
+        assert recorded[0].get("encoding") == "utf-8"
+
 
 class TestMarkupLiteralContent(RealDatabaseTestCase):
     """CR-01 regressions: document content prints raw, never as Rich markup."""
