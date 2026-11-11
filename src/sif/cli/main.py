@@ -25,7 +25,6 @@ console = Console()
 
 # Default paths
 DEFAULT_INDEX_PATH = Path.home() / ".local" / "share" / "sif" / "sif.db"
-DEFAULT_CONFIG_PATH = Path.home() / ".config" / "sif"
 
 
 def _get_default_db_path() -> str:
@@ -51,17 +50,10 @@ def _get_default_db_path() -> str:
     default=_get_default_db_path,
     help="Path to the index database",
 )
-@click.option(
-    "--config",
-    "-c",
-    type=click.Path(),
-    default=str(DEFAULT_CONFIG_PATH),
-    help="Path to the configuration file",
-)
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose output")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress non-error output")
 @click.pass_context
-def cli(ctx: click.Context, index: str, config: str, verbose: bool, quiet: bool) -> None:
+def cli(ctx: click.Context, index: str, verbose: bool, quiet: bool) -> None:
     """SIF - Search / Index / Find - Local document search engine.
 
     SIF indexes your documents and enables fast, intelligent search
@@ -76,7 +68,6 @@ def cli(ctx: click.Context, index: str, config: str, verbose: bool, quiet: bool)
 
     # Store options in context
     ctx.obj["index_path"] = Path(index).expanduser()
-    ctx.obj["config_path"] = Path(config).expanduser()
     ctx.obj["verbose"] = verbose
     ctx.obj["quiet"] = quiet
 

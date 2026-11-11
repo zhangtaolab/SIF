@@ -307,3 +307,62 @@ class TestDefaultDbPathConfigError:
         assert "Error:" in result.output
         assert "reranker_model_type" in result.output
         assert "Traceback" not in result.output
+
+
+class TestConfigOptionRemoved:
+    """IN-05: the former global config-path option is removed, not wired.
+
+    The group once accepted the option in long and short form and stored it
+    on ctx.obj with zero consumers (configuration comes from SIF_ env vars
+    via Pydantic Settings). Per the user decision the option is deleted, so
+    Click's parser must reject both spellings and group help must not list
+    it. Subcommand-level -c options (--collection/--cmd) are unaffected.
+    """
+
+    @pytest.fixture(autouse=True)
+    def isolated_settings(self) -> Generator[None, None, None]:
+        """Keep Settings caching independent between tests."""
+        get_settings.cache_clear()
+        yield
+        get_settings.cache_clear()
+
+    def test_long_form_config_option_rejected(self, tmp_path: Path) -> None:
+        """The long spelling exits 2 with Click's No such option error."""
+        result = CliRunner().invoke(
+            cli,
+            [
+                "--config",
+                str(tmp_path / "config"),
+                "--index",
+                str(tmp_path / "sif.db"),
+                "status",
+            ],
+            env={"COLUMNS": "200"},
+        )
+
+        assert result.exit_code == 2, result.output
+        assert "No such option" in result.output
+        assert "--config" in result.output
+
+    def test_short_form_config_option_rejected(self, tmp_path: Path) -> None:
+        """The short spelling exits 2 with Click's No such option error."""
+        result = CliRunner().invoke(
+            cli,
+            ["-c", str(tmp_path / "config"), "--index", str(tmp_path / "sif.db"), "status"],
+            env={"COLUMNS": "200"},
+        )
+
+        assert result.exit_code == 2, result.output
+        assert "No such option" in result.output
+        assert "-c" in result.output
+
+    def test_help_does_not_list_config_option(self, tmp_path: Path) -> None:
+        """Group help succeeds and no longer advertises the removed option."""
+        result = CliRunner().invoke(
+            cli,
+            ["--index", str(tmp_path / "sif.db"), "--help"],
+            env={"COLUMNS": "200"},
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "--config" not in result.output
