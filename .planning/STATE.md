@@ -4,11 +4,11 @@ milestone: v1.1
 milestone_name: Live Index and Search Quality
 current_phase: 11
 status: completed
-stopped_at: context exhaustion at 89% (2026-11-11)
-last_updated: "2026-11-11T11:53:15.718Z"
+stopped_at: context exhaustion at 75% (2026-11-11)
+last_updated: "2026-11-11T12:05:09.566Z"
 last_activity: 2026-11-11
 last_activity_desc: Phase 11 complete
-state_head: 15343bbf9ae872143a94dd9821c8ac2e8f62b111
+state_head: 802c08c556eea041e420e28b6ac582260811f168
 progress:
   total_phases: 6
   completed_phases: 6
@@ -31,7 +31,7 @@ progress:
 Phase: 11
 Plan: Not started
 Status: All phases complete
-Last activity: 2026-11-11 - Completed quick task 261111-r2f: Close Phase 10 WR-06 — bench fixture open pinned to explicit UTF-8 encoding (open-kwarg contract test red-to-green; ledger open 17->16)
+Last activity: 2026-11-11 - Completed quick batch 261111-rqo (4 items): IN-08 read_text UTF-8 pin, WR-09 cache-expiry instant comparison, D-1 caplog leak fixture, WR-01 shared embedding purger — ledger open 16->13
 
 Progress: [██████████] 100%
 
@@ -199,6 +199,10 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 | 261111-pqy | Close Phase 10 WR-05: collection ls subpath collection-relative segment-aligned filter (regression tests + ledger closure; open 19->18) | 2026-11-11 | 1ac9f24 | [261111-pqy-next-phase-10-item-address-the-smallest-](./quick/261111-pqy-next-phase-10-item-address-the-smallest-/) |
 | 261111-qlv | Close Phase 10 WR-02: triage close as fixed (whole-run txn superseded by IncrementalIndexer per-file BEGIN IMMEDIATE; AST + durability evidence, ledger closure; open 18->17) | 2026-11-11 | de0b729 | [261111-qlv-next-phase-10-item-address-the-smallest-](./quick/261111-qlv-next-phase-10-item-address-the-smallest-/) |
 | 261111-r2f | Close Phase 10 WR-06: pin bench fixture open to explicit UTF-8 encoding (open-kwarg contract test red-to-green + ledger closure; open 17->16) | 2026-11-11 | 15343bb | [261111-r2f-next-phase-10-item-address-the-smallest-](./quick/261111-r2f-next-phase-10-item-address-the-smallest-/) |
+| 261111-rqp | Close Phase 10 IN-08: pin read_text to explicit UTF-8 encoding at the site named by the IN-08 record (read the original finding in .planning/milestones/v1.0-phases/10-raise-pytest-coverage-to-90/10-REVIEW.md; contract test red-to-green + three-edit ledger closure in 10-REVIEW-DISPOSITION.md) | 2026-11-11 | 7be1412 | /Users/forrest/GitHub/SIF/.planning/quick/261111-rqp-close-phase-10-in-08-pin-read-text-to-explicit-utf-8-encodin |
+| 261111-rqq | Close Phase 10 WR-09: stale-vector handling on the read side (src/sif/cli/main.py) and write side (src/sif/database/repositories.py) per the original WR-09 finding (regression tests + three-edit ledger closure in 10-REVIEW-DISPOSITION.md) | 2026-11-11 | 8f16b1e | /Users/forrest/GitHub/SIF/.planning/quick/261111-rqq-close-phase-10-wr-09-stale-vector-handling-on-the-read-side |
+| 261111-rqr | Fix deferred D-1: caplog cross-test leak in tests/unit/cli/test_watch_cmd.py under .venv batch runs (bisect the batch order to isolate the leaking predecessor, reset logger state; full details in .planning/quick/261111-o6y-find-and-fix-failing-tests-run-the-quali/deferred-items.md) | 2026-11-11 | a04af92 | /Users/forrest/GitHub/SIF/.planning/quick/261111-rqr-fix-deferred-d-1-caplog-cross-test-leak-in-tests-unit-cli-te |
+| 261111-rqs | Close Phase 10 WR-01: share the duplicated purge helper (collection.py:75/93 and index.py) plus repositories.py purge and sqlite-vec handling per the original WR-01 finding (regression tests + three-edit ledger closure in 10-REVIEW-DISPOSITION.md) | 2026-11-11 | a43007a | /Users/forrest/GitHub/SIF/.planning/quick/261111-rqs-close-phase-10-wr-01-share-the-duplicated-purge-helper-colle |
 
 ### Overrides
 
@@ -206,8 +210,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 
 ## Session Continuity
 
-Last session: 2026-11-11T08:14:36Z
-Stopped at: Quick 261111-r2f complete — Phase 10 WR-06 closed (bench fixture UTF-8 encoding pin + contract test); ledger open 16/22
+Last session: 2026-11-11T12:05:08.602Z
+Stopped at: Quick batch 261111-rqo complete — 4/4 items (IN-08, WR-09, D-1, WR-01); Phase 10 ledger open 13/22; suite 1528 passed / 95.06% cov
 Resume file: .planning/.continue-here.md (pause record retained)
 
-- **Next expected action:** `/gsd-quick` — next Phase 10 item (ledger 16/22 open; IN-08 read_text encoding is the next smallest one-file item; WR-01/09 multi-file, WR-07 MCP protocol decision, WR-08 convention-conflicting needs user decision); or `/gsd-complete-milestone v1.1` (all 6 phases complete and verified; milestone ready to archive)
+- **Next expected action:** remaining Phase 10 backlog needs decisions, not autonomous fixes: WR-07 (MCP line-metadata protocol decision), WR-08 (conflicts with CLAUDE.md fail-fast vector posture — user decision), plus open IN/CR findings (IN-09/10, CR-01/02 etc. — re-assess live); or `/gsd-complete-milestone v1.1` (all 6 phases complete and verified; milestone ready to archive)
