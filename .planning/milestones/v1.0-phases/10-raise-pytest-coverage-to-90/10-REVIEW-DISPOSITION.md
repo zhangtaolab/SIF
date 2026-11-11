@@ -13,7 +13,7 @@ findings:
     title: "`index update` runs all collections in one implicit transaction — later failure discards earlier collections' work"
   - id: WR-03
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "`multi-get --max-bytes` truncates by characters after a byte-length check — limit can be exceeded up to 4x"
   - id: WR-04
     severity: warning
@@ -91,7 +91,7 @@ findings:
     severity: critical
     disposition: open
     title: "XML-forbidden control characters not stripped in cli/commands/search.py:104-121 — title containing \\x0b produces non-well-formed XML"
-open: 21
+open: 20
 total: 22
 recorded: 2026-11-06T12:37:58.492Z
 ---
@@ -102,7 +102,7 @@ recorded: 2026-11-06T12:37:58.492Z
 |---------|----------|-------------|--------|
 | WR-01 | warning | open | - |
 | WR-02 | warning | open | - |
-| WR-03 | warning | open | - |
+| WR-03 | warning | fixed | quick 261111-mlj (multi-get byte-budget truncation plus regression tests) |
 | WR-04 | warning | open | - |
 | WR-05 | warning | open | - |
 | WR-06 | warning | open | - |
