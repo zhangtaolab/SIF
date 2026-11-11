@@ -7,9 +7,11 @@ from typing import Any, ClassVar
 from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
+from pydantic import ValidationError
 
 from sif.cli.commands.index import index_status_cmd
 from sif.cli.main import status_cmd
+from sif.config.settings import get_settings
 
 
 def _mock_stats() -> dict:
@@ -270,3 +272,34 @@ class TestVectorLag:
         assert result.exit_code == 0
         assert "Vector lag" in result.output
         assert "n/a" in result.output
+
+
+class TestStatusFallbackConfigError:
+    """Phase 10 IN-06: the index_path-None fallback must guard get_settings().
+
+    Invoking status_cmd with a context obj lacking index_path (obj={}) hits
+    the fallback; invalid env config there must render the same one-line
+    Click error as _get_default_db_path, not a raw pydantic traceback.
+    get_settings is lru_cache'd, so the cache must be cleared AFTER the env
+    var is set (a prior cached success would mask the invalid env) and again
+    in finally for hygiene (monkeypatch restores the env at teardown, so the
+    cache must be empty when it does).
+    """
+
+    def test_status_fallback_wraps_validation_error(self, monkeypatch) -> None:
+        """Invalid SIF_RERANKER_MODEL_TYPE on the fallback path -> one-line Error."""
+        monkeypatch.setenv("SIF_RERANKER_MODEL_TYPE", "cross-encoder")
+        get_settings.cache_clear()
+        try:
+            result = CliRunner().invoke(status_cmd, [], obj={})
+        finally:
+            get_settings.cache_clear()
+
+        assert result.exit_code == 1
+        assert "Error:" in result.output
+        assert "reranker_model_type" in result.output
+        assert "Traceback" not in result.output
+        # click 8.3.2's CliRunner stores SystemExit after Click renders a
+        # ClickException, so pin the exception negatively instead of
+        # asserting isinstance(result.exception, click.ClickException).
+        assert not isinstance(result.exception, ValidationError)
