@@ -231,8 +231,12 @@ def multi_get_cmd(  # noqa: C901
 
             for doc in matched_docs:
                 content = doc.content
-                if len(content.encode()) > max_bytes:
-                    content = content[:max_bytes] + "\n... [truncated]"
+                encoded_content = content.encode("utf-8")
+                if len(encoded_content) > max_bytes:
+                    content = (
+                        encoded_content[:max_bytes].decode("utf-8", errors="ignore")
+                        + "\n... [truncated]"
+                    )
 
                 if line_numbers:
                     content = prepend_line_numbers(content)

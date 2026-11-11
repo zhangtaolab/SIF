@@ -368,9 +368,7 @@ class TestMultiGetRetrieval(RealDatabaseTestCase):
         """CJK truncation drops a partial character at the byte boundary."""
         db_path, documents = multibyte_documents
 
-        result = self._invoke(
-            db_path, "multi-get", documents[0].id, "--max-bytes", "10"
-        )
+        result = self._invoke(db_path, "multi-get", documents[0].id, "--max-bytes", "10")
 
         assert result.exit_code == 0, result.output
         assert result.output.count("中") == 3
@@ -383,9 +381,7 @@ class TestMultiGetRetrieval(RealDatabaseTestCase):
         """Emoji truncation never emits a split or replacement character."""
         db_path, documents = multibyte_documents
 
-        result = self._invoke(
-            db_path, "multi-get", documents[1].id, "--max-bytes", "6"
-        )
+        result = self._invoke(db_path, "multi-get", documents[1].id, "--max-bytes", "6")
 
         assert result.exit_code == 0, result.output
         assert result.output.count("😀") == 1
@@ -399,9 +395,7 @@ class TestMultiGetRetrieval(RealDatabaseTestCase):
         """Multibyte content below the byte budget passes through unchanged."""
         db_path, documents = multibyte_documents
 
-        result = self._invoke(
-            db_path, "multi-get", documents[0].id, "--max-bytes", "1000"
-        )
+        result = self._invoke(db_path, "multi-get", documents[0].id, "--max-bytes", "1000")
 
         assert result.exit_code == 0, result.output
         assert result.output.count("中") == 20
