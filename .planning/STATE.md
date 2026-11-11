@@ -217,8 +217,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 
 ## Session Continuity
 
-Last session: 2026-11-11T14:20:57Z (resumed via /gsd-resume-work; HANDOFF.json consumed and retired)
-Stopped at: Session resumed — proceeding to quick batch on Phase 10 IN-02/IN-03/IN-04 (user-selected route); ledger 7/22 open, suite 1529 passed / 95.06% cov
-Resume file: .planning/.continue-here.md (pause record retained)
+Last session: 2026-11-11T15:15:27Z (resumed via /gsd-resume-work; HANDOFF.json consumed and retired)
+Stopped at: Quick batch 261111-v4x complete — 3/3 items (IN-02 import/patch-target, IN-03 model accessor, IN-04 dead quiet); Phase 10 ledger open 4/22; suite 1531 passed / 1 skipped / 95.06% cov
+Resume file: .planning/.continue-here.md (pause record retained — describes prior tio pause; superseded by this batch)
 
-- **Next expected action:** quick batch IN-02/03/04 (ledger 7->4 on success); then IN-07 solo (medium refactor), WR-07/WR-08/IN-05 user decisions, or `/gsd-complete-milestone v1.1` (all 6 phases complete and verified; milestone ready to archive)
+- **Next expected action:** remaining Phase 10 backlog (4/22 open) — IN-07 solo (medium embedding-dim refactor), WR-07/WR-08/IN-05 user decisions (MCP line-metadata protocol / fail-fast convention / wire-or-remove --config); or `/gsd-complete-milestone v1.1` (all 6 phases complete and verified; milestone ready to archive)
