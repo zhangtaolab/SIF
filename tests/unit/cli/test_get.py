@@ -328,6 +328,85 @@ class TestMarkupLiteralContent(RealDatabaseTestCase):
 class TestMultiGetRetrieval(RealDatabaseTestCase):
     """Batch selection and output behavior against real SQLite."""
 
+    @pytest.fixture
+    def multibyte_documents(self, tmp_path: Path) -> tuple[Path, list[Document]]:
+        """Index CJK and emoji documents for byte-boundary truncation tests."""
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        documents = [
+            Document(
+                id="doc-cjk",
+                path=str(notes / "cjk.md"),
+                collection_id="collection-1",
+                title="CJK",
+                content="中" * 20,
+            ),
+            Document(
+                id="doc-emoji",
+                path=str(notes / "emoji.md"),
+                collection_id="collection-1",
+                title="Emoji",
+                content="😀" * 10,
+            ),
+        ]
+        for document in documents:
+            Path(document.path).write_text(document.content, encoding="utf-8")
+        db_path = tmp_path / "sif.db"
+        with Database(db_path) as db:
+            db.init_schema()
+            with db.transaction() as conn:
+                CollectionRepository(conn).create(
+                    Collection(id="collection-1", name="notes", path=str(notes))
+                )
+                for document in documents:
+                    DocumentRepository(conn).create(document)
+        return db_path, documents
+
+    def test_multi_get_max_bytes_cjk_respects_byte_budget(
+        self, multibyte_documents: tuple[Path, list[Document]]
+    ) -> None:
+        """CJK truncation drops a partial character at the byte boundary."""
+        db_path, documents = multibyte_documents
+
+        result = self._invoke(
+            db_path, "multi-get", documents[0].id, "--max-bytes", "10"
+        )
+
+        assert result.exit_code == 0, result.output
+        assert result.output.count("中") == 3
+        assert "... [truncated]" in result.output
+        assert "中" * 4 not in result.output
+
+    def test_multi_get_max_bytes_emoji_respects_byte_budget(
+        self, multibyte_documents: tuple[Path, list[Document]]
+    ) -> None:
+        """Emoji truncation never emits a split or replacement character."""
+        db_path, documents = multibyte_documents
+
+        result = self._invoke(
+            db_path, "multi-get", documents[1].id, "--max-bytes", "6"
+        )
+
+        assert result.exit_code == 0, result.output
+        assert result.output.count("😀") == 1
+        assert "... [truncated]" in result.output
+        assert "😀" * 2 not in result.output
+        assert "�" not in result.output
+
+    def test_multi_get_under_limit_content_unchanged(
+        self, multibyte_documents: tuple[Path, list[Document]]
+    ) -> None:
+        """Multibyte content below the byte budget passes through unchanged."""
+        db_path, documents = multibyte_documents
+
+        result = self._invoke(
+            db_path, "multi-get", documents[0].id, "--max-bytes", "1000"
+        )
+
+        assert result.exit_code == 0, result.output
+        assert result.output.count("中") == 20
+        assert "... [truncated]" not in result.output
+
     def test_comma_separated_lookup_deduplicates_documents(
         self, indexed_documents: tuple[Path, list[Document]]
     ) -> None:
