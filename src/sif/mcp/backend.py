@@ -14,6 +14,7 @@ from sif.database.repositories import CollectionRepository, DocumentRepository
 from sif.embedding.factory import EmbeddingModelFactory
 from sif.embedding.model import ModelType
 from sif.mcp.protocol import CollectionInfo, Document, SearchResult
+from sif.search.bm25 import BM25Searcher
 from sif.search.hybrid import SearchPipeline
 from sif.search.suggest import SuggestionEngine
 from sif.utils.logging import get_logger
@@ -88,6 +89,7 @@ class SearchBackend:
         self.db_path = db_path
         self.settings = settings or get_settings()
         self._embedder: Any = None
+        self._vec_unavailable_warned = False
         try:
             factory = EmbeddingModelFactory()
             model_type = ModelType(self.settings.model_type)
@@ -132,6 +134,11 @@ class SearchBackend:
         Weight overrides (Phase 15, D-04): each ``None`` falls back to the
         server process's ``SIF_`` settings (request field ≈ CLI flag); the
         resolved values ride SearchOptions into the pipeline.
+
+        When sqlite-vec is unavailable (SearchPipeline construction raises
+        ``RuntimeError``), the search degrades to BM25-only with a one-time
+        warning (Phase 10 WR-08, user decision); search-time errors still
+        propagate.
         """
 
         def _search(conn: Any) -> list[SearchResult]:
@@ -152,12 +159,25 @@ class SearchBackend:
                 if not matched:
                     return _with_suggestions(conn, query, [])
                 options.collection_ids = matched
-            pipeline = SearchPipeline(
-                conn,
-                embedder=self._embedder,
-                embedding_dim=self.settings.embedding_dim,
-            )
-            core_results = pipeline.search(query, options)
+            try:
+                pipeline = SearchPipeline(
+                    conn,
+                    embedder=self._embedder,
+                    embedding_dim=self.settings.embedding_dim,
+                )
+            except RuntimeError:
+                # WR-08 (user decision): MCP-boundary carve-out — a missing
+                # sqlite-vec extension fails SearchPipeline construction, so
+                # degrade to BM25-only here; the core HybridSearcher.search
+                # stays fail-fast (search-time errors are never caught).
+                if not self._vec_unavailable_warned:
+                    self._vec_unavailable_warned = True
+                    logger.warning(
+                        "sqlite-vec unavailable; MCP hybrid search degrades to BM25-only"
+                    )
+                core_results = BM25Searcher(conn).search(query, options)
+            else:
+                core_results = pipeline.search(query, options)
             mapped = [
                 SearchResult(
                     doc_id=r.document_id,

@@ -652,6 +652,8 @@ class TestZeroResultSuggestions:
 # sqlite-vec degradation (Phase 10 WR-08, user decision)
 # =============================================================================
 
+_VEC_MISSING_MSG = "sqlite-vec extension is not available. Install sqlite-vec to use vector search."
+
 
 class TestHybridSearchVecDegradation:
     """Phase 10 WR-08 (user decision): the MCP SearchBackend boundary degrades
@@ -666,9 +668,7 @@ class TestHybridSearchVecDegradation:
 
         with patch(
             "sif.mcp.backend.SearchPipeline",
-            side_effect=RuntimeError(
-                "sqlite-vec extension is not available. Install sqlite-vec to use vector search."
-            ),
+            side_effect=RuntimeError(_VEC_MISSING_MSG),
         ):
             results = await backend.hybrid_search("quantum")
 
@@ -690,9 +690,7 @@ class TestHybridSearchVecDegradation:
         with (
             patch(
                 "sif.mcp.backend.SearchPipeline",
-                side_effect=RuntimeError(
-                    "sqlite-vec extension is not available. Install sqlite-vec to use vector search."
-                ),
+                side_effect=RuntimeError(_VEC_MISSING_MSG),
             ),
             caplog.at_level(logging.WARNING, logger=backend_module.logger.name),
         ):
