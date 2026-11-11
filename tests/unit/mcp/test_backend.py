@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sqlite3
 from datetime import datetime, timezone
@@ -14,6 +15,7 @@ from pydantic import ValidationError
 
 from sif.config.settings import Settings
 from sif.database.database import Database
+from sif.mcp import backend as backend_module
 from sif.mcp.backend import HybridSearchResults, SearchBackend, _truncate_content
 from sif.mcp.protocol import CollectionInfo, Document, QueryInput, SearchResult
 from sif.models.embedding import ModelType
@@ -644,3 +646,69 @@ class TestZeroResultSuggestions:
         payload = json.loads(result.content[0].text)
         assert payload["results"] == []
         assert payload["suggestions"] == ["quantum machin"]
+
+
+# =============================================================================
+# sqlite-vec degradation (Phase 10 WR-08, user decision)
+# =============================================================================
+
+
+class TestHybridSearchVecDegradation:
+    """Phase 10 WR-08 (user decision): the MCP SearchBackend boundary degrades
+    to BM25-only when sqlite-vec is unavailable; the core HybridSearcher.search
+    stays fail-fast (the carve-out is construction-only)."""
+
+    @pytest.mark.asyncio
+    async def test_vec_unavailable_degrades_to_bm25_results(self, tmp_path: Path) -> None:
+        """Construction failure yields real BM25 rows with full boundary metadata."""
+        db_path, settings = _seed_suggestion_db(tmp_path)
+        backend = _suggestion_backend(db_path, settings)
+
+        with patch(
+            "sif.mcp.backend.SearchPipeline",
+            side_effect=RuntimeError(
+                "sqlite-vec extension is not available. Install sqlite-vec to use vector search."
+            ),
+        ):
+            results = await backend.hybrid_search("quantum")
+
+        assert isinstance(results, HybridSearchResults)
+        assert {r.doc_id for r in results} == {"d1", "d2"}
+        for r in results:
+            assert isinstance(r, SearchResult)
+            assert r.metadata["collection_name"] == "notes"
+            assert isinstance(r.metadata["rank"], int)
+            assert "vectors_stale" in r.metadata
+
+    @pytest.mark.asyncio
+    async def test_vec_unavailable_warning_emitted_once(self, tmp_path: Path, caplog) -> None:
+        """Repeated degraded queries warn exactly once per backend instance."""
+        db_path, settings = _seed_suggestion_db(tmp_path)
+        # Built before capture: the __init__ embedder warning is unrelated.
+        backend = _suggestion_backend(db_path, settings)
+
+        with (
+            patch(
+                "sif.mcp.backend.SearchPipeline",
+                side_effect=RuntimeError(
+                    "sqlite-vec extension is not available. Install sqlite-vec to use vector search."
+                ),
+            ),
+            caplog.at_level(logging.WARNING, logger=backend_module.logger.name),
+        ):
+            first = await backend.hybrid_search("quantum")
+            second = await backend.hybrid_search("quantum")
+
+        assert list(first)
+        assert list(second)
+        vec_warnings = [r for r in caplog.records if "sqlite-vec" in r.message]
+        assert len(vec_warnings) == 1
+        assert vec_warnings[0].levelno == logging.WARNING
+
+    @pytest.mark.asyncio
+    async def test_search_time_runtime_error_still_propagates(self, backend) -> None:
+        """Preservation pin: search-time RuntimeErrors are never swallowed."""
+        with patch("sif.mcp.backend.SearchPipeline") as mock_pipeline:
+            mock_pipeline.return_value.search.side_effect = RuntimeError("vector search failed")
+            with pytest.raises(RuntimeError, match="vector search failed"):
+                await backend.hybrid_search("quantum")
