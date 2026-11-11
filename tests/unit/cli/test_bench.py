@@ -1,6 +1,8 @@
 """Tests for bench CLI command."""
 
+import builtins
 import json
+import os
 from pathlib import Path
 from typing import ClassVar
 from unittest.mock import MagicMock, patch
@@ -526,6 +528,62 @@ class TestBenchCommand:
 
         assert result.exit_code != 0
         assert "Benchmark failed" in result.output
+
+    def test_bench_fixture_open_pins_utf8_encoding(self, tmp_path: Path) -> None:
+        """Pin the WR-06 encoding sub-item via a locale-independent open contract.
+
+        A functional non-ASCII fixture test would be vacuous on UTF-8 locales
+        (the locale default already decodes UTF-8), so this spies on
+        builtins.open and asserts the fixture open carries encoding="utf-8".
+        """
+        runner = CliRunner()
+
+        fixture = {
+            "queries": [
+                {"query": "test", "relevant_docids": ["doc-1"]},
+            ],
+        }
+        fixture_path = tmp_path / "fixture.json"
+        fixture_path.write_text(json.dumps(fixture), encoding="utf-8")
+
+        real_open = builtins.open
+        fixture_opens: list[dict] = []
+
+        def spy_open(file: object, *args: object, **kwargs: object) -> object:
+            """Record the fixture open's kwargs; delegate every call unchanged."""
+            if isinstance(file, (str, os.PathLike)) and os.fspath(file) == str(fixture_path):
+                fixture_opens.append(kwargs)
+            return real_open(file, *args, **kwargs)
+
+        mock_pipeline = MagicMock()
+        mock_pipeline.search.return_value = [
+            MagicMock(document_id="doc-1"),
+        ]
+
+        mock_db = MagicMock()
+        mock_manager = MagicMock()
+        mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager._model = MagicMock()
+
+        with (
+            patch("sif.cli.commands.bench.Database", return_value=mock_db),
+            patch(
+                "sif.cli.commands.bench.EmbeddingManager.from_settings",
+                return_value=mock_manager,
+            ),
+            patch("sif.cli.commands.bench.SearchPipeline", return_value=mock_pipeline),
+            patch("sif.cli.commands.bench.get_settings", return_value=_settings_mock()),
+            patch("builtins.open", spy_open),
+        ):
+            result = runner.invoke(
+                bench_cmd,
+                [str(fixture_path)],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code == 0
+        assert len(fixture_opens) == 1
+        assert fixture_opens[0].get("encoding") == "utf-8"
 
     def test_bench_invalid_settings_click_exception(self, tmp_path: Path) -> None:
         """A pydantic ValidationError from get_settings surfaces as a
