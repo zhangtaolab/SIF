@@ -17,10 +17,34 @@ from sif.cli.commands.collection import (
 )
 from sif.cli.commands.index import update_cmd
 from sif.cli.main import cli
-from sif.config.settings import get_settings
-from sif.core.models import Collection
+from sif.config.settings import Settings, get_settings
+from sif.core.models import Collection, Document, DocumentChunk
 from sif.database.database import Database
-from sif.database.repositories import CollectionRepository
+from sif.database.repositories import (
+    CollectionRepository,
+    DocumentChunkRepository,
+    DocumentRepository,
+)
+
+
+def _stored_embedding_doc_ids(db_path: Path) -> set[str]:
+    """Read stored vec0 document_ids on a fresh sqlite-vec-loaded connection.
+
+    Skips only when the extension itself is absent (the same best-effort
+    contract as test_incremental's _embedding_count).
+    """
+    try:
+        import sqlite_vec
+    except ImportError:
+        pytest.skip("sqlite-vec not available")
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.enable_load_extension(True)
+        sqlite_vec.load(conn)
+        conn.enable_load_extension(False)
+        return {row[0] for row in conn.execute("SELECT document_id FROM document_embeddings")}
+    finally:
+        conn.close()
 
 
 class TestCollectionRealDatabase:
@@ -73,6 +97,49 @@ class TestCollectionRealDatabase:
         with contextlib.closing(sqlite3.connect(db_path)) as conn:
             conn.row_factory = sqlite3.Row
             return conn.execute("SELECT * FROM collections WHERE name = ?", (name,)).fetchone()
+
+    def _seed_embedded_collection(
+        self, db_path: Path, name: str, probe_token: str, *, embed: bool = True
+    ) -> str:
+        """Seed one collection with a document, a chunk, and a real vec0 embedding.
+
+        The dim-8 settings patch must cover init_schema: the schema's
+        dimension-mismatch guard rejects a vec0 table whose FLOAT[dim]
+        disagrees with settings. The probe token lands in both the document
+        content and the chunk content so documents_fts and chunks_fts are
+        MATCH-assertable. Returns the seeded document id.
+        """
+        from sif.search.vector import VectorSearcher
+
+        content = f"# Probe\n\n{probe_token} unique probe body.\n"
+        root = db_path.parent / name
+        db = Database(db_path)
+        with patch(
+            "sif.config.settings.get_settings",
+            return_value=Settings(embedding_dim=8, model_name="test", cache_embeddings=False),
+        ):
+            db.init_schema()
+            with db.transaction() as conn:
+                coll = CollectionRepository(conn).create(Collection(name=name, path=str(root)))
+                doc = DocumentRepository(conn).create(
+                    Document(path=str(root / "probe.md"), collection_id=coll.id, content=content)
+                )
+                DocumentChunkRepository(conn).create(
+                    DocumentChunk(
+                        content=content,
+                        sequence=0,
+                        start_pos=0,
+                        end_pos=len(content),
+                        document_id=doc.id,
+                    )
+                )
+                if embed:
+                    # Real chunk_id string: vec0 v0.1.9 rejects NULL TEXT metadata.
+                    VectorSearcher(conn, embedding_dim=8).add_embedding(
+                        f"e-{doc.id}", doc.id, f"c-{doc.id}", [0.1] * 8
+                    )
+        db.close()
+        return doc.id
 
     def test_add_list_show_and_repository_state(self, tmp_path: Path, notes_dir: Path) -> None:
         """A collection added through the CLI persists and is visible to readers."""
@@ -129,6 +196,108 @@ class TestCollectionRealDatabase:
         assert self._read_collection(db_path, "notes") is None
         assert missing.exit_code != 0
         assert "Collection 'notes' not found" in missing.stderr
+
+    def test_remove_purges_embeddings_chunks_and_fts(self, tmp_path: Path) -> None:
+        """WR-01: collection remove purges vec0 embeddings; a keeper collection survives.
+
+        The vec0 virtual table cannot carry the documents FK cascade, so
+        removal must purge embeddings explicitly before deleting documents.
+        At the defect HEAD the orphaned vec0 row survives and the final
+        stored-embedding assertion fails.
+        """
+        db_path = tmp_path / "sif.db"
+        removed_doc_id = self._seed_embedded_collection(db_path, "notes", "purgeprobealpha")
+        keeper_doc_id = self._seed_embedded_collection(db_path, "keeper", "purgeprobekeeper")
+
+        with patch(
+            "sif.config.settings.get_settings",
+            return_value=Settings(embedding_dim=8, model_name="test", cache_embeddings=False),
+        ):
+            result = self._invoke(db_path, "remove", "notes", stdin="y\n")
+
+        assert result.exit_code == 0, result.output
+        assert self._read_collection(db_path, "notes") is None
+        assert self._read_collection(db_path, "keeper") is not None
+
+        conn = sqlite3.connect(db_path)
+        try:
+            doc_ids = {row[0] for row in conn.execute("SELECT id FROM documents")}
+            assert removed_doc_id not in doc_ids
+            assert keeper_doc_id in doc_ids
+            assert (
+                conn.execute(
+                    "SELECT COUNT(*) FROM document_chunks WHERE document_id = ?",
+                    (removed_doc_id,),
+                ).fetchone()[0]
+                == 0
+            )
+            assert (
+                conn.execute(
+                    "SELECT COUNT(*) FROM document_chunks WHERE document_id = ?",
+                    (keeper_doc_id,),
+                ).fetchone()[0]
+                == 1
+            )
+            assert (
+                conn.execute(
+                    "SELECT COUNT(*) FROM documents_fts WHERE documents_fts MATCH 'purgeprobealpha'"
+                ).fetchone()[0]
+                == 0
+            )
+            assert (
+                conn.execute(
+                    "SELECT COUNT(*) FROM documents_fts "
+                    "WHERE documents_fts MATCH 'purgeprobekeeper'"
+                ).fetchone()[0]
+                == 1
+            )
+            assert (
+                conn.execute(
+                    "SELECT COUNT(*) FROM chunks_fts WHERE chunks_fts MATCH 'purgeprobealpha'"
+                ).fetchone()[0]
+                == 0
+            )
+        finally:
+            conn.close()
+
+        stored = _stored_embedding_doc_ids(db_path)
+        assert removed_doc_id not in stored, "WR-01: orphaned vec0 embedding survived removal"
+        assert keeper_doc_id in stored
+        assert len(stored) == 1
+
+    def test_remove_without_sqlite_vec_still_deletes(self, tmp_path: Path) -> None:
+        """D4 fail-soft pin: BM25-only installs without sqlite-vec still remove collections."""
+        db_path = tmp_path / "sif.db"
+        doc_id = self._seed_embedded_collection(db_path, "notes", "purgeprobenovec", embed=False)
+
+        with (
+            patch(
+                "sif.config.settings.get_settings",
+                return_value=Settings(embedding_dim=8, model_name="test", cache_embeddings=False),
+            ),
+            patch(
+                "sif.search.vector.VectorSearcher",
+                side_effect=RuntimeError("sqlite-vec extension is not available."),
+            ),
+        ):
+            result = self._invoke(db_path, "remove", "notes", stdin="y\n")
+
+        assert result.exit_code == 0, result.output
+        assert self._read_collection(db_path, "notes") is None
+        conn = sqlite3.connect(db_path)
+        try:
+            assert (
+                conn.execute("SELECT COUNT(*) FROM documents WHERE id = ?", (doc_id,)).fetchone()[0]
+                == 0
+            )
+            assert (
+                conn.execute(
+                    "SELECT COUNT(*) FROM document_chunks WHERE document_id = ?", (doc_id,)
+                ).fetchone()[0]
+                == 0
+            )
+        finally:
+            conn.close()
 
     def test_rename_missing_and_duplicate(self, tmp_path: Path, notes_dir: Path) -> None:
         """Rename enforces both source existence and destination uniqueness."""
