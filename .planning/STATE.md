@@ -5,10 +5,10 @@ milestone_name: Live Index and Search Quality
 current_phase: 11
 status: completed
 stopped_at: context exhaustion at 89% (2026-11-11)
-last_updated: "2026-11-11T10:17:06.343Z"
+last_updated: "2026-11-11T11:01:38.242Z"
 last_activity: 2026-11-11
 last_activity_desc: Phase 11 complete
-state_head: 65226635fdcd2751234578bfb9f017d8d6768ed8
+state_head: 1ac9f2454838406bd7254474a602261da3e54b2c
 progress:
   total_phases: 6
   completed_phases: 6
@@ -31,7 +31,7 @@ progress:
 Phase: 11
 Plan: Not started
 Status: All phases complete
-Last activity: 2026-11-11 - Completed quick task 261111-o6y: Fix 60 FORCE_COLOR=1 test failures — color-env-hermetic pytest suite (conftest import-time scrub + autouse fixture)
+Last activity: 2026-11-11 - Completed quick task 261111-pqy: Close Phase 10 WR-05 — collection ls subpath collection-relative segment-aligned filter (regression tests + ledger closure; open 19->18)
 
 Progress: [██████████] 100%
 
@@ -196,6 +196,7 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 | 261111-mlj | Close Phase 10 WR-03: multi-get --max-bytes UTF-8 byte-budget truncation (CJK/emoji regression tests + ledger closure; open 21->20) | 2026-11-11 | f1eeace | [261111-mlj-next-phase-10-item-address-the-smallest-](./quick/261111-mlj-next-phase-10-item-address-the-smallest-/) |
 | 261111-nj0 | Close Phase 10 WR-04: ls subpath collection-relative segment-aligned filter (regression tests + ledger closure; open 20->19) | 2026-11-11 | 68f4101 | [261111-nj0-next-phase-10-item-address-the-smallest-](./quick/261111-nj0-next-phase-10-item-address-the-smallest-/) |
 | 261111-o6y | Fix 60 FORCE_COLOR=1 test failures: color-env-hermetic pytest suite (conftest import-time scrub + autouse fixture; dual-regime full-suite gates green, 1514 passed / 95.02% cov) | 2026-11-11 | 6522663 | [261111-o6y-find-and-fix-failing-tests-run-the-quali](./quick/261111-o6y-find-and-fix-failing-tests-run-the-quali/) |
+| 261111-pqy | Close Phase 10 WR-05: collection ls subpath collection-relative segment-aligned filter (regression tests + ledger closure; open 19->18) | 2026-11-11 | 1ac9f24 | [261111-pqy-next-phase-10-item-address-the-smallest-](./quick/261111-pqy-next-phase-10-item-address-the-smallest-/) |
 
 ### Overrides
 
@@ -204,7 +205,7 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 ## Session Continuity
 
 Last session: 2026-11-11T08:14:36Z
-Stopped at: Quick 261111-nj0 complete — Phase 10 WR-04 closed (ls subpath collection-relative segment-aligned filter); ledger open 19/22
+Stopped at: Quick 261111-pqy complete — Phase 10 WR-05 closed (collection ls subpath collection-relative segment-aligned filter); ledger open 18/22
 Resume file: .planning/.continue-here.md (pause record retained)
 
-- **Next expected action:** `/gsd-quick` — next Phase 10 WR item (ledger 19/22 open; re-assess candidates live: WR-02/06 stale, WR-08 convention-conflicting, WR-01/07/09 broader; WR-05 may be unblocked now that WR-04 is fixed); or `/gsd-complete-milestone v1.1` (all 6 phases complete and verified; milestone ready to archive)
+- **Next expected action:** `/gsd-quick` — next Phase 10 WR item (ledger 18/22 open; re-assess candidates live: WR-01/07/09 broader, WR-02/06 stale pending triage, WR-08 convention-conflicting); or `/gsd-complete-milestone v1.1` (all 6 phases complete and verified; milestone ready to archive)
