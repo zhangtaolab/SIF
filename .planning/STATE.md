@@ -5,10 +5,10 @@ milestone_name: Live Index and Search Quality
 current_phase: 11
 status: completed
 stopped_at: Phase 11 complete — all phases complete
-last_updated: "2026-11-11T07:12:29.580Z"
+last_updated: "2026-11-11T07:42:41.935Z"
 last_activity: 2026-11-11
 last_activity_desc: Phase 11 complete
-state_head: c018a6837b5e75ac114898cb883ca25bfd3ef59f
+state_head: 486fc59d124a2d86b8146c9d9637170473d985e9
 progress:
   total_phases: 6
   completed_phases: 6
@@ -32,7 +32,7 @@ progress:
 Phase: 11
 Plan: Not started
 Status: All phases complete
-Last activity: 2026-11-11 - Completed quick task 261111-kn2: Fix phase 13 idle-checkpoint ResourceWarnings and close the stale phase 16 deferred audit item
+Last activity: 2026-11-11 - Completed quick task 261111-l7p: Correct Phase 10 WR-10 embedding-dimension mismatch recovery guidance
 
 Progress: [██████████] 100%
 
@@ -193,6 +193,7 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 | 261107-cdh | Fix README.md install typo: docdocsif -> docsif in extras install command | 2026-11-07 | ef8edc2 | [261107-cdh-fix-readme-md-install-typo-docdocsif-doc](./quick/261107-cdh-fix-readme-md-install-typo-docdocsif-doc/) |
 | 261107-f5t | Bump version to 1.0.1 (release docsif 1.0.1: typo fixes + parser checksum fix since v1.0) | 2026-11-07 | c4088ca | [261107-f5t-bump-version-to-1-0-1-release-docsif-1-0](./quick/261107-f5t-bump-version-to-1-0-1-release-docsif-1-0/) |
 | 261111-kn2 | Fix phase 13 idle-checkpoint ResourceWarnings and close the stale phase 16 deferred audit item | 2026-11-11 | c018a68 | [261111-kn2-fix-phase-13-idle-checkpoint-resourcewar](./quick/261111-kn2-fix-phase-13-idle-checkpoint-resourcewar/) |
+| 261111-l7p | Correct Phase 10 WR-10 embedding-dimension mismatch recovery guidance | 2026-11-11 | 486fc59 | [261111-l7p-address-the-smallest-safe-well-scoped-op](./quick/261111-l7p-address-the-smallest-safe-well-scoped-op/) |
 
 ### Overrides
 
