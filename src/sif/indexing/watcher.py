@@ -451,10 +451,19 @@ class FileWatcher:
             observer.unschedule(handle)
 
     def stop(self, *, flush: bool = True) -> None:
-        """Stop intake, drain queued work once (bounded), and join threads.
+        """Stop intake, drain queued work once (count-bounded), and join threads.
 
         Args:
             flush: When True, run every job already queued at stop time.
+
+        The flush bound is a COUNT bound — every job already queued at stop
+        time, dequeued without blocking — not a time bound: once the worker
+        join has quiesced, each flushed job runs on the stop-caller's thread
+        and at embed depth may legitimately take unbounded time there (the
+        lazy first-use ``manager.load_model()``, or a ``lock_timeout``-long
+        flock wait per job). The hosts' second-signal escapes (CLI exit 130,
+        daemon SIGKILL fallback) are the time-bounded way out of a stuck
+        flush.
         """
         logger.info("Stopping file watcher (flush=%s)", flush)
         # Quiesce the worker BEFORE touching worker-owned state (Pitfall 6):
@@ -852,7 +861,15 @@ class FileWatcher:
         return doc is not None and doc.checksum != before.get(str(path))
 
     def _drain_once(self) -> None:
-        """Run every job already queued at call time (bounded, no waiting)."""
+        """Run every job already queued at call time (count-bounded, no waiting).
+
+        Count-bounded and non-blocking on dequeue only — NOT time-bounded:
+        at embed depth a flushed job can trigger the lazy first-use model
+        load or wait out ``lock_timeout`` on the per-DB flock, all on the
+        calling thread (the stop path's caller). A flush that outruns the
+        caller's patience is the hosts' second-signal escape hatch, not a
+        hang bug.
+        """
         while True:
             try:
                 job = self._queue.get_nowait()
