@@ -692,8 +692,10 @@ class FileWatcher:
 
         A job that completed within the re-stat window means the writer was
         recently active — not idle — so the checkpoint waits a full interval.
-        A busy result row means another connection holds the WAL: skip
-        silently, never log per tick (Pitfall 7).
+        A busy result row means another connection holds the WAL: nothing to
+        do here — the deadline reset in :meth:`_checkpoint_if_due` is what
+        postpones the retry to the next interval, surfaced at debug only,
+        never as a per-tick warning (Pitfall 7).
         """
         last_job = self._last_job_at
         if last_job is not None and (now - last_job) < self._config.restat_interval:
@@ -704,7 +706,10 @@ class FileWatcher:
             logger.warning("Idle WAL checkpoint failed: %s", e)
             return
         if row is not None and row[0]:
-            return
+            # Busy: another connection holds the WAL. The retry is postponed
+            # by the caller's deadline reset, not by anything done here —
+            # debug only, so a busy-but-healthy watcher never spams the log.
+            logger.debug("Idle WAL checkpoint busy (WAL held elsewhere); retrying next interval")
 
     def _settled_callback(self, collection: Collection) -> SettledCallback:
         """Build the debouncer callback for one collection.
