@@ -98,6 +98,7 @@ Settings are defined in `src/sif/config/settings.py` using Pydantic Settings. En
 - CLI commands raise `click.ClickException(str(e))` for user-facing errors.
 - Database transactions use `Database.transaction()` context manager with automatic rollback on exception.
 - `HybridSearcher.search()` fails fast on vector errors: embedder/vector exceptions propagate uncaught. BM25-only results are returned only when vector search yields zero results (a no-results path, not failure handling).
+- The MCP `SearchBackend` boundary is the one carve-out: when the sqlite-vec extension is unavailable (`VectorSearcher` construction raises `RuntimeError`), `hybrid_search` degrades to BM25-only with a one-time warning, consistent with its embedder-failure degradation at init; the core `HybridSearcher.search()` remains fail-fast.
 
 ### Code Style
 
