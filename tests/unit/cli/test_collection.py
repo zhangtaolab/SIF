@@ -41,6 +41,16 @@ class TestCollectionRealDatabase:
         (notes / "projects" / "roadmap.md").write_text("# Roadmap\n", encoding="utf-8")
         return notes
 
+    @pytest.fixture
+    def sibling_notes_dir(self, tmp_path: Path) -> Path:
+        """A real collection root with sibling python/ and python2/ subtrees."""
+        notes = tmp_path / "notes"
+        (notes / "python").mkdir(parents=True)
+        (notes / "python2").mkdir(parents=True)
+        (notes / "python" / "a.md").write_text("# A\n", encoding="utf-8")
+        (notes / "python2" / "b.md").write_text("# B\n", encoding="utf-8")
+        return notes
+
     def _invoke(self, db_path: Path, *args: str, stdin: str | None = None) -> Result:
         """Invoke the top-level CLI with every database confined to tmp_path."""
         return CliRunner().invoke(
@@ -219,6 +229,72 @@ class TestCollectionRealDatabase:
         assert "projects/roadmap.md" in listed.output
         assert empty.exit_code == 0, empty.output
         assert "No files found in collection." in empty.output
+
+    def test_ls_subpath_is_segment_aligned(
+        self, tmp_path: Path, sibling_notes_dir: Path
+    ) -> None:
+        """WR-05: a relative subpath lists its own subtree, never a sibling prefix."""
+        db_path = tmp_path / "sif.db"
+        self._seed(db_path, "notes", sibling_notes_dir)
+
+        filtered = self._invoke(db_path, "ls", "notes", "python")
+        unfiltered = self._invoke(db_path, "ls", "notes")
+
+        assert filtered.exit_code == 0, filtered.output
+        assert "python/a.md" in filtered.output
+        assert "b.md" not in filtered.output
+        assert unfiltered.exit_code == 0, unfiltered.output
+        assert "python/a.md" in unfiltered.output
+        assert "python2/b.md" in unfiltered.output
+
+    def test_ls_subpath_absolute_is_segment_aligned(
+        self, tmp_path: Path, sibling_notes_dir: Path
+    ) -> None:
+        """An absolute subpath selects the same subtree as the relative form."""
+        db_path = tmp_path / "sif.db"
+        self._seed(db_path, "notes", sibling_notes_dir)
+
+        result = self._invoke(db_path, "ls", "notes", str(sibling_notes_dir / "python"))
+
+        assert result.exit_code == 0, result.output
+        assert "python/a.md" in result.output
+        assert "b.md" not in result.output
+
+    def test_ls_subpath_exact_file(self, tmp_path: Path, sibling_notes_dir: Path) -> None:
+        """An exact-file subpath selects that single file."""
+        db_path = tmp_path / "sif.db"
+        self._seed(db_path, "notes", sibling_notes_dir)
+
+        result = self._invoke(db_path, "ls", "notes", "python/a.md")
+
+        assert result.exit_code == 0, result.output
+        assert "python/a.md" in result.output
+        assert "b.md" not in result.output
+
+    def test_ls_subpath_trailing_slash(self, tmp_path: Path, sibling_notes_dir: Path) -> None:
+        """A trailing-slash subpath selects the same file as the bare form."""
+        db_path = tmp_path / "sif.db"
+        self._seed(db_path, "notes", sibling_notes_dir)
+
+        result = self._invoke(db_path, "ls", "notes", "python/")
+
+        assert result.exit_code == 0, result.output
+        assert "python/a.md" in result.output
+        assert "b.md" not in result.output
+
+    def test_ls_subpath_no_match_reports_no_files(
+        self, tmp_path: Path, sibling_notes_dir: Path
+    ) -> None:
+        """A subpath matching nothing exits 0 with the existing no-files message."""
+        db_path = tmp_path / "sif.db"
+        self._seed(db_path, "notes", sibling_notes_dir)
+
+        result = self._invoke(db_path, "ls", "notes", "missing")
+
+        assert result.exit_code == 0, result.output
+        assert "No files found in collection." in result.output
+        assert "a.md" not in result.output
+        assert "b.md" not in result.output
 
     def test_list_missing_empty_and_verbose(self, tmp_path: Path, notes_dir: Path) -> None:
         """List handles absent and empty indexes plus verbose collection details."""
