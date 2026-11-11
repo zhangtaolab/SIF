@@ -370,7 +370,9 @@ class SchemaManager:
                     raise RuntimeError(
                         f"Embedding dimension mismatch: database has FLOAT[{existing_dim}], "
                         f"but settings require FLOAT[{self.embedding_dim}]. "
-                        f"Rebuild the index with 'sif cleanup' or delete the database file.",
+                        f"Restore the model and SIF_EMBEDDING_DIM that match "
+                        f"FLOAT[{existing_dim}], or delete the database file "
+                        "and rebuild the index.",
                     )
 
         self.db.execute(f"""
