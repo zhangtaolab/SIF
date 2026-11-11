@@ -11,6 +11,7 @@ from __future__ import annotations
 import io
 import logging
 import sys
+from collections.abc import Generator
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -73,6 +74,42 @@ def _seed_collections(db_path: Path, *names: str) -> None:
                 (root / "a.md").write_text(BODY, encoding="utf-8")
                 CollectionRepository(db.connection).create(Collection(name=name, path=str(root)))
     db.close()
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_sif_logging() -> Generator[None, None, None]:
+    """Isolate this module from leaked sif logger state (deferred D-1).
+
+    The real cli group callback runs setup_logging, which leaves the ``sif``
+    logger with propagate=False, a stderr StreamHandler, and a raised level.
+    caplog's capture handler sits on the ROOT logger, so that wall stops the
+    shutdown WARNING emitted by sif.cli.commands.watch before it ever reaches
+    caplog (three predecessor files leak: test_collection, test_get, test_main).
+    Test-side isolation only — snapshot, normalize, and restore the sif logger
+    chain; the root logger is left to pytest's logging plugin. No production
+    logging behavior changes.
+    """
+    chain = [
+        logging.getLogger(name)
+        for name in ("sif", "sif.cli", "sif.cli.commands", "sif.cli.commands.watch")
+    ]
+    snapshots = [(lg, lg.level, lg.propagate, lg.disabled, list(lg.handlers)) for lg in chain]
+    manager_disable = logging.Logger.manager.disable
+    for lg in chain:
+        lg.setLevel(logging.NOTSET)
+        lg.propagate = True
+        lg.disabled = False
+        lg.handlers = []
+    logging.Logger.manager.disable = logging.NOTSET
+    try:
+        yield
+    finally:
+        for lg, level, propagate, disabled, handlers in snapshots:
+            lg.setLevel(level)
+            lg.propagate = propagate
+            lg.disabled = disabled
+            lg.handlers = handlers
+        logging.Logger.manager.disable = manager_disable
 
 
 class TestHelpSurface:
