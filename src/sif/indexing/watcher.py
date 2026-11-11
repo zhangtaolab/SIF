@@ -11,6 +11,7 @@ the worker's idle wait doubles as the D-12 missing-root re-stat loop.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import queue
 import re
@@ -437,6 +438,20 @@ class FileWatcher:
         debouncer.start()
         return True
 
+    @staticmethod
+    def _unschedule_quietly(observer: BaseObserver, handle: ObservedWatch) -> None:
+        """Unschedule one watch, tolerating a registry already cleared by stop().
+
+        ``BaseObserver.unschedule`` indexes its watch->emitter map directly
+        and raises ``KeyError`` when ``observer.stop()`` (which synchronously
+        unschedules everything) cleared the registration while a tick was
+        already in flight — the worker checks the stop flag only at the loop
+        top. The watch is already gone, so the miss is a no-op for THIS root,
+        never a tick failure that would skip the tick's remaining roots.
+        """
+        with contextlib.suppress(KeyError):
+            observer.unschedule(handle)
+
     def stop(self, *, flush: bool = True) -> None:
         """Stop intake, drain queued work once (bounded), and join threads.
 
@@ -512,7 +527,7 @@ class FileWatcher:
                     state.collection.name,
                 )
                 if state.handle is not None:
-                    observer.unschedule(state.handle)
+                    self._unschedule_quietly(observer, state.handle)
                     state.handle = None
                 if state.debouncer is not None:
                     # The watch handle is gone, so no further events can
@@ -570,7 +585,7 @@ class FileWatcher:
             if name in wanted:
                 continue
             if state.handle is not None:
-                observer.unschedule(state.handle)
+                self._unschedule_quietly(observer, state.handle)
                 state.handle = None
             if state.debouncer is not None:
                 state.debouncer.stop()
@@ -711,7 +726,13 @@ class FileWatcher:
             try:
                 job = self._queue.get(timeout=self._config.restat_interval)
             except queue.Empty:
-                self._on_tick()
+                try:
+                    self._on_tick()
+                except Exception:
+                    # One tick failure must never kill the worker thread: the
+                    # host banner still says "Watching" while nothing consumes
+                    # the queue — log and keep the next interval coming.
+                    logger.exception("watch tick failed; continuing next interval")
                 continue
             if job is None:
                 # stop() sentinel: wake immediately instead of parking for
