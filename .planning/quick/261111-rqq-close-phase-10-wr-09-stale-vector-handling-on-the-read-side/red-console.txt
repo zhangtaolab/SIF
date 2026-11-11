@@ -1,0 +1,108 @@
+...............FF......F..........                                       [100%]
+=================================== FAILURES ===================================
+___________ TestLLMCacheExpiryWR09.test_set_stores_aware_utc_expiry ____________
+
+self = <tests.unit.database.test_repositories.TestLLMCacheExpiryWR09 object at 0x10d87cf50>
+db = <sqlite3.Connection object at 0x116fef970>, east_of_utc = None
+
+    def test_set_stores_aware_utc_expiry(self, db, east_of_utc):
+        """set() writes an aware-UTC (+00:00) expiry at the correct instant."""
+        repo = LLMCacheRepository(db)
+        repo.set("model", "hash", "prompt", "response", ttl_seconds=3600)
+    
+        value = db.execute(
+            "SELECT expires_at FROM llm_cache WHERE prompt_hash = 'hash'"
+        ).fetchone()["expires_at"]
+    
+>       assert value.endswith("+00:00")
+E       AssertionError: assert False
+E        +  where False = <built-in method endswith of str object at 0x1170ed160>('+00:00')
+E        +    where <built-in method endswith of str object at 0x1170ed160> = '2026-11-11T21:35:21.114062'.endswith
+
+tests/unit/database/test_repositories.py:520: AssertionError
+_ TestLLMCacheExpiryWR09.test_clear_expired_removes_legacy_naive_local_expired_row _
+
+self = <tests.unit.database.test_repositories.TestLLMCacheExpiryWR09 object at 0x10d87d090>
+db = <sqlite3.Connection object at 0x116feff10>, east_of_utc = None
+
+    @pytest.mark.skipif(not hasattr(time, "tzset"), reason="tzset unavailable")
+    def test_clear_expired_removes_legacy_naive_local_expired_row(self, db, east_of_utc):
+        """Legacy naive-local rows expire by instant east of UTC (WR-09 read side).
+    
+        The rows use the exact naive-local form the old ``set`` writer
+        produced; lexicographic order puts their wall time ahead of the
+        aware-UTC now string, so the old predicate kept the expired row.
+        """
+        now = datetime.now(timezone.utc)
+        for row_id, instant in (
+            ("legacy-expired", (now - timedelta(hours=1)).timestamp()),
+            ("legacy-fresh", (now + timedelta(hours=1)).timestamp()),
+        ):
+            db.execute(
+                "INSERT INTO llm_cache "
+                "(id, model_name, prompt_hash, prompt, response, created_at, expires_at) "
+                "VALUES (?, 'm', ?, 'p', 'r', ?, ?)",
+                (
+                    row_id,
+                    f"hash-{row_id}",
+                    now.isoformat(),
+                    datetime.fromtimestamp(instant).isoformat(),
+                ),
+            )
+    
+        repo = LLMCacheRepository(db)
+>       assert repo.clear_expired() == 1
+E       assert 0 == 1
+E        +  where 0 = clear_expired()
+E        +    where clear_expired = <sif.database.repositories.LLMCacheRepository object at 0x1170920d0>.clear_expired
+
+tests/unit/database/test_repositories.py:552: AssertionError
+_ TestCleanupRealDatabase.test_cleanup_removes_legacy_naive_local_expired_cache _
+
+self = <tests.unit.cli.test_main.TestCleanupRealDatabase object at 0x1101576f0>
+tmp_path = PosixPath('/private/var/folders/1q/2qhztsp1673fnqgrpblxnpd40000gn/T/pytest-of-forrest/pytest-407/test_cleanup_removes_legacy_na0')
+east_of_utc = None
+
+    @pytest.mark.skipif(not hasattr(time, "tzset"), reason="tzset unavailable")
+    def test_cleanup_removes_legacy_naive_local_expired_cache(
+        self, tmp_path: Path, east_of_utc
+    ) -> None:
+        """WR-09: cleanup deletes legacy naive-local expired rows east of UTC.
+    
+        The seeded rows use the exact naive-local form the old ``set`` writer
+        produced; the old lexicographic DELETE kept the expired row and
+        reported 0 removed. The seeded document/chunk must survive.
+        """
+        db_path = tmp_path / "sif.db"
+        self._seed_document(db_path)
+        now = datetime.now(timezone.utc)
+        with Database(db_path) as db, db.transaction() as conn:
+            for cache_id, instant in (
+                ("legacy-expired", (now - timedelta(hours=1)).timestamp()),
+                ("legacy-fresh", (now + timedelta(hours=1)).timestamp()),
+            ):
+                conn.execute(
+                    "INSERT INTO llm_cache "
+                    "(id, model_name, prompt_hash, prompt, response, created_at, expires_at) "
+                    "VALUES (?, 'test-model', ?, 'prompt', 'response', ?, ?)",
+                    (
+                        cache_id,
+                        f"hash-{cache_id}",
+                        now.isoformat(),
+                        datetime.fromtimestamp(instant).isoformat(),
+                    ),
+                )
+    
+        result = self._invoke(db_path, "cleanup", confirm=True)
+    
+        assert result.exit_code == 0, result.output
+>       assert "Removed 1 expired cache entries" in result.output
+E       AssertionError: assert 'Removed 1 expired cache entries' in 'Are you sure you want to clean up the index? [y/N]: y\nCleanup complete:\n  - Removed 0 orphaned chunks\n  - Removed 0 orphaned embeddings\n  - Removed 0 expired cache entries\n'
+E        +  where 'Are you sure you want to clean up the index? [y/N]: y\nCleanup complete:\n  - Removed 0 orphaned chunks\n  - Removed 0 orphaned embeddings\n  - Removed 0 expired cache entries\n' = <Result okay>.output
+
+tests/unit/cli/test_main.py:250: AssertionError
+=========================== short test summary info ============================
+FAILED tests/unit/database/test_repositories.py::TestLLMCacheExpiryWR09::test_set_stores_aware_utc_expiry
+FAILED tests/unit/database/test_repositories.py::TestLLMCacheExpiryWR09::test_clear_expired_removes_legacy_naive_local_expired_row
+FAILED tests/unit/cli/test_main.py::TestCleanupRealDatabase::test_cleanup_removes_legacy_naive_local_expired_cache
+3 failed, 31 passed in 0.77s
