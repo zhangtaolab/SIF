@@ -69,7 +69,7 @@ findings:
     title: "`status_cmd` fallback calls `get_settings()` without the ValidationError guard used elsewhere"
   - id: IN-07
     severity: info
-    disposition: open
+    disposition: fixed
     title: "Inconsistent embedding-dim resolution across commands — 384 magic fallback and per-query probe"
   - id: IN-08
     severity: info
@@ -91,7 +91,7 @@ findings:
     severity: critical
     disposition: fixed
     title: "XML-forbidden control characters not stripped in cli/commands/search.py:104-121 — title containing \\x0b produces non-well-formed XML"
-open: 2
+open: 1
 total: 22
 recorded: 2026-11-06T12:37:58.492Z
 ---
@@ -116,7 +116,7 @@ recorded: 2026-11-06T12:37:58.492Z
 | IN-04 | info | fixed | quick 261111-v50 (deleted the three dead output-time quiet recomputations in search_cmd/vsearch_cmd/query_cmd; entry computations preserved; existing output/format tests green) |
 | IN-05 | info | fixed | quick 261111-wh9 (user-decided removal of the no-op global --config option: decorator, cli parameter, ctx.obj config_path entry, and DEFAULT_CONFIG_PATH constant deleted from main.py; cli-reference.md regenerated via make docs-generate; option-rejection regression tests red-to-green) |
 | IN-06 | info | fixed | quick 261111-tiq (status_cmd index_path-None fallback wrapped in the _get_default_db_path ValidationError-to-ClickException guard; invalid-env regression test red-to-green) |
-| IN-07 | info | open | - |
+| IN-07 | info | fixed | quick 261111-wha (query_cmd and bench _load_embedder prefer get_model_info embedding_dim with probe fallback; bench load failure uses settings.embedding_dim; probe-avoidance regression tests red-to-green) |
 | IN-08 | info | fixed | quick 261111-rqp (disk-fallback read_text pinned to explicit UTF-8 encoding plus read_text-contract regression test) |
 | IN-09 | info | fixed | quick 261111-tis (api-reference database examples expand the tilde via pathlib before opening the DB; Complete Search Example plus the identical DatabaseConnection and SearchBackend usage patterns) |
 | IN-10 | info | fixed | quick 261111-tir (backend fixture and direct constructions use tmp_path-scoped DB paths; sentinel-verified no shared /tmp database creation) |
