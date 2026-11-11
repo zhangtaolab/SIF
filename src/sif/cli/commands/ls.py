@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import click
 from rich.console import Console
 from rich.tree import Tree
@@ -49,8 +51,10 @@ def ls_cmd(
 
                 docs = doc_repo.list_by_collection(coll.id)
                 if subpath:
-                    prefix = subpath.strip("/")
-                    docs = [d for d in docs if d.path.strip("/").startswith(prefix)]
+                    sub = Path(subpath)
+                    resolved = sub if sub.is_absolute() else Path(coll.path) / sub
+                    target = str(resolved).rstrip("/")
+                    docs = [d for d in docs if d.path == target or d.path.startswith(target + "/")]
 
                 if not docs:
                     continue
