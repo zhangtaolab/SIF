@@ -6,11 +6,23 @@ findings:
   - id: WR-01
     severity: warning
     disposition: open
-    title: "FileWatcher leaks/orphans observers in multi-collection use — stop() is ineffective per collection"
+    title: "Worker tick is not exception-guarded — one tick exception permanently kills live indexing"
   - id: WR-02
     severity: warning
     disposition: open
-    title: "DatabaseConnection.execute()/executemany() return a cursor from an already-closed connection"
+    title: "stop() mutates and iterates worker-owned state before quiescing the worker — races the rescope diff"
+  - id: IN-01
+    severity: info
+    disposition: open
+    title: "Inert busy-check branch in _checkpoint_if_idle (dead code that implies behavior it does not have)"
+  - id: IN-02
+    severity: info
+    disposition: open
+    title: "WAL-checkpoint PRAGMA constant triplicated across modules"
+  - id: IN-03
+    severity: info
+    disposition: open
+    title: "\"Bounded\" stop flush is not time-bounded at embed depth"
   - id: WR-03
     severity: warning
     disposition: open
@@ -19,18 +31,6 @@ findings:
     severity: warning
     disposition: open
     title: "Impossible-state guard — `if not coll: continue` in both collection loops"
-  - id: IN-01
-    severity: info
-    disposition: open
-    title: "Dead variable `doc_chunks_map` in embed_cmd"
-  - id: IN-02
-    severity: info
-    disposition: open
-    title: "Progress bar over-advances — the \"scan\" event both sets the total and advances"
-  - id: IN-03
-    severity: info
-    disposition: open
-    title: "Database lazy schema-init logic triplicated"
   - id: IN-04
     severity: info
     disposition: open
@@ -41,7 +41,7 @@ findings:
     title: "Valid model-type set duplicated between CLI choice list and Settings validator"
 open: 9
 total: 9
-recorded: 2026-11-07T07:13:46.338Z
+recorded: 2026-11-11T03:13:35.519Z
 ---
 
 # Phase 11: Code Review Disposition
@@ -50,13 +50,13 @@ recorded: 2026-11-07T07:13:46.338Z
 |---------|----------|-------------|--------|
 | WR-01 | warning | open | - |
 | WR-02 | warning | open | - |
-| WR-03 | warning | open | - |
-| WR-04 | warning | open | - |
 | IN-01 | info | open | - |
 | IN-02 | info | open | - |
 | IN-03 | info | open | - |
-| IN-04 | info | open | - |
-| IN-05 | info | open | - |
+| WR-03 | warning | open | - (not in the current review) |
+| WR-04 | warning | open | - (not in the current review) |
+| IN-04 | info | open | - (not in the current review) |
+| IN-05 | info | open | - (not in the current review) |
 
 Dispositions: `open` (recorded, not yet triaged), `fixed`, `skipped`, `deferred`.
 Set `deferred` by hand and put the reason in the Source cell; both are preserved. A `|` in the reason is kept as prose and escaped on the next run.
