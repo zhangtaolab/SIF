@@ -12,6 +12,7 @@ import errno
 import logging
 import os
 import sqlite3
+import time
 from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -829,6 +830,207 @@ class TestStopFlushGate:
             assert watcher.worker_joined() is False
             watcher._worker = DoneWorker()  # type: ignore[assignment]
             assert watcher.worker_joined() is True
+        finally:
+            db.close()
+
+
+class TestConcurrencyGuardRegressions:
+    """WR-01/WR-02 regression proofs (11-REVIEW IN-04).
+
+    The committed suite drives ``_on_tick`` and the unschedule sites only
+    with the worker quiesced, so a refactor could silently revert either
+    concurrency guard without a test failing — the exact
+    silent-live-indexing-death failure mode WR-01 described. These tests
+    drive the REAL worker loop, a stop-cleared observer registry, and a
+    mid-iteration state mutation inside stop().
+    """
+
+    def test_real_worker_loop_survives_raising_tick(self, tmp_path, monkeypatch) -> None:
+        """WR-01: a raising ``_on_tick`` inside the real ``_worker_loop`` is
+        logged and absorbed — the SAME worker thread still consumes a job
+        enqueued after the failure (a killed worker leaves it queued forever
+        while the host banner still says "Watching")."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "watch.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        (notes / "a.md").write_text(BODY_ALPHA, encoding="utf-8")
+        _seed_collection(db_path, notes)
+
+        tick_failures: list[int] = []
+        batches: list[IncrementalResult] = []
+
+        def raising_tick() -> None:
+            tick_failures.append(1)
+            raise RuntimeError("tick exploded")
+
+        observer_cls = MagicMock()
+        monkeypatch.setattr(watcher_module, "Observer", observer_cls)
+
+        db = Database(db_path)
+        watcher = None
+        try:
+            from sif.database.repositories import CollectionRepository
+
+            coll = CollectionRepository(db.connection).get_by_name("notes")
+            assert coll is not None
+            watcher = FileWatcher(
+                [coll],
+                db.connection,
+                db_path,
+                WatchConfig(
+                    restat_interval=0.05,
+                    on_batch=lambda _coll, result: batches.append(result),
+                ),
+            )
+            monkeypatch.setattr(watcher, "_on_tick", raising_tick)
+            watcher.start()  # the REAL _worker_loop thread runs
+
+            # The idle wait times out fast (restat_interval=0.05), so the
+            # raising tick fires within a bounded wait.
+            deadline = time.monotonic() + 5.0
+            while not tick_failures and time.monotonic() < deadline:
+                time.sleep(0.01)
+            assert tick_failures, "the raising tick never ran"
+
+            watcher._queue.put((coll, FoldResult(needs_reconcile=True)))
+            deadline = time.monotonic() + 10.0
+            while not batches and time.monotonic() < deadline:
+                time.sleep(0.01)
+            assert batches, "worker died on the raising tick: later job never ran"
+        finally:
+            if watcher is not None:
+                watcher.stop(flush=False)
+            db.close()
+
+    def test_recovery_tick_tolerates_stop_cleared_observer_registry(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """WR-01: ``observer.stop()`` clears the watch registry, so a tick
+        already in flight hits ``KeyError`` at unschedule — the suppression
+        must swallow it per root and the tick must keep processing the
+        remaining roots (a bare unschedule aborts the whole pass)."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "watch.db"
+        alpha = tmp_path / "alpha"
+        beta = tmp_path / "beta"
+        alpha.mkdir()
+        beta.mkdir()
+        (alpha / "a.md").write_text(BODY_ALPHA, encoding="utf-8")
+        (beta / "b.md").write_text(BODY_BETA, encoding="utf-8")
+        _seed_collections(db_path, {"alpha": alpha, "beta": beta})
+
+        observer_cls = MagicMock()
+        monkeypatch.setattr(watcher_module, "Observer", observer_cls)
+        # What a stop()-cleared registry does at every unschedule attempt.
+        observer_cls.return_value.unschedule.side_effect = KeyError
+
+        db = Database(db_path)
+        watcher = None
+        try:
+            from sif.database.repositories import CollectionRepository
+
+            repo = CollectionRepository(db.connection)
+            coll_a = repo.get_by_name("alpha")
+            coll_b = repo.get_by_name("beta")
+            assert coll_a is not None
+            assert coll_b is not None
+            watcher = FileWatcher([coll_a, coll_b], db.connection, db_path)
+            monkeypatch.setattr(watcher, "_worker_loop", lambda: None)
+            watcher.start()
+            observer = observer_cls.return_value
+
+            # Both roots disappear while the registry is already cleared:
+            # recovery_tick must not raise, and the SECOND root (iteration
+            # continues past alpha's KeyError) must be processed too.
+            alpha.rename(tmp_path / "alpha-gone")
+            beta.rename(tmp_path / "beta-gone")
+            watcher.recovery_tick()
+
+            assert observer.unschedule.call_count == 2
+            assert watcher._watch_states["alpha"].missing is True
+            assert watcher._watch_states["beta"].missing is True
+            assert watcher._watch_states["alpha"].handle is None
+            assert watcher._watch_states["beta"].handle is None
+            # Documents are never touched by a recovery pass.
+            assert _doc_paths(db_path) == {
+                str(alpha / "a.md"),
+                str(beta / "b.md"),
+            }
+        finally:
+            if watcher is not None:
+                watcher.stop(flush=False)
+            db.close()
+
+    def test_stop_quiesces_worker_and_snapshot_survives_mid_iteration_mutation(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """WR-02: stop() joins the worker before touching worker-owned state,
+        and its ``_watch_states`` loops walk ``list()`` snapshots — a mutation
+        landing mid-iteration (the timed-out-join edge: a late tick still
+        mutating the dict) must not raise "dictionary changed size during
+        iteration" out of stop() into the host's shutdown path."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "watch.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        (notes / "a.md").write_text(BODY_ALPHA, encoding="utf-8")
+        _seed_collection(db_path, notes)
+
+        calls: list[str] = []
+
+        class RecordingWorker:
+            def join(self, timeout: float | None = None) -> None:  # noqa: ARG002
+                calls.append("worker.join")
+
+            def is_alive(self) -> bool:
+                return False
+
+        class RecordingObserver:
+            def stop(self) -> None:
+                calls.append("observer.stop")
+
+            def join(self, timeout: float | None = None) -> None:  # noqa: ARG002
+                calls.append("observer.join")
+
+        db = Database(db_path)
+        watcher = None
+        try:
+            from sif.database.repositories import CollectionRepository
+
+            coll = CollectionRepository(db.connection).get_by_name("notes")
+            assert coll is not None
+            watcher = FileWatcher([coll], db.connection, db_path)
+
+            alpha_state = watcher_module._WatchState(collection=coll, root=notes)
+            beta_state = watcher_module._WatchState(collection=coll, root=notes)
+            alpha_state.debouncer = MagicMock()
+            beta_state.debouncer = MagicMock()
+
+            def mutate_registry_mid_iteration() -> None:
+                calls.append("debouncer.stop:alpha")
+                # Direct dict iteration would raise RuntimeError here.
+                watcher._watch_states.pop("beta", None)
+
+            alpha_state.debouncer.stop.side_effect = mutate_registry_mid_iteration
+            beta_state.debouncer.stop.side_effect = lambda: calls.append("debouncer.stop:beta")
+            watcher._watch_states["alpha"] = alpha_state
+            watcher._watch_states["beta"] = beta_state
+            watcher._observer = RecordingObserver()  # type: ignore[assignment]
+            watcher._worker = RecordingWorker()  # type: ignore[assignment]
+            monkeypatch.setattr(watcher, "_drain_once", lambda: calls.append("drain"))
+
+            watcher.stop(flush=True)  # must not raise despite the mutation
+
+            # Worker quiesced before ANY worker-owned state was touched.
+            assert calls.index("worker.join") < calls.index("observer.stop")
+            assert calls.index("worker.join") < calls.index("debouncer.stop:alpha")
+            # The snapshot still walked BOTH states although alpha's teardown
+            # deleted beta mid-loop; intake is fully stopped before the flush,
+            # and the final observer join follows the flush.
+            assert "debouncer.stop:beta" in calls
+            assert calls.index("debouncer.stop:beta") < calls.index("drain")
+            assert calls.index("drain") < calls.index("observer.join")
         finally:
             db.close()
 
