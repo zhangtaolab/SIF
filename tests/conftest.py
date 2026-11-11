@@ -1,6 +1,7 @@
 """Shared pytest fixtures for SIF tests."""
 
 import hashlib
+import os
 
 # Add src to path for imports
 import sys
@@ -21,6 +22,33 @@ from sif.core.context import Context, ContextType
 from sif.core.document import Document, DocumentChunk, DocumentMetadata
 from sif.database.connection import DatabaseConnection
 from sif.models.search import SearchOptions, SearchResult
+
+
+# Scrub ambient color-forcing env vars BEFORE any test module imports sif.cli: every
+# sif.cli module builds module-level Rich Console() objects at import time, and Rich 15
+# caches _color_system at construction; scrubbing after construction cannot undo ambient
+# color forcing. The sif imports above load only core/database/model modules (no sif.cli,
+# no Console construction), so this scrub still precedes every Console construction.
+_COLOR_ENV_VARS = ("FORCE_COLOR", "CLICOLOR_FORCE", "NO_COLOR", "PY_COLORS", "TTY_COMPATIBLE")
+for name in _COLOR_ENV_VARS:
+    os.environ.pop(name, None)
+
+
+# =============================================================================
+# Environment Isolation
+# =============================================================================
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_color_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep every test's color environment at the known-green baseline.
+
+    Scrubs all five forcing vars per test so Click's call-time
+    CLICOLOR_FORCE/NO_COLOR reads and subprocess child envs copied from
+    os.environ never see ambient color forcing.
+    """
+    for var in _COLOR_ENV_VARS:
+        monkeypatch.delenv(var, raising=False)
 
 
 # =============================================================================
