@@ -548,7 +548,7 @@ class LLMCacheRepository:
         expires_at = None
         if ttl_seconds:
             expires_at = datetime.now(timezone.utc).timestamp() + ttl_seconds
-            expires_at = datetime.fromtimestamp(expires_at).isoformat()
+            expires_at = datetime.fromtimestamp(expires_at, tz=timezone.utc).isoformat()
 
         self.db.execute(
             """
@@ -568,10 +568,34 @@ class LLMCacheRepository:
         )
 
     def clear_expired(self) -> int:
-        """Clear expired cache entries."""
+        """Clear expired cache entries by parsed datetime (WR-09).
+
+        Expiry is compared as instants, never as ISO string order. Legacy
+        naive-local ``expires_at`` strings (the old ``set`` writer's
+        ``datetime.fromtimestamp`` form) are interpreted as system-local time
+        via ``astimezone`` — the exact semantics of that writer; aware values
+        convert losslessly. Rows with NULL or unparseable expiries are
+        retained: cleanup never deletes a row whose expiry it cannot interpret.
+        """
+        now = datetime.now(timezone.utc)
         cursor = self.db.execute(
-            "DELETE FROM llm_cache WHERE expires_at IS NOT NULL AND expires_at <= ?",
-            (datetime.now(timezone.utc).isoformat(),),
+            "SELECT id, expires_at FROM llm_cache WHERE expires_at IS NOT NULL"
+        )
+        expired_ids: list[str] = []
+        for row in cursor.fetchall():
+            try:
+                expires = datetime.fromisoformat(row["expires_at"])
+            except ValueError:
+                # Cleanup never deletes a row whose expiry it cannot interpret.
+                continue
+            if expires.astimezone(timezone.utc) <= now:
+                expired_ids.append(row["id"])
+        if not expired_ids:
+            return 0
+        placeholders = ",".join("?" for _ in expired_ids)
+        cursor = self.db.execute(
+            f"DELETE FROM llm_cache WHERE id IN ({placeholders})",
+            expired_ids,
         )
         return cursor.rowcount
 

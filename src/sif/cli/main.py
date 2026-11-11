@@ -14,6 +14,7 @@ from rich.table import Table
 from sif import __version__
 from sif.config.settings import get_settings
 from sif.database.database import Database
+from sif.database.repositories import LLMCacheRepository
 from sif.search.staleness import embedded_document_ids
 from sif.utils import daemon
 from sif.utils.logging import get_logger, setup_logging
@@ -251,17 +252,8 @@ def cleanup_cmd(ctx: click.Context) -> None:
                 except sqlite3.OperationalError:
                     embeddings_removed = 0
 
-                # Clean up expired LLM cache
-                from datetime import datetime, timezone  # noqa: PLC0415
-
-                cursor = conn.execute(
-                    """
-                    DELETE FROM llm_cache
-                    WHERE expires_at IS NOT NULL AND expires_at <= ?
-                """,
-                    (datetime.now(timezone.utc).isoformat(),),
-                )
-                cache_removed = cursor.rowcount
+                # Clean up expired LLM cache (WR-09: datetime comparison in the repository)
+                cache_removed = LLMCacheRepository(conn).clear_expired()
 
             console.print("[green]Cleanup complete:[/green]")
             console.print(f"  - Removed {chunks_removed} orphaned chunks")
