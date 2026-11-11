@@ -493,7 +493,6 @@ def search_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             _record_query_history(db.connection, query, results, collections)
 
         # Output results
-        quiet = quiet or ctx.obj.get("quiet", False)
         if output_files or (quiet and not any([output_json, output_csv, output_md, output_xml])):
             for r in results:
                 click.echo(r.path)
@@ -683,7 +682,6 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             # D-08: one history row for an executed search (fail-soft).
             _record_query_history(db.connection, query, results, collections, settings=settings)
 
-        quiet = quiet or ctx.obj.get("quiet", False)
         if quiet and not output_json:
             for r in results:
                 click.echo(r.path)
@@ -947,7 +945,6 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             _record_query_history(db.connection, query, results, collections, settings=settings)
 
         # Output results
-        quiet = quiet or ctx.obj.get("quiet", False)
         if output_files or (quiet and not any([output_json, output_csv, output_md, output_xml])):
             for r in results:
                 click.echo(r.path)
