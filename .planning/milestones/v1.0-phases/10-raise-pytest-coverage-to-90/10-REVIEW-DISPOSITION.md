@@ -9,7 +9,7 @@ findings:
     title: "`collection remove` orphans vec0 embeddings — vector search pollution until `sif cleanup`"
   - id: WR-02
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "`index update` runs all collections in one implicit transaction — later failure discards earlier collections' work"
   - id: WR-03
     severity: warning
@@ -91,7 +91,7 @@ findings:
     severity: critical
     disposition: open
     title: "XML-forbidden control characters not stripped in cli/commands/search.py:104-121 — title containing \\x0b produces non-well-formed XML"
-open: 18
+open: 17
 total: 22
 recorded: 2026-11-06T12:37:58.492Z
 ---
@@ -101,7 +101,7 @@ recorded: 2026-11-06T12:37:58.492Z
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
 | WR-01 | warning | open | - |
-| WR-02 | warning | open | - |
+| WR-02 | warning | fixed | quick 261111-qlv (triage close: whole-run transaction superseded by Phase 11 IncrementalIndexer per-file BEGIN IMMEDIATE commits, D-04; staleness re-verified live with durability regression test) |
 | WR-03 | warning | fixed | quick 261111-mlj (multi-get byte-budget truncation plus regression tests) |
 | WR-04 | warning | fixed | quick 261111-nj0 (ls subpath collection-relative segment-aligned filter plus regression tests) |
 | WR-05 | warning | fixed | quick 261111-pqy (collection ls subpath collection-relative segment-aligned filter plus regression tests) |
