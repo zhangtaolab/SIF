@@ -65,7 +65,7 @@ findings:
     title: "`--config` global option is accepted, documented, and never consumed"
   - id: IN-06
     severity: info
-    disposition: open
+    disposition: fixed
     title: "`status_cmd` fallback calls `get_settings()` without the ValidationError guard used elsewhere"
   - id: IN-07
     severity: info
@@ -91,7 +91,7 @@ findings:
     severity: critical
     disposition: fixed
     title: "XML-forbidden control characters not stripped in cli/commands/search.py:104-121 — title containing \\x0b produces non-well-formed XML"
-open: 10
+open: 9
 total: 22
 recorded: 2026-11-06T12:37:58.492Z
 ---
@@ -115,7 +115,7 @@ recorded: 2026-11-06T12:37:58.492Z
 | IN-03 | info | open | - |
 | IN-04 | info | open | - |
 | IN-05 | info | open | - |
-| IN-06 | info | open | - |
+| IN-06 | info | fixed | quick 261111-tiq (status_cmd index_path-None fallback wrapped in the _get_default_db_path ValidationError-to-ClickException guard; invalid-env regression test red-to-green) |
 | IN-07 | info | open | - |
 | IN-08 | info | fixed | quick 261111-rqp (disk-fallback read_text pinned to explicit UTF-8 encoding plus read_text-contract regression test) |
 | IN-09 | info | open | - |
