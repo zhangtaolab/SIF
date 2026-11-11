@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-11-11T13:06:13.388Z",
+  "timestamp": "2026-11-11T14:13:59.291Z",
   "phase": null,
   "phase_name": "quick-task backlog (v1.1 complete; milestone ready to archive)",
   "phase_dir": null,
@@ -9,30 +9,32 @@
   "total_tasks": null,
   "status": "paused",
   "completed_tasks": [
-    {"id": "261111-pqy", "name": "Close Phase 10 WR-05: collection ls subpath segment-aligned filter", "status": "done", "commit": "cbf5e44"},
-    {"id": "261111-qlv", "name": "Close Phase 10 WR-02: triage close as fixed (IncrementalIndexer per-file BEGIN IMMEDIATE)", "status": "done", "commit": "42c931f"},
-    {"id": "261111-r2f", "name": "Close Phase 10 WR-06: bench fixture open pinned to UTF-8", "status": "done", "commit": "802c08c"},
-    {"id": "261111-rqp", "name": "Batch rqo: Close Phase 10 IN-08: get.py disk-fallback read_text UTF-8 pin", "status": "done", "commit": "7be1412"},
-    {"id": "261111-rqq", "name": "Batch rqo: Close Phase 10 WR-09: LLM cache expiry by parsed instant", "status": "done", "commit": "8f16b1e"},
-    {"id": "261111-rqr", "name": "Batch rqo: Fix deferred D-1 caplog cross-test leak (autouse sif-logger isolation fixture)", "status": "done", "commit": "a04af92"},
-    {"id": "261111-rqs", "name": "Batch rqo: Close Phase 10 WR-01: shared create_embedding_purger + vec0 purge on collection remove", "status": "done", "commit": "a43007a"}
+    {"id": "261111-tip", "name": "Batch tio: triage close IN-01 + CR-01 + CR-02 (evidence-backed, no code changes)", "status": "done", "commit": "292bf05"},
+    {"id": "261111-tiq", "name": "Batch tio: IN-06 status_cmd fallback ValidationError guard + regression test", "status": "done", "commit": "cee902a"},
+    {"id": "261111-tir", "name": "Batch tio: IN-10 backend tests scoped to tmp_path (sentinel RED/GREEN evidence)", "status": "done", "commit": "381df0d"},
+    {"id": "261111-tis", "name": "Batch tio: IN-09 api-reference tilde expansion at 3 DB-open sites", "status": "done", "commit": "eb18aa8"}
   ],
   "remaining_tasks": [
-    {"id": "WR-07", "name": "MCP line_start/line_end metadata contract — needs user protocol decision", "status": "not_started"},
-    {"id": "WR-08", "name": "Conflicts with CLAUDE.md fail-fast vector posture — needs user convention decision", "status": "not_started"},
-    {"id": "IN/CR", "name": "Open IN/CR findings (IN-09/10, CR-01/02 etc.) — re-assess live; ledger 13/22 open", "status": "not_started"},
+    {"id": "WR-07", "name": "MCP get tool silently ignores max_lines when from_line absent — needs user protocol decision", "status": "not_started"},
+    {"id": "WR-08", "name": "MCP hybrid_search cannot degrade to BM25 without sqlite-vec — conflicts with CLAUDE.md fail-fast posture, needs user convention decision", "status": "not_started"},
+    {"id": "IN-02", "name": "vsearch_cmd local Database import duplicates module-level (search.py:630); test patch-target trap in test_search.py — live, small", "status": "not_started"},
+    {"id": "IN-03", "name": "EmbeddingManager has no public model accessor; bench.py/search.py reach into _model — live, small API addition", "status": "not_started"},
+    {"id": "IN-04", "name": "Dead quiet recomputations in search.py (lines 496, 687, 951) — live, trivial", "status": "not_started"},
+    {"id": "IN-05", "name": "--config global option accepted/documented/never consumed — needs user decision: wire into get_settings or remove + regenerate CLI reference", "status": "not_started"},
+    {"id": "IN-07", "name": "Inconsistent embedding-dim resolution (384 magic fallback in bench, per-query probe in query_cmd) — live, medium refactor", "status": "not_started"},
     {"id": "milestone", "name": "/gsd-complete-milestone v1.1 — all 6 phases complete and verified", "status": "not_started"}
   ],
   "blockers": [],
   "async_jobs": [],
   "human_actions_pending": [
-    {"action": "Decide WR-07 (MCP line-metadata protocol change) and WR-08 (fail-fast convention conflict) before any autonomous fix", "context": "Both remaining WR items are decision-gated, not code-gated", "blocking": false}
+    {"action": "Decide WR-07 (MCP line-metadata protocol) and WR-08 (fail-fast convention conflict) and IN-05 (wire or remove --config) before autonomous fixes", "context": "These three items are decision-gated, not code-gated", "blocking": false}
   ],
   "decisions": [
-    {"decision": "Shared-ledger rule for batches: ledger open-count read from execution-time git HEAD and decremented dynamically; reconstruction gate compares execution-time HEAD", "rationale": "Sibling closures land between planning and execution; hardcoded literals would fail", "phase": "quick-batch"},
-    {"decision": "WR-02 closed as fixed (not stale): Phase 11 IncrementalIndexer per-file BEGIN IMMEDIATE commits supersede the reported whole-run transaction", "rationale": "AST proof + shipped durability test; fixed is the ledger's honest vocabulary", "phase": "10"},
-    {"decision": "D-1 fixed victim-side (autouse fixture in test_watch_cmd.py), not predecessor-side", "rationale": "Three predecessor files each leak via the real cli group's setup_logging propagate=False wall", "phase": "quick"},
-    {"decision": "WR-01 helper promoted to public create_embedding_purger in search/vector.py; repositories.py left vec0-free", "rationale": "collection_remove is delete_by_collection's sole production caller; CLI-side purge covers the finding's full chain", "phase": "10"}
+    {"decision": "Batch tio ran with ISOLATION=none (USE_WORKTREES=false): sequential inline executors, waves serialized 0/1/2/3 by shared-ledger files_modified overlap", "rationale": "Project config disables worktrees; mutating concurrency forced to 1", "phase": "quick-batch"},
+    {"decision": "Shared-ledger rule held across 4 sequential closures: each executor read open count from execution-time git show HEAD and decremented dynamically; byte-equality reconstruction gate passed every time (13->10->9->8->7)", "rationale": "Sibling closures land between planning and execution; hardcoded literals would fail", "phase": "quick-batch"},
+    {"decision": "IN-01/CR-01/CR-02 closed as fixed via triage with commit evidence (c52f489, 7622985, f78ef4a) — CR-01/CR-02 were legacy rows flagged 'not in the current review'; the delta review's CR-01 is a DIFFERENT finding already fixed in its own ledger", "rationale": "Live code verification + ancestor-commit proof; honest triage, no invented stale category", "phase": "10"},
+    {"decision": "IN-09 fixed at 3 sites (818 named + 650/790 same-pattern); collection-registration ~/Documents literals deliberately left (different API surface — stored paths, not DB-open calls)", "rationale": "DatabaseConnection ctor does Path()+mkdir without expanduser — raw-tilde examples literally create a ~ directory tree in the reader's cwd", "phase": "10"},
+    {"decision": "Phase-scoped capability checkpoints (api-coverage, assumption-delta, schema-push, security) resolved to skipped for phaseless quick items; toggles unset", "rationale": "Detectors are phase-scoped; matches prior batch behavior", "phase": "quick-batch"}
   ],
   "uncommitted_files": [
     " M .planning/config.json",
@@ -43,7 +45,6 @@
     "?? .planning/phases/16-bench-expansion-reranker-tuning/16-PATTERNS.md",
     "?? .planning/phases/16-bench-expansion-reranker-tuning/16-REVIEW-FIX.iter2.md",
     "?? .planning/phases/16-bench-expansion-reranker-tuning/16-REVIEW.iter2.md",
-    "?? .planning/quick-batches/",
     "?? .planning/research/.cache/05bfeb8fe0b053d9433d563826d721818e4c527a92e3db6c0efc155dbba51a95.json",
     "?? .planning/research/.cache/07ca94279fedeea49c0ac97e8d9f09661f8f3746b72d8cbfb367134b999b2b8e.json",
     "?? .planning/research/.cache/1cd113f8f9ed602c2ad81ced9a84d243e1db92f290152d8c68bf546c0df035f6.json",
@@ -57,6 +58,6 @@
     "?? .planning/state.json",
     "?? .planning/tmp/"
   ],
-  "next_action": "User decision: WR-07 protocol / WR-08 convention, or /gsd-complete-milestone v1.1; alternatively /gsd-quick to re-assess open IN/CR findings live",
-  "context_notes": "Clean pause at a batch boundary. Session closed 7 ledger items (3 single quick tasks + 4-item batch 261111-rqo, all complete). Phase 10 ledger 22->13 open. Suite 1528 passed / 1 skipped / 95.06% cov; ruff/format/ty green. All session work committed through 3c98c08. Uncommitted entries above are PRE-EXISTING churn (preserve, never commit/revert) except quick-batches/ which the pause commit tracks. No background processes, no async jobs."
+  "next_action": "User decision: WR-07/WR-08/IN-05, or /gsd-quick(-batch) on live IN-02/IN-03/IN-04/IN-07, or /gsd-complete-milestone v1.1",
+  "context_notes": "Clean pause at a batch boundary. Batch 261111-tio complete 4/4 (tip/tiq/tir/tis), all artifacts committed through fea4349. Phase 10 ledger 13->7 open this session (22->7 cumulative across both sessions). Suite 1529 passed / 1 skipped / 95.06% cov; ruff/format/ty green. All 4 executors returned with zero plan deviations. Uncommitted entries above are PRE-EXISTING churn (preserve, never commit/revert). No background processes, no async jobs."
 }
