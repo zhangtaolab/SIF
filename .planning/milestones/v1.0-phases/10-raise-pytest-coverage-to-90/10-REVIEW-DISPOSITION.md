@@ -17,7 +17,7 @@ findings:
     title: "`multi-get --max-bytes` truncates by characters after a byte-length check — limit can be exceeded up to 4x"
   - id: WR-04
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "`ls` subpath filter matches the absolute stored path, not collection-relative paths, and is not segment-aligned"
   - id: WR-05
     severity: warning
@@ -91,7 +91,7 @@ findings:
     severity: critical
     disposition: open
     title: "XML-forbidden control characters not stripped in cli/commands/search.py:104-121 — title containing \\x0b produces non-well-formed XML"
-open: 20
+open: 19
 total: 22
 recorded: 2026-11-06T12:37:58.492Z
 ---
@@ -103,7 +103,7 @@ recorded: 2026-11-06T12:37:58.492Z
 | WR-01 | warning | open | - |
 | WR-02 | warning | open | - |
 | WR-03 | warning | fixed | quick 261111-mlj (multi-get byte-budget truncation plus regression tests) |
-| WR-04 | warning | open | - |
+| WR-04 | warning | fixed | quick 261111-nj0 (ls subpath collection-relative segment-aligned filter plus regression tests) |
 | WR-05 | warning | open | - |
 | WR-06 | warning | open | - |
 | WR-07 | warning | open | - |
