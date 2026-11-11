@@ -41,7 +41,7 @@ findings:
     title: "`cleanup` compares naive-local ISO timestamps against aware-UTC ISO strings lexicographically"
   - id: WR-10
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "Embedding-dimension mismatch error recommends `sif cleanup`, which cannot fix the mismatch"
   - id: IN-01
     severity: info
@@ -91,7 +91,7 @@ findings:
     severity: critical
     disposition: open
     title: "XML-forbidden control characters not stripped in cli/commands/search.py:104-121 — title containing \\x0b produces non-well-formed XML"
-open: 22
+open: 21
 total: 22
 recorded: 2026-11-06T12:37:58.492Z
 ---
@@ -109,7 +109,7 @@ recorded: 2026-11-06T12:37:58.492Z
 | WR-07 | warning | open | - |
 | WR-08 | warning | open | - |
 | WR-09 | warning | open | - |
-| WR-10 | warning | open | - |
+| WR-10 | warning | fixed | quick 261111-l7p (dimension-mismatch remediation message plus regression test) |
 | IN-01 | info | open | - |
 | IN-02 | info | open | - |
 | IN-03 | info | open | - |
