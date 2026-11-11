@@ -208,9 +208,9 @@ class SearchBackend:
             content = doc.content  # Do NOT truncate yet
             line_start: int | None = None
             line_end: int | None = None
-            if from_line is not None:
+            if from_line is not None or max_lines is not None:
                 lines = content.split("\n")
-                start = max(0, from_line - 1)
+                start = max(0, (from_line or 1) - 1)
                 end = len(lines) if max_lines is None else start + max_lines
                 content = "\n".join(lines[start:end])
                 line_start = start + 1
