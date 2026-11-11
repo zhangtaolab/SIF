@@ -5,10 +5,10 @@ milestone_name: Live Index and Search Quality
 current_phase: 11
 status: completed
 stopped_at: context exhaustion at 89% (2026-11-11)
-last_updated: "2026-11-11T11:28:00.798Z"
+last_updated: "2026-11-11T11:53:15.718Z"
 last_activity: 2026-11-11
 last_activity_desc: Phase 11 complete
-state_head: de0b729beec3f515b851917cb587e6748c09bdf0
+state_head: 15343bbf9ae872143a94dd9821c8ac2e8f62b111
 progress:
   total_phases: 6
   completed_phases: 6
@@ -31,7 +31,7 @@ progress:
 Phase: 11
 Plan: Not started
 Status: All phases complete
-Last activity: 2026-11-11 - Completed quick task 261111-qlv: Close Phase 10 WR-02 — triage close as fixed (whole-run txn superseded by IncrementalIndexer per-file BEGIN IMMEDIATE; ledger open 18->17)
+Last activity: 2026-11-11 - Completed quick task 261111-r2f: Close Phase 10 WR-06 — bench fixture open pinned to explicit UTF-8 encoding (open-kwarg contract test red-to-green; ledger open 17->16)
 
 Progress: [██████████] 100%
 
@@ -198,6 +198,7 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 | 261111-o6y | Fix 60 FORCE_COLOR=1 test failures: color-env-hermetic pytest suite (conftest import-time scrub + autouse fixture; dual-regime full-suite gates green, 1514 passed / 95.02% cov) | 2026-11-11 | 6522663 | [261111-o6y-find-and-fix-failing-tests-run-the-quali](./quick/261111-o6y-find-and-fix-failing-tests-run-the-quali/) |
 | 261111-pqy | Close Phase 10 WR-05: collection ls subpath collection-relative segment-aligned filter (regression tests + ledger closure; open 19->18) | 2026-11-11 | 1ac9f24 | [261111-pqy-next-phase-10-item-address-the-smallest-](./quick/261111-pqy-next-phase-10-item-address-the-smallest-/) |
 | 261111-qlv | Close Phase 10 WR-02: triage close as fixed (whole-run txn superseded by IncrementalIndexer per-file BEGIN IMMEDIATE; AST + durability evidence, ledger closure; open 18->17) | 2026-11-11 | de0b729 | [261111-qlv-next-phase-10-item-address-the-smallest-](./quick/261111-qlv-next-phase-10-item-address-the-smallest-/) |
+| 261111-r2f | Close Phase 10 WR-06: pin bench fixture open to explicit UTF-8 encoding (open-kwarg contract test red-to-green + ledger closure; open 17->16) | 2026-11-11 | 15343bb | [261111-r2f-next-phase-10-item-address-the-smallest-](./quick/261111-r2f-next-phase-10-item-address-the-smallest-/) |
 
 ### Overrides
 
@@ -206,7 +207,7 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 ## Session Continuity
 
 Last session: 2026-11-11T08:14:36Z
-Stopped at: Quick 261111-qlv complete — Phase 10 WR-02 closed as fixed via evidence-backed triage (no code changes); ledger open 17/22
+Stopped at: Quick 261111-r2f complete — Phase 10 WR-06 closed (bench fixture UTF-8 encoding pin + contract test); ledger open 16/22
 Resume file: .planning/.continue-here.md (pause record retained)
 
-- **Next expected action:** `/gsd-quick` — next Phase 10 WR item (ledger 17/22 open; WR-06 recommended: live encoding="utf-8" sub-item at bench.py:624, one-line fix + contract test + closure; WR-01/07/09 broader; WR-08 convention-conflicting, needs user decision); or `/gsd-complete-milestone v1.1` (all 6 phases complete and verified; milestone ready to archive)
+- **Next expected action:** `/gsd-quick` — next Phase 10 item (ledger 16/22 open; IN-08 read_text encoding is the next smallest one-file item; WR-01/09 multi-file, WR-07 MCP protocol decision, WR-08 convention-conflicting needs user decision); or `/gsd-complete-milestone v1.1` (all 6 phases complete and verified; milestone ready to archive)
