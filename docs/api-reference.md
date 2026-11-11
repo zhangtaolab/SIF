@@ -645,9 +645,11 @@ class DatabaseConnection:
 
 **Usage:**
 ```python
+from pathlib import Path
+
 from sif.database.connection import DatabaseConnection
 
-conn = DatabaseConnection("~/.local/share/sif/sif.db")
+conn = DatabaseConnection(Path("~/.local/share/sif/sif.db").expanduser())
 
 with conn.connect() as db:
     cursor = db.execute("SELECT * FROM collections WHERE name = ?", ("my-notes",))
@@ -782,12 +784,14 @@ Transports wrap a server: `StdioTransport(server, stdin=None, stdout=None)` runs
 
 **Usage:**
 ```python
+from pathlib import Path
+
 from sif.mcp.backend import SearchBackend
 from sif.mcp.handlers import create_default_tools
 from sif.mcp.server import MCPServer
 from sif.mcp.transports.stdio import StdioTransport
 
-server = MCPServer(SearchBackend("~/.local/share/sif/sif.db"))
+server = MCPServer(SearchBackend(str(Path("~/.local/share/sif/sif.db").expanduser())))
 server.register_tools(create_default_tools())
 
 transport = StdioTransport(server)
@@ -801,6 +805,7 @@ Module-level runners wire everything together: `run_stdio_server_sync(db_path)` 
 
 ```python
 import sqlite3
+from pathlib import Path
 
 from sif.core.models import SearchOptions
 from sif.embedding.factory import EmbeddingModelFactory
@@ -815,7 +820,8 @@ embedder = factory.create_model(
     model_name="all-MiniLM-L6-v2",
 )
 
-with sqlite3.connect("~/.local/share/sif/sif.db") as db:
+db_path = Path("~/.local/share/sif/sif.db").expanduser()
+with sqlite3.connect(str(db_path)) as db:
     # HybridSearcher builds BM25Searcher + VectorSearcher and fuses via RRF
     searcher = HybridSearcher(db, embedder=embedder, embedding_dim=384)
 
