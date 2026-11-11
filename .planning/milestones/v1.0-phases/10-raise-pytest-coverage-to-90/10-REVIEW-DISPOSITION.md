@@ -49,7 +49,7 @@ findings:
     title: "Identical if/else branches under a comment promising syntax highlighting that doesn't exist"
   - id: IN-02
     severity: info
-    disposition: open
+    disposition: fixed
     title: "`vsearch_cmd` function-local imports duplicate module-level imports of the same names"
   - id: IN-03
     severity: info
@@ -91,7 +91,7 @@ findings:
     severity: critical
     disposition: fixed
     title: "XML-forbidden control characters not stripped in cli/commands/search.py:104-121 — title containing \\x0b produces non-well-formed XML"
-open: 7
+open: 6
 total: 22
 recorded: 2026-11-06T12:37:58.492Z
 ---
@@ -111,7 +111,7 @@ recorded: 2026-11-06T12:37:58.492Z
 | WR-09 | warning | fixed | quick 261111-rqq (cleanup delegates to LLMCacheRepository.clear_expired with parsed-datetime comparison; cache expiry written as aware-UTC; legacy naive-local rows interpreted as system-local; regression tests) |
 | WR-10 | warning | fixed | quick 261111-l7p (dimension-mismatch remediation message plus regression test) |
 | IN-01 | info | fixed | quick 261111-tip (triage close: byte-identical markdown/else display branches collapsed to a single console.print(content, markup=False) in get.py, commit c52f489; raw-print regression tests green) |
-| IN-02 | info | open | - |
+| IN-02 | info | fixed | quick 261111-v4y (vsearch_cmd uses the module-level Database import; all eight vsearch test patch sites unified on sif.cli.commands.search.Database; patch-target trap demonstrated red-to-green via the closure test) |
 | IN-03 | info | open | - |
 | IN-04 | info | open | - |
 | IN-05 | info | open | - |
