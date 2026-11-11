@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import contextlib
+import os
 import sqlite3
+import time
 from collections.abc import Generator
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -33,6 +35,26 @@ class RealDatabaseTestCase:
         get_settings.cache_clear()
         yield
         get_settings.cache_clear()
+
+    @pytest.fixture
+    def east_of_utc(self, monkeypatch) -> Generator[None, None, None]:
+        """Force a fixed east-of-UTC local zone (WR-09 legacy naive-local rows).
+
+        ``time.tzset`` mutates process-global state, so the prior TZ is
+        restored unconditionally in teardown (Asia/Shanghai is fixed UTC+8).
+        CliRunner executes in-process, so cleanup_cmd sees the forced zone.
+        """
+        prior = os.environ.get("TZ")
+        monkeypatch.setenv("TZ", "Asia/Shanghai")
+        time.tzset()
+        try:
+            yield
+        finally:
+            if prior is None:
+                monkeypatch.delenv("TZ", raising=False)
+            else:
+                monkeypatch.setenv("TZ", prior)
+            time.tzset()
 
     def _invoke(self, db_path: Path, command: str, *, confirm: bool = False) -> Result:
         """Invoke a top-level command against a specific temporary index."""
@@ -189,6 +211,63 @@ class TestCleanupRealDatabase(RealDatabaseTestCase):
             )
             assert (
                 conn.execute("SELECT COUNT(*) FROM documents WHERE id = 'document-1'").fetchone()[0]
+                == 1
+            )
+
+    @pytest.mark.skipif(not hasattr(time, "tzset"), reason="tzset unavailable")
+    @pytest.mark.usefixtures("east_of_utc")
+    def test_cleanup_removes_legacy_naive_local_expired_cache(self, tmp_path: Path) -> None:
+        """WR-09: cleanup deletes legacy naive-local expired rows east of UTC.
+
+        The seeded rows use the exact naive-local form the old ``set`` writer
+        produced; the old lexicographic DELETE kept the expired row and
+        reported 0 removed. The seeded document/chunk must survive.
+        """
+        db_path = tmp_path / "sif.db"
+        self._seed_document(db_path)
+        now = datetime.now(timezone.utc)
+        with Database(db_path) as db, db.transaction() as conn:
+            for cache_id, instant in (
+                ("legacy-expired", (now - timedelta(hours=1)).timestamp()),
+                ("legacy-fresh", (now + timedelta(hours=1)).timestamp()),
+            ):
+                conn.execute(
+                    "INSERT INTO llm_cache "
+                    "(id, model_name, prompt_hash, prompt, response, created_at, expires_at) "
+                    "VALUES (?, 'test-model', ?, 'prompt', 'response', ?, ?)",
+                    (
+                        cache_id,
+                        f"hash-{cache_id}",
+                        now.isoformat(),
+                        datetime.fromtimestamp(instant).isoformat(),
+                    ),
+                )
+
+        result = self._invoke(db_path, "cleanup", confirm=True)
+
+        assert result.exit_code == 0, result.output
+        assert "Removed 1 expired cache entries" in result.output
+        with contextlib.closing(sqlite3.connect(db_path)) as conn:
+            assert (
+                conn.execute(
+                    "SELECT COUNT(*) FROM llm_cache WHERE id = 'legacy-expired'"
+                ).fetchone()[0]
+                == 0
+            )
+            assert (
+                conn.execute("SELECT COUNT(*) FROM llm_cache WHERE id = 'legacy-fresh'").fetchone()[
+                    0
+                ]
+                == 1
+            )
+            assert (
+                conn.execute("SELECT COUNT(*) FROM documents WHERE id = 'document-1'").fetchone()[0]
+                == 1
+            )
+            assert (
+                conn.execute(
+                    "SELECT COUNT(*) FROM document_chunks WHERE id = 'chunk-1'"
+                ).fetchone()[0]
                 == 1
             )
 

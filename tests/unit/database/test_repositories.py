@@ -11,8 +11,10 @@ database created from the production DDL (no sqlite-vec extension involved).
 
 from __future__ import annotations
 
+import os
 import sqlite3
-from datetime import datetime, timezone
+import time
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -43,6 +45,26 @@ def db():
     manager._create_indexes()
     yield conn
     conn.close()
+
+
+@pytest.fixture
+def east_of_utc(monkeypatch):
+    """Force a fixed east-of-UTC local zone (WR-09 legacy naive-local rows).
+
+    ``time.tzset`` mutates process-global state, so the prior TZ is restored
+    unconditionally in teardown (Asia/Shanghai is fixed UTC+8, no DST).
+    """
+    prior = os.environ.get("TZ")
+    monkeypatch.setenv("TZ", "Asia/Shanghai")
+    time.tzset()
+    try:
+        yield
+    finally:
+        if prior is None:
+            monkeypatch.delenv("TZ", raising=False)
+        else:
+            monkeypatch.setenv("TZ", prior)
+        time.tzset()
 
 
 @pytest.fixture
@@ -481,3 +503,94 @@ class TestRepositoryCoverage:
         assert repo.get("model", "persistent") is None
         assert repo.clear_expired() == 1
         assert repo.get("model", "short-lived") == "future response"
+
+
+class TestLLMCacheExpiryWR09:
+    """WR-09: cache expiry must compare parsed instants, not ISO string order."""
+
+    @pytest.mark.usefixtures("east_of_utc")
+    def test_set_stores_aware_utc_expiry(self, db):
+        """set() writes an aware-UTC (+00:00) expiry at the correct instant."""
+        repo = LLMCacheRepository(db)
+        repo.set("model", "hash", "prompt", "response", ttl_seconds=3600)
+
+        value = db.execute(
+            "SELECT expires_at FROM llm_cache WHERE prompt_hash = 'hash'"
+        ).fetchone()["expires_at"]
+
+        assert value.endswith("+00:00")
+        assert abs(
+            datetime.fromisoformat(value) - (datetime.now(timezone.utc) + timedelta(seconds=3600))
+        ) < timedelta(seconds=5)
+
+    @pytest.mark.skipif(not hasattr(time, "tzset"), reason="tzset unavailable")
+    @pytest.mark.usefixtures("east_of_utc")
+    def test_clear_expired_removes_legacy_naive_local_expired_row(self, db):
+        """Legacy naive-local rows expire by instant east of UTC (WR-09 read side).
+
+        The rows use the exact naive-local form the old ``set`` writer
+        produced; lexicographic order puts their wall time ahead of the
+        aware-UTC now string, so the old predicate kept the expired row.
+        """
+        now = datetime.now(timezone.utc)
+        for row_id, instant in (
+            ("legacy-expired", (now - timedelta(hours=1)).timestamp()),
+            ("legacy-fresh", (now + timedelta(hours=1)).timestamp()),
+        ):
+            db.execute(
+                "INSERT INTO llm_cache "
+                "(id, model_name, prompt_hash, prompt, response, created_at, expires_at) "
+                "VALUES (?, 'm', ?, 'p', 'r', ?, ?)",
+                (
+                    row_id,
+                    f"hash-{row_id}",
+                    now.isoformat(),
+                    datetime.fromtimestamp(instant).isoformat(),
+                ),
+            )
+
+        repo = LLMCacheRepository(db)
+        assert repo.clear_expired() == 1
+        assert (
+            db.execute("SELECT COUNT(*) FROM llm_cache WHERE id = 'legacy-expired'").fetchone()[0]
+            == 0
+        )
+        assert (
+            db.execute("SELECT COUNT(*) FROM llm_cache WHERE id = 'legacy-fresh'").fetchone()[0]
+            == 1
+        )
+
+    def test_clear_expired_aware_utc_rows(self, db):
+        """Aware-UTC expired rows are deleted; aware-UTC fresh rows survive."""
+        now = datetime.now(timezone.utc)
+        for row_id, expires_at in (
+            ("aware-expired", (now - timedelta(hours=1)).isoformat()),
+            ("aware-fresh", (now + timedelta(hours=1)).isoformat()),
+        ):
+            db.execute(
+                "INSERT INTO llm_cache "
+                "(id, model_name, prompt_hash, prompt, response, created_at, expires_at) "
+                "VALUES (?, 'm', ?, 'p', 'r', ?, ?)",
+                (row_id, f"hash-{row_id}", now.isoformat(), expires_at),
+            )
+
+        repo = LLMCacheRepository(db)
+        assert repo.clear_expired() == 1
+        assert (
+            db.execute("SELECT COUNT(*) FROM llm_cache WHERE id = 'aware-fresh'").fetchone()[0] == 1
+        )
+
+    def test_clear_expired_retains_null_and_unparseable(self, db):
+        """NULL and unparseable expiries are retained; cleanup never guesses."""
+        now = datetime.now(timezone.utc).isoformat()
+        for row_id, expires_at in (("null-expiry", None), ("garbage-expiry", "not-a-timestamp")):
+            db.execute(
+                "INSERT INTO llm_cache "
+                "(id, model_name, prompt_hash, prompt, response, created_at, expires_at) "
+                "VALUES (?, 'm', ?, 'p', 'r', ?, ?)",
+                (row_id, f"hash-{row_id}", now, expires_at),
+            )
+
+        repo = LLMCacheRepository(db)
+        assert repo.clear_expired() == 0
+        assert db.execute("SELECT COUNT(*) FROM llm_cache").fetchone()[0] == 2
