@@ -627,7 +627,6 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     from pydantic import ValidationError  # noqa: PLC0415
 
     from sif.config.settings import get_settings  # noqa: PLC0415
-    from sif.database.database import Database  # noqa: PLC0415
     from sif.embedding.manager import EmbeddingManager  # noqa: PLC0415
     from sif.search.vector import VectorSearcher  # noqa: PLC0415
 

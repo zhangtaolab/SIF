@@ -210,7 +210,7 @@ class TestSearchFiltering:
         mock_db = MagicMock()
 
         with (
-            patch("sif.database.database.Database", return_value=mock_db),
+            patch("sif.cli.commands.search.Database", return_value=mock_db),
             patch(
                 "sif.cli.commands.search.CollectionRepository",
                 return_value=mock_repo,
@@ -513,7 +513,7 @@ class TestSearchLineNumbers:
         mock_db = MagicMock()
 
         with (
-            patch("sif.database.database.Database", return_value=mock_db),
+            patch("sif.cli.commands.search.Database", return_value=mock_db),
             patch(
                 "sif.cli.commands.search.CollectionRepository",
                 return_value=mock_repo,
@@ -731,7 +731,7 @@ class TestVsearchNewFlags:
         mock_db = MagicMock()
 
         with (
-            patch("sif.database.database.Database", return_value=mock_db),
+            patch("sif.cli.commands.search.Database", return_value=mock_db),
             patch(
                 "sif.cli.commands.search.CollectionRepository",
                 return_value=mock_repo,
@@ -780,7 +780,7 @@ class TestVsearchNewFlags:
         mock_db = MagicMock()
 
         with (
-            patch("sif.database.database.Database", return_value=mock_db),
+            patch("sif.cli.commands.search.Database", return_value=mock_db),
             patch(
                 "sif.cli.commands.search.CollectionRepository",
                 return_value=mock_repo,
@@ -1639,7 +1639,7 @@ class TestSearchOutputBranches:
         manager.embed_single.return_value = [0.0] * 4
         settings = settings or MagicMock()
         with (
-            patch("sif.database.database.Database", return_value=MagicMock()),
+            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
             patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
             patch("sif.search.vector.VectorSearcher", return_value=searcher),
             patch("sif.embedding.manager.EmbeddingManager.from_settings", return_value=manager),
@@ -2033,7 +2033,7 @@ class TestSearchOutputBranches:
         manager = MagicMock()
         manager.embed_single.return_value = [0.0] * 4
         with (
-            patch("sif.database.database.Database", return_value=MagicMock()),
+            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
             patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
             patch("sif.search.vector.VectorSearcher", return_value=searcher),
             patch("sif.embedding.manager.EmbeddingManager.from_settings", return_value=manager),
@@ -2441,7 +2441,7 @@ class TestStalenessFormatMarker:
         manager.embed_single.return_value = [0.0] * 4
         settings = MagicMock()
         with (
-            patch("sif.database.database.Database", return_value=MagicMock()),
+            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
             patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
             patch("sif.search.vector.VectorSearcher", return_value=searcher),
             patch("sif.embedding.manager.EmbeddingManager.from_settings", return_value=manager),
@@ -2546,14 +2546,14 @@ class TestDatabaseClosure:
     ) -> None:
         """Every Database constructed by vsearch is closed after a successful run.
 
-        vsearch_cmd imports Database inside its function body, so the double
-        must be installed on sif.database.database (the import source), not
-        on the sif.cli.commands.search namespace the other closure tests patch.
+        vsearch_cmd uses the module-level Database import, so the double is
+        installed on sif.cli.commands.search — the same namespace the other
+        closure tests patch.
         """
         index = tmp_path / "index.db"
         index.touch()
         TrackingDatabase.created.clear()
-        monkeypatch.setattr("sif.database.database.Database", TrackingDatabase)
+        monkeypatch.setattr("sif.cli.commands.search.Database", TrackingDatabase)
         searcher = MagicMock()
         searcher.search.return_value = []
         repo = MagicMock()
