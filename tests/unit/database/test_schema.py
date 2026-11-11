@@ -201,8 +201,15 @@ class TestSchemaManagerVectorTables:
         manager = SchemaManager(vec_db, embedding_dim=384)
         manager._create_vector_tables()
         manager2 = SchemaManager(vec_db, embedding_dim=768)
-        with pytest.raises(RuntimeError, match="Embedding dimension mismatch"):
+        with pytest.raises(RuntimeError, match="Embedding dimension mismatch") as exc_info:
             manager2._create_vector_tables()
+
+        message = str(exc_info.value)
+        assert "database has FLOAT[384]" in message
+        assert "settings require FLOAT[768]" in message
+        assert "Restore the model and SIF_EMBEDDING_DIM that match FLOAT[384]" in message
+        assert "delete the database file and rebuild the index" in message
+        assert "sif cleanup" not in message
 
     def test_same_dimension_does_not_raise(self, vec_db):
         manager = SchemaManager(vec_db, embedding_dim=384)
