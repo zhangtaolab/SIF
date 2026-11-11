@@ -39,8 +39,8 @@ Progress: [██████████] 100%
 ## Performance Metrics
 
 - **Velocity:** v1.0 shipped 68 plans / 11 phases (2026-04-14 → 2026-11-07); recent plans averaged ~13 min
-- **Suite:** 1501 passed, 1 skipped @ 94.95% coverage (fail_under=90 active); ruff/format/ty green
-- **v1.1:** 6/6 phases, 22/22 plans (complete; Phase 11 re-verified at HEAD 2026-11-11)
+- **Suite:** 1504 passed, 1 skipped @ 95.00% coverage (fail_under=90 active); ruff/format/ty green
+- **v1.1:** 6/6 phases, 22/22 plans (complete; Phase 11 re-verified at HEAD e20ce25 2026-11-11 after review-fix cycle)
 
 | Phase | Plans | Status |
 |-------|-------|--------|
@@ -176,7 +176,7 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 
 ### Blockers/Concerns
 
-- ⚠️ [Phase 11 re-review 2026-11-11] `src/sif/indexing/watcher.py` worker lifecycle races: WR-01 tick not exception-guarded (one tick exception permanently kills the worker), WR-02 `stop()` iterates worker-owned state before quiescing (rescope path) — open in `11-REVIEW-DISPOSITION.md` (affects daemon/MCP watch hosts, Phases 12-13 surface)
+- ⚠️ [Phase 11 re-review 2026-11-11] WR-01/WR-02 watcher lifecycle races FIXED (guards in `src/sif/indexing/watcher.py` at 750-759/450/501-603, pinned by IN-04 TestConcurrencyGuardRegressions; re-verified 20/20 at e20ce25). Still open (advisory, carried in `11-REVIEW-DISPOSITION.md`): WR-03 init_schema errors escape as raw tracebacks, WR-04 impossible-state `if not coll: continue` guards, IN-05 model-type set duplicated CLI/Settings
 
 ## Deferred Items
 
@@ -200,7 +200,7 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 ## Session Continuity
 
 Last session: 2026-11-11
-Stopped at: Phase 11 complete — all phases complete
+Stopped at: Phase 11 re-verified at HEAD e20ce25 (stale-verification regeneration after review-fix cycle, 20/20 passed) — all phases complete
 Resume file: None
 
 - **Next expected action:** `/gsd-complete-milestone v1.1` (all 6 phases complete and verified; milestone ready to archive)
