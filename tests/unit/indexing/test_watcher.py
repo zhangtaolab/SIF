@@ -2015,12 +2015,12 @@ class TestIdleCheckpoint:
         )
         monkeypatch.setattr(watcher, "_worker_loop", lambda: None)
         watcher.start()
-        return watcher, spy, clock, alpha, coll
+        return watcher, spy, clock, alpha, coll, db
 
     def test_checkpoint_runs_once_when_due(self, tmp_path, monkeypatch) -> None:
         """Deadline elapsed + idle -> exactly one TRUNCATE checkpoint on the
         worker connection; one per interval, never two inside one tick."""
-        watcher, spy, clock, _alpha, _coll = self._make(
+        watcher, spy, clock, _alpha, _coll, db = self._make(
             tmp_path, monkeypatch, checkpoint_interval=300.0
         )
         try:
@@ -2039,7 +2039,10 @@ class TestIdleCheckpoint:
             watcher._on_tick()
             assert spy.calls == 2
         finally:
-            watcher.stop(flush=False)
+            try:
+                watcher.stop(flush=False)
+            finally:
+                db.close()
 
     def test_busy_row_skips_silently_and_resets_deadline(
         self, tmp_path, monkeypatch, caplog
@@ -2047,7 +2050,7 @@ class TestIdleCheckpoint:
         """A busy result row means contention: no retry inside the tick, NO
         warning log records, and the deadline still resets for the next
         interval (Pitfall 7)."""
-        watcher, spy, clock, _alpha, _coll = self._make(
+        watcher, spy, clock, _alpha, _coll, db = self._make(
             tmp_path, monkeypatch, checkpoint_interval=300.0, busy=True
         )
         try:
@@ -2065,13 +2068,16 @@ class TestIdleCheckpoint:
                 assert spy.calls == 2
             assert [r for r in caplog.records if "checkpoint" in r.message] == []
         finally:
-            watcher.stop(flush=False)
+            try:
+                watcher.stop(flush=False)
+            finally:
+                db.close()
 
     def test_recent_burst_postpones_checkpoint(self, tmp_path, monkeypatch) -> None:
         """A job completed within the recent window (restat_interval) means
         the writer was active: the due checkpoint is postponed a full
         interval, then runs once the burst is stale."""
-        watcher, spy, clock, alpha, coll = self._make(
+        watcher, spy, clock, alpha, coll, db = self._make(
             tmp_path, monkeypatch, checkpoint_interval=300.0
         )
         try:
@@ -2088,13 +2094,16 @@ class TestIdleCheckpoint:
             watcher._on_tick()
             assert spy.calls == 1
         finally:
-            watcher.stop(flush=False)
+            try:
+                watcher.stop(flush=False)
+            finally:
+                db.close()
 
     def test_disabled_by_default_never_checkpoints(self, tmp_path, monkeypatch) -> None:
         """checkpoint_interval=0 (the WatchConfig default): driven ticks never
         execute a checkpoint — shutdown checkpointing stays the final word."""
         assert WatchConfig().checkpoint_interval == 0.0
-        watcher, spy, clock, _alpha, _coll = self._make(
+        watcher, spy, clock, _alpha, _coll, db = self._make(
             tmp_path, monkeypatch, checkpoint_interval=0.0
         )
         try:
@@ -2103,7 +2112,10 @@ class TestIdleCheckpoint:
                 watcher._on_tick()
             assert spy.calls == 0
         finally:
-            watcher.stop(flush=False)
+            try:
+                watcher.stop(flush=False)
+            finally:
+                db.close()
 
 
 class TestScheduleFailure:
