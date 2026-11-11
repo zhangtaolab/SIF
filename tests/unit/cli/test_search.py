@@ -16,7 +16,7 @@ from typing import ClassVar
 from unittest.mock import MagicMock, patch
 
 import pytest
-from click.testing import CliRunner
+from click.testing import CliRunner, Result
 from pydantic import ValidationError
 
 from sif.cli.commands.search import (
@@ -1007,6 +1007,81 @@ class TestQueryPipelineErrorHandling:
         result = self._invoke_query(mock_pipeline)
 
         assert isinstance(result.exception, ValueError)
+
+
+class TestQueryEmbeddingDimension:
+    """IN-07: query_cmd prefers the model-metadata dimension over a billed probe."""
+
+    def _invoke(self, tmp_path: Path, manager: MagicMock) -> tuple[Result, MagicMock]:
+        """Run query_cmd --json on the standard scaffold; return result + pipeline class."""
+        index_path = tmp_path / "sif.db"
+        index_path.touch()
+
+        mock_repo = MagicMock()
+        mock_repo.list_enabled.return_value = []
+
+        # One real result keeps the zero-result suggestion path out of scope.
+        search_result = SearchResult(
+            document_id="doc1",
+            rank=1,
+            score=0.95,
+            title="Test Doc",
+            path="/notes/test.md",
+            collection_name="notes",
+            content="test content",
+        )
+        mock_pipeline = MagicMock()
+        mock_pipeline.search.return_value = [search_result]
+        pipeline_cls = MagicMock(return_value=mock_pipeline)
+
+        with (
+            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+            patch(
+                "sif.cli.commands.search.CollectionRepository",
+                return_value=mock_repo,
+            ),
+            patch("sif.cli.commands.search.SearchPipeline", pipeline_cls),
+            patch(
+                "sif.embedding.manager.EmbeddingManager.from_settings",
+                return_value=manager,
+            ),
+            patch(
+                "sif.config.settings.get_settings",
+                return_value=_query_settings_mock(),
+            ),
+        ):
+            run_result = CliRunner().invoke(
+                query_cmd,
+                ["query", "--json"],
+                obj={"index_path": index_path},
+            )
+        return run_result, pipeline_cls
+
+    def test_model_info_dimension_skips_probe(self, tmp_path: Path) -> None:
+        """The metadata dimension reaches SearchPipeline with zero probe embeddings."""
+        manager = MagicMock()
+        manager.get_model_info.return_value = {"loaded": True, "embedding_dim": 7}
+        manager.embed_single.side_effect = AssertionError("probe ran despite metadata dimension")
+        manager.model = MagicMock()
+
+        result, pipeline_cls = self._invoke(tmp_path, manager)
+
+        assert result.exit_code == 0, result.output
+        manager.embed_single.assert_not_called()
+        assert pipeline_cls.call_args.kwargs["embedding_dim"] == 7
+
+    def test_missing_model_info_dimension_uses_probe(self, tmp_path: Path) -> None:
+        """Characterization: metadata without a dimension keeps the single probe fallback."""
+        manager = MagicMock()
+        manager.get_model_info.return_value = {"loaded": True}
+        manager.embed_single.return_value = [0.0] * 5
+        manager.model = MagicMock()
+
+        result, pipeline_cls = self._invoke(tmp_path, manager)
+
+        assert result.exit_code == 0, result.output
+        manager.embed_single.assert_called_once_with("probe")
+        assert pipeline_cls.call_args.kwargs["embedding_dim"] == 5
 
 
 class TestQueryRerankerConfigError:

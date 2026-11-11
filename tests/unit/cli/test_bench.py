@@ -759,6 +759,55 @@ class TestBenchCommand:
         assert "no single winner" in result.output
 
 
+class TestLoadEmbedder:
+    """IN-07: metadata-first dimension resolution with a settings-based soft-fail."""
+
+    def test_model_info_dimension_skips_probe(self) -> None:
+        from sif.cli.commands.bench import _load_embedder
+
+        manager = MagicMock()
+        manager.get_model_info.return_value = {"loaded": True, "embedding_dim": 7}
+        manager.embed_single.side_effect = AssertionError("probe ran despite metadata dimension")
+
+        with patch(
+            "sif.cli.commands.bench.EmbeddingManager.from_settings",
+            return_value=manager,
+        ):
+            loaded, dim = _load_embedder(_settings_mock(embedding_dim=1024), None)
+
+        assert loaded is manager
+        assert dim == 7
+        manager.embed_single.assert_not_called()
+
+    def test_missing_model_info_dimension_uses_probe(self) -> None:
+        from sif.cli.commands.bench import _load_embedder
+
+        manager = MagicMock()
+        manager.get_model_info.return_value = {"loaded": True}
+        manager.embed_single.return_value = [0.0] * 5
+
+        with patch(
+            "sif.cli.commands.bench.EmbeddingManager.from_settings",
+            return_value=manager,
+        ):
+            loaded, dim = _load_embedder(_settings_mock(embedding_dim=1024), None)
+
+        assert loaded is manager
+        assert dim == 5
+        manager.embed_single.assert_called_once_with("probe")
+
+    def test_load_failure_uses_settings_dimension(self) -> None:
+        from sif.cli.commands.bench import _load_embedder
+
+        with patch(
+            "sif.cli.commands.bench.EmbeddingManager.from_settings",
+            side_effect=ImportError("backend not installed"),
+        ):
+            loaded, dim = _load_embedder(_settings_mock(embedding_dim=2048), None)
+
+        assert (loaded, dim) == (None, 2048)
+
+
 class TestCachedEmbedder:
     def test_embed_runs_the_inner_model_once_per_distinct_text(self) -> None:
         from sif.cli.commands.bench import CachedEmbedder

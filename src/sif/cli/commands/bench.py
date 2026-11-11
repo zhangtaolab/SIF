@@ -102,11 +102,17 @@ def _load_embedder(
     if model_type:
         settings = settings.model_copy(update={"model_type": model_type})
     manager = None
-    embedding_dim = 384
+    # BM25-only soft-fail keeps the neutral configured dimension (IN-07).
+    embedding_dim = settings.embedding_dim
     try:
         manager = EmbeddingManager.from_settings(settings)
         manager.load_model()
-        embedding_dim = len(manager.embed_single("probe"))
+        # IN-07 (index.py precedent): prefer the loaded model's metadata dim;
+        # probe only when it has no usable integer dimension.
+        model_dim = manager.get_model_info().get("embedding_dim")
+        embedding_dim = (
+            model_dim if isinstance(model_dim, int) else len(manager.embed_single("probe"))
+        )
     except ImportError as e:
         console_err.print(f"[yellow]Embedding backend not installed: {e}[/yellow]")
     except Exception as e:

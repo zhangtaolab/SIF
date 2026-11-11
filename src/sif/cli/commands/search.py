@@ -895,7 +895,12 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
         try:
             manager = EmbeddingManager.from_settings(settings)
             manager.load_model()
-            embedding_dim = len(manager.embed_single("probe"))
+            # IN-07 (index.py precedent): the loaded model already knows its
+            # dim, so remote backends are never billed for a throwaway probe.
+            model_dim = manager.get_model_info().get("embedding_dim")
+            embedding_dim = (
+                model_dim if isinstance(model_dim, int) else len(manager.embed_single("probe"))
+            )
         except ImportError as e:
             raise click.ClickException(f"Embedding backend not installed: {e}") from None
         except Exception as e:
