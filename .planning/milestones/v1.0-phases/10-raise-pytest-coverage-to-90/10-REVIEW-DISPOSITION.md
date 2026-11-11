@@ -25,7 +25,7 @@ findings:
     title: "`collection ls` accepts and documents a `subpath` argument but ignores it entirely"
   - id: WR-06
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "`bench` fixture load and validation errors escape as raw tracebacks"
   - id: WR-07
     severity: warning
@@ -91,7 +91,7 @@ findings:
     severity: critical
     disposition: open
     title: "XML-forbidden control characters not stripped in cli/commands/search.py:104-121 — title containing \\x0b produces non-well-formed XML"
-open: 17
+open: 16
 total: 22
 recorded: 2026-11-06T12:37:58.492Z
 ---
@@ -105,7 +105,7 @@ recorded: 2026-11-06T12:37:58.492Z
 | WR-03 | warning | fixed | quick 261111-mlj (multi-get byte-budget truncation plus regression tests) |
 | WR-04 | warning | fixed | quick 261111-nj0 (ls subpath collection-relative segment-aligned filter plus regression tests) |
 | WR-05 | warning | fixed | quick 261111-pqy (collection ls subpath collection-relative segment-aligned filter plus regression tests) |
-| WR-06 | warning | open | - |
+| WR-06 | warning | fixed | quick 261111-r2f (bench fixture load pinned to explicit UTF-8 encoding plus open-contract regression test; raw-traceback wrapping already shipped in Phase 16 T-16-02) |
 | WR-07 | warning | open | - |
 | WR-08 | warning | open | - |
 | WR-09 | warning | open | - |
