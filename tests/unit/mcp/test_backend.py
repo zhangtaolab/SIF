@@ -133,6 +133,66 @@ async def test_get_document_with_line_slicing(backend):
 
 
 @pytest.mark.asyncio
+async def test_get_document_max_lines_only(backend):
+    """Phase 10 WR-07: max_lines alone slices from line 1 (user decision)."""
+    mock_doc = MagicMock()
+    mock_doc.id = "doc1"
+    mock_doc.path = "/test.md"
+    mock_doc.title = "Test"
+    mock_doc.content = "line1\nline2\nline3\nline4"
+    mock_doc.metadata = {}
+    mock_doc.collection_id = "coll1"
+
+    with patch("sif.mcp.backend.DocumentRepository") as mock_repo:
+        mock_repo.return_value.get_by_id.return_value = mock_doc
+        result = await backend.get_document("doc1", max_lines=2)
+
+    assert result.content == "line1\nline2"
+    assert result.line_start == 1
+    assert result.line_end == 2
+
+
+@pytest.mark.asyncio
+async def test_get_document_from_line_only(backend):
+    """Verify from_line alone slices through the document end."""
+    mock_doc = MagicMock()
+    mock_doc.id = "doc1"
+    mock_doc.path = "/test.md"
+    mock_doc.title = "Test"
+    mock_doc.content = "line1\nline2\nline3\nline4"
+    mock_doc.metadata = {}
+    mock_doc.collection_id = "coll1"
+
+    with patch("sif.mcp.backend.DocumentRepository") as mock_repo:
+        mock_repo.return_value.get_by_id.return_value = mock_doc
+        result = await backend.get_document("doc1", from_line=3)
+
+    assert result.content == "line3\nline4"
+    assert result.line_start == 3
+    assert result.line_end == 4
+
+
+@pytest.mark.asyncio
+async def test_get_document_no_line_params(backend):
+    """Verify omitting both line params returns the full document."""
+    mock_doc = MagicMock()
+    mock_doc.id = "doc1"
+    mock_doc.path = "/test.md"
+    mock_doc.title = "Test"
+    mock_doc.content = "line1\nline2\nline3\nline4"
+    mock_doc.metadata = {}
+    mock_doc.collection_id = "coll1"
+
+    with patch("sif.mcp.backend.DocumentRepository") as mock_repo:
+        mock_repo.return_value.get_by_id.return_value = mock_doc
+        result = await backend.get_document("doc1")
+
+    assert result.content == "line1\nline2\nline3\nline4"
+    assert result.line_start is None
+    assert result.line_end is None
+
+
+@pytest.mark.asyncio
 async def test_get_document_not_found(backend):
     """Verify get_document returns None when not found."""
     with (
