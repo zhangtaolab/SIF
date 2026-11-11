@@ -166,7 +166,11 @@ def status_cmd(ctx: click.Context) -> None:
     ctx.ensure_object(dict)
     index_path = ctx.obj.get("index_path")
     if index_path is None:
-        index_path = get_settings().get_db_path()
+        # IN-06: same ValidationError-to-ClickException guard as _get_default_db_path.
+        try:
+            index_path = get_settings().get_db_path()
+        except ValidationError as e:
+            raise click.ClickException(str(e)) from e
 
     if not index_path.exists():
         console.print("[yellow]No index found. Run 'sif index update' to create one.[/yellow]")
