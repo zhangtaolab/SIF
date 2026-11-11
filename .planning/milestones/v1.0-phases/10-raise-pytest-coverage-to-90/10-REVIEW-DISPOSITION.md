@@ -37,7 +37,7 @@ findings:
     title: "MCP `hybrid_search` cannot degrade to BM25 when sqlite-vec is unavailable — every `query` tool call fails"
   - id: WR-09
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "`cleanup` compares naive-local ISO timestamps against aware-UTC ISO strings lexicographically"
   - id: WR-10
     severity: warning
@@ -91,7 +91,7 @@ findings:
     severity: critical
     disposition: open
     title: "XML-forbidden control characters not stripped in cli/commands/search.py:104-121 — title containing \\x0b produces non-well-formed XML"
-open: 15
+open: 14
 total: 22
 recorded: 2026-11-06T12:37:58.492Z
 ---
@@ -108,7 +108,7 @@ recorded: 2026-11-06T12:37:58.492Z
 | WR-06 | warning | fixed | quick 261111-r2f (bench fixture load pinned to explicit UTF-8 encoding plus open-contract regression test; raw-traceback wrapping already shipped in Phase 16 T-16-02) |
 | WR-07 | warning | open | - |
 | WR-08 | warning | open | - |
-| WR-09 | warning | open | - |
+| WR-09 | warning | fixed | quick 261111-rqq (cleanup delegates to LLMCacheRepository.clear_expired with parsed-datetime comparison; cache expiry written as aware-UTC; legacy naive-local rows interpreted as system-local; regression tests) |
 | WR-10 | warning | fixed | quick 261111-l7p (dimension-mismatch remediation message plus regression test) |
 | IN-01 | info | open | - |
 | IN-02 | info | open | - |
