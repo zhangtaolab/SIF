@@ -1,112 +1,132 @@
 ---
 phase: 11-live-index-foundation-concurrent-db-incremental-core
-fixed_at: 2026-11-11T04:09:36Z
+fixed_at: 2026-11-11T04:37:47Z
 review_path: .planning/phases/11-live-index-foundation-concurrent-db-incremental-core/11-REVIEW.md
 iteration: 1
-findings_in_scope: 2
-fixed: 2
+findings_in_scope: 4
+fixed: 4
 skipped: 0
 status: all_fixed
 ---
 
 # Phase 11: Code Review Fix Report
 
-**Fixed at:** 2026-11-11T04:09:36Z
+**Fixed at:** 2026-11-11T04:37:47Z
 **Source review:** .planning/phases/11-live-index-foundation-concurrent-db-incremental-core/11-REVIEW.md
-**Iteration:** 1
+**Iteration:** 1 (re-review at HEAD `2adc456`; supersedes the previous fix report, which covered the pre-fix WR-01/WR-02 iteration)
 
 **Summary:**
-- Findings in scope: 2 (WR-01, WR-02 — fix_scope `critical_warning`)
-- Fixed: 2
+- Findings in scope: 4 (IN-01 … IN-04 — fix_scope `all`)
+- Fixed: 4
 - Skipped: 0
-- Out of scope (Info severity, not attempted): IN-01, IN-02, IN-03 — see below
+
+**Environment note:** `workflow.use_worktrees=false`, so all edits, commits, and
+verification gates below ran directly in the main checkout (`/Users/forrest/GitHub/SIF`,
+branch `dev`) — the numbers are reproducible from that tree as-is.
 
 ## Fixed Issues
 
-### WR-01: Worker tick is not exception-guarded — one tick exception permanently kills live indexing
+### IN-01: Inert busy-check branch in `_checkpoint_if_idle`
 
 **Files modified:** `src/sif/indexing/watcher.py`
-**Commit:** `224d1db`
-**Status:** fixed: requires human verification (concurrency/state-handling fix; behavioral evidence below)
-**Applied fix:**
-- `_worker_loop`: the `_on_tick()` call in the `except queue.Empty` arm is now wrapped in
-  `try/except Exception` + `logger.exception("watch tick failed; continuing next interval")`,
-  matching the existing job guard — one tick failure no longer kills the worker thread for the
-  process lifetime.
-- New `FileWatcher._unschedule_quietly(observer, handle)` helper wrapping
-  `observer.unschedule(handle)` in `contextlib.suppress(KeyError)` (ruff SIM105 required the
-  `suppress` form over `try/except/pass`). Used at both unschedule sites the review cited:
-  `recovery_tick`'s disappeared-root branch and `_unschedule_removed`. Verified against the
-  installed watchdog 6.0.0 source that `BaseObserver.unschedule` does a bare
-  `self._emitter_for_watch[watch]` lookup (raises `KeyError` once `observer.stop()` →
-  `on_thread_stop()` → `unschedule_all()` has cleared the registry), so the guard targets the
-  real trigger; a cleared registration now skips a single root instead of aborting the tick.
+**Commit:** `1a577bc`
+**Applied fix:** Took the review's `logger.debug`-on-busy option: the dead
+`if row is not None and row[0]: return` tail is now a live branch that logs
+busy at DEBUG ("Idle WAL checkpoint busy (WAL held elsewhere); retrying next
+interval") with an adjacent comment stating that the caller's deadline reset in
+`_checkpoint_if_due` — not anything done in this function — is what postpones
+the retry. The docstring's "skip silently" sentence was rewritten to say the
+same, so the code no longer implies a distinct skip action it does not have.
+DEBUG level keeps the existing
+`test_busy_row_skips_silently_and_resets_deadline` warning-silence contract
+intact (caplog at WARNING never sees it), and it fires at most once per
+checkpoint interval, respecting Pitfall 7.
 
-### WR-02: stop() mutates and iterates worker-owned state before quiescing the worker — races the rescope diff
+### IN-02: WAL-checkpoint PRAGMA constant triplicated across modules
+
+**Files modified:** `src/sif/database/factory.py`, `src/sif/indexing/watcher.py`,
+`src/sif/cli/commands/watch.py`, `src/sif/mcp/watch_host.py`
+**Commit:** `2444fa0`
+**Applied fix:** Defined the constant once as public
+`WAL_CHECKPOINT_TRUNCATE = "PRAGMA wal_checkpoint(TRUNCATE)"` in
+`sif/database/factory.py` (alongside the other locked SQLite recipe strings,
+with the 12-D14/D-16 provenance comment carried over) and imported it at all
+three former definition sites (`watcher.py` idle tick, `cli/commands/watch.py`
+`shutdown_watcher`, `mcp/watch_host.py` `stop_embedded_watch`). Grep confirms a
+single definition and three import sites; no underscore-prefixed copies remain.
+No circular imports (factory.py imports only stdlib + sqlite_vec +
+`sif.utils.logging`).
+
+### IN-03: "Bounded" stop flush is not time-bounded at embed depth
 
 **Files modified:** `src/sif/indexing/watcher.py`
-**Commit:** `c210f4a`
-**Status:** fixed: requires human verification (concurrency/state-handling fix; behavioral evidence below)
-**Applied fix:**
-- `stop()` reordered to quiesce the worker FIRST: `_stop_event.set()` + stop sentinel + the
-  bounded 10s worker join + the skip-flush-on-live-worker gate all run before any
-  worker-owned state is touched. Only then `observer.stop()`, the debouncer `stop()` loop,
-  the flush (`_drain_once`), and the final observer/debouncer joins — from the now-quiet
-  state, exactly as the review's fix prescribed.
-- Both `self._watch_states` iterations in `stop()` now walk `list(...)` snapshots, so even the
-  timed-out-worker edge (a late tick still mutating the dict) cannot raise
-  `RuntimeError: dictionary changed size during iteration` out of `stop()` into the host's
-  shutdown path. Documented trade-off (accepted by the review): a debouncer armed by a very
-  late worker mutation is then stopped only by process exit.
-- Public contract preserved: `stop()` then `worker_joined()` sequencing used by both hosts
-  (`src/sif/cli/commands/watch.py`, `src/sif/mcp/watch_host.py`) is unchanged.
+**Commit:** `1bfd7c5`
+**Applied fix:** Took the review's recommended documentation option (the
+behavioral alternative — skipping embed-depth jobs in the flush — would change
+the shutdown data contract and was not warranted for an Info finding).
+`stop()`'s docstring now says "count-bounded" in the summary line and adds a
+paragraph explaining the bound is a COUNT bound with non-blocking dequeue, not
+a time bound: once the worker join has quiesced, each flushed job runs on the
+stop-caller's thread and at embed depth may legitimately take unbounded time
+(lazy first-use `manager.load_model()`, a `lock_timeout`-long flock wait per
+job), with the hosts' second-signal escapes (CLI exit 130, daemon SIGKILL
+fallback) as the time-bounded way out. `_drain_once`'s docstring makes the same
+count-bounded-not-time-bounded distinction explicitly.
+
+### IN-04: WR-01/WR-02 concurrency fixes have no committed regression test
+
+**Files modified:** `tests/unit/indexing/test_watcher.py`
+**Commit:** `d6412fb`
+**Applied fix:** Added `TestConcurrencyGuardRegressions` with one test per
+guard (plus the stop-ordering proof the review's fix text asked for):
+- `test_real_worker_loop_survives_raising_tick` — starts the REAL
+  `_worker_loop` thread with `_on_tick` monkeypatched to raise, waits (bounded
+  poll, restat_interval=0.05) for the failure to actually fire, then enqueues a
+  real reconcile job and asserts the same surviving worker processes it
+  (`on_batch` fires). A reverted tick guard kills the thread and fails here.
+- `test_recovery_tick_tolerates_stop_cleared_observer_registry` —
+  `observer.unschedule` raises `KeyError` at every attempt (what a
+  `stop()`-cleared `_emitter_for_watch` map does per the watchdog 6.0.0
+  source); two roots both disappear and `recovery_tick` must not raise, must
+  unschedule-attempt BOTH roots (iteration did not abort at alpha's KeyError),
+  must mark both missing with cleared handles, and must preserve documents.
+- `test_stop_quiesces_worker_and_snapshot_survives_mid_iteration_mutation` —
+  recording fakes prove `worker.join` precedes `observer.stop` and the
+  debouncer teardown (quiesce-before-touch, WR-02), and alpha's debouncer
+  teardown pops beta from `_watch_states` MID-iteration (the timed-out-join
+  edge): `stop()` must return without "dictionary changed size during
+  iteration", the snapshot must still stop BOTH debouncers, and the flush must
+  run only after intake is fully stopped (before the final observer join).
+Mutation-verified: temporarily reverting each guard in `src/sif/indexing/watcher.py`
+(tick try/except removed; `contextlib.suppress(KeyError)` removed; `list()`
+snapshots removed) made exactly the corresponding test fail; the committed
+guards were restored via `git checkout` afterward and all tests went green.
 
 ## Verification
 
-All verification ran in the **main checkout** (`workflow.use_worktrees` is `false` in
-`.planning/config.json`, so the fixer edited and committed directly on `dev`; numbers are
-reproducible from this tree).
+All gates ran in the main checkout (no worktree; `workflow.use_worktrees=false`):
 
-Per fix (before each commit):
-- `ruff check src/sif/indexing/watcher.py` + `ruff format --check src/sif/indexing/watcher.py` — clean.
-- `pytest tests/unit/indexing/` — 120 passed (coverage-gate FAIL on single-dir runs is a
-  subset artifact, identical pre-fix).
-- Behavioral proofs beyond syntax (throwaway scripts, not committed):
-  - WR-01: drove the real `_worker_loop` with `_on_tick` raising `RuntimeError` — worker
-    survived 7 consecutive failing ticks (each logged via `logger.exception`) and then
-    processed an enqueued job; `_unschedule_quietly` swallowed the `KeyError` from a
-    stop-cleared-registry observer while still forwarding a normal unschedule.
-  - WR-02: ran `stop()` concurrently with a thread performing 400 dict insert/delete churns
-    (the `_unschedule_removed`/`_schedule_added` shape) — no exception escaped `stop()`;
-    both debouncers still stopped.
+- Per fix: `ast.parse` + `ruff check` + `ruff format --check` on every touched
+  file (Tier 1 + Tier 2), plus targeted pytest runs after each commit.
+- Final combined gates on HEAD `d6412fb`:
+  - `ruff check src tests` — pass; `ruff format --check src tests` — 187 files clean.
+  - `ty check src/sif` — pass.
+  - `pytest tests/unit/indexing/test_watcher.py tests/unit/mcp/test_mcp_watch_host.py
+    tests/unit/cli/test_watch_cmd.py tests/integration/test_watch_e2e.py` —
+    98 passed (43 pre-existing watcher tests + 3 new; 54 in the MCP/watcher
+    subset; 41 CLI/e2e).
+  - New tests additionally run 3x consecutively (threaded test stability) and
+    once against each reverted guard (all three fail as expected).
+- Full-tree pytest intentionally not used as a gate: ~13 pre-existing failures
+  from suite-ordering interference unrelated to this phase (per session
+  baseline); all phase-relevant files were run targeted instead.
 
-Post-fix integration:
-- `pytest tests/integration/test_watch_e2e.py tests/integration/test_watch_daemon_e2e.py` —
-  11 passed (includes the graceful-stop WAL-truncate/no-traceback path with a real observer).
-- `pytest tests/integration/test_mcp_watch_e2e.py` — 4 passed.
-- `ruff check src tests` + `ruff format --check src tests` — clean project-wide.
-- Full unit tree: 13 failures + 1 torch-import collection error, **byte-identical to the
-  pre-fix baseline** (A/B verified by temporarily restoring `5f7012d`'s watcher.py and
-  diffing the failure lists) — all pre-existing full-suite ordering interference
-  (they pass in directory isolation) and/or environmental (no `torch` installed), none
-  caused by these fixes.
+## Skipped Issues
 
-## Out of Scope (Info severity — `fix_scope: critical_warning`)
-
-### IN-01: Inert busy-check branch in _checkpoint_if_idle
-**File:** `src/sif/indexing/watcher.py:679-680`
-**Reason:** Info severity, outside `critical_warning` scope; left for a human decision.
-
-### IN-02: WAL-checkpoint PRAGMA constant triplicated across modules
-**Files:** `src/sif/indexing/watcher.py:57`, `src/sif/cli/commands/watch.py:62`, `src/sif/mcp/watch_host.py:45`
-**Reason:** Info severity, outside `critical_warning` scope; left for a human decision.
-
-### IN-03: "Bounded" stop flush is not time-bounded at embed depth
-**File:** `src/sif/indexing/watcher.py:818-831`
-**Reason:** Info severity, outside `critical_warning` scope; left for a human decision.
+None — all four in-scope findings were fixed.
 
 ---
 
-_Fixed: 2026-11-11T04:09:36Z_
+_Fixed: 2026-11-11T04:37:47Z_
 _Fixer: Claude (gsd-code-fixer)_
 _Iteration: 1_

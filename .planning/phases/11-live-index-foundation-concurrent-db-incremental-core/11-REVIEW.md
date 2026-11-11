@@ -1,6 +1,6 @@
 ---
 phase: 11-live-index-foundation-concurrent-db-incremental-core
-reviewed: 2026-11-11T04:24:37Z
+reviewed: 2026-11-11T04:43:51Z
 depth: standard
 files_reviewed: 1
 files_reviewed_list:
@@ -8,164 +8,117 @@ files_reviewed_list:
 findings:
   critical: 0
   warning: 0
-  info: 4
-  total: 4
+  info: 0
+  total: 0
   necessity: 0
-status: issues_found
+status: clean
 ---
 
-# Phase 11: Code Review Report (incremental re-review, post-fix)
+# Phase 11: Code Review Report (iteration 3 — post-IN-fix re-review)
 
-**Reviewed:** 2026-11-11T04:24:37Z
+**Reviewed:** 2026-11-11T04:43:51Z
 **Depth:** standard
-**Files Reviewed:** 1 (`src/sif/indexing/watcher.py` at HEAD `2adc456`)
-**Status:** issues_found
+**Files Reviewed:** 1 (`src/sif/indexing/watcher.py` at HEAD `d6412fb`, clean working tree)
+**Status:** clean
 
 ## Summary
 
-Second incremental re-review of `src/sif/indexing/watcher.py`, focused on
-verifying the WR-01/WR-02 fixes from commits `224d1db` and `c210f4a` against
-the actual source, re-assessing IN-01/IN-02/IN-03 with fresh line references,
-and running a fresh adversarial pass over the changed code for new defects.
+Third re-review of `src/sif/indexing/watcher.py`, verifying the four info-item
+fixes from commits `1a577bc` (IN-01), `2444fa0` (IN-02), `1bfd7c5` (IN-03), and
+`d6412fb` (IN-04) against the actual source, then running a fresh adversarial
+pass over the fix deltas and the full file. All four fixes are verified
+complete; no new defects were introduced. All reviewed files meet quality
+standards. No issues found.
 
-**WR-01 — VERIFIED FIXED, finding drops.** Both halves of the fix are present
-and grounded in the installed watchdog 6.0.0 source:
+Supporting files consulted for verification (not in the reviewed scope):
+`src/sif/database/factory.py`, `src/sif/cli/commands/watch.py`,
+`src/sif/mcp/watch_host.py`, `tests/unit/indexing/test_watcher.py`,
+`tests/unit/cli/test_watch_cmd.py`.
 
-- The `_on_tick()` call in `_worker_loop`'s `except queue.Empty` arm is now
-  wrapped in `try/except Exception` + `logger.exception("watch tick failed;
-  continuing next interval")` (`src/sif/indexing/watcher.py:741-747`), exactly
-  the recommended shape. One tick exception can no longer kill the worker
-  thread for the process lifetime.
-- New `_unschedule_quietly` helper (`src/sif/indexing/watcher.py:441-453`)
-  wraps `observer.unschedule(handle)` in `contextlib.suppress(KeyError)` and
-  is used at BOTH previously-bare call sites: `recovery_tick`'s
-  disappeared-root branch (line 542) and `_unschedule_removed` (line 600).
-  Grep confirms no bare `observer.unschedule` call site remains. Verified
-  against the installed watchdog (`observers/api.py:362-376`):
-  `unschedule` does a bare `self._emitter_for_watch[watch]` lookup, and
-  `observer.stop()` -> `on_thread_stop()` -> `unschedule_all()` ->
-  `_clear_emitters()` clears that map (`observers/api.py:241-248`), so
-  `KeyError` is provably the exception a stop-cleared registry raises, and
-  every statement in the unschedule body that could raise in this race raises
-  `KeyError` (the whole body runs under the observer lock). The suppression
-  targets the real trigger.
+**IN-01 — VERIFIED FIXED, finding drops.** The inert
+`if row is not None and row[0]: return` tail of `_checkpoint_if_idle`
+(`src/sif/indexing/watcher.py:715-719`) is now a `logger.debug("Idle WAL
+checkpoint busy (WAL held elsewhere); retrying next interval")` with an inline
+comment stating the caller's deadline reset is what postpones the retry, and
+the docstring (`:697-706`) was rewritten to match ("nothing to do here — the
+deadline reset in :meth:`_checkpoint_if_due` is what postpones the retry,
+surfaced at debug only"). The branch now has observable behavior and no longer
+implies a skip action it does not take. The log call introduces no behavior
+change at the default INFO level.
 
-**WR-02 — VERIFIED FIXED, finding drops.** `stop()`
-(`src/sif/indexing/watcher.py:455-503`) now quiesces the worker before
-touching any worker-owned state, exactly as prescribed: `_stop_event.set()`
-(469) and the stop sentinel (472) come first, then the bounded 10s worker
-join with the skip-flush-on-live-worker gate (478-486), and only then
-`observer.stop()` (493) and the debouncer stops (494-496), the flush
-(497-498), and the final joins (500-503). Both `_watch_states` iterations now
-walk `list(...)` snapshots (lines 494, 501), so even the timed-out-join edge
-(a late worker tick still mutating the dict) cannot raise
-`RuntimeError: dictionary changed size during iteration` out of `stop()`.
+**IN-02 — VERIFIED FIXED, finding drops.** `WAL_CHECKPOINT_TRUNCATE` is now
+defined exactly once, at `src/sif/database/factory.py:45` with a comment naming
+its three consumers, and imported at all three former definition sites:
+`src/sif/indexing/watcher.py:33` (use at `:711`),
+`src/sif/cli/commands/watch.py:49` (use at `:113`), and
+`src/sif/mcp/watch_host.py:37` (use at `:181`). Repo-wide grep confirms zero
+remaining module-local copies. No circular import: `factory.py` imports only
+stdlib, `sqlite_vec`, and `sif.utils.logging`. The independent literal in
+`tests/unit/cli/test_watch_cmd.py:43` is deliberate test-pinning of the pragma
+value (importing the production constant would make the assertion tautological)
+— not residual duplication.
 
-The documented trade-off of the timed-out edge — a debouncer armed by a very
-late worker mutation is missed by the stop snapshot — is process-exit-safe:
-watchdog's `BaseThread.__init__` sets `daemon = True`
-(`utils/__init__.py:38-43`), and the watcher's own worker thread is
-`daemon=True` (line 396), so no leaked thread can hang interpreter exit.
+**IN-03 — VERIFIED FIXED, finding drops.** `stop()`'s docstring
+(`src/sif/indexing/watcher.py:454-467`) now states explicitly that "The flush
+bound is a COUNT bound — every job already queued at stop time, dequeued
+without blocking — not a time bound," naming the two real unbounded-time
+hazards (lazy first-use `manager.load_model()`, per-job `lock_timeout` flock
+wait) and the hosts' second-signal escapes as the time-bounded way out.
+`_drain_once`'s docstring (`:864-872`) carries the matching "Count-bounded and
+non-blocking on dequeue only — NOT time-bounded" statement. The documentation
+no longer implies time-boundedness it does not have.
 
-**No new defects from the fixes.** Adversarially traced the changed code
-paths: double-`stop()` is idempotent (the second sentinel is skipped by
-`_drain_once`'s `job is not None` check at line 859); a sentinel left in the
-queue when the worker exits via the loop-top stop flag is likewise skipped;
-`stop()` re-ordered intake-stop before the drain makes the flush see a
-quiesced queue (strictly better than the old order). I also chased one
-candidate the previous review did not address — `rescope`'s identity-by-name
-diff ignoring a same-name path change — and rejected it as unreachable: no
-CLI or MCP surface mutates a collection's `path` after creation
-(`src/sif/cli/commands/collection.py` offers only add/remove/rename/
-enable/disable/update-cmd/include/exclude; `CollectionRepository.update`
-accepts a path but no caller changes it), and remove+re-add changes the name
-set, which the diff handles correctly.
+**IN-04 — VERIFIED FIXED, finding drops.** New
+`TestConcurrencyGuardRegressions` (`tests/unit/indexing/test_watcher.py:837-1035`,
+commit `d6412fb`, +202 lines) delivers the prescribed regression coverage:
 
-**Quality gates:** `ruff check` and `ruff format --check` on the file pass;
-`pytest tests/unit/indexing/test_watcher.py tests/unit/mcp/test_mcp_watch_host.py
-tests/integration/test_watch_e2e.py` — 60 passed (the 90% coverage-gate FAIL
-is a single-subset artifact, identical pre-fix).
+- `test_real_worker_loop_survives_raising_tick` (`:848`) drives the REAL
+  `_worker_loop` thread with `_on_tick` monkeypatched to raise, then asserts a
+  job enqueued after the failure is still processed — pinning the WR-01 tick
+  guard against the silent-live-indexing-death revert.
+- `test_recovery_tick_tolerates_stop_cleared_observer_registry` (`:906`) sets
+  `observer.unschedule.side_effect = KeyError` (a stop-cleared registry) and
+  asserts `recovery_tick` processes BOTH disappeared roots (`call_count == 2`,
+  both `missing is True`, documents preserved) — pinning the
+  `_unschedule_quietly` suppression and iteration continuation.
+- `test_stop_quiesces_worker_and_snapshot_survives_mid_iteration_mutation`
+  (`:965`) mutates `_watch_states` mid-iteration via a debouncer-stop side
+  effect and asserts ordering (`worker.join` before `observer.stop` and
+  debouncer stops; both debouncers stopped before the drain; drain before
+  `observer.join`) — pinning the WR-02 quiesce-then-snapshot shape.
 
-**Necessity review performed** (rubric read at standard depth): every
-defensive construct in the changed code defends a reachable state — the
-KeyError suppression is grounded in the watchdog source, the tick guard and
-snapshots defend the timed-out-join/tick-in-flight interleavings. Zero
-necessity findings.
+The tests are deadline-bounded (5s/10s waits, no fixed sleeps), assert on
+structure rather than timing, and clean up in `finally` blocks.
 
-Result: both warnings drop as verified-fixed; the three info items remain
-(fresh line references below), plus one new info item: the two concurrency
-fixes ship with no committed regression test.
+**No new defects from the fixes.** Adversarially traced every fix delta: the
+debug log is a pure constant-string call; the import move adds no cycle and no
+meaningful import cost (every watcher entry point already opens a factory
+connection); both docstring rewrites are accurate against the code they
+describe (`index_lock(lock_timeout)` per job, lazy `load_model()` in
+`ensure_ready`, CLI second-signal exit and daemon SIGKILL fallback); and the
+new tests use the file's established `_delenv_settings_vars`/`_seed_*` helpers
+without disturbing existing coverage.
 
-## Info
+**Necessity review performed** (rubric read at standard depth): every defensive
+construct in the file defends a reachable state — the KeyError suppression is
+grounded in the installed watchdog source, the tick guard and `list()`
+snapshots defend real interleavings, and the `rescope_provider`/
+`checkpoint_interval` opt-ins are instantiated by actual hosts
+(`src/sif/mcp/watch_host.py:149-151` and the daemon wiring at
+`src/sif/cli/commands/watch.py:383-385`), so they are not generality without
+instantiation. Zero necessity findings.
 
-### IN-01: Inert busy-check branch in `_checkpoint_if_idle` (dead code that implies behavior it does not have)
+**Quality gates:** `ruff check` and `ruff format --check` pass on all five
+touched files; `pytest tests/unit/indexing/test_watcher.py
+tests/unit/cli/test_watch_cmd.py tests/unit/mcp/test_mcp_watch_host.py` — 92
+passed; `TestConcurrencyGuardRegressions` — 3 passed;
+`tests/integration/test_watch_e2e.py` — 6 passed. (The 90% coverage-gate FAIL
+on subset runs is the documented single-subset artifact, identical pre-fix.)
 
-**File:** `src/sif/indexing/watcher.py:706-707`
-**Issue:** `if row is not None and row[0]: return` is the last statement of
-the function — both the busy and non-busy paths are behaviorally identical,
-so the branch is dead. The docstring ("A busy result row means another
-connection holds the WAL: skip silently") reads as if a distinct skip action
-exists; a maintainer could reasonably believe busy is handled specially. In
-reality a busy TRUNCATE result needs no action here only because the deadline
-was already reset in `_checkpoint_if_due` (line 687) — worth stating in code,
-not in a dead branch. Unchanged since the previous review.
-**Fix:** Replace the branch with a comment (or a `logger.debug` on busy)
-saying the deadline reset in the caller is what postpones the retry, and
-delete the no-op `if`.
-
-### IN-02: WAL-checkpoint PRAGMA constant triplicated across modules
-
-**File:** `src/sif/indexing/watcher.py:58`, `src/sif/cli/commands/watch.py:62`, `src/sif/mcp/watch_host.py:45`
-**Issue:** `_WAL_CHECKPOINT_TRUNCATE = "PRAGMA wal_checkpoint(TRUNCATE)"` is
-defined identically in three modules. A future change to the checkpoint
-spelling (e.g. `PASSIVE` vs `TRUNCATE`, or `wal_autocheckpoint` interplay)
-would have to be made in three places that are deliberately designed to share
-the same shutdown contract. Unchanged since the previous review.
-**Fix:** Define it once (e.g. in `sif/database/` alongside the other SQLite
-recipe strings) and import it at the three call sites.
-
-### IN-03: "Bounded" stop flush is not time-bounded at embed depth
-
-**File:** `src/sif/indexing/watcher.py:457` (docstring), `851-864` (`_drain_once`)
-**Issue:** `stop()` carefully bounds the worker join at 10s and skips the
-flush when the worker is still alive, yet once the worker is dead the flush
-itself runs `_run_job` on the stop-caller's thread — and at embed depth the
-first flushed job can trigger the lazy `manager.load_model()` (the exact
-first-use hazard the join-timeout comment at lines 475-477 warns about) or a
-`lock_timeout`-long flock wait per job. The docstring's "drain queued work
-once (bounded)" (line 457) and `_drain_once`'s "bounded, no waiting" (line
-852) are bounded in count and dequeue-blocking, not in time. The CLI
-second-signal escape (exit 130) and the daemon SIGKILL fallback mitigate, so
-this is a documentation/robustness gap rather than a hang bug. Unchanged
-since the previous review.
-**Fix:** Note explicitly in the `stop()`/`_drain_once` docstrings that the
-flush is count-bounded only and may legitimately perform first-use model
-load, or skip embed-depth jobs in the flush when their lock-window cost
-would exceed the join budget (leaving them to the next run's reconcile).
-
-### IN-04: WR-01/WR-02 concurrency fixes have no committed regression test
-
-**File:** `src/sif/indexing/watcher.py:741-747`, `441-453`, `469-503` (uncovered guards); tests at `tests/unit/indexing/test_watcher.py`
-**Issue:** The fixer's behavioral proofs (a real `_worker_loop` surviving a
-raising `_on_tick`; `_unschedule_quietly` swallowing a stop-cleared-registry
-`KeyError`; `stop()` under dict churn) were throwaway scripts, per
-`11-REVIEW-FIX.md`. The committed suite never drives the real `_worker_loop`
-with a raising tick — every `_on_tick` test (e.g. lines 1713-1744, 1825-1862)
-invokes it directly with the worker quiesced, and the only `RuntimeError`
-raise in the file (line 1424) exercises the pre-existing rescope-provider
-guard. Likewise no test covers a `stop()`-cleared observer registry hitting
-`_unschedule_quietly`, or the `list()` snapshot under a concurrent mutation.
-A future refactor could silently revert either guard without any test
-failing — the exact silent-live-indexing-death failure mode WR-01 described.
-The test file was last touched in phase 13 (`8039a3e`), before both fixes.
-**Fix:** Commit one test per guard: (a) run the real `_worker_loop` with
-`_on_tick` monkeypatched to raise, assert the worker survives and processes a
-subsequently enqueued job; (b) call `recovery_tick` against an observer whose
-registry was cleared by `stop()` and assert no exception and remaining roots
-still processed.
+Result: all four info findings verified fixed and dropped; no new findings.
 
 ---
 
-_Reviewed: 2026-11-11T04:24:37Z_
+_Reviewed: 2026-11-11T04:43:51Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
