@@ -61,7 +61,7 @@ findings:
     title: "`quiet` recomputed redundantly after the search completes"
   - id: IN-05
     severity: info
-    disposition: open
+    disposition: fixed
     title: "`--config` global option is accepted, documented, and never consumed"
   - id: IN-06
     severity: info
@@ -91,7 +91,7 @@ findings:
     severity: critical
     disposition: fixed
     title: "XML-forbidden control characters not stripped in cli/commands/search.py:104-121 — title containing \\x0b produces non-well-formed XML"
-open: 3
+open: 2
 total: 22
 recorded: 2026-11-06T12:37:58.492Z
 ---
@@ -114,7 +114,7 @@ recorded: 2026-11-06T12:37:58.492Z
 | IN-02 | info | fixed | quick 261111-v4y (vsearch_cmd uses the module-level Database import; all eight vsearch test patch sites unified on sif.cli.commands.search.Database; patch-target trap demonstrated red-to-green via the closure test) |
 | IN-03 | info | fixed | quick 261111-v4z (EmbeddingManager.model public read-only property replaces the two private _model reach-ins in query_cmd and bench_cmd; property unit tests red-to-green) |
 | IN-04 | info | fixed | quick 261111-v50 (deleted the three dead output-time quiet recomputations in search_cmd/vsearch_cmd/query_cmd; entry computations preserved; existing output/format tests green) |
-| IN-05 | info | open | - |
+| IN-05 | info | fixed | quick 261111-wh9 (user-decided removal of the no-op global --config option: decorator, cli parameter, ctx.obj config_path entry, and DEFAULT_CONFIG_PATH constant deleted from main.py; cli-reference.md regenerated via make docs-generate; option-rejection regression tests red-to-green) |
 | IN-06 | info | fixed | quick 261111-tiq (status_cmd index_path-None fallback wrapped in the _get_default_db_path ValidationError-to-ClickException guard; invalid-env regression test red-to-green) |
 | IN-07 | info | open | - |
 | IN-08 | info | fixed | quick 261111-rqp (disk-fallback read_text pinned to explicit UTF-8 encoding plus read_text-contract regression test) |
