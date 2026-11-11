@@ -230,9 +230,7 @@ class TestCollectionRealDatabase:
         assert empty.exit_code == 0, empty.output
         assert "No files found in collection." in empty.output
 
-    def test_ls_subpath_is_segment_aligned(
-        self, tmp_path: Path, sibling_notes_dir: Path
-    ) -> None:
+    def test_ls_subpath_is_segment_aligned(self, tmp_path: Path, sibling_notes_dir: Path) -> None:
         """WR-05: a relative subpath lists its own subtree, never a sibling prefix."""
         db_path = tmp_path / "sif.db"
         self._seed(db_path, "notes", sibling_notes_dir)
