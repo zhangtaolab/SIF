@@ -459,20 +459,22 @@ class FileWatcher:
             flush: When True, run every job already queued at stop time.
         """
         logger.info("Stopping file watcher (flush=%s)", flush)
-        if self._observer is not None:
-            self._observer.stop()
-        for state in self._watch_states.values():
-            if state.debouncer is not None:
-                state.debouncer.stop()
+        # Quiesce the worker BEFORE touching worker-owned state (Pitfall 6):
+        # rescope/recovery_tick run on the worker thread and mutate
+        # ``_watch_states`` and the observer, so stopping the observer or
+        # iterating the states first races a tick in flight — a rescope
+        # del/insert mid-iteration raises RuntimeError out of stop() into
+        # the host's shutdown path, and observer.stop() clearing the
+        # registry is the KeyError trigger the unschedule sites tolerate.
+        self._stop_event.set()
+        # Wake a worker parked on its re-stat-timeout idle wait so the join
+        # below never waits out the interval (D-14 bounded stop).
+        self._queue.put(_WORKER_STOP_SENTINEL)
         # The worker exits on the stop flag; queued work is then drained on
         # this thread so no two threads ever share the connection mid-job.
         # A timed-out join means a job legitimately still runs (flock wait up
         # to lock_timeout, first-use model load) — the flush is then skipped
         # rather than racing the live worker on the same connection (CR-01).
-        self._stop_event.set()
-        # Wake a worker parked on its re-stat-timeout idle wait so the join
-        # below never waits out the interval (D-14 bounded stop).
-        self._queue.put(_WORKER_STOP_SENTINEL)
         if self._worker is not None:
             self._worker.join(timeout=_WORKER_JOIN_TIMEOUT_SECONDS)
             if flush and self._worker.is_alive():
@@ -482,11 +484,21 @@ class FileWatcher:
                     _WORKER_JOIN_TIMEOUT_SECONDS,
                 )
                 flush = False
+        # The worker is quiet now (or, on a timed-out join, past the stop
+        # signal): stop intake from a state no tick is iterating. The
+        # snapshot also covers the timed-out case — a late worker mutation
+        # then leaves a just-armed debouncer to process exit rather than
+        # raising "dictionary changed size during iteration" here.
+        if self._observer is not None:
+            self._observer.stop()
+        for state in list(self._watch_states.values()):
+            if state.debouncer is not None:
+                state.debouncer.stop()
         if flush:
             self._drain_once()
         if self._observer is not None:
             self._observer.join(timeout=_JOIN_TIMEOUT_SECONDS)
-        for state in self._watch_states.values():
+        for state in list(self._watch_states.values()):
             if state.debouncer is not None:
                 state.debouncer.join(timeout=_JOIN_TIMEOUT_SECONDS)
 
