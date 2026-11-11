@@ -86,8 +86,22 @@ def collection_remove(ctx: click.Context, name: str) -> None:
             if not collection:
                 raise click.ClickException(f"Collection '{name}' not found")
 
-            # Delete documents first (cascade will handle chunks)
+            # Purge vec0 embeddings first: the virtual table cannot carry the
+            # documents FK cascade, so orphaned rows would pollute KNN search
+            # until cleanup (WR-01). Documents then cascade-delete their chunks.
             from sif.database.repositories import DocumentRepository  # noqa: PLC0415
+            from sif.search.vector import create_embedding_purger  # noqa: PLC0415
+
+            purger = create_embedding_purger(conn)
+            if purger is not None:
+                doc_ids = [
+                    row[0]
+                    for row in conn.execute(
+                        "SELECT id FROM documents WHERE collection_id = ?", (collection.id,)
+                    )
+                ]
+                for doc_id in doc_ids:
+                    purger.delete_embeddings_by_document(doc_id)
 
             doc_repo = DocumentRepository(conn)
             doc_repo.delete_by_collection(collection.id)

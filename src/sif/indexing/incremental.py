@@ -55,20 +55,6 @@ class IncrementalResult:
     failed: int = 0
 
 
-def _embedding_purger(conn: sqlite3.Connection) -> VectorSearcher | None:
-    """Return a VectorSearcher for purging embeddings, or None without sqlite-vec.
-
-    A missing sqlite-vec extension also means no vec0 table — hence no stored
-    embeddings — so callers treat None as "nothing to purge".
-    """
-    from sif.search.vector import VectorSearcher  # noqa: PLC0415
-
-    try:
-        return VectorSearcher(conn)
-    except RuntimeError:
-        return None
-
-
 class IncrementalIndexer:
     """The single shared incremental update loop (roadmap SC3).
 
@@ -89,7 +75,9 @@ class IncrementalIndexer:
         self._doc_repo = DocumentRepository(conn)
         self._chunk_repo = DocumentChunkRepository(conn)
         self._parser = MarkdownParser()
-        self._vector_purger = _embedding_purger(conn)
+        from sif.search.vector import create_embedding_purger  # noqa: PLC0415
+
+        self._vector_purger: VectorSearcher | None = create_embedding_purger(conn)
 
     def update_collection(
         self,

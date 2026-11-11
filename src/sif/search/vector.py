@@ -237,3 +237,18 @@ class VectorSearcher:
                 continue
             result.setdefault(document_id, set()).add(chunk_id)
         return result
+
+
+def create_embedding_purger(conn: sqlite3.Connection) -> VectorSearcher | None:
+    """Return a VectorSearcher for purging embeddings, or None without sqlite-vec.
+
+    A missing sqlite-vec extension also means no vec0 table — hence no stored
+    embeddings — so callers treat None as "nothing to purge".
+
+    Single shared construction point for embedding purgers (WR-01): both
+    IncrementalIndexer and ``collection remove`` build their purger here.
+    """
+    try:
+        return VectorSearcher(conn)
+    except RuntimeError:
+        return None
