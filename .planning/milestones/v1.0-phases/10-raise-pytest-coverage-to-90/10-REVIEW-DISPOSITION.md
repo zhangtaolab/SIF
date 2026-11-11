@@ -77,7 +77,7 @@ findings:
     title: "Disk-fallback `read_text()` without explicit encoding"
   - id: IN-09
     severity: info
-    disposition: open
+    disposition: fixed
     title: "api-reference example uses `sqlite3.connect(\"~/...\")` — tilde is not expanded"
   - id: IN-10
     severity: info
@@ -91,7 +91,7 @@ findings:
     severity: critical
     disposition: fixed
     title: "XML-forbidden control characters not stripped in cli/commands/search.py:104-121 — title containing \\x0b produces non-well-formed XML"
-open: 8
+open: 7
 total: 22
 recorded: 2026-11-06T12:37:58.492Z
 ---
@@ -118,7 +118,7 @@ recorded: 2026-11-06T12:37:58.492Z
 | IN-06 | info | fixed | quick 261111-tiq (status_cmd index_path-None fallback wrapped in the _get_default_db_path ValidationError-to-ClickException guard; invalid-env regression test red-to-green) |
 | IN-07 | info | open | - |
 | IN-08 | info | fixed | quick 261111-rqp (disk-fallback read_text pinned to explicit UTF-8 encoding plus read_text-contract regression test) |
-| IN-09 | info | open | - |
+| IN-09 | info | fixed | quick 261111-tis (api-reference database examples expand the tilde via pathlib before opening the DB; Complete Search Example plus the identical DatabaseConnection and SearchBackend usage patterns) |
 | IN-10 | info | fixed | quick 261111-tir (backend fixture and direct constructions use tmp_path-scoped DB paths; sentinel-verified no shared /tmp database creation) |
 | CR-01 | critical | fixed | quick 261111-tip (triage close: schema.py detects and drops legacy direct-DELETE/UPDATE FTS sync triggers, recreates delete-command forms with gated rebuild, Phase 10.1-02 commit 7622985; legacy-delete migration regression tests green) |
 | CR-02 | critical | fixed | quick 261111-tip (triage close: search.py strips XML-1.0-forbidden control characters via _XML_1_0_INVALID/_xml_sanitize on query/title/path/collection/line_numbers, Phase 10.1-03 commit f78ef4a; round-trip parse regression tests green) |
