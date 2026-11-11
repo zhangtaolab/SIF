@@ -930,7 +930,7 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
         with db.connection:
             pipeline = SearchPipeline(
                 db.connection,
-                embedder=manager._model,  # noqa: SLF001
+                embedder=manager.model,
                 query_expander=query_expander,
                 reranker=reranker,
                 snippet_extractor=snippet_extractor,

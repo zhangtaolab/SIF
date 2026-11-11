@@ -645,7 +645,7 @@ def bench_cmd(  # noqa: PLR0913
         # One embedding-once wrapper per bench invocation serves the baseline
         # and the sweep alike (D-07): every distinct query text is embedded
         # exactly once, then reused across all measurements.
-        inner_embedder = manager._model if manager else None  # noqa: SLF001
+        inner_embedder = manager.model if manager else None
         harness = BenchHarness(
             db=db,
             embedder=CachedEmbedder(inner_embedder) if inner_embedder is not None else None,

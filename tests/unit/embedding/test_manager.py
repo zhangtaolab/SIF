@@ -169,3 +169,28 @@ class TestEmbeddingManager:
         assert info["model_id"] == "test-model"
         assert info["embedding_dim"] == 512
         assert info["max_tokens"] == 256
+
+    def test_model_property_reflects_load_state(self) -> None:
+        """Phase 10 IN-03: model exposes the loaded embedder lifecycle."""
+        mock_embedder = MagicMock()
+        mock_factory = MagicMock()
+        mock_factory.create_model.return_value = mock_embedder
+        config = EmbeddingConfig(model_type=ModelType.SENTENCE_TRANSFORMERS, model_name="test")
+        manager = EmbeddingManager(config=config, factory=mock_factory)
+
+        assert manager.model is None
+        manager.load_model()
+        assert manager.model is mock_embedder
+        manager.unload_model()
+        assert manager.model is None
+
+    def test_model_property_is_read_only(self) -> None:
+        """Phase 10 IN-03: model rejects assignment because it has no setter."""
+        mock_embedder = MagicMock()
+        mock_factory = MagicMock()
+        mock_factory.create_model.return_value = mock_embedder
+        config = EmbeddingConfig(model_type=ModelType.SENTENCE_TRANSFORMERS, model_name="test")
+        manager = EmbeddingManager(config=config, factory=mock_factory)
+
+        with pytest.raises(AttributeError):
+            manager.model = mock_embedder

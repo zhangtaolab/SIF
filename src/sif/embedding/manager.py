@@ -72,6 +72,11 @@ class EmbeddingManager:
 
         return cls(config=config, cache=cache)
 
+    @property
+    def model(self) -> Embedder | None:
+        """The loaded embedder, or None when no model is loaded."""
+        return self._model
+
     def load_model(self) -> None:
         """Load the embedding model."""
         if self._model is not None:

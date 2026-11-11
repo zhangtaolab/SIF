@@ -633,7 +633,7 @@ class TestBenchCommand:
             mock_db = MagicMock()
             mock_db.__enter__.return_value.connection = conn
             mock_manager = MagicMock()
-            mock_manager._model = embedder
+            mock_manager.model = embedder
             mock_manager.embed_single.return_value = [0.0] * EMBEDDING_DIM
 
             runner = CliRunner()
@@ -801,7 +801,7 @@ class TestBenchSweepDiscipline:
 
         mock_manager = MagicMock()
         mock_manager.embed_single.return_value = [0.0] * 8
-        mock_manager._model = counting
+        mock_manager.model = counting
 
         with (
             patch("sif.cli.commands.bench.Database", return_value=MagicMock()),
@@ -1109,7 +1109,7 @@ class TestBenchRerankStates:
             mock_db = MagicMock()
             mock_db.__enter__.return_value.connection = conn
             mock_manager = MagicMock()
-            mock_manager._model = embedder
+            mock_manager.model = embedder
             mock_manager.embed_single.return_value = [0.0] * EMBEDDING_DIM
 
             runner = CliRunner()
