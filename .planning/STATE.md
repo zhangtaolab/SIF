@@ -203,6 +203,10 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 | 261111-rqq | Close Phase 10 WR-09: stale-vector handling on the read side (src/sif/cli/main.py) and write side (src/sif/database/repositories.py) per the original WR-09 finding (regression tests + three-edit ledger closure in 10-REVIEW-DISPOSITION.md) | 2026-11-11 | 8f16b1e | /Users/forrest/GitHub/SIF/.planning/quick/261111-rqq-close-phase-10-wr-09-stale-vector-handling-on-the-read-side |
 | 261111-rqr | Fix deferred D-1: caplog cross-test leak in tests/unit/cli/test_watch_cmd.py under .venv batch runs (bisect the batch order to isolate the leaking predecessor, reset logger state; full details in .planning/quick/261111-o6y-find-and-fix-failing-tests-run-the-quali/deferred-items.md) | 2026-11-11 | a04af92 | /Users/forrest/GitHub/SIF/.planning/quick/261111-rqr-fix-deferred-d-1-caplog-cross-test-leak-in-tests-unit-cli-te |
 | 261111-rqs | Close Phase 10 WR-01: share the duplicated purge helper (collection.py:75/93 and index.py) plus repositories.py purge and sqlite-vec handling per the original WR-01 finding (regression tests + three-edit ledger closure in 10-REVIEW-DISPOSITION.md) | 2026-11-11 | a43007a | /Users/forrest/GitHub/SIF/.planning/quick/261111-rqs-close-phase-10-wr-01-share-the-duplicated-purge-helper-colle |
+| 261111-tip | Close Phase 10 IN-01/CR-01/CR-02 via evidence-backed triage (open 13->10) | 2026-11-11 | 292bf05 | .planning/quick/261111-tip-close-phase-10-findings-in-01-cr-01-cr-02-as-fixed-via-evide |
+| 261111-tiq | Close Phase 10 IN-06: status_cmd fallback ValidationError guard (open 10->9) | 2026-11-11 | cee902a | .planning/quick/261111-tiq-close-phase-10-in-06-wrap-status-cmd-s-index-path-none-fallb |
+| 261111-tir | Close Phase 10 IN-10: backend tests scoped to tmp_path (open 9->8) | 2026-11-11 | 381df0d | .planning/quick/261111-tir-close-phase-10-in-10-make-tests-unit-mcp-test-backend-py-sto |
+| 261111-tis | Close Phase 10 IN-09: api-reference tilde expansion, 3 sites (open 8->7) | 2026-11-11 | eb18aa8 | .planning/quick/261111-tis-close-phase-10-in-09-fix-the-complete-search-example-in-docs |
 
 ### Overrides
 
