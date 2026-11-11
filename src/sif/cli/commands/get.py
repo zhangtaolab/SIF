@@ -82,7 +82,7 @@ def get_cmd(  # noqa: C901, PLR0912, PLR0915
                 path = Path(path_or_docid)
                 if path.exists():
                     try:
-                        content = path.read_text()
+                        content = path.read_text(encoding="utf-8")
                         # Honor the same line filtering/numbering contract
                         # as the indexed path (CR-02: these were silently
                         # ignored on the fallback, dumping unbounded output).
