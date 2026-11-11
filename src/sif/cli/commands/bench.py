@@ -621,7 +621,7 @@ def bench_cmd(  # noqa: PLR0913
     # Load fixture (T-16-02): malformed JSON is untrusted input and must
     # surface as a ClickException (non-zero exit), never a raw traceback.
     try:
-        with open(fixture) as f:
+        with open(fixture, encoding="utf-8") as f:
             fixture_data = json.load(f)
     except (OSError, ValueError) as e:
         raise click.ClickException(f"Benchmark failed: {e}") from e
