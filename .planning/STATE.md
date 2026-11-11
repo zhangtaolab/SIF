@@ -4,17 +4,16 @@ milestone: v1.1
 milestone_name: Live Index and Search Quality
 current_phase: 11
 status: completed
-stopped_at: Phase 11 complete — all phases complete
-last_updated: "2026-11-11T07:42:41.935Z"
+stopped_at: context exhaustion at 89% (2026-11-11)
+last_updated: "2026-11-11T10:17:06.343Z"
 last_activity: 2026-11-11
 last_activity_desc: Phase 11 complete
-state_head: 486fc59d124a2d86b8146c9d9637170473d985e9
+state_head: 65226635fdcd2751234578bfb9f017d8d6768ed8
 progress:
   total_phases: 6
   completed_phases: 6
   total_plans: 22
   completed_plans: 22
-  percent: 100
 ---
 
 # DocSift — Project State
@@ -32,7 +31,7 @@ progress:
 Phase: 11
 Plan: Not started
 Status: All phases complete
-Last activity: 2026-11-11 - Completed quick task 261111-nj0: Close Phase 10 WR-04 — ls subpath collection-relative segment-aligned filter
+Last activity: 2026-11-11 - Completed quick task 261111-o6y: Fix 60 FORCE_COLOR=1 test failures — color-env-hermetic pytest suite (conftest import-time scrub + autouse fixture)
 
 Progress: [██████████] 100%
 
@@ -196,6 +195,7 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 | 261111-l7p | Correct Phase 10 WR-10 embedding-dimension mismatch recovery guidance | 2026-11-11 | 486fc59 | [261111-l7p-address-the-smallest-safe-well-scoped-op](./quick/261111-l7p-address-the-smallest-safe-well-scoped-op/) |
 | 261111-mlj | Close Phase 10 WR-03: multi-get --max-bytes UTF-8 byte-budget truncation (CJK/emoji regression tests + ledger closure; open 21->20) | 2026-11-11 | f1eeace | [261111-mlj-next-phase-10-item-address-the-smallest-](./quick/261111-mlj-next-phase-10-item-address-the-smallest-/) |
 | 261111-nj0 | Close Phase 10 WR-04: ls subpath collection-relative segment-aligned filter (regression tests + ledger closure; open 20->19) | 2026-11-11 | 68f4101 | [261111-nj0-next-phase-10-item-address-the-smallest-](./quick/261111-nj0-next-phase-10-item-address-the-smallest-/) |
+| 261111-o6y | Fix 60 FORCE_COLOR=1 test failures: color-env-hermetic pytest suite (conftest import-time scrub + autouse fixture; dual-regime full-suite gates green, 1514 passed / 95.02% cov) | 2026-11-11 | 6522663 | [261111-o6y-find-and-fix-failing-tests-run-the-quali](./quick/261111-o6y-find-and-fix-failing-tests-run-the-quali/) |
 
 ### Overrides
 
