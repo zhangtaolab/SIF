@@ -53,7 +53,7 @@ findings:
     title: "`vsearch_cmd` function-local imports duplicate module-level imports of the same names"
   - id: IN-03
     severity: info
-    disposition: open
+    disposition: fixed
     title: "`manager._model` private access in two commands — `EmbeddingManager` has no public model accessor"
   - id: IN-04
     severity: info
@@ -91,7 +91,7 @@ findings:
     severity: critical
     disposition: fixed
     title: "XML-forbidden control characters not stripped in cli/commands/search.py:104-121 — title containing \\x0b produces non-well-formed XML"
-open: 6
+open: 5
 total: 22
 recorded: 2026-11-06T12:37:58.492Z
 ---
@@ -112,7 +112,7 @@ recorded: 2026-11-06T12:37:58.492Z
 | WR-10 | warning | fixed | quick 261111-l7p (dimension-mismatch remediation message plus regression test) |
 | IN-01 | info | fixed | quick 261111-tip (triage close: byte-identical markdown/else display branches collapsed to a single console.print(content, markup=False) in get.py, commit c52f489; raw-print regression tests green) |
 | IN-02 | info | fixed | quick 261111-v4y (vsearch_cmd uses the module-level Database import; all eight vsearch test patch sites unified on sif.cli.commands.search.Database; patch-target trap demonstrated red-to-green via the closure test) |
-| IN-03 | info | open | - |
+| IN-03 | info | fixed | quick 261111-v4z (EmbeddingManager.model public read-only property replaces the two private _model reach-ins in query_cmd and bench_cmd; property unit tests red-to-green) |
 | IN-04 | info | open | - |
 | IN-05 | info | open | - |
 | IN-06 | info | fixed | quick 261111-tiq (status_cmd index_path-None fallback wrapped in the _get_default_db_path ValidationError-to-ClickException guard; invalid-env regression test red-to-green) |
