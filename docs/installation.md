@@ -156,7 +156,6 @@ Options:
   --index PATH      Path to the index database file.
   -v, --verbose     Enable verbose output.
   -q, --quiet       Suppress non-error output.
-  --config PATH     Path to the configuration file
   --help            Show this message and exit.
 
 Commands:

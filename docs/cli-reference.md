@@ -10,7 +10,6 @@ These options can be used with any command:
 |--------|-------|------|---------|-------------|
 | `--version` | `` | flag | `false` | Show the version and exit. |
 | `--index` | `-i` | path | — | Path to the index database |
-| `--config` | `-c` | path | `~/.config/sif` | Path to the configuration file |
 | `--verbose` | `-v` | flag | `false` | Enable verbose output |
 | `--quiet` | `-q` | flag | `false` | Suppress non-error output |
 
