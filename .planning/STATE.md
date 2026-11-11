@@ -221,8 +221,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 
 ## Session Continuity
 
-Last session: 2026-11-11T15:15:27Z (resumed via /gsd-resume-work; HANDOFF.json consumed and retired)
-Stopped at: Quick batch 261111-v4x complete — 3/3 items (IN-02 import/patch-target, IN-03 model accessor, IN-04 dead quiet); Phase 10 ledger open 4/22; suite 1531 passed / 1 skipped / 95.06% cov
-Resume file: .planning/.continue-here.md (pause record retained — describes prior tio pause; superseded by this batch)
+Last session: 2026-11-11T16:27:46Z (batch 261111-wh6 complete)
+Stopped at: Quick batch 261111-wh6 complete — 4/4 items (WR-07 max_lines, WR-08 BM25 degradation + user-authorized CLAUDE.md carve-out, IN-05 --config removal, IN-07 dim resolution); Phase 10 ledger open 0/22 (FULLY CLOSED); suite 1545 passed / 1 skipped / 95.06% cov
+Resume file: .planning/.continue-here.md (pause record retained — describes prior tio pause; superseded)
 
-- **Next expected action:** remaining Phase 10 backlog (4/22 open) — IN-07 solo (medium embedding-dim refactor), WR-07/WR-08/IN-05 user decisions (MCP line-metadata protocol / fail-fast convention / wire-or-remove --config); or `/gsd-complete-milestone v1.1` (all 6 phases complete and verified; milestone ready to archive)
+- **Next expected action:** Phase 10 review backlog fully closed (0/22 open). v1.1 milestone ready to archive — `/gsd-complete-milestone v1.1` (all 6 phases complete and verified). No remaining Phase 10 findings; the autonomous-fix vein is exhausted.
