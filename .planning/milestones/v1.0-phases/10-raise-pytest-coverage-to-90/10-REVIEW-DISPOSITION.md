@@ -73,7 +73,7 @@ findings:
     title: "Inconsistent embedding-dim resolution across commands — 384 magic fallback and per-query probe"
   - id: IN-08
     severity: info
-    disposition: open
+    disposition: fixed
     title: "Disk-fallback `read_text()` without explicit encoding"
   - id: IN-09
     severity: info
@@ -91,7 +91,7 @@ findings:
     severity: critical
     disposition: open
     title: "XML-forbidden control characters not stripped in cli/commands/search.py:104-121 — title containing \\x0b produces non-well-formed XML"
-open: 16
+open: 15
 total: 22
 recorded: 2026-11-06T12:37:58.492Z
 ---
@@ -117,7 +117,7 @@ recorded: 2026-11-06T12:37:58.492Z
 | IN-05 | info | open | - |
 | IN-06 | info | open | - |
 | IN-07 | info | open | - |
-| IN-08 | info | open | - |
+| IN-08 | info | fixed | quick 261111-rqp (disk-fallback read_text pinned to explicit UTF-8 encoding plus read_text-contract regression test) |
 | IN-09 | info | open | - |
 | IN-10 | info | open | - |
 | CR-01 | critical | open | - (not in the current review) |
