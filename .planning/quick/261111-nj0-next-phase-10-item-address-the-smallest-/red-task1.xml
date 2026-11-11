@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="5" skipped="0" tests="10" time="0.083" timestamp="2026-11-11T17:13:52.650556+08:00" hostname="Mac-Studio.local"><testcase classname="tests.unit.cli.test_ls.TestLsCommand" name="test_ls_no_index" time="0.003" /><testcase classname="tests.unit.cli.test_ls.TestLsCommand" name="test_ls_all_collections" time="0.002" /><testcase classname="tests.unit.cli.test_ls.TestLsCommand" name="test_ls_specific_collection" time="0.003" /><testcase classname="tests.unit.cli.test_ls.TestLsCommand" name="test_ls_with_subpath_filter" time="0.001"><failure message="AssertionError: assert 'x.md' in ''&#10; +  where '' = &lt;Result okay&gt;.output">self = &lt;tests.unit.cli.test_ls.TestLsCommand object at 0x108d6f6f0&gt;
+
+    def test_ls_with_subpath_filter(self):
+        """Test ls with collection and subpath filter."""
+        runner = CliRunner()
+    
+        mock_coll = MagicMock()
+        mock_coll.id = "coll-notes"
+        mock_coll.name = "notes"
+        mock_coll.path = "/data/notes"
+    
+        mock_doc_x = MagicMock()
+        mock_doc_x.path = "/data/notes/ideas/x.md"
+    
+        mock_doc_y = MagicMock()
+        mock_doc_y.path = "/data/notes/done/y.md"
+    
+        mock_index_path = MagicMock()
+        mock_index_path.exists.return_value = True
+    
+        with (
+            patch("sif.cli.commands.ls.Database") as mock_db_cls,
+            patch("sif.cli.commands.ls.DocumentRepository") as mock_doc_repo_cls,
+            patch("sif.cli.commands.ls.CollectionRepository") as mock_coll_repo_cls,
+        ):
+            mock_db = MagicMock()
+            mock_db.connection.__enter__ = MagicMock(return_value=mock_db.connection)
+            mock_db.connection.__exit__ = MagicMock(return_value=False)
+            mock_db_cls.return_value = mock_db
+    
+            mock_coll_repo = MagicMock()
+            mock_coll_repo.get_by_name.return_value = mock_coll
+            mock_coll_repo_cls.return_value = mock_coll_repo
+    
+            mock_doc_repo = MagicMock()
+            mock_doc_repo.list_by_collection.return_value = [mock_doc_x, mock_doc_y]
+            mock_doc_repo_cls.return_value = mock_doc_repo
+    
+            result = runner.invoke(ls_cmd, ["notes", "ideas"], obj={"index_path": mock_index_path})
+    
+        assert result.exit_code == 0
+&gt;       assert "x.md" in result.output
+E       AssertionError: assert 'x.md' in ''
+E        +  where '' = &lt;Result okay&gt;.output
+
+tests/unit/cli/test_ls.py:160: AssertionError</failure></testcase><testcase classname="tests.unit.cli.test_ls.TestLsCommand" name="test_ls_collection_not_found" time="0.001" /><testcase classname="tests.unit.cli.test_ls.TestLsCommand" name="test_ls_subpath_is_segment_aligned" time="0.001"><failure message="AssertionError: assert 'a.md' in ''&#10; +  where '' = &lt;Result okay&gt;.output">self = &lt;tests.unit.cli.test_ls.TestLsCommand object at 0x10c2bb020&gt;
+
+    def test_ls_subpath_is_segment_aligned(self) -&gt; None:
+        """Relative subpath resolves against the collection root, whole segments only."""
+        result = self._invoke_ls(
+            "/data/notes",
+            ["/data/notes/python/a.md", "/data/notes/python2/b.md"],
+            ["notes", "python"],
+        )
+    
+        assert result.exit_code == 0
+&gt;       assert "a.md" in result.output
+E       AssertionError: assert 'a.md' in ''
+E        +  where '' = &lt;Result okay&gt;.output
+
+tests/unit/cli/test_ls.py:235: AssertionError</failure></testcase><testcase classname="tests.unit.cli.test_ls.TestLsCommand" name="test_ls_subpath_absolute_is_segment_aligned" time="0.001"><failure message="AssertionError: assert 'b.md' not in 'notes\n└── ...  └── b.md\n'&#10;  &#10;  'b.md' is contained here:&#10;          └── b.md&#10;  ?           ++++">self = &lt;tests.unit.cli.test_ls.TestLsCommand object at 0x10c2bb240&gt;
+
+    def test_ls_subpath_absolute_is_segment_aligned(self) -&gt; None:
+        """Absolute subpath matches whole segments, never a sibling prefix like python2."""
+        result = self._invoke_ls(
+            "/data/notes",
+            ["/data/notes/python/a.md", "/data/notes/python2/b.md"],
+            ["notes", "/data/notes/python"],
+        )
+    
+        assert result.exit_code == 0
+        assert "a.md" in result.output
+&gt;       assert "b.md" not in result.output
+E       AssertionError: assert 'b.md' not in 'notes\n└── ...  └── b.md\n'
+E         
+E         'b.md' is contained here:
+E                 └── b.md
+E         ?           ++++
+
+tests/unit/cli/test_ls.py:248: AssertionError</failure></testcase><testcase classname="tests.unit.cli.test_ls.TestLsCommand" name="test_ls_subpath_exact_file" time="0.001"><failure message="AssertionError: assert 'a.md' in ''&#10; +  where '' = &lt;Result okay&gt;.output">self = &lt;tests.unit.cli.test_ls.TestLsCommand object at 0x108d97b50&gt;
+
+    def test_ls_subpath_exact_file(self) -&gt; None:
+        """An exact-file subpath selects that document only."""
+        result = self._invoke_ls(
+            "/data/notes",
+            ["/data/notes/python/a.md", "/data/notes/python2/b.md"],
+            ["notes", "python/a.md"],
+        )
+    
+        assert result.exit_code == 0
+&gt;       assert "a.md" in result.output
+E       AssertionError: assert 'a.md' in ''
+E        +  where '' = &lt;Result okay&gt;.output
+
+tests/unit/cli/test_ls.py:259: AssertionError</failure></testcase><testcase classname="tests.unit.cli.test_ls.TestLsCommand" name="test_ls_subpath_trailing_slash" time="0.001"><failure message="AssertionError: assert 'a.md' in ''&#10; +  where '' = &lt;Result okay&gt;.output">self = &lt;tests.unit.cli.test_ls.TestLsCommand object at 0x108d97d50&gt;
+
+    def test_ls_subpath_trailing_slash(self) -&gt; None:
+        """A trailing-slash subpath selects the same documents as the bare form."""
+        result = self._invoke_ls(
+            "/data/notes",
+            ["/data/notes/python/a.md", "/data/notes/python2/b.md"],
+            ["notes", "python/"],
+        )
+    
+        assert result.exit_code == 0
+&gt;       assert "a.md" in result.output
+E       AssertionError: assert 'a.md' in ''
+E        +  where '' = &lt;Result okay&gt;.output
+
+tests/unit/cli/test_ls.py:271: AssertionError</failure></testcase><testcase classname="tests.unit.cli.test_ls.TestLsCommand" name="test_ls_subpath_no_match_lists_nothing" time="0.001" /></testsuite></testsuites>
