@@ -33,7 +33,7 @@ findings:
     title: "MCP `get` tool silently ignores `max_lines` when `from_line` is absent"
   - id: WR-08
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "MCP `hybrid_search` cannot degrade to BM25 when sqlite-vec is unavailable — every `query` tool call fails"
   - id: WR-09
     severity: warning
@@ -91,7 +91,7 @@ findings:
     severity: critical
     disposition: fixed
     title: "XML-forbidden control characters not stripped in cli/commands/search.py:104-121 — title containing \\x0b produces non-well-formed XML"
-open: 1
+open: 0
 total: 22
 recorded: 2026-11-06T12:37:58.492Z
 ---
@@ -107,7 +107,7 @@ recorded: 2026-11-06T12:37:58.492Z
 | WR-05 | warning | fixed | quick 261111-pqy (collection ls subpath collection-relative segment-aligned filter plus regression tests) |
 | WR-06 | warning | fixed | quick 261111-r2f (bench fixture load pinned to explicit UTF-8 encoding plus open-contract regression test; raw-traceback wrapping already shipped in Phase 16 T-16-02) |
 | WR-07 | warning | fixed | quick 261111-wh7 (user decided: honor max_lines alone — get_document slices from line 1 when only max_lines is sent; line_start/line_end metadata and truncation preserved; regression tests red-to-green) |
-| WR-08 | warning | open | - |
+| WR-08 | warning | fixed | quick 261111-wh8 (user decision: MCP hybrid_search degrades to BM25-only when sqlite-vec is unavailable — one-time warning at the SearchBackend boundary mirroring the embedder-failure posture; core HybridSearcher.search stays fail-fast; CLAUDE.md Error Handling carve-out recorded; regression tests red-to-green) |
 | WR-09 | warning | fixed | quick 261111-rqq (cleanup delegates to LLMCacheRepository.clear_expired with parsed-datetime comparison; cache expiry written as aware-UTC; legacy naive-local rows interpreted as system-local; regression tests) |
 | WR-10 | warning | fixed | quick 261111-l7p (dimension-mismatch remediation message plus regression test) |
 | IN-01 | info | fixed | quick 261111-tip (triage close: byte-identical markdown/else display branches collapsed to a single console.print(content, markup=False) in get.py, commit c52f489; raw-print regression tests green) |
