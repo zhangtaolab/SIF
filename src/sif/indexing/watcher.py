@@ -30,6 +30,7 @@ from watchdog.observers.api import BaseObserver, ObservedWatch
 from watchdog.utils.event_debouncer import EventDebouncer
 
 from sif.core.models import Collection
+from sif.database.factory import WAL_CHECKPOINT_TRUNCATE
 from sif.database.locking import index_lock
 from sif.database.repositories import DocumentChunkRepository, DocumentRepository
 from sif.indexing.incremental import IncrementalIndexer, IncrementalResult
@@ -53,9 +54,6 @@ SettledCallback = Callable[[list[FileSystemEvent]], None]
 # Wakes a worker parked on its re-stat-timeout idle wait so shutdown never
 # waits out the interval; nothing is enqueued after it (D-14 bounded stop).
 _WORKER_STOP_SENTINEL = None
-
-# The shutdown-checkpoint spelling (12-D14) reused by the D-16 idle tick.
-_WAL_CHECKPOINT_TRUNCATE = "PRAGMA wal_checkpoint(TRUNCATE)"
 
 # D-17 remedy text: the standard Linux fix for inotify watch exhaustion.
 _INOTIFY_REMEDY = (
@@ -701,7 +699,7 @@ class FileWatcher:
         if last_job is not None and (now - last_job) < self._config.restat_interval:
             return
         try:
-            row = self._conn.execute(_WAL_CHECKPOINT_TRUNCATE).fetchone()
+            row = self._conn.execute(WAL_CHECKPOINT_TRUNCATE).fetchone()
         except sqlite3.Error as e:
             logger.warning("Idle WAL checkpoint failed: %s", e)
             return

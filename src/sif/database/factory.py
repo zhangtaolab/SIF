@@ -39,6 +39,11 @@ logger = get_logger(__name__)
 _WAL_RETRY_ATTEMPTS = 4
 _WAL_RETRY_BACKOFF_SECONDS = 0.15
 
+# The WAL-checkpoint recipe (12-D14) shared by both watch hosts' shutdown
+# paths and the watcher's D-16 idle tick — one spelling, so the checkpoint
+# contract (TRUNCATE) can only ever change in one place.
+WAL_CHECKPOINT_TRUNCATE = "PRAGMA wal_checkpoint(TRUNCATE)"
+
 
 def create_connection(db_path: Path) -> sqlite3.Connection:
     """Open one fully configured SQLite connection to ``db_path``.

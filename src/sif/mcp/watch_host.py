@@ -34,6 +34,7 @@ from typing import Any
 from sif.config.settings import get_settings
 from sif.core.models import Collection
 from sif.database.database import Database
+from sif.database.factory import WAL_CHECKPOINT_TRUNCATE
 from sif.database.repositories import CollectionRepository
 from sif.indexing.incremental import IncrementalResult
 from sif.indexing.watcher import FileWatcher, FoldResult, WatchConfig
@@ -41,8 +42,6 @@ from sif.utils.logging import get_logger
 
 
 logger = get_logger(__name__)
-
-_WAL_CHECKPOINT_TRUNCATE = "PRAGMA wal_checkpoint(TRUNCATE)"
 
 # D-02: the literal depth for every embedded watcher — never read from
 # settings, whatever the ambient update-depth configuration says.
@@ -179,7 +178,7 @@ def stop_embedded_watch(watch: EmbeddedWatch | None) -> None:
     try:
         watch.watcher.stop(flush=True)
         if watch.watcher.worker_joined():
-            watch.db.connection.execute(_WAL_CHECKPOINT_TRUNCATE)
+            watch.db.connection.execute(WAL_CHECKPOINT_TRUNCATE)
         else:
             logger.warning("MCP watch: worker still busy at shutdown; skipping WAL checkpoint")
     finally:

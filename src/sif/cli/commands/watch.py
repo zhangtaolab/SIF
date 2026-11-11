@@ -46,6 +46,7 @@ from sif.cli.commands.index import _render_index_event
 from sif.config.settings import Settings
 from sif.core.models import Collection
 from sif.database.database import Database
+from sif.database.factory import WAL_CHECKPOINT_TRUNCATE
 from sif.database.locking import index_lock
 from sif.database.repositories import CollectionRepository
 from sif.indexing.incremental import IncrementalIndexer
@@ -59,7 +60,6 @@ logger = get_logger(__name__)
 
 _LOOP_INTERVAL_SECONDS = 0.2
 _IMMEDIATE_EXIT_AFTER_SIGNALS = 2
-_WAL_CHECKPOINT_TRUNCATE = "PRAGMA wal_checkpoint(TRUNCATE)"
 
 
 @dataclass
@@ -110,7 +110,7 @@ def shutdown_watcher(watcher: FileWatcher, conn: sqlite3.Connection) -> None:
     """
     watcher.stop(flush=True)
     if watcher.worker_joined():
-        conn.execute(_WAL_CHECKPOINT_TRUNCATE)
+        conn.execute(WAL_CHECKPOINT_TRUNCATE)
     else:
         logger.warning(
             "watch worker still busy at shutdown; skipping WAL checkpoint "
