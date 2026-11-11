@@ -5,11 +5,11 @@ titles: json
 findings:
   - id: WR-01
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "Worker tick is not exception-guarded — one tick exception permanently kills live indexing"
   - id: WR-02
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "stop() mutates and iterates worker-owned state before quiescing the worker — races the rescope diff"
   - id: IN-01
     severity: info
@@ -39,17 +39,17 @@ findings:
     severity: info
     disposition: open
     title: "Valid model-type set duplicated between CLI choice list and Settings validator"
-open: 9
+open: 7
 total: 9
-recorded: 2026-11-11T03:13:35.519Z
+recorded: 2026-11-11T04:13:05.241Z
 ---
 
 # Phase 11: Code Review Disposition
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| WR-01 | warning | open | - |
-| WR-02 | warning | open | - |
+| WR-01 | warning | fixed | 11-REVIEW-FIX.md |
+| WR-02 | warning | fixed | 11-REVIEW-FIX.md |
 | IN-01 | info | open | - |
 | IN-02 | info | open | - |
 | IN-03 | info | open | - |
