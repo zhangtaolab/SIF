@@ -331,7 +331,7 @@ def collection_exclude(ctx: click.Context, name: str) -> None:
 @click.argument("name")
 @click.argument("subpath", required=False)
 @click.pass_context
-def collection_ls(ctx: click.Context, name: str, subpath: str | None) -> None:  # noqa: ARG001
+def collection_ls(ctx: click.Context, name: str, subpath: str | None) -> None:
     """List files in a collection."""
     index_path = ctx.obj["index_path"]
 
@@ -355,14 +355,21 @@ def collection_ls(ctx: click.Context, name: str, subpath: str | None) -> None:  
                 ignore_patterns=collection.ignore_patterns,
             )
 
-            if not scan_result.files:
+            files = scan_result.files
+            if subpath:
+                sub = Path(subpath)
+                resolved = sub if sub.is_absolute() else Path(collection.path) / sub
+                target = str(resolved).rstrip("/")
+                files = [f for f in files if str(f) == target or str(f).startswith(target + "/")]
+
+            if not files:
                 console.print("[yellow]No files found in collection.[/yellow]")
                 return
 
             # Build tree
             tree = Tree(f"[bold cyan]{collection.name}[/bold cyan]")
 
-            for file_path in sorted(scan_result.files):
+            for file_path in sorted(files):
                 rel_path = file_path.relative_to(collection.path)
                 tree.add(str(rel_path))
 
