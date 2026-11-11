@@ -186,6 +186,17 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 | Feature | FUTR-02 LLM-assisted weight tuning | v2+ | 2026-11-07 | v1.1 |
 | Feature | FUTR-03 symspellpy DYM fallback (only if UAT shows difflib gaps) | v2+ | 2026-11-07 | v1.1 |
 
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 261107-cdh | Fix README.md install typo: docdocsif -> docsif in extras install command | 2026-11-07 | ef8edc2 | [261107-cdh-fix-readme-md-install-typo-docdocsif-doc](./quick/261107-cdh-fix-readme-md-install-typo-docdocsif-doc/) |
+| 261107-f5t | Bump version to 1.0.1 (release docsif 1.0.1: typo fixes + parser checksum fix since v1.0) | 2026-11-07 | c4088ca | [261107-f5t-bump-version-to-1-0-1-release-docsif-1-0](./quick/261107-f5t-bump-version-to-1-0-1-release-docsif-1-0/) |
+
+### Overrides
+
+- [2026-09-03] Phase 03 decision-coverage gate override (user-approved): D-06/D-07/D-08/D-10 accepted as covered-by-legacy — implemented and behaviorally verified per 03-VERIFICATION.md; legacy plans 03-01…03-06 predate D-ID citation and are read-only in gap-closure mode. Verify-phase should re-surface this.
+
 ## Session Continuity
 
 Last session: 2026-11-09T00:50:00+08:00
