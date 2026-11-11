@@ -29,7 +29,7 @@ findings:
     title: "`bench` fixture load and validation errors escape as raw tracebacks"
   - id: WR-07
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "MCP `get` tool silently ignores `max_lines` when `from_line` is absent"
   - id: WR-08
     severity: warning
@@ -91,7 +91,7 @@ findings:
     severity: critical
     disposition: fixed
     title: "XML-forbidden control characters not stripped in cli/commands/search.py:104-121 — title containing \\x0b produces non-well-formed XML"
-open: 4
+open: 3
 total: 22
 recorded: 2026-11-06T12:37:58.492Z
 ---
@@ -106,7 +106,7 @@ recorded: 2026-11-06T12:37:58.492Z
 | WR-04 | warning | fixed | quick 261111-nj0 (ls subpath collection-relative segment-aligned filter plus regression tests) |
 | WR-05 | warning | fixed | quick 261111-pqy (collection ls subpath collection-relative segment-aligned filter plus regression tests) |
 | WR-06 | warning | fixed | quick 261111-r2f (bench fixture load pinned to explicit UTF-8 encoding plus open-contract regression test; raw-traceback wrapping already shipped in Phase 16 T-16-02) |
-| WR-07 | warning | open | - |
+| WR-07 | warning | fixed | quick 261111-wh7 (user decided: honor max_lines alone — get_document slices from line 1 when only max_lines is sent; line_start/line_end metadata and truncation preserved; regression tests red-to-green) |
 | WR-08 | warning | open | - |
 | WR-09 | warning | fixed | quick 261111-rqq (cleanup delegates to LLMCacheRepository.clear_expired with parsed-datetime comparison; cache expiry written as aware-UTC; legacy naive-local rows interpreted as system-local; regression tests) |
 | WR-10 | warning | fixed | quick 261111-l7p (dimension-mismatch remediation message plus regression test) |
