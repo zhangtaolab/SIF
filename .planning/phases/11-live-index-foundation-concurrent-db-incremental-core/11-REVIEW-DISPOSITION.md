@@ -13,15 +13,15 @@ findings:
     title: "stop() mutates and iterates worker-owned state before quiescing the worker — races the rescope diff"
   - id: IN-01
     severity: info
-    disposition: open
-    title: "Inert busy-check branch in _checkpoint_if_idle (dead code that implies behavior it does not have)"
+    disposition: fixed
+    title: "Inert busy-check branch in `_checkpoint_if_idle`"
   - id: IN-02
     severity: info
-    disposition: open
+    disposition: fixed
     title: "WAL-checkpoint PRAGMA constant triplicated across modules"
   - id: IN-03
     severity: info
-    disposition: open
+    disposition: fixed
     title: "\"Bounded\" stop flush is not time-bounded at embed depth"
   - id: WR-03
     severity: warning
@@ -33,29 +33,29 @@ findings:
     title: "Impossible-state guard — `if not coll: continue` in both collection loops"
   - id: IN-04
     severity: info
-    disposition: open
-    title: "Already-defended-elsewhere — PRAGMA busy_timeout duplicates the connect-time timeout"
+    disposition: fixed
+    title: "WR-01/WR-02 concurrency fixes have no committed regression test"
   - id: IN-05
     severity: info
     disposition: open
     title: "Valid model-type set duplicated between CLI choice list and Settings validator"
-open: 7
+open: 3
 total: 9
-recorded: 2026-11-11T04:13:05.241Z
+recorded: 2026-11-11T04:45:14.148Z
 ---
 
 # Phase 11: Code Review Disposition
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| WR-01 | warning | fixed | 11-REVIEW-FIX.md |
-| WR-02 | warning | fixed | 11-REVIEW-FIX.md |
-| IN-01 | info | open | - |
-| IN-02 | info | open | - |
-| IN-03 | info | open | - |
+| WR-01 | warning | fixed | 11-REVIEW-FIX.md (not in the current review) |
+| WR-02 | warning | fixed | 11-REVIEW-FIX.md (not in the current review) |
+| IN-01 | info | fixed | 11-REVIEW-FIX.md (not in the current review) |
+| IN-02 | info | fixed | 11-REVIEW-FIX.md (not in the current review) |
+| IN-03 | info | fixed | 11-REVIEW-FIX.md (not in the current review) |
 | WR-03 | warning | open | - (not in the current review) |
 | WR-04 | warning | open | - (not in the current review) |
-| IN-04 | info | open | - (not in the current review) |
+| IN-04 | info | fixed | 11-REVIEW-FIX.md (not in the current review) |
 | IN-05 | info | open | - (not in the current review) |
 
 Dispositions: `open` (recorded, not yet triaged), `fixed`, `skipped`, `deferred`.
