@@ -11,6 +11,7 @@ exclude-all returns every indexed document. ``None`` remains unfiltered
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Sequence
 from unittest.mock import MagicMock
 
 import pytest
@@ -47,6 +48,8 @@ def _build_search_db(with_vec: bool = False) -> sqlite3.Connection:
         "CREATE TABLE documents "
         "(id TEXT PRIMARY KEY, collection_id TEXT, title TEXT, path TEXT, content TEXT)"
     )
+    # Real schema (schema.py:391): planner input making the filtered join degenerate.
+    conn.execute("CREATE INDEX idx_documents_collection ON documents(collection_id)")
     conn.execute(
         """
         CREATE TABLE contexts (
@@ -215,5 +218,94 @@ class TestExcludeAllHybrid:
                 "python", SearchOptions(collection_ids=None, include_highlights=False)
             )
             assert {r.document_id for r in results} == {"d1", "d2", "d3"}
+        finally:
+            conn.close()
+
+
+class _RecordingConnection:
+    """Connection proxy recording every statement BM25Searcher executes.
+
+    Only ``execute`` is needed: BM25Searcher and the shared context/staleness
+    helpers touch the connection solely through that method.
+    """
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self.conn = conn
+        self.calls: list[tuple[str, Sequence[object]]] = []
+
+    def execute(self, sql: str, parameters: Sequence[object] = ()) -> sqlite3.Cursor:
+        """Record the statement, then delegate to the wrapped connection."""
+        self.calls.append((sql, parameters))
+        return self.conn.execute(sql, parameters)
+
+
+class TestBM25ScopedQueryPlan:
+    """Scoped BM25 evaluates the FTS match once without altering scores.
+
+    The default CLI search paths always pass resolved non-empty collection ids
+    (only ``--all`` sends None), so the filtered statement is the production
+    path. With the real ``idx_documents_collection`` index present, a bare
+    join drives from ``documents`` and re-runs the FTS match per candidate
+    document; ``AS MATERIALIZED`` pins the match to one evaluation.
+    """
+
+    @pytest.mark.parametrize("collection_ids", [["c1"], ["c1", "c2"]])
+    def test_scoped_plan_uses_materialized_match_cte(self, collection_ids: list[str]) -> None:
+        """The executed scoped SQL is MATERIALIZED and scans FTS exactly once."""
+        conn = _build_search_db()
+        try:
+            recorder = _RecordingConnection(conn)
+            BM25Searcher(recorder).search(  # type: ignore[arg-type]
+                "python",
+                SearchOptions(collection_ids=collection_ids, include_highlights=False),
+            )
+
+            # Capture the exact statement the searcher ran BEFORE EXPLAIN:
+            # the EXPLAIN output text also contains the word MATCH.
+            sql, params = next(call for call in recorder.calls if "MATCH" in call[0])
+            assert "MATERIALIZED" in sql.upper()
+
+            plan = conn.execute(f"EXPLAIN QUERY PLAN {sql}", params).fetchall()
+            details = [row[3] for row in plan]
+            # No per-document FTS scan (`SCAN fts ... INDEX 32:=M1`) may remain.
+            assert not any(":=" in detail for detail in details)
+            fts_details = [detail for detail in details if "documents_fts" in detail]
+            assert fts_details
+            assert all("M1" in detail for detail in fts_details)
+            assert any("MATERIALIZE" in detail for detail in details)
+        finally:
+            conn.close()
+
+    @pytest.mark.parametrize(
+        ("collection_ids", "expected_names"),
+        [(["c1"], {"one"}), (["c1", "c2"], {"one", "two"})],
+    )
+    def test_scoped_scores_match_unfiltered(
+        self, collection_ids: list[str], expected_names: set[str]
+    ) -> None:
+        """Scoped ids and scores equal unfiltered results restricted to the scope."""
+        conn = _build_search_db()
+        try:
+            scoped = BM25Searcher(conn).search(
+                "python",
+                SearchOptions(collection_ids=collection_ids, include_highlights=False),
+            )
+            unfiltered = BM25Searcher(conn).search(
+                "python",
+                SearchOptions(collection_ids=None, include_highlights=False),
+            )
+
+            expected = {
+                result.document_id: result.score
+                for result in unfiltered
+                if result.collection_name in expected_names
+            }
+            actual = {result.document_id: result.score for result in scoped}
+
+            # FTS rank ties are not order-stable across plan shapes, so compare
+            # dictionaries keyed by document id, never list order.
+            assert set(actual) == set(expected)
+            for document_id, score in actual.items():
+                assert score == expected[document_id]
         finally:
             conn.close()
