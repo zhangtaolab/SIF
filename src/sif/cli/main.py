@@ -12,7 +12,7 @@ from rich.console import Console
 from rich.table import Table
 
 from sif import __version__
-from sif.cli.error_handling import open_initialized_database
+from sif.cli.error_handling import _database_remedy, open_initialized_database
 from sif.config.settings import get_settings
 from sif.database.database import Database
 from sif.database.repositories import LLMCacheRepository
@@ -72,8 +72,11 @@ def cli(ctx: click.Context, index: str, verbose: bool, quiet: bool) -> None:
     ctx.obj["verbose"] = verbose
     ctx.obj["quiet"] = quiet
 
-    # Create index directory if needed
-    ctx.obj["index_path"].parent.mkdir(parents=True, exist_ok=True)
+    # Create index directory if needed, using the shared DB-open remedy.
+    try:
+        ctx.obj["index_path"].parent.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        raise click.ClickException(_database_remedy(ctx.obj["index_path"], e)) from e
 
 
 # Import and register subcommands after cli group to avoid circular imports

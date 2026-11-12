@@ -313,6 +313,26 @@ class TestCleanupErrorNarrowing(RealDatabaseTestCase):
         assert "Error during cleanup" not in result.stdout
 
 
+class TestIndexPathCreationError:
+    """CR-01: group-level parent creation uses the shared DB-open remedy."""
+
+    def test_regular_file_parent_renders_clean_error(self, tmp_path: Path) -> None:
+        """A regular file in the DB parent path must not leak FileExistsError."""
+        regular_file = tmp_path / "not-a-directory"
+        regular_file.write_text("occupied", encoding="utf-8")
+
+        result = CliRunner().invoke(
+            cli,
+            ["--index", str(regular_file / "sif.db"), "index", "update"],
+        )
+
+        assert result.exit_code == 1
+        assert "Cannot open index database at" in result.output
+        assert "Check file permissions and free disk space" in result.output
+        assert "Traceback" not in result.output
+        assert not isinstance(result.exception, FileExistsError)
+
+
 class TestDefaultDbPathConfigError:
     """WR-09: an invalid SIF_RERANKER_MODEL_TYPE must surface as a clean error.
 
