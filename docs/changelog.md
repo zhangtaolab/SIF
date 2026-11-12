@@ -35,6 +35,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - N/A
 
+## [1.1.1] - 2026-11-12
+
+### Changed
+- The release version is now single-sourced in `src/sif/_version.py`; packaging, `sif.__version__`, `sif.cli.__version__`, `APP_VERSION`, and the MCP `serverInfo` version all derive from it.
+
+### Fixed
+- Install, upgrade, and uninstall instructions and in-app remedy hints now name the published `docsif` distribution.
+
 ## [1.0.1] - 2026-11-07
 
 ### Fixed
@@ -193,7 +201,7 @@ For minor releases:
 cp ~/.local/share/sif/sif.db ~/.local/share/sif/sif.db.backup
 
 # Upgrade package
-pip install --upgrade sif
+pip install --upgrade docsif
 
 # Reindex if needed
 sif index update
@@ -228,6 +236,7 @@ Thanks to all contributors who have helped shape SIF!
 
 ---
 
-[Unreleased]: https://github.com/zhangtaolab/sif/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/zhangtaolab/sif/compare/v1.1.1...HEAD
 [0.1.0]: https://github.com/zhangtaolab/sif/releases/tag/v0.1.0
+[1.1.1]: https://github.com/zhangtaolab/sif/releases/tag/v1.1.1
 [1.0.1]: https://github.com/zhangtaolab/sif/releases/tag/v1.0.1

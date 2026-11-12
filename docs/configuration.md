@@ -69,7 +69,7 @@ SIF exposes no device setting — each embedding backend picks its compute devic
 | `gguf` | CPU only by default. `SIF_N_GPU_LAYERS` defaults to `0` (all layers on CPU); values greater than `0` offload that many layers via llama.cpp's GPU support (Metal on Apple Silicon — llama.cpp's own path, not torch MPS). |
 | `openai` | Embeddings are computed by the remote API; local hardware is unused. |
 
-BM25/FTS5 keyword search and sqlite-vec vector search always run on CPU regardless of backend. MPS support ships in the torch wheel installed by the `embed` extra (`pip install "sif[embed]"`); Apple's Neural Engine (ANE/NPU) is not used by any backend.
+BM25/FTS5 keyword search and sqlite-vec vector search always run on CPU regardless of backend. MPS support ships in the torch wheel installed by the `embed` extra (`pip install "docsif[embed]"`); Apple's Neural Engine (ANE/NPU) is not used by any backend.
 
 ### API Settings
 

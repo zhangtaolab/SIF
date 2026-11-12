@@ -391,7 +391,7 @@ class OpenAIEmbedder(Embedder):
             from openai import OpenAI  # noqa: PLC0415
         except ImportError:
             logger.error(
-                "openai not installed. Install with: pip install sif[openai]",
+                "openai not installed. Install with: pip install docsif[openai]",
             )
             raise
 

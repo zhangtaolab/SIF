@@ -277,7 +277,7 @@ def _append_device_selection_note(lines: list[str]) -> None:
     lines.append(
         "BM25/FTS5 keyword search and sqlite-vec vector search always run on CPU "
         "regardless of backend. MPS support ships in the torch wheel installed "
-        'by the `embed` extra (`pip install "sif[embed]"`); Apple\'s Neural '
+        'by the `embed` extra (`pip install "docsif[embed]"`); Apple\'s Neural '
         "Engine (ANE/NPU) is not used by any backend."
     )
 

@@ -35,7 +35,7 @@ def mcp_stdio_cmd(ctx: click.Context) -> None:
         run_stdio_server(str(index_path))
     except ImportError as e:
         console.print(f"[red]MCP server not available: {e}[/red]")
-        raise click.ClickException("Install with: pip install sif[mcp]") from None
+        raise click.ClickException("Install with: pip install docsif[mcp]") from None
 
 
 @mcp_group.command("http")
@@ -68,7 +68,7 @@ def mcp_http_cmd(
         run_http_server(str(index_path), host=host, port=port, cors_origins=origins)
     except ImportError as e:
         console.print(f"[red]HTTP server not available: {e}[/red]")
-        raise click.ClickException("Install with: pip install sif[http]") from None
+        raise click.ClickException("Install with: pip install docsif[http]") from None
 
 
 @mcp_group.command("daemon")

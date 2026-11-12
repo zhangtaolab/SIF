@@ -207,7 +207,7 @@ class TestOpenAIEmbedderBehavior:
         ):
             OpenAIEmbedder(model_name="test-model")
 
-        assert "sif[openai]" in caplog.text
+        assert "docsif[openai]" in caplog.text
 
     def test_embeddings_are_l2_normalized(self) -> None:
         raw = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]

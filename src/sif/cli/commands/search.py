@@ -922,7 +922,7 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 if not quiet:
                     console.print(
                         "[yellow]Reranker not available. "
-                        "Install with: pip install -e '.[embed]'[/yellow]",
+                        'Install with: pip install "docsif[embed]"[/yellow]',
                     )
             # Defense in depth (REVIEW WR-09): a factory ValueError for an
             # unknown model_type must not escape as a raw traceback.

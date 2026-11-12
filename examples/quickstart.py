@@ -5,7 +5,7 @@ SIF Quickstart Example
 This script demonstrates the basic usage of SIF for document indexing and search.
 
 Prerequisites:
-    pip install sif
+    pip install docsif
 
 Usage:
     python quickstart.py
@@ -189,7 +189,7 @@ def example_database_operations() -> None:
         
     except ImportError as e:
         print(f"   ✗ Import error: {e}")
-        print("   Make sure SIF is installed: pip install sif")
+        print("   Make sure SIF is installed: pip install docsif")
     except Exception as e:
         print(f"   ✗ Error: {e}")
 
@@ -352,7 +352,7 @@ def main() -> int:
     print("=" * 60)
     print("""
 Next steps:
-    1. Install SIF: pip install sif
+    1. Install SIF: pip install docsif
     2. Add a collection: sif collection add /path/to/docs
     3. Update index: sif update
     4. Search: sif search "your query"

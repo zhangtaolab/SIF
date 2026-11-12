@@ -116,7 +116,7 @@ Using Homebrew:
 brew install python@3.11
 
 # Install SIF
-pip3 install sif
+pip3 install docsif
 ```
 
 **Hardware acceleration**: on Apple Silicon Macs the modelscope and sentence_transformers backends automatically use the GPU via Metal (MPS). GGUF (llama.cpp) models run on CPU only unless `SIF_N_GPU_LAYERS` is set above 0, which enables llama.cpp Metal offload (distinct from MPS). See [Configuration](configuration.md) for the full device-selection behavior.
@@ -145,7 +145,7 @@ sif --help
 
 Expected output:
 ```
-sif, version 1.0.1
+sif, version 1.1.1
 
 Usage: sif [OPTIONS] COMMAND [ARGS]...
 
@@ -176,7 +176,7 @@ Commands:
 **Solution**:
 ```bash
 # Reinstall
-pip install --force-reinstall sif
+pip install --force-reinstall docsif
 
 # Check if pip is using the correct Python
 which python
@@ -236,7 +236,7 @@ If you encounter issues not covered here:
 To remove SIF:
 
 ```bash
-pip uninstall sif
+pip uninstall docsif
 ```
 
 To also remove data and configuration:
