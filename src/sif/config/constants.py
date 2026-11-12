@@ -1,8 +1,11 @@
 """Constants for SIF."""
 
+from sif._version import __version__
+
+
 # Application info
 APP_NAME = "sif"
-APP_VERSION = "1.0.1"
+APP_VERSION = __version__
 APP_DESCRIPTION = (
     "A local CLI search engine for indexing and searching documents (SIF: Search / Index / Find)"
 )

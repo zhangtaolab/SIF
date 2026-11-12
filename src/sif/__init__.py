@@ -1,9 +1,6 @@
 """SIF - Search / Index / Find - Local document search engine."""
 
-__version__ = "1.0.1"
-__author__ = "SIF Team"
-__description__ = "Local document search engine (SIF: Search / Index / Find)"
-
+from sif._version import __version__ as __version__
 from sif.core.models import (
     Collection,
     Document,
@@ -13,6 +10,9 @@ from sif.core.models import (
     SearchResult,
 )
 
+
+__author__ = "SIF Team"
+__description__ = "Local document search engine (SIF: Search / Index / Find)"
 
 __all__ = [
     "Collection",

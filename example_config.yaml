@@ -182,8 +182,8 @@ mcp:
   name: sif-mcp-server
   
   # MCP server version
-  # Default: 1.0.1
-  version: "1.0.1"
+  # Default: 1.1.1
+  version: "1.1.1"
   
   # Protocol version
   # Default: 2024-11-05

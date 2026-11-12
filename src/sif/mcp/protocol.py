@@ -12,6 +12,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from sif._version import __version__
+
 
 # ============================================================================
 # JSON-RPC Base Types
@@ -111,7 +113,7 @@ class InitializeResult(BaseModel):
     protocolVersion: str = "2024-11-05"  # noqa: N815
     capabilities: ServerCapabilities = Field(default_factory=ServerCapabilities)
     serverInfo: dict[str, str] = Field(  # noqa: N815
-        default_factory=lambda: {"name": "sif-mcp-server", "version": "1.0.1"},
+        default_factory=lambda: {"name": "sif-mcp-server", "version": __version__},
     )
 
 
