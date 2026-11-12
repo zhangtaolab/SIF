@@ -5,16 +5,16 @@ milestone_name: Live Index and Search Quality
 current_phase: "16.1"
 current_phase_name: "Address tech debt: CLI error conventions + cache TTL + watch-host enqueue API"
 status: executing
-stopped_at: Completed 16.1-01-PLAN.md
-last_updated: "2026-11-12T04:06:35.836Z"
+stopped_at: Completed 16.1-03-PLAN.md
+last_updated: "2026-11-12T04:27:52.768Z"
 last_activity: 2026-11-12
 last_activity_desc: Phase 16.1 execution started
-state_head: 381e07c1beecfd25fae4601e4da127f55e06d14d
+state_head: 94baff65a5473b7a629b0c6c3634a081b4598f95
 progress:
   total_phases: 7
   completed_phases: 6
   total_plans: 27
-  completed_plans: 23
+  completed_plans: 24
 ---
 
 # DocSift — Project State
@@ -30,7 +30,7 @@ progress:
 ## Current Position
 
 Phase: 16.1 (Address tech debt: CLI error conventions + cache TTL + watch-host enqueue API) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Status: Ready to execute
 Last activity: 2026-11-12 — Phase 16.1 execution started
 
@@ -75,6 +75,7 @@ Progress: [██████████] 100%
 | Phase 16 P05 | 13 min | 3 tasks | 9 files |
 | Phase 16 P05 | 13 min | 3 tasks | 9 files |
 | Phase 16.1 P01 | 18 min | 3 tasks | 7 files |
+| Phase 16.1 P03 | 13 min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -172,6 +173,9 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 - [Phase 16.1]: [16.1-01] Shared CLI error boundary: class-injected open_initialized_database(index_path, Database) keeps per-module test patch seams; known classes only (OSError ctor, sqlite3.Error/OSError init), close-and-reraise via except BaseException for unexpected classes; yield never inside a handler (D-04)
 - [Phase 16.1]: [16.1-01] Constructor-only sqlite-vec guards on vsearch/query (14-WR-02/04 one defect); execution-stage Reranking-failed wording and ValueError propagation byte-identical; no CLI BM25 fallback
 - [Phase 16.1]: [16.1-01] 15-IN-06 traceback half closed via suggest opener adoption; --clear-history -q quiet leak preserved byte-identical (dedicated preservation pin) — ledger row stays open for Plan 05
+- [Phase 16.1]: [16.1-03] One shared _expiry_instant (fromisoformat + astimezone(timezone.utc)) owns TTL semantics for get() and clear_expired(); get() fetches by key without the SQL expiry predicate (D-05, 14-WR-03 read side closed)
+- [Phase 16.1]: [16.1-03] Malformed non-NULL expiry = controlled miss in get() with row retained (RESEARCH OQ1 adopted); both methods catch exactly (ValueError, TypeError); non-string regression uses BLOB because TEXT affinity coerces INTEGER to text
+- [Phase 16.1]: [16.1-03] W-1: cache._connection delegates to create_connection (zero pragma copies); per-connection pragmas proven on the factory-delegated connection, persisted WAL additionally via raw connect; fail-soft fallbacks byte-identical
 
 ### Pending Todos
 
@@ -230,8 +234,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 
 ## Session Continuity
 
-Last session: 2026-11-12T04:06:35.500Z
-Stopped at: Completed 16.1-01-PLAN.md
+Last session: 2026-11-12T04:27:52.406Z
+Stopped at: Completed 16.1-03-PLAN.md
 Resume file: None
 
 - **Next expected action:** Phase 10 review backlog fully closed (0/22 open). v1.1 milestone ready to archive — `/gsd-complete-milestone v1.1` (all 6 phases complete and verified). No remaining Phase 10 findings; the autonomous-fix vein is exhausted.

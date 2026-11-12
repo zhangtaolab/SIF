@@ -194,12 +194,12 @@ Plans:
   3. Embedding-cache connections open through the Phase 11 factory (pragma recipe stays single-sourced in `database/factory.py`); the cache remains separate and fail-soft
   4. `mcp/watch_host.py` enqueues serve-first reconcile through a public FileWatcher method — the `noqa: SLF001` queue reach-in is gone and serve-first ordering is preserved
   5. Disposition ledgers record the closures with evidence (11-WR-03; 14-WR-02/03/04; 15-IN-06 per its partial-closure rule) and the full quality suite stays green (pytest fail_under=90, ruff, ty)
-**Plans:** 1/5 plans executed
+**Plans:** 2/5 plans executed
 
 Plans:
 **Wave 1**
 - [x] 16.1-01-PLAN.md — Shared CLI error boundary (tracer) + index/search/suggest conversion + vector constructor guards
-- [ ] 16.1-03-PLAN.md — LLM cache TTL instant-compare read path (east/west TZ regressions) + embedding-cache factory delegation
+- [x] 16.1-03-PLAN.md — LLM cache TTL instant-compare read path (east/west TZ regressions) + embedding-cache factory delegation
 - [ ] 16.1-04-PLAN.md — FileWatcher.enqueue_reconcile public API + MCP host rewrite (serve-first preserved)
 
 **Wave 2** *(blocked on Wave 1 completion)*
