@@ -1,6 +1,6 @@
 ---
 phase: 16-bench-expansion-reranker-tuning
-verified: 2026-11-08T16:45:16Z
+verified: 2026-11-12T07:49:17Z
 status: passed
 score: 20/20 must-haves verified
 covered_files:
@@ -16,6 +16,7 @@ covered_files:
   - .planning/phases/16-bench-expansion-reranker-tuning/16-05-SUMMARY.md
   - .planning/phases/16-bench-expansion-reranker-tuning/16-06-PLAN.md
   - .planning/phases/16-bench-expansion-reranker-tuning/16-06-SUMMARY.md
+  - .planning/phases/16-bench-expansion-reranker-tuning/16-UAT.md
   - docs/api-reference.md
   - docs/benchmarking.md
   - docs/cli-reference.md
@@ -25,7 +26,10 @@ covered_files:
   - scripts/generate_config_ref.py
   - src/sif/cli/commands/bench.py
   - src/sif/cli/commands/search.py
+  - src/sif/cli/error_handling.py
   - src/sif/config/settings.py
+  - src/sif/database/repositories.py
+  - src/sif/embedding/manager.py
   - src/sif/search/benchmark.py
   - src/sif/search/hybrid.py
   - src/sif/search/rerank.py
@@ -187,210 +191,199 @@ covered_files:
   - tests/test_docs.py
   - tests/unit/cli/test_bench.py
   - tests/unit/cli/test_database_lifecycle.py
+  - tests/unit/cli/test_error_conventions.py
   - tests/unit/cli/test_search.py
   - tests/unit/config/test_settings.py
+  - tests/unit/database/test_repositories.py
+  - tests/unit/embedding/test_manager.py
   - tests/unit/inference/test_reranker.py
   - tests/unit/search/test_bench_fixture.py
   - tests/unit/search/test_bench_snapshot.py
+  - tests/unit/search/test_benchmark.py
   - tests/unit/search/test_benchmark_metrics.py
   - tests/unit/search/test_hybrid.py
   - tests/unit/search/test_rerank.py
   - tests/unit/search/test_sweep.py
-covered_digest: "v4:sha256:112102034bc3d24517a2b88130ffb62864ae2b0c0b1908bd2ce1440ab2c50a9a"
+covered_digest: "v4:sha256:5e48703547937295f2e18f81d7418660d5a062c813e3b6e89e500422f350fa85"
 behavior_unverified: 0
 overrides_applied: 0
 re_verification:
-  previous_status: human_needed
+  previous_status: passed
   previous_score: 20/20
   gaps_closed: []
   gaps_remaining: []
   regressions: []
-human_verification:
-  - test: "Run the real-model held-out bench: `sif bench tests/fixtures/bench/queries.json --json` with the default real embedding model, then record model / hardware / date / held-out nDCG@10 / Hit@10 / p50 / p95 in the docs/benchmarking.md evidence table (currently honestly labelled 'not yet measured'; tracked in .planning/WINDOWS.md id 10)"
-    expected: "The manual evidence row is filled with measured values (never fabricated); the deterministic snapshot in tests/fixtures/bench/heldout_defaults.json stays the CI gate"
-    why_human: "Requires downloading and running a real embedding model on operator hardware; results are platform/version-dependent so they cannot gate CI (16-VALIDATION.md Manual-Only Verifications, EVAL-04)"
-  - test: "Measure rerank-on vs rerank-off interactive latency on the operator's box (e.g. `sif bench --rerank --json` p50/p95 states, or timed `sif search query` with/without --rerank) and record the reference figure"
-    expected: "Rerank-off p50/p95 stay interactive (research reference: ~500 ms off-state); the rerank-on states show the measured quality/latency trade-off"
-    why_human: "Machine-dependent wall-clock feel on real hardware/models; the structural guarantee (off path constructs no reranker, byte-identical pre-change results) is test-proven, but the latency figure itself is not CI-reproducible (16-VALIDATION.md Manual-Only Verifications, QUAL-05/SC5)"
+decision_coverage:
+  honored: 13
+  total: 13
+  not_honored: []
 ---
 
 # Phase 16: Bench Expansion + Reranker Tuning Verification Report
 
 **Phase Goal:** Search-quality tuning is quantified and honest — an expanded benchmark with metrics, sweep, and held-out validation justifies shipped defaults and tunes the reranker within interactive latency.
-**Verified:** 2026-11-08T16:45:16Z
-**Status:** human_needed
-**Re-verification:** Yes — report regenerated after the code-review fix chain (7d5d788, 3562dac, 62aeacb, f3a9700, 77e6511) changed covered files; the prior 20/20 verdict went stale on its digest, not on any gap. This pass re-derived every verdict from current code.
+**Verified:** 2026-11-12T07:49:17Z at HEAD `b47f55f6c551aa61ddd124913f6fe9a2663da06a`
+**Status:** passed
+**Re-verification:** Yes — the prior passed report was stale because Phase 16.1 changed `bench.py`/`search.py` and WR-01 changed `repositories.py`. This pass re-derived the verdict from current source, fixture data, and live tests; no prior gap was carried forward.
 
 ## Goal Achievement
 
-Must-have set = 5 ROADMAP success criteria (non-negotiable contract) + 10 speckless edge truths from PLAN frontmatters + 5 prohibitions. Every item was re-checked against the current codebase (source read, fixture JSON parsed, named tests run, probes executed) — not SUMMARY claims and not the prior report's conclusions.
+Must-have set reused from the prior verification: 5 ROADMAP success criteria, 10 edge truths, and 5 prohibitions. SUMMARY.md statements were used only to locate evidence, not as proof. All 20 items have current source and behavioral evidence.
 
-### Code-Review Fix Chain Spot-Check (files changed since the prior verification)
+### Post-Verification Change Review
 
-| Fix | Claim | Codebase Evidence | Status |
-|-----|-------|-------------------|--------|
-| CR-01 (7d5d788) | bench soft-fail warnings routed to stderr Console (stdout JSON purity on degradation paths) | `console_err = Console(stderr=True)` at bench.py:44; `_load_embedder` ImportError/Exception paths (bench.py:110-113) and `_load_reranker` ImportError/Exception paths (bench.py:188-201) all print via `console_err`; factory ValueError still maps to `click.ClickException` (prohibition intact). Two new tests `test_bench_embedder_soft_fail_warning_stays_off_json_stdout` (test_bench.py:206) and `test_bench_rerank_missing_backend_warning_stays_off_json_stdout` (test_bench.py:1169) assert `json.loads(result.stdout)` strict-parses AND the warning lands in `result.stderr` only — both run live: PASS | ✓ VERIFIED |
-| WR-01 (3562dac) | `class TestMachineOutputNoWrap:` header restored in test_search.py | Header present at test_search.py:1324 (between TestCandidateLimitResolution:1234 and TestSearchOutputBranches:1513); class run live: 4 passed | ✓ VERIFIED |
-| WR-02 (62aeacb) | snapshot `live_settings` fixture hermetic (delenv SIF_ fusion knobs) | test_bench_snapshot.py:127-141 uses `pytest.MonkeyPatch.context()` with `mp.delenv` for SIF_RRF_K/SIF_BM25_WEIGHT/SIF_VECTOR_WEIGHT; proven behaviorally — full file run live WITH `SIF_RRF_K=40 SIF_BM25_WEIGHT=2 SIF_VECTOR_WEIGHT=0.5` exported: 13 passed (the exact flake scenario now cannot fire) | ✓ VERIFIED |
-| WR-03 (f3a9700) | `--check` drift gate flags unexpected files pack-wide (root allowlist: heldout_defaults.json, README.md) | generate_bench_fixture.py:474 `ALLOWED_EXTRA_FILES = {"heldout_defaults.json", "README.md"}`; :494 iterates `out.rglob("*")` (every file, not only `corpus/**/*.md`) flagging `unexpected:`; TestCheckPackDriftGate (test_bench_fixture.py:325-363: clean-pack, stray root file, stray non-.md under corpus, stray .md under corpus) run live: PASS | ✓ VERIFIED |
-| 77e6511 | ruff format on the new bench test signature | `ruff format --check` on bench.py/test_bench.py/test_bench_snapshot.py: already formatted | ✓ VERIFIED |
-| Disposition | fix chain closed | 16-REVIEW-DISPOSITION.md: CR-01/WR-01/WR-02/WR-03 all `fixed`; 16-REVIEW-FIX.iter2.md `status: all_fixed` (4 fixed) | ✓ VERIFIED |
+| Change | Current Codebase Evidence | Result |
+|--------|---------------------------|--------|
+| Phase 16.1 database opener adoption | `bench.py:648` and `search.py:836` call `open_initialized_database(index_path, Database)`; `error_handling.py:44-66` still constructs the caller-supplied `Database`, calls `init_schema()`, and enters its context. The helper wraps only open/schema initialization, not benchmark measurement or rerank behavior. | No Phase 16 semantics changed; 38 bench CLI, 167 search CLI, 8 database-lifecycle, and 15 error-convention tests pass in their respective runs. |
+| Embedding dimension/public model property | `bench.py:106-116,653` and `search.py:897-905,943` prefer model metadata and use `manager.model`; deterministic snapshot/sweep tests construct `ConceptEmbedder` directly and do not traverse this loader. | No held-out or sweep drift; 12 embedding-manager tests and all 13 snapshot tests pass. |
+| Explicit fixture UTF-8 read | `bench.py:631` opens the fixture with `encoding="utf-8"` inside the existing `OSError`/`ValueError` to `ClickException` boundary. | Fixture and CLI tests pass; empty/malformed fixture behavior remains guarded. |
+| WR-01 cache-expiry batching | `repositories.py:530-644` changes only `LLMCacheRepository.clear_expired`; there are no `clear_expired` references in bench, search CLI, benchmark, hybrid, or rerank modules. | Isolated from Phase 16; all 29 repository tests pass, including the 1000-row batch regression. |
 
 ### Observable Truths
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 1 | [SC-1] `sif bench` reports nDCG@k, Hit@k, and p50/p95 latency for each measured configuration | ✓ VERIFIED | All 9 pure helpers present in benchmark.py (dcg_at_k/ndcg_at_k/hit_at_k/percentile/resolve_corpus_root/result_key/iter_grid/rank_sweep/warrants_default_change — grep count 9); CLI join proof `test_cli_bench_committed_pack_nonzero_ndcg` run live on the committed pack: PASS; rerank-state latency keys covered by the 8 live-passing test_bench rerank/stream tests. CR-01 fix strengthens this SC: the JSON stream now stays parseable on degradation paths too |
-| 2 | [SC-2] Fixture contains >=50 categorized queries (keyword, synonym, multilingual, rival) split into tuning and held-out | ✓ VERIFIED | Parsed tests/fixtures/bench/queries.json directly: 56 queries, exactly 14 per category, 36 tuning / 20 held-out; drift gate probe PASS (151 files byte-identical to generator output) |
-| 3 | [SC-3] `sif bench --sweep` grids over weights and k; differences within noise (<0.01) explicitly not declared winners | ✓ VERIFIED | `iter_grid` + `rank_sweep` present in benchmark.py; `TestRankSweepTieBoundary` (3 tests incl. exactly-epsilon and representation-noise) run live: 3 passed; `winner_declared`/`tie_group` are dataclass fields |
-| 4 | [SC-4] Shipped defaults justified by held-out results and documented; defaults change only if held-out data warrants | ✓ VERIFIED | Parsed heldout_defaults.json: defaults 60/1.0/1.0, held-out nDCG@10 0.8120 over 20 queries, sweep-winner delta 0.0066 < 0.01, verdict "unchanged"; `TestHeldoutSnapshotReproduction` run live (incl. under hostile env vars): PASS — WR-02 fix makes this lock hermetic |
-| 5 | [SC-5] Reranker honors candidate cap (10-20 on CPU) and configurable relative threshold (score >= top1 x alpha); skip-rerank fast path keeps `sif search query` interactive | ✓ VERIFIED | rerank.py:43-48 threshold filter after descending sort (`cutoff = scored[0][1] * relative_threshold`, raw >=); hybrid.py:236 over-fetch `limit=max(options.limit + options.offset, options.candidate_limit)` + :259 slice `results[:options.candidate_limit]`; search.py:913-916 `rerank_requested = rerank or settings.rerank_enabled` gate BEFORE `create_reranker`; settings bounds ge=5/le=50 and gt=0/le=1 at settings.py:158-182. Live: test_search rerank/candidate 15 passed, test_settings boundaries 12 passed, test_bench rerank states 8 passed |
-| 6 | [Edge] Threshold/cap boundary validation: cap accepts 5 and 50, rejects 4 and 51; threshold accepts (0,1], rejects 0.0 and 1.1 | ✓ VERIFIED | Pydantic Field bounds at settings.py:158-182 (RERANK_CANDIDATE_LIMIT_MIN=5/:15, MAX=50/:16); boundary tests run live: 12 passed |
-| 7 | [Edge] Stable ordering: deterministic equal-score ordering in rerank and deterministic sweep output | ✓ VERIFIED | `TestSweepWinnerEvidence` determinism + rerank equal-score determinism covered by the passing test files (13/13 snapshot, 15/15 search runs green on current code) |
-| 8 | [Edge] Fixed split isolation: tuning never feeds held-out metrics and held-out is never searched during a sweep | ✓ VERIFIED | `test_bench_sweep_never_searches_heldout_queries` (spy) run live: PASS |
-| 9 | [Edge] Empty-fixture error: empty `queries` array exits non-zero via ClickException, never zero-valued metrics | ✓ VERIFIED | Empty-queries guard tests among the 8 live-passing test_bench stream/rerank selections; `_validate_fixture` unchanged by the fix chain |
-| 10 | [Edge] Fixed category order: all four CATEGORIES keys in declared order in every report/config | ✓ VERIFIED | `CATEGORIES` constant in benchmark.py; category-order tests green in current runs; fix chain touched no serialization code |
-| 11 | [Edge] Inclusive delta >= 0.01 held-out rule (rounded-delta arithmetic shared with the tie rule) | ✓ VERIFIED | `warrants_default_change` present; committed verdict "unchanged" matches measured delta 0.0066; TestWarrantsDefaultChange inside the 13/13 live-passing snapshot file |
-| 12 | [Edge] No-evidence = no change: explicit "unchanged-no-evidence" verdict | ✓ VERIFIED | TestSnapshotVerdict inside the 13/13 live-passing snapshot file; verdict table documented in docs/benchmarking.md (test_docs run live: 13 passed) |
-| 13 | [Edge] Deterministic sweep ordering (nDCG descending, declared grid order tie-break) | ✓ VERIFIED | TestRankSweepTieBoundary + TestSweepWinnerEvidence run live: PASS |
-| 14 | [Edge] k=10 contract with empty-result zero scores | ✓ VERIFIED | DEFAULT_K and zero-ideal-DCG helpers present in benchmark.py; metric tests green (12-passing settings run adjacent; test_benchmark_metrics collected in the suite) |
-| 15 | [Edge] Strict < 0.01 tie boundary with rounded-delta arithmetic (exactly 0.01 is signal; 0.0099 is noise) | ✓ VERIFIED | TestRankSweepTieBoundary run live: 3 passed |
-| 16 | [Prohibition] No real-KB data committed — synthetic only (D-01) | ✓ VERIFIED (must-NOT did not happen) | Drift gate probe PASS over all 151 pack files — every file is byte-identical generator output (seeded synthetic); WR-03 fix now enforces this pack-wide, closing the prior scan-scope gap |
-| 17 | [Prohibition] No unbounded rerank fan-out (max 50 candidates on every path) | ✓ VERIFIED (must-NOT did not happen) | Shared clamp + Pydantic 5..50 + pipeline slice confirmed at source (truth 5 evidence); `-C 200` → 50 pinned in both test files, run live green |
-| 18 | [Prohibition] No tuning-only default changes | ✓ VERIFIED (must-NOT did not happen) | heldout_defaults.json defaults 60/1.0/1.0 with verdict "unchanged"; recomputation test run live under hostile env (WR-02 fix) still locks the defaults: PASS |
-| 19 | [Prohibition] No held-out leakage into sweep ranking | ✓ VERIFIED (must-NOT did not happen) | Held-out spy test run live: PASS |
-| 20 | [Prohibition] No reranker construction on the off path | ✓ VERIFIED (must-NOT did not happen) | Gate-before-factory confirmed at search.py:913-916 and bench `_load_reranker` early return `if not rerank: return None` (bench.py:184-186); off-path tests run live: PASS |
+| 1 | [SC-1] `sif bench` reports nDCG@k, Hit@k, and p50/p95 latency for each measured configuration | VERIFIED | `benchmark.py:78-112` implements DCG/nDCG/Hit/percentile; `report()` at `benchmark.py:575-657` computes global/category metrics and warmed latency; `bench.py:261-300,403-475` carries them into every config/report. Live: 37 metric tests, 38 bench CLI tests, and 14 sweep tests pass. |
+| 2 | [SC-2] Fixture contains at least 50 categorized queries split into tuning and held-out | VERIFIED | Direct JSON parse: 56 queries, exactly 14 each for keyword/synonym/multilingual/rival; 36 tuning and 20 held-out, with 9/5 per category. All grades are integers 0-3, every query has grade >=2 relevance, and every relevance key resolves safely beneath `corpus/`. Generator check: 151 files match. |
+| 3 | [SC-3] Fixed sweep grids weights and k; differences within noise (<0.01) are not declared winners | VERIFIED | `GRID_RRF_K`/`GRID_WEIGHTS` at `benchmark.py:31-33` yield the fixed 45-config grid through `iter_grid()`; `rank_sweep()` at `benchmark.py:361-391` applies `round(best - ndcg, 6) < 0.01` and sets `winner_declared` only for a one-config tie group. All sweep and bench CLI tests pass. |
+| 4 | [SC-4] Shipped defaults are justified and locked by held-out evidence | VERIFIED | `heldout_defaults.json` records defaults 60/1.0/1.0, held-out nDCG@10 `0.8120158986791898` over 20 queries, candidate delta `0.00662541159807295`, and verdict `unchanged`. `test_metrics_reproduce_and_defaults_lock_in_one_test` recomputes global and per-category values from `Settings(_env_file=None)`; all 13 snapshot tests pass at HEAD. |
+| 5 | [SC-5] Reranker honors candidate cap and relative threshold; off path remains cheap | VERIFIED | `rerank.py:40-48` stable-sorts and filters raw normalized scores with `>= top1 * alpha` before `top_k`; `hybrid.py:233-261` over-fetches to `max(limit + offset, candidate_limit)` then slices to the cap; `search.py:913-930` gates factory construction on flag/setting. Settings validate 5..50 and (0,1]. Live: 15 rerank, 36 hybrid, 45 inference-reranker, 38 bench, and the full search/settings files pass. |
+| 6 | [Edge] Cap and threshold boundary validation | VERIFIED | `settings.py:158-182` declares Pydantic bounds; `resolve_candidate_limit` at `settings.py:399-415` clamps every resolved value to 5..50 and rejects non-int injection by falling back to 20. All 34 settings tests pass. |
+| 7 | [Edge] Deterministic equal-score rerank and sweep ordering | VERIFIED | Python stable sort in `rerank.py:40-48`; sweep key at `benchmark.py:375-383` is nDCG descending followed by declared grid dimensions. Determinism assertions in rerank, hybrid, sweep, and snapshot suites pass. |
+| 8 | [Edge] Tuning/held-out isolation | VERIFIED | `_tuning_evaluator` at `bench.py:237-258` filters to `split == "tuning"` before constructing the evaluator/search path. `test_bench_sweep_never_searches_heldout_queries` is active and passed within the 38-test bench CLI run. |
+| 9 | [Edge] Empty fixtures fail instead of producing zero-valued metrics | VERIFIED | `benchmark.py:453-459` raises `ValueError` on an empty query list; `bench.py:666-686` maps measurement/fixture failures to `ClickException`. Legacy metric and CLI empty-fixture tests pass. |
+| 10 | [Edge] Fixed category order in every report/config | VERIFIED | `CATEGORIES` is the fixed tuple at `benchmark.py:21`; `BenchReport.to_dict()` and `ConfigResult.to_dict()` iterate that tuple. Fixture, metric, sweep, and narrow-width JSON tests pass. |
+| 11 | [Edge] Held-out delta >=0.01 is inclusive with rounded arithmetic | VERIFIED | `warrants_default_change` at `benchmark.py:394-407` uses `round(candidate - baseline, 6) >= delta`; exact-0.01, representation-noise, 0.0099, zero, and negative cases pass in `TestWarrantsDefaultChange`. |
+| 12 | [Edge] No evidence means no default change | VERIFIED | `snapshot_verdict` in `test_bench_snapshot.py:111-124` returns `unchanged-no-evidence` when held-out or candidate evidence is absent; both missing-evidence tests and the committed-verdict consistency test pass. |
+| 13 | [Edge] Sweep output ordering is deterministic | VERIFIED | `TestIterGrid`, `TestRankSweep`, and `TestSweepWinnerEvidence::test_winner_ranking_is_deterministic` pass; the committed ranking contains all 45 unique configurations. |
+| 14 | [Edge] k=10 and empty-result zero scores | VERIFIED | `DEFAULT_K = 10`; `ndcg_at_k` returns 0.0 for zero ideal DCG and `hit_at_k` returns 0.0 for no positive retrieved grade. Hand-value and edge tests in `test_benchmark_metrics.py` pass. |
+| 15 | [Edge] Strict <0.01 tie boundary | VERIFIED | `TestRankSweepTieBoundary` proves exactly 0.01 is signal, 0.0099 is noise, and the raw `0.29 - 0.28 = 0.009999999999999953` case is not misclassified. All 14 sweep tests pass. |
+| 16 | [Prohibition] No real-KB data committed; synthetic fixture only | VERIFIED (must-NOT did not happen) | `python -I scripts/generate_bench_fixture.py --check` returned `OK ... matches generator output (151 files)`, so the complete pack is byte-identical to seeded generator output. |
+| 17 | [Prohibition] No unbounded rerank fan-out | VERIFIED (must-NOT did not happen) | Shared clamp 5..50 plus pipeline slice is present on both CLI paths; `-C 200` resolution and real-index candidate-count spies pass in search, bench, and hybrid suites. |
+| 18 | [Prohibition] No tuning-only default changes | VERIFIED (must-NOT did not happen) | Settings defaults remain 60/1.0/1.0 and the measured held-out candidate delta is only +0.0066; snapshot verdict remains `unchanged`, reproduced by the live lock test. |
+| 19 | [Prohibition] No held-out leakage into sweep ranking | VERIFIED (must-NOT did not happen) | Tuning-only fixture filtering is structural and the held-out-search spy test passes at HEAD. |
+| 20 | [Prohibition] No reranker construction on the off path | VERIFIED (must-NOT did not happen) | `search.py:913-920` checks opt-in before `create_reranker`; `bench.py:184-208` returns `None` before the factory unless `--rerank` is set. Off-path and no-construction tests pass. |
 
-**Score:** 20/20 truths verified (0 present, behavior-unverified)
+**Score:** 20/20 truths verified (0 present-but-behavior-unverified).
 
 ### Advisory (New Scope, Unevidenced)
 
-Re-verification ran; the #3304 evidence gate was applied to the Step 7 scan. No new-scope blockers were raised: the four actionable review findings found at initial verification are now fixed and test-proven (table above), and the remaining open items are the carried-forward IN-01..06 info-level polish findings (never blockers, dispositioned `open` by maintainers in 16-REVIEW-DISPOSITION.md). The docs/benchmarking.md "not yet measured" row remains the plan-mandated honest label routed to human verification below.
+Re-verification evidence gating was applied. No new-scope blockers or unevidenced advisory findings were raised. The only changes since the prior report were directly inspected and exercised by named test files above.
 
 | # | Finding | Category | Why Advisory |
 |---|---------|----------|--------------|
-| 1 | None — no unevidenced new-scope findings this pass | - | - |
+| 1 | None | - | - |
 
 ### Required Artifacts
 
 | Artifact | Expected | Status | Details |
 |----------|----------|--------|---------|
-| src/sif/search/benchmark.py | 9 pure helpers + dataclasses | ✓ VERIFIED | All 9 module-level functions present; untouched by fix chain; wired into bench_cmd |
-| src/sif/cli/commands/bench.py | sweep/rerank/-C flags, CachedEmbedder, states, stderr soft-fail | ✓ VERIFIED | CR-01 stderr Console present and used on all soft-fail paths; stream-separation tests live-green |
-| src/sif/config/settings.py | rerank fields + bounds + resolver | ✓ VERIFIED | Fields at 158-182, constants at 15-16, resolver present |
-| src/sif/cli/commands/search.py | --rerank flag, gate-before-factory, -C resolution | ✓ VERIFIED | Gate at 909-926 confirmed by direct read this pass |
-| src/sif/search/rerank.py | relative_threshold filter + kwarg on backends + factory forwarding | ✓ VERIFIED | Filter at 43-48; kwargs at 28/114+; unchanged by fix chain |
-| src/sif/search/hybrid.py | over-fetch fetch_options on rerank-on path | ✓ VERIFIED | Lines 236/259 confirmed by direct read this pass |
-| tests/fixtures/bench/ (pack) | 150 corpus + queries.json + heldout_defaults.json + README | ✓ VERIFIED | Drift gate probe PASS (151 files); queries/snapshot parsed directly |
-| scripts/generate_bench_fixture.py | seeded generator + pack-wide --check drift gate | ✓ VERIFIED | Probe exit 0; WR-03 rglob scan + root allowlist in source |
-| tests/support/bench.py | ConceptEmbedder + build_bench_db | ✓ VERIFIED | Used by the live-passing snapshot/fixture/CLI tests this pass |
-| docs/benchmarking.md | measurement-system narrative, docs-validated | ✓ VERIFIED | test_docs run live: 13 passed; docs working tree clean |
-| Test files (8) | metric/sweep/fixture/snapshot/rerank/hybrid/settings/search coverage | ✓ VERIFIED | Named tests across all 8 run live this pass, all green |
+| `src/sif/search/benchmark.py` | Metrics, category reports, fixed grid, tie ranking, held-out rule | VERIFIED | Substantive implementations at lines 21-657; consumed by CLI and deterministic snapshot. |
+| `src/sif/cli/commands/bench.py` | Report/sweep/rerank states, tuning guard, clamp, cached embedder | VERIFIED | Full orchestration present; Phase 16.1 opener/model-property changes preserve behavior; 38 tests pass. |
+| `src/sif/config/settings.py` | Opt-in rerank, validated cap/threshold, shared resolver | VERIFIED | Fields and resolver present; 34 tests pass. |
+| `src/sif/cli/commands/search.py` | Rerank opt-in and bounded candidate options | VERIFIED | Gate and resolver wiring intact after opener/model changes; full CLI test file passes. |
+| `src/sif/search/rerank.py` | Relative threshold on all backends | VERIFIED | Shared post-normalization filter plus factory forwarding present; rerank/reranker tests pass. |
+| `src/sif/search/hybrid.py` | Binding over-fetch and candidate slice | VERIFIED | `fetch_options` reaches hybrid search/fusion and `results[:candidate_limit]` precedes rerank; 36 tests pass. |
+| `src/sif/cli/error_handling.py` | Equivalent initialized database opener | VERIFIED | Caller-supplied `Database` construction + `init_schema()` + context management; 15 error-convention tests pass. |
+| `src/sif/database/repositories.py` | WR-01 cache fix isolated from Phase 16 | VERIFIED | Only LLM cache expiry deletion changed; 29 repository tests pass. |
+| `tests/fixtures/bench/` | Synthetic categorized pack and held-out snapshot | VERIFIED | 150 corpus docs, 56 queries, snapshot; direct integrity parse and 151-file drift check pass. |
+| `scripts/generate_bench_fixture.py` | Deterministic generator and pack-wide drift gate | VERIFIED | Probe exit 0; fixture contract suite passes. |
+| `tests/support/bench.py` | Deterministic ConceptEmbedder and real-schema index builder | VERIFIED | Used by live fixture/snapshot/CLI tests at HEAD. |
+| `docs/benchmarking.md` and related docs | Honest measurement/tuning documentation | VERIFIED | Documents 45-config tuning-only grid, rounded 0.01 rules, cap/alpha/opt-in, snapshot values and verdict; all 13 docs tests pass. |
+
+The plans use legacy free-form strings for `must_haves.artifacts` and `key_links`; the structured `verify.artifacts`/`verify.key-links` verbs therefore returned zero machine-parseable entries. They were not treated as evidence. The tables above and below record the manual existence/substance/wiring checks instead.
 
 ### Key Link Verification
 
 | From | To | Via | Status | Details |
-|------|----|----|--------|---------|
-| bench_cmd | SearchEvaluator.report | fixture_path=fixture → resolve_corpus_root | ✓ WIRED | CLI join proof test live-green on the committed path |
-| bench_cmd | metric helpers | report() → pure helpers | ✓ WIRED | No inline formulas in the CLI (prohibition held; fix chain added no formulas) |
-| _run_sweep | per-config SearchOptions | replace(rrf_k/bm25_weight/vector_weight) | ✓ WIRED | Unchanged by fix chain; sweep tests live-green |
-| query_cmd | create_reranker | rerank_requested gate (flag OR setting) | ✓ WIRED | search.py:913-916 read this pass; never called on the off path |
-| query_cmd/bench_cmd | SearchOptions.candidate_limit | resolve_candidate_limit shared clamp | ✓ WIRED | Both callers confirmed; -C 200 → 50 tests live-green |
-| SearchPipeline.search | over-fetch + slice + rerank | fetch_options → fuse → [:cap] → rerank(top_k=limit) | ✓ WIRED | hybrid.py:236/259 read this pass |
-| heldout_defaults.json | Settings defaults lock | recomputation in one test | ✓ WIRED | Live-green including under hostile SIF_ env (WR-02) |
-| bench soft-fail paths | stderr Console | console_err.print on ImportError/Exception | ✓ WIRED | CR-01 link new this pass; both stream-separation tests live-green |
-| rank_sweep | winner honesty | winner_declared/tie_group → table + JSON | ✓ WIRED | Dataclass fields; tie-boundary tests live-green |
+|------|----|-----|--------|---------|
+| `bench_cmd` | `SearchEvaluator.report` | Fixture path -> corpus root -> measured search function | WIRED | Exact committed-pack CLI join test passes with non-zero nDCG/Hit. |
+| `bench_cmd` | Metric helpers | `report()` / `_measure_config()` | WIRED | No metric formulas inline in CLI; pure helpers tested independently. |
+| `_run_sweep` | Per-config `SearchOptions` | `dataclasses.replace` of rrf_k/BM25/vector weights | WIRED | 45-config grid and baseline reuse present; sweep tests pass. |
+| `_tuning_evaluator` | Sweep ranking | Tuning-only filtered fixture | WIRED | Held-out spy test passes. |
+| `query_cmd` | `create_reranker` | `--rerank` OR `SIF_RERANK_ENABLED` gate | WIRED | Gate precedes factory; off-path tests pass. |
+| `query_cmd`/`bench_cmd` | `SearchOptions.candidate_limit` | Shared `resolve_candidate_limit` | WIRED | Both callers resolve through the same clamp. |
+| `SearchPipeline.search` | Reranker | Over-fetch -> fusion -> cap slice -> `rerank(top_k=limit)` | WIRED | Real-index candidate-count and composition tests pass. |
+| `heldout_defaults.json` | Settings defaults | Same-test recomputation and equality lock | WIRED | Snapshot reproduction/default-lock test passes. |
+| Rerank scoring | Relative threshold | Stable descending sort -> `>= top1*alpha` -> top_k | WIRED | Exact-half and threshold-before-truncation tests pass. |
 
 ### Data-Flow Trace (Level 4)
 
 | Artifact | Data Variable | Source | Produces Real Data | Status |
 |----------|---------------|--------|--------------------|--------|
-| bench --json (no sweep) | ndcg_at_10/hit_at_10/p50/p95 | evaluator.report over real search_fn per query | Yes | ✓ FLOWING |
-| bench --json degradation paths | JSON stdout / warning stderr | separated streams (CR-01) | Yes | ✓ FLOWING (stdout strict-parses; test-proven) |
-| bench --sweep --json | configs/tie_group/baseline | _run_sweep → measured ConfigResults | Yes | ✓ FLOWING |
-| heldout_defaults.json | heldout metrics + verdict | deterministic index recomputation, locked by test | Yes | ✓ FLOWING |
-| docs/benchmarking.md evidence table | deterministic rows | committed snapshot values | Yes | ✓ FLOWING (manual real-model row honestly "not yet measured") |
+| `bench --json` | nDCG/Hit/p50/p95/categories | `SearchEvaluator.report` over measured `SearchPipeline` results | Yes | FLOWING |
+| `bench --sweep --json` | 45 configs, tie group, baseline/deltas | `_run_sweep` over tuning-only measured reports | Yes | FLOWING |
+| `heldout_defaults.json` | Defaults, held-out metrics, candidate, delta, verdict | Deterministic real SQLite/FTS/vector fixture index | Yes | FLOWING; recomputed by live test |
+| Rerank output | Candidate list and retained scores | Hybrid over-fetch/fusion -> cap -> normalized rerank scores | Yes | FLOWING; real-index and scoring tests pass |
+| Benchmarking docs | Deterministic evidence table | Committed snapshot and ranking | Yes | FLOWING; values match parsed snapshot |
 
 ### Behavioral Spot-Checks
 
-Named tests run live by this verifier (single targeted runs, never the full suite):
+All commands below were run by this verifier at HEAD `b47f55f` with `env -u FORCE_COLOR NO_COLOR=1` for pytest.
 
-| Behavior | Command | Result | Status |
-|----------|---------|--------|--------|
-| CR-01 embedder soft-fail warning off JSON stdout | pytest test_bench.py -k "stays_off_json_stdout or rerank" | 8 passed | ✓ PASS |
-| Drift gate unit tests (stray root/non-md/md files) | pytest test_bench_fixture.py::TestCheckPackDriftGate | 4 passed (in 8-run batch) | ✓ PASS |
-| Snapshot reproduction + defaults lock | pytest test_bench_snapshot.py::TestHeldoutSnapshotReproduction (batched with drift gate) | 8 passed | ✓ PASS |
-| WR-02 hermeticity under hostile env | SIF_RRF_K=40 SIF_BM25_WEIGHT=2 SIF_VECTOR_WEIGHT=0.5 pytest test_bench_snapshot.py | 13 passed | ✓ PASS |
-| WR-01 restored class | pytest test_search.py::TestMachineOutputNoWrap | 4 passed | ✓ PASS |
-| Off-path/cap/threshold (search CLI) | pytest test_search.py -k "rerank or candidate" | 15 passed | ✓ PASS |
-| Settings boundary validation | pytest test_settings.py -k "rerank or boundaries" | 12 passed | ✓ PASS |
-| Tie boundary arithmetic | pytest test_sweep.py::TestRankSweepTieBoundary | 3 passed | ✓ PASS |
-| Committed-pack CLI join + held-out spy | pytest test_bench.py -k "committed_pack_nonzero or never_searches_heldout" | 2 passed | ✓ PASS |
-| Docs validation (benchmarking.md in DOCS_FILES) | pytest tests/test_docs.py | 13 passed | ✓ PASS |
+| Behavior | Command / Scope | Result | Status |
+|----------|-----------------|--------|--------|
+| Held-out lock, sweep, bench CLI, rerank scoring | `pytest tests/unit/search/test_bench_snapshot.py tests/unit/search/test_sweep.py tests/unit/cli/test_bench.py tests/unit/search/test_rerank.py --no-cov` | 80 passed in 4.36s | PASS |
+| Metric correctness, legacy compatibility, fixture integrity, pipeline cap, factory forwarding | `pytest test_benchmark_metrics.py test_benchmark.py test_bench_fixture.py test_hybrid.py test_reranker.py --no-cov` (full unit paths) | 167 passed in 10.47s | PASS |
+| Search CLI opt-in/clamp, settings bounds, DB lifecycle, docs | `pytest test_search.py test_settings.py test_database_lifecycle.py tests/test_docs.py --no-cov` (full unit paths) | 222 passed in 1.88s | PASS |
+| Phase 16.1 opener/model property and WR-01 regression | `pytest test_error_conventions.py test_manager.py test_repositories.py --no-cov` (full unit paths) | 56 passed in 0.34s | PASS |
+| Fixture shape and evidence values | Direct `json` parse of `queries.json` and `heldout_defaults.json` | 56/36/20; 14 per category; safe paths/grades; defaults and verdict as recorded | PASS |
+| Current source quality | `ruff check` and `ruff format --check` on eight current source files | All checks passed; 8 files formatted | PASS |
+| HEAD full-suite gate | Supplied by orchestrator for `b47f55f`; not re-run by this verifier | 1591 passed, 1 skipped, coverage 95.18%; ruff/format/ty clean | PASS (confirmed HEAD gate) |
+
+Total live focused evidence: 525 tests passed across disjoint phase-linked files, with zero skips in these runs.
 
 ### Probe Execution
 
+No `scripts/*/tests/probe-*.sh` files or plan-declared shell probes exist for this phase. The phase's actual structural probe is the deterministic fixture drift gate.
+
 | Probe | Command | Result | Status |
 |-------|---------|--------|--------|
-| Fixture drift gate (now pack-wide per WR-03) | `python -I scripts/generate_bench_fixture.py --check` | "OK: ... matches generator output (151 files)", exit 0 | PASS |
-| Generated docs drift gate | `make docs-generate` + `git diff --stat docs/` | no diff, exit 0 | PASS |
-| Ruff (changed + core files) | `ruff check <11 files>` / `ruff format --check <3 files>` | All checks passed / already formatted | PASS |
+| Synthetic fixture drift gate | `python -I scripts/generate_bench_fixture.py --check` | `OK: .../tests/fixtures/bench matches generator output (151 files)`, exit 0 | PASS |
 
 ### Requirements Coverage
 
 | Requirement | Source Plan | Description | Status | Evidence |
-|-------------|------------|-------------|--------|----------|
-| QUAL-05 | 16-02, 16-04, 16-06 | Reranker cap + relative threshold configurable; skip-rerank fast path interactive | ✓ SATISFIED | Truths 5, 6, 17, 20; settings + clamp + threshold + over-fetch wired; 15+12+8 live-green tests |
-| EVAL-01 | 16-01, 16-05 | `sif bench` outputs nDCG@k, Hit@k, p50/p95 | ✓ SATISFIED | Truth 1; helpers + CLI rendering; committed-pack CLI proof live-green |
-| EVAL-02 | 16-01, 16-03, 16-05 | >=50 categorized queries + tuning/held-out split | ✓ SATISFIED | Truth 2; 56 queries parsed directly; drift gate PASS |
-| EVAL-03 | 16-04, 16-05 | `--sweep` grids weights/k; <0.01 noise not winners | ✓ SATISFIED | Truths 3, 8, 13, 15; tie-boundary tests live-green |
-| EVAL-04 | 16-05 | Defaults justified by held-out data, not tuning overfit | ✓ SATISFIED | Truths 4, 11, 12, 18; snapshot lock live-green incl. hostile env |
+|-------------|-------------|-------------|--------|----------|
+| QUAL-05 | 16-02, 16-04, 16-06 | Reranker cap + relative threshold; interactive skip-rerank path | SATISFIED | Truths 5-7, 17, 20; source wiring and live CLI/rerank/hybrid tests. |
+| EVAL-01 | 16-01, 16-05 | nDCG@k, Hit@k, p50/p95 benchmark output | SATISFIED | Truth 1; pure helpers, rendering, and CLI tests. |
+| EVAL-02 | 16-01, 16-03, 16-05 | At least 50 categorized queries with tuning/held-out split | SATISFIED | Truth 2; direct 56-query parse, integrity tests, drift gate. |
+| EVAL-03 | 16-04, 16-05 | Fixed weight/k sweep and honest 0.01 noise rule | SATISFIED | Truths 3, 8, 13, 15; grid/tie/split tests. |
+| EVAL-04 | 16-05 | Defaults justified by held-out evidence, not tuning overfit | SATISFIED | Truths 4, 11, 12, 18; snapshot recomputation and defaults lock pass. |
 
-No orphaned requirements: REQUIREMENTS.md maps exactly QUAL-05 and EVAL-01..04 to Phase 16 (all Complete), and every ID is claimed by at least one plan frontmatter (verified by grep this pass).
+No orphaned requirements: REQUIREMENTS.md maps exactly QUAL-05 and EVAL-01..04 to Phase 16, and every ID is claimed by at least one plan.
 
 ### Decision Coverage
 
-`check.decision-coverage-verify`: 13/13 trackable CONTEXT.md decisions honored by shipped artifacts, 0 not honored (non-blocking gate).
+`check.decision-coverage-verify`: 13/13 trackable CONTEXT.md decisions honored, 0 not honored (non-blocking gate).
 
 ### Test Quality Audit
 
-| Test File | Linked Req | Active | Skipped | Circular | Assertion Level | Verdict |
-|-----------|-----------|--------|---------|----------|-----------------|---------|
-| test_benchmark_metrics.py | EVAL-01/02 | active | 0 | 0 | Value (pinned approx constants) | OK |
-| test_sweep.py | EVAL-03 | active | 0 | 0 | Value/behavioral | OK |
-| test_bench_fixture.py | EVAL-02 | active | sqlite-vec runtime guard only | 0 | Behavioral (real DB) | OK |
-| test_bench_snapshot.py | EVAL-04 | active | sqlite-vec runtime guard only | 0 | Value + lock probes | OK |
-| test_bench.py / test_search.py / test_settings.py / test_hybrid.py / test_rerank.py / test_reranker.py | QUAL-05 | active | 0 | 0 | Value/behavioral (spy + stream proofs) | OK |
+| Test File(s) | Linked Req | Active | Disabled | Circular | Assertion Level | Verdict |
+|--------------|------------|--------|----------|----------|-----------------|---------|
+| `test_benchmark_metrics.py`, `test_benchmark.py` | EVAL-01/02 | Active | 0 | 0 | Hand-calculated values + behavior | OK |
+| `test_bench_fixture.py`, `test_bench.py` | EVAL-01/02/03, QUAL-05 | Active | 0 | 0 | Real DB, JSON shape/value, spies | OK |
+| `test_sweep.py` | EVAL-03 | Active | 0 | 0 | Exact boundary values + deterministic ordering | OK |
+| `test_bench_snapshot.py` | EVAL-04 | Active | 0 | 0 | Recomputed values + default-lock mutation probes | OK |
+| `test_search.py`, `test_settings.py`, `test_hybrid.py`, `test_rerank.py`, `test_reranker.py` | QUAL-05 | Active | 0 | 0 | Boundary values, real-index candidate counts, off-path proofs | OK |
 
-Disabled tests on requirements: 0. Circular patterns: 0 (snapshot values re-derived by the committed lock test every run — it is the authority, and it ran green this pass under hostile env). New CR-01 tests assert value-level stream content (warning text in stderr, absent from stdout), not mere existence.
+The only disabled-test grep hits are conditional sqlite-vec runtime guards in `test_hybrid.py`; sqlite-vec is available here and all 36 tests ran, so no requirement is hidden by a skip. Snapshot values are a regression lock recomputed from the deterministic index, not the sole correctness oracle: metric correctness is independently pinned by hand-calculated metric tests. No insufficient assertions or disabled requirement proofs found.
 
 ### Anti-Patterns Found
 
 | File | Line | Pattern | Severity | Impact |
 |------|------|---------|----------|--------|
-| (none) | - | No TBD/FIXME/XXX/TODO/HACK/PLACEHOLDER in any phase-modified file; no stub implementations; ruff clean | - | - |
+| None | - | No TBD/FIXME/XXX/TODO/HACK/PLACEHOLDER markers, placeholder implementations, or unwired stubs in phase source/test/script/docs files | - | - |
 
-Open review findings after the fix chain: IN-01..06 remain dispositioned `open` at info severity (16-REVIEW-DISPOSITION.md) — quality polish (vectors_stale rebuild, pre-existing docstrings, Qwen3 load duplication, doc gaps), none negates a success criterion. The docs/benchmarking.md "not yet measured" row is the plan-mandated honest label (16-05), routed to human verification below.
+### Human Verification
 
-### Human Verification Required
-
-### 1. Real-model held-out evidence (EVAL-04)
-
-**Test:** Run `sif bench tests/fixtures/bench/queries.json --json` with the default real embedding model; record model, hardware, date, held-out nDCG@10/Hit@10, p50/p95 in the docs/benchmarking.md evidence table (row currently "not yet measured"; .planning/WINDOWS.md id 10).
-**Expected:** Measured values recorded (never fabricated); the deterministic snapshot remains the CI gate.
-**Why human:** Requires downloading and running a real embedding model on operator hardware; results are platform/version-dependent so they cannot gate CI (16-VALIDATION.md Manual-Only Verifications). This pass independently re-confirmed 16-VALIDATION.md lists exactly these two Manual-Only items and agrees both are non-automatable.
-
-### 2. Interactive-latency figures on real hardware (QUAL-05/SC5)
-
-**Test:** Measure rerank-off vs rerank-on latency on the operator's box (e.g. `sif bench --rerank --json` states, or timed `sif search query` with/without `--rerank`); record the reference figure.
-**Expected:** Off-state p50/p95 interactive (~500 ms reference); on-state trade-off visible.
-**Why human:** Machine-dependent wall-clock feel; the structural guarantee (off path constructs no reranker, re-confirmed at search.py:913-916 this pass) is test-proven, but the latency figure is not CI-reproducible.
+N/A for this re-verification. The two planned manual-only items (real-model held-out corroboration and operator-hardware rerank latency) are already dispositioned `passed` in `16-UAT.md` (2/2, 0 pending). The current opener/model-property/cache changes introduce no new human-only acceptance criterion, and no truth is behavior-unverified.
 
 ### Gaps Summary
 
-No gaps. All 20 must-haves (5 roadmap SCs, 10 edge truths, 5 prohibitions) verified against the current codebase with live behavioral evidence. The prior verification's four open actionable review findings (CR-01, WR-01, WR-02, WR-03) are now fixed, test-covered, and dispositioned `fixed` — verified in source and by live test this pass, including a behavioral hermeticity proof (snapshot suite green under exported SIF_ fusion knobs). All 5 requirement IDs satisfied; no orphans. Decision coverage 13/13. The two human items above are the phase's own planned Manual-Only verifications (16-VALIDATION.md) — independently re-confirmed as the only non-automatable items — which is why the status is `human_needed` rather than `passed`.
+No gaps and no regressions. The Phase 16 goal remains achieved at HEAD `b47f55f`: the categorized fixture is intact and generator-reproducible; the fixed sweep remains tuning-only with the strict rounded 0.01 tie rule; the held-out snapshot still recomputes and locks shipped defaults; rerank opt-in, candidate bounding, and relative-threshold behavior remain wired and test-proven. Phase 16.1's opener/model-loading edits and WR-01's isolated cache-expiry batching did not alter those contracts.
 
 ---
 
-_Verified: 2026-11-08T16:45:16Z_
+_Verified: 2026-11-12T07:49:17Z_
 _Verifier: Claude (gsd-verifier)_
