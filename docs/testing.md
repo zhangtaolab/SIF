@@ -1,7 +1,7 @@
 <!-- generated-by: gsd-doc-writer -->
 # Testing
 
-SIF's test suite is built on [pytest](https://docs.pytest.org/) with coverage collected by pytest-cov. Tests live in `tests/` and are organized into unit, integration, and e2e tiers, plus three root-level suites for documentation validation, installed-package smoke tests, and version-identity regression tests — 1610 tests in total (1609 passing and 1 opt-in skip), with a full run taking roughly a minute and a half. This guide covers how to run the suite, how the tiers are laid out, and how to write new tests using the shared fixtures and factories.
+SIF's test suite is built on [pytest](https://docs.pytest.org/) with coverage collected by pytest-cov. Tests live in `tests/` and are organized into unit, integration, and e2e tiers, plus three root-level suites for documentation validation, core-module smoke checks, and version-identity regression tests — 1610 tests in total (1609 passing and 1 opt-in skip), with a full run taking roughly a minute and a half. This guide covers how to run the suite, how the tiers are laid out, and how to write new tests using the shared fixtures and factories.
 
 ## Test framework and setup
 
@@ -84,14 +84,14 @@ tests/
 ├── conftest.py              # Shared pytest fixtures + global color-env scrub
 ├── factories.py             # Test data factories
 ├── test_docs.py             # Validates code blocks in documentation (13 tests)
-├── test_sif_complete.py     # End-to-end smoke tests over the installed package (9 tests)
+├── test_sif_complete.py     # Per-module smoke checks importing source modules directly (9 tests)
 ├── test_version_identity.py # Pins the single-sourced release version (4 tests)
 ├── unit/                    # 1538 tests — module-level tests with mocks/temp databases
 │   ├── cli/                 #   CLI commands, error conventions, index locking, color hermeticity (434)
 │   ├── config/              #   Settings loading and validation (34)
 │   ├── core/                #   Core domain entities (Collection, Context) (25)
 │   ├── database/            #   Schema, migrations, repositories, locking, query log (90)
-│   ├── db/                  #   DatabaseConnection / ConnectionPool tests (58)
+│   ├── db/                  #   DatabaseConnection and repository tests (58)
 │   ├── embedding/           #   Embedder implementations, cache, factory, manager (100)
 │   ├── indexing/            #   Chunker, indexer, parser, scanner, watcher, drift, incremental (126)
 │   ├── inference/           #   Embedder, query expander, reranker (90)
@@ -116,7 +116,7 @@ tests/
 └── e2e/                     # Reserved tier; currently empty
 ```
 
-- **unit/** tests a single module in isolation, using mocks (`MagicMock`) or the temporary-database fixtures. `database/` mirrors the `sif.database` package (schema, migrations, repositories, locking), while `db/` covers connection management (`DatabaseConnection`, `ConnectionPool`).
+- **unit/** tests a single module in isolation, using mocks (`MagicMock`) or the temporary-database fixtures. `database/` mirrors the `sif.database` package (schema, migrations, repositories, locking), while `db/` covers connection management (`DatabaseConnection`) and repositories.
 - **integration/** exercises multiple layers together: CLI embed idempotency and incremental-index equivalence against real temporary databases, WAL concurrency and two-writer locking across processes, the full search pipeline (FTS5 + vector + RRF fusion), and real-subprocess batteries for foreground `sif watch`, the detached watch daemon, and the MCP server with its embedded watcher. `test_service_live_launchd.py` is skipped unless `SIF_TEST_LIVE_LAUNCHD=1` is set on macOS with `launchctl` on `PATH` — it is the suite's one default skip.
 - **e2e/** is a placeholder with no tests yet; add true end-to-end scenarios here.
 - **test_docs.py** extracts fenced code blocks from a hardcoded `DOCS_FILES` list (README.md plus `docs/index.md`, `cli-reference.md`, `configuration.md`, `quickstart.md`, `mcp-server.md`, `search-algorithms.md`, `benchmarking.md`, `architecture.md`, and `models.md`) and checks that the documented `sif` commands exist, Python and SQL blocks are valid, and JSON examples match the real output schemas.
@@ -151,7 +151,7 @@ Helper functions `create_test_document()` and `create_test_collection()` are als
 
 For entities with varying shapes, prefer the factories over the fixed `sample_*` fixtures:
 
-- `CollectionFactory`, `DocumentFactory` (supports `with_chunks=True`), `DocumentChunkFactory`, `DocumentMetadataFactory`, `ContextFactory` — each has `.create(**overrides)` and `.create_batch(n, **overrides)`
+- `CollectionFactory`, `DocumentFactory` (supports `with_chunks=True`), `DocumentChunkFactory`, `DocumentMetadataFactory`, `ContextFactory` — each has `.create(**overrides)`; all but `DocumentMetadataFactory` also have `.create_batch(n, **overrides)`
 - `SearchOptionsFactory` — plus `.bm25()`, `.vector()`, `.hybrid()` presets
 - `SearchResultFactory` — `.create_batch(n)` yields decreasing scores
 - `SAMPLE_MARKDOWN_CONTENTS`, `SAMPLE_SEARCH_QUERIES`, `get_sample_embedding(dim)`, `get_sample_embeddings(count, dim)` — shared corpora and deterministic vectors

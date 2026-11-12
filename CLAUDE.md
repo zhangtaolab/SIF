@@ -67,7 +67,7 @@ src/sif/
 
 ### Key Architectural Patterns
 
-**Repository Pattern:** All database access flows through repository classes in `src/sif/database/repositories.py`, built on the abstract `Repository` interfaces in `src/sif/database/repository.py`.
+**Repository Pattern:** Entity CRUD for collections, documents, chunks, contexts, query logs, and the LLM cache goes through standalone repository classes in `src/sif/database/repositories.py` (`CollectionRepository`, `DocumentRepository`, `DocumentChunkRepository`, `ContextRepository`, `QueryLogRepository`, `LLMCacheRepository`) that wrap a shared `sqlite3.Connection`. These concrete classes do not inherit from the abstract `Repository` interfaces in `src/sif/database/repository.py`; those interfaces are referenced only by tests (as `create_autospec` mocks). Search strategies in `src/sif/search/` and the embedding cache in `src/sif/embedding/cache.py` also execute SQL directly, so the repository layer is the convention for entity CRUD, not the sole path for all database access.
 
 **Protocol-Based Extensibility:** `src/sif/core/models.py` defines protocols like `Embedder` that decouple search and indexing from specific embedding providers. The embedding factory in `src/sif/embedding/factory.py` creates real embedders per `ModelType`: `SentenceTransformerEmbedder` (sentence-transformers), `LlamaCppEmbedder` for GGUF models (llama-cpp-python), plus OpenAI and ModelScope providers. The HuggingFace backend raises `NotImplementedError` and is rejected by `model_type` settings validation.
 
@@ -85,7 +85,7 @@ src/sif/
 
 ### Data Flow
 
-All persistent state lives in a single SQLite database (default is `<platformdirs user_data_dir>/sif/sif.db`, e.g. `~/.local/share/sif/sif.db` on Linux or `~/Library/Application Support/sif/sif.db` on macOS, resolved via `Settings.get_db_path()`; override with `SIF_DB_PATH`). The `SchemaManager` in `src/sif/database/schema.py` creates tables, FTS5 virtual tables, and vector tables. FTS5 tables are external-content tables (`content='documents'`, `content='document_chunks'`) kept synchronized with the main tables via SQLite insert/update/delete triggers.
+Primary application state lives in a SQLite database (default is `<platformdirs user_data_dir>/sif/sif.db`, e.g. `~/.local/share/sif/sif.db` on Linux or `~/Library/Application Support/sif/sif.db` on macOS, resolved via `Settings.get_db_path()`; override with `SIF_DB_PATH`). A second SQLite database holds the embedding cache at `<cache_dir>/embeddings_cache.db` (default `<platformdirs user_cache_dir>/sif/embeddings_cache.db`, e.g. `~/.cache/sif/embeddings_cache.db` on Linux or `~/Library/Caches/sif/embeddings_cache.db` on macOS, resolved via `Settings.get_cache_dir()`; enabled by default with `cache_embeddings=True` and created by `src/sif/embedding/cache.py`); a `<db_path>.lock` file also accompanies the main database for cross-process index locking (`src/sif/database/locking.py`). The `SchemaManager` in `src/sif/database/schema.py` creates tables, FTS5 virtual tables, and vector tables. FTS5 tables are external-content tables (`content='documents'`, `content='document_chunks'`) kept synchronized with the main tables via SQLite insert/update/delete triggers.
 
 Embedding models are loaded on demand and cached in `EmbeddingManager._model`.
 

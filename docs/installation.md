@@ -152,16 +152,16 @@ Usage: sif [OPTIONS] COMMAND [ARGS]...
   SIF - Search / Index / Find - Local document search engine.
 
 Options:
-  --version         Show version and exit.
-  --index PATH      Path to the index database file.
-  -v, --verbose     Enable verbose output.
-  -q, --quiet       Suppress non-error output.
+  --version         Show the version and exit.
+  -i, --index PATH  Path to the index database
+  -v, --verbose     Enable verbose output
+  -q, --quiet       Suppress non-error output
   --help            Show this message and exit.
 
 Commands:
   collection  Manage document collections.
-  context     Manage search context.
-  search      Search indexed documents.
+  context     Manage contextual descriptions for paths, collections, and global scope.
+  search      Search commands.
   ...
 ```
 
@@ -229,7 +229,7 @@ If you encounter issues not covered here:
 
 1. Check the [GitHub Issues](https://github.com/zhangtaolab/sif/issues)
 2. Run with verbose mode: `sif -v <command>`
-3. Logs are written to stderr; SIF does not create a log file
+3. Logs are written to stderr by default; `sif watch --detach` redirects stdout/stderr to a log file in the platform log directory (default `watch.log`, e.g. `~/Library/Logs/sif/watch.log` on macOS), and installed watch services also write log files there
 
 ## Uninstallation
 

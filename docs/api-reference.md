@@ -907,8 +907,10 @@ SIF uses full type hints throughout. Entity IDs are plain `str` values, embeddin
 
 ## Error Handling
 
-SIF defines no custom exception hierarchy; it raises built-in exceptions:
+SIF defines a small custom exception hierarchy in `sif.utils.service` and otherwise raises built-in exceptions:
 
+- `ServiceManagerMissing` (subclass of `RuntimeError`, `sif.utils.service`) is raised when the platform's service-manager binary (`launchctl` on macOS or `systemctl` on Linux) is not on `PATH`.
+- `ServiceCommandError` (subclass of `RuntimeError`, `sif.utils.service`) is raised when a service-manager invocation fails or times out; it carries the failing `argv` and the manager's failure detail.
 - `CollectionManager.create_collection` raises `ValueError` when a collection name already exists.
 - `CollectionManager.update_collection`, `add_path`, and `remove_path` raise `ValueError` when the collection ID is not found; `get_collection` returns `None` instead of raising.
 - `VectorSearcher.__init__` raises `RuntimeError` when the sqlite-vec extension is unavailable.

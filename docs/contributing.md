@@ -433,7 +433,7 @@ Before opening a PR, run the full suite (`make test`) so total coverage is measu
 
 ### Tests fail with ANSI escape codes in assertions
 
-Some terminals and CI harnesses export `FORCE_COLOR`. Rich treats **any non-empty value — including `0` — as forced color**, so CLI output tests fail on plain-text assertions:
+Some terminals and CI harnesses export `FORCE_COLOR`, and Rich treats **any non-empty value — including `0` — as forced color**. The suite is now color-hermetic: `tests/conftest.py` removes `FORCE_COLOR`, `CLICOLOR_FORCE`, `NO_COLOR`, `PY_COLORS`, and `TTY_COMPATIBLE` at import time — before any `sif.cli` module constructs its Rich consoles — and the autouse `_hermetic_color_env` fixture clears them again before every test, so no shell changes are needed (`tests/unit/cli/test_color_hermeticity.py` pins both properties). The failure and workaround below apply only to pre-fix branches (before commit `6522663`), where CLI output tests failed on plain-text assertions:
 
 ```
 AssertionError: assert '   1: line1' in '\x1b[1;36ma.md\x1b[0m\n...'

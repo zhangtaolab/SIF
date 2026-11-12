@@ -87,7 +87,7 @@ from sif.search.benchmark import dcg_at_k, ndcg_at_k
 
 ideal = [3, 2]
 # Ideal ranking: 7/log2(2) + 3/log2(3) = 8.8928 (the denominator)
-dcg_at_k(sorted(ideal, reverse=True), 10)   # 8.892789260914245
+dcg_at_k(sorted(ideal, reverse=True), 10)   # 8.892789260714373
 # Retrieved [3, 0, 2]: 7/1 + 0 + 3/2 = 8.5
 ndcg_at_k([3, 0, 2], ideal, 10)             # 0.95583058934618
 # Retrieved [2, 3, 0]: 3/1 + 7/log2(3) = 7.4165 (right docs, worse order)

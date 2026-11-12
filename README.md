@@ -168,7 +168,7 @@ sif search query "python decorators" --limit 20
 sif search query "AI" --explain
 ```
 
-`--json`, `--csv`, `--md`, `--xml`, and `--files` are available on all three search subcommands.
+`--json` is available on all three search subcommands. The CSV, Markdown, XML, and file-list output flags are available on the `search` and `query` subcommands, but not on `vsearch`.
 
 ### Live Indexing
 

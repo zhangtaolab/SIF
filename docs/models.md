@@ -451,7 +451,7 @@ CREATE TABLE contexts (
 
 ## Validation Rules
 
-The domain dataclasses in `sif.core.models` perform no field validation. The limits below are conventions only — none of these length or range constraints are enforced anywhere in `src/sif`:
+The domain dataclasses in `sif.core.models` perform no field validation. The limits below are conventions for the domain dataclasses only — none of these length or range constraints are enforced in `src/sif/core` (the Pydantic API models in `sif.models` do enforce some of them; see below):
 
 ### Collection
 - `name`: 1-100 characters (convention, not enforced); uniqueness is enforced at the database level (`collections.name` UNIQUE)
