@@ -9,6 +9,7 @@ from rich.console import Console
 from rich.table import Table
 from rich.tree import Tree
 
+from sif.cli.error_handling import open_initialized_database
 from sif.core.models import Collection
 from sif.database.database import Database
 from sif.database.repositories import CollectionRepository
@@ -43,9 +44,7 @@ def collection_add(  # noqa: PLR0913
     """Add a new collection."""
     index_path = ctx.obj["index_path"]
 
-    with Database(index_path) as db:
-        db.init_schema()
-
+    with open_initialized_database(index_path, Database) as db:
         with db.transaction() as conn:
             repo = CollectionRepository(conn)
 
@@ -76,9 +75,7 @@ def collection_remove(ctx: click.Context, name: str) -> None:
     """Remove a collection."""
     index_path = ctx.obj["index_path"]
 
-    with Database(index_path) as db:
-        db.init_schema()
-
+    with open_initialized_database(index_path, Database) as db:
         with db.transaction() as conn:
             repo = CollectionRepository(conn)
 
@@ -120,9 +117,7 @@ def collection_rename(ctx: click.Context, old_name: str, new_name: str) -> None:
     """Rename a collection."""
     index_path = ctx.obj["index_path"]
 
-    with Database(index_path) as db:
-        db.init_schema()
-
+    with open_initialized_database(index_path, Database) as db:
         with db.transaction() as conn:
             repo = CollectionRepository(conn)
 
@@ -151,9 +146,7 @@ def collection_list(ctx: click.Context, verbose: bool) -> None:
         console.print("[yellow]No index found.[/yellow]")
         return
 
-    with Database(index_path) as db:
-        db.init_schema()
-
+    with open_initialized_database(index_path, Database) as db:
         with db.connection:
             repo = CollectionRepository(db.connection)
             collections = repo.list_all()
@@ -196,9 +189,7 @@ def collection_show(ctx: click.Context, name: str) -> None:
     """Show collection details."""
     index_path = ctx.obj["index_path"]
 
-    with Database(index_path) as db:
-        db.init_schema()
-
+    with open_initialized_database(index_path, Database) as db:
         with db.connection:
             repo = CollectionRepository(db.connection)
             collection = repo.get_by_name(name)
@@ -229,9 +220,7 @@ def collection_enable(ctx: click.Context, name: str) -> None:
     """Enable a collection for default searches."""
     index_path = ctx.obj["index_path"]
 
-    with Database(index_path) as db:
-        db.init_schema()
-
+    with open_initialized_database(index_path, Database) as db:
         with db.transaction() as conn:
             repo = CollectionRepository(conn)
             collection = repo.get_by_name(name)
@@ -252,9 +241,7 @@ def collection_disable(ctx: click.Context, name: str) -> None:
     """Disable a collection from default searches."""
     index_path = ctx.obj["index_path"]
 
-    with Database(index_path) as db:
-        db.init_schema()
-
+    with open_initialized_database(index_path, Database) as db:
         with db.transaction() as conn:
             repo = CollectionRepository(conn)
             collection = repo.get_by_name(name)
@@ -277,9 +264,7 @@ def collection_update_cmd(ctx: click.Context, name: str, cmd: str | None, clear:
     """Set or clear a pre-index shell command for a collection."""
     index_path = ctx.obj["index_path"]
 
-    with Database(index_path) as db:
-        db.init_schema()
-
+    with open_initialized_database(index_path, Database) as db:
         with db.transaction() as conn:
             repo = CollectionRepository(conn)
             collection = repo.get_by_name(name)
@@ -306,9 +291,7 @@ def collection_include(ctx: click.Context, name: str) -> None:
     """Include a collection in default searches."""
     index_path = ctx.obj["index_path"]
 
-    with Database(index_path) as db:
-        db.init_schema()
-
+    with open_initialized_database(index_path, Database) as db:
         with db.transaction() as conn:
             repo = CollectionRepository(conn)
             collection = repo.get_by_name(name)
@@ -327,9 +310,7 @@ def collection_exclude(ctx: click.Context, name: str) -> None:
     """Exclude a collection from default searches."""
     index_path = ctx.obj["index_path"]
 
-    with Database(index_path) as db:
-        db.init_schema()
-
+    with open_initialized_database(index_path, Database) as db:
         with db.transaction() as conn:
             repo = CollectionRepository(conn)
             collection = repo.get_by_name(name)
@@ -349,42 +330,39 @@ def collection_ls(ctx: click.Context, name: str, subpath: str | None) -> None:
     """List files in a collection."""
     index_path = ctx.obj["index_path"]
 
-    with Database(index_path) as db:
-        db.init_schema()
+    with open_initialized_database(index_path, Database) as db, db.connection:
+        repo = CollectionRepository(db.connection)
+        collection = repo.get_by_name(name)
 
-        with db.connection:
-            repo = CollectionRepository(db.connection)
-            collection = repo.get_by_name(name)
+        if not collection:
+            raise click.ClickException(f"Collection '{name}' not found")
 
-            if not collection:
-                raise click.ClickException(f"Collection '{name}' not found")
+        # Scan files
+        from sif.indexing.scanner import FileScanner  # noqa: PLC0415
 
-            # Scan files
-            from sif.indexing.scanner import FileScanner  # noqa: PLC0415
+        scanner = FileScanner()
+        scan_result = scanner.scan(
+            Path(collection.path),
+            pattern=collection.pattern,
+            ignore_patterns=collection.ignore_patterns,
+        )
 
-            scanner = FileScanner()
-            scan_result = scanner.scan(
-                Path(collection.path),
-                pattern=collection.pattern,
-                ignore_patterns=collection.ignore_patterns,
-            )
+        files = scan_result.files
+        if subpath:
+            sub = Path(subpath)
+            resolved = sub if sub.is_absolute() else Path(collection.path) / sub
+            target = str(resolved).rstrip("/")
+            files = [f for f in files if str(f) == target or str(f).startswith(target + "/")]
 
-            files = scan_result.files
-            if subpath:
-                sub = Path(subpath)
-                resolved = sub if sub.is_absolute() else Path(collection.path) / sub
-                target = str(resolved).rstrip("/")
-                files = [f for f in files if str(f) == target or str(f).startswith(target + "/")]
+        if not files:
+            console.print("[yellow]No files found in collection.[/yellow]")
+            return
 
-            if not files:
-                console.print("[yellow]No files found in collection.[/yellow]")
-                return
+        # Build tree
+        tree = Tree(f"[bold cyan]{collection.name}[/bold cyan]")
 
-            # Build tree
-            tree = Tree(f"[bold cyan]{collection.name}[/bold cyan]")
+        for file_path in sorted(files):
+            rel_path = file_path.relative_to(collection.path)
+            tree.add(str(rel_path))
 
-            for file_path in sorted(files):
-                rel_path = file_path.relative_to(collection.path)
-                tree.add(str(rel_path))
-
-            console.print(tree)
+        console.print(tree)
