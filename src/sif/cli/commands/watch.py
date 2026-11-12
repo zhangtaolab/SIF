@@ -2,7 +2,9 @@
 
 Startup reconcile per collection (D-03) runs BEFORE the observer arms, so
 the FSEvents startup created-burst is absorbed by checksum skips
-(Pitfall 1). Depth is tiered (LIVE-05): BM25-only unless ``--embed`` (or
+(Pitfall 1). The pass runs through the watcher's embed-aware reconcile, so
+at embed depth it re-embeds what its BM25 leg changed. Depth is tiered
+(LIVE-05): BM25-only unless ``--embed`` (or
 ``SIF_WATCH_UPDATE_DEPTH=embed``) explicitly opts into vector updates.
 Shutdown is signal-driven (D-14): first SIGINT/SIGTERM runs one bounded
 flush plus a WAL truncate checkpoint and exits 0; a second signal exits 130
@@ -48,9 +50,7 @@ from sif.config.settings import Settings
 from sif.core.models import Collection
 from sif.database.database import Database
 from sif.database.factory import WAL_CHECKPOINT_TRUNCATE
-from sif.database.locking import index_lock
 from sif.database.repositories import CollectionRepository
-from sif.indexing.incremental import IncrementalIndexer
 from sif.indexing.watcher import FileWatcher, WatchConfig
 from sif.utils import daemon, service
 from sif.utils.logging import get_logger
@@ -164,28 +164,9 @@ def run_watch_host(db: Database, selected: list[Collection], params: WatchHostPa
         # D-03: one full reconcile pass per collection BEFORE the observer
         # arms — anything drifted before watch started becomes fresh
         # immediately, and the startup burst lands on matching checksums.
-        indexer = IncrementalIndexer(db.connection)
-        for coll in selected:
-            console.print(f"\n[bold]Reconciling collection: {escape(coll.name)}[/bold]")
-            with Progress(
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                console=console,
-            ) as progress:
-                task = progress.add_task(f"Indexing {coll.name}...", total=None)
-                with index_lock(
-                    Path(index_path),
-                    lock_timeout,
-                    on_wait=lambda: console.print(
-                        f"[dim]Another index writer is running; waiting up to "
-                        f"{lock_timeout:.0f}s...[/dim]"
-                    ),
-                ):
-                    indexer.update_collection(
-                        coll,
-                        progress=_render_index_event(console, progress, task),
-                    )
-
+        # The pass runs through the watcher's embed-aware reconcile, so at
+        # embed depth it also re-embeds what its BM25 leg changed (IN-04's
+        # purged-vector repair applied to the startup seam).
         watcher = FileWatcher(
             selected,
             db.connection,
@@ -208,6 +189,22 @@ def run_watch_host(db: Database, selected: list[Collection], params: WatchHostPa
                 checkpoint_interval=params.checkpoint_interval,
             ),
         )
+        for coll in selected:
+            console.print(f"\n[bold]Reconciling collection: {escape(coll.name)}[/bold]")
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                console=console,
+            ) as progress:
+                task = progress.add_task(f"Indexing {coll.name}...", total=None)
+                watcher.reconcile_now(
+                    coll,
+                    progress=_render_index_event(console, progress, task),
+                    on_wait=lambda: console.print(
+                        f"[dim]Another index writer is running; waiting up to "
+                        f"{lock_timeout:.0f}s...[/dim]"
+                    ),
+                )
         watcher.start()
 
         # D-13 banner — printed after the observer arms, so "Watching" marks

@@ -103,6 +103,8 @@ def _embed_manager_mock(dim: int = 8) -> MagicMock:
     manager.embed.side_effect = fake_embed
     return manager
 
+
+@pytest.fixture(autouse=True)
 def _hermetic_sif_logging() -> Generator[None, None, None]:
     """Isolate this module from leaked sif logger state (deferred D-1).
 
@@ -850,4 +852,3 @@ class TestStartupReconcileEmbedDepth:
             assert conn.execute("SELECT COUNT(*) FROM document_embeddings").fetchone()[0] == 0
         finally:
             conn.close()
-

@@ -522,6 +522,26 @@ class FileWatcher:
         worker = self._worker
         return worker is None or not worker.is_alive()
 
+    def reconcile_now(
+        self,
+        collection: Collection,
+        *,
+        progress: Callable[[str], None] | None = None,
+        on_wait: Callable[[], None] | None = None,
+    ) -> IncrementalResult:
+        """Run one full reconcile on the calling thread BEFORE :meth:`start`.
+
+        The startup hosts (CLI foreground, daemon, installed service) reuse
+        the embed-aware reconcile so an embed-depth startup cannot leave the
+        documents its BM25 leg changed vector-less: the update branch purges
+        chunks and embeddings, and the checksum diff feeds them back through
+        the embed leg in the same lock window (the IN-04 shape). Callable
+        pre-start only — once :meth:`start` runs, the worker owns the
+        connection and hosts express reconcile intent through
+        :meth:`enqueue_reconcile`.
+        """
+        return self._run_reconcile(collection, progress=progress, on_wait=on_wait)
+
     def enqueue_reconcile(self, collections: Iterable[Collection]) -> None:
         """Queue one full reconcile per collection — the public intent API (W-3/D-06).
 
@@ -808,7 +828,13 @@ class FileWatcher:
         if self._config.on_batch is not None:
             self._config.on_batch(collection, result)
 
-    def _run_reconcile(self, collection: Collection) -> IncrementalResult:
+    def _run_reconcile(
+        self,
+        collection: Collection,
+        *,
+        progress: Callable[[str], None] | None = None,
+        on_wait: Callable[[], None] | None = None,
+    ) -> IncrementalResult:
         """One full-collection BM25 pass (directory move, returning root).
 
         The core pass stays BM25-only, but its update branch purges chunks
@@ -818,18 +844,22 @@ class FileWatcher:
         fed through the embed leg in the SAME lock window (D-09), because
         the burst change detector alone would never re-select paths whose
         fresh checksums the reconcile just committed.
+
+        ``progress``/``on_wait`` default to the configured host callbacks;
+        the startup seam (:meth:`reconcile_now`) overrides them with the
+        CLI's Rich renderer and flock waiting notice. The worker paths pass
+        neither and keep using ``self._config.on_event``.
         """
-        with index_lock(self._db_path, self._config.lock_timeout):
+        cb = progress if progress is not None else self._config.on_event
+        with index_lock(self._db_path, self._config.lock_timeout, on_wait=on_wait):
             before = (
                 self._collection_checksums(collection) if self._config.depth == "embed" else None
             )
-            result = IncrementalIndexer(self._conn).update_collection(
-                collection, progress=self._config.on_event
-            )
+            result = IncrementalIndexer(self._conn).update_collection(collection, progress=cb)
             if before is not None:
                 changed = self._changed_since(collection, before)
                 if changed:
-                    self._embed.embed_documents(collection, changed, self._config.on_event)
+                    self._embed.embed_documents(collection, changed, cb)
             return result
 
     def _run_burst(self, collection: Collection, folded: FoldResult) -> IncrementalResult:
