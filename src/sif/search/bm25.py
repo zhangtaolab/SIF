@@ -64,24 +64,51 @@ class BM25Searcher:
 
         if options.collection_ids:
             placeholders = ", ".join(["?"] * len(options.collection_ids))
-            collection_filter = f"AND d.collection_id IN ({placeholders})"
             params.extend(options.collection_ids)
-
-        # Execute search
-        sql = f"""
-            SELECT
-                d.id as document_id,
-                d.title,
-                d.path,
-                c.name as collection_name,
-                rank as score
-            FROM documents_fts fts
-            JOIN documents d ON fts.rowid = d.rowid
-            JOIN collections c ON d.collection_id = c.id
-            WHERE documents_fts MATCH ? {collection_filter}
-            ORDER BY rank
-            LIMIT ? OFFSET ?
-        """
+            # Keep the FTS match evaluated once for scoped searches. The
+            # scoped default CLI path always carries a non-empty collection
+            # filter; with a bare join (or a plain, flattened CTE) SQLite
+            # drives from `documents` via idx_documents_collection and
+            # re-runs the match per candidate document
+            # (`SCAN fts VIRTUAL TABLE INDEX 32:=M1`). AS MATERIALIZED
+            # computes the match once before the join; the keyword needs
+            # SQLite >= 3.35.0 (2021-03), newer than supported CPython 3.10+.
+            sql = f"""
+                WITH matched AS MATERIALIZED (
+                    SELECT rowid, rank FROM documents_fts
+                    WHERE documents_fts MATCH ?
+                )
+                SELECT
+                    d.id as document_id,
+                    d.title,
+                    d.path,
+                    c.name as collection_name,
+                    m.rank as score
+                FROM matched m
+                JOIN documents d ON m.rowid = d.rowid
+                JOIN collections c ON d.collection_id = c.id
+                WHERE d.collection_id IN ({placeholders})
+                ORDER BY m.rank
+                LIMIT ? OFFSET ?
+            """
+        else:
+            # Unfiltered (--all) SQL byte-for-byte as before: its plan is
+            # already a single FTS scan, and a materialized CTE would only
+            # add an unnecessary sort step.
+            sql = f"""
+                SELECT
+                    d.id as document_id,
+                    d.title,
+                    d.path,
+                    c.name as collection_name,
+                    rank as score
+                FROM documents_fts fts
+                JOIN documents d ON fts.rowid = d.rowid
+                JOIN collections c ON d.collection_id = c.id
+                WHERE documents_fts MATCH ? {collection_filter}
+                ORDER BY rank
+                LIMIT ? OFFSET ?
+            """
         params.extend([options.limit, options.offset])
 
         cursor = self.db.execute(sql, params)
