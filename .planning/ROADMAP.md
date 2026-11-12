@@ -40,6 +40,7 @@ Full detail: `.planning/milestones/v1.0-ROADMAP.md`
 - [x] **Phase 14: Freshness Floor (Pre-Command Refresh + Staleness Marking)** - Stat-based drift refresh before search with no daemon running; staleness markers on vector-lagging results (completed 2026-11-08)
 - [x] **Phase 15: Search Quality Configuration (Weights + Suggestions)** - `rrf_k`/BM25/vector weights configurable with unchanged defaults; did-you-mean + history suggestions; `sif suggest` (completed 2026-11-08)
 - [x] **Phase 16: Bench Expansion + Reranker Tuning** - nDCG@k/Hit@k/p50-p95 metrics, ≥50-query tuning/held-out fixtures, `--sweep`, reranker cap + threshold (completed 2026-11-09)
+- [ ] **Phase 16.1: Address tech debt: CLI error conventions + cache TTL + watch-host enqueue API**
 
 ## Phase Details
 
@@ -181,3 +182,19 @@ Plans:
 
 ---
 *Roadmap created 2026-11-07 for milestone v1.1 — phase numbering continues from v1.0's Phase 10.1 (11 phases shipped).*
+
+### Phase 16.1: Address tech debt: CLI error conventions + cache TTL + watch-host enqueue API (INSERTED)
+
+**Goal:** Close the v1.1 audit's "warnings worth a cleanup pass" — CLI errors follow the ClickException convention with remedy hints, LLM cache expiry compares as instants on the read path, the embedding cache uses the Phase 11 connection factory, and FileWatcher exposes a public reconcile-enqueue API.
+**Requirements**: TBD
+**Depends on:** Phase 16
+**Success Criteria** (what must be TRUE):
+  1. No CLI command lets a foreseeable failure (sqlite3.Error, OSError, searcher-construction RuntimeError) escape as a raw traceback — user-facing errors are ClickException with remedy hints; unexpected bugs still show tracebacks
+  2. `LLMCacheRepository.get()` compares expiry as parsed instants; legacy naive-local rows are interpreted as system-local (mirrors `clear_expired`), proven by a non-UTC timezone regression test
+  3. Embedding-cache connections open through the Phase 11 factory (pragma recipe stays single-sourced in `database/factory.py`); the cache remains separate and fail-soft
+  4. `mcp/watch_host.py` enqueues serve-first reconcile through a public FileWatcher method — the `noqa: SLF001` queue reach-in is gone and serve-first ordering is preserved
+  5. Disposition ledgers record the closures with evidence (11-WR-03; 14-WR-02/03/04; 15-IN-06 per its partial-closure rule) and the full quality suite stays green (pytest fail_under=90, ruff, ty)
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 16.1 to break down)
