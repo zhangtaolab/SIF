@@ -263,7 +263,7 @@ def _append_output_formats(lines: list[str]) -> None:
     lines.append("| Table (default) | — | Rich formatted table |")
     lines.append("| JSON | `--json` | Machine-readable JSON |")
     lines.append("| CSV | `--csv` | Comma-separated values |")
-    lines.append("| Markdown | `--md` | Markdown table format |")
+    lines.append("| Markdown | `--md` | Markdown headings and lists |")
     lines.append("| XML | `--xml` | XML format |")
     lines.append("| Files | `--files` | Plain file paths, one per line |")
     lines.append("")

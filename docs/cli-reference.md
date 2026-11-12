@@ -49,7 +49,7 @@ sif
 ├── mcp             MCP server commands.
 │   ├── stdio           Run MCP server in stdio mode.
 │   ├── http            Run MCP server in HTTP mode.
-│   └── daemon          Run MCP server as a daemon.
+│   └── daemon          Daemon mode is not implemented; use 'mcp http' instead.
 ├── ls              List indexed documents as a virtual file tree.
 ├── pull            Download a GGUF model file.
 ├── bench           Run benchmark evaluation against a fixture file.
@@ -516,7 +516,7 @@ sif search vsearch [OPTIONS]
 
 ### `mcp daemon`
 
-Run MCP server as a daemon.
+Daemon mode is not implemented; use 'mcp http' instead.
 
 ```bash
 sif mcp daemon [OPTIONS]
@@ -546,7 +546,7 @@ sif mcp http [OPTIONS]
 |--------|-------|------|---------|-------------|
 | `--host` | `-h` | text | `127.0.0.1` | Host to bind to |
 | `--port` | `-p` | integer | `3000` | Port to listen on |
-| `--reload` | `—` | flag | `false` | Enable auto-reload |
+| `--reload` | `—` | flag | `false` | Accepted for compatibility; currently has no effect |
 | `--cors-origins` | `—` | text[] | — | CORS allowed origins |
 
 ### `mcp stdio`
@@ -568,8 +568,7 @@ Fixture format (JSON):
         "queries": [
             {
                 "query": "search terms",
-                "relevant_docids": ["doc-id-1", "doc-id-2"],
-                "collections": ["optional-collection-filter"]
+                "relevant_docids": ["doc-id-1", "doc-id-2"]
             }
         ]
     }
@@ -719,7 +718,7 @@ Several commands support multiple output formats via flags:
 | Table (default) | — | Rich formatted table |
 | JSON | `--json` | Machine-readable JSON |
 | CSV | `--csv` | Comma-separated values |
-| Markdown | `--md` | Markdown table format |
+| Markdown | `--md` | Markdown headings and lists |
 | XML | `--xml` | XML format |
 | Files | `--files` | Plain file paths, one per line |
 

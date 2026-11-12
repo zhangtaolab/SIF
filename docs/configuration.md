@@ -149,12 +149,12 @@ SIF validates configuration on startup. Invalid values will raise errors:
 | `reranker_model_type` | Must be one of: `gguf`, `sentence_transformers` | `Invalid reranker_model_type: xyz. Must be one of ['gguf', 'sentence_transformers']` |
 | `api_base` | Must start with `http://` or `https://` | `api_base must be an HTTP or HTTPS URL` |
 | `log_level` | Must be one of: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` | `Invalid log level: TRACE` |
-| `chunk_size` | Minimum 100 | `ensure this value is greater than or equal to 100` |
-| `chunk_overlap` | Minimum 0 | `ensure this value is greater than or equal to 0` |
-| `default_limit` | 1 to 100 | `ensure this value is less than or equal to 100` |
-| `rerank_candidate_limit` | 5 to 50 | `ensure this value is less than or equal to 50` |
-| `rerank_relative_threshold` | Greater than 0 and at most 1 | `ensure this value is less than or equal to 1` |
-| `mcp_port` | 1 to 65535 | `ensure this value is less than or equal to 65535` |
+| `chunk_size` | Minimum 100 | `Input should be greater than or equal to 100` |
+| `chunk_overlap` | Minimum 0 | `Input should be greater than or equal to 0` |
+| `default_limit` | 1 to 100 | `Input should be less than or equal to 100` |
+| `rerank_candidate_limit` | 5 to 50 | `Input should be less than or equal to 50` |
+| `rerank_relative_threshold` | Greater than 0 and at most 1 | `Input should be less than or equal to 1` |
+| `mcp_port` | 1 to 65535 | `Input should be less than or equal to 65535` |
 
 ## Complete .env Example
 
@@ -212,12 +212,7 @@ Error: Invalid model_type: invalid. Must be one of ['gguf', 'modelscope', 'opena
 
 ## Viewing Current Configuration
 
-To see your current configuration:
-
-```bash
-# View effective configuration
-sif status
-```
+SIF does not echo resolved settings. Configuration comes from `SIF_*` environment variables and a `.env` file in the current working directory; `sif status` shows index state (path, collections, documents, watch, and vector lag), not configuration values.
 
 ## Best Practices
 

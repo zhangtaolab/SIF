@@ -346,23 +346,17 @@ def _append_validation_rules(lines: list[str], validator_choices: dict[str, list
         "| `log_level` | Must be one of: `DEBUG`, `INFO`, `WARNING`, "
         "`ERROR`, `CRITICAL` | `Invalid log level: TRACE` |"
     )
+    lines.append("| `chunk_size` | Minimum 100 | `Input should be greater than or equal to 100` |")
+    lines.append("| `chunk_overlap` | Minimum 0 | `Input should be greater than or equal to 0` |")
+    lines.append("| `default_limit` | 1 to 100 | `Input should be less than or equal to 100` |")
     lines.append(
-        "| `chunk_size` | Minimum 100 | `ensure this value is greater than or equal to 100` |"
-    )
-    lines.append(
-        "| `chunk_overlap` | Minimum 0 | `ensure this value is greater than or equal to 0` |"
-    )
-    lines.append(
-        "| `default_limit` | 1 to 100 | `ensure this value is less than or equal to 100` |"
-    )
-    lines.append(
-        "| `rerank_candidate_limit` | 5 to 50 | `ensure this value is less than or equal to 50` |"
+        "| `rerank_candidate_limit` | 5 to 50 | `Input should be less than or equal to 50` |"
     )
     lines.append(
         "| `rerank_relative_threshold` | Greater than 0 and at most 1 | "
-        "`ensure this value is less than or equal to 1` |"
+        "`Input should be less than or equal to 1` |"
     )
-    lines.append("| `mcp_port` | 1 to 65535 | `ensure this value is less than or equal to 65535` |")
+    lines.append("| `mcp_port` | 1 to 65535 | `Input should be less than or equal to 65535` |")
     lines.append("")
 
 
@@ -436,12 +430,12 @@ def _append_viewing_config(lines: list[str]) -> None:
     """Append viewing current configuration section."""
     lines.append("## Viewing Current Configuration")
     lines.append("")
-    lines.append("To see your current configuration:")
-    lines.append("")
-    lines.append("```bash")
-    lines.append("# View effective configuration")
-    lines.append("sif status")
-    lines.append("```")
+    lines.append(
+        "SIF does not echo resolved settings. Configuration comes from `SIF_*` "
+        "environment variables and a `.env` file in the current working directory; "
+        "`sif status` shows index state (path, collections, documents, watch, and "
+        "vector lag), not configuration values."
+    )
     lines.append("")
 
 

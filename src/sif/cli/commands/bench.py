@@ -605,8 +605,7 @@ def bench_cmd(  # noqa: PLR0913
             "queries": [
                 {
                     "query": "search terms",
-                    "relevant_docids": ["doc-id-1", "doc-id-2"],
-                    "collections": ["optional-collection-filter"]
+                    "relevant_docids": ["doc-id-1", "doc-id-2"]
                 }
             ]
         }

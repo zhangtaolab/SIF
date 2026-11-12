@@ -41,7 +41,7 @@ def mcp_stdio_cmd(ctx: click.Context) -> None:
 @mcp_group.command("http")
 @click.option("--host", "-h", default="127.0.0.1", help="Host to bind to")
 @click.option("--port", "-p", type=int, default=3000, help="Port to listen on")
-@click.option("--reload", is_flag=True, help="Enable auto-reload")
+@click.option("--reload", is_flag=True, help="Accepted for compatibility; currently has no effect")
 @click.option(
     "--cors-origins",
     multiple=True,
@@ -86,5 +86,5 @@ def mcp_daemon_cmd(  # noqa: PLR0913
     log_file: str | None,  # noqa: ARG001
     stop: bool,  # noqa: ARG001
 ) -> None:
-    """Run MCP server as a daemon."""
+    """Daemon mode is not implemented; use 'mcp http' instead."""
     raise click.ClickException("Daemon mode is not yet implemented. Use 'mcp http' instead.")
