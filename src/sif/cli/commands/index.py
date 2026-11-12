@@ -11,6 +11,7 @@ import click
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TaskID, TextColumn
 
+from sif.cli.error_handling import open_initialized_database
 from sif.core.models import Collection
 from sif.database.database import Database
 from sif.database.locking import index_lock
@@ -45,9 +46,7 @@ def update_cmd(ctx: click.Context, collection: str | None, force: bool) -> None:
     """Update the index by scanning collections."""
     index_path = ctx.obj["index_path"]
 
-    with Database(index_path) as db:
-        db.init_schema()
-
+    with open_initialized_database(index_path, Database) as db:
         from sif.config.settings import get_settings  # noqa: PLC0415
 
         lock_timeout = get_settings().lock_wait_timeout
@@ -207,9 +206,7 @@ def embed_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     """Generate embeddings for documents."""
     index_path = ctx.obj["index_path"]
 
-    with Database(index_path) as db:
-        db.init_schema()
-
+    with open_initialized_database(index_path, Database) as db:
         # Initialize embedder
         from sif.config.settings import get_settings  # noqa: PLC0415
         from sif.embedding.manager import EmbeddingManager  # noqa: PLC0415
