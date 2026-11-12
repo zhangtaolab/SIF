@@ -68,6 +68,26 @@ def east_of_utc(monkeypatch):
 
 
 @pytest.fixture
+def west_of_utc(monkeypatch):
+    """Force a fixed west-of-UTC local zone (14-WR-03 legacy naive-local rows).
+
+    ``time.tzset`` mutates process-global state, so the prior TZ is restored
+    unconditionally in teardown (America/Phoenix is fixed UTC-7, no DST).
+    """
+    prior = os.environ.get("TZ")
+    monkeypatch.setenv("TZ", "America/Phoenix")
+    time.tzset()
+    try:
+        yield
+    finally:
+        if prior is None:
+            monkeypatch.delenv("TZ", raising=False)
+        else:
+            monkeypatch.setenv("TZ", prior)
+        time.tzset()
+
+
+@pytest.fixture
 def alias_pair(tmp_path):
     """Create a real symlink alias over a vault directory.
 
@@ -594,3 +614,51 @@ class TestLLMCacheExpiryWR09:
         repo = LLMCacheRepository(db)
         assert repo.clear_expired() == 0
         assert db.execute("SELECT COUNT(*) FROM llm_cache").fetchone()[0] == 2
+
+
+class TestLLMCacheGetTTL14WR03:
+    """14-WR-03 read side: get() must compare parsed instants, not ISO text (D-05).
+
+    The old SQL predicate ``expires_at > now_utc_iso`` mis-orders legacy
+    naive-local rows in BOTH timezone directions: east of UTC an expired
+    row's wall time sorts ahead of the aware-UTC now string (wrongly served);
+    west of UTC a fresh row's wall time sorts behind it (wrongly missed).
+    """
+
+    @staticmethod
+    def _insert_legacy_row(db, row_id: str, expires_at: str, now: datetime) -> None:
+        """Insert one row in the old writer's exact naive-local legacy form."""
+        db.execute(
+            "INSERT INTO llm_cache "
+            "(id, model_name, prompt_hash, prompt, response, created_at, expires_at) "
+            "VALUES (?, 'm', ?, 'p', 'r', ?, ?)",
+            (row_id, f"hash-{row_id}", now.isoformat(), expires_at),
+        )
+
+    @pytest.mark.skipif(not hasattr(time, "tzset"), reason="tzset unavailable")
+    @pytest.mark.usefixtures("east_of_utc")
+    def test_get_rejects_legacy_naive_local_expired_row_east_of_utc(self, db):
+        """An expired legacy naive-local row must miss east of UTC.
+
+        At the pre-fix HEAD this returned 'r': UTC+8 wall time sorts after
+        the aware-UTC now string, so the SQL predicate kept the expired row.
+        """
+        now = datetime.now(timezone.utc)
+        expires = datetime.fromtimestamp((now - timedelta(hours=1)).timestamp()).isoformat()
+        self._insert_legacy_row(db, "legacy-expired", expires, now)
+
+        assert LLMCacheRepository(db).get("m", "hash-legacy-expired") is None
+
+    @pytest.mark.skipif(not hasattr(time, "tzset"), reason="tzset unavailable")
+    @pytest.mark.usefixtures("west_of_utc")
+    def test_get_returns_legacy_naive_local_fresh_row_west_of_utc(self, db):
+        """A fresh legacy naive-local row must hit west of UTC.
+
+        At the pre-fix HEAD this returned None: UTC-7 wall time sorts before
+        the aware-UTC now string, so the SQL predicate dropped the fresh row.
+        """
+        now = datetime.now(timezone.utc)
+        expires = datetime.fromtimestamp((now + timedelta(hours=1)).timestamp()).isoformat()
+        self._insert_legacy_row(db, "legacy-fresh", expires, now)
+
+        assert LLMCacheRepository(db).get("m", "hash-legacy-fresh") == "r"
