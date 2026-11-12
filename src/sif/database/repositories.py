@@ -561,7 +561,7 @@ class LLMCacheRepository:
             return row["response"]
         try:
             expires = _expiry_instant(expires_at)
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, OverflowError):
             # A read must not trust an unreadable TTL: miss, row untouched.
             return None
         if expires <= datetime.now(timezone.utc):
@@ -617,7 +617,7 @@ class LLMCacheRepository:
         for row in cursor.fetchall():
             try:
                 expires = _expiry_instant(row["expires_at"])
-            except (ValueError, TypeError):
+            except (ValueError, TypeError, OverflowError):
                 # Cleanup never deletes a row whose expiry it cannot interpret.
                 continue
             if expires <= now:

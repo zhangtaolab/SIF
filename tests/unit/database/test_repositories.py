@@ -722,6 +722,28 @@ class TestLLMCacheExpiryEdgePolicy:
         assert repo.clear_expired() == 0
         assert db.execute("SELECT COUNT(*) FROM llm_cache").fetchone()[0] == 1
 
+    def test_get_overflowing_expiry_misses_and_retains_row(self, db):
+        """CR-02: an ISO boundary overflow is an uninterpretable-expiry miss."""
+        self._insert_row(db, "overflow-expiry", "0001-01-01T00:00:00+14:00")
+
+        repo = LLMCacheRepository(db)
+        assert repo.get("m", "hash-overflow-expiry") is None
+        assert (
+            db.execute("SELECT COUNT(*) FROM llm_cache WHERE id = 'overflow-expiry'").fetchone()[0]
+            == 1
+        )
+
+    def test_clear_expired_retains_overflowing_expiry(self, db):
+        """CR-02: cleanup retains a row whose UTC conversion overflows."""
+        self._insert_row(db, "overflow-expiry", "0001-01-01T00:00:00+14:00")
+
+        repo = LLMCacheRepository(db)
+        assert repo.clear_expired() == 0
+        assert (
+            db.execute("SELECT COUNT(*) FROM llm_cache WHERE id = 'overflow-expiry'").fetchone()[0]
+            == 1
+        )
+
     def test_clear_expired_non_string_expiry_survives(self, db):
         """A non-string stored expiry raises nothing; the row is retained.
 
