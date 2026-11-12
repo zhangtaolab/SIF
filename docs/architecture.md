@@ -1,73 +1,63 @@
+<!-- generated-by: gsd-doc-writer -->
 # SIF Architecture
 
-## Overview
+## System Overview
 
-SIF follows a layered architecture with clean separation of concerns, designed for modularity, testability, and extensibility. The architecture is inspired by Domain-Driven Design (DDD) principles and implements several well-known design patterns.
+SIF (DocSIF) is a local-first hybrid search engine for personal knowledge bases: it indexes Markdown notes and other text documents into one SQLite index database, then answers free-text queries with BM25 keyword search (SQLite FTS5), semantic vector search (sqlite-vec), or RRF-fused hybrid ranking. Its primary inputs are local files registered as named collections, optional user-authored contexts (path, collection, and global descriptions that enrich results), and a configured embedding model; its primary outputs are ranked search results with snippets and attached context descriptions, served through two front ends — a Click CLI (`sif`) and an MCP server exposing the `query`, `get`, `multi_get`, and `status` tools over stdio or streamable HTTP transports. A live-indexing component, `sif watch`, keeps the index fresh as files change (foreground, detached daemon, OS service, or an opt-in watcher embedded in the MCP server). The architectural style is layered with protocol-based seams (see the component diagram and dependency graph below): the domain package defines capability interfaces — `Embedder`, `SearchStrategy`, `Chunker`, and the repository protocols — that infrastructure implements, the index lives in one SQLite file (`sif.db`) with an optional separate embedding-cache database and model files on disk, and everything runs locally with no server dependency beyond optional external embedding APIs.
 
 ## Architecture Diagram
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                        Presentation Layer                                │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────────────┐  │
-│  │     CLI      │  │  MCP Server  │  │      API (Future)            │  │
-│  │   (Click)    │  │   (MCP)      │  │                              │  │
-│  └──────────────┘  └──────────────┘  └──────────────────────────────┘  │
-├─────────────────────────────────────────────────────────────────────────┤
-│                        Application Layer                                 │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────────────┐  │
-│  │   Collection │  │    Index     │  │        Search                │  │
-│  │   Manager    │  │   Service    │  │       Service                │  │
-│  └──────────────┘  └──────────────┘  └──────────────────────────────┘  │
-├─────────────────────────────────────────────────────────────────────────┤
-│                        Domain Layer                                      │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────────────┐  │
-│  │  Collection  │  │   Document   │  │        Context               │  │
-│  │   Entity     │  │   Entity     │  │       Entity                 │  │
-│  └──────────────┘  └──────────────┘  └──────────────────────────────┘  │
-├─────────────────────────────────────────────────────────────────────────┤
-│                        Infrastructure Layer                              │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────┐   │
-│  │  Repository  │  │   Embedding  │  │   Database   │  │  Search  │   │
-│  │  (SQLite)    │  │    Model     │  │  Connection  │  │  Index   │   │
-│  └──────────────┘  └──────────────┘  └──────────────┘  └──────────┘   │
-└─────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│ Entry points                                                             │
+│   CLI (Click + Rich)                    MCP server (JSON-RPC 2.0)        │
+│   sif <command>                         stdio | streamable HTTP          │
+├──────────────────────────────────────────────────────────────────────────┤
+│ Orchestration                                                            │
+│   SearchPipeline                        IncrementalIndexer + FileWatcher │
+│   prefix routing, expansion, hybrid     one per-file update loop;        │
+│   RRF, rerank, snippets, drift refresh  watch hosts (CLI/daemon/service, │
+│                                         MCP) drive it                    │
+├──────────────────────────────────────────────────────────────────────────┤
+│ Domain                                                                   │
+│   core                                  models                           │
+│   entities, protocol seams, domain      Pydantic boundary schemas        │
+│   services (CollectionManager, ...)                                      │
+├──────────────────────────────────────────────────────────────────────────┤
+│ Infrastructure                                                           │
+│   database        embedding        config            utils               │
+│   connection      factory,         Pydantic          logging, paths,     │
+│   factory, lock,  manager,         Settings          progress, daemon,   │
+│   schema, repos   embedders, cache                   service             │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Layer Descriptions
 
-### Presentation Layer
+### Entry Points
 
-The presentation layer handles user interaction and external interfaces:
+Both entry points sit at the top of the dependency graph and are never imported by lower layers:
 
-- **CLI**: Command-line interface built with Click and Rich for interactive output
-- **MCP Server**: Model Context Protocol server for AI assistant integration
-- **API (Future)**: RESTful API for programmatic access
+- **CLI**: Click commands with Rich console output. The groups are `collection`, `context`, `index`, `search`, `get`, and `mcp`, plus the top-level `ls`, `pull`, `bench`, `suggest`, `watch`, `status`, and `cleanup` commands.
+- **MCP server**: `MCPServer` (`sif/mcp/server.py`) handles JSON-RPC 2.0 requests and notifications over pluggable transports — `StdioTransport` and a FastAPI-based streamable HTTP transport. One `ToolHandler` subclass per tool (`query`, `get`, `multi_get`, `status`) delegates to `SearchBackend`, which wires the database, repositories, embedding factory, and `SearchPipeline` together per call. With `SIF_MCP_WATCH=1`, the server also starts an embedded `FileWatcher` via `sif/mcp/watch_host.py`.
 
-### Application Layer
+### Orchestration
 
-The application layer orchestrates use cases and coordinates domain operations:
+- **`SearchPipeline`** (`sif/search/hybrid.py`): parses query prefixes (`lex:`, `vec:`, `hyde:`, `expand:`, default hybrid), optionally expands the query, runs `HybridSearcher` (BM25 + vector + `RRFFusion`), optionally reranks, extracts snippets, and attaches contexts and vector-staleness markers.
+- **`IncrementalIndexer`** (`sif/indexing/incremental.py`): the single per-file update loop shared by every host — `sif index update` delegates to it, and the watch hosts drive it as events arrive. It scans, parses, writes or updates document rows (purging stale chunks and embeddings on update), and commits each file as one short `BEGIN IMMEDIATE` transaction.
+- **`FileWatcher`** (`sif/indexing/watcher.py`): host-agnostic observer → debouncer → worker pipeline for live indexing. It imports no UI; hosts pass rendering callbacks.
+- **Pre-search drift** (`sif/indexing/drift.py`): stat-walks searched collections and performs a bounded, BM25-only refresh before the CLI search trio runs.
 
-- **Collection Manager**: Manages document collections (create, update, delete)
-- **Index Service**: Handles document indexing and reindexing
-- **Search Service**: Coordinates search operations across different strategies
+### Domain
 
-### Domain Layer
+- **`core/`**: plain `@dataclass` entities (`Collection`, `Document`, `DocumentChunk`, `SearchResult`, `SearchOptions`, `PathContext`, `QueryLogEntry`, `IndexStats`) and the protocol seams callers depend on (`Embedder`, `Reranker`, `QueryExpander`, plus repository protocols). Domain services such as `CollectionManager` and `ContextManager` also live here.
+- **`models/`**: Pydantic models for data arriving at the edges — CLI arguments, MCP tool payloads, search request/response shapes, embedding configuration, and ModelScope model downloads.
 
-The domain layer contains core business logic and entities:
+### Infrastructure
 
-- **Collection**: Represents a document collection with metadata
-- **Document**: Represents an indexed document with content and metadata
-- **Context**: Provides additional context for improved search relevance
-
-### Infrastructure Layer
-
-The infrastructure layer provides technical capabilities:
-
-- **Repository**: Data access layer using SQLite with FTS5
-- **Embedding Model**: Interface for embedding generation
-- **Database Connection**: Connection management and transactions
-- **Search Index**: FTS5 and vector search indices
+- **`database/`**: the shared connection factory, per-database index write lock, `SchemaManager`, `Database` and `DatabaseConnection` wrappers, abstract repository interfaces, and the concrete SQLite repositories. It never imports `search/` or `indexing/`.
+- **`embedding/`**: `EmbeddingModelFactory` creates an `Embedder` per `ModelType`; `EmbeddingManager` lazy-loads and caches the model and fronts the embedding cache.
+- **`config/` and `utils/`**: cross-cutting foundation. `config/` holds Pydantic `Settings` (environment variables prefixed `SIF_`, cached via `get_settings()`); `utils/` provides logging, path, progress, text, daemon, and service helpers.
 
 ## Design Patterns
 
@@ -75,7 +65,7 @@ The infrastructure layer provides technical capabilities:
 
 **Purpose**: Abstract data access layer, decouple domain logic from storage
 
-**Location**: `sif/database/repositories.py`
+**Location**: `sif/database/repository.py` (abstract interfaces) and `sif/database/repositories.py` (concrete SQLite implementations). The domain also declares consumer-facing protocols in `sif/core/collection.py`, `sif/core/document.py`, and `sif/core/context.py`.
 
 ```python
 class Repository(ABC, Generic[T]):
@@ -107,7 +97,7 @@ class Repository(ABC, Generic[T]):
 - `BM25Searcher`: Full-text search via SQLite FTS5
 - `VectorSearcher`: Semantic search via sqlite-vec
 - `HybridSearcher`: Combined BM25 + Vector with RRF fusion
-- `SearchPipeline`: Adds query expansion, reranking, snippet extraction
+- `SearchPipeline`: Adds prefix routing, query expansion, reranking, snippet extraction, and context/staleness attachment
 
 **Benefits**:
 - Easy to add new search algorithms
@@ -133,21 +123,30 @@ class EmbeddingModelFactory:
 
 **Supported Models**:
 - GGUF models via llama-cpp-python
-- Sentence Transformers
+- Sentence Transformers (`SentenceTransformerEmbedder`)
 - OpenAI-compatible API
 - ModelScope models
+
+`ModelType.HUGGINGFACE` is a recognized enum value, but `_create_huggingface_model()` raises `NotImplementedError`; the `model_type` settings validator deliberately rejects it, so it cannot be selected through configuration.
+
+**Benefits**:
+- Provider-specific imports and model loading stay isolated in one package
+- New backends plug in without touching search or indexing code
+- Tests can substitute a fake `Embedder`
 
 ### Dependency Injection
 
 **Purpose**: Manage dependencies and enable testing
 
-**Example**: `CollectionManager` receives `CollectionRepository` in constructor:
+**Example**: `CollectionManager` receives `CollectionRepository` in its constructor (`sif/core/collection.py`):
 
 ```python
 class CollectionManager:
     def __init__(self, repository: CollectionRepository) -> None:
         self._repository = repository
 ```
+
+CLI command functions typically construct the concrete repositories directly over the command's shared connection (for example `CollectionRepository(db.connection)`), which keeps the wiring explicit and testable through the same constructor seam.
 
 **Benefits**:
 - Loose coupling between components
@@ -158,86 +157,128 @@ class CollectionManager:
 
 ### Indexing Flow
 
+Indexing is split into two stages: `sif index update` builds the BM25/FTS side, and `sif index embed` adds vectors. Registering a collection does not read any files.
+
 ```
 1. User: sif collection add ~/notes --name my-collection
    │
    ▼
-2. CLI: Parse command, validate inputs
+2. CLI: Validate path, write the collection row (path, pattern, ignore patterns)
    │
    ▼
-3. CollectionManager: Create/update collection
+3. User: sif index update [-c NAME] [--force]
    │
    ▼
-4. FileScanner: Scan directory for markdown files
+4. open_initialized_database(): construct Database and run SchemaManager.create_all()
    │
    ▼
-5. MarkdownParser: Parse each file, extract metadata
+5. index_lock(): hold the per-database flock for the write pass
    │
    ▼
-6. Chunker: Split content into chunks
+6. IncrementalIndexer.update_collection()
    │
    ▼
-7. EmbeddingModel: Generate embeddings for chunks
+7. FileScanner: scan the collection root with the shared membership predicate
    │
    ▼
-8. Repository: Store documents, chunks, embeddings
+8. MarkdownParser: parse changed files (checksum skip unless --force)
    │
    ▼
-9. FTS Index: Update full-text search index
+9. DocumentRepository: write the document row; an update also purges its
+   │  stale chunks and embeddings (one short BEGIN IMMEDIATE transaction per file)
+   ▼
+10. FTS triggers: keep documents_fts synchronized for document-level BM25
    │
    ▼
-10. Vector Index: Update vector search index
+11. User: sif index embed [-c NAME] [--force] [--chunk-strategy ...]
+   │
+   ▼
+12. EmbeddingManager: load the configured model (loaded up front here and cached)
+   │
+   ▼
+13. create_chunker(): split each document into chunks; chunk texts are embedded
+   │  in batches, consulting the embedding cache
+   ▼
+14. DocumentChunkRepository + VectorSearcher.add_embeddings_batch():
+    write document_chunks (syncing chunks_fts via triggers) and
+    document_embeddings, one transaction per collection
 ```
+
+The watch hosts run steps 7–10 continuously as filesystem events settle, and optionally run the embed leg when started with `--embed` (or `SIF_WATCH_UPDATE_DEPTH=embed`).
 
 ### Search Flow
 
 ```
-1. User: sif search query "machine learning"
+1. User: sif search query "machine learning"      (hybrid, default)
+   or:   sif search search "machine learning"     (BM25 only)
+   or:   sif search vsearch "machine learning"    (vector only)
    │
    ▼
-2. CLI: Parse query, build SearchQuery
+2. CLI: optional pre-search drift check (--no-refresh disables)
+   │  stat-walk collections; bounded BM25 refresh under the cap
+   ▼
+3. SearchPipeline.search(): parse query prefix
+   │  lex: -> BM25, vec: -> vector, hyde: -> HyDE,
+   │  expand: -> hybrid + expansion, default -> hybrid
+   ▼
+4. QueryExpansion (optional): produce query variants
    │
    ▼
-3. SearchPipeline: Select search strategy via prefix routing
+5. HybridSearcher: BM25Searcher (FTS5) + VectorSearcher (sqlite-vec)
    │
    ▼
-4. QueryExpansion (optional): Expand query
+6. RRFFusion: fuse result lists using weighted reciprocal rank fusion
    │
    ▼
-5. BM25Searcher: Search FTS index
+7. Reranker (optional): rerank the candidate-capped list
    │
    ▼
-6. VectorSearcher: Search vector index
+8. SmartSnippetExtractor: extract relevant snippets
    │
    ▼
-7. HybridSearcher: Combine results (RRF)
+9. attach_path_contexts + mark_vector_staleness:
+   │  attach context descriptions and staleness markers
+   ▼
+10. QueryLogRepository: record query history (when enabled)
    │
    ▼
-8. Reranker (optional): Rerank results
-   │
-   ▼
-9. SmartSnippetExtractor: Extract relevant snippets
-   │
-   ▼
-10. Repository: Fetch document details
-   │
-   ▼
-11. CLI: Format and display results
+11. CLI: format and display results (or emit --json)
 ```
+
+The MCP `query` tool takes the same path without the CLI's drift check: `SearchBackend.hybrid_search()` builds a `SearchPipeline` per call on a fresh `DatabaseConnection` inside an `asyncio.to_thread` worker.
+
+## Watch Hosts and Index Freshness
+
+Live indexing is built on one host-agnostic core. `FileWatcher` (`sif/indexing/watcher.py`) owns the observer → debouncer → `fold_events` → worker-thread → per-burst `index_lock` → `IncrementalIndexer` pipeline. Hosts supply `on_event`/`on_batch` callbacks, so the core imports no UI. Depth is tiered: updates are BM25-only by default, and `--embed` (or `SIF_WATCH_UPDATE_DEPTH=embed`) opts into an inline chunk-and-embed leg that computes embeddings outside write transactions.
+
+Three CLI hosts share the same foreground body:
+
+- **Foreground**: `sif watch [-c NAME] [--embed|--no-embed]`. Shutdown is signal-driven — the first SIGINT/SIGTERM runs one bounded flush plus a WAL truncate checkpoint and exits 0; a second signal exits immediately with code 130.
+- **Detached daemon**: `sif watch --detach` double-forks before any thread exists and prints the armed daemon's PID; logs go to the platform log directory unless `--log-file` is given. `sif watch --stop` corroborates the PID file's identity, then escalates SIGTERM → bounded wait → SIGKILL.
+- **OS service**: `sif watch --install-service` generates and installs a launchd LaunchAgent (macOS) or systemd user unit (Linux) whose argv runs the foreground command with the install-time flags baked in; `--uninstall-service` stops and removes it.
+
+The PID file managed by `sif/utils/daemon.py` is management metadata only. Single-writer arbitration remains the per-database `index_lock` (`sif/database/locking.py`): an exclusive `fcntl.flock` on `{db_path}.lock` held for each write burst. A waiter blocks up to `lock_wait_timeout` (default 30 seconds) and then runs its own pass anyway; the kernel releases the lock on process death, so stale locks are impossible. On platforms without `fcntl`, the lock degrades to a warning and indexing runs unlocked under WAL + `busy_timeout`.
+
+The MCP embedded host (`sif/mcp/watch_host.py`) is opt-in via `SIF_MCP_WATCH=1`. It is deliberately BM25-only regardless of ambient depth, opens its own `Database` (and initializes the schema), reconciles each collection at startup, rescopes on the collections table, and renders only through the logger because stdout is the stdio JSON-RPC channel.
+
+Two freshness signals sit outside the watcher:
+
+- **Pre-search drift refresh**: the CLI search trio stat-walks the requested collections via `FileScanner` before searching (`sif/indexing/drift.py`). Up to `SIF_SEARCH_REFRESH_MAX_FILES` (default 100) drifted files are re-indexed BM25-only inside one `index_lock` window; above the cap nothing is refreshed and a warning is printed. `--no-refresh` or `SIF_SEARCH_REFRESH_ENABLED=0` disables the check. `sif bench` and the MCP server bypass it by construction.
+- **Vector staleness**: `sif/search/staleness.py` derives (never stores) a marker for results whose document has no rows in `document_embeddings`. Markers appear only once the index holds at least one embedding, so pure-BM25 users see no nagging; the same single-scan derivation backs the `sif status` vector-lag row.
 
 ## Module Structure
 
 ```
 sif/
-├── __init__.py              # Package exports
-├── _version.py              # Version information
-├── core/                    # Domain entities and business logic
+├── __init__.py              # Package exports (version, core models)
+├── _version.py              # Version string
+├── core/                    # Domain entities, protocols, domain services
 │   ├── __init__.py
-│   ├── models.py            # Domain entities (Collection, Document, PathContext, SearchResult, etc.)
-│   ├── collection.py        # Collection entity
-│   ├── document.py          # Document and DocumentChunk entities
-│   └── context.py           # Context entity
-├── models/                  # Pydantic models for validation
+│   ├── models.py            # Dataclass entities and protocol seams (Embedder, Reranker, QueryExpander)
+│   ├── collection.py        # Collection entity, CollectionRepository protocol, CollectionManager
+│   ├── document.py          # DocumentMetadata, Document, DocumentChunk, DocumentRepository protocol
+│   └── context.py           # Context entity, ContextType, ContextRepository protocol, ContextManager
+├── models/                  # Pydantic models for validation and serialization
 │   ├── __init__.py
 │   ├── collection.py        # Collection request/response models
 │   ├── document.py          # Document request/response models
@@ -247,37 +288,42 @@ sif/
 │   └── download.py          # Model download from ModelScope
 ├── database/                # Data access layer
 │   ├── __init__.py
-│   ├── database.py          # Database class with schema init
-│   ├── schema.py            # SchemaManager
-│   ├── repositories.py      # Repository implementations
+│   ├── database.py          # Database class (command-scoped connection)
+│   ├── connection.py        # DatabaseConnection (per-operation connection)
+│   ├── factory.py           # Shared connection factory: pragma recipe + sqlite-vec
+│   ├── locking.py           # Cross-process index write lock (fcntl.flock)
+│   ├── schema.py            # SchemaManager (idempotent DDL and in-place repair)
+│   ├── repositories.py      # Concrete SQLite repositories (incl. LLM/query-log)
 │   ├── repository.py        # Abstract repository interfaces
-│   ├── connection.py        # DatabaseConnection
-│   └── migrations.py        # Database migrations
+│   └── migrations.py        # Legacy MigrationManager (not on the runtime path)
 ├── search/                  # Search functionality
 │   ├── __init__.py
-│   ├── strategy.py          # Search strategy interface
+│   ├── strategy.py          # SearchStrategy interface, SearchContext, Searchable
 │   ├── bm25.py              # BM25Searcher
-│   ├── vector.py            # VectorSearcher
+│   ├── vector.py            # VectorSearcher, embedding purger
 │   ├── hybrid.py            # HybridSearcher, SearchPipeline
 │   ├── rrf.py               # RRFFusion
 │   ├── expansion.py         # QueryExpansion
 │   ├── rerank.py            # Reranker implementations
 │   ├── snippets.py          # SmartSnippetExtractor
 │   ├── context_attach.py    # Path-context attachment for search results
+│   ├── staleness.py         # Derived vector-staleness markers
 │   ├── term_match.py        # Shared stem-tolerant term matching
+│   ├── suggest.py           # SuggestionEngine (vocabulary + query history)
 │   └── benchmark.py         # SearchEvaluator
 ├── indexing/                # Document indexing
 │   ├── __init__.py
-│   ├── scanner.py           # File system scanning
-│   ├── parser.py            # Markdown parsing
-│   ├── chunker.py           # Document chunking
-│   ├── indexer.py           # Index orchestration
-│   └── watcher.py           # File system watcher for auto-indexing
+│   ├── scanner.py           # FileScanner
+│   ├── parser.py            # MarkdownParser, TextParser, CodeParser
+│   ├── chunker.py           # Chunker hierarchy and create_chunker()
+│   ├── incremental.py       # IncrementalIndexer: the one per-file update loop
+│   ├── drift.py             # Pre-search drift detection and bounded BM25 refresh
+│   └── watcher.py           # FileWatcher: observer/debouncer/worker pipeline
 ├── embedding/               # Embedding generation
 │   ├── __init__.py
 │   ├── manager.py           # EmbeddingManager
 │   ├── factory.py           # EmbeddingModelFactory
-│   ├── model.py             # Embedding model interface
+│   ├── model.py             # EmbeddingModel interface
 │   ├── embedder.py          # Embedding model implementations
 │   └── cache.py             # Embedding cache
 ├── mcp/                     # Unified MCP server
@@ -287,6 +333,7 @@ sif/
 │   ├── handlers.py          # ToolHandler implementations
 │   ├── protocol.py          # MCP protocol (JSON-RPC 2.0) definitions
 │   ├── cli.py               # MCP server CLI helpers
+│   ├── watch_host.py        # Embedded watch host (SIF_MCP_WATCH opt-in)
 │   └── transports/          # Transport implementations
 │       ├── __init__.py
 │       ├── stdio.py         # StdioTransport
@@ -295,17 +342,20 @@ sif/
 │   ├── __init__.py
 │   ├── main.py              # CLI entry point
 │   ├── formatters.py        # Output formatters
+│   ├── error_handling.py    # Shared database-open/schema-init error boundary
 │   └── commands/            # CLI command implementations
 │       ├── __init__.py
 │       ├── collection.py    # Collection commands
 │       ├── context.py       # Context commands
 │       ├── get.py           # get group (get, multi-get)
-│       ├── index.py         # Index commands
-│       ├── search.py        # Search commands
+│       ├── index.py         # Index commands (update, embed, status)
+│       ├── search.py        # Search commands (search, vsearch, query)
 │       ├── mcp.py           # MCP commands
 │       ├── ls.py            # List command
 │       ├── bench.py         # Benchmark command
-│       └── pull.py          # Pull command
+│       ├── pull.py          # Pull command
+│       ├── suggest.py       # Suggest command
+│       └── watch.py         # Watch command (foreground, daemon, service)
 ├── config/                  # Application configuration
 │   ├── __init__.py
 │   ├── constants.py         # Application constants and defaults
@@ -313,9 +363,11 @@ sif/
 └── utils/                   # Utilities
     ├── __init__.py
     ├── logging.py           # Logging setup
-    ├── paths.py             # Path utilities
+    ├── paths.py             # Path utilities and normalize_path
     ├── progress.py          # Progress tracking
-    └── text.py              # Text processing utilities
+    ├── text.py              # Text processing utilities
+    ├── daemon.py            # Detached-daemon lifecycle and PID metadata
+    └── service.py           # launchd/systemd service install/uninstall
 ```
 
 ## Module Dependency Graph
@@ -323,6 +375,7 @@ sif/
 ```mermaid
 graph TD
 
+    _version[_version]
     cli[CLI<br/>(Click)]
     config[Config<br/>(Settings)]
     core[Core<br/>(Domain Models)]
@@ -342,31 +395,39 @@ graph TD
     cli --> mcp
     cli --> search
     cli --> utils
+    config --> _version
     database --> config
     database --> core
     database --> utils
     embedding --> config
     embedding --> core
+    embedding --> database
     embedding --> models
     embedding --> utils
+    indexing --> config
     indexing --> core
     indexing --> database
     indexing --> embedding
+    indexing --> search
     indexing --> utils
+    mcp --> _version
     mcp --> config
     mcp --> core
     mcp --> database
     mcp --> embedding
+    mcp --> indexing
     mcp --> search
     mcp --> utils
     models --> utils
+    search --> config
     search --> core
+    search --> database
     search --> models
     search --> utils
     utils --> config
 ```
 
-_Generated by `scripts/generate_arch_diagram.py` from actual source imports._
+_Generated by `scripts/generate_arch_diagram.py` from actual source imports at the top-level package granularity. TYPE_CHECKING-only imports are excluded; deferred function-local imports are included, so a few edges represent intentional lazy seams._
 
 ## Database Schema
 
@@ -381,7 +442,6 @@ CREATE TABLE collections (
     ignore_patterns TEXT DEFAULT '[]',
     include_by_default INTEGER DEFAULT 1,
     description TEXT,
-    pre_update_cmd TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     last_indexed_at TEXT,
@@ -389,6 +449,8 @@ CREATE TABLE collections (
     chunk_count INTEGER DEFAULT 0
 );
 ```
+
+The `pre_update_cmd` column used by `sif index update` is added by `SchemaManager._add_column_if_missing()` on first schema init, so it does not appear in the literal `CREATE TABLE` above.
 
 ### Documents Table
 
@@ -438,6 +500,39 @@ CREATE TABLE contexts (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+
+CREATE INDEX idx_contexts_target ON contexts(target_id, context_type);
+```
+
+### LLM Cache Table
+
+```sql
+CREATE TABLE llm_cache (
+    id TEXT PRIMARY KEY,
+    model_name TEXT NOT NULL,
+    prompt_hash TEXT NOT NULL,
+    prompt TEXT NOT NULL,
+    response TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    expires_at TEXT,
+    UNIQUE(model_name, prompt_hash)
+);
+
+CREATE INDEX idx_llm_cache_lookup ON llm_cache(model_name, prompt_hash);
+```
+
+### Query Log Table
+
+```sql
+CREATE TABLE query_log (
+    id TEXT PRIMARY KEY,
+    query TEXT NOT NULL,
+    result_count INTEGER NOT NULL DEFAULT 0,
+    collections TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX idx_query_log_created ON query_log(created_at DESC);
 ```
 
 ### FTS5 Virtual Tables
@@ -456,7 +551,11 @@ CREATE VIRTUAL TABLE chunks_fts USING fts5(
     content_rowid='rowid',
     tokenize='porter'
 );
+
+CREATE VIRTUAL TABLE documents_fts_v USING fts5vocab(documents_fts, 'row');
 ```
+
+The two external-content FTS tables are kept synchronized with their base tables by AFTER INSERT/UPDATE/DELETE triggers using the documented `'delete'`-command form. `documents_fts_v` is the FTS5 vocabulary shadow (one row per porter-stem term with its document frequency) that feeds the suggestion engine; it is derived from the index and needs no sync maintenance.
 
 ### sqlite-vec Vector Table
 
@@ -465,7 +564,7 @@ CREATE VIRTUAL TABLE document_embeddings USING vec0(
     embedding_id TEXT PRIMARY KEY,
     document_id TEXT NOT NULL,
     chunk_id TEXT,
-    embedding FLOAT[{dim}]  -- dimension from model (default: 1024)
+    embedding FLOAT[{dim}]  -- dimension from SIF_EMBEDDING_DIM (default: 1024)
 );
 ```
 
@@ -517,75 +616,87 @@ class CollectionRepository(Protocol):
 
 ## Performance Considerations
 
-1. **Indexing**: Batch operations for efficient database writes
-2. **Search**: Pre-computed embeddings and FTS5 indices
-3. **Caching**: Embedding cache to avoid redundant computation
-4. **Chunking**: Configurable chunk size for optimal retrieval
-5. **Connection Pooling**: Reuse database connections
+1. **Indexing**: Per-file `BEGIN IMMEDIATE` transactions keep write locks short, make runs resumable, and let searches interleave; embedding runs batch chunk texts through the model and commits one collection per transaction.
+2. **Search**: Pre-computed embeddings and FTS5/vec0 indices; candidate-capped over-fetch only when a reranker is enabled.
+3. **Caching**: Embedding cache to avoid redundant computation.
+4. **Chunking**: Configurable chunk size and strategy for optimal retrieval.
+5. **Connection lifecycle**: One reused connection per CLI command, fresh per-operation connections in the MCP server, WAL journaling plus `busy_timeout` for reader/writer coexistence, and a per-database flock to serialize index write bursts.
 
 ## Security Considerations
 
 1. **Local-First**: All data stays on user's machine
 2. **No External Calls**: No data sent to external services (unless using external embedding models)
-3. **Path Validation**: Validate all paths before operations
-4. **SQL Injection**: Use parameterized queries throughout
+3. **Path Validation**: Validate all paths before operations; `normalize_path` is the single canonical path-identity function
+4. **SQL Injection**: Use parameterized queries throughout, and sanitize/quote user tokens before building FTS5 `MATCH` expressions
 
 ## Future Enhancements
 
-1. **Real-time Watching**: File system watcher for auto-indexing (watcher.py exists but is not yet wired to any CLI/MCP surface)
-2. **Plugin System**: Custom parsers and search strategies
-3. **Web UI**: Browser-based search interface
-4. **Query Suggestions**: Auto-complete and related queries
+1. **Plugin System**: Custom parsers and search strategies
+2. **Web UI**: Browser-based search interface
 
 ## Directory Structure Rationale
 
-The package layout under `src/sif/` maps one-to-one onto the layers: every layer is a top-level package, and the import direction follows the layering — entry points (`cli/`, `mcp/`) may import anything below them, infrastructure (`database/`, `embedding/`) may import the domain, and the domain (`core/`) imports nothing from other SIF layers. The rationale for each package:
+The package layout under `src/sif/` maps closely onto the layers: each layer is a top-level package, and the import direction follows the layering — entry points (`cli/`, `mcp/`) may import anything below them, infrastructure (`database/`, `embedding/`) may import the domain, and the domain (`core/`) imports nothing from other SIF layers. The rationale for each package:
 
-- **`core/` — dependency-free domain.** Plain `@dataclass` entities (`Collection`, `Document`, `DocumentChunk`) and `Protocol` interfaces (`Embedder`, `Reranker`, `QueryExpander` in `core/models.py`; repository protocols in `core/collection.py` and `core/document.py`) with no imports from any other SIF layer. This keeps domain logic free of I/O and framework coupling, so search and indexing code can be exercised without a database or a loaded model.
-- **`config/` and `utils/` — cross-cutting foundation.** `config/` holds Pydantic `Settings` (environment variables prefixed `SIF_`, cached via `get_settings()`) and constants; `utils/` provides logging, path, progress, and text helpers and depends only on `config/`. Every other layer may use both.
+- **`core/` — dependency-free domain.** Plain `@dataclass` entities (`Collection`, `Document`, `DocumentChunk`, `SearchResult`, `SearchOptions`, `PathContext`, `QueryLogEntry`) and `Protocol` interfaces (`Embedder`, `Reranker`, `QueryExpander` in `core/models.py`; repository protocols in `core/collection.py`, `core/document.py`, and `core/context.py`) with no imports from any other SIF layer. This keeps domain logic free of I/O and framework coupling, so search and indexing code can be exercised without a database or a loaded model. `CollectionManager` and `ContextManager` are domain services over those repository protocols.
+- **`config/` and `utils/` — cross-cutting foundation.** `config/` holds Pydantic `Settings` (environment variables prefixed `SIF_`, cached via `get_settings()`) and constants; `utils/` provides logging, path, progress, text, daemon, and service helpers. `utils/` may import `config/`; `config/` depends only on `sif._version` (through `config/constants.py`) and its own modules. Every other layer may use both.
 - **`models/` — Pydantic boundary schemas.** Validation and serialization models (`ModelType`, `EmbeddingConfig`, request/response models, `ModelDownloader`) live apart from `core/` so domain entities stay plain dataclasses while Pydantic handles input arriving at the edges: CLI arguments, MCP tool payloads, and model configuration. This package depends only on `utils/`.
-- **`database/` — infrastructure behind the repository protocols.** SQLite connection management, `SchemaManager`, migrations, and the concrete repositories. It depends on `core/` (entity types), `config/`, and `utils/` — never on `search/` or `indexing/`.
-- **`embedding/` — provider isolation.** Two abstractions split the concern: the `Embedder` protocol from `core/` is what callers use, and the `EmbeddingModel` ABC in `embedding/model.py` is what providers implement. `EmbeddingModelFactory` builds instances from `ModelType` and `EmbeddingManager` loads and caches them, so switching GGUF, Sentence Transformers, OpenAI-compatible, or ModelScope backends touches only this package.
-- **`search/` — strategies over the indices.** Strategies query SQLite directly (e.g., `bm25.py` uses the stdlib `sqlite3` module and imports nothing from `embedding/` or `database/` at module level). Embedding dependencies are deliberately lazy: `expansion.py` imports `EmbeddingManager` only under `TYPE_CHECKING`, and `rerank.py` defers `ModelDownloader` and its ML-library imports to call time, so BM25 search works without an embedding stack present.
-- **`indexing/` — pipeline orchestration.** scanner → parser → chunker → indexer (plus `watcher.py`, reserved for auto-indexing). Besides the two entry points, it is the only layer that combines `database/` and `embedding/` in a single flow, which is why it sits above both.
-- **`cli/` and `mcp/` — the two entry points.** Both sit at the top of the dependency graph: they may import every layer below them, and nothing imports them. `mcp/` is self-contained by design: `MCPServer` plus JSON-RPC 2.0 protocol handling (`server.py`, `protocol.py`), a `SearchBackend` that wires the database, repositories, embedding factory, and `SearchPipeline` together (`backend.py`), one `ToolHandler` subclass per tool (`handlers.py`), and a `transports/` subpackage (`StdioTransport`, `HTTPTransport`) so a new transport can be added without touching server logic.
+- **`database/` — infrastructure behind the repository protocols.** The connection factory, per-database index lock, `SchemaManager`, legacy migration module, and the concrete repositories. It depends on `core/` (entity types), `config/`, and `utils/` — never on `search/` or `indexing/`.
+- **`embedding/` — provider isolation.** Two abstractions split the concern: the `Embedder` protocol from `core/` is what callers use, and the `EmbeddingModel` ABC in `embedding/model.py` is what providers implement. `EmbeddingModelFactory` builds instances from `ModelType` and `EmbeddingManager` loads and caches them, so switching GGUF, Sentence Transformers, OpenAI-compatible, or ModelScope backends touches only this package. The one infrastructure touch is `embedding/cache.py`, which opens its cache database through `database/factory.create_connection` for the same pragma recipe.
+- **`search/` — strategies over the indices.** Strategies query SQLite directly (e.g., `bm25.py` uses the stdlib `sqlite3` module). Dependencies on `database/` and `config/` are limited to cross-cutting storage services: `suggest.py` uses `QueryLogRepository` and `Settings`, while embedding dependencies stay lazy — `expansion.py` imports `EmbeddingManager` only under `TYPE_CHECKING`, and `rerank.py` defers `ModelDownloader` and its ML-library imports to call time, so BM25 search works without an embedding stack present.
+- **`indexing/` — pipeline orchestration.** scanner → parser → chunker, with `incremental.py` as the single per-file update loop, `drift.py` for pre-search freshness, and `watcher.py` for live indexing. It combines `database/` and `embedding/` in one flow, and reaches into `search/vector.py` through a deferred `create_embedding_purger` import so BM25-only paths do not require the vector stack.
+- **`cli/` and `mcp/` — the two entry points.** Both sit at the top of the dependency graph: they may import every layer below them, and nothing imports them. `mcp/` is self-contained by design: `MCPServer` plus JSON-RPC 2.0 protocol handling (`server.py`, `protocol.py`), a `SearchBackend` that wires the database, repositories, embedding factory, and `SearchPipeline` together (`backend.py`), one `ToolHandler` subclass per tool (`handlers.py`), an optional embedded watcher (`watch_host.py`), and a `transports/` subpackage (`StdioTransport`, `HTTPTransport`) so a new transport can be added without touching server logic.
 
-Two conventions reinforce the layout. Deferred imports (marked `# noqa: PLC0415`, e.g. `get_settings()` inside `database/database.py` or `ModelDownloader` inside `search/rerank.py`) keep heavy or cycle-prone dependencies out of module import time. And sibling layers never import each other sideways — `search/` does not import `indexing/`, `database/` does not import `embedding/` — so each layer can be understood and replaced in isolation.
+Two conventions reinforce the layout. Deferred imports (marked `# noqa: PLC0415`, e.g. `get_settings()` inside `database/database.py` or `ModelDownloader` inside `search/rerank.py`) keep heavy or cycle-prone dependencies out of module import time. Cross-layer imports that do exist are deliberately narrow and one-directional at the package level: `indexing/` reaches into `search/` only for the deferred embedding purger, `embedding/` reaches into `database/` only for the connection factory, and `search/` reaches into `database/` only for the query-log repository used by suggestions.
 
 ## Connection Management
 
-Two connection wrappers cover the two entry-point lifetimes, and repositories are deliberately agnostic of both: every repository takes a raw `sqlite3.Connection`, so either wrapper can host the same repository code.
+Every connection the application opens goes through `create_connection()` (`sif/database/factory.py`), so no connection site can forget the locked pragma recipe:
+
+1. `PRAGMA busy_timeout = 5000` first — the WAL switch itself needs a write lock and does not honor a busy handler.
+2. `PRAGMA journal_mode = WAL` behind a bounded retry — the mode persists in the database header, so the retry cost is paid only on the true first open.
+3. `PRAGMA synchronous = NORMAL` — WAL's default remains FULL, and synchronous is per-connection.
+4. `PRAGMA foreign_keys = ON`, `row_factory = sqlite3.Row`, and best-effort sqlite-vec loading.
+5. `isolation_level="IMMEDIATE"` and `check_same_thread=False` — every `with conn:` block is a `BEGIN IMMEDIATE` transaction with commit/rollback semantics, and connections may move onto worker threads. Safety comes from the ownership discipline below, not from locking.
 
 ### Database (command-scoped)
 
-`Database` (`sif/database/database.py`) holds one lazily created connection for the lifetime of the object. The connection opens on first access with `sqlite3.Row` rows, `PRAGMA foreign_keys = ON`, and sqlite-vec loaded best-effort, and is released by `close()` or the context-manager protocol. Every CLI command that touches the index follows the same pattern — `with Database(index_path) as db:` — so a connection never outlives the command that opened it.
+`Database` (`sif/database/database.py`) holds one lazily created connection for the lifetime of the object, opened through the factory. `init_schema()` constructs a `SchemaManager` and runs `create_all()`. The connection is released by `close()` or the context-manager protocol. Every CLI command that touches the index follows the same pattern — `with open_initialized_database(index_path, Database) as db:` — so a connection never outlives the command that opened it. Commands may use `Database.transaction()` or the connection's own `with conn:` blocks.
 
 ### DatabaseConnection (per-operation)
 
-`DatabaseConnection` (`sif/database/connection.py`, re-exported from `sif.database`) opens a fresh connection per operation: `connect()` and `transaction()` are context managers that close the connection in a `finally`, and the convenience methods (`execute`, `executemany`, `fetchone`, `fetchall`) wrap single statements the same way. The MCP server uses this wrapper exclusively — `SearchBackend._run_in_db()` executes each tool call inside `DatabaseConnection(...).transaction()` on an `asyncio.to_thread` worker, so the event loop is never blocked and connections are never shared across threads. The MCP server does not create schema; it relies on the database already existing (created by the CLI).
+`DatabaseConnection` (`sif/database/connection.py`, re-exported from `sif.database`) opens a fresh factory-configured connection per operation: `connect()` and `transaction()` are context managers that close the connection in a `finally`, and the convenience methods (`execute`, `executemany`, `fetchone`, `fetchall`) wrap single statements the same way. The MCP server uses this wrapper exclusively — `SearchBackend._run_in_db()` executes each tool call inside `DatabaseConnection(...).transaction()` on an `asyncio.to_thread` worker, so the event loop is never blocked and connections are never shared across threads. The ordinary MCP serving path does not create schema; it relies on the database already existing (created by the CLI). The opt-in embedded watch host is the exception: it opens its own `Database` and calls `init_schema()` before arming.
 
-### ConnectionPool
+### Index Write Lock
 
-`ConnectionPool` (`sif/database/connection.py`) is a small idle-connection pool (default capacity 5) intended for read-heavy workloads; writes are expected to go through a single connection to avoid SQLite locking. Both wrappers set `check_same_thread=False` so work can move onto threads — safety comes from the ownership discipline above, not from locking.
+`index_lock()` (`sif/database/locking.py`) serializes long-running index writes across processes with an exclusive `fcntl.flock` on a per-database lock file (`{db_path}.lock`, created `0600`). A loser waits up to `lock_wait_timeout` (default 30 seconds) and then runs its own pass anyway; checksum skipping makes overlapping passes no-ops. Kernel release on process death eliminates stale locks. On non-POSIX platforms the lock degrades to a warning.
 
 ## Schema Management and Evolution
 
-There is no versioned migration runner on the active path. `SchemaManager.create_all()` (`sif/database/schema.py`) is idempotent, and each CLI command invokes it via `db.init_schema()` right after opening the database. Besides `CREATE ... IF NOT EXISTS`, it adapts older layouts in place:
+There is no versioned migration runner on the active path. `SchemaManager.create_all()` (`sif/database/schema.py`) is idempotent, and the shared CLI database boundary (`sif/cli/error_handling.py`) invokes it via `db.init_schema()` for every command that opens the index. Besides `CREATE ... IF NOT EXISTS`, it adapts older layouts in place:
 
 - **Column additions**: `_add_column_if_missing()` inspects `PRAGMA table_info` and issues `ALTER TABLE` when needed (e.g. the `pre_update_cmd` column on `collections`).
 - **Table merges**: legacy `path_contexts` rows are folded into the unified `contexts` table inside a savepoint (`SAVEPOINT sp_migration`) that rolls back atomically on failure.
-- **FTS repair**: external-content FTS5 tables must be maintained through the documented `'delete'`-command trigger form. `CREATE TRIGGER IF NOT EXISTS` cannot replace an existing broken trigger, so triggers whose `sqlite_master` SQL writes directly to the FTS tables are dropped and recreated; when a legacy direct-DELETE trigger is detected, the index is rebuilt (`INSERT INTO documents_fts(documents_fts) VALUES('rebuild')`) to purge entries orphaned by past deletes. FTS tables with a misconfigured `content=` setting are dropped and recreated.
-- **Dimension guard**: before creating `document_embeddings`, the existing `FLOAT[dim]` declaration is compared with `settings.embedding_dim`; a mismatch raises `RuntimeError` (rebuild via `sif cleanup` or delete the database file) instead of silently corrupting vector search.
+- **FTS repair**: external-content FTS5 tables must be maintained through the documented `'delete'`-command trigger form. `CREATE TRIGGER IF NOT EXISTS` cannot replace an existing broken trigger, so triggers whose `sqlite_master` SQL writes directly to the FTS tables are dropped and recreated; when a legacy direct-DELETE trigger is detected, the index is rebuilt (`INSERT INTO documents_fts(documents_fts) VALUES('rebuild')`) to purge entries orphaned by past deletes. FTS tables with a misconfigured `content=` setting are dropped, recreated, and reseeded from their base tables.
+- **Suggestion vocabulary**: `documents_fts_v` is created with `fts5vocab(documents_fts, 'row')`; the suggestion engine re-ensures it on first use for connections that never ran `init_schema`.
+- **Dimension guard**: before creating `document_embeddings`, the existing `FLOAT[dim]` declaration is compared with `settings.embedding_dim`; a mismatch raises `RuntimeError` whose remedy is to restore the model and `SIF_EMBEDDING_DIM` that match the stored dimension, or delete the database file and rebuild the index.
 - **Optional vector support**: if the sqlite-vec extension is unavailable (`SELECT vec_version()` fails), vector tables are skipped and BM25 keeps working.
 
-`MigrationManager` (`sif/database/migrations.py`, a `schema_version`-table approach) predates this layout and is no longer on the runtime path — `SchemaManager` owns schema creation and evolution.
+`MigrationManager` (`sif/database/migrations.py`, a `schema_version`-table approach) predates this layout and is no longer on the runtime path — `SchemaManager` owns schema creation and evolution. It remains exported from `sif.database` for compatibility.
 
 ## Caching
 
-Two independent SQLite-backed caches keep expensive computation off the hot path:
+Two SQLite-backed cache surfaces exist:
 
-- **Embedding cache** (`sif/embedding/cache.py`): stores embeddings in a separate database (`embeddings_cache.db`) under the cache directory (`Settings.get_cache_dir()`, the platformdirs user cache dir, overridable via `SIF_CACHE_DIR`). Entries are keyed `(SHA-256 content hash, model_id)` with vectors serialized as JSON, so cached embeddings survive restarts and models never read each other's vectors; a cache written before per-model keying existed is detected and rebuilt on first open. Enabled by the `cache_embeddings` setting; `EmbeddingManager` owns the cache and consults it around embed calls, bucketing entries by a model identifier of the form `{model_type}:{model_name}` (suffixed with the API base when one is configured).
-- **LLM cache** (`llm_cache` table, `LLMCacheRepository` in `sif/database/repositories.py`): caches LLM responses keyed `(model_name, prompt_hash)` with an optional `expires_at` TTL and a lookup index on the key pair. Expired rows are purged by `sif cleanup`.
+- **Embedding cache** (`sif/embedding/cache.py`): stores embeddings in a separate database (`embeddings_cache.db`) under the cache directory (`Settings.get_cache_dir()`, the platformdirs user cache dir, overridable via `SIF_CACHE_DIR`). Entries are keyed `(SHA-256 content hash, model_id)` with vectors serialized as JSON, so cached embeddings survive restarts and models never read each other's vectors; a cache written before per-model keying existed is detected and rebuilt on first open. Enabled by the `cache_embeddings` setting; `EmbeddingManager` owns the cache and consults it around embed calls, bucketing entries by a model identifier of the form `{model_type}:{model_name}` (suffixed with `@{api_base}` when an API base is configured).
+- **LLM cache** (`llm_cache` table, `LLMCacheRepository` in `sif/database/repositories.py`): stores LLM responses keyed `(model_name, prompt_hash)` with an optional `expires_at` TTL and a lookup index on the key pair. Expired rows are purged by `sif cleanup`. No current search or reranking path populates or reads this table; it is a prepared cache surface.
+
+## Suggestions and Query History
+
+`sif suggest QUERY` and the did-you-mean path share one `SuggestionEngine` (`sif/search/suggest.py`) that ranks three display-only sections: prefix completions and did-you-mean rewrites from the `documents_fts_v` vocabulary, and history from the `query_log` table. The engine never rewrites or re-executes a user's query, and every `sqlite3.OperationalError` path degrades to empty suggestions with a warning rather than failing the command.
+
+- **History writes**: the CLI search trio records `(query, result count, collections)` through `QueryLogRepository.add()`, which trims to the most recent `SIF_QUERY_HISTORY_LIMIT` rows (default 500) in the same transaction. `SIF_QUERY_HISTORY_ENABLED=0` disables both writes and reads; `sif suggest --clear-history` empties the table.
+- **Ranking**: history weight halves every 14 days of age; suggestions are truncated and escaped before display so bracketed text renders literally.
 
 ## Context System
 
@@ -600,14 +711,10 @@ Contexts are user-authored descriptions attached to paths or collections (or glo
 
 The error strategy is fail fast at construction, degrade gracefully in optional pipelines, and translate at the edges:
 
-- **CLI boundary**: commands catch exceptions and re-raise as `click.ClickException(str(e))`, so Click prints a clean message and exits non-zero.
-- **Transactions**: `Database.transaction()` and `DatabaseConnection.transaction()` commit on success and roll back with a re-raise on any exception — repository failures never leave partial writes.
+- **CLI database boundary**: `open_initialized_database()` (`sif/cli/error_handling.py`) owns the `Database(...)` + `init_schema()` pair. Known `OSError`/`sqlite3.Error` failures become remedy-bearing `click.ClickException`s; unexpected exceptions propagate unchanged with the handle closed. Command bodies translate their own user-facing failures the same way, so Click prints a clean message and exits non-zero.
+- **Transactions**: `Database.transaction()` and `DatabaseConnection.transaction()` commit on success and roll back with a re-raise on any exception — repository failures never leave partial writes. The incremental indexer instead commits each file in its own short `BEGIN IMMEDIATE` transaction, so a mid-run failure keeps completed files durable and the run resumable.
 - **Fail fast**: `VectorSearcher.__init__` raises `RuntimeError` when the sqlite-vec extension is missing rather than returning empty vector results; `SchemaManager` raises on embedding-dimension mismatch; `SearchPipeline` raises on reranking failure and on vector/HyDE search without an embedder. In `HybridSearcher.search()`, embedder and vector exceptions propagate uncaught — BM25-only results are returned only when vector search yields zero results, which is a no-results path, not failure handling.
-- **Degrade gracefully**: optional stages log and continue — query-expansion failures are logged at warning level and search proceeds with the original query; the MCP `SearchBackend` logs a warning and serves BM25-only when the embedder fails to load; `Database` loads sqlite-vec best-effort so the database opens even without it.
-
-## System Overview
-
-SIF (DocSIF) is a local-first hybrid search engine for personal knowledge bases: it indexes Markdown notes and other text documents into a single SQLite database, then answers free-text queries with BM25 keyword search (SQLite FTS5), semantic vector search (sqlite-vec), or RRF-fused hybrid ranking. Its primary inputs are local files registered as named collections, optional user-authored contexts (path, collection, and global descriptions that enrich results), and a configured embedding model; its primary outputs are ranked search results with snippets and attached context descriptions, served through two front ends — a Click CLI (`sif`) and an MCP server exposing the `query`, `get`, `multi_get`, and `status` tools over stdio or streamable HTTP transports. The architectural style is layered with protocol-based seams (see the diagram above): the domain package defines capability interfaces — `Embedder`, `SearchStrategy`, `Chunker`, and the repository protocols — that infrastructure implements, all persistent state lives in one SQLite file, and everything runs locally with no server dependency beyond optional external embedding APIs.
+- **Degrade gracefully**: optional stages log and continue — query-expansion failures are logged at warning level and search proceeds with the original query; the MCP `SearchBackend` logs a warning and serves BM25-only when the embedder fails to load or when `SearchPipeline` construction finds sqlite-vec unavailable; the connection factory loads sqlite-vec best-effort so the database opens even without it; pre-search drift refresh and suggestion generation warn and leave search results intact.
 
 ## Key Abstractions
 
@@ -616,14 +723,16 @@ The seams that make the layering work, as a quick index. Code for several of the
 | Abstraction | Location | Role |
 | --- | --- | --- |
 | `Embedder`, `Reranker`, `QueryExpander` (protocols) | `sif/core/models.py` | The domain's capability seams: embed text, rerank candidates, expand queries. Callers depend on these, not on providers. |
-| Domain entities: `Collection`, `Document`, `DocumentChunk`, `SearchResult`, `SearchOptions` | `sif/core/models.py`, `sif/core/collection.py`, `sif/core/document.py` | Plain dataclasses exchanged across every layer, free of I/O and framework coupling. |
+| Domain entities: `Collection`, `Document`, `DocumentChunk`, `SearchResult`, `SearchOptions`, `PathContext`, `QueryLogEntry` | `sif/core/models.py`, `sif/core/collection.py`, `sif/core/document.py` | Plain dataclasses exchanged across every layer, free of I/O and framework coupling. |
 | Repository protocols (`CollectionRepository`, `DocumentRepository`, `ContextRepository`) and the `Repository` ABC | `sif/core/collection.py`, `sif/core/document.py`, `sif/core/context.py`, `sif/database/repository.py` | Callers code against the protocols; concrete SQLite repositories (`sif/database/repositories.py`) implement them. |
 | `SearchStrategy` (ABC), `SearchContext`, `Searchable` | `sif/search/strategy.py` | The common search interface (`search`, `search_batch`) implemented by `BM25Searcher`, `VectorSearcher`, and `HybridSearcher`. |
-| `SearchPipeline` / `HybridSearcher` | `sif/search/hybrid.py` | Orchestration: strategy selection via prefix routing, RRF fusion, optional query expansion and reranking, snippet extraction. |
+| `SearchPipeline` / `HybridSearcher` | `sif/search/hybrid.py` | Orchestration: prefix routing (`lex:`, `vec:`, `hyde:`, `expand:`), RRF fusion, optional query expansion and reranking, snippet extraction, context and staleness attachment. |
+| `SuggestionEngine` | `sif/search/suggest.py` | Display-only prefix completions, did-you-mean rewrites, and history ranking over the FTS vocabulary and `query_log`. |
 | `Chunker` hierarchy and `create_chunker()` | `sif/indexing/chunker.py` | Chunking strategies (`FixedSizeChunker`, `MarkdownChunker`, `CodeChunker`, `AutoChunker`) selected by a factory function. |
+| `IncrementalIndexer`, `FileWatcher`, `drift` helpers | `sif/indexing/incremental.py`, `sif/indexing/watcher.py`, `sif/indexing/drift.py` | The one per-file update loop, the host-agnostic live-index pipeline, and bounded pre-search refresh. |
 | `EmbeddingModel` (ABC), `EmbeddingModelFactory`, `EmbeddingManager` | `sif/embedding/model.py`, `sif/embedding/factory.py`, `sif/embedding/manager.py` | Provider isolation: the factory builds an embedder per `ModelType` (llama.cpp GGUF, Sentence Transformers, OpenAI-compatible, ModelScope); the manager lazy-loads and caches the instance and fronts the embedding cache. |
 | `MCPServer`, `SearchBackend`, `ToolHandler` (ABC) | `sif/mcp/server.py`, `sif/mcp/backend.py`, `sif/mcp/handlers.py` | The MCP surface: a JSON-RPC 2.0 server core over pluggable transports, a backend that wires database, repositories, factory, and `SearchPipeline` together per call, and one handler subclass per tool (`query`, `get`, `multi_get`, `status`). |
-| `Database`, `DatabaseConnection`, `ConnectionPool`, `SchemaManager` | `sif/database/database.py`, `sif/database/connection.py`, `sif/database/schema.py` | Storage lifecycle: command-scoped and per-operation connection wrappers over raw `sqlite3.Connection` (repositories stay agnostic), plus idempotent schema creation and in-place adaptation. |
-| `Settings` / `get_settings()` | `sif/config/settings.py` | Pydantic Settings with `SIF_`-prefixed environment variables, cached via `@lru_cache`; the single source for database/cache paths, model selection, and defaults. |
+| `create_connection`, `Database`, `DatabaseConnection`, `index_lock`, `SchemaManager` | `sif/database/factory.py`, `sif/database/database.py`, `sif/database/connection.py`, `sif/database/locking.py`, `sif/database/schema.py` | Storage lifecycle: the shared pragma recipe, command-scoped and per-operation connection wrappers over raw `sqlite3.Connection` (repositories stay agnostic), cross-process write arbitration, and idempotent schema creation and in-place adaptation. |
+| `Settings` / `get_settings()` | `sif/config/settings.py` | Pydantic Settings with `SIF_`-prefixed environment variables, cached via `@lru_cache`; the single source for database/cache paths, model selection, watch depth, search refresh, query history, and defaults. |
 
 Two supporting abstractions have their own sections: `Context` / `ContextManager` (`sif/core/context.py`), which aggregates global, collection, and path contexts into a single search-context string, and `normalize_path` (`sif/utils/paths.py`), the canonical path-identity function — both under [Context System](#context-system).
