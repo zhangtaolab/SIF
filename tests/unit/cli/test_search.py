@@ -1009,6 +1009,135 @@ class TestQueryPipelineErrorHandling:
         assert isinstance(result.exception, ValueError)
 
 
+class TestVectorConstructorErrorHandling:
+    """14-WR-02/04: searcher construction failures render the sqlite-vec remedy.
+
+    The constructor-only guards translate the sqlite-vec RuntimeError into a
+    clean Click error with an install hint; execution-stage handling (the
+    TestQueryPipelineErrorHandling pair above) stays byte-identical.
+    """
+
+    _VEC_ERROR = "sqlite-vec extension is not available. Install sqlite-vec to use vector search."
+
+    def _invoke_query(self, args: list[str] | None = None) -> Result:
+        """query_cmd with SearchPipeline construction raising the sqlite-vec error."""
+        runner = CliRunner()
+
+        mock_repo = MagicMock()
+        mock_repo.list_enabled.return_value = []
+
+        mock_manager = MagicMock()
+        mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager._model = MagicMock()
+
+        mock_db = MagicMock()
+
+        with (
+            patch("sif.cli.commands.search.Database", return_value=mock_db),
+            patch(
+                "sif.cli.commands.search.CollectionRepository",
+                return_value=mock_repo,
+            ),
+            patch(
+                "sif.cli.commands.search.SearchPipeline",
+                side_effect=RuntimeError(self._VEC_ERROR),
+            ),
+            patch(
+                "sif.embedding.manager.EmbeddingManager.from_settings",
+                return_value=mock_manager,
+            ),
+            patch(
+                "sif.config.settings.get_settings",
+                return_value=_query_settings_mock(),
+            ),
+        ):
+            return runner.invoke(
+                query_cmd,
+                args if args is not None else ["query"],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+    def _invoke_vsearch(self, args: list[str] | None = None) -> Result:
+        """vsearch_cmd with VectorSearcher construction raising the sqlite-vec error.
+
+        VectorSearcher is imported inside vsearch_cmd, so the patch seam is
+        sif.search.vector.VectorSearcher (function-local import).
+        """
+        runner = CliRunner()
+
+        mock_repo = MagicMock()
+        mock_repo.list_enabled.return_value = []
+
+        mock_manager = MagicMock()
+        mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager._model = MagicMock()
+
+        mock_db = MagicMock()
+
+        with (
+            patch("sif.cli.commands.search.Database", return_value=mock_db),
+            patch(
+                "sif.cli.commands.search.CollectionRepository",
+                return_value=mock_repo,
+            ),
+            patch(
+                "sif.search.vector.VectorSearcher",
+                side_effect=RuntimeError(self._VEC_ERROR),
+            ),
+            patch(
+                "sif.embedding.manager.EmbeddingManager.from_settings",
+                return_value=mock_manager,
+            ),
+            patch(
+                "sif.config.settings.get_settings",
+                return_value=_query_settings_mock(),
+            ),
+        ):
+            return runner.invoke(
+                vsearch_cmd,
+                args if args is not None else ["query"],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+    def test_vsearch_constructor_runtime_error_becomes_click_exception(self):
+        """vsearch: missing sqlite-vec at construction exits 1 with the install remedy."""
+        result = self._invoke_vsearch()
+
+        assert result.exit_code == 1
+        assert "Error:" in result.output
+        assert "sqlite-vec" in result.output
+        assert "pip install" in result.output
+        assert "Traceback" not in result.output
+        assert not isinstance(result.exception, RuntimeError)
+
+    def test_query_constructor_runtime_error_becomes_click_exception(self):
+        """query: the same construction failure gets the identical clean presentation."""
+        result = self._invoke_query()
+
+        assert result.exit_code == 1
+        assert "Error:" in result.output
+        assert "sqlite-vec" in result.output
+        assert "pip install" in result.output
+        assert "Traceback" not in result.output
+        assert not isinstance(result.exception, RuntimeError)
+
+    def test_vsearch_json_failure_stdout_is_pure(self):
+        """--json failure keeps stdout empty: ClickException renders to stderr only."""
+        result = self._invoke_vsearch(args=["query", "--json"])
+
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        assert "Error:" in result.output
+
+    def test_query_json_failure_stdout_is_pure(self):
+        """--json failure keeps stdout empty for the hybrid path too."""
+        result = self._invoke_query(args=["query", "--json"])
+
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        assert "Error:" in result.output
+
+
 class TestQueryEmbeddingDimension:
     """IN-07: query_cmd prefers the model-metadata dimension over a billed probe."""
 
