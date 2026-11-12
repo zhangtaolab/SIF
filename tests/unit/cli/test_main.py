@@ -314,7 +314,7 @@ class TestCleanupErrorNarrowing(RealDatabaseTestCase):
 
 
 class TestIndexPathCreationError:
-    """CR-01: group-level parent creation uses the shared DB-open remedy."""
+    """CR-01: a file-parent DB path uses the shared DB-open remedy."""
 
     def test_regular_file_parent_renders_clean_error(self, tmp_path: Path) -> None:
         """A regular file in the DB parent path must not leak FileExistsError."""
@@ -331,6 +331,40 @@ class TestIndexPathCreationError:
         assert "Check file permissions and free disk space" in result.output
         assert "Traceback" not in result.output
         assert not isinstance(result.exception, FileExistsError)
+
+
+class TestGroupCallbackDoesNotCreateIndexParent:
+    """Ledger 5: the group callback must not materialize the index parent directory.
+
+    Index-parent creation belongs to ``Database.__init__`` inside the shared
+    DB-open boundary, so guarded read-only commands that never open the index
+    must leave the filesystem untouched.
+    """
+
+    def test_guarded_context_commands_create_no_index_parent(self, tmp_path: Path) -> None:
+        """Guarded context commands exit early without creating parent or DB."""
+        db_path = tmp_path / "never-created" / "sif.db"
+        for argv in (
+            ["context", "list"],
+            ["context", "add", "path", str(tmp_path / "note.md"), "note"],
+        ):
+            result = CliRunner().invoke(cli, ["--index", str(db_path), *argv])
+
+            assert result.exit_code == 0, result.output
+            assert "No index found" in result.output
+            assert not db_path.parent.exists()
+            assert not db_path.exists()
+
+    def test_db_opening_command_still_creates_index_parent(self, tmp_path: Path) -> None:
+        """Positive control: a DB-opening command still creates parent and DB."""
+        db_path = tmp_path / "fresh" / "sif.db"
+
+        result = CliRunner().invoke(cli, ["--index", str(db_path), "index", "update"])
+
+        assert result.exit_code == 0, result.output
+        assert "No collections found" in result.output
+        assert db_path.parent.is_dir()
+        assert db_path.exists()
 
 
 class TestDefaultDbPathConfigError:
