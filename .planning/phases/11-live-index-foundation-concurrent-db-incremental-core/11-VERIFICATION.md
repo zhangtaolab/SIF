@@ -1,224 +1,206 @@
 ---
 phase: 11-live-index-foundation-concurrent-db-incremental-core
-verified: 2026-11-11T05:30:00Z
+verified: 2026-11-12T07:27:42Z
 status: passed
 score: 20/20 must-haves verified
-covered_files: [".planning/phases/11-live-index-foundation-concurrent-db-incremental-core/11-01-PLAN.md", ".planning/phases/11-live-index-foundation-concurrent-db-incremental-core/11-01-SUMMARY.md", ".planning/phases/11-live-index-foundation-concurrent-db-incremental-core/11-02-PLAN.md", ".planning/phases/11-live-index-foundation-concurrent-db-incremental-core/11-02-SUMMARY.md", ".planning/phases/11-live-index-foundation-concurrent-db-incremental-core/11-03-PLAN.md", ".planning/phases/11-live-index-foundation-concurrent-db-incremental-core/11-03-SUMMARY.md", "src/sif/cli/commands/index.py", "src/sif/cli/commands/watch.py", "src/sif/config/settings.py", "src/sif/database/__init__.py", "src/sif/database/connection.py", "src/sif/database/database.py", "src/sif/database/factory.py", "src/sif/database/locking.py", "src/sif/indexing/incremental.py", "src/sif/indexing/watcher.py", "src/sif/mcp/watch_host.py", "tests/integration/test_concurrency.py", "tests/integration/test_incremental_equivalence.py", "tests/integration/test_two_writer_subprocess.py", "tests/unit/cli/test_collection.py", "tests/unit/cli/test_index.py", "tests/unit/cli/test_index_locking.py", "tests/unit/database/test_database.py", "tests/unit/database/test_factory.py", "tests/unit/database/test_locking.py", "tests/unit/db/test_database.py", "tests/unit/indexing/test_incremental.py", "tests/unit/indexing/test_watcher.py"]
-covered_digest: "v4:sha256:8f9bd33e401748b2a268c152539531ac9649a26308c6a5938a26e986fbb4e48a"
-behavior_unverified: 0 # Count of PRESENT_BEHAVIOR_UNVERIFIED truths; none — every behavior-dependent truth exercised by a test that passed in this verifier's own run at HEAD e20ce25
+covered_files: [".planning/phases/11-live-index-foundation-concurrent-db-incremental-core/11-01-PLAN.md", ".planning/phases/11-live-index-foundation-concurrent-db-incremental-core/11-01-SUMMARY.md", ".planning/phases/11-live-index-foundation-concurrent-db-incremental-core/11-02-PLAN.md", ".planning/phases/11-live-index-foundation-concurrent-db-incremental-core/11-02-SUMMARY.md", ".planning/phases/11-live-index-foundation-concurrent-db-incremental-core/11-03-PLAN.md", ".planning/phases/11-live-index-foundation-concurrent-db-incremental-core/11-03-SUMMARY.md", "src/sif/cli/commands/index.py", "src/sif/cli/commands/watch.py", "src/sif/cli/error_handling.py", "src/sif/config/settings.py", "src/sif/database/__init__.py", "src/sif/database/connection.py", "src/sif/database/database.py", "src/sif/database/factory.py", "src/sif/database/locking.py", "src/sif/indexing/incremental.py", "src/sif/indexing/watcher.py", "src/sif/mcp/watch_host.py", "tests/integration/test_concurrency.py", "tests/integration/test_incremental_equivalence.py", "tests/integration/test_two_writer_subprocess.py", "tests/unit/cli/test_collection.py", "tests/unit/cli/test_index.py", "tests/unit/cli/test_index_locking.py", "tests/unit/database/test_database.py", "tests/unit/database/test_factory.py", "tests/unit/database/test_locking.py", "tests/unit/db/test_database.py", "tests/unit/indexing/test_incremental.py", "tests/unit/indexing/test_watcher.py", "tests/unit/mcp/test_mcp_watch_host.py"]
+covered_digest: "v4:sha256:a70341ba73af8789e63099f981c452bc297a9c197d9cb905f42a5e5bcb95fa21"
+behavior_unverified: 0
 overrides_applied: 0
 re_verification:
   previous_status: passed
   previous_score: 20/20
-  gaps_closed: [] # prior pass had no gaps; staleness regeneration after the phase-11 code-review fix cycle (WR-01/WR-02 guards, IN-01..IN-04) modified covered source
+  gaps_closed: [] # prior report had no gaps; this is a staleness regeneration after Phase 16.1 changed covered source
   gaps_remaining: []
-  regressions: [] # none: factory pragma recipe untouched (only the IN-02 constant added); watcher guards are additive; full suite 1504 passed at this HEAD
+  regressions: [] # pragma recipe and per-file transactions intact; enqueue_reconcile remains inside the worker's per-job flock
+advisory: []
+decision_coverage:
+  honored: 9
+  total: 9
+  not_honored: []
 ---
 
 # Phase 11: Live-Index Foundation (Concurrent DB + Incremental Core) Verification Report
 
 **Phase Goal:** The database and indexing core can safely host a resident background writer — watch writes and CLI/MCP reads coexist without lock errors, and exactly one per-file incremental update path exists for all watch hosts to reuse.
-**Verified:** 2026-11-11T05:30:00Z
+**Verified:** 2026-11-12T07:27:42Z
 **Status:** passed
-**Re-verification:** Yes — staleness regeneration (#4682). The prior report (passed 20/20, written 2026-11-11) predates HEAD; the phase-11 code-review fix cycle then modified covered source (`1a577bc` IN-01 busy-branch logging, `2444fa0` IN-02 WAL-checkpoint constant consolidation into factory.py, `1bfd7c5` IN-03 stop-flush docstrings, `d6412fb` IN-04 watcher regression tests; docs commits `5be330a`/`e20ce25`). This report re-verifies every must-have against HEAD `e20ce25` — no verdict copied from the prior report.
+**HEAD:** `0899d909d97f95fc9fa4b8c26b0717cb69e78e7c`
+**Re-verification:** Yes — staleness regeneration. The previous report passed 20/20 at `e20ce25`; Phase 16.1 and related cleanup subsequently changed `factory.py`, `index.py`, `watch.py`, `incremental.py`, `watcher.py`, and `watch_host.py`. Every roadmap criterion and every merged plan truth was re-evaluated against HEAD rather than carried forward from the prior verdict.
 
 ## Goal Achievement
 
-Must-haves merged from the 4 ROADMAP success criteria (the contract) plus the three
-plans' frontmatter truths, deduplicated (checksum-skip, empty-input, and scan-order
-truths appear in both 11-01 and 11-02; kept once): 8 truths from 11-01, 5 unique from
-11-02, 7 from 11-03 = 20. All 13 documented task commits verified present at HEAD
-(`verify.commits`: 13/13 valid, 0 invalid).
+Must-haves were merged from the four ROADMAP success criteria plus all three plans' frontmatter truths, with duplicate checksum, empty-input, and scan-order items deduplicated: 8 truths from 11-01, 5 unique truths from 11-02, and 7 from 11-03 = 20. No overrides were used. All 13 implementation commits documented by the plans are valid commits at HEAD.
 
 ### Observable Truths
 
-| # | Truth | Status | Evidence (at HEAD e20ce25) |
-|---|-------|--------|----------|
-| 1 | Every connection (CLI `Database.connection` + MCP `DatabaseConnection._create_connection`) reports busy_timeout=5000, WAL, synchronous=1, foreign_keys=1, isolation_level IMMEDIATE (SC1) | ✓ VERIFIED | `factory.py` read: locked pragma order intact (busy_timeout line 67 BEFORE WAL retry line 68, synchronous line 69), `isolation_level="IMMEDIATE"` line 59; both paths delegate (`database.py:28`, `connection.py:26`); behavioral: `test_factory.py` pragma audit + `test_mcp_style_connection_inherits_factory_pragmas` passed in this verifier's run |
-| 2 | A reader (CLI-style or MCP-style) querying while another connection holds an open BEGIN IMMEDIATE write txn succeeds with zero "database is locked" (SC1) | ✓ VERIFIED | `test_concurrency.py::TestReaderDuringWriter` — passed in this verifier's targeted run (89 passed across the 7 phase files + watcher) |
-| 3 | Two simultaneous `sif index update` processes both exit 0; loser waits then runs its own pass; every file indexed exactly once (SC2) | ✓ VERIFIED | `test_two_writer_subprocess.py` 3/3 passed in this verifier's run (real `python -m sif.cli.main` children; parent-holds-lock determinism; unique document rows asserted from DB state) |
-| 4 | Lock file `{db_path}.lock` created 0600 next to DB; SIGKILLed holder releases immediately | ✓ VERIFIED | `locking.py:70` `os.open(..., 0o600)`; `test_locking.py` 0600-mode + holder-death tests passed in this run |
-| 5 | Checksum-equal file skipped unless `--force`; second run reports Added: 0 / Updated: 0 / Removed: 0 | ✓ VERIFIED | `incremental.py:314` skip logic; skip + force tests and `test_incremental_equivalence.py::test_third_run_is_idempotent` (zeros asserted) green in this run. Phase 14's mtime-only UPDATE inside the skip branch (`incremental.py:323-328`) converges touch drift; counts stay 0/0/0 (idempotency test green), document body untouched |
-| 6 | Empty input keeps behavior: no-collections notice + exit 0; zero-file scan reports zero counts | ✓ VERIFIED | `index.py:72-76` notice; `test_incremental.py` empty-scan test green in this run |
-| 7 | Element order is FileScanner's existing scan order; output/index content deterministic | ✓ VERIFIED | `incremental.py:129-148` consumes `scanner.scan()` directly, one loop, no reordering; golden equivalence asserts final index state through real CLI runs (3/3 green) |
-| 8 | Parallel writers: SQLite collisions wait inside busy_timeout rather than failing instantly; long jobs serialized by flock before DB contention | ✓ VERIFIED | `test_concurrency.py` TestBusyTimeoutWait + TestThreadedInterleave (zero OperationalError) green in this run |
-| 9 | `sif index update` produces identical results before/after extraction — same docs/chunks/FTS rows + same CLI counts block (SC3) | ✓ VERIFIED | `test_incremental_equivalence.py` 3/3 passed: Added: 3 with `documents_fts` == documents count, mutation run 1/1/1 with deleted doc absent from FTS, third run zeros |
-| 10 | Per-file document + chunks + FTS-trigger writes commit as one short BEGIN IMMEDIATE txn; sweep and stats are their own short transactions (D-04) | ✓ VERIFIED | `incremental.py` read: per-file `with self._conn:` blocks (file update 335, file create 365), removal via `_remove_document` (393, shared by sweep and the Phase-12 `update_paths` path), stats tail (167); D-04 durability test green |
-| 11 | Mid-run failure keeps completed files durable; failing file not half-written (D-04) | ✓ VERIFIED | `test_incremental.py` per-file failure test (repo monkeypatched to raise on 2nd file; first file's rows visible on a fresh connection; second file absent) green in this run |
-| 12 | `update_cmd` contains no indexing loop; delegates to IncrementalIndexer; complexity exemption gone | ✓ VERIFIED | grep at HEAD: `parser.parse` count in index.py = 0; `update_cmd` (line 44) carries no noqa — the sole `noqa: C901...` is on `embed_cmd` (line 199, pre-existing, expected); `IncrementalIndexer(db.connection)` at index.py:80 |
-| 13 | Rich/console stays in CLI; IncrementalIndexer takes a progress callback, no Rich dependency | ✓ VERIFIED | `incremental.py` imports are stdlib + `sif.*` only (zero rich/click); progress via callback; `index.py::_render_index_event` is the only renderer |
-| 14 | Importing retired names raises ImportError; `sif.database.__all__` contains only surviving names (D-07) | ✓ VERIFIED | `__init__.py` read: exactly the 9 surviving names (lines 16-26), pool absent; `TestRetiredImports` (pool, duplicate wrapper, `__all__` audit) passed in this run |
-| 15 | `src/sif/indexing/indexer.py` no longer exists; dead orchestrator + status enum + result dataclass retired with their test suite | ✓ VERIFIED | `ls` ENOENT on both `src/sif/indexing/indexer.py` and `tests/unit/indexing/test_indexer.py`; grep: zero `ConnectionPool\|DocumentIndexer\|IndexStatus\|IndexResult` references in src/ |
-| 16 | watcher.py annotations reference IncrementalIndexer | ✓ VERIFIED | `watcher.py:36` runtime import of `IncrementalIndexer, IncrementalResult` from `sif.indexing.incremental`; constructions at 812/824 (Phase 12 wired the watch host onto the Plan-02 core); all 46 watcher tests incl. the IN-04 `TestConcurrencyGuardRegressions` passed in this run |
-| 17 | embed_cmd acquires the same per-DB flock around its collection loop with waiting notice; transaction structure otherwise untouched (D-01, D-05) | ✓ VERIFIED | `index.py:277-284` — `index_lock(...)` placed AFTER embedder load (224-232) and vec0 dimension check (245-256); per-collection `with db.connection:` commit point at 323; spy test green |
-| 18 | Concurrent update and embed serialize without BUSY failures; both exit 0; loser waits then proceeds | ✓ VERIFIED | `test_index_locking.py` spy (exactly one `index_lock` entry per invocation for BOTH commands) + held-lock-proceeds (exit 0, notice, work done after wait) passed in this run; flock mutual exclusion unit-proven in `TestIndexLock` |
-| 19 | Dead tests gone: pool fixture/class removed from `tests/unit/db/test_database.py`; dead orchestrator test file deleted | ✓ VERIFIED | `grep -c "def test_"` = 14 at HEAD (the plan's expected post-removal count); `tests/unit/indexing/test_indexer.py` absent; zero pool references outside the intentional ImportError assertions |
-| 20 | Full quality suite green — pytest fail_under=90, ruff, format, ty (SC4) | ✓ VERIFIED | This verifier's own run at HEAD: `pytest` → 1504 passed, 1 skipped @ 95.00% (fail_under=90.0 reached; +3 tests vs prior pass = the IN-04 regression tests); `ruff check src tests` → All checks passed; `ruff format --check` → 187 files formatted; `ty check src/sif` → All checks passed |
+| # | Truth | Status | Evidence at HEAD `0899d90` |
+|---|-------|--------|----------------------------|
+| 1 | Every CLI `Database.connection` and MCP `DatabaseConnection._create_connection` reports busy_timeout=5000, WAL, synchronous=1, foreign_keys=1, isolation_level IMMEDIATE (SC1) | ✓ VERIFIED | `factory.py:56-73` is the sole `sqlite3.connect` site in `src/sif`; busy_timeout precedes the WAL helper and synchronous follows it. Both wrappers delegate (`database.py:28`, `connection.py:26`). `test_pragma_audit_on_every_connection` and `test_mcp_style_connection_inherits_factory_pragmas` passed. |
+| 2 | CLI-style and MCP-style readers succeed while another connection holds an open BEGIN IMMEDIATE write transaction, with zero "database is locked" (SC1) | ✓ VERIFIED | `test_concurrency.py::TestReaderDuringWriter::test_cli_and_mcp_style_readers_succeed_during_open_write_txn` passed against real file-backed connections; it asserts both readers see the pre-commit snapshot and the committed row afterward. |
+| 3 | Two simultaneous `sif index update` processes both exit 0; the loser waits then runs; files are indexed exactly once (SC2) | ✓ VERIFIED | `test_two_writer_subprocess.py` passed 3/3: a real CLI child remains blocked under the parent's flock, exits 0 after release, sequential updates leave exactly three unique paths, and WAL persists. D-02 wait-then-run is the locked interpretation of deferral. |
+| 4 | `{db_path}.lock` is created next to the DB with mode 0600; a SIGKILLed holder releases immediately | ✓ VERIFIED | `locking.py:67-70` derives one canonical per-DB path and opens it 0600. All seven `test_locking.py` tests passed, including mode, contention, release, expiry, and holder-death behavior. |
+| 5 | Checksum-equal files are skipped unless `--force`; a second update reports Added: 0 / Updated: 0 / Removed: 0 | ✓ VERIFIED | `incremental.py:300-318` implements checksum skip (with the later mtime-only convergence guarded inside the skip). Skip/force tests and `test_third_run_is_idempotent` passed; the idempotent snapshot preserves document and chunk state. |
+| 6 | Empty input retains behavior: no-collections notice and exit 0; zero-file scans report zero counts | ✓ VERIFIED | `index.py:71-75` retains the notice/return. `test_empty_scan_reports_zero_counts` passed with `IncrementalResult(0, 0, 0)` and `scan 0`. |
+| 7 | Processing follows FileScanner's existing scan order; output and index content remain deterministic | ✓ VERIFIED | `incremental.py:117-152` consumes `scan_result.files` directly without reordering. Golden add/mutate/idempotent CLI cycles passed with independently constructed fixture expectations. |
+| 8 | Parallel SQLite writers wait inside busy_timeout; long jobs serialize through flock before DB contention | ✓ VERIFIED | `TestBusyTimeoutWait` and `TestThreadedInterleave` passed: the waiter completes only after release, and 40 interleaved writes finish without OperationalError. CLI update/embed and watcher write paths all call `index_lock`. |
+| 9 | `sif index update` produces equivalent documents/chunks/FTS state and the same CLI counts after extraction (SC3) | ✓ VERIFIED | `test_incremental_equivalence.py` passed 3/3: first-run 3/0/0, mutation-run 1/1/1, third-run zeros, FTS/document parity, fresh checksums, stale-chunk purge, and deleted-document FTS removal. |
+| 10 | Each file's document/chunk/FTS-trigger writes commit in one short BEGIN IMMEDIATE transaction; removal and stats have separate short transactions (D-04) | ✓ VERIFIED | `incremental.py:323-341` and `353-355` retain the per-file `with self._conn:` boundaries; `_remove_document` uses `381-384`; stats use `155-158` and `260-263`. The factory sets `isolation_level="IMMEDIATE"`. The 16.1 purger refactor changed only construction at `78-80`. |
+| 11 | A mid-run failure keeps completed files durable and leaves the failing file not half-written | ✓ VERIFIED | `test_mid_run_failure_keeps_completed_files_durable` passed: a fresh connection sees only the first file, no failing-file rows, and no third-file work. |
+| 12 | `update_cmd` contains no indexing loop, delegates to IncrementalIndexer, and has no complexity exemption | ✓ VERIFIED | `index.py:77-101` constructs one indexer and calls `update_collection`; `index.py` has no `parser.parse` or `noqa: C901, PLR0912, PLR0915` match. The separate pre-existing exemption on `embed_cmd` is unrelated. |
+| 13 | Rich/console stays in the CLI; IncrementalIndexer is presentation-free and accepts a progress callback | ✓ VERIFIED | `incremental.py` has no rich/click imports; events flow through `_notify`. `index.py::_render_index_event` renders them. Direct core tests passed without CLI presentation. |
+| 14 | Retired imports raise ImportError and `sif.database.__all__` contains only surviving names (D-07) | ✓ VERIFIED | `database/__init__.py:16-26` lists exactly nine names. All three `TestRetiredImports` tests passed; no `ConnectionPool`, `DocumentIndexer`, `IndexStatus`, or `IndexResult` reference remains in `src/sif`. |
+| 15 | `src/sif/indexing/indexer.py` and its dead orchestrator/test suite are retired | ✓ VERIFIED | Both `src/sif/indexing/indexer.py` and `tests/unit/indexing/test_indexer.py` are absent. Source-wide retired-symbol grep returned no matches. |
+| 16 | `watcher.py` uses IncrementalIndexer rather than the deleted class | ✓ VERIFIED | `watcher.py:36` imports the shared core; burst and reconcile paths call `update_paths` and `update_collection` at `838-843` and `826-828`. All 49 watcher tests passed. |
+| 17 | `embed_cmd` uses the same per-DB flock around its collection loop, after model loading/dimension checks, without restructuring its transactions (D-01/D-05) | ✓ VERIFIED | `index.py:221-253` loads/checks the model before `index_lock` at `275-281`; per-collection `with db.connection:` remains at `320-362`. Both lock spy tests passed with one enter/release per command. |
+| 18 | Concurrent update and embed serialize without BUSY failures; losers wait then proceed | ✓ VERIFIED | `test_index_locking.py` passed 5/5, including update/embed lock spies and held-lock update that waits, prints the notice, indexes its file, and exits 0. Kernel mutual exclusion is covered by `TestIndexLock`. |
+| 19 | Dead pool/orchestrator tests are gone | ✓ VERIFIED | `tests/unit/db/test_database.py` has the planned 14 test methods and passed; `tests/unit/indexing/test_indexer.py` is absent. |
+| 20 | Existing CLI/MCP behavior remains green under pytest fail_under=90, ruff, format, and ty (SC4) | ✓ VERIFIED | Independent HEAD run: 1590 passed, 1 skipped, coverage 95.18% (90% gate reached); `ruff check src tests`, `ruff format --check src tests` (190 files), and `ty check src/sif` all passed. |
 
-**Score:** 20/20 truths verified (0 present, behavior-unverified)
+**Score:** 20/20 truths verified (0 present-but-behavior-unverified).
 
-Every behavior-dependent truth (reader-during-writer, busy-wait, two-writer subprocess
-serialization, holder-death release, per-file durability, golden equivalence, lock
-wait-then-proceed, embed lock entry, and the watcher concurrency guards added by the
-review-fix cycle) is exercised by a behavioral test that passed in a run executed by
-this verifier at HEAD — not by symbol presence alone.
+Every behavior-dependent truth has current runtime evidence from the verifier's own 93-test focused run, the 15-test MCP watch-host run, and/or the single full-suite run. No verdict rests solely on symbol presence.
 
-### Review-Fix Changes to Covered Source Since the Prior Report
+### Phase 16.1 Regression Review
 
-The code-review fix cycle modified `factory.py` and `watcher.py` (plus two watch-host
-consumers and the watcher test file); each change was inspected and none regresses a
-phase-11 truth:
-
-| Change | Commit | Phase-11 truths affected | Outcome |
-|--------|--------|--------------------------|---------|
-| `WAL_CHECKPOINT_TRUNCATE` constant defined once in factory.py, imported at watcher.py:33, watch.py:49, watch_host.py:37 (IN-02) | `2444fa0` | #1 | Additive only — the pragma recipe block (lines 55-71) untouched; grep confirms no other `PRAGMA wal_checkpoint` spelling in src/; factory tests green |
-| WR-01 tick guard: `_on_tick()` wrapped in try/except with `logger.exception` (watcher.py:750-759) | review cycle | #16 | Additive robustness; pinned by `test_real_worker_loop_survives_raising_tick` (passed in this run) |
-| WR-02 stop-ordering guards: `contextlib.suppress(KeyError)` (450), `list()` snapshots (501/508/603), `worker.join` (486) before `observer.stop` (500) | review cycle | #16 | Additive; pinned by the two other IN-04 regression tests (passed in this run) |
-| IN-01 busy-branch debug log + IN-03 count-bounded docstrings | `1a577bc`, `1bfd7c5` | none | Comment/logging accuracy only; no behavior change at INFO level |
-| IN-04 `TestConcurrencyGuardRegressions` (+3 tests, test_watcher.py:837-1035) | `d6412fb` | #20 | Suite grew 1501→1504, all green; the re-review (11-REVIEW.md iteration 3) confirms the guards mutation-verified |
-
-Open review findings (WR-03 raw tracebacks, WR-04 impossible-state guard, IN-05 model-type
-set duplication) are recorded `open` in 11-REVIEW-DISPOSITION.md for later triage; none
-corresponds to a phase-11 must-have, and none is a defect evidenced by a failing test.
+| Change | Verification result |
+|--------|---------------------|
+| WR-01 close-on-setup-failure in `factory.py` (`46e259b`) | `factory.py:63-76` wraps the complete setup sequence and closes/reraises on BaseException. The pragma recipe remains foreign_keys → busy_timeout → WAL retry → synchronous → vec load. `test_post_connect_pragma_failure_closes_handle_and_reraises` passed and proves the underlying handle is actually closed. |
+| Shared CLI DB opener adoption (`f54be6e`, `06020ab`) | `index.py:49` and watch openers still construct the same `Database`; `error_handling.py` only owns construction/schema initialization and closes on failures. It does not alter incremental or embed transaction bodies. |
+| Shared embedding purger adoption (`c34a965`) | `incremental.py:78-80` delegates purger construction, while per-file writes, checksum skip, removal, and stats transactions remain in the same locations and passed their behavioral tests. |
+| Public `enqueue_reconcile` (`8820965`, `64fc4f1`) | `watcher.py:525-537` only enqueues `(Collection, FoldResult(needs_reconcile=True))`; it performs no DB work. Worker `_run_job` dispatches reconcile to `_run_reconcile`, whose body is inside `index_lock` at `822-833`. MCP and internal producers use the public method. FIFO/payload and producer-routing tests passed. |
 
 ### Roadmap Success Criteria Mapping
 
 | SC | Statement | Truths | Status |
 |----|-----------|--------|--------|
-| 1 | Zero "database is locked" under concurrent writer + CLI/MCP readers; locked pragma recipe; BEGIN IMMEDIATE | 1, 2, 8 | ✓ VERIFIED |
-| 2 | Two simultaneous writers: one does the work, other defers cleanly, no duplicated indexing/embedding (flock) | 3, 4 | ✓ VERIFIED |
-| 3 | Identical results before/after refactor; one shared IncrementalIndexer; update_cmd delegates; DocumentIndexer retired | 9-13, 14-16 | ✓ VERIFIED |
-| 4 | Existing CLI/MCP behavior unchanged; full quality suite green | 20 (+6, 7 for unchanged edge behavior) | ✓ VERIFIED |
-
-SC2 wording note: "the other defers cleanly" is implemented as D-02 wait-then-run (loser
-waits up to the deadline, then runs its own pass; checksum-skip makes the overlapping
-pass a no-op). Human-settled availability-over-exclusion decision in CONTEXT.md;
-no-duplication is what the subprocess proofs assert from DB state.
+| 1 | Concurrent writer + CLI/MCP reads complete with zero lock errors; pragma recipe and BEGIN IMMEDIATE | 1, 2, 8, 10 | ✓ VERIFIED |
+| 2 | Two index writers arbitrate through flock without duplicated indexing/embedding | 3, 4, 17, 18 | ✓ VERIFIED |
+| 3 | Identical update results; one shared IncrementalIndexer; update delegates; dead DocumentIndexer retired | 5, 7, 9-16 | ✓ VERIFIED |
+| 4 | Existing CLI/MCP behavior unchanged; full quality suite green | 6, 20 | ✓ VERIFIED |
 
 ### Required Artifacts
 
-`gsd-tools query verify.artifacts` — all three plans at HEAD: `all_passed: true` (7/7, 3/3, 2/2).
+`gsd-tools query verify.artifacts` returned `all_passed: true` for all plans: 7/7, 3/3, and 2/2.
 
 | Artifact | Expected | Status | Details |
 |----------|----------|--------|---------|
-| `src/sif/database/factory.py` | The ONE shared connection factory (D-06) | ✓ VERIFIED | 127 lines at HEAD (+4: the IN-02 WAL-checkpoint constant); locked pragma order, bounded WAL retry, vec swallow; wired from both connection classes |
-| `src/sif/database/locking.py` | `index_lock` flock context manager | ✓ VERIFIED | 98 lines; 0600 lock file, 50ms poll loop, monotonic deadline, expiry-breaks-to-yield, non-POSIX degrade; wired into 4 consumers (CLI update/embed, watch.py, drift.py) |
-| `src/sif/config/settings.py` | `lock_wait_timeout` field (env `SIF_LOCK_WAIT_TIMEOUT`, default 30.0) | ✓ VERIFIED | Field at line 43; env parse re-proven live by this verifier (`SIF_LOCK_WAIT_TIMEOUT=7.5` → 7.5; unset → 30.0) |
-| `src/sif/indexing/incremental.py` | IncrementalIndexer — single shared per-file core (SC3) | ✓ VERIFIED | 396 lines; `update_collection(collection, *, force, progress)` intact plus Phase 12/14 `update_paths`; short `with self._conn` transactions; no rich/click |
-| `src/sif/database/__init__.py` | Final export surface | ✓ VERIFIED | Exactly the 9 surviving names, alphabetical; pool absent; create_connection + index_lock present |
-| `tests/unit/database/test_factory.py` | Pragma audit + WAL retry + vec-swallow + TestRetiredImports | ✓ VERIFIED | 11 tests, all green in this run |
-| `tests/unit/database/test_locking.py` | flock semantics incl. holder death + 0600 | ✓ VERIFIED | 7 tests, all green (fcntl present on this platform; importorskip is a platform conditional) |
-| `tests/integration/test_concurrency.py` | In-suite SC1 proofs (D-08a) | ✓ VERIFIED | 4 tests green |
-| `tests/integration/test_two_writer_subprocess.py` | Deterministic subprocess SC2 proofs (D-08b/D-09) | ✓ VERIFIED | 3 tests green in this verifier's targeted run |
-| `tests/unit/indexing/test_incremental.py` | Unit proofs incl. D-04 durability | ✓ VERIFIED | 10 tests green |
-| `tests/integration/test_incremental_equivalence.py` | Golden equivalence (SC3) | ✓ VERIFIED | 3/3 green in this run |
-| `tests/unit/cli/test_index_locking.py` | Deterministic lock-acquisition proofs (D-01/D-02) | ✓ VERIFIED | 5 tests green |
+| `src/sif/database/factory.py` | One shared connection factory | ✓ VERIFIED | 133 substantive lines; sole raw connection site; locked pragma order, WAL retry, vec swallow, close-on-setup-failure; wired to both wrappers. |
+| `src/sif/database/locking.py` | Kernel-flock arbitration | ✓ VERIFIED | 98 lines; canonical per-DB 0600 file, wait deadline, expiry-to-yield, fd cleanup; used by CLI, watch, and drift writers. |
+| `src/sif/config/settings.py` | `lock_wait_timeout` setting | ✓ VERIFIED | Field at `43-48`; live checks parsed `SIF_LOCK_WAIT_TIMEOUT=7.5` as 7.5 and unset as 30.0. |
+| `src/sif/indexing/incremental.py` | Single per-file incremental core | ✓ VERIFIED | 384 lines; one class/loop, no presentation imports, shared by CLI and watcher; real scan and repository data. |
+| `src/sif/database/__init__.py` | Final export surface | ✓ VERIFIED | Exactly nine surviving exports, including create_connection/index_lock and excluding ConnectionPool. |
+| `tests/unit/database/test_factory.py` | Pragma/retry/degrade/close/export proofs | ✓ VERIFIED | 12 tests passed. |
+| `tests/unit/database/test_locking.py` | flock semantics | ✓ VERIFIED | 7 tests passed on POSIX. |
+| `tests/integration/test_concurrency.py` | SC1 real-connection proofs | ✓ VERIFIED | 4 tests passed. |
+| `tests/integration/test_two_writer_subprocess.py` | SC2 real-CLI proofs | ✓ VERIFIED | 3 tests passed. |
+| `tests/unit/indexing/test_incremental.py` | Incremental and durability proofs | ✓ VERIFIED | 10 tests passed. |
+| `tests/integration/test_incremental_equivalence.py` | Golden equivalence | ✓ VERIFIED | 3 tests passed. |
+| `tests/unit/cli/test_index_locking.py` | CLI lock and wait-then-run proofs | ✓ VERIFIED | 5 tests passed. |
 
-Deleted artifacts (confirmed gone at HEAD): `src/sif/indexing/indexer.py`, `tests/unit/indexing/test_indexer.py`.
+Deleted artifacts confirmed absent: `src/sif/indexing/indexer.py`, `tests/unit/indexing/test_indexer.py`.
 
 ### Key Link Verification
 
-`gsd-tools query verify.key-links` — all three plans at HEAD: `all_verified: true` (3/3, 2/2, 2/2).
+`gsd-tools query verify.key-links` returned `all_verified: true` for all plans: 3/3, 2/2, and 2/2.
 
 | From | To | Via | Status | Details |
-|------|----|----|--------|---------|
-| src/sif/database/database.py | src/sif/database/factory.py | `Database.connection` calls the factory | ✓ WIRED | `database.py:28` `create_connection(self.db_path)` |
-| src/sif/database/connection.py | src/sif/database/factory.py | `_create_connection` delegates its whole body | ✓ WIRED | `connection.py:26` `return create_connection(self._db_path)` |
-| src/sif/cli/commands/index.py | src/sif/database/locking.py | update_cmd + embed_cmd wrap write work in `index_lock` | ✓ WIRED | `index.py:54` (update) and `index.py:278` (embed) |
-| src/sif/cli/commands/index.py | src/sif/indexing/incremental.py | update_cmd constructs `IncrementalIndexer(db.connection)` | ✓ WIRED | `index.py:80`; `update_collection` called per collection at 98 |
-| src/sif/indexing/incremental.py | src/sif/database/database.py | per-file `with conn:` = BEGIN IMMEDIATE via factory connection | ✓ WIRED | `with self._conn:` blocks throughout; connection from `Database.connection` (factory) |
-| src/sif/indexing/watcher.py | src/sif/indexing/incremental.py | import + annotations + constructions on the Plan-02 core | ✓ WIRED | `watcher.py:36` runtime import; constructions at 812/824 |
-| src/sif/mcp/backend.py | src/sif/database/connection.py | MCP reads flow through the factory-routed wrapper | ✓ WIRED | `backend.py:12,113` — queries run inside `DatabaseConnection(...).transaction()` (pragmas inherited via delegation) |
+|------|----|-----|--------|---------|
+| `database/database.py` | `database/factory.py` | `Database.connection` | ✓ WIRED | `create_connection(self.db_path)` at line 28. |
+| `database/connection.py` | `database/factory.py` | `_create_connection` | ✓ WIRED | Whole-body delegation at line 26. |
+| `cli/commands/index.py` | `database/locking.py` | update and embed | ✓ WIRED | `index_lock` at lines 53 and 275. |
+| `cli/commands/index.py` | `indexing/incremental.py` | update delegation | ✓ WIRED | Constructor at line 79; update call at 97. |
+| `indexing/incremental.py` | factory-created connection | per-file `with self._conn` | ✓ WIRED | CLI and watcher supply Database/factory connections; transaction tests passed. |
+| `indexing/watcher.py` | `indexing/incremental.py` | shared core | ✓ WIRED | Import and both update APIs present; 49 tests passed. |
+| `mcp/watch_host.py` | `indexing/watcher.py` | public reconcile API | ✓ WIRED | `enqueue_reconcile` at line 100; start/enqueue ordering and FIFO payload tests passed. |
 
 ### Data-Flow Trace (Level 4)
 
-Not a data-rendering phase (infrastructure); the equivalent trace is the connection path:
+This is an infrastructure phase; the equivalent trace follows real connections, files, and DB rows rather than rendered UI state.
 
-| Artifact | Data Variable | Source | Produces Real Data | Status |
+| Artifact | Data variable | Source | Produces real data | Status |
 |----------|---------------|--------|--------------------|--------|
-| factory.py | `conn` | `sqlite3.connect(db_path)` + pragmas | ✓ real per-path connection, no static fallback | ✓ FLOWING |
-| incremental.py | `scan_result` / `existing_docs` | `FileScanner().scan(...)` / `doc_repo.list_by_collection` | ✓ real directory scan + DB snapshot | ✓ FLOWING |
-| index.py update_cmd | `total_added/updated/removed` | `IncrementalIndexer.update_collection` results | ✓ accumulated from real runs, rendered in counts block | ✓ FLOWING |
-| locking.py | `lock_path` | derived from caller's real `db_path` (canonicalized) | ✓ one real lock file per DB | ✓ FLOWING |
+| `factory.py` | `conn` | `sqlite3.connect(db_path)` plus pragmas | Real per-path SQLite connection; no fallback object | ✓ FLOWING |
+| `incremental.py` | `scan_result`, `existing_docs` | `FileScanner.scan` and `DocumentRepository.list_by_collection` | Real filesystem and DB inputs | ✓ FLOWING |
+| `index.py` update_cmd | added/updated/removed totals | `IncrementalIndexer.update_collection` results | Real run counts rendered in CLI block | ✓ FLOWING |
+| `locking.py` | `lock_path` | Canonicalized caller DB path | One real per-DB lock file | ✓ FLOWING |
+| `watcher.py` | reconcile jobs | Public enqueue → worker queue → locked core call | Real queued intents; no direct DB bypass | ✓ FLOWING |
 
 ### Behavioral Spot-Checks
 
 | Behavior | Command | Result | Status |
 |----------|---------|--------|--------|
-| All 7 phase-11 test files + the review-cycle watcher tests | `env -u FORCE_COLOR NO_COLOR=1 pytest <7 files> tests/unit/indexing/test_watcher.py --no-cov -q` | 89 passed in 6.78s | ✓ PASS |
-| IN-04 regression class present and passing | same run (class at test_watcher.py:837; tests at 848/906/965) | included in the 89 passed | ✓ PASS |
-| SC4 full quality suite | `env -u FORCE_COLOR NO_COLOR=1 pytest` | 1504 passed, 1 skipped @ 95.00% (fail_under=90 reached) | ✓ PASS |
-| Lint gate | `ruff check src tests` + `ruff format --check src tests` | All checks passed; 187 files formatted | ✓ PASS |
-| Type gate | `ty check src/sif` | All checks passed | ✓ PASS |
-| `SIF_LOCK_WAIT_TIMEOUT` env wiring | `SIF_LOCK_WAIT_TIMEOUT=7.5 python -c ...` / unset | 7.5 parsed; default 30.0 | ✓ PASS |
-| Retired names unimportable | via TestRetiredImports in the targeted run | passed | ✓ PASS |
-| 11-03 dead-test count gate | `grep -c "def test_" tests/unit/db/test_database.py` | 14 | ✓ PASS |
-| Documented commits present | `gsd-tools query verify.commits <13 hashes>` | 13/13 valid | ✓ PASS |
+| Phase 11 and watcher behavioral regressions | `env -u FORCE_COLOR NO_COLOR=1 pytest <8 phase/watcher test files> --no-cov -q` | 93 passed in 7.26s | ✓ PASS |
+| MCP watch-host and public reconcile behavior | `env -u FORCE_COLOR NO_COLOR=1 pytest tests/unit/mcp/test_mcp_watch_host.py -q --no-cov` | 15 passed in 0.11s | ✓ PASS |
+| Full quality suite | `env -u FORCE_COLOR NO_COLOR=1 pytest` | 1590 passed, 1 skipped; 95.18% coverage; 90% gate reached | ✓ PASS |
+| Lint and formatting | `ruff check src tests && ruff format --check src tests` | All checks passed; 190 files formatted | ✓ PASS |
+| Type checking | `ty check src/sif` | All checks passed | ✓ PASS |
+| Settings env/default | Live `Settings(_env_file=None)` construction | Override 7.5; default 30.0 | ✓ PASS |
+| Retirement/loop/presentation greps | Source-wide symbol and import checks | No retired symbols, update parse loop, core UI imports, or autocommit connection | ✓ PASS |
+| Plan artifact/link/commit verbs | `verify.artifacts`, `verify.key-links`, `verify.commits` | 12/12 artifacts, 7/7 links, 13/13 commits | ✓ PASS |
 
-Environment note: PATH-based miniconda `pytest` per project convention (`.venv` lacks
-torch); `env -u FORCE_COLOR NO_COLOR=1` applied per project memory.
+Environment note: PATH-based pytest was used per project convention; `env -u FORCE_COLOR NO_COLOR=1` kept the suite color-hermetic. The full workspace suite was run once.
 
 ### Probe Execution
 
-No `scripts/*/tests/probe-*.sh` probes declared by the plans or SUMMARYs; the phase's proof
-mechanism is the pytest suite (executed above, including the subprocess proofs). Not applicable.
+No `scripts/*/tests/probe-*.sh` probes exist or are declared by the Phase 11 plans/SUMMARYs. The phase's proof mechanism is pytest, executed above. Not applicable.
 
 ### Requirements Coverage
 
 | Requirement | Source Plan | Description | Status | Evidence |
-|-------------|------------|-------------|--------|----------|
-| LIVE-06 | 11-01, 11-02, 11-03 (all three claim it) | watch writes coexist with CLI/MCP concurrent reads, zero "database is locked" (WAL + busy_timeout + BEGIN IMMEDIATE) | ✓ SATISFIED | Truths 1, 2, 8, 10, 11 — factory pragma recipe on both paths, reader-during-writer proofs both styles, busy-wait proof, per-file short transactions; REQUIREMENTS.md marks LIVE-06 → Phase 11 Complete |
-| LIVE-07 | 11-01, 11-02, 11-03 (all three claim it) | flock single-writer arbitration, multiple watch forms coexist without duplicate embed | ✓ SATISFIED | Truths 3, 4, 17, 18 — per-DB 0600 flock on both long-running writers, loser wait-then-run, no-duplicate-rows subprocess proof; REQUIREMENTS.md marks LIVE-07 → Phase 11 Complete |
+|-------------|-------------|-------------|--------|----------|
+| LIVE-06 | 11-01, 11-02, 11-03 | Watch writes coexist with CLI/MCP reads without lock errors | ✓ SATISFIED | Truths 1, 2, 8, 10, 11; factory-only connection creation, real concurrent reader/writer tests, short per-file transactions. REQUIREMENTS.md maps it to Phase 11 Complete. |
+| LIVE-07 | 11-01, 11-02, 11-03 | flock single-writer arbitration without duplicate index/embed work | ✓ SATISFIED | Truths 3, 4, 17, 18; per-DB flock on CLI and watch writers, wait-then-run proofs, unique-row assertions. REQUIREMENTS.md maps it to Phase 11 Complete. |
 
-Orphaned requirements: none — the traceability matrix maps exactly LIVE-06 and LIVE-07 to
-Phase 11, and both are claimed by all three plans.
+Orphaned requirements: none. The traceability matrix maps exactly LIVE-06 and LIVE-07 to Phase 11, and all three plans claim both.
 
-### Prohibition Checks (negative checks)
+### Prohibition Checks
 
-| Prohibition | Status | Evidence (at HEAD) |
-|-------------|--------|--------|
-| No sqlite3 connection in autocommit/`isolation_level=None` anywhere in src | ✓ HELD | grep across src/: only `factory.py` sets isolation_level (`"IMMEDIATE"`; the `None` hit at line 22 is a docstring); sole remaining raw `sqlite3.connect` (`embedding/cache.py:19`, separate cache DB, pre-existing) uses default legacy isolation, not None |
-| `journal_mode=WAL` never before `busy_timeout=5000` | ✓ HELD | factory.py lines 67→68 enforce order; zero journal_mode pragma sites outside factory.py |
-| No write txn held across embedding/model inference on the incremental path | ✓ HELD | incremental.py is BM25-only (vector purger is DML delete only); embed_cmd's txn-across-embed is pre-existing structure explicitly frozen by D-05, not the incremental path |
-| No PID-file/custom lockfile liveness scheme | ✓ HELD | locking.py is pure kernel flock |
-| Lock waiter never silently drops its work | ✓ HELD | expiry `break`s to `yield` (locking.py:83-92); proven by expiry test + held-lock-proceeds, green in this run |
-| No per-collection lock files — one global lock per DB | ✓ HELD | single `{db}.lock` derivation with path canonicalization (locking.py:67-68) |
-| No third copy of the incremental loop | ✓ HELD | update_cmd delegates (grep 0 parse loops); DocumentIndexer module deleted, zero src references |
-| embed_cmd per-collection transaction structure not restructured (D-05) | ✓ HELD | `with db.connection:` commit point at index.py:323; only the lock wrap + re-indent added |
-| No new runtime dependencies | ✓ HELD | review-fix diff touched only src/tests files; all three SUMMARYs record `added: []` |
+| Prohibition | Status | Evidence |
+|-------------|--------|----------|
+| No autocommit `isolation_level=None` connection in `src/sif` | ✓ HELD | Only docstring mention; sole raw connect uses `isolation_level="IMMEDIATE"`. |
+| WAL never precedes busy_timeout | ✓ HELD | `factory.py:68` busy_timeout precedes WAL calls at 69 and 102/114; no journal_mode pragma elsewhere. |
+| No incremental write transaction across embedding inference | ✓ HELD | Core remains BM25-only; purger performs DML only. Embed command's pre-existing transaction shape is separately locked by D-05. |
+| No PID-file/custom liveness scheme for index arbitration | ✓ HELD | `locking.py` uses only kernel flock and fd lifetime. |
+| Lock waiter never silently drops work | ✓ HELD | Deadline breaks to yield; expiry and held-lock CLI tests passed. |
+| No per-collection locks | ✓ HELD | Single canonical `{db}.lock` derivation. |
+| No third incremental loop | ✓ HELD | CLI delegates; dead indexer deleted; only IncrementalIndexer implements update_collection/update_paths. |
+| Embed per-collection transactions unchanged | ✓ HELD | Existing `with db.connection:` commit body remains; only opener/lock integration changed around it. |
+| No new runtime dependencies | ✓ HELD | Changes use existing stdlib/project dependencies; no dependency file changed. |
 
 ### Test Quality Audit
 
-| Test File | Linked Req | Active | Skipped | Circular | Assertion Level | Verdict |
-|-----------|-----------|--------|---------|----------|-----------------|---------|
-| test_factory.py | LIVE-06 | 11 | 0 | No | Value (pragma values, isolation_level string) | OK |
-| test_locking.py | LIVE-07 | 7 | 0 on POSIX (platform conditional only) | No | Behavioral (BlockingIOError, death-release, expiry-proceeds) | OK |
-| test_concurrency.py | LIVE-06 | 4 | 0 | No | Behavioral + Value (snapshot counts, elapsed, row counts) | OK |
-| test_two_writer_subprocess.py | LIVE-07 | 3 | 0 | No | Behavioral (child exit codes, DB row uniqueness, 0600 mode, WAL persists) | OK |
-| test_incremental.py | LIVE-06 | 10 | 1 conditional (sqlite-vec-absent helper guard, never fires here) | No | Behavioral (D-04 durability via fresh connection, purge ordering) | OK |
-| test_incremental_equivalence.py | LIVE-06/07 | 3 | 0 | No | Value + Behavioral (counts blocks, FTS row parity, checksum change) | OK |
-| test_index_locking.py | LIVE-07 | 5 | 0 | No | Behavioral (1 lock entry per command, wait-then-proceed, exit 0) | OK |
-| test_watcher.py (IN-04 regressions) | LIVE-07 reuse path | 46 | 0 | No | Behavioral (real thread survives raising tick, stop ordering, mid-iteration mutation) | OK |
+| Test file | Linked req | Active | Skipped | Circular | Assertion level | Verdict |
+|-----------|------------|--------|---------|----------|-----------------|---------|
+| `test_factory.py` | LIVE-06 | 12 | 0 | No | Value + behavioral (pragma values, contention, real close) | OK |
+| `test_locking.py` | LIVE-07 | 7 | 0 on POSIX | No | Behavioral (flock contention, release, death, expiry) | OK |
+| `test_concurrency.py` | LIVE-06 | 4 | 0 | No | Behavioral + value (snapshots, elapsed wait, 40 rows) | OK |
+| `test_two_writer_subprocess.py` | LIVE-07 | 3 | 0 | No | Behavioral (real CLI exit codes, unique DB rows, WAL) | OK |
+| `test_incremental.py` | LIVE-06 | 10 | 0 here | No | Behavioral (fresh-connection durability, purge order, counts) | OK |
+| `test_incremental_equivalence.py` | LIVE-06/07 | 3 | 0 | No | Value + behavioral (independent fixtures, FTS/chunk state) | OK |
+| `test_index_locking.py` | LIVE-07 | 5 | 0 | No | Behavioral (lock entry, wait/proceed, persisted work) | OK |
+| `test_watcher.py` | LIVE-07 reuse | 49 | 0 | No | Behavioral (worker/lock/reconcile invariants) | OK |
+| `test_mcp_watch_host.py` | LIVE-07 reuse | 15 | 0 | No | Behavioral (startup order, public enqueue, queue payload) | OK |
 
-**Disabled tests on requirements:** 0 (the single `pytest.skip` is an ImportError
-conditional inside a counting helper, equivalent to importorskip — not a disabled
-requirement test). **Circular patterns detected:** 0 — golden expectations derive from
-test-constructed fixture trees (independent oracle).
+**Disabled requirement tests:** 0. `pytest.importorskip("fcntl")` is a platform guard; this POSIX run executed all lock tests. The conditional sqlite-vec skip helper did not skip any test here.
+
+**Circular patterns:** 0. Golden expectations derive from independently constructed fixture trees and direct DB assertions, not output generated by the system under test.
+
+**Assertion strength:** Behavioral/value assertions cover the required state transitions, lock ordering, persistence, and counts; no requirement is supported only by existence/type assertions.
 
 ### Anti-Patterns Found
 
 | File | Line | Pattern | Severity | Impact |
 |------|------|---------|----------|--------|
-| (none) | — | No TBD/FIXME/XXX/TODO/HACK/PLACEHOLDER markers in any of the 11 phase/review-modified production files at HEAD | — | — |
+| None | — | No TBD/FIXME/XXX/TODO/HACK/PLACEHOLDER markers or stub implementations in covered production files | — | — |
 
 ### Decision Coverage
 
-`check.decision-coverage-verify`: 9/9 trackable CONTEXT.md decisions honored by shipped
-artifacts, `not_honored: []` (non-blocking gate, informational).
+`check.decision-coverage-verify`: 9/9 trackable CONTEXT.md decisions honored; `not_honored: []`. Non-blocking informational gate.
 
 ### Advisory (New Scope, Unevidenced)
 
-Re-verification pass ran (staleness regeneration); no new-scope unevidenced findings.
+Re-verification ran; no new-scope unevidenced findings.
 
 | # | Finding | Category | Why Advisory |
 |---|---------|----------|--------------|
@@ -226,26 +208,13 @@ Re-verification pass ran (staleness regeneration); no new-scope unevidenced find
 
 ### Human Verification Required
 
-N/A — Infrastructure/foundation phase (database + indexing core) with no user-facing
-elements. All acceptance criteria are verifiable programmatically, and every
-behavior-dependent truth is exercised by a passing behavioral test from this verifier's
-own runs at HEAD (none left PRESENT_BEHAVIOR_UNVERIFIED; no backstop-tagged truths
-exist in the plan frontmatter).
+N/A — Infrastructure/foundation phase with no user-facing UX requiring manual judgment. All behavior-dependent acceptance criteria have current passing automated evidence; none remains PRESENT_BEHAVIOR_UNVERIFIED, and no backstop-tagged truths exist.
 
 ### Gaps Summary
 
-None. All 20 merged truths verified at HEAD e20ce25 with behavioral evidence from this
-verifier's own test runs (89 targeted tests + full suite 1504 passed @ 95.00%); all 12
-artifacts present, substantive, and wired (7/7 key links verified); both requirements
-satisfied with no orphans; all 9 prohibitions held; SC4 quality gate reproduced
-independently at HEAD (ruff/format/ty clean); all 13 documented commits valid; 9/9
-decisions honored. The review-fix changes to covered source (WR-01/WR-02 watcher guards,
-IN-01..IN-04) are additive and behavior-pinned by new regression tests — none regresses
-a phase-11 truth; the prior report's staleness trigger is resolved at this HEAD. The
-phase goal — a concurrency-safe DB core hosting a resident background writer with
-exactly one per-file incremental path — remains achieved in the codebase at HEAD.
+None. At HEAD `0899d90`, all 20 merged truths are verified, all 12 required artifacts are present/substantive/wired, all seven declared key links are wired, both requirements are satisfied, all nine prohibitions hold, and all 13 documented commits are valid. The Phase 16.1 factory cleanup preserves pragma order and adds proven close-on-failure behavior; opener adoption preserves transaction structure; `enqueue_reconcile` only queues work and cannot bypass the per-reconcile flock. Independent gates are green: 93 focused tests + 15 MCP tests, full suite 1590 passed/1 skipped at 95.18%, ruff/format/ty clean. The phase goal remains achieved.
 
 ---
 
-_Verified: 2026-11-11T05:30:00Z_
+_Verified: 2026-11-12T07:27:42Z_
 _Verifier: Claude (gsd-verifier)_
