@@ -662,3 +662,79 @@ class TestLLMCacheGetTTL14WR03:
         self._insert_legacy_row(db, "legacy-fresh", expires, now)
 
         assert LLMCacheRepository(db).get("m", "hash-legacy-fresh") == "r"
+
+
+class TestLLMCacheExpiryEdgePolicy:
+    """14-WR-03 edge policy: aware-offset, NULL, and malformed rows on both methods."""
+
+    @staticmethod
+    def _insert_row(db, row_id: str, expires_at: object) -> None:
+        """Insert one row with an explicit stored expiry value."""
+        db.execute(
+            "INSERT INTO llm_cache "
+            "(id, model_name, prompt_hash, prompt, response, created_at, expires_at) "
+            "VALUES (?, 'm', ?, 'p', 'r', ?, ?)",
+            (row_id, f"hash-{row_id}", datetime.now(timezone.utc).isoformat(), expires_at),
+        )
+
+    def test_get_compares_aware_offset_expiry_as_instant(self, db):
+        """Explicit +08:00 offsets compare as instants, never as text."""
+        now = datetime.now(timezone.utc)
+        tz_plus8 = timezone(timedelta(hours=8))
+        for row_id, instant in (
+            ("offset-expired", now - timedelta(hours=1)),
+            ("offset-fresh", now + timedelta(hours=1)),
+        ):
+            self._insert_row(db, row_id, instant.astimezone(tz_plus8).isoformat())
+
+        repo = LLMCacheRepository(db)
+        assert repo.get("m", "hash-offset-expired") is None
+        assert repo.get("m", "hash-offset-fresh") == "r"
+
+    def test_get_null_expiry_never_expires(self, db):
+        """NULL expires_at is a permanent hit."""
+        self._insert_row(db, "null-expiry", None)
+
+        assert LLMCacheRepository(db).get("m", "hash-null-expiry") == "r"
+
+    def test_get_malformed_expiry_misses_and_retains_row(self, db):
+        """Unparseable non-NULL expiry is a miss; the row is never deleted.
+
+        Adopted policy (16.1-RESEARCH Open Question 1, resolved): a read must
+        not trust an unreadable TTL, but the row stays untouched — cleanup's
+        WR-09 retain-guarantee still owns it.
+        """
+        self._insert_row(db, "garbage-expiry", "not-a-date")
+
+        repo = LLMCacheRepository(db)
+        assert repo.get("m", "hash-garbage-expiry") is None
+        assert (
+            db.execute("SELECT COUNT(*) FROM llm_cache WHERE id = 'garbage-expiry'").fetchone()[0]
+            == 1
+        )
+
+    def test_clear_expired_retains_malformed_row_after_get_miss(self, db):
+        """The get-miss policy never deletes: cleanup retains the same row."""
+        self._insert_row(db, "garbage-expiry", "not-a-date")
+
+        repo = LLMCacheRepository(db)
+        assert repo.get("m", "hash-garbage-expiry") is None
+        assert repo.clear_expired() == 0
+        assert db.execute("SELECT COUNT(*) FROM llm_cache").fetchone()[0] == 1
+
+    def test_clear_expired_non_string_expiry_survives(self, db):
+        """A non-string stored expiry raises nothing; the row is retained.
+
+        ``expires_at`` has TEXT affinity, so an INTEGER coerces to text on
+        insert — a BLOB is the one non-string form the production DDL can
+        actually store. Parsing it raises TypeError, which cleanup must
+        catch alongside ValueError (never delete what it cannot interpret).
+        """
+        self._insert_row(db, "blob-expiry", b"not-a-date")
+
+        repo = LLMCacheRepository(db)
+        assert repo.clear_expired() == 0
+        assert (
+            db.execute("SELECT COUNT(*) FROM llm_cache WHERE id = 'blob-expiry'").fetchone()[0]
+            == 1
+        )
