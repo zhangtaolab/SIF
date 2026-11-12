@@ -8,6 +8,35 @@ DocSift 是 [qmd](https://github.com/tobi/qmd) 的 Python 重构版本，一个�
 
 用户可以在自己的笔记和文档库中，用自然语言快速、准确地找到需要的信息——无论关键词是否匹配。
 
+## Current Milestone: v1.2 Search Precision and Agent Experience
+
+**Goal:** 让搜索精准可控（元数据过滤 + 正确性修复）、让 MCP 达到 2026 生态就绪（SDK v2 + agent 包装）、让质量提升有 held-out 证据（个人语料评测 + Harrier 评估），并补齐分发与 CI 缺口。
+
+**Target features:**
+
+*搜索精准化*
+- 元数据过滤 AST：path/mtime/tag/frontmatter 键，RRF 前应用，CLI + MCP 共享（qmd 未发布旗舰 parity）
+- `metadata` 发现工具（键/类型/值统计）
+- 正确性修复：parser 分派接线、向量按文档去重、hybrid offset 切片、标题入 FTS
+- 规模：消除每查询全表扫描（staleness/contexts）、`sif index vacuum` + backup、embed 流式分批
+
+*MCP 现代化与 Agent 体验*
+- 官方 Python SDK v2（MCPServer）升级，双时代（2025/2026）客户端服务
+- 工具注解（readOnlyHint/idempotentHint）+ structuredContent/outputSchema
+- MCP query 补齐 rerank/expand/snippet pipeline（与 CLI 对等）、懒加载 embedder、lex/vec 工具接线
+- Host 头校验（Origin 已有）、`sif mcp daemon` stub 收口
+- Claude Code skill/plugin + MCP Registry 上架
+
+*质量可证*
+- 个人语料 known-item 评测仪器（`sif eval --personal`，免人工标注）
+- Harrier-OSS-v1-0.6b EN+ZH held-out 评估（胜出才换默认；embedder 身份标记防同维陷阱）
+- rapidfuzz 测量替换 difflib、chunk size/overlap 扫描 + 标题面包屑实验
+
+*工程与分发*
+- 测试 CI 矩阵（py3.10–3.13 × ubuntu/macos）+ Windows smoke（hc remote yoga）
+- 发布 v1.1.x 到 PyPI（trusted publishing）+ Makefile/extras/pre-commit 清理
+- `sif models pull/status` + 下载器 bug 修复 + 非 TTY 静默；安装文档重写（uv 优先）
+
 ## Milestone v1.1: Live Index and Search Quality（已发布 2026-11-12）
 
 **Goal:** 让索引从手动 `index update` 变为自动常新（Live Index），并让搜索质量可配置、可量化、持续可调（Search Quality）。
@@ -66,13 +95,25 @@ DocSift 是 [qmd](https://github.com/tobi/qmd) 的 Python 重构版本，一个�
 
 ### Active
 
+<!-- v1.2 高层目标；细化 REQ-ID 见 REQUIREMENTS.md（定义中） -->
+
+- [ ] 元数据过滤（path/mtime/tag/frontmatter，RRF 前）+ metadata 发现 + 分页修复
+- [ ] 搜索正确性与规模（parser 接线、去重、offset、去全表扫、标题 FTS、vacuum）
+- [ ] MCP SDK v2 现代化 + 注解/structuredContent + query pipeline 对等 + agent 包装
+- [ ] 个人语料评测仪器 + Harrier held-out 评估 + rapidfuzz/chunk 调优
+- [ ] 测试 CI + Windows smoke + PyPI 发布 + models UX + 安装文档
 
 ### Out of Scope
 
 - 多用户/权限系统 — 本地单用户工具，不需要
 - 实时协作/同步 — 超出 qmd 原有范围
 - Web UI — qmd 也没有，仅 CLI + MCP
-- 非 Markdown 格式的复杂解析（如 PDF、Word）—— 先聚焦文本和代码文件
+- 非 Markdown 格式的复杂解析（如 PDF、Word、HTML、EPUB）—— 先聚焦文本和代码文件；**2026-11-13 用户再次确认不做**（竞品虽有 PDF，但维持本地文本聚焦；pypdf/trafilatura 选型研究已存档备用）
+- Windows 完整支持 — 推迟 v2（POSIX fork/systemd-everywhere/flock 降级需专门设计）；v1.2 仅 CI smoke（hc remote yoga）
+- spellfix1（FUTR-01）— ASCII-only 距离核心 + sdist-only 打包税 + 零中文收益（2026-11-13 研究结论）
+- 语义分块 / late chunking — NAACL 2025 反面证据；last-token pooling 模型机械不兼容
+- ANN 向量索引 — 100k 向量 brute force 75-150ms 够用；stable sqlite-vec 量化+rescore 是现成逃生门
+- chat-with-notes / ask — MCP 消费者本身就是 chat 层，投资引用级检索而非问答
 
 ## Context
 
@@ -111,6 +152,10 @@ DocSift 是 [qmd](https://github.com/tobi/qmd) 的 Python 重构版本，一个�
 | missing-root 防护在共享核心（D-11） | 顺带修复 update_cmd 对消失根目录的潜在全量删除 bug；两条更新路径都有回归测试 | Phase 12 Complete |
 | 文档内容永不作为 Rich markup 渲染 | get/multi-get 内容 `markup=False` 直出、表头 `escape()`——与 05-10/05-11 同类第三例；回归测试锁定（字面渲染、批次不中断、回退路径同等契约） | v1.0 Complete |
 | docs 局部套件 `--no-cov` | 全局 `addopts` 覆盖率 + `fail_under=90` 使 docs-only 运行必失败（CI 自 Phase 10 起恒红）；Makefile 与 docs.yml 双修 | v1.0 Complete |
+| v1.2 范围四决策（2026-11-13）：PDF 不做；MCP 升级 SDK v2；Harrier 纳入但 held-out 门禁；Windows 推迟 + CI smoke | 用户拍板；研究三路交叉验证（代码库差距/qmd 生态/技术选型） | — Pending |
+| Harrier 默认切换门禁：EN+ZH held-out 胜出 + embedder 身份标记（非仅宽度） | 独立证据仅英文（localGPT A/B nDCG 0.915 vs 0.805）；Harrier 与 Qwen3-0.6B 同 1024 维，宽度守护会静默接受坏切换；query 侧必须 prompt_name | — Pending |
+| Windows smoke 走 hc remote yoga（Win11 26300） | 用户指定；yoga 未装 Python（仅 Store alias），CI phase 需先 uv/Python setup | — Pending |
+| DYM 选型：rapidfuzz 测量替换 > symspellpy 推迟 > spellfix1 跳过 | 个人 KB 规模 difflib 已够用；rapidfuzz 去首字母桶是召回修复；symspellpy 仅 >200k 词表再议 | — Pending |
 
 ## Context（v1.1 shipped 2026-11-12）
 
@@ -145,4 +190,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-11-12 after v1.1 milestone（已发布：7 phases incl. 16.1 tech debt, 27 plans, 21/21 requirements）*
+*Last updated: 2026-11-13 after v1.2 milestone start（范围确认：元数据过滤 + MCP 现代化 + 质量仪器 + 分发；PDF 维持排除，Windows 推迟 + smoke）*

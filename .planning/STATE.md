@@ -1,19 +1,16 @@
 ---
 gsd_state_version: "1.0"
-milestone: v1.1
-status: Awaiting next milestone
-stopped_at: Milestone v1.1 summary generated
-last_updated: "2026-11-12T15:10:41.452Z"
-last_activity: 2026-11-12
-last_activity_desc: Milestone v1.1 completed and archived
-state_head: 2158059fe80ae82118f0bce0146f29b75719c68f
+milestone: v1.2
+milestone_name: Search Precision and Agent Experience
+status: planning
+last_updated: "2026-11-12T23:40:39.599Z"
+last_activity: 2026-11-13
 progress:
-  total_phases: 7
-  completed_phases: 7
-  total_plans: 27
-  completed_plans: 27
-milestone_name: Live Index and Search Quality
-current_phase: "16.1"
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # DocSift — Project State
@@ -28,10 +25,11 @@ current_phase: "16.1"
 
 ## Current Position
 
-Phase: Milestone v1.1 complete
+Phase: Not started (defining requirements)
 Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-11-12 — Milestone v1.1 completed and archived
+Status: Defining requirements
+Last activity: 2026-11-13 — Milestone v1.2 started
+
 
 ## Performance Metrics
 
