@@ -528,6 +528,11 @@ def _expiry_instant(value: str) -> datetime:
     return datetime.fromisoformat(value).astimezone(timezone.utc)
 
 
+# Bound variables per expiry DELETE well under SQLite's historical
+# SQLITE_LIMIT_VARIABLE_NUMBER floor of 999 (WR-01).
+_EXPIRY_DELETE_BATCH_SIZE = 500
+
+
 class LLMCacheRepository:
     """Repository for LLM cache operations."""
 
@@ -608,6 +613,9 @@ class LLMCacheRepository:
         via ``astimezone`` — the exact semantics of that writer; aware values
         convert losslessly. Rows with NULL or unparseable expiries are
         retained: cleanup never deletes a row whose expiry it cannot interpret.
+        Deletion runs in bounded batches (WR-01) so a large expired set never
+        exceeds SQLITE_LIMIT_VARIABLE_NUMBER; all batches stay on the
+        caller's transaction.
         """
         now = datetime.now(timezone.utc)
         cursor = self.db.execute(
@@ -622,14 +630,16 @@ class LLMCacheRepository:
                 continue
             if expires <= now:
                 expired_ids.append(row["id"])
-        if not expired_ids:
-            return 0
-        placeholders = ",".join("?" for _ in expired_ids)
-        cursor = self.db.execute(
-            f"DELETE FROM llm_cache WHERE id IN ({placeholders})",
-            expired_ids,
-        )
-        return cursor.rowcount
+        deleted = 0
+        for start in range(0, len(expired_ids), _EXPIRY_DELETE_BATCH_SIZE):
+            batch = expired_ids[start : start + _EXPIRY_DELETE_BATCH_SIZE]
+            placeholders = ",".join("?" for _ in batch)
+            cursor = self.db.execute(
+                f"DELETE FROM llm_cache WHERE id IN ({placeholders})",
+                batch,
+            )
+            deleted += cursor.rowcount
+        return deleted
 
 
 class QueryLogRepository:

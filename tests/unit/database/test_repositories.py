@@ -616,6 +616,48 @@ class TestLLMCacheExpiryWR09:
         assert db.execute("SELECT COUNT(*) FROM llm_cache").fetchone()[0] == 2
 
 
+class TestLLMCacheClearExpiredWR01:
+    """WR-01: clear_expired must stay under SQLite's bound-variable limit.
+
+    The old single ``DELETE ... WHERE id IN (...)`` bound one variable per
+    expired row; ~1000 expired rows exceed SQLITE_LIMIT_VARIABLE_NUMBER
+    (999 on stock builds), raising ``sqlite3.OperationalError: too many SQL
+    variables`` and aborting the caller's whole cleanup transaction.
+    """
+
+    def test_clear_expired_deletes_1000_rows_under_variable_limit(self, db):
+        """1000 expired rows delete cleanly; NULL/future/garbage expiries survive."""
+        # Pin the historical 999-variable floor so the regression reproduces
+        # on modern builds whose default limit is 32766+ (masks the bug).
+        # setlimit is Python 3.11+; on 3.10 stock SQLite the default is 999.
+        if hasattr(db, "setlimit"):
+            db.setlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER, 999)
+
+        now = datetime.now(timezone.utc)
+        created = now.isoformat()
+        expired_at = (now - timedelta(hours=1)).isoformat()
+        insert_sql = (
+            "INSERT INTO llm_cache "
+            "(id, model_name, prompt_hash, prompt, response, created_at, expires_at) "
+            "VALUES (?, 'm', ?, 'p', 'r', ?, ?)"
+        )
+        db.executemany(
+            insert_sql,
+            ((f"expired-{i}", f"hash-expired-{i}", created, expired_at) for i in range(1000)),
+        )
+        for row_id, expires_at in (
+            ("null-expiry", None),
+            ("future-expiry", (now + timedelta(hours=1)).isoformat()),
+            ("garbage-expiry", "not-a-timestamp"),
+        ):
+            db.execute(insert_sql, (row_id, f"hash-{row_id}", created, expires_at))
+
+        repo = LLMCacheRepository(db)
+        assert repo.clear_expired() == 1000
+        survivors = {row["id"] for row in db.execute("SELECT id FROM llm_cache")}
+        assert survivors == {"null-expiry", "future-expiry", "garbage-expiry"}
+
+
 class TestLLMCacheGetTTL14WR03:
     """14-WR-03 read side: get() must compare parsed instants, not ISO text (D-05).
 
