@@ -186,7 +186,7 @@ Plans:
 ### Phase 16.1: Address tech debt: CLI error conventions + cache TTL + watch-host enqueue API (INSERTED)
 
 **Goal:** Close the v1.1 audit's "warnings worth a cleanup pass" — CLI errors follow the ClickException convention with remedy hints, LLM cache expiry compares as instants on the read path, the embedding cache uses the Phase 11 connection factory, and FileWatcher exposes a public reconcile-enqueue API.
-**Requirements**: TBD
+**Requirements**: 11-WR-03, 14-WR-02, 14-WR-03, 14-WR-04, W-1, W-3, 15-IN-06 (partial) — audit-finding tracking labels; tech-debt phase, no REQ-IDs
 **Depends on:** Phase 16
 **Success Criteria** (what must be TRUE):
   1. No CLI command lets a foreseeable failure (sqlite3.Error, OSError, searcher-construction RuntimeError) escape as a raw traceback — user-facing errors are ClickException with remedy hints; unexpected bugs still show tracebacks
@@ -194,7 +194,11 @@ Plans:
   3. Embedding-cache connections open through the Phase 11 factory (pragma recipe stays single-sourced in `database/factory.py`); the cache remains separate and fail-soft
   4. `mcp/watch_host.py` enqueues serve-first reconcile through a public FileWatcher method — the `noqa: SLF001` queue reach-in is gone and serve-first ordering is preserved
   5. Disposition ledgers record the closures with evidence (11-WR-03; 14-WR-02/03/04; 15-IN-06 per its partial-closure rule) and the full quality suite stays green (pytest fail_under=90, ruff, ty)
-**Plans:** 0 plans
+**Plans:** 5 plans
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 16.1 to break down)
+- [ ] 16.1-01-PLAN.md — Shared CLI error boundary (tracer) + index/search/suggest conversion + vector constructor guards
+- [ ] 16.1-02-PLAN.md — Convention-wide sweep (23 remaining sites), daemon arm() variant, main.py narrowing, AST inventory gate
+- [ ] 16.1-03-PLAN.md — LLM cache TTL instant-compare read path (east/west TZ regressions) + embedding-cache factory delegation
+- [ ] 16.1-04-PLAN.md — FileWatcher.enqueue_reconcile public API + MCP host rewrite (serve-first preserved)
+- [ ] 16.1-05-PLAN.md — Ledger closures (11: 3→2, 14: 5→2, 15: stays 6 partial) + full phase quality gate
