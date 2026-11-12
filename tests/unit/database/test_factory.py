@@ -14,6 +14,7 @@ import sqlite3
 import time
 from collections.abc import Generator
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
@@ -131,6 +132,36 @@ class TestConnectionFactory:
             conn.close()
             incumbent.rollback()
             incumbent.close()
+
+    def test_post_connect_pragma_failure_closes_handle_and_reraises(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """WR-01: setup failure closes the opened handle and preserves the error."""
+        raw_connection = sqlite3.connect(":memory:")
+        connection = Mock(wraps=raw_connection)
+        real_execute = raw_connection.execute
+
+        def fail_synchronous_pragma(sql: str) -> sqlite3.Cursor:
+            if sql == "PRAGMA synchronous = NORMAL":
+                raise sqlite3.OperationalError("injected synchronous pragma failure")
+            return real_execute(sql)
+
+        connection.execute.side_effect = fail_synchronous_pragma
+        monkeypatch.setattr(
+            "sif.database.factory.sqlite3.connect", lambda *_args, **_kwargs: connection
+        )
+
+        try:
+            with pytest.raises(
+                sqlite3.OperationalError, match="injected synchronous pragma failure"
+            ):
+                create_connection(tmp_path / "failed-setup.db")
+
+            connection.close.assert_called_once_with()
+            with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+                raw_connection.execute("SELECT 1")
+        finally:
+            raw_connection.close()
 
     def test_sqlite_vec_load_failure_is_swallowed(self, tmp_path: Path, monkeypatch) -> None:
         """A failing sqlite-vec load leaves a working connection (OQ3)."""

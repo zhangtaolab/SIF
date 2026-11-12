@@ -60,14 +60,20 @@ def create_connection(db_path: Path) -> sqlite3.Connection:
         detect_types=sqlite3.PARSE_DECLTYPES,
         check_same_thread=False,
     )
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    # busy_timeout must land before the WAL switch (locked pragma order): the
-    # switch's lock upgrade ignores the busy handler, everything else honors it.
-    conn.execute("PRAGMA busy_timeout = 5000")
-    _set_wal_with_retry(conn, attempts=_WAL_RETRY_ATTEMPTS, backoff_s=_WAL_RETRY_BACKOFF_SECONDS)
-    conn.execute("PRAGMA synchronous = NORMAL")
-    _load_sqlite_vec(conn)
+    try:
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
+        # busy_timeout must land before the WAL switch (locked pragma order): the
+        # switch's lock upgrade ignores the busy handler, everything else honors it.
+        conn.execute("PRAGMA busy_timeout = 5000")
+        _set_wal_with_retry(
+            conn, attempts=_WAL_RETRY_ATTEMPTS, backoff_s=_WAL_RETRY_BACKOFF_SECONDS
+        )
+        conn.execute("PRAGMA synchronous = NORMAL")
+        _load_sqlite_vec(conn)
+    except BaseException:
+        conn.close()
+        raise
     return conn
 
 
