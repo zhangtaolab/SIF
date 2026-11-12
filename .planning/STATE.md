@@ -5,16 +5,16 @@ milestone_name: Live Index and Search Quality
 current_phase: "16.1"
 current_phase_name: "Address tech debt: CLI error conventions + cache TTL + watch-host enqueue API"
 status: executing
-stopped_at: Completed 16.1-04-PLAN.md
-last_updated: "2026-11-12T04:45:36.553Z"
+stopped_at: Completed 16.1-02-PLAN.md
+last_updated: "2026-11-12T05:10:40.073Z"
 last_activity: 2026-11-12
 last_activity_desc: Phase 16.1 execution started
-state_head: 64fc4f1fb0c49d5946ff54f90e2bba1f05578f10
+state_head: fe865b8e564e5280c8932eee31098b38e5cd3bb0
 progress:
   total_phases: 7
   completed_phases: 6
   total_plans: 27
-  completed_plans: 25
+  completed_plans: 26
 ---
 
 # DocSift — Project State
@@ -30,7 +30,7 @@ progress:
 ## Current Position
 
 Phase: 16.1 (Address tech debt: CLI error conventions + cache TTL + watch-host enqueue API) — EXECUTING
-Plan: 4 of 5
+Plan: 5 of 5
 Status: Ready to execute
 Last activity: 2026-11-12 — Phase 16.1 execution started
 
@@ -77,6 +77,7 @@ Progress: [██████████] 100%
 | Phase 16.1 P01 | 18 min | 3 tasks | 7 files |
 | Phase 16.1 P03 | 13 min | 3 tasks | 4 files |
 | Phase 16.1 P04 | 12 min | 2 tasks | 4 files |
+| Phase 16.1 P02 | 15 min | 3 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -179,6 +180,9 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 - [Phase 16.1]: [16.1-03] W-1: cache._connection delegates to create_connection (zero pragma copies); per-connection pragmas proven on the factory-delegated connection, persisted WAL additionally via raw connect; fail-soft fallbacks byte-identical
 - [Phase 16.1]: [16.1-04] W-3/D-06: FileWatcher.enqueue_reconcile(Iterable[Collection]) is the only reconcile entry — FoldResult tuple built privately; MCP host reach-in + last watcher-queue noqa: SLF001 deleted (suppression count 1→0)
 - [Phase 16.1]: [16.1-04] All three reconcile producers routed (host startup, recovery_tick, _schedule_added via one-element iterables); event-fold enqueue + stop sentinel untouched; serve-first start()-then-enqueue byte-identical (13-D04), proven by call-order test + unchanged subprocess e2e
+- [Phase 16.1]: [16.1-02] D-02 sweep complete: all 30 CLI open/schema sites route through open_initialized_database; TestCliSchemaInventory AST gate structurally forbids direct init_schema outside error_handling.py (11-WR-03 class closed in code)
+- [Phase 16.1]: [16.1-02] Daemon arm() uses open_initialized_database_unmanaged: the armed DB escapes via nonlocal and closes in the detach branch; no-collections RuntimeError remedy, PID write, and detach ordering byte-identical
+- [Phase 16.1]: [16.1-02] status/cleanup outer handlers narrowed to (sqlite3.Error, OSError) with Rich stdout error prints deleted (D-04); inner probe guards retained; the opener yields the constructed instance, so mock seams bind it directly (bench/status wiring adapted)
 
 ### Pending Todos
 
@@ -237,8 +241,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 
 ## Session Continuity
 
-Last session: 2026-11-12T04:45:36.183Z
-Stopped at: Completed 16.1-04-PLAN.md
+Last session: 2026-11-12T05:10:39.713Z
+Stopped at: Completed 16.1-02-PLAN.md
 Resume file: None
 
 - **Next expected action:** Phase 10 review backlog fully closed (0/22 open). v1.1 milestone ready to archive — `/gsd-complete-milestone v1.1` (all 6 phases complete and verified). No remaining Phase 10 findings; the autonomous-fix vein is exhausted.
