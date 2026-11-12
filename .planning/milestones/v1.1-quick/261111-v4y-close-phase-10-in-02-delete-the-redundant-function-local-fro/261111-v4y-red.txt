@@ -1,0 +1,73 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_________ TestDatabaseClosure.test_vsearch_closes_database_on_success __________
+
+self = <tests.unit.cli.test_search.TestDatabaseClosure object at 0x110763a80>
+tmp_path = PosixPath('/private/var/folders/1q/2qhztsp1673fnqgrpblxnpd40000gn/T/pytest-of-forrest/pytest-511/test_vsearch_closes_database_o0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x110762650>
+
+    def test_vsearch_closes_database_on_success(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Every Database constructed by vsearch is closed after a successful run.
+    
+        vsearch_cmd imports Database inside its function body, so the double
+        must be installed on sif.database.database (the import source), not
+        on the sif.cli.commands.search namespace the other closure tests patch.
+        """
+        index = tmp_path / "index.db"
+        index.touch()
+        TrackingDatabase.created.clear()
+        monkeypatch.setattr("sif.cli.commands.search.Database", TrackingDatabase)
+        searcher = MagicMock()
+        searcher.search.return_value = []
+        repo = MagicMock()
+        repo.list_enabled.return_value = []
+        manager = MagicMock()
+        manager.embed_single.return_value = [0.0] * 4
+        # embedding_dim must be a real int (see query closure test note).
+        settings = MagicMock(embedding_dim=4)
+        with (
+            patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
+            patch("sif.search.vector.VectorSearcher", return_value=searcher),
+            patch("sif.embedding.manager.EmbeddingManager.from_settings", return_value=manager),
+            patch("sif.config.settings.get_settings", return_value=settings),
+        ):
+            result = CliRunner().invoke(vsearch_cmd, ["query"], obj={"index_path": index})
+    
+        assert result.exit_code == 0, result.output
+>       assert TrackingDatabase.created, "vsearch must construct its Database"
+E       AssertionError: vsearch must construct its Database
+E       assert []
+E        +  where [] = TrackingDatabase.created
+
+tests/unit/cli/test_search.py:2574: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  sif.sif.cli.commands.search:search.py:286 Query history write failed
+Traceback (most recent call last):
+  File "/Users/forrest/GitHub/SIF/src/sif/cli/commands/search.py", line 277, in _record_query_history
+    QueryLogRepository(conn).add(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        QueryLogEntry(
+        ^^^^^^^^^^^^^^
+    ...<4 lines>...
+        keep=settings.query_history_limit,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/forrest/GitHub/SIF/src/sif/database/repositories.py", line 632, in add
+    self.db.execute(
+    ~~~~~~~~~~~~~~~^
+        """
+        ^^^
+    ...<3 lines>...
+        (keep,),
+        ^^^^^^^^
+    )
+    ^
+sqlite3.ProgrammingError: Error binding parameter 1: type 'MagicMock' is not supported
+=========================== short test summary info ============================
+FAILED tests/unit/cli/test_search.py::TestDatabaseClosure::test_vsearch_closes_database_on_success
+1 failed in 0.22s

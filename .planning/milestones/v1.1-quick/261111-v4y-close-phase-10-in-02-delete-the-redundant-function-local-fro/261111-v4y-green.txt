@@ -1,0 +1,36 @@
+=== closure test alone (expect 1 passed) ===
+.                                                                        [100%]
+1 passed in 0.16s
+
+=== whole test_search.py file (expect 161 passed) ===
+........................................................................ [ 44%]
+........................................................................ [ 89%]
+.................                                                        [100%]
+161 passed in 1.75s
+
+=== full suite with coverage (tail; exit 0) ===
+src/sif/search/bm25.py                  99      6    94%   46, 210, 225, 232-234
+src/sif/search/context_attach.py        14      0   100%
+src/sif/search/expansion.py             61      7    89%   63, 116-130
+src/sif/search/hybrid.py               153     11    93%   88, 198, 221-222, 263-264, 318, 332-344
+src/sif/search/rerank.py               222      3    99%   128, 336, 380
+src/sif/search/rrf.py                   41      2    95%   65, 122
+src/sif/search/snippets.py             122      5    96%   166, 171-172, 193, 217
+src/sif/search/staleness.py             21      0   100%
+src/sif/search/strategy.py              20      0   100%
+src/sif/search/suggest.py              150      4    97%   135-137, 295
+src/sif/search/term_match.py            96      7    93%   50, 62, 87, 101, 138, 162, 177
+src/sif/search/vector.py                85      0   100%
+src/sif/utils/__init__.py                5      0   100%
+src/sif/utils/daemon.py                201     59    71%   115-117, 150-151, 169-172, 184-185, 237-261, 363-370, 379-397, 402-403
+src/sif/utils/logging.py                62      0   100%
+src/sif/utils/paths.py                  30      0   100%
+src/sif/utils/progress.py               34      0   100%
+src/sif/utils/service.py               147     11    93%   194-196, 267, 306, 310, 334, 338, 342, 377, 379
+src/sif/utils/text.py                   13      0   100%
+------------------------------------------------------------------
+TOTAL                                 7469    369    95%
+Coverage HTML written to dir htmlcov
+Coverage XML written to file coverage.xml
+Required test coverage of 90.0% reached. Total coverage: 95.06%
+================== 1529 passed, 1 skipped in 83.14s (0:01:23) ==================
