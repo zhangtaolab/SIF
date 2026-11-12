@@ -4,17 +4,17 @@ milestone: v1.1
 milestone_name: Live Index and Search Quality
 current_phase: "16.1"
 current_phase_name: "Address tech debt: CLI error conventions + cache TTL + watch-host enqueue API"
-status: executing
-stopped_at: Completed 16.1-02-PLAN.md
-last_updated: "2026-11-12T05:10:40.073Z"
+status: verifying
+stopped_at: Completed 16.1-05-PLAN.md
+last_updated: "2026-11-12T05:26:19.375Z"
 last_activity: 2026-11-12
 last_activity_desc: Phase 16.1 execution started
-state_head: fe865b8e564e5280c8932eee31098b38e5cd3bb0
+state_head: ff7aec6596b73819a27c6084d58d9b3bbc818ee7
 progress:
   total_phases: 7
   completed_phases: 6
   total_plans: 27
-  completed_plans: 26
+  completed_plans: 27
 ---
 
 # DocSift — Project State
@@ -31,7 +31,7 @@ progress:
 
 Phase: 16.1 (Address tech debt: CLI error conventions + cache TTL + watch-host enqueue API) — EXECUTING
 Plan: 5 of 5
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-11-12 — Phase 16.1 execution started
 
 Progress: [██████████] 100%
@@ -78,6 +78,7 @@ Progress: [██████████] 100%
 | Phase 16.1 P03 | 13 min | 3 tasks | 4 files |
 | Phase 16.1 P04 | 12 min | 2 tasks | 4 files |
 | Phase 16.1 P02 | 15 min | 3 tasks | 11 files |
+| Phase 16.1 P05 | 6 min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -183,6 +184,9 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 - [Phase 16.1]: [16.1-02] D-02 sweep complete: all 30 CLI open/schema sites route through open_initialized_database; TestCliSchemaInventory AST gate structurally forbids direct init_schema outside error_handling.py (11-WR-03 class closed in code)
 - [Phase 16.1]: [16.1-02] Daemon arm() uses open_initialized_database_unmanaged: the armed DB escapes via nonlocal and closes in the detach branch; no-collections RuntimeError remedy, PID write, and detach ordering byte-identical
 - [Phase 16.1]: [16.1-02] status/cleanup outer handlers narrowed to (sqlite3.Error, OSError) with Rich stdout error prints deleted (D-04); inner probe guards retained; the opener yields the constructed instance, so mock seams bind it directly (bench/status wiring adapted)
+- [Phase 16.1]: Close only evidence-backed rows: Phase 11 open 3 to 2 and Phase 14 open 5 to 2; all D-01 out-of-scope rows remain untouched
+- [Phase 16.1]: Keep 15-IN-06 open at 6 because _clear_history still prints its confirmation unconditionally under -q; record only the traceback-half closure
+- [Phase 16.1]: Use 16.1-03-SUMMARY.md and 16.1-04-SUMMARY.md as the W-1 and W-3 closure records because those findings have no disposition ledgers
 
 ### Pending Todos
 
@@ -241,8 +245,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 
 ## Session Continuity
 
-Last session: 2026-11-12T05:10:39.713Z
-Stopped at: Completed 16.1-02-PLAN.md
+Last session: 2026-11-12T05:26:19.014Z
+Stopped at: Completed 16.1-05-PLAN.md
 Resume file: None
 
 - **Next expected action:** Phase 10 review backlog fully closed (0/22 open). v1.1 milestone ready to archive — `/gsd-complete-milestone v1.1` (all 6 phases complete and verified). No remaining Phase 10 findings; the autonomous-fix vein is exhausted.

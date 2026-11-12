@@ -194,7 +194,7 @@ Plans:
   3. Embedding-cache connections open through the Phase 11 factory (pragma recipe stays single-sourced in `database/factory.py`); the cache remains separate and fail-soft
   4. `mcp/watch_host.py` enqueues serve-first reconcile through a public FileWatcher method — the `noqa: SLF001` queue reach-in is gone and serve-first ordering is preserved
   5. Disposition ledgers record the closures with evidence (11-WR-03; 14-WR-02/03/04; 15-IN-06 per its partial-closure rule) and the full quality suite stays green (pytest fail_under=90, ruff, ty)
-**Plans:** 4/5 plans executed
+**Plans:** 5/5 plans executed
 
 Plans:
 **Wave 1**
@@ -206,4 +206,4 @@ Plans:
 - [x] 16.1-02-PLAN.md — Convention-wide sweep (23 remaining sites), daemon arm() variant, main.py narrowing, AST inventory gate
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 16.1-05-PLAN.md — Ledger closures (11: 3→2, 14: 5→2, 15: stays 6 partial) + full phase quality gate
+- [x] 16.1-05-PLAN.md — Ledger closures (11: 3→2, 14: 5→2, 15: stays 6 partial) + full phase quality gate
