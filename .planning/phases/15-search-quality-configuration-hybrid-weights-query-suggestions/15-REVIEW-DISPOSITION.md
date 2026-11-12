@@ -75,7 +75,7 @@ recorded: 2026-11-08T11:09:06.704Z
 | IN-03 | info | open | - |
 | IN-04 | info | open | - |
 | IN-05 | info | open | - |
-| IN-06 | info | open | - |
+| IN-06 | info | open | 16.1-01: traceback half fixed (shared opener); --clear-history quiet leak remains |
 | IN-07 | info | open | - |
 
 Dispositions: `open` (recorded, not yet triaged), `fixed`, `skipped`, `deferred`.
