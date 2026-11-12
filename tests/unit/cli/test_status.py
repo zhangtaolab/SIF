@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from typing import Any, ClassVar
 from unittest.mock import MagicMock, patch
 
@@ -303,3 +304,41 @@ class TestStatusFallbackConfigError:
         # ClickException, so pin the exception negatively instead of
         # asserting isinstance(result.exception, click.ClickException).
         assert not isinstance(result.exception, ValidationError)
+
+
+class TestStatusErrorNarrowing:
+    """16.1-02 D-04: the outer status handler catches known classes only.
+
+    Unexpected body bugs (ValueError) keep their tracebacks; known-class
+    body failures (sqlite3.Error/OSError) render as exit-1 Click errors with
+    NO error text on stdout (the old Rich console.print polluted --json pipes).
+    """
+
+    def _invoke(self, db_path, side_effect: Exception) -> Any:
+        db_path.touch()
+        mock_db = MagicMock()
+        mock_db.get_stats.side_effect = side_effect
+        with patch("sif.cli.main.Database") as mock_db_cls:
+            # The shared opener yields the constructed instance; the legacy
+            # `with Database(...)` form binds its __enter__ result — wire both
+            # so the double works on either side of the conversion.
+            mock_db_cls.return_value = mock_db
+            mock_db.__enter__.return_value = mock_db
+            return CliRunner().invoke(status_cmd, [], obj={"index_path": db_path})
+
+    def test_body_value_error_propagates(self, tmp_path) -> None:
+        """An unexpected get_stats bug is not masked as a user error (D-04)."""
+        result = self._invoke(tmp_path / "sif.db", ValueError("unexpected status bug"))
+
+        assert isinstance(result.exception, ValueError)
+
+    def test_body_sqlite_error_exits_1_with_pure_stdout(self, tmp_path) -> None:
+        """Known-class body failure: exit 1, Error: rendered, stdout untouched."""
+        result = self._invoke(
+            tmp_path / "sif.db", sqlite3.OperationalError("database disk image is malformed")
+        )
+
+        assert result.exit_code == 1
+        assert "Error:" in result.output
+        # click >=8.2 mixes stderr into .output — purity is asserted on .stdout.
+        assert "Error reading index" not in result.stdout

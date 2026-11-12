@@ -8,6 +8,7 @@ legs prove ``sif index update`` / ``sif index embed`` render a real schema
 failure as a clean exit-1 Click error with no traceback (11-WR-03).
 """
 
+import ast
 import sqlite3
 from collections.abc import Generator
 from pathlib import Path
@@ -211,3 +212,34 @@ class TestIndexCommandsEndToEnd:
         assert "Traceback" not in result.output
         assert not isinstance(result.exception, sqlite3.Error)
         _assert_all_closed()
+
+
+class TestCliSchemaInventory:
+    """AST gate: the D-02 convention is structurally enforced, not spot-fixed.
+
+    Every ``init_schema()`` call under ``src/sif/cli/`` must live in the shared
+    boundary module (``error_handling.py``); any other call site bypasses the
+    known-exception translation and re-opens the 11-WR-03 defect class.
+    """
+
+    def test_no_direct_init_schema_outside_shared_helper(self) -> None:
+        """Zero init_schema Call nodes in CLI code outside the shared opener."""
+        repo_root = Path(__file__).resolve().parents[3]
+        cli_root = repo_root / "src" / "sif" / "cli"
+        allowed = cli_root / "error_handling.py"
+        violations: list[str] = []
+        for py_file in sorted(cli_root.rglob("*.py")):
+            if py_file == allowed:
+                continue
+            tree = ast.parse(py_file.read_text(encoding="utf-8"), filename=str(py_file))
+            violations.extend(
+                f"{py_file.relative_to(repo_root)}:{node.lineno}"
+                for node in ast.walk(tree)
+                if isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "init_schema"
+            )
+        assert not violations, (
+            "Direct init_schema() calls bypass the shared CLI error boundary "
+            f"(open_initialized_database): {violations}"
+        )

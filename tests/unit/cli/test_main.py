@@ -9,6 +9,7 @@ import time
 from collections.abc import Generator
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 import click
 import pytest
@@ -23,6 +24,7 @@ from sif.database.repositories import (
     ContextRepository,
     DocumentChunkRepository,
     DocumentRepository,
+    LLMCacheRepository,
 )
 
 
@@ -270,6 +272,45 @@ class TestCleanupRealDatabase(RealDatabaseTestCase):
                 ).fetchone()[0]
                 == 1
             )
+
+
+class TestCleanupErrorNarrowing(RealDatabaseTestCase):
+    """16.1-02 D-04: the outer cleanup handler catches known classes only.
+
+    The body failure is injected at the repository seam (clear_expired) on a
+    real schema-initialized index, so the transaction rollback and handle
+    closure run for real. Unexpected bugs (ValueError) keep their tracebacks;
+    known-class failures (sqlite3.Error) exit 1 with NO error text on stdout.
+    """
+
+    def test_body_value_error_propagates(self, tmp_path: Path) -> None:
+        """An unexpected cleanup-body bug is not masked as a user error (D-04)."""
+        db_path = tmp_path / "sif.db"
+        self._seed_document(db_path)
+
+        with patch.object(
+            LLMCacheRepository, "clear_expired", side_effect=ValueError("unexpected cleanup bug")
+        ):
+            result = self._invoke(db_path, "cleanup", confirm=True)
+
+        assert isinstance(result.exception, ValueError)
+
+    def test_body_sqlite_error_exits_1_with_pure_stdout(self, tmp_path: Path) -> None:
+        """Known-class body failure: exit 1, Error: rendered, stdout untouched."""
+        db_path = tmp_path / "sif.db"
+        self._seed_document(db_path)
+
+        with patch.object(
+            LLMCacheRepository,
+            "clear_expired",
+            side_effect=sqlite3.OperationalError("database is locked"),
+        ):
+            result = self._invoke(db_path, "cleanup", confirm=True)
+
+        assert result.exit_code == 1
+        assert "Error:" in result.output
+        # click >=8.2 mixes stderr into .output — purity is asserted on .stdout.
+        assert "Error during cleanup" not in result.stdout
 
 
 class TestDefaultDbPathConfigError:
