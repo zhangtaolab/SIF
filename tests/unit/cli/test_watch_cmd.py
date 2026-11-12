@@ -36,7 +36,11 @@ from sif.cli.commands.watch import (
 from sif.config.settings import Settings
 from sif.core.models import Collection
 from sif.database.database import Database
+from sif.database.factory import create_connection
 from sif.database.repositories import CollectionRepository
+from sif.indexing import watcher as watcher_module
+from sif.indexing.incremental import IncrementalIndexer
+from sif.indexing.parser import MarkdownParser
 from sif.utils import service
 from sif.utils.service import InstallResult
 
@@ -76,7 +80,29 @@ def _seed_collections(db_path: Path, *names: str) -> None:
     db.close()
 
 
-@pytest.fixture(autouse=True)
+def _embed_manager_mock(dim: int = 8) -> MagicMock:
+    """Build a mocked EmbeddingManager producing deterministic dim-length vectors.
+
+    The same shape ``tests/unit/indexing/test_watcher.py`` proves the worker's
+    embed leg with: ``get_model_info`` reports the schema dimension and every
+    ``embed()`` call returns a fixed vector per text. The startup-reconcile
+    tests use it to observe whether the pre-observer pass really computed
+    embeddings at embed depth.
+    """
+    manager = MagicMock()
+    manager.get_model_info.return_value = {
+        "loaded": True,
+        "model_id": "test-model",
+        "embedding_dim": dim,
+    }
+
+    def fake_embed(texts: list[str], **_kwargs: object) -> MagicMock:
+        vectors = [[0.1] * dim for _ in texts]
+        return MagicMock(embeddings=vectors)
+
+    manager.embed.side_effect = fake_embed
+    return manager
+
 def _hermetic_sif_logging() -> Generator[None, None, None]:
     """Isolate this module from leaked sif logger state (deferred D-1).
 
@@ -686,3 +712,142 @@ class TestShutdownRoutine:
         watcher_instance.stop.assert_called_once_with(flush=True)
         # TERM shares the routine: both signals installed the same handler.
         assert captured[2] is captured[15]
+
+
+class TestStartupReconcileEmbedDepth:
+    """qtn: the pre-observer startup pass must be embed-aware at embed depth.
+
+    ``run_watch_host`` reconciles each collection BEFORE ``watcher.start()``
+    (D-03). The BM25 update branch purges chunks and embeddings for every
+    changed document, so calling ``IncrementalIndexer.update_collection``
+    directly leaves the startup pass's changed documents vector-less until a
+    later burst or ``sif index embed``. The pass routes through the IN-04
+    embed-aware reconcile instead, and these tests pin both halves: the
+    embed-depth repair and the unchanged BM25-only behavior.
+    """
+
+    def _seed_stale_vectorless_document(self, tmp_path, monkeypatch) -> Path:
+        """Seed one BM25-indexed doc, then rewrite it on disk (stale, vector-less).
+
+        Returns the database path. The rewrite changes the body without
+        touching any other file, so at HEAD the startup pass takes the
+        update branch for exactly this document — the shape that strands it.
+        """
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "watch.db"
+        _seed_collections(db_path, "notes")
+        db = Database(db_path)
+        try:
+            coll = CollectionRepository(db.connection).get_by_name("notes")
+            assert coll is not None
+            # BM25-only index: fresh checksum, zero chunks/vectors.
+            IncrementalIndexer(db.connection).update_collection(coll)
+        finally:
+            db.close()
+        (tmp_path / "notes" / "a.md").write_text(
+            "# Drifted\n\n" + ("Changed paragraph text. " * 40), encoding="utf-8"
+        )
+        return db_path
+
+    def _install_park_loop(self, monkeypatch) -> dict[int, object]:
+        """Stop the host's park loop after its first sleep via the SIGTERM handler.
+
+        The observer is a MagicMock (no real FSEvents), the signal module is a
+        fake that captures the installed handlers, and ``time.sleep`` invokes
+        the captured SIGTERM handler exactly once — the D-14 graceful path.
+        The FileWatcher itself stays REAL: the startup pass under test runs
+        through its embed-aware reconcile.
+        """
+        captured: dict[int, object] = {}
+
+        def fake_signal(sig: int, handler: object) -> None:
+            captured[sig] = handler
+
+        monkeypatch.setattr(
+            watch_mod,
+            "signal",
+            SimpleNamespace(signal=fake_signal, SIGINT=2, SIGTERM=15),
+        )
+
+        def fake_sleep(_seconds: float) -> None:
+            term_handler = captured[15]
+            assert callable(term_handler)
+            term_handler(15, None)
+
+        monkeypatch.setattr(watch_mod, "time", SimpleNamespace(sleep=fake_sleep))
+        monkeypatch.setattr(watcher_module, "Observer", MagicMock())
+        return captured
+
+    def test_embed_startup_leaves_no_vectorless_documents(self, tmp_path, monkeypatch) -> None:
+        """At --embed depth the startup pass re-embeds what its BM25 leg changed.
+
+        RED at HEAD: the startup pass calls ``update_collection`` directly, the
+        update branch purges the stale document's chunks and embeddings, and
+        nothing re-embeds them — a fresh connection then sees the document
+        without any embedding row.
+        """
+        db_path = self._seed_stale_vectorless_document(tmp_path, monkeypatch)
+        self._install_park_loop(monkeypatch)
+        manager = _embed_manager_mock()
+
+        with (
+            patch("sif.config.settings.get_settings", return_value=_test_settings()),
+            patch(
+                "sif.embedding.manager.EmbeddingManager.from_settings",
+                return_value=manager,
+            ),
+        ):
+            result = CliRunner().invoke(
+                watch_mod.watch_cmd, ["--embed"], obj={"index_path": db_path}
+            )
+
+        assert result.exit_code == 0, result.output
+
+        conn = create_connection(db_path)
+        try:
+            assert conn.execute("SELECT COUNT(*) FROM documents").fetchone()[0] == 1
+            vectorless = conn.execute(
+                "SELECT d.id FROM documents d WHERE NOT EXISTS ("
+                "SELECT 1 FROM document_chunks c "
+                "JOIN document_embeddings e ON e.chunk_id = c.id "
+                "WHERE c.document_id = d.id)"
+            ).fetchall()
+        finally:
+            conn.close()
+
+        assert vectorless == []
+        assert manager.embed.call_count >= 1
+
+    def test_bm25_startup_writes_no_vectors_and_never_loads_model(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """BM25 depth is byte-behaviour unchanged: same BM25 pass, no model load.
+
+        The embedding factory raises if touched, so any model construction
+        fails the test; the stale document still gets its fresh checksum, and
+        both chunk and vector tables stay empty.
+        """
+        db_path = self._seed_stale_vectorless_document(tmp_path, monkeypatch)
+        self._install_park_loop(monkeypatch)
+        expected_checksum = MarkdownParser().parse(tmp_path / "notes" / "a.md").checksum
+
+        with (
+            patch("sif.config.settings.get_settings", return_value=_test_settings()),
+            patch(
+                "sif.embedding.manager.EmbeddingManager.from_settings",
+                side_effect=AssertionError("embedding model must not load at BM25 depth"),
+            ),
+        ):
+            result = CliRunner().invoke(watch_mod.watch_cmd, [], obj={"index_path": db_path})
+
+        assert result.exit_code == 0, result.output
+
+        conn = create_connection(db_path)
+        try:
+            assert conn.execute("SELECT COUNT(*) FROM documents").fetchone()[0] == 1
+            assert conn.execute("SELECT checksum FROM documents").fetchone()[0] == expected_checksum
+            assert conn.execute("SELECT COUNT(*) FROM document_chunks").fetchone()[0] == 0
+            assert conn.execute("SELECT COUNT(*) FROM document_embeddings").fetchone()[0] == 0
+        finally:
+            conn.close()
+
