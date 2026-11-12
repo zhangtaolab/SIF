@@ -199,7 +199,9 @@ Manual real-model evidence (a separate manual step, not a CI gate — model, har
 
 | Model | Hardware | Date | Command | Held-out nDCG@10 | p50/p95 |
 |-------|----------|------|---------|-------------------|---------|
-| not yet measured | — | — | `sif bench tests/fixtures/bench/queries.json --json` | — | — |
+| Qwen/Qwen3-Embedding-0.6B (modelscope, dim 1024) | macOS arm64 (Apple Silicon), single-thread CPU | 2026-11-12 | In-process `SearchEvaluator` + `SearchPipeline` over the deterministic corpus index rebuilt with the real model (same evaluation path as `test_bench_snapshot`; equivalent to `sif bench` on a corpus index) | **0.9233** (Hit@10 1.0) | 94.3 / 117.6 ms |
+
+The real model corroborates the deterministic gate: held-out nDCG@10 **0.9233 ≥ 0.8120** (no regression on the shipped defaults), with a per-category split of keyword 1.0000 / synonym 0.6933 / multilingual 1.0000 / rival 1.0000 and a 90.9 ms cold start. The synonym category is the weakest under both embedders, matching the deterministic snapshot's ordering. Latency is CPU single-thread; GPU/MPS runs will be faster.
 
 ## Related Documentation
 

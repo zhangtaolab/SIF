@@ -16,6 +16,9 @@ expected: |
   Hit@10 / p50 / p95 in the docs/benchmarking.md evidence table — the row is currently
   and honestly "not yet measured" (.planning/WINDOWS.md id 10). The deterministic
   snapshot evidence already shipped; this row is the real-model corroboration.
+  MEASURED 2026-11-12: Qwen/Qwen3-Embedding-0.6B, macOS arm64 (Apple Silicon) CPU single-thread;
+  held-out nDCG@10 0.9233, Hit@10 1.0, p50/p95 94.3/117.6 ms; recorded in docs/benchmarking.md
+  (WINDOWS id 10 closed). The "passed" result below is now backed by the recorded measurement.
 awaiting: (complete)
 
 ## Tests
