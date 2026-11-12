@@ -29,7 +29,7 @@ Requirements for milestone v1.1. Each maps to roadmap phases (numbering continue
 - [x] **QUAL-03**: 基于查询历史的建议（query_log 本地存储）
 - [x] **QUAL-04**: `sif suggest` 命令（prefix 补全 + DYM + 历史）
 - [x] **QUAL-05**: reranker 候选上限（CPU 10-20）+ 相对阈值（≥top1×α）可配；skip-rerank 快路径保持交互延迟
-- **QUAL-06**: 分层更新深度下，向量滞后的搜索结果标记 staleness 状态
+- [x] **QUAL-06**: 分层更新深度下，向量滞后的搜索结果标记 staleness 状态
 
 ### Evaluation
 
@@ -90,4 +90,4 @@ Requirements for milestone v1.1. Each maps to roadmap phases (numbering continue
 
 ---
 *Requirements defined: 2026-11-07*
-*Last updated: 2026-11-07 after v1.1 roadmap creation (traceability filled, 21/21 mapped)*
+*Last updated: 2026-11-12 by v1.1 completion audit (QUAL-06 checkbox added — traceability already Complete; 21/21 satisfied)*
