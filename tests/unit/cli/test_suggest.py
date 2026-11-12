@@ -260,3 +260,65 @@ class TestGuardsAndQuiet:
         assert "Prefix completions" not in result.output
         assert "Did you mean" not in result.output
         assert _history_count(db_path) == 2
+
+
+class TestDbFailurePresentation:
+    """15-IN-06 (traceback half): DB open/schema failures are clean Click errors.
+
+    The ``--clear-history`` quiet-leak half is explicitly out of scope (16.1
+    D-01) — the preservation pin below keeps it byte-identical, not fixed.
+    """
+
+    def test_schema_failure_exits_1_with_remedy(self, tmp_path: Path) -> None:
+        """A failing init_schema renders Error: + path + remedy, never a traceback."""
+        db_path = tmp_path / "suggest.db"
+        db_path.touch()
+
+        class SchemaFailureDatabase(Database):
+            def init_schema(self) -> None:
+                raise sqlite3.OperationalError("database disk image is malformed")
+
+        with patch("sif.cli.commands.suggest.Database", SchemaFailureDatabase):
+            result = CliRunner().invoke(suggest_cmd, ["quant"], obj={"index_path": db_path})
+
+        assert result.exit_code == 1
+        assert "Error:" in result.output
+        assert str(db_path) in result.output
+        assert "permissions" in result.output
+        assert "disk" in result.output
+        assert "corrupted" in result.output
+        assert "Traceback" not in result.output
+        assert not isinstance(result.exception, sqlite3.Error)
+
+    def test_clear_history_constructor_failure_exits_1_with_remedy(self, tmp_path: Path) -> None:
+        """--clear-history: a constructor OSError gets the same clean presentation."""
+        db_path = tmp_path / "suggest.db"
+        db_path.touch()
+
+        class ConstructorFailureDatabase(Database):
+            def __init__(self, _db_path: str | Path) -> None:
+                raise OSError("Permission denied")
+
+        with patch("sif.cli.commands.suggest.Database", ConstructorFailureDatabase):
+            result = CliRunner().invoke(
+                suggest_cmd, ["--clear-history"], obj={"index_path": db_path}
+            )
+
+        assert result.exit_code == 1
+        assert "Error:" in result.output
+        assert str(db_path) in result.output
+        assert "permissions" in result.output
+        assert "Traceback" not in result.output
+        assert not isinstance(result.exception, OSError)
+
+    def test_clear_history_quiet_confirmation_is_unchanged(self, tmp_path: Path) -> None:
+        """Preservation pin: -q still prints the confirmation (quiet leak stays open)."""
+        db_path = _seed_index(tmp_path, history=("quantum notes",))
+
+        result = CliRunner().invoke(
+            suggest_cmd, ["--clear-history", "-q"], obj={"index_path": db_path}
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "Cleared 1 query history row(s)." in result.output
+        assert _history_count(db_path) == 0
