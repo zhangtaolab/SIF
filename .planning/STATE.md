@@ -5,16 +5,16 @@ milestone_name: Live Index and Search Quality
 current_phase: "16.1"
 current_phase_name: "Address tech debt: CLI error conventions + cache TTL + watch-host enqueue API"
 status: executing
-stopped_at: Completed 16.1-03-PLAN.md
-last_updated: "2026-11-12T04:27:52.768Z"
+stopped_at: Completed 16.1-04-PLAN.md
+last_updated: "2026-11-12T04:45:36.553Z"
 last_activity: 2026-11-12
 last_activity_desc: Phase 16.1 execution started
-state_head: 94baff65a5473b7a629b0c6c3634a081b4598f95
+state_head: 64fc4f1fb0c49d5946ff54f90e2bba1f05578f10
 progress:
   total_phases: 7
   completed_phases: 6
   total_plans: 27
-  completed_plans: 24
+  completed_plans: 25
 ---
 
 # DocSift — Project State
@@ -30,7 +30,7 @@ progress:
 ## Current Position
 
 Phase: 16.1 (Address tech debt: CLI error conventions + cache TTL + watch-host enqueue API) — EXECUTING
-Plan: 3 of 5
+Plan: 4 of 5
 Status: Ready to execute
 Last activity: 2026-11-12 — Phase 16.1 execution started
 
@@ -76,6 +76,7 @@ Progress: [██████████] 100%
 | Phase 16 P05 | 13 min | 3 tasks | 9 files |
 | Phase 16.1 P01 | 18 min | 3 tasks | 7 files |
 | Phase 16.1 P03 | 13 min | 3 tasks | 4 files |
+| Phase 16.1 P04 | 12 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -176,6 +177,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 - [Phase 16.1]: [16.1-03] One shared _expiry_instant (fromisoformat + astimezone(timezone.utc)) owns TTL semantics for get() and clear_expired(); get() fetches by key without the SQL expiry predicate (D-05, 14-WR-03 read side closed)
 - [Phase 16.1]: [16.1-03] Malformed non-NULL expiry = controlled miss in get() with row retained (RESEARCH OQ1 adopted); both methods catch exactly (ValueError, TypeError); non-string regression uses BLOB because TEXT affinity coerces INTEGER to text
 - [Phase 16.1]: [16.1-03] W-1: cache._connection delegates to create_connection (zero pragma copies); per-connection pragmas proven on the factory-delegated connection, persisted WAL additionally via raw connect; fail-soft fallbacks byte-identical
+- [Phase 16.1]: [16.1-04] W-3/D-06: FileWatcher.enqueue_reconcile(Iterable[Collection]) is the only reconcile entry — FoldResult tuple built privately; MCP host reach-in + last watcher-queue noqa: SLF001 deleted (suppression count 1→0)
+- [Phase 16.1]: [16.1-04] All three reconcile producers routed (host startup, recovery_tick, _schedule_added via one-element iterables); event-fold enqueue + stop sentinel untouched; serve-first start()-then-enqueue byte-identical (13-D04), proven by call-order test + unchanged subprocess e2e
 
 ### Pending Todos
 
@@ -234,8 +237,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 
 ## Session Continuity
 
-Last session: 2026-11-12T04:27:52.406Z
-Stopped at: Completed 16.1-03-PLAN.md
+Last session: 2026-11-12T04:45:36.183Z
+Stopped at: Completed 16.1-04-PLAN.md
 Resume file: None
 
 - **Next expected action:** Phase 10 review backlog fully closed (0/22 open). v1.1 milestone ready to archive — `/gsd-complete-milestone v1.1` (all 6 phases complete and verified). No remaining Phase 10 findings; the autonomous-fix vein is exhausted.
