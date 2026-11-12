@@ -25,7 +25,7 @@ findings:
     title: "\"Bounded\" stop flush is not time-bounded at embed depth"
   - id: WR-03
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "update_cmd/embed_cmd let user-facing init_schema errors escape as raw tracebacks"
   - id: WR-04
     severity: warning
@@ -39,7 +39,7 @@ findings:
     severity: info
     disposition: open
     title: "Valid model-type set duplicated between CLI choice list and Settings validator"
-open: 3
+open: 2
 total: 9
 recorded: 2026-11-11T04:45:14.148Z
 ---
@@ -53,7 +53,7 @@ recorded: 2026-11-11T04:45:14.148Z
 | IN-01 | info | fixed | 11-REVIEW-FIX.md (not in the current review) |
 | IN-02 | info | fixed | 11-REVIEW-FIX.md (not in the current review) |
 | IN-03 | info | fixed | 11-REVIEW-FIX.md (not in the current review) |
-| WR-03 | warning | open | - (not in the current review) |
+| WR-03 | warning | fixed | 16.1-01/16.1-02 (shared CLI opener; tests/unit/cli/test_error_conventions.py) |
 | WR-04 | warning | open | - (not in the current review) |
 | IN-04 | info | fixed | 11-REVIEW-FIX.md (not in the current review) |
 | IN-05 | info | open | - (not in the current review) |
