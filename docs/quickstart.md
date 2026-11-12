@@ -1,6 +1,39 @@
+<!-- generated-by: gsd-doc-writer -->
 # Quick Start Guide
 
 Get up and running with SIF in minutes.
+
+## Prerequisites
+
+Before installing SIF, make sure your system meets these requirements:
+
+- **Python `>= 3.10`** — check your version with `python3 --version`
+- **pip** — included with Python; any recent version works
+- **SQLite** — nothing to install separately. SIF stores all data locally in a
+  SQLite database via Python's built-in `sqlite3` module; the `sqlite-vec`
+  dependency for vector tables is installed automatically
+
+Optional, depending on which features you plan to use:
+
+- **Vector and hybrid search** — requires an embedding backend that is not
+  installed by default. BM25 keyword search works out of the box; for vector
+  search, install one of the extras:
+
+  ```bash
+  pip install "docsif[embed]"   # sentence-transformers and modelscope backends
+  # or
+  pip install "docsif[all]"     # adds GGUF (llama-cpp-python) and OpenAI API support
+  ```
+
+  The first `sif index embed` run downloads the default embedding model
+  (`Qwen/Qwen3-Embedding-0.6B`), so it needs network access and may take a
+  while on first use.
+
+If `sif index embed` exits with `sentence-transformers not installed`, install
+the `embed` (or `all`) extra as shown above and retry.
+
+For platform-specific setup (Linux, macOS, Windows) and deeper install
+troubleshooting, see the [Installation Guide](installation.md).
 
 ## Installation
 
@@ -10,10 +43,12 @@ Install SIF from PyPI:
 pip install docsif
 ```
 
-For full functionality including embeddings:
+For vector and hybrid search, install an embedding backend:
 
 ```bash
-pip install "docsif[all]"
+pip install "docsif[embed]"   # sentence-transformers and ModelScope backends
+# or
+pip install "docsif[all]"     # adds GGUF (llama-cpp-python) and OpenAI API support
 ```
 
 Verify installation:
@@ -22,6 +57,55 @@ Verify installation:
 sif --version
 ```
 
+To work from a source checkout instead (for development):
+
+```bash
+git clone https://github.com/zhangtaolab/sif.git
+cd sif
+pip install -e ".[dev]"
+```
+
+See the [Installation Guide](installation.md#method-2-install-from-source) for
+details on the source install.
+
+## First Run
+
+The [Your First Collection](#your-first-collection) walkthrough below sets up a
+real collection. To confirm a fresh install works end to end first, run this
+self-contained smoke test. It uses BM25 keyword search only, so it works with
+the base `pip install docsif` — no embedding extras, no model downloads.
+
+```bash
+# 1. Create a tiny test corpus
+mkdir -p ~/sif-demo
+printf '# Decorators\n\nDecorators wrap a function to add behavior around it.\n' \
+  > ~/sif-demo/decorators.md
+printf '# Ideas\n\nA local-first search engine for personal notes.\n' > ~/sif-demo/ideas.md
+
+# 2. Register the directory as a collection and index it
+sif collection add ~/sif-demo --name demo
+sif index update --collection demo
+
+# 3. Search it
+sif search search "decorators"
+```
+
+The final command prints a ranked results table (with `Score` and `Snippet`
+columns) whose top hit is `~/sif-demo/decorators.md`. The SQLite index database
+is created automatically on first use; `sif status` shows where it lives.
+
+Clean up when done — `collection remove` asks for confirmation:
+
+```bash
+sif collection remove demo
+rm -rf ~/sif-demo
+```
+
+If the smoke test passes, continue with [Your First Collection](#your-first-collection)
+to index real documents. Vector and hybrid search additionally require an
+embedding backend and an embed step (`sif index embed`); see
+[Prerequisites](#prerequisites).
+
 ## Your First Collection
 
 A collection is a group of documents you want to search together.
@@ -29,7 +113,7 @@ A collection is a group of documents you want to search together.
 ### 1. Add a Collection
 
 ```bash
-sif collection add ~/Documents/notes --name my-notes   --description "My personal notes"
+sif collection add ~/Documents/notes --name my-notes --description "My personal notes"
 ```
 
 The `PATH` argument is the directory to index. Use `--name` to give your
@@ -65,15 +149,18 @@ sif index update --collection my-notes --force
 SIF provides three search subcommands under `sif search`:
 
 ```bash
-# BM25 keyword search
+# BM25 keyword search (works on the base install)
 sif search search "python decorators"
 
-# Vector (semantic) search
+# Vector (semantic) search (run sif index embed first)
 sif search vsearch "functions that wrap other functions"
 
-# Hybrid search (BM25 + Vector + Rerank) -- recommended for best results
+# Hybrid search (BM25 + Vector + RRF) -- recommended for best results
 sif search query "python decorators"
 ```
+
+`vsearch` and `query` need an embedding backend and chunk embeddings from
+`sif index embed`; `search search` uses BM25 and works on the base install.
 
 ### Search with Options
 
@@ -90,7 +177,10 @@ sif search query "python decorators" --all
 # Show score breakdowns across pipeline stages
 sif search query "python decorators" --explain
 
-# Increase candidate pool for reranking
+# Enable reranking (requires the embed or all extra)
+sif search query "python decorators" --rerank
+
+# Reranker candidate pool (takes effect with --rerank)
 sif search query "python decorators" --candidate-limit 30
 
 # Provide intent hint for query expansion
@@ -103,7 +193,7 @@ sif search query "python decorators" --intent "programming tutorial"
 # JSON output
 sif search query "python" --json
 
-# Markdown table
+# Markdown output
 sif search query "python" --md
 
 # CSV output
@@ -162,30 +252,32 @@ sif ls my-notes
 
 ## Adding Context
 
-Context helps improve search relevance by providing background information.
+Context stores background descriptions for paths, collections, and global
+scope. Path contexts are attached to matching search results.
 
 ### Global Context
 
-Applies to all searches:
+Stores an index-wide description:
 
 ```bash
-sif context add global global   "I am a software engineer working with Python and machine learning."
+sif context add global global "I am a software engineer working with Python and machine learning."
 ```
 
 ### Collection Context
 
-Applies to searches in a specific collection:
+Stores a description for a collection (target is the collection name):
 
 ```bash
-sif context add collection my-notes   "These are my personal notes about programming and technology."
+sif context add collection my-notes "These are my personal notes about programming and technology."
 ```
 
 ### Path Context
 
-Applies to a specific file or directory:
+Attaches a description to results for one indexed file (target is the file's
+indexed path, not a directory):
 
 ```bash
-sif context add path ~/Documents/notes/project-a   "Notes for the Project Alpha rewrite."
+sif context add path ~/Documents/notes/project-a.md "Notes for the Project Alpha rewrite."
 ```
 
 ### List and Remove Context
@@ -204,7 +296,7 @@ sif status
 ```
 
 The status command shows index path, collection count, document count, chunk
-count, contexts, and total database size.
+count, contexts, total database size, watch state, and vector lag.
 
 ## Updating Index
 
@@ -259,7 +351,7 @@ sif get multi-get "*.md"
 Start the MCP server for AI assistant integration:
 
 ```bash
-# Stdio transport (default)
+# Stdio transport
 sif mcp stdio
 
 # HTTP transport
@@ -268,10 +360,11 @@ sif mcp http --port 8080
 
 ## Configuration
 
-Create a `.env` file for persistent configuration:
+Create a `.env` file in the directory where you run SIF for persistent
+configuration:
 
 ```bash
-# ~/.env or ./.env
+# ./.env (loaded from the current working directory)
 SIF_DB_PATH=~/.local/share/sif/sif.db
 SIF_MODEL_NAME=Qwen/Qwen3-Embedding-0.6B
 SIF_EMBEDDING_DIM=1024
@@ -279,7 +372,8 @@ SIF_CHUNK_SIZE=512
 SIF_LOG_LEVEL=INFO
 ```
 
-Environment variables are read automatically when SIF starts.
+Environment variables are read automatically when SIF starts. CLI verbosity is
+controlled by the group-level `-v`/`--verbose` and `-q`/`--quiet` flags.
 
 ## Common Workflows
 
@@ -301,23 +395,23 @@ sif index update
 
 ```bash
 # Add research collection
-sif collection add ~/Research --name research   --description "Research papers and notes"
+sif collection add ~/Research --name research --description "Research papers and notes"
 
 # Index
 sif index update --collection research
 
 # Search with hybrid pipeline
-sif search query "neural networks"   -c research   --limit 20
+sif search query "neural networks" -c research --limit 20
 ```
 
 ### Documentation Workflow
 
 ```bash
 # Add docs collection
-sif collection add ~/Projects/docs --name docs   --description "Project documentation"
+sif collection add ~/Projects/docs --name docs --description "Project documentation"
 
 # Add context
-sif context add collection docs   "This is technical documentation for my projects."
+sif context add collection docs "This is technical documentation for my projects."
 
 # Index
 sif index update --collection docs
@@ -416,11 +510,8 @@ sif get multi-get "*.md"
    sif index update --collection my-notes --force
    ```
 
-3. Check logs:
-   ```bash
-   export SIF_LOG_LEVEL=DEBUG
-   sif index update --collection my-notes
-   ```
+3. Re-run with verbose output. The verbose flag is a group option, so it goes
+   before the subcommand: `sif -v index update --collection my-notes`
 
 ### Cleaning Up
 
@@ -429,94 +520,6 @@ Remove orphaned chunks, embeddings, and expired cache entries:
 ```bash
 sif cleanup
 ```
-
-## Next Steps
-
-- Learn about [Search Algorithms](search-algorithms.md)
-- Explore the [CLI Reference](cli-reference.md)
-- Set up the [MCP Server](mcp-server.md)
-- Read the full [Configuration](configuration.md) guide
-
-## Getting Help
-
-- Use `--help` for command help:
-  ```bash
-  sif search query --help
-  ```
-
-- Check the [FAQ](#) (coming soon)
-
-- Open an issue on [GitHub](https://github.com/zhangtaolab/sif/issues)
-
-## Prerequisites
-
-Before installing SIF, make sure your system meets these requirements:
-
-- **Python `>= 3.10`** — check your version with `python3 --version`
-- **pip** — included with Python; any recent version works
-- **SQLite** — nothing to install separately. SIF stores all data locally in a
-  SQLite database via Python's built-in `sqlite3` module; the `sqlite-vec`
-  dependency for vector tables is installed automatically
-
-Optional, depending on which features you plan to use:
-
-- **Vector and hybrid search** — requires an embedding backend that is not
-  installed by default. BM25 keyword search works out of the box; for vector
-  search, install one of the extras:
-
-  ```bash
-  pip install "docsif[embed]"   # sentence-transformers and modelscope backends
-  # or
-  pip install "docsif[all]"     # adds GGUF (llama-cpp-python) and OpenAI API support
-  ```
-
-  The first `sif index embed` run downloads the default embedding model
-  (`Qwen/Qwen3-Embedding-0.6B`), so it needs network access and may take a
-  while on first use.
-
-If `sif index embed` exits with `sentence-transformers not installed`, install
-the `embed` (or `all`) extra as shown above and retry.
-
-For platform-specific setup (Linux, macOS, Windows) and deeper install
-troubleshooting, see the [Installation Guide](installation.md).
-
-## First Run
-
-The [Your First Collection](#your-first-collection) walkthrough above sets up a
-real collection. To confirm a fresh install works end to end first, run this
-self-contained smoke test. It uses BM25 keyword search only, so it works with
-the base `pip install docsif` — no embedding extras, no model downloads.
-
-```bash
-# 1. Create a tiny test corpus
-mkdir -p ~/sif-demo
-printf '# Decorators\n\nDecorators wrap a function to add behavior around it.\n' \
-  > ~/sif-demo/decorators.md
-printf '# Ideas\n\nA local-first search engine for personal notes.\n' > ~/sif-demo/ideas.md
-
-# 2. Register the directory as a collection and index it
-sif collection add ~/sif-demo --name demo
-sif index update --collection demo
-
-# 3. Search it
-sif search search "decorators"
-```
-
-The final command prints a ranked results table (with `Score` and `Snippet`
-columns) whose top hit is `~/sif-demo/decorators.md`. The SQLite index database
-is created automatically on first use; `sif status` shows where it lives.
-
-Clean up when done — `collection remove` asks for confirmation:
-
-```bash
-sif collection remove demo
-rm -rf ~/sif-demo
-```
-
-If the smoke test passes, continue with [Your First Collection](#your-first-collection)
-to index real documents. Vector and hybrid search additionally require an
-embedding backend and an embed step (`sif index embed`); see
-[Prerequisites](#prerequisites).
 
 ## Common Setup Issues
 
@@ -544,9 +547,11 @@ sif collection add ~/Documents/notes --name my-notes
 sif index update
 ```
 
-If you expected an existing index, run `sif status` and check the listed
-Index Path: it comes from `SIF_DB_PATH`, the `--index`/`-i` option, or the
-platform default (see [Configuration](#configuration)).
+If you expected an existing index, check that `SIF_DB_PATH` (or the
+`--index`/`-i` option) points at the database you want. When an index exists at
+the resolved path, `sif status` lists its Index Path; the path comes from
+`SIF_DB_PATH`, the `--index`/`-i` option, or the platform default (see
+[Configuration](#configuration)).
 
 ### Vector or hybrid search exits with `sqlite-vec extension is not available`
 
@@ -569,3 +574,23 @@ Python from python.org, Homebrew, or pyenv and retry.
 `sif index embed` and vector/hybrid search need an embedding backend, which the
 base install does not include. Install the `embed` (or `all`) extra — see
 [Prerequisites](#prerequisites) for the exact commands.
+
+## Next Steps
+
+- Install options and platform notes: [Installation Guide](installation.md)
+- Learn about [Search Algorithms](search-algorithms.md)
+- Explore the [CLI Reference](cli-reference.md)
+- Set up the [MCP Server](mcp-server.md)
+- Read the full [Configuration](configuration.md) guide
+- Contribute: [Development](development.md) and [Testing](testing.md)
+
+## Getting Help
+
+- Use `--help` for command help:
+  ```bash
+  sif search query --help
+  ```
+
+- Browse the [documentation index](index.md) for the full guides.
+
+- Open an issue on [GitHub](https://github.com/zhangtaolab/sif/issues)

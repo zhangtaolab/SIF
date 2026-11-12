@@ -1,3 +1,4 @@
+<!-- generated-by: gsd-doc-writer -->
 # Contributing to SIF
 
 Thank you for your interest in contributing to SIF! This document provides guidelines for contributing to the project.
@@ -46,7 +47,7 @@ What you expected to happen.
 **Environment**
 - OS: [e.g., macOS 14.0]
 - Python: [e.g., 3.11.0]
-- SIF: [e.g., 0.1.0]
+- SIF: [e.g., 1.1.1]
 
 **Logs**
 ```
@@ -77,10 +78,13 @@ Feature requests are welcome! Include:
 - [ ] Code passes linting (`ruff check .`)
 - [ ] Type checking passes (`ty check src/sif`)
 - [ ] Documentation updated
+- [ ] Reference docs regenerated (`make docs-generate`) if CLI commands or configuration settings changed
 - [ ] Changelog updated (docs/changelog.md)
 - [ ] Commit messages follow conventions
 
-#### PR Template
+#### PR Description Format
+
+There is no `.github/PULL_REQUEST_TEMPLATE.md` in the repository. Use this format for the pull request description:
 
 ```markdown
 ## Description
@@ -157,7 +161,7 @@ ty check src/sif
 pytest
 
 # Run with coverage
-pytest --cov=sif
+pytest --cov=src/sif
 
 # Run specific test
 pytest tests/unit/test_collection.py
@@ -268,26 +272,25 @@ def test_collection_creation():
 
 ### Integration Tests
 
-Test component interactions:
+Test component interactions, for example the `SearchPipeline` routing a `lex:`-prefixed query to BM25 search (as in `tests/integration/test_search_pipeline.py`):
 
 ```python
-def test_index_and_search():
-    # Index document
-    indexer.index_document(doc)
-    
-    # Search
-    results = searcher.search("query")
-    
-    # Verify
-    assert len(results) > 0
+def test_bm25_search_pipeline(mock_db):
+    # mock_db is a MagicMock standing in for the sqlite3 connection
+    pipeline = SearchPipeline(mock_db)
+
+    results = pipeline.search("lex: machine learning")
+
+    assert isinstance(results, list)
+    assert all(isinstance(r, SearchResult) for r in results)
 ```
 
 ### Test Coverage
 
-Aim for high coverage:
+Coverage is collected on every pytest run and the suite fails below 90% total coverage of `src/sif` (see the Troubleshooting section below). Generate the HTML report with:
 
 ```bash
-pytest --cov=sif --cov-report=html
+pytest --cov=src/sif --cov-report=html
 open htmlcov/index.html
 ```
 
@@ -332,10 +335,10 @@ For significant documentation changes:
 
 Maintainers follow this process:
 
-1. Update version in `_version.py`
+1. Update version in `src/sif/_version.py`
 2. Update docs/changelog.md
 3. Create git tag
-4. Build and upload to PyPI
+4. Build the distribution (`make build`) and upload it to PyPI
 5. Create GitHub release
 
 ## Areas for Contribution
@@ -370,6 +373,8 @@ The workflow installs the package with `pip install -e ".[dev]"` on Python 3.11,
 > make docs-generate
 > ```
 
+`docs/cli-reference.md` and `docs/configuration.md` are written wholesale by the generation scripts — do not edit them by hand; change the CLI or settings source and rerun `make docs-generate`.
+
 Note: CI does **not** currently run the lint, format, type-check, or test suite — those checks are enforced locally only. Run the full quality suite before opening a PR (see [Coding Standards](#coding-standards) and the Makefile targets below).
 
 ## Makefile Targets
@@ -394,13 +399,13 @@ The `Makefile` wraps the common development commands:
 
 ## Questions?
 
-- GitHub Discussions: [github.com/zhangtaolab/sif/discussions](https://github.com/zhangtaolab/sif/discussions)
+GitHub Discussions is not enabled on this repository. For questions and support, open an issue:
+
 - Issues: [github.com/zhangtaolab/sif/issues](https://github.com/zhangtaolab/sif/issues)
 
 ## Recognition
 
 Contributors will be:
-
 - Mentioned in release notes
 - Credited in documentation
 
