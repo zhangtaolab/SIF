@@ -522,6 +522,20 @@ class FileWatcher:
         worker = self._worker
         return worker is None or not worker.is_alive()
 
+    def enqueue_reconcile(self, collections: Iterable[Collection]) -> None:
+        """Queue one full reconcile per collection — the public intent API (W-3/D-06).
+
+        Hosts and the internal reconcile producers (``recovery_tick``,
+        ``_schedule_added``) express reconcile intent through this method;
+        the job representation — the ``(Collection, FoldResult)`` tuple —
+        stays private to this module, so no caller can forge burst jobs or
+        the stop sentinel. ``queue.Queue.put`` is thread-safe, so a host
+        thread may enqueue while the freshly started worker idles race-free
+        (the MCP host's serve-first startup relies on exactly that, 13-D04).
+        """
+        for collection in collections:
+            self._queue.put((collection, FoldResult(needs_reconcile=True)))
+
     def recovery_tick(self) -> None:
         """Run one D-12 re-stat pass over tracked roots.
 

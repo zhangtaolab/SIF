@@ -37,7 +37,7 @@ from sif.database.database import Database
 from sif.database.factory import WAL_CHECKPOINT_TRUNCATE
 from sif.database.repositories import CollectionRepository
 from sif.indexing.incremental import IncrementalResult
-from sif.indexing.watcher import FileWatcher, FoldResult, WatchConfig
+from sif.indexing.watcher import FileWatcher, WatchConfig
 from sif.utils.logging import get_logger
 
 
@@ -92,12 +92,12 @@ def _render_batch(collection: Collection, result: IncrementalResult) -> None:
 def _enqueue_startup_reconcile(watcher: FileWatcher, collections: list[Collection]) -> None:
     """Queue one full-reconcile job per collection — serve first (Pitfall 4).
 
-    The enqueue shape is the recovery-return job the worker already drains.
-    ``queue.Queue.put`` is thread-safe, so queueing from the host thread
-    while the freshly started worker idles is race-free.
+    Delegates to the watcher's public reconcile-intent API (W-3/D-06); the
+    job representation stays private to the watcher. ``queue.Queue.put`` is
+    thread-safe, so queueing from the host thread while the freshly started
+    worker idles is race-free.
     """
-    for collection in collections:
-        watcher._queue.put((collection, FoldResult(needs_reconcile=True)))  # noqa: SLF001
+    watcher.enqueue_reconcile(collections)
 
 
 def start_embedded_watch(db_path: str) -> EmbeddedWatch | None:
