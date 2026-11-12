@@ -23,6 +23,7 @@ from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
 
+from sif.cli.error_handling import open_initialized_database
 from sif.database.database import Database
 from sif.database.repositories import QueryLogRepository
 from sif.search.suggest import SuggestionEngine
@@ -70,10 +71,11 @@ def _render_section(title: str, items: list[str]) -> None:
 
 def _clear_history(index_path: Path) -> None:
     """Delete every query_log row and confirm after the commit (D-10)."""
-    with Database(index_path) as db:
-        db.init_schema()
-        with db.transaction() as conn:
-            removed = QueryLogRepository(conn).clear()
+    with (
+        open_initialized_database(index_path, Database) as db,
+        db.transaction() as conn,
+    ):
+        removed = QueryLogRepository(conn).clear()
     # Confirmation outside the transaction (context.py precedent): a display
     # failure must not roll back a write that already committed.
     console.print(f"[green]Cleared {removed} query history row(s).[/green]")
@@ -98,8 +100,7 @@ def _collect(
     completions: list[str] = []
     did_you_mean: list[str] = []
     history: list[str] = []
-    with Database(index_path) as db:
-        db.init_schema()
+    with open_initialized_database(index_path, Database) as db:
         try:
             with db.connection:
                 engine = SuggestionEngine(db.connection)
