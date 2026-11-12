@@ -249,6 +249,75 @@ class TestCorroboratePid:
         monkeypatch.setattr(daemon.os, "kill", _alive_kill)
         assert daemon.corroborate_pid({"pid": "123"}) is False
 
+    def test_console_script_ps_line_corroborates(self, monkeypatch) -> None:
+        """Installed entry-point shape: `<python> <prefix>/sif ... watch ...`.
+
+        ``[project.scripts]`` runs the CLI as ``<python> <prefix>/sif`` —
+        ``sif.cli.main`` never appears in that process's argv (qtm).
+        """
+        monkeypatch.setattr(daemon.os, "kill", _alive_kill)
+        monkeypatch.setattr(
+            daemon,
+            "subprocess",
+            SimpleNamespace(
+                run=_ps_run(
+                    "/venv/bin/python -u /venv/bin/sif --index /tmp/watch.db "
+                    "watch --detach --log-file /tmp/d.log"
+                )
+            ),
+        )
+
+        assert daemon.corroborate_pid(dict(_PAYLOAD)) is True
+
+    def test_console_script_without_watch_token_does_not_corroborate(self, monkeypatch) -> None:
+        """Identity alone is not enough: the positive watch token is required."""
+        monkeypatch.setattr(daemon.os, "kill", _alive_kill)
+        monkeypatch.setattr(
+            daemon,
+            "subprocess",
+            SimpleNamespace(
+                run=_ps_run("/venv/bin/python /venv/bin/sif --index /tmp/watch.db mcp stdio")
+            ),
+        )
+
+        assert daemon.corroborate_pid(dict(_PAYLOAD)) is False
+
+    @pytest.mark.parametrize(
+        "ps_line",
+        [
+            "/opt/tools/not-sif watch",
+            "/usr/local/bin/sif-tools watch",
+        ],
+    )
+    def test_lookalike_program_basenames_do_not_corroborate(
+        self, monkeypatch, ps_line: str
+    ) -> None:
+        """Exact basename equality only — sif-prefixed tools fail closed."""
+        monkeypatch.setattr(daemon.os, "kill", _alive_kill)
+        monkeypatch.setattr(daemon, "subprocess", SimpleNamespace(run=_ps_run(ps_line)))
+
+        assert daemon.corroborate_pid(dict(_PAYLOAD)) is False
+
+    def test_ps_invocation_requests_unlimited_width(self, monkeypatch) -> None:
+        """``-ww`` keeps a long interpreter/script/``--index`` prefix from
+        clipping the trailing watch token off the admin-width ps output."""
+        monkeypatch.setattr(daemon.os, "kill", _alive_kill)
+        monkeypatch.setattr(daemon, "shutil", SimpleNamespace(which=lambda _name: "/bin/ps"))
+        captured: list[list[str]] = []
+
+        def _run(argv: list[str], **_kwargs: Any) -> SimpleNamespace:
+            captured.append(list(argv))
+            return SimpleNamespace(
+                returncode=0,
+                stdout="/opt/python3.13 -u -m sif.cli.main --index /tmp/watch.db watch",
+            )
+
+        monkeypatch.setattr(daemon, "subprocess", SimpleNamespace(run=_run))
+
+        assert daemon.corroborate_pid(dict(_PAYLOAD)) is True
+        assert len(captured) == 1
+        assert "-ww" in captured[0]
+
 
 def _ps_run_with_code(returncode: int):
     """subprocess.run fake failing with the given return code."""

@@ -47,11 +47,16 @@ _STOP_KILL_TIMEOUT_SECONDS = 5.0
 _POLL_INTERVAL_SECONDS = 0.05
 _PS_TIMEOUT_SECONDS = 5.0
 
-# Identity markers (Pitfall 3): the ps command line of a real sif watch
-# process contains the CLI module path, and the watch subcommand appears as
-# its own whitespace token (a "watch.db" path fragment must not corroborate).
+# Identity markers (Pitfall 3): a real sif watch process appears in ps in one
+# of two program shapes — the module form (`python -m sif.cli.main`) or the
+# installed console-script form (`python <prefix>/sif`, generated from
+# [project.scripts] sif = "sif.cli.main:main"). The watch subcommand must
+# also appear as its own whitespace token (a "watch.db" path fragment must
+# not corroborate), and the console-script token's basename must be exactly
+# `sif` — lookalikes such as `not-sif` and `sif-tools` never corroborate.
 _CLI_MARKER = "sif.cli.main"
 _WATCH_MARKER = "watch"
+_CONSOLE_SCRIPT_NAME = "sif"
 
 
 @dataclass
@@ -151,13 +156,33 @@ def remove_pid_file(path: Path) -> None:
         logger.warning("Could not remove PID file %s", path, exc_info=True)
 
 
+def _identifies_sif_cli(command_line: str) -> bool:
+    """True when a ps command line names the sif CLI.
+
+    Both real program shapes are accepted: the module form
+    (``python -m sif.cli.main``) and the installed console-script form
+    (``python <prefix>/sif``). The console-script token is matched by exact
+    basename only, so lookalikes (``not-sif``, ``sif-tools``, ``sif.exe``,
+    ``sif-script.py``) never corroborate. This lifecycle is POSIX-only
+    (double-fork), so no Windows script suffixes are accepted.
+    """
+    if _CLI_MARKER in command_line:
+        return True
+    return any(os.path.basename(token) == _CONSOLE_SCRIPT_NAME for token in command_line.split())
+
+
 def corroborate_pid(payload: dict[str, object]) -> bool:
     """Fail-closed identity check before any signal (Pitfall 3, T-13-03).
 
     A process is only corroborated when it is alive AND its ps command line
-    carries both the sif CLI module marker and the watch subcommand as its
-    own token. Process-gone, ps missing, ps failure, or any mismatch returns
-    False — an uncorroborated PID is never signalled.
+    names the sif CLI — the module form (``python -m sif.cli.main``) or the
+    installed console-script form (``python <prefix>/sif``) — AND carries
+    the watch subcommand as its own whitespace token. ``ps`` is invoked with
+    ``-ww`` (unlimited width) because the console-script shape places that
+    trailing watch token after the interpreter, script path, and ``--index``
+    value, where default width clipping could otherwise hide it. Every other
+    shape, a wrong-typed pid, a dead process, a missing ``ps``, or a ``ps``
+    failure returns False — an uncorroborated PID is never signalled.
     """
     pid = payload.get("pid")
     if isinstance(pid, bool) or not isinstance(pid, int):
@@ -175,7 +200,7 @@ def corroborate_pid(payload: dict[str, object]) -> bool:
         return False
     try:
         result = subprocess.run(
-            [ps_path, "-p", str(pid), "-o", "command="],
+            [ps_path, "-ww", "-p", str(pid), "-o", "command="],
             capture_output=True,
             text=True,
             timeout=_PS_TIMEOUT_SECONDS,
@@ -185,7 +210,7 @@ def corroborate_pid(payload: dict[str, object]) -> bool:
         return False
     if result.returncode != 0:
         return False
-    return _CLI_MARKER in result.stdout and _WATCH_MARKER in result.stdout.split()
+    return _identifies_sif_cli(result.stdout) and _WATCH_MARKER in result.stdout.split()
 
 
 def detach(
