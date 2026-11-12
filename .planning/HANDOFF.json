@@ -1,0 +1,45 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-11-12T10:50:56.449Z",
+  "phase": "milestone-v1.1",
+  "phase_name": "v1.1 Live Index and Search Quality (SHIPPED)",
+  "phase_dir": ".planning/milestones/v1.1-phases",
+  "plan": null,
+  "task": null,
+  "total_tasks": null,
+  "status": "complete",
+  "completed_tasks": [
+    {"id": "v1.1-reverify", "name": "Re-verified all 7 phases (11-16.1) at HEAD with fresh fingerprints", "status": "done", "commit": "dff344b..cf23b4d"},
+    {"id": "wr-01", "name": "Fixed cache clear_expired SQLite variable-limit bug (batched deletion, 1000-row regression)", "status": "done", "commit": "aa520be"},
+    {"id": "coverage", "name": "validate-phase 12 + 16.1; secure-phase 16 + 16.1 (SECURITY.md verified, threats_open 0)", "status": "done", "commit": "5a70a23,ff87985,951ec28,0899d90"},
+    {"id": "realmodel", "name": "Ran real-model held-out bench (nDCG@10 0.9233, Hit@10 1.0); recorded in docs/benchmarking.md; WINDOWS id 10 closed", "status": "done", "commit": "5d6d524"},
+    {"id": "milestone-close", "name": "Archived v1.1 milestone (7 phases, 27 plans, 67 tasks); ROADMAP collapsed; REQUIREMENTS removed; PROJECT evolved; retrospective written; tag v1.1; pushed", "status": "done", "commit": "ed63fca..a5a89ce"}
+  ],
+  "remaining_tasks": [],
+  "blockers": [],
+  "async_jobs": [],
+  "human_actions_pending": [],
+  "decisions": [
+    {"decision": "Fix the re-review WR-01 cache-cleanup bug now rather than defer", "rationale": "Milestone-introduced regression that aborts cleanup at ~1000 expired rows; small safe batched fix", "phase": "11-reverify"},
+    {"decision": "Use in-process batched single-threaded evaluation for the real-model bench instead of the CLI bench", "rationale": "MPS/joblib deadlock + cache-dir mismatch + in-memory-to-file vec0 backup hang; in-process mirrors test_bench_snapshot", "phase": "16"},
+    {"decision": "Corrected 16-UAT status from 'passed' to canonical 'complete'", "rationale": "audit-open scanner treats only 'complete' as terminal; UAT genuinely complete (2/2, evidence-backed)", "phase": "16"},
+    {"decision": "Deferred WR-02 test-reliability (Python 3.10 setlimit) as documented follow-up", "rationale": "Production fix clean; test-only concern; avoids re-stale loop", "phase": "11-reverify"}
+  ],
+  "uncommitted_files": [
+    "?? .planning/agent-history.json",
+    "?? .planning/research/.cache/05bfeb8fe0b053d9433d563826d721818e4c527a92e3db6c0efc155dbba51a95.json",
+    "?? .planning/research/.cache/07ca94279fedeea49c0ac97e8d9f09661f8f3746b72d8cbfb367134b999b2b8e.json",
+    "?? .planning/research/.cache/1cd113f8f9ed602c2ad81ced9a84d243e1db92f290152d8c68bf546c0df035f6.json",
+    "?? .planning/research/.cache/503959ddb0808d08e478038f9779ead6885e902fd899e1474b85e8557c1fdd8d.json",
+    "?? .planning/research/.cache/9248b3705cde6b4b9fd537e3a1e7bbe830fd00b533b7ce3bbb925c9c0b037735.json",
+    "?? .planning/research/.cache/9eb3e31fe811e10f52548dac1e5d45dc6ead1d5bd28be6ca2b24a2a9fe312bab.json",
+    "?? .planning/research/.cache/c1d1cd7e6ef0c3666c66542508d3a8bcb53732e4aeaaaadfaa30ca99b673214b.json",
+    "?? .planning/research/.cache/d0a0228a1c2905610c5a9a20e053796bd36d343c4998ac18321598c2cf46624a.json",
+    "?? .planning/research/.cache/e76ba5ee87c72924e3109896fdb9cf6c7483c3f5ace5fc5a6aa5669acab0eeb6.json",
+    "?? .planning/research/.cache/faa1d584d63bb5ea6191d7b32f019088afb9c839d307e2c10db0778282fa88c9.json",
+    "?? .planning/state.json",
+    "?? .planning/tmp/"
+  ],
+  "next_action": "Run /gsd-new-milestone to define the next milestone (phase numbering continues at 17). v1.1 is complete, archived, tagged, and pushed.",
+  "context_notes": "No active phase or milestone work in progress. v1.1 shipped 2026-11-12 (7 phases incl. inserted 16.1 tech-debt, 27 plans, 21/21 requirements). All retroactive coverage runs done; the audit's tech_debt verdict is fully addressed. The 13 untracked files are pre-existing scratch (research cache, tmp, tooling JSON) — intentionally not committed."
+}
