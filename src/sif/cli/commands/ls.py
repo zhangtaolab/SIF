@@ -8,6 +8,7 @@ import click
 from rich.console import Console
 from rich.tree import Tree
 
+from sif.cli.error_handling import open_initialized_database
 from sif.database.database import Database
 from sif.database.repositories import CollectionRepository, DocumentRepository
 
@@ -31,41 +32,38 @@ def ls_cmd(
         console.print("[yellow]No index found.[/yellow]")
         return
 
-    with Database(index_path) as db:
-        db.init_schema()
+    with open_initialized_database(index_path, Database) as db, db.connection:
+        doc_repo = DocumentRepository(db.connection)
+        coll_repo = CollectionRepository(db.connection)
 
-        with db.connection:
-            doc_repo = DocumentRepository(db.connection)
-            coll_repo = CollectionRepository(db.connection)
+        if collection:
+            collections = [coll_repo.get_by_name(collection)]
+            if not collections[0]:
+                raise click.ClickException(f"Collection '{collection}' not found")
+        else:
+            collections = coll_repo.list_all()
 
-            if collection:
-                collections = [coll_repo.get_by_name(collection)]
-                if not collections[0]:
-                    raise click.ClickException(f"Collection '{collection}' not found")
-            else:
-                collections = coll_repo.list_all()
+        for coll in collections:
+            if not coll:
+                continue
 
-            for coll in collections:
-                if not coll:
-                    continue
+            docs = doc_repo.list_by_collection(coll.id)
+            if subpath:
+                sub = Path(subpath)
+                resolved = sub if sub.is_absolute() else Path(coll.path) / sub
+                target = str(resolved).rstrip("/")
+                docs = [d for d in docs if d.path == target or d.path.startswith(target + "/")]
 
-                docs = doc_repo.list_by_collection(coll.id)
-                if subpath:
-                    sub = Path(subpath)
-                    resolved = sub if sub.is_absolute() else Path(coll.path) / sub
-                    target = str(resolved).rstrip("/")
-                    docs = [d for d in docs if d.path == target or d.path.startswith(target + "/")]
+            if not docs:
+                continue
 
-                if not docs:
-                    continue
+            tree = Tree(f"[bold cyan]{coll.name}[/bold cyan]")
+            for doc in sorted(docs, key=lambda d: d.path):
+                parts = doc.path.strip("/").split("/")
+                node = tree
+                for part in parts[:-1]:
+                    found = next((c for c in node.children if str(c.label) == part), None)
+                    node = found if found else node.add(part)
+                node.add(parts[-1])
 
-                tree = Tree(f"[bold cyan]{coll.name}[/bold cyan]")
-                for doc in sorted(docs, key=lambda d: d.path):
-                    parts = doc.path.strip("/").split("/")
-                    node = tree
-                    for part in parts[:-1]:
-                        found = next((c for c in node.children if str(c.label) == part), None)
-                        node = found if found else node.add(part)
-                    node.add(parts[-1])
-
-                console.print(tree)
+            console.print(tree)

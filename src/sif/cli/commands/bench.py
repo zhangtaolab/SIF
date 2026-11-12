@@ -12,6 +12,7 @@ from pydantic import ValidationError
 from rich.console import Console
 from rich.table import Table
 
+from sif.cli.error_handling import open_initialized_database
 from sif.config.settings import Settings, get_settings, resolve_candidate_limit
 from sif.core.models import Embedder, SearchOptions
 from sif.database.database import Database
@@ -644,9 +645,7 @@ def bench_cmd(  # noqa: PLR0913
     # create_reranker without the flag, so the off state is zero-cost.
     reranker = _load_reranker(rerank, settings)
 
-    with Database(index_path) as db:
-        db.init_schema()
-
+    with open_initialized_database(index_path, Database) as db:
         manager, embedding_dim = _load_embedder(settings, model_type)
         # One embedding-once wrapper per bench invocation serves the baseline
         # and the sweep alike (D-07): every distinct query text is embedded

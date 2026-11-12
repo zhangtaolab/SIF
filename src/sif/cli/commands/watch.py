@@ -43,6 +43,7 @@ from rich.markup import escape
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from sif.cli.commands.index import _render_index_event
+from sif.cli.error_handling import open_initialized_database, open_initialized_database_unmanaged
 from sif.config.settings import Settings
 from sif.core.models import Collection
 from sif.database.database import Database
@@ -365,8 +366,7 @@ def _run_detach(
     def arm() -> None:
         """Armed means ready: schema open, collections selected, PID file written."""
         nonlocal armed_db, armed_selected
-        db = Database(params.index_path)
-        db.init_schema()
+        db = open_initialized_database_unmanaged(params.index_path, Database)
         selected = _select_collections(CollectionRepository(db.connection), collections)
         if not selected:
             raise RuntimeError("no collections found — add one with 'sif collection add'")
@@ -629,8 +629,7 @@ def watch_cmd(  # noqa: PLR0913
         _run_detach(params, collections, log_file, settings)
         return
 
-    with Database(index_path) as db:
-        db.init_schema()
+    with open_initialized_database(index_path, Database) as db:
         selected = _select_collections(CollectionRepository(db.connection), collections)
         if not selected:
             console.print(

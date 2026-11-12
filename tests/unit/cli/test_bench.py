@@ -631,7 +631,7 @@ class TestBenchCommand:
         conn = build_bench_db(Path("tests/fixtures/bench/corpus"), embedder)
         try:
             mock_db = MagicMock()
-            mock_db.__enter__.return_value.connection = conn
+            mock_db.connection = conn
             mock_manager = MagicMock()
             mock_manager.model = embedder
             mock_manager.embed_single.return_value = [0.0] * EMBEDDING_DIM
@@ -1156,7 +1156,7 @@ class TestBenchRerankStates:
         _SpyReranker.calls = []
         try:
             mock_db = MagicMock()
-            mock_db.__enter__.return_value.connection = conn
+            mock_db.connection = conn
             mock_manager = MagicMock()
             mock_manager.model = embedder
             mock_manager.embed_single.return_value = [0.0] * EMBEDDING_DIM
