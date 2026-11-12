@@ -1,9 +1,9 @@
 ---
-status: passed
+status: complete
 phase: 16-Bench Expansion + Reranker Tuning
 source: [16-VERIFICATION.md]
 started: 2026-11-09T00:40:00+08:00
-updated: 2026-11-09T00:40:00+08:00
+updated: 2026-11-12T10:40:00Z
 ---
 
 ## Current Test
