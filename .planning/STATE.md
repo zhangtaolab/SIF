@@ -4,17 +4,17 @@ milestone: v1.1
 milestone_name: Live Index and Search Quality
 current_phase: "16.1"
 current_phase_name: "Address tech debt: CLI error conventions + cache TTL + watch-host enqueue API"
-status: completed
-stopped_at: Phase 16.1 context gathered
-last_updated: "2026-11-12T03:36:09.829Z"
-last_activity: 2026-11-11
-last_activity_desc: Phase 11 complete
-state_head: f7348df2b9cba544dc8eab2919d81f552e3e8c69
+status: executing
+stopped_at: Completed 16.1-01-PLAN.md
+last_updated: "2026-11-12T04:06:35.836Z"
+last_activity: 2026-11-12
+last_activity_desc: Phase 16.1 execution started
+state_head: 381e07c1beecfd25fae4601e4da127f55e06d14d
 progress:
   total_phases: 7
   completed_phases: 6
   total_plans: 27
-  completed_plans: 22
+  completed_plans: 23
 ---
 
 # DocSift — Project State
@@ -29,10 +29,10 @@ progress:
 
 ## Current Position
 
-Phase: 16.1 (Address tech debt: CLI error conventions + cache TTL + watch-host enqueue API) — READY TO EXECUTE
-Plan: Not started
-Status: All phases complete
-Last activity: 2026-11-11 - Completed quick batch 261111-rqo (4 items): IN-08 read_text UTF-8 pin, WR-09 cache-expiry instant comparison, D-1 caplog leak fixture, WR-01 shared embedding purger — ledger open 16->13
+Phase: 16.1 (Address tech debt: CLI error conventions + cache TTL + watch-host enqueue API) — EXECUTING
+Plan: 2 of 5
+Status: Ready to execute
+Last activity: 2026-11-12 — Phase 16.1 execution started
 
 Progress: [██████████] 100%
 
@@ -74,6 +74,7 @@ Progress: [██████████] 100%
 | Phase 16 P04 | 27 min | 3 tasks | 5 files |
 | Phase 16 P05 | 13 min | 3 tasks | 9 files |
 | Phase 16 P05 | 13 min | 3 tasks | 9 files |
+| Phase 16.1 P01 | 18 min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -168,6 +169,9 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 - [Phase 16]: [16-05] warrants_default_change = round(candidate - baseline, 6) >= 0.01 — inclusive at exactly 0.01 under rank_sweep's rounded-delta arithmetic; tuning results alone can never change defaults
 - [Phase 16]: [16-05] Measured verdict is "unchanged": sweep winner (20, 1.0, 0.5) held-out delta +0.0066 < 0.01, so shipped defaults 60/1.0/1.0 stay — the no-change-documented outcome EVAL-04 permits; change-warranted follow-up route named in docs, never executed in-plan
 - [Phase 16]: [16-05] Held-out evidence lock: snapshot recomputation + Settings defaults lock in ONE test; vector_weight is the drift-probe knob (rrf_k alone does not move held-out nDCG on this pack); manual real-model row honestly "not yet measured" (WINDOWS id 10)
+- [Phase 16.1]: [16.1-01] Shared CLI error boundary: class-injected open_initialized_database(index_path, Database) keeps per-module test patch seams; known classes only (OSError ctor, sqlite3.Error/OSError init), close-and-reraise via except BaseException for unexpected classes; yield never inside a handler (D-04)
+- [Phase 16.1]: [16.1-01] Constructor-only sqlite-vec guards on vsearch/query (14-WR-02/04 one defect); execution-stage Reranking-failed wording and ValueError propagation byte-identical; no CLI BM25 fallback
+- [Phase 16.1]: [16.1-01] 15-IN-06 traceback half closed via suggest opener adoption; --clear-history -q quiet leak preserved byte-identical (dedicated preservation pin) — ledger row stays open for Plan 05
 
 ### Pending Todos
 
@@ -226,8 +230,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 
 ## Session Continuity
 
-Last session: 2026-11-12T02:05:54.315Z
-Stopped at: Phase 16.1 context gathered
-Resume file: .planning/phases/16.1-address-tech-debt-cli-error-conventions-cache-ttl-watch-host/16.1-CONTEXT.md
+Last session: 2026-11-12T04:06:35.500Z
+Stopped at: Completed 16.1-01-PLAN.md
+Resume file: None
 
 - **Next expected action:** Phase 10 review backlog fully closed (0/22 open). v1.1 milestone ready to archive — `/gsd-complete-milestone v1.1` (all 6 phases complete and verified). No remaining Phase 10 findings; the autonomous-fix vein is exhausted.
