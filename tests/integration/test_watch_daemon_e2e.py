@@ -81,6 +81,37 @@ def _pid_file_for(db_path: Path) -> Path:
     return resolved.with_name(resolved.name + ".watch.pid")
 
 
+def _launcher_or_default(launcher: list[str] | None) -> list[str]:
+    """Resolve the CLI launcher: the module form unless a caller supplies one."""
+    if launcher is None:
+        return [sys.executable, "-u", "-m", "sif.cli.main"]
+    return list(launcher)
+
+
+def _console_script(tmp_path: Path) -> Path:
+    """Write a stand-in installed console script for the ``sif`` entry point.
+
+    ``[project.scripts] sif = "sif.cli.main:main"`` generates a wrapper whose
+    body imports ``main`` from the declared module and exits with its return
+    code. Launching ``<python> <prefix>/sif ...`` is the real installed argv
+    shape, and its ps command line never contains ``sif.cli.main`` (qtm).
+    """
+    script = tmp_path / "bin" / "sif"
+    script.parent.mkdir(parents=True, exist_ok=True)
+    script.write_text(
+        f"#!{sys.executable}\n"
+        "import sys\n"
+        "\n"
+        "from sif.cli.main import main\n"
+        "\n"
+        "if __name__ == '__main__':\n"
+        "    sys.exit(main())\n",
+        encoding="utf-8",
+    )
+    script.chmod(0o755)
+    return script
+
+
 def _fetch_one(db_path: Path, sql: str, params: tuple[str, ...] = ()) -> tuple | None:
     """Fetch one row through a fresh connection (never a cached reader)."""
     conn = sqlite3.connect(str(db_path))
@@ -147,13 +178,15 @@ def _wait_pid_gone(pid: int, deadline_s: float) -> None:
     _poll_until(_gone, deadline_s, f"daemon PID {pid} to exit")
 
 
-def _detach(db_path: Path, cwd: Path, log_path: Path) -> subprocess.CompletedProcess[str]:
+def _detach(
+    db_path: Path,
+    cwd: Path,
+    log_path: Path,
+    launcher: list[str] | None = None,
+) -> subprocess.CompletedProcess[str]:
     """Run the real detach parent; the child logs to ``log_path`` (hermetic)."""
     argv = [
-        sys.executable,
-        "-u",
-        "-m",
-        "sif.cli.main",
+        *_launcher_or_default(launcher),
         "--index",
         str(db_path),
         "watch",
@@ -172,13 +205,14 @@ def _detach(db_path: Path, cwd: Path, log_path: Path) -> subprocess.CompletedPro
     )
 
 
-def _run_stop(db_path: Path, cwd: Path) -> subprocess.CompletedProcess[str]:
+def _run_stop(
+    db_path: Path,
+    cwd: Path,
+    launcher: list[str] | None = None,
+) -> subprocess.CompletedProcess[str]:
     """Run the real ``watch --stop`` lifecycle command."""
     argv = [
-        sys.executable,
-        "-u",
-        "-m",
-        "sif.cli.main",
+        *_launcher_or_default(launcher),
         "--index",
         str(db_path),
         "watch",
@@ -195,15 +229,41 @@ def _run_stop(db_path: Path, cwd: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _run_status(
+    db_path: Path,
+    cwd: Path,
+    launcher: list[str] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    """Run the real ``status`` command through the given launcher."""
+    argv = [*_launcher_or_default(launcher), "--index", str(db_path), "status"]
+    return subprocess.run(
+        argv,
+        cwd=cwd,
+        env=_child_env(),
+        capture_output=True,
+        text=True,
+        timeout=_STOP_TIMEOUT_S,
+        check=False,
+    )
+
+
 @contextmanager
-def _detached_daemon(db_path: Path, cwd: Path, log_path: Path) -> Iterator[int]:
+def _detached_daemon(
+    db_path: Path,
+    cwd: Path,
+    log_path: Path,
+    launcher: list[str] | None = None,
+) -> Iterator[int]:
     """Detach a real daemon; yield its PID; never leak it past a failure.
 
     The safety net stops the daemon (``--stop``, fallback SIGKILL) even when
     an assertion inside the ``with`` block fails — a detached daemon must
-    never outlive a failing test.
+    never outlive a failing test. ``launcher`` selects the CLI argv shape
+    (module form by default, installed console script in the qtm test) and is
+    forwarded to the safety net's ``--stop`` so the fallback corroborates the
+    very process that was detached.
     """
-    result = _detach(db_path, cwd, log_path)
+    result = _detach(db_path, cwd, log_path, launcher)
     assert result.returncode == 0, (
         f"detach parent exited {result.returncode}:\n"
         f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
@@ -218,7 +278,7 @@ def _detached_daemon(db_path: Path, cwd: Path, log_path: Path) -> Iterator[int]:
         yield pid
     finally:
         if _pid_alive(pid):
-            _run_stop(db_path, cwd)
+            _run_stop(db_path, cwd, launcher)
         if _pid_alive(pid):
             os.kill(pid, signal.SIGKILL)
         _wait_pid_gone(pid, _SHUTDOWN_DEADLINE_S)
@@ -444,3 +504,59 @@ def test_detach_arm_timeout_kills_grandchild_session(tmp_path: Path) -> None:
         "a grandchild survived the timeout kill and armed after the parent "
         "reported failure — silent maybe-detach (SC2 violation)"
     )
+
+
+def test_console_script_daemon_corroborated_by_status_and_stop(tmp_path: Path) -> None:
+    """qtm: status and --stop recognize a console-script-launched daemon.
+
+    The installed entry point runs as ``<python> <prefix>/sif ... watch
+    --detach``, whose ps command line never carries the ``sif.cli.main``
+    module marker. A false-stale verdict is destructive, not cosmetic:
+    ``sif status`` deletes the PID file it cannot corroborate and ``--stop``
+    skips the graceful signal entirely. The PID file's survival through
+    status is therefore the regression proof, not just the "running" text.
+    """
+    db_path = tmp_path / "watch.db"
+    notes = tmp_path / "notes"
+    log_path = tmp_path / "daemon.log"
+    pid_file = _pid_file_for(db_path)
+    _seed_db(db_path, notes, "seed.md")
+    script = _console_script(tmp_path)
+    launcher = [sys.executable, "-u", str(script)]
+
+    with _detached_daemon(db_path, tmp_path, log_path, launcher=launcher) as pid:
+        # Steady state: the startup reconcile row landed and the observer armed.
+        _wait_for_row(db_path, _doc_path(notes, "seed.md"), _STARTUP_DEADLINE_S)
+        _wait_for_marker(log_path, "Watching", _STARTUP_DEADLINE_S)
+        assert pid_file.exists()
+
+        status = _run_status(db_path, tmp_path, launcher)
+        assert status.returncode == 0, (
+            f"status exited {status.returncode}:\n"
+            f"stdout:\n{status.stdout}\nstderr:\n{status.stderr}"
+        )
+        status_text = " ".join(status.stdout.split())
+        assert "running" in status_text, (
+            f"status did not report the daemon as running:\n{status.stdout}"
+        )
+        assert f"PID {pid}" in status_text, f"status did not name PID {pid}:\n{status.stdout}"
+        assert "stale" not in status_text, (
+            f"status treated the console-script daemon as stale:\n{status.stdout}"
+        )
+        assert pid_file.exists(), (
+            "status removed a corroborated console-script daemon's PID file (false-stale verdict)"
+        )
+
+        stop = _run_stop(db_path, tmp_path, launcher)
+        assert stop.returncode == 0, (
+            f"watch --stop exited {stop.returncode}:\n"
+            f"stdout:\n{stop.stdout}\nstderr:\n{stop.stderr}"
+        )
+        assert "Watch daemon stopped" in stop.stdout, (
+            f"--stop did not report the graceful stop:\n{stop.stdout}"
+        )
+        assert "stale" not in stop.stdout, (
+            f"--stop treated the console-script daemon as stale:\n{stop.stdout}"
+        )
+        _wait_pid_gone(pid, _SHUTDOWN_DEADLINE_S)
+        assert not pid_file.exists(), "PID file survived --stop"
