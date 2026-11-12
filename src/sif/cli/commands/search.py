@@ -15,6 +15,7 @@ from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
 
+from sif.cli.error_handling import open_initialized_database, sqlite_vec_remedy
 from sif.cli.formatters import add_line_numbers_to_results, prepend_line_numbers
 from sif.core.models import Collection, QueryLogEntry, SearchOptions, SearchResult
 from sif.database.database import Database
@@ -456,9 +457,7 @@ def search_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             console.print("[yellow]No index found. Run 'sif index update' first.[/yellow]")
         return
 
-    with Database(index_path) as db:
-        db.init_schema()
-
+    with open_initialized_database(index_path, Database) as db:
         # Build options
         options = SearchOptions(
             limit=limit,
@@ -647,9 +646,7 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     except Exception as e:
         raise click.ClickException(f"Failed to load embedding model: {e}") from e
 
-    with Database(index_path) as db:
-        db.init_schema()
-
+    with open_initialized_database(index_path, Database) as db:
         options = SearchOptions(
             limit=limit,
             min_score=min_score,
@@ -675,7 +672,14 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
         )
 
         with db.connection:
-            searcher = VectorSearcher(db.connection, len(query_embedding))
+            # Constructor-only guard (14-WR-02/04): a missing sqlite-vec extension
+            # is a foreseeable install problem, not a search failure. The search
+            # call below stays OUTSIDE this try so execution-stage RuntimeErrors
+            # never acquire the install remedy (Pitfall 4).
+            try:
+                searcher = VectorSearcher(db.connection, len(query_embedding))
+            except RuntimeError as e:
+                raise click.ClickException(sqlite_vec_remedy(e)) from e
             results = searcher.search(query_embedding, options)
             # D-05/SC2: only the zero-result path pays the DYM cost.
             suggestions = _zero_result_suggestions(db.connection, query, results)
@@ -829,9 +833,7 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             console.print("[yellow]No index found. Run 'sif index update' first.[/yellow]")
         return
 
-    with Database(index_path) as db:
-        db.init_schema()
-
+    with open_initialized_database(index_path, Database) as db:
         # Settings touchpoint (Phase 15: loaded above the options build so the
         # fusion knobs can resolve flag > SIF_ setting > default, D-03). When
         # --index IS passed the group default never runs, so this is the first
@@ -931,14 +933,21 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
 
         # Search using pipeline
         with db.connection:
-            pipeline = SearchPipeline(
-                db.connection,
-                embedder=manager.model,
-                query_expander=query_expander,
-                reranker=reranker,
-                snippet_extractor=snippet_extractor,
-                embedding_dim=embedding_dim,
-            )
+            # Constructor-only guard (14-WR-02/04): SearchPipeline constructs
+            # HybridSearcher -> VectorSearcher, whose missing-extension
+            # RuntimeError gets the install remedy. The execution-stage handler
+            # below stays a SEPARATE block with plain wording (Pitfall 4).
+            try:
+                pipeline = SearchPipeline(
+                    db.connection,
+                    embedder=manager.model,
+                    query_expander=query_expander,
+                    reranker=reranker,
+                    snippet_extractor=snippet_extractor,
+                    embedding_dim=embedding_dim,
+                )
+            except RuntimeError as e:
+                raise click.ClickException(sqlite_vec_remedy(e)) from e
             try:
                 results = pipeline.search(query, options)
             except RuntimeError as e:
