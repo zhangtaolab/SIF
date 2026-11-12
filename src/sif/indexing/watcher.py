@@ -583,7 +583,7 @@ class FileWatcher:
                         state.collection.name,
                     )
                     state.missing = False
-                    self._queue.put((state.collection, FoldResult(needs_reconcile=True)))
+                    self.enqueue_reconcile([state.collection])
 
     def rescope(self, collections: list[Collection]) -> None:
         """Diff the eligible collection set against the watched set (D-15).
@@ -648,7 +648,7 @@ class FileWatcher:
                 state.missing = True
                 continue
             if self._schedule_watch(state, observer):
-                self._queue.put((coll, FoldResult(needs_reconcile=True)))
+                self.enqueue_reconcile([coll])
             else:
                 state.missing = True
 
