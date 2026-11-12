@@ -542,6 +542,9 @@ class LLMCacheRepository:
         order is not chronological across naive-local/aware forms. NULL
         expiry never expires; legacy naive-local values convert through
         ``_expiry_instant`` exactly as ``clear_expired`` interprets them.
+        An unparseable non-NULL expiry is a miss with the row left untouched
+        (16.1-RESEARCH Open Question 1): a read never trusts an unreadable
+        TTL, and only cleanup's retain-guarantee owns the row.
         """
         cursor = self.db.execute(
             """
@@ -556,7 +559,12 @@ class LLMCacheRepository:
         expires_at = row["expires_at"]
         if expires_at is None:
             return row["response"]
-        if _expiry_instant(expires_at) <= datetime.now(timezone.utc):
+        try:
+            expires = _expiry_instant(expires_at)
+        except (ValueError, TypeError):
+            # A read must not trust an unreadable TTL: miss, row untouched.
+            return None
+        if expires <= datetime.now(timezone.utc):
             return None
         return row["response"]
 
@@ -609,7 +617,7 @@ class LLMCacheRepository:
         for row in cursor.fetchall():
             try:
                 expires = _expiry_instant(row["expires_at"])
-            except ValueError:
+            except (ValueError, TypeError):
                 # Cleanup never deletes a row whose expiry it cannot interpret.
                 continue
             if expires <= now:

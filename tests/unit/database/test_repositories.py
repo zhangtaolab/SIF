@@ -735,6 +735,5 @@ class TestLLMCacheExpiryEdgePolicy:
         repo = LLMCacheRepository(db)
         assert repo.clear_expired() == 0
         assert (
-            db.execute("SELECT COUNT(*) FROM llm_cache WHERE id = 'blob-expiry'").fetchone()[0]
-            == 1
+            db.execute("SELECT COUNT(*) FROM llm_cache WHERE id = 'blob-expiry'").fetchone()[0] == 1
         )
