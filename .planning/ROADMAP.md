@@ -197,8 +197,13 @@ Plans:
 **Plans:** 5 plans
 
 Plans:
+**Wave 1**
 - [ ] 16.1-01-PLAN.md — Shared CLI error boundary (tracer) + index/search/suggest conversion + vector constructor guards
-- [ ] 16.1-02-PLAN.md — Convention-wide sweep (23 remaining sites), daemon arm() variant, main.py narrowing, AST inventory gate
 - [ ] 16.1-03-PLAN.md — LLM cache TTL instant-compare read path (east/west TZ regressions) + embedding-cache factory delegation
 - [ ] 16.1-04-PLAN.md — FileWatcher.enqueue_reconcile public API + MCP host rewrite (serve-first preserved)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 16.1-02-PLAN.md — Convention-wide sweep (23 remaining sites), daemon arm() variant, main.py narrowing, AST inventory gate
+
+**Wave 3** *(blocked on Wave 2 completion)*
 - [ ] 16.1-05-PLAN.md — Ledger closures (11: 3→2, 14: 5→2, 15: stays 6 partial) + full phase quality gate

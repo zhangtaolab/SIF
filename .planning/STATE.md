@@ -3,16 +3,17 @@ gsd_state_version: "1.0"
 milestone: v1.1
 milestone_name: Live Index and Search Quality
 current_phase: "16.1"
+current_phase_name: "Address tech debt: CLI error conventions + cache TTL + watch-host enqueue API"
 status: completed
 stopped_at: Phase 16.1 context gathered
-last_updated: "2026-11-12T02:05:54.674Z"
+last_updated: "2026-11-12T03:36:09.829Z"
 last_activity: 2026-11-11
 last_activity_desc: Phase 11 complete
-state_head: 697ad14918ee0c5be50cf6ecce568a9d8fa1180e
+state_head: f7348df2b9cba544dc8eab2919d81f552e3e8c69
 progress:
   total_phases: 7
   completed_phases: 6
-  total_plans: 22
+  total_plans: 27
   completed_plans: 22
 ---
 
@@ -28,7 +29,7 @@ progress:
 
 ## Current Position
 
-Phase: 16.1
+Phase: 16.1 (Address tech debt: CLI error conventions + cache TTL + watch-host enqueue API) — READY TO EXECUTE
 Plan: Not started
 Status: All phases complete
 Last activity: 2026-11-11 - Completed quick batch 261111-rqo (4 items): IN-08 read_text UTF-8 pin, WR-09 cache-expiry instant comparison, D-1 caplog leak fixture, WR-01 shared embedding purger — ledger open 16->13
