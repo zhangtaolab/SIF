@@ -86,18 +86,18 @@ tests/
 ├── test_docs.py             # Validates code blocks in documentation (13 tests)
 ├── test_sif_complete.py     # Per-module smoke checks importing source modules directly (9 tests)
 ├── test_version_identity.py # Pins the single-sourced release version (4 tests)
-├── unit/                    # 1538 tests — module-level tests with mocks/temp databases
-│   ├── cli/                 #   CLI commands, error conventions, index locking, color hermeticity (434)
-│   ├── config/              #   Settings loading and validation (34)
+├── unit/                    # 1557 tests — module-level tests with mocks/temp databases
+│   ├── cli/                 #   CLI commands, error conventions, index locking, color hermeticity (444)
+│   ├── config/              #   Settings loading and validation (37)
 │   ├── core/                #   Core domain entities (Collection, Context) (25)
 │   ├── database/            #   Schema, migrations, repositories, locking, query log (90)
 │   ├── db/                  #   DatabaseConnection and repository tests (58)
-│   ├── embedding/           #   Embedder implementations, cache, factory, manager (100)
-│   ├── indexing/            #   Chunker, indexer, parser, scanner, watcher, drift, incremental (126)
+│   ├── embedding/           #   Embedder implementations, cache, factory, manager (102)
+│   ├── indexing/            #   Chunker, indexer, parser, scanner, watcher, drift, incremental (128)
 │   ├── inference/           #   Embedder, query expander, reranker (90)
 │   ├── mcp/                 #   MCP backend, server, and transports (120, async)
 │   ├── models/              #   Model download helpers (16)
-│   ├── search/              #   BM25, vector, hybrid, RRF, rerank, snippets, staleness, suggest, benchmark sweep (334)
+│   ├── search/              #   BM25, vector, hybrid, RRF, rerank, snippets, staleness, suggest, benchmark sweep (336)
 │   ├── utils/               #   Logging, paths, progress, daemon/service, text helpers (88)
 │   ├── test_collection.py   #   CollectionManager
 │   └── test_search.py       #   Search strategy and response models
@@ -193,7 +193,7 @@ Coverage is measured over `src/sif` on every run (via `addopts`) and reported th
 - `htmlcov/index.html` — browsable HTML report
 - `coverage.xml` — machine-readable report
 
-A minimum threshold **is** enforced: `[tool.coverage.report]` in `pyproject.toml` sets `fail_under = 90`, so any run whose total coverage falls below 90% fails with `Required test coverage of 90.0% not reached`. Note that this applies to partial runs too — running a single file or tier measures only that subset against the same 90% gate, so use `--no-cov` for focused work. At the time of writing, the full suite reports 95.06% coverage (7608 statements, 374 missed) with 1628 passed and 1 skipped.
+A minimum threshold **is** enforced: `[tool.coverage.report]` in `pyproject.toml` sets `fail_under = 90`, so any run whose total coverage falls below 90% fails with `Required test coverage of 90.0% not reached`. Note that this applies to partial runs too — running a single file or tier measures only that subset against the same 90% gate, so use `--no-cov` for focused work. At the time of writing, the full suite reports 95.06% coverage (7615 statements, 376 missed) with 1628 passed and 1 skipped.
 
 Artifacts are cleaned by `make clean` (removes `htmlcov/`, `.coverage`, `coverage.xml`).
 

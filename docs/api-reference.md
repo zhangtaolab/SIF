@@ -780,7 +780,7 @@ class MCPServer:
     async def handle_notification(self, notification: JsonRpcNotification) -> None: ...
 ```
 
-Transports wrap a server: `StdioTransport(server, stdin=None, stdout=None)` runs a stdin/stdout loop via `await transport.run()`, and `HTTPTransport(server, host="127.0.0.1", port=3000, cors_origins=None)` serves it with FastAPI via `transport.run()`.
+Transports wrap a server: `StdioTransport(server, stdin=None, stdout=None)` runs a stdin/stdout loop via `await transport.run()`, and `HTTPTransport(server, host="127.0.0.1", port=8080, cors_origins=None)` serves it with FastAPI via `transport.run()`.
 
 **Usage:**
 ```python
