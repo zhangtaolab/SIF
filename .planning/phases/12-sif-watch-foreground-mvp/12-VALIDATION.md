@@ -15,6 +15,8 @@ validated: "2026-11-12"
 > Per-phase validation contract for feedback sampling during execution.
 > Reconciled by /gsd-validate-phase 12 on 2026-11-12: seeded requirement-level rows mapped to the
 > shipped task/test layout, all commands re-run green at HEAD e18648a (105-test phase battery, 20.01s).
+> Re-audited by /gsd-validate-phase 12 on 2026-11-12 at HEAD 37e65bc: all 8 rows still COVERED, 0 gaps;
+> battery now 108 passed in 19.46s (grew by 3 from Phase 16.1's enqueue_reconcile tests, all green).
 
 ---
 
