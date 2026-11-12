@@ -1,0 +1,124 @@
+{
+  "schema_version": 1,
+  "batch_id": "261112-qtj",
+  "created_at": "2026-11-12T11:18:39.614Z",
+  "options": {},
+  "base_revision": "1e0eac56f991ffb79b18c1b5d101ecca57cf5d9e",
+  "items": [
+    {
+      "quick_id": "261112-qtk",
+      "client_id": null,
+      "description": "Fix scoped/default BM25 query plan: replace the collection-filtered FTS join with a MATERIALIZED FTS match CTE so `sif search search` and `sif query` no longer degrade to the per-document `SCAN fts ... :=M1` plan; add a regression test on a multi-collection fixture preserving default scoring.",
+      "status": "complete",
+      "depends_on": [],
+      "planned_files": [
+        "src/sif/search/bm25.py",
+        "tests/unit/search/test_collection_filter.py",
+        ".planning/quick/261112-qtk-fix-scoped-default-bm25-query-plan/261112-qtk-SUMMARY.md"
+      ],
+      "directory": null,
+      "worktree": null,
+      "dispatched_worktree": null,
+      "dispatched_branch": null,
+      "dispatched_base": null,
+      "wave": 0,
+      "commit": "2c7efc6",
+      "failure_reason": null
+    },
+    {
+      "quick_id": "261112-qtl",
+      "client_id": null,
+      "description": "Align release identity to 1.1.1: single-source the version across pyproject.toml, src/sif/__init__.py, src/sif/_version.py, src/sif/cli/__init__.py, src/sif/config/constants.py, and src/sif/mcp/protocol.py; add a changelog entry; correct install/upgrade/uninstall docs and in-app hints to use the `docsif` distribution name.",
+      "status": "complete",
+      "depends_on": [],
+      "planned_files": [
+        "pyproject.toml",
+        "src/sif/_version.py",
+        "src/sif/__init__.py",
+        "src/sif/cli/__init__.py",
+        "src/sif/config/constants.py",
+        "src/sif/mcp/protocol.py",
+        "example_config.yaml",
+        "uv.lock",
+        "tests/test_version_identity.py",
+        "docs/installation.md",
+        "docs/changelog.md",
+        "docs/configuration.md",
+        "scripts/generate_config_ref.py",
+        "examples/quickstart.py",
+        "src/sif/embedding/embedder.py",
+        "src/sif/cli/commands/mcp.py",
+        "src/sif/cli/commands/search.py",
+        "tests/unit/embedding/test_openai_embedder.py"
+      ],
+      "directory": null,
+      "worktree": null,
+      "dispatched_worktree": null,
+      "dispatched_branch": null,
+      "dispatched_base": null,
+      "wave": 0,
+      "commit": "9f366d4",
+      "failure_reason": null
+    },
+    {
+      "quick_id": "261112-qtm",
+      "client_id": null,
+      "description": "Fix detached-daemon identity for console-script installs: `sif watch --stop` and `sif status` must corroborate a daemon launched via the installed `sif` entry point, not only `python -m sif.cli.main`; add a subprocess e2e test covering the console-script argv shape.",
+      "status": "complete",
+      "depends_on": [],
+      "planned_files": [
+        "src/sif/utils/daemon.py",
+        "tests/unit/utils/test_daemon.py",
+        "tests/integration/test_watch_daemon_e2e.py"
+      ],
+      "directory": null,
+      "worktree": null,
+      "dispatched_worktree": null,
+      "dispatched_branch": null,
+      "dispatched_base": null,
+      "wave": 0,
+      "commit": "94099ef",
+      "failure_reason": null
+    },
+    {
+      "quick_id": "261112-qtn",
+      "client_id": null,
+      "description": "Fix `sif watch --embed` startup reconcile: the pre-observer pass currently runs BM25-only and can leave changed documents vector-less; route startup through the embed-aware reconcile path and add a regression test proving no embedding-less documents remain after startup.",
+      "status": "complete",
+      "depends_on": [],
+      "planned_files": [
+        "src/sif/indexing/watcher.py",
+        "src/sif/cli/commands/watch.py",
+        "tests/unit/cli/test_watch_cmd.py"
+      ],
+      "directory": null,
+      "worktree": null,
+      "dispatched_worktree": null,
+      "dispatched_branch": null,
+      "dispatched_base": null,
+      "wave": 0,
+      "commit": "7dae754",
+      "failure_reason": null
+    },
+    {
+      "quick_id": "261112-qto",
+      "client_id": null,
+      "description": "Clean the Broken Windows ledger: re-validate every open entry, mark the two caplog entries fixed (re-run result: 31 passed), waive the deliberate HuggingFace stub and the API-key manual check with explicit reasons, and fix or waive the group-callback mkdir side effect.",
+      "status": "complete",
+      "depends_on": [],
+      "planned_files": [
+        ".planning/WINDOWS.md",
+        "src/sif/cli/main.py",
+        "tests/unit/cli/test_main.py"
+      ],
+      "directory": null,
+      "worktree": null,
+      "dispatched_worktree": null,
+      "dispatched_branch": null,
+      "dispatched_base": null,
+      "wave": 0,
+      "commit": "9c8d6b6",
+      "failure_reason": null
+    }
+  ]
+}

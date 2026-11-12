@@ -210,6 +210,11 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
+| 261112-qtk | Fix scoped/default BM25 query plan: replace the collection-filtered FTS join with a MATERIALIZED FTS match CTE so `sif search search` and `sif query` no longer degrade to the per-document `SCAN fts ... :=M1` plan; add a regression test on a multi-collection fixture preserving default scoring. | 2026-11-12 | 2c7efc6 | .planning/quick/261112-qtk-fix-scoped-default-bm25-query-plan |
+| 261112-qtl | Align release identity to 1.1.1: single-source the version across pyproject.toml, src/sif/__init__.py, src/sif/_version.py, src/sif/cli/__init__.py, src/sif/config/constants.py, and src/sif/mcp/protocol.py; add a changelog entry; correct install/upgrade/uninstall docs and in-app hints to use the `docsif` distribution name. | 2026-11-12 | 9f366d4 | .planning/quick/261112-qtl-align-release-identity-to-1-1-1 |
+| 261112-qtm | Fix detached-daemon identity for console-script installs: `sif watch --stop` and `sif status` must corroborate a daemon launched via the installed `sif` entry point, not only `python -m sif.cli.main`; add a subprocess e2e test covering the console-script argv shape. | 2026-11-12 | 94099ef | .planning/quick/261112-qtm-fix-detached-daemon-identity-for-console-script-installs |
+| 261112-qtn | Fix `sif watch --embed` startup reconcile: the pre-observer pass currently runs BM25-only and can leave changed documents vector-less; route startup through the embed-aware reconcile path and add a regression test proving no embedding-less documents remain after startup. | 2026-11-12 | 7dae754 | .planning/quick/261112-qtn-fix-sif-watch-embed-startup-reconcile |
+| 261112-qto | Clean the Broken Windows ledger: re-validate every open entry, mark the two caplog entries fixed (re-run result: 31 passed), waive the deliberate HuggingFace stub and the API-key manual check with explicit reasons, and fix or waive the group-callback mkdir side effect. | 2026-11-12 | 9c8d6b6 | .planning/quick/261112-qto-clean-the-broken-windows-ledger |
 
 ### Overrides
 
