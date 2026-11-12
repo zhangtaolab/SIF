@@ -6,7 +6,7 @@ findings:
   - id: WR-01
     severity: warning
     disposition: fixed
-    title: "Worker tick is not exception-guarded — one tick exception permanently kills live indexing"
+    title: "Cache cleanup exceeds SQLite bind-variable limits (clear_expired single IN statement)"
   - id: WR-02
     severity: warning
     disposition: fixed
@@ -48,7 +48,7 @@ recorded: 2026-11-11T04:45:14.148Z
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| WR-01 | warning | fixed | 11-REVIEW-FIX.md (not in the current review) |
+| WR-01 | warning | fixed | aa520be (batched clear_expired deletion, 500/batch; 1000-row regression pins 999-variable limit). NOTE: ID reused — the earlier WR-01 (worker-tick exception guard) was a distinct finding fixed in 11-REVIEW-FIX.md and remains in code |
 | WR-02 | warning | fixed | 11-REVIEW-FIX.md (not in the current review) |
 | IN-01 | info | fixed | 11-REVIEW-FIX.md (not in the current review) |
 | IN-02 | info | fixed | 11-REVIEW-FIX.md (not in the current review) |

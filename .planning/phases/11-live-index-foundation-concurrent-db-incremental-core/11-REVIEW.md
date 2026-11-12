@@ -1,124 +1,77 @@
 ---
 phase: 11-live-index-foundation-concurrent-db-incremental-core
-reviewed: 2026-11-11T04:43:51Z
+reviewed: 2026-11-12T07:27:46Z
 depth: standard
-files_reviewed: 1
+files_reviewed: 9
 files_reviewed_list:
+  - src/sif/cli/commands/index.py
+  - src/sif/cli/commands/watch.py
+  - src/sif/cli/error_handling.py
+  - src/sif/cli/main.py
+  - src/sif/database/factory.py
+  - src/sif/database/repositories.py
+  - src/sif/indexing/incremental.py
   - src/sif/indexing/watcher.py
+  - src/sif/mcp/watch_host.py
 findings:
   critical: 0
-  warning: 0
+  warning: 1
   info: 0
-  total: 0
+  total: 1
   necessity: 0
-status: clean
+status: issues_found
 ---
 
-# Phase 11: Code Review Report (iteration 3 — post-IN-fix re-review)
+# Phase 11: Code Review Report (incremental HEAD re-verification)
 
-**Reviewed:** 2026-11-11T04:43:51Z
+**Reviewed:** 2026-11-12T07:27:46Z
 **Depth:** standard
-**Files Reviewed:** 1 (`src/sif/indexing/watcher.py` at HEAD `d6412fb`, clean working tree)
-**Status:** clean
+**Files Reviewed:** 9
+**Status:** issues_found
 
 ## Summary
 
-Third re-review of `src/sif/indexing/watcher.py`, verifying the four info-item
-fixes from commits `1a577bc` (IN-01), `2444fa0` (IN-02), `1bfd7c5` (IN-03), and
-`d6412fb` (IN-04) against the actual source, then running a fresh adversarial
-pass over the fix deltas and the full file. All four fixes are verified
-complete; no new defects were introduced. All reviewed files meet quality
-standards. No issues found.
+Incrementally reviewed all nine scoped files at HEAD `0899d909d97f95fc9fa4b8c26b0717cb69e78e7c`, using `5be330a59db40bcd4a78078f63c8fd47612d502c` as the prior-review baseline. The previously fixed mkdir-boundary, expiry-overflow, and factory setup-cleanup defects were not re-reported.
 
-Supporting files consulted for verification (not in the reviewed scope):
-`src/sif/database/factory.py`, `src/sif/cli/commands/watch.py`,
-`src/sif/mcp/watch_host.py`, `tests/unit/indexing/test_watcher.py`,
-`tests/unit/cli/test_watch_cmd.py`.
+The Phase 11 concurrency and locking invariants remain intact:
 
-**IN-01 — VERIFIED FIXED, finding drops.** The inert
-`if row is not None and row[0]: return` tail of `_checkpoint_if_idle`
-(`src/sif/indexing/watcher.py:715-719`) is now a `logger.debug("Idle WAL
-checkpoint busy (WAL held elsewhere); retrying next interval")` with an inline
-comment stating the caller's deadline reset is what postpones the retry, and
-the docstring (`:697-706`) was rewritten to match ("nothing to do here — the
-deadline reset in :meth:`_checkpoint_if_due` is what postpones the retry,
-surfaced at debug only"). The branch now has observable behavior and no longer
-implies a skip action it does not take. The log call introduces no behavior
-change at the default INFO level.
+- `src/sif/database/factory.py:48-77` remains the sole production `sqlite3.connect` site. The `foreign_keys` / `busy_timeout` / WAL / `synchronous` recipe and `isolation_level="IMMEDIATE"` are unchanged; the only factory behavior delta is closing the local handle when setup raises.
+- The CLI update/embed paths and watch startup reconcile still hold `index_lock` (`index.py:53-59,275-281`; `watch.py:176-187`). Watcher bursts and full reconciles still acquire the same per-database flock at `watcher.py:800-801,822-833`.
+- `FileWatcher.enqueue_reconcile()` (`watcher.py:525-537`) only constructs and enqueues intent. It performs no database work and does not bypass locking: every resulting job flows through `_run_job()` to `_run_reconcile()`, whose flock covers the checksum snapshot, incremental pass, and optional embed leg. MCP startup still calls `start()` before enqueueing (`watch_host.py:154-157`). No new lock ordering was introduced.
+- The `IncrementalIndexer` per-file `with self._conn:` commit boundaries are unchanged (`incremental.py:312-316,323-341,353-355,381-384`). The shared `create_embedding_purger()` is behaviorally equivalent to the extracted local helper.
 
-**IN-02 — VERIFIED FIXED, finding drops.** `WAL_CHECKPOINT_TRUNCATE` is now
-defined exactly once, at `src/sif/database/factory.py:45` with a comment naming
-its three consumers, and imported at all three former definition sites:
-`src/sif/indexing/watcher.py:33` (use at `:711`),
-`src/sif/cli/commands/watch.py:49` (use at `:113`), and
-`src/sif/mcp/watch_host.py:37` (use at `:181`). Repo-wide grep confirms zero
-remaining module-local copies. No circular import: `factory.py` imports only
-stdlib, `sqlite_vec`, and `sif.utils.logging`. The independent literal in
-`tests/unit/cli/test_watch_cmd.py:43` is deliberate test-pinning of the pragma
-value (importing the production constant would make the assertion tautological)
-— not residual duplication.
+One new Warning was found in the post-baseline LLM-cache cleanup: its single `IN (...)` delete exceeds SQLite's bind-variable limit on sufficiently large expired caches, aborting `sif cleanup`. This is outside the locking path and does not weaken the Phase 11 invariants.
 
-**IN-03 — VERIFIED FIXED, finding drops.** `stop()`'s docstring
-(`src/sif/indexing/watcher.py:454-467`) now states explicitly that "The flush
-bound is a COUNT bound — every job already queued at stop time, dequeued
-without blocking — not a time bound," naming the two real unbounded-time
-hazards (lazy first-use `manager.load_model()`, per-job `lock_timeout` flock
-wait) and the hosts' second-signal escapes as the time-bounded way out.
-`_drain_once`'s docstring (`:864-872`) carries the matching "Count-bounded and
-non-blocking on dequeue only — NOT time-bounded" statement. The documentation
-no longer implies time-boundedness it does not have.
+Validation: scoped `ruff check` and `ruff format --check` passed; authoritative `ty check src/sif` passed; 168 focused repository/factory/incremental/watcher/CLI/MCP/integration-concurrency tests passed with `--no-cov`. The caller-provided full-suite HEAD baseline is 1590 passed at 95.18% coverage. The cache-limit defect was independently reproduced as `sqlite3.OperationalError: too many SQL variables` with 1,000 expired rows and SQLite's variable limit set to the widely deployed 999 value.
 
-**IN-04 — VERIFIED FIXED, finding drops.** New
-`TestConcurrencyGuardRegressions` (`tests/unit/indexing/test_watcher.py:837-1035`,
-commit `d6412fb`, +202 lines) delivers the prescribed regression coverage:
+Necessity review was performed using the standard-depth rubric. Zero necessity findings: the opener's cleanup handles reachable construction/schema failures, and `enqueue_reconcile` has three real producers (MCP startup, recovery-return, and rescope-add), so it is not generality without instantiation.
 
-- `test_real_worker_loop_survives_raising_tick` (`:848`) drives the REAL
-  `_worker_loop` thread with `_on_tick` monkeypatched to raise, then asserts a
-  job enqueued after the failure is still processed — pinning the WR-01 tick
-  guard against the silent-live-indexing-death revert.
-- `test_recovery_tick_tolerates_stop_cleared_observer_registry` (`:906`) sets
-  `observer.unschedule.side_effect = KeyError` (a stop-cleared registry) and
-  asserts `recovery_tick` processes BOTH disappeared roots (`call_count == 2`,
-  both `missing is True`, documents preserved) — pinning the
-  `_unschedule_quietly` suppression and iteration continuation.
-- `test_stop_quiesces_worker_and_snapshot_survives_mid_iteration_mutation`
-  (`:965`) mutates `_watch_states` mid-iteration via a debouncer-stop side
-  effect and asserts ordering (`worker.join` before `observer.stop` and
-  debouncer stops; both debouncers stopped before the drain; drain before
-  `observer.join`) — pinning the WR-02 quiesce-then-snapshot shape.
+## Warnings
 
-The tests are deadline-bounded (5s/10s waits, no fixed sleeps), assert on
-structure rather than timing, and clean up in `finally` blocks.
+### WR-01: Cache cleanup exceeds SQLite bind-variable limits
 
-**No new defects from the fixes.** Adversarially traced every fix delta: the
-debug log is a pure constant-string call; the import move adds no cycle and no
-meaningful import cost (every watcher entry point already opens a factory
-connection); both docstring rewrites are accurate against the code they
-describe (`index_lock(lock_timeout)` per job, lazy `load_model()` in
-`ensure_ready`, CLI second-signal exit and daemon SIGKILL fallback); and the
-new tests use the file's established `_delenv_settings_vars`/`_seed_*` helpers
-without disturbing existing coverage.
+**File:** `src/sif/database/repositories.py:616-632`
+**Issue:** `clear_expired()` collects every expired row and emits one `DELETE FROM llm_cache WHERE id IN (?, ?, ...)`. SQLite limits the number of host parameters per statement; 999 is a common supported limit, while this table has no row cap. Once the expired set exceeds the connection's limit, cleanup raises `sqlite3.OperationalError: too many SQL variables`. Through `main.py:230-259`, that aborts and rolls back the entire `sif cleanup` transaction, including orphan removal. Reproduced with 1,000 expired rows and `SQLITE_LIMIT_VARIABLE_NUMBER=999`. The pre-change single SQL expiry predicate did not have this failure mode.
+**Fix:** Delete in bounded batches within the caller's existing transaction and return the accumulated row count. For example:
 
-**Necessity review performed** (rubric read at standard depth): every defensive
-construct in the file defends a reachable state — the KeyError suppression is
-grounded in the installed watchdog source, the tick guard and `list()`
-snapshots defend real interleavings, and the `rescope_provider`/
-`checkpoint_interval` opt-ins are instantiated by actual hosts
-(`src/sif/mcp/watch_host.py:149-151` and the daemon wiring at
-`src/sif/cli/commands/watch.py:383-385`), so they are not generality without
-instantiation. Zero necessity findings.
+```python
+removed = 0
+batch_size = 500
+for start in range(0, len(expired_ids), batch_size):
+    batch = expired_ids[start : start + batch_size]
+    placeholders = ",".join("?" for _ in batch)
+    cursor = self.db.execute(
+        f"DELETE FROM llm_cache WHERE id IN ({placeholders})",
+        batch,
+    )
+    removed += cursor.rowcount
+return removed
+```
 
-**Quality gates:** `ruff check` and `ruff format --check` pass on all five
-touched files; `pytest tests/unit/indexing/test_watcher.py
-tests/unit/cli/test_watch_cmd.py tests/unit/mcp/test_mcp_watch_host.py` — 92
-passed; `TestConcurrencyGuardRegressions` — 3 passed;
-`tests/integration/test_watch_e2e.py` — 6 passed. (The 90% coverage-gate FAIL
-on subset runs is the documented single-subset artifact, identical pre-fix.)
-
-Result: all four info findings verified fixed and dropped; no new findings.
+Add a regression with more expired rows than a deliberately lowered SQLite variable limit (or more than the chosen fixed batch size), asserting all expired rows are removed, fresh/malformed rows remain, and the returned count is exact.
 
 ---
 
-_Reviewed: 2026-11-11T04:43:51Z_
+_Reviewed: 2026-11-12T07:27:46Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
