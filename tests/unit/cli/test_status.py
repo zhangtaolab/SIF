@@ -51,9 +51,10 @@ class TestStatusCommand:
                 "contexts": 0,
                 "total_size_bytes": 1024,
             }
-            # status_cmd owns the Database via `with Database(...) as db:`, so
-            # the instance bound in the scope is the __enter__ result.
-            mock_db_cls.return_value.__enter__.return_value = mock_db
+            # The shared opener yields the constructed instance; the legacy
+            # `with Database(...)` form binds its __enter__ result — wire both.
+            mock_db_cls.return_value = mock_db
+            mock_db.__enter__.return_value = mock_db
             result = runner.invoke(status_cmd)
 
         assert result.exit_code == 0
@@ -84,8 +85,9 @@ class TestStatusCommand:
                 "contexts": 0,
                 "total_size_bytes": 0,
             }
-            # Ownership scope binds the __enter__ result (see test above).
-            mock_db_cls.return_value.__enter__.return_value = mock_db
+            # Instance binding shared by the opener and the legacy form (see above).
+            mock_db_cls.return_value = mock_db
+            mock_db.__enter__.return_value = mock_db
             result = runner.invoke(status_cmd)
 
         # The command should use the env var path
@@ -122,7 +124,8 @@ class TestWatchSection:
         if payload is not None:
             monkeypatch.setattr("sif.utils.daemon.corroborate_pid", lambda _pl: corroborate)
         with patch("sif.cli.main.Database") as mock_db_cls:
-            mock_db_cls.return_value.__enter__.return_value = mock_db
+            mock_db_cls.return_value = mock_db
+            mock_db.__enter__.return_value = mock_db
             return CliRunner().invoke(command, [], obj={"index_path": db_path})
 
     def test_running_daemon_renders_pid_mode_depth(self, tmp_path, monkeypatch):
@@ -225,7 +228,8 @@ class TestVectorLag:
             mock_db.connection.execute.return_value = iter(doc_ids)
         monkeypatch.setattr("sif.utils.daemon.read_pid_file", lambda _path: None)
         with patch("sif.cli.main.Database") as mock_db_cls:
-            mock_db_cls.return_value.__enter__.return_value = mock_db
+            mock_db_cls.return_value = mock_db
+            mock_db.__enter__.return_value = mock_db
             return CliRunner().invoke(status_cmd, [], obj={"index_path": db_path})
 
     def test_lag_count_renders_documents(self, tmp_path, monkeypatch):

@@ -12,6 +12,7 @@ from rich.console import Console
 from rich.table import Table
 
 from sif import __version__
+from sif.cli.error_handling import open_initialized_database
 from sif.config.settings import get_settings
 from sif.database.database import Database
 from sif.database.repositories import LLMCacheRepository
@@ -168,8 +169,7 @@ def status_cmd(ctx: click.Context) -> None:
         return
 
     try:
-        with Database(index_path) as db:
-            db.init_schema()
+        with open_initialized_database(index_path, Database) as db:
             stats = db.get_stats()
 
             table = Table(title="Index Status")
@@ -209,8 +209,7 @@ def status_cmd(ctx: click.Context) -> None:
 
             console.print(table)
 
-    except Exception as e:
-        console.print(f"[red]Error reading index: {e}[/red]")
+    except (sqlite3.Error, OSError) as e:
         raise click.ClickException(str(e)) from e
 
 
@@ -226,9 +225,7 @@ def cleanup_cmd(ctx: click.Context) -> None:
         return
 
     try:
-        with Database(index_path) as db:
-            db.init_schema()
-
+        with open_initialized_database(index_path, Database) as db:
             with db.transaction() as conn:
                 # Clean up orphaned chunks
                 cursor = conn.execute("""
@@ -255,8 +252,7 @@ def cleanup_cmd(ctx: click.Context) -> None:
             console.print(f"  - Removed {embeddings_removed} orphaned embeddings")
             console.print(f"  - Removed {cache_removed} expired cache entries")
 
-    except Exception as e:
-        console.print(f"[red]Error during cleanup: {e}[/red]")
+    except (sqlite3.Error, OSError) as e:
         raise click.ClickException(str(e)) from e
 
 
