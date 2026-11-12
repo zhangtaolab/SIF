@@ -516,6 +516,18 @@ class ContextRepository:
 PathContextRepository = ContextRepository
 
 
+def _expiry_instant(value: str) -> datetime:
+    """Parse a stored expiry into an aware-UTC instant (D-05, WR-09 semantics).
+
+    Legacy naive-local strings (the old ``set`` writer's
+    ``datetime.fromtimestamp`` form) are interpreted as system-local time by
+    ``astimezone`` — never relabeled via ``replace(tzinfo=...)``. One parser
+    serves both ``get`` and ``clear_expired`` so the read and cleanup paths
+    can never diverge on what an expiry means.
+    """
+    return datetime.fromisoformat(value).astimezone(timezone.utc)
+
+
 class LLMCacheRepository:
     """Repository for LLM cache operations."""
 
@@ -524,17 +536,29 @@ class LLMCacheRepository:
         self.db = db
 
     def get(self, model_name: str, prompt_hash: str) -> str | None:
-        """Get cached response."""
+        """Get cached response, comparing expiry as instants (14-WR-03, D-05).
+
+        The row is fetched by key without a SQL expiry predicate: ISO text
+        order is not chronological across naive-local/aware forms. NULL
+        expiry never expires; legacy naive-local values convert through
+        ``_expiry_instant`` exactly as ``clear_expired`` interprets them.
+        """
         cursor = self.db.execute(
             """
-            SELECT response FROM llm_cache
+            SELECT response, expires_at FROM llm_cache
             WHERE model_name = ? AND prompt_hash = ?
-            AND (expires_at IS NULL OR expires_at > ?)
             """,
-            (model_name, prompt_hash, datetime.now(timezone.utc).isoformat()),
+            (model_name, prompt_hash),
         )
         row = cursor.fetchone()
-        return row[0] if row else None
+        if row is None:
+            return None
+        expires_at = row["expires_at"]
+        if expires_at is None:
+            return row["response"]
+        if _expiry_instant(expires_at) <= datetime.now(timezone.utc):
+            return None
+        return row["response"]
 
     def set(
         self,
@@ -584,11 +608,11 @@ class LLMCacheRepository:
         expired_ids: list[str] = []
         for row in cursor.fetchall():
             try:
-                expires = datetime.fromisoformat(row["expires_at"])
+                expires = _expiry_instant(row["expires_at"])
             except ValueError:
                 # Cleanup never deletes a row whose expiry it cannot interpret.
                 continue
-            if expires.astimezone(timezone.utc) <= now:
+            if expires <= now:
                 expired_ids.append(row["id"])
         if not expired_ids:
             return 0
