@@ -2,15 +2,15 @@
 gsd_state_version: "1.0"
 milestone: v1.1
 milestone_name: Live Index and Search Quality
-current_phase: 11
+current_phase: "16.1"
 status: completed
-stopped_at: context exhaustion at 75% (2026-11-11)
-last_updated: "2026-11-11T12:05:09.566Z"
+stopped_at: Phase 16.1 context gathered
+last_updated: "2026-11-12T02:05:54.674Z"
 last_activity: 2026-11-11
 last_activity_desc: Phase 11 complete
-state_head: 802c08c556eea041e420e28b6ac582260811f168
+state_head: 697ad14918ee0c5be50cf6ecce568a9d8fa1180e
 progress:
-  total_phases: 6
+  total_phases: 7
   completed_phases: 6
   total_plans: 22
   completed_plans: 22
@@ -28,7 +28,7 @@ progress:
 
 ## Current Position
 
-Phase: 11
+Phase: 16.1
 Plan: Not started
 Status: All phases complete
 Last activity: 2026-11-11 - Completed quick batch 261111-rqo (4 items): IN-08 read_text UTF-8 pin, WR-09 cache-expiry instant comparison, D-1 caplog leak fixture, WR-01 shared embedding purger — ledger open 16->13
@@ -177,6 +177,10 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 
 - ⚠️ [Phase 11 re-review 2026-11-11] WR-01/WR-02 watcher lifecycle races FIXED (guards in `src/sif/indexing/watcher.py` at 750-759/450/501-603, pinned by IN-04 TestConcurrencyGuardRegressions; re-verified 20/20 at e20ce25). Still open (advisory, carried in `11-REVIEW-DISPOSITION.md`): WR-03 init_schema errors escape as raw tracebacks, WR-04 impossible-state `if not coll: continue` guards, IN-05 model-type set duplicated CLI/Settings
 
+### Roadmap Evolution
+
+- Phase 16.1 inserted after Phase 16: Address tech debt: CLI error conventions + cache TTL + watch-host enqueue API (URGENT)
+
 ## Deferred Items
 
 | Category | Item | Status | Deferred At | Milestone |
@@ -221,8 +225,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.1 planning):
 
 ## Session Continuity
 
-Last session: 2026-11-11T16:27:46Z (batch 261111-wh6 complete)
-Stopped at: Quick batch 261111-wh6 complete — 4/4 items (WR-07 max_lines, WR-08 BM25 degradation + user-authorized CLAUDE.md carve-out, IN-05 --config removal, IN-07 dim resolution); Phase 10 ledger open 0/22 (FULLY CLOSED); suite 1545 passed / 1 skipped / 95.06% cov
-Resume file: .planning/.continue-here.md (pause record retained — describes prior tio pause; superseded)
+Last session: 2026-11-12T02:05:54.315Z
+Stopped at: Phase 16.1 context gathered
+Resume file: .planning/phases/16.1-address-tech-debt-cli-error-conventions-cache-ttl-watch-host/16.1-CONTEXT.md
 
 - **Next expected action:** Phase 10 review backlog fully closed (0/22 open). v1.1 milestone ready to archive — `/gsd-complete-milestone v1.1` (all 6 phases complete and verified). No remaining Phase 10 findings; the autonomous-fix vein is exhausted.
