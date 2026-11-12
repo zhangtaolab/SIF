@@ -1238,6 +1238,150 @@ class TestRecoveryTick:
         assert _doc_paths(db_path) == {str(doc_file)}
 
 
+class TestEnqueueReconcile:
+    """W-3/D-06 public reconcile-intent API, zero timing.
+
+    The FIFO/payload battery dequeues actual jobs on a quiesced worker
+    (Pitfall 11 — qsize alone is not ordering proof); the routing spies prove
+    both internal producers (``recovery_tick``'s return branch and
+    ``_schedule_added``) call the public method instead of putting directly.
+    """
+
+    def _start_quiesced(
+        self,
+        db_path: Path,
+        names: tuple[str, ...],
+        monkeypatch,
+        extra_registered: tuple[str, ...] = (),
+    ) -> tuple[FileWatcher, dict[str, Collection], Database]:
+        """Open the DB, build+start a quiesced-worker watcher over ``names``.
+
+        ``extra_registered`` names exist in the DB but stay unwatched (the
+        rescope-add probe). Returns (watcher, colls, db).
+        """
+        observer_cls = MagicMock()
+        monkeypatch.setattr(watcher_module, "Observer", observer_cls)
+        db = Database(db_path)
+        from sif.database.repositories import CollectionRepository
+
+        repo = CollectionRepository(db.connection)
+        colls: dict[str, Collection] = {}
+        for name in (*names, *extra_registered):
+            coll = repo.get_by_name(name)
+            assert coll is not None
+            colls[name] = coll
+        watcher = FileWatcher([colls[n] for n in names], db.connection, db_path)
+        monkeypatch.setattr(watcher, "_worker_loop", lambda: None)
+        watcher.start()
+        return watcher, colls, db
+
+    def test_fifo_order_and_needs_reconcile_only_payload(self, tmp_path, monkeypatch) -> None:
+        """enqueue_reconcile([alpha, beta]) yields exactly two jobs, dequeued
+        FIFO alpha then beta, each a needs_reconcile-only FoldResult with empty
+        candidate sets — proven by dequeuing actual jobs, never qsize alone
+        (Pitfall 11)."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "watch.db"
+        alpha_root = tmp_path / "alpha"
+        beta_root = tmp_path / "beta"
+        alpha_root.mkdir()
+        beta_root.mkdir()
+        (alpha_root / "a.md").write_text(BODY_ALPHA, encoding="utf-8")
+        (beta_root / "b.md").write_text(BODY_BETA, encoding="utf-8")
+        _seed_collections(db_path, {"alpha": alpha_root, "beta": beta_root})
+
+        watcher, colls, db = self._start_quiesced(db_path, ("alpha", "beta"), monkeypatch)
+        try:
+            watcher.enqueue_reconcile([colls["alpha"], colls["beta"]])
+
+            assert watcher._queue.qsize() == 2
+            first_coll, first_fold = watcher._queue.get_nowait()
+            watcher._queue.task_done()
+            second_coll, second_fold = watcher._queue.get_nowait()
+            watcher._queue.task_done()
+            assert [first_coll.name, second_coll.name] == ["alpha", "beta"]
+            for folded in (first_fold, second_fold):
+                assert folded.needs_reconcile is True
+                assert folded.index_candidates == set()
+                assert folded.remove_candidates == set()
+            assert watcher._queue.empty()
+        finally:
+            watcher.stop(flush=False)
+            db.close()
+
+    def test_recovery_return_routes_through_public_enqueue(self, tmp_path, monkeypatch) -> None:
+        """D-06 internal routing: the recovery-return producer calls
+        self.enqueue_reconcile with a one-element iterable — the spy proves
+        the routing, the dequeued job proves the payload stays unchanged."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "watch.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        (notes / "a.md").write_text(BODY_ALPHA, encoding="utf-8")
+        _seed_collection(db_path, notes)
+
+        watcher, _colls, db = self._start_quiesced(db_path, ("notes",), monkeypatch)
+        try:
+            spy = MagicMock(wraps=watcher.enqueue_reconcile)
+            monkeypatch.setattr(watcher, "enqueue_reconcile", spy)
+
+            # Lose the root, then bring it back (the recovery-return harness).
+            gone = tmp_path / "notes-gone"
+            notes.rename(gone)
+            watcher.recovery_tick()
+            gone.rename(notes)
+            watcher.recovery_tick()
+
+            spy.assert_called_once()
+            (enqueued,) = spy.call_args.args
+            assert [coll.name for coll in enqueued] == ["notes"]
+            # Payload unchanged: exactly one needs_reconcile-only job.
+            assert watcher._queue.qsize() == 1
+            job_coll, folded = watcher._queue.get_nowait()
+            watcher._queue.task_done()
+            assert job_coll.name == "notes"
+            assert folded == FoldResult(needs_reconcile=True)
+        finally:
+            watcher.stop(flush=False)
+            db.close()
+
+    def test_schedule_added_routes_through_public_enqueue(self, tmp_path, monkeypatch) -> None:
+        """D-06 internal routing: _schedule_added (the rescope-add path) calls
+        self.enqueue_reconcile with a one-element iterable — the spy proves
+        the routing, the dequeued job proves the payload stays unchanged."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "watch.db"
+        alpha_root = tmp_path / "alpha"
+        beta_root = tmp_path / "beta"
+        alpha_root.mkdir()
+        beta_root.mkdir()
+        (alpha_root / "a.md").write_text(BODY_ALPHA, encoding="utf-8")
+        (beta_root / "b.md").write_text(BODY_BETA, encoding="utf-8")
+        _seed_collections(db_path, {"alpha": alpha_root, "beta": beta_root})
+
+        # Watch alpha only; beta is registered but unwatched until the rescope.
+        watcher, colls, db = self._start_quiesced(
+            db_path, ("alpha",), monkeypatch, extra_registered=("beta",)
+        )
+        try:
+            spy = MagicMock(wraps=watcher.enqueue_reconcile)
+            monkeypatch.setattr(watcher, "enqueue_reconcile", spy)
+
+            watcher.rescope([colls["alpha"], colls["beta"]])
+
+            spy.assert_called_once()
+            (enqueued,) = spy.call_args.args
+            assert [coll.name for coll in enqueued] == ["beta"]
+            assert watcher._queue.qsize() == 1
+            job_coll, folded = watcher._queue.get_nowait()
+            watcher._queue.task_done()
+            assert job_coll.name == "beta"
+            assert folded == FoldResult(needs_reconcile=True)
+        finally:
+            watcher.stop(flush=False)
+            db.close()
+
+
 DIM = 8
 
 
