@@ -137,6 +137,118 @@ def test_startup_reconcile_is_queued_not_inline(tmp_path: Path) -> None:
         indexer_cls.return_value.update_collection.assert_called_once()
 
 
+def test_startup_calls_start_then_public_enqueue_with_full_collections(tmp_path: Path) -> None:
+    """W-3/D-06: host startup routes through the public reconcile-intent API —
+    watcher.start() precedes watcher.enqueue_reconcile(collections), the FULL
+    collections list is handed over in one call, and no indexing runs before
+    the queue drains (serve-first preserved, 13-D04/Pitfall 4)."""
+    db_path = tmp_path / "watch.db"
+    _make_db(db_path, with_collection=True)
+    more = tmp_path / "more"
+    more.mkdir()
+    (more / "note.md").write_text("# More\n\nSecond collection text.\n", encoding="utf-8")
+    db = Database(db_path)
+    try:
+        with db.connection:
+            CollectionRepository(db.connection).create(Collection(name="more", path=str(more)))
+    finally:
+        db.close()
+    settings = Settings(mcp_watch=True)
+    real_file_watcher = watcher_mod.FileWatcher
+    calls: list[tuple[str, list[str] | None]] = []
+
+    def _quiesced(collections, conn, db_path_arg, config=None):
+        """Real watcher, no-op worker; start/enqueue append to the shared call
+        log BEFORE delegating, so the log proves the host's call order."""
+        watcher = real_file_watcher(collections, conn, db_path_arg, config)
+        watcher._worker_loop = lambda: None
+        real_start = watcher.start
+        real_enqueue = watcher.enqueue_reconcile
+
+        def _start() -> None:
+            calls.append(("start", None))
+            real_start()
+
+        def _enqueue(colls) -> None:
+            materialized = list(colls)
+            calls.append(("enqueue_reconcile", [coll.name for coll in materialized]))
+            real_enqueue(materialized)
+
+        watcher.start = _start
+        watcher.enqueue_reconcile = _enqueue
+        return watcher
+
+    with (
+        patch.object(watch_host, "get_settings", return_value=settings),
+        patch.object(watch_host, "FileWatcher", _quiesced),
+        patch.object(watcher_mod, "IncrementalIndexer") as indexer_cls,
+    ):
+        result = start_embedded_watch(str(db_path))
+        assert result is not None
+        # start() first, then ONE public enqueue carrying every collection.
+        assert calls == [("start", None), ("enqueue_reconcile", ["more", "notes"])]
+        # Serve-first: both reconcile jobs sit queued; the indexer never ran.
+        indexer_cls.return_value.update_collection.assert_not_called()
+        assert result.watcher._queue.qsize() == 2
+        stop_embedded_watch(result)
+        # The flush drain at teardown runs both reconciles — never during start.
+        assert indexer_cls.return_value.update_collection.call_count == 2
+
+
+def test_enqueue_reconcile_fifo_order_and_private_payload(tmp_path: Path) -> None:
+    """D-06: enqueue_reconcile([alpha, beta]) on a quiesced watcher yields
+    exactly two jobs, dequeued FIFO alpha then beta, each a needs_reconcile-only
+    FoldResult with empty candidate sets — proven by dequeuing actual jobs,
+    never qsize alone (Pitfall 11)."""
+    db_path = tmp_path / "watch.db"
+    alpha_root = tmp_path / "alpha"
+    beta_root = tmp_path / "beta"
+    alpha_root.mkdir()
+    beta_root.mkdir()
+    alpha = Collection(name="alpha", path=str(alpha_root))
+    beta = Collection(name="beta", path=str(beta_root))
+    db = Database(db_path)
+    watcher = None
+    try:
+        db.init_schema()
+        watcher = watcher_mod.FileWatcher([alpha, beta], db.connection, db_path)
+        watcher._worker_loop = lambda: None
+        watcher.start()
+
+        watcher.enqueue_reconcile([alpha, beta])
+
+        assert watcher._queue.qsize() == 2
+        first_collection, first_fold = watcher._queue.get_nowait()
+        watcher._queue.task_done()
+        second_collection, second_fold = watcher._queue.get_nowait()
+        watcher._queue.task_done()
+        assert [first_collection.name, second_collection.name] == ["alpha", "beta"]
+        for folded in (first_fold, second_fold):
+            assert folded.needs_reconcile is True
+            assert folded.index_candidates == set()
+            assert folded.remove_candidates == set()
+        assert watcher._queue.empty()
+    finally:
+        if watcher is not None:
+            watcher.stop(flush=False)
+        db.close()
+
+
+def test_watch_host_exposes_no_foldresult_attribute() -> None:
+    """W-3 module boundary: the host import is narrowed to FileWatcher and
+    WatchConfig — FoldResult (the private job payload) never enters the host
+    namespace (D-06: the job representation stays private to watcher.py)."""
+    assert not hasattr(watch_host, "FoldResult")
+
+
+def test_watch_host_source_contains_no_private_queue_suppression() -> None:
+    """W-3/no-noqa culture: the last SLF001 reach-in into the watcher queue is
+    gone — zero suppression markers remain in the host source (baseline at
+    the pre-fix HEAD: 1)."""
+    source = Path(watch_host.__file__).read_text(encoding="utf-8")
+    assert source.count("noqa: SLF001") == 0
+
+
 def test_renderers_log_only_and_never_touch_stdout(caplog, capsys) -> None:
     """Pitfall 1: event/batch renderers emit logger records only — sys.stdout
     (the stdio JSON-RPC channel) receives nothing."""
