@@ -1,6 +1,6 @@
 ---
 phase: 16-bench-expansion-reranker-tuning
-verified: 2026-11-12T10:37:54Z
+verified: 2026-11-12T10:42:35Z
 status: passed
 score: 20/20 must-haves verified
 covered_files:
@@ -205,7 +205,7 @@ covered_files:
   - tests/unit/search/test_hybrid.py
   - tests/unit/search/test_rerank.py
   - tests/unit/search/test_sweep.py
-covered_digest: "v4:sha256:08ff053a573a87791b7480810d368a9a4bec4beed856fc0bf448bf1a2b8d68d5"
+covered_digest: "v4:sha256:f18fb8d6e30ad4fe6a3b4ca84b54965bda9b8170af20e086d3eb3c31a940265e"
 behavior_unverified: 0
 overrides_applied: 0
 re_verification:
@@ -218,75 +218,61 @@ decision_coverage:
   honored: 13
   total: 13
   not_honored: []
+advisory: []
 ---
 
 # Phase 16: Bench Expansion + Reranker Tuning Verification Report
 
 **Phase Goal:** Search-quality tuning is quantified and honest — an expanded benchmark with metrics, sweep, and held-out validation justifies shipped defaults and tunes the reranker within interactive latency.
-**Verified:** 2026-11-12T10:37:54Z at HEAD `5d6d524e5ea14a3071b1d93dbcafe7af594cbf6b`
+**Verified:** 2026-11-12T10:42:35Z at HEAD `353fe339ab361b91396670452df9007072698354`
 **Status:** passed
-**Re-verification:** Yes — the prior passed report went stale because `docs/benchmarking.md`, `16-UAT.md`, and `.planning/WINDOWS.md` were updated after it. Those are the only changes since the prior pass: `git log --since=2026-11-12T07:49:17Z --oneline -- src tests scripts` is empty. This pass re-derived the verdict from current source, fixture data, live tests, and a fresh check of the new documentation claims; no prior gap was carried forward.
+**Re-verification:** Yes — final pass. The prior report was `passed` 20/20 with no gaps. Since its `verified` timestamp (`2026-11-12T10:37:54Z`) the only functional change is the `16-UAT.md` frontmatter correction (`status: passed` → canonical `status: complete`, updated timestamp) in commit `353fe33`; `git log --since=2026-11-12T10:37:54Z --oneline -- src tests scripts` is empty, so no implementation, fixture, or test input changed. This pass nonetheless re-derived every verdict from current source, fixture data, a live sweep recomputation, and the focused test suites rather than carrying the prior verdict forward.
 
 ## Goal Achievement
 
-Must-have set reused from the prior verification: 5 ROADMAP success criteria, 10 edge truths, and 5 prohibitions. SUMMARY.md statements were used only to locate evidence, not as proof. All 20 items have current source and behavioral evidence.
-
-### Post-Verification Change Review
-
-Only the documentation/ledger commit `5d6d524` landed after the prior pass. No implementation, fixture, or test file changed.
-
-| Change | Current Codebase Evidence | Result |
-|--------|---------------------------|--------|
-| `docs/benchmarking.md` real-model evidence row | The "Manual real-model evidence" table now records Qwen/Qwen3-Embedding-0.6B, macOS arm64 single-thread CPU, 2026-11-12, held-out nDCG@10 0.9233 (Hit@10 1.0), p50/p95 94.3/117.6 ms, and is explicitly labeled "a separate manual step, not a CI gate". The row says the measurement used the in-process `SearchEvaluator` + `SearchPipeline` over the deterministic corpus index rebuilt with the real model — the same evaluation path `test_bench_snapshot.py` exercises (only the embedder differs). | Consistent with the code; corroboration only, not a gate. |
-| `docs/benchmarking.md` deterministic evidence table | Unchanged values: held-out nDCG@10 0.8120, Hit@10 0.85, per-category 0.9735/0.2746/1.0000/1.0000, sweep winner 20/1.0/0.5 with tuning nDCG 0.8680 and a 30/45 tie group, held-out 0.8186, delta +0.0066, verdict `unchanged`. This verifier recomputed the sweep at HEAD (36 tuning queries): best 20/1.0/0.5, nDCG@10 0.8679671304, 30-config tie group, `winner_declared=false` — exactly the documented figures. | Consistent; the snapshot remains the CI gate. |
-| `16-UAT.md` item 1 note | Item 1 is `result: passed` and now carries the recorded measurement, so the previously open manual-only item is backed by evidence. | Consistent with the docs row and WINDOWS closure. |
-| `.planning/WINDOWS.md` id 10 | Row 10 is `fixed` with `resolved_at 2026-11-12T10:33:55.806Z`; frontmatter is `open_count: 6`, `fixed_count: 4`. | Consistent; Broken Window closed only after the evidence was recorded. |
+Must-haves are the five ROADMAP success criteria plus the plan-must-have edge cases and prohibitions consolidated to 20 items. SUMMARY.md statements were used only to locate evidence, never as proof.
 
 ### Observable Truths
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 1 | [SC-1] `sif bench` reports nDCG@k, Hit@k, and p50/p95 latency for each measured configuration | VERIFIED | `benchmark.py:78-112` implements DCG/nDCG/Hit/percentile; `report()` at `benchmark.py:575-657` computes global/category metrics and warmed latency; `bench.py:261-300,403-475` carries them into every config/report. Live: 86 metric/benchmark/fixture tests and 38 bench CLI tests pass. |
-| 2 | [SC-2] Fixture contains at least 50 categorized queries split into tuning and held-out | VERIFIED | Direct JSON parse at HEAD: 56 queries, exactly 14 each for keyword/synonym/multilingual/rival; 36 tuning and 20 held-out, with 9/5 per category. All grades are integers 0-3, every query has grade >=2 relevance, and every relevance key resolves beneath `corpus/`. Generator check: 151 files match. |
-| 3 | [SC-3] Fixed sweep grids weights and k; differences within noise (<0.01) are not declared winners | VERIFIED | `GRID_RRF_K`/`GRID_WEIGHTS` at `benchmark.py:31-33` yield the fixed 45-config grid through `iter_grid()`; `rank_sweep()` at `benchmark.py:361-391` applies `round(best - ndcg, 6) < 0.01` and sets `winner_declared` only for a one-config tie group. Live recomputation at HEAD returned 45 unique configs, 30-config tie group, no winner. All 14 sweep tests pass. |
-| 4 | [SC-4] Shipped defaults are justified and locked by held-out evidence | VERIFIED | `heldout_defaults.json` records defaults 60/1.0/1.0, held-out nDCG@10 `0.8120158986791898` over 20 queries, candidate delta `0.00662541159807295`, and verdict `unchanged`; `Settings` still defaults to 60/1.0/1.0. `test_metrics_reproduce_and_defaults_lock_in_one_test` recomputes global and per-category values from `Settings(_env_file=None)`; all 13 snapshot tests pass. The new real-model row is corroboration, not the lock. |
-| 5 | [SC-5] Reranker honors candidate cap and relative threshold; off path remains cheap | VERIFIED | `rerank.py:40-48` stable-sorts and filters raw normalized scores with `>= top1 * alpha` before `top_k`; `hybrid.py:233-261` over-fetches to `max(limit + offset, candidate_limit)` then slices to the cap; `search.py:913-930` gates factory construction on flag/setting. Settings validate 5..50 and (0,1]. Live: rerank, hybrid, inference-reranker, bench, and search/settings files pass. |
-| 6 | [Edge] Cap and threshold boundary validation | VERIFIED | `settings.py:158-182` declares Pydantic bounds; `resolve_candidate_limit` at `settings.py:399-415` clamps every resolved value to 5..50 and rejects non-int injection by falling back to 20. Settings tests pass. |
-| 7 | [Edge] Deterministic equal-score rerank and sweep ordering | VERIFIED | Python stable sort in `rerank.py:40-48`; sweep key at `benchmark.py:375-383` is nDCG descending followed by declared grid dimensions. Determinism assertions in rerank, hybrid, sweep, and snapshot suites pass. |
-| 8 | [Edge] Tuning/held-out isolation | VERIFIED | `_tuning_evaluator` at `bench.py:237-258` filters to `split == "tuning"` before constructing the evaluator/search path. `test_bench_sweep_never_searches_heldout_queries` is active and passed within the 38-test bench CLI run. |
-| 9 | [Edge] Empty fixtures fail instead of producing zero-valued metrics | VERIFIED | `benchmark.py:453-459` raises `ValueError` on an empty query list; `bench.py:666-686` maps measurement/fixture failures to `ClickException`. Legacy metric and CLI empty-fixture tests pass. |
-| 10 | [Edge] Fixed category order in every report/config | VERIFIED | `CATEGORIES` is the fixed tuple at `benchmark.py:21`; `BenchReport.to_dict()` and `ConfigResult.to_dict()` iterate that tuple. Fixture, metric, sweep, and narrow-width JSON tests pass. |
-| 11 | [Edge] Held-out delta >=0.01 is inclusive with rounded arithmetic | VERIFIED | `warrants_default_change` at `benchmark.py:394-407` uses `round(candidate - baseline, 6) >= delta`; exact-0.01, representation-noise, 0.0099, zero, and negative cases pass in `TestWarrantsDefaultChange`. |
-| 12 | [Edge] No evidence means no default change | VERIFIED | `snapshot_verdict` in `test_bench_snapshot.py:111-124` returns `unchanged-no-evidence` when held-out or candidate evidence is absent; both missing-evidence tests and the committed-verdict consistency test pass. |
-| 13 | [Edge] Sweep output ordering is deterministic | VERIFIED | `TestIterGrid`, `TestRankSweep`, and `TestSweepWinnerEvidence::test_winner_ranking_is_deterministic` pass; the committed ranking contains all 45 unique configurations (reconfirmed live at HEAD). |
-| 14 | [Edge] k=10 and empty-result zero scores | VERIFIED | `DEFAULT_K = 10`; `ndcg_at_k` returns 0.0 for zero ideal DCG and `hit_at_k` returns 0.0 for no positive retrieved grade. Hand-value and edge tests in `test_benchmark_metrics.py` pass. |
-| 15 | [Edge] Strict <0.01 tie boundary | VERIFIED | `TestRankSweepTieBoundary` proves exactly 0.01 is signal, 0.0099 is noise, and the raw `0.29 - 0.28 = 0.009999999999999953` case is not misclassified. All 14 sweep tests pass. |
-| 16 | [Prohibition] No real-KB data committed; synthetic fixture only | VERIFIED (must-NOT did not happen) | `python -I scripts/generate_bench_fixture.py --check` returned `OK ... matches generator output (151 files)`, so the complete pack is byte-identical to seeded generator output. The new real-model row measures over that same synthetic corpus, so no user data was introduced. |
-| 17 | [Prohibition] No unbounded rerank fan-out | VERIFIED (must-NOT did not happen) | Shared clamp 5..50 plus pipeline slice is present on both CLI paths; `-C 200` resolution and real-index candidate-count spies pass in search, bench, and hybrid suites. |
-| 18 | [Prohibition] No tuning-only default changes | VERIFIED (must-NOT did not happen) | `Settings` defaults remain 60/1.0/1.0 and the measured held-out candidate delta is only +0.0066; snapshot verdict remains `unchanged`, reproduced by the live lock test. |
-| 19 | [Prohibition] No held-out leakage into sweep ranking | VERIFIED (must-NOT did not happen) | Tuning-only fixture filtering is structural and the held-out-search spy test passes at HEAD. |
-| 20 | [Prohibition] No reranker construction on the off path | VERIFIED (must-NOT did not happen) | `search.py:913-920` checks opt-in before `create_reranker`; `bench.py:184-208` returns `None` before the factory unless `--rerank` is set. Off-path and no-construction tests pass. |
+| 1 | [SC-1] `sif bench` reports nDCG@k, Hit@k, and p50/p95 latency for each measured configuration | VERIFIED | `benchmark.py:78-112` (dcg/ndcg/hit/percentile with linear interpolation), `search` report at `benchmark.py:575-657` (global + per-category + warmed p50/p95 via `measure_query_times`), `ConfigResult` carries `p50_ms`/`p95_ms` per swept config (`benchmark.py:279-292`), and `bench.py:440-474` renders nDCG@10, Hit@10, p50, p95. 65 snapshot/sweep/bench-CLI tests pass. |
+| 2 | [SC-2] Fixture contains ≥50 categorized queries split into tuning and held-out | VERIFIED | Direct `json` parse at HEAD: 56 queries; 14 each for keyword/synonym/multilingual/rival; 36 tuning + 20 held-out (9/5 per category); grades are integers 0-3; every query has max grade ≥2; all 56 relevance keys resolve under `corpus/`. Generator drift gate passes (151 files). |
+| 3 | [SC-3] Fixed sweep grids weights and k; differences within noise (<0.01) are not declared winners | VERIFIED | `GRID_RRF_K`/`GRID_WEIGHTS` (`benchmark.py:31-33`) yield 45 unique configs via `iter_grid()`; `rank_sweep()` applies `round(best - ndcg, 6) < 0.01` and sets `winner_declared = len(tie_group) == 1`. Live recomputation at HEAD over the 36 tuning queries: 45 unique configs, winner `20/1.0/0.5` at nDCG@10 `0.8679671304`, tie group 30/45, `winner_declared=false`; an exact-0.01 pair is correctly declared a winner. 14 sweep tests pass. |
+| 4 | [SC-4] Shipped defaults are justified and locked by held-out evidence | VERIFIED | `heldout_defaults.json` records defaults 60/1.0/1.0, held-out nDCG@10 `0.8120158986791898` over 20 queries, per-category `0.9735/0.2746/1.0000/1.0000`, candidate `20/1.0/0.5` at held-out `0.8186413`, delta `+0.0066254`, verdict `unchanged`. `Settings` defaults remain 60/1.0/1.0 (`settings.py:228-245`). `test_metrics_reproduce_and_defaults_lock_in_one_test` recomputes and asserts the lock in the same test; 13 snapshot tests pass. |
+| 5 | [SC-5] Reranker honors candidate cap and relative threshold; off path remains cheap | VERIFIED | `rerank.py:24-48` stable-sorts, then filters `score >= top1 * alpha`, then truncates to `top_k`; `hybrid.py:233-262` over-fetches to `max(limit + offset, candidate_limit)` and slices `[: candidate_limit]` before rerank; `search.py:915-920` gates `create_reranker` behind flag/setting. `Settings` defaults cap 20 (5..50) and α 0.5 ((0,1]). Live: rerank/hybrid/reranker/settings/search suites pass. |
+| 6 | [Edge] Cap and threshold boundary validation | VERIFIED | `settings.py:158-182` Pydantic bounds; `resolve_candidate_limit` (`settings.py:399-415`) clamps to 5..50 and falls back to 20 for non-int injection. `test_rerank_candidate_limit_accepts_boundaries`/`_rejects_out_of_range` and `test_rerank_relative_threshold_*` pass. |
+| 7 | [Edge] Deterministic equal-score rerank and sweep ordering | VERIFIED | Stable Python sort in `rerank.py:40-48`; sweep key is nDCG descending then declared grid order (`benchmark.py:375-383`). `test_equal_scores_deterministic_across_runs`, `test_ranking_is_descending_with_grid_order_tiebreak`, and `test_winner_ranking_is_deterministic` pass. |
+| 8 | [Edge] Tuning/held-out isolation | VERIFIED | `_tuning_evaluator` (`bench.py:237-258`) filters to `split == "tuning"` before constructing the evaluator, raising on no tuning queries. `test_bench_sweep_never_searches_heldout_queries` passes (sentinel never reaches the searcher). |
+| 9 | [Edge] Empty fixtures fail instead of producing zero-valued metrics | VERIFIED | `benchmark.py:456-459` raises `ValueError` on missing/empty queries; `bench.py:683-686` maps measurement failures to `ClickException`; malformed JSON maps to `ClickException` (`bench.py:630-634`). `test_validate_fixture_missing_queries`, `test_empty_queries_list_rejected`, `test_bench_empty_queries_exits_nonzero`, and `test_bench_malformed_fixture_exits_nonzero` pass. |
+| 10 | [Edge] Fixed category order in every report/config | VERIFIED | `CATEGORIES` fixed tuple (`benchmark.py:21`); `BenchReport.to_dict()` and `ConfigResult.to_dict()` iterate it. `test_to_dict_serializes_categories_in_declared_order` and JSON narrow-width tests pass. |
+| 11 | [Edge] Held-out delta ≥0.01 is inclusive with rounded arithmetic | VERIFIED | `warrants_default_change` uses `round(candidate - baseline, 6) >= delta` (`benchmark.py:394-407`). `TestWarrantsDefaultChange` covers exactly 0.01, representation noise (`0.29-0.28`), 0.0099, zero, and negative — all pass. |
+| 12 | [Edge] No evidence means no default change | VERIFIED | `snapshot_verdict` (`test_bench_snapshot.py:111-124`) returns `unchanged-no-evidence` when held-out or candidate is absent; both missing-evidence tests and the committed-verdict consistency test pass. |
+| 13 | [Edge] Sweep output ordering is deterministic | VERIFIED | `TestIterGrid`/`TestRankSweep`, `test_winner_ranking_is_deterministic`, and the live recomputation (45 unique configs) confirm stable ordering. |
+| 14 | [Edge] k=10 and empty-result zero scores | VERIFIED | `DEFAULT_K = 10`; `ndcg_at_k` returns 0.0 for zero ideal DCG; `hit_at_k` returns 0.0 with no positive retrieved grade. Hand-value and edge tests in `test_benchmark_metrics.py` pass. |
+| 15 | [Edge] Strict <0.01 tie boundary | VERIFIED | `TestRankSweepTieBoundary`: exactly 0.01 is signal, 0.0099 is noise, and the raw `0.29 - 0.28 = 0.009999999999999953` case is not misclassified. Live exact-0.01 check confirmed. |
+| 16 | [Prohibition] No real-KB data committed; synthetic fixture only | VERIFIED (must-NOT did not happen) | `python -I scripts/generate_bench_fixture.py --check` returned `OK ... matches generator output (151 files)`, so the pack is byte-identical to seeded synthetic generator output. The real-model row measures that same synthetic corpus. |
+| 17 | [Prohibition] No unbounded rerank fan-out | VERIFIED (must-NOT did not happen) | Shared clamp 5..50 in `resolve_candidate_limit` + pipeline slice. `test_candidate_limit_200_clamps_to_50`, `test_resolve_candidate_limit_clamps_explicit_into_bounds`, and `test_over_cap_never_parses_candidates` pass. |
+| 18 | [Prohibition] No tuning-only default changes | VERIFIED (must-NOT did not happen) | `Settings` defaults remain 60/1.0/1.0; measured held-out candidate delta is +0.0066 < 0.01; snapshot verdict remains `unchanged`, reproduced by the live lock test. |
+| 19 | [Prohibition] No held-out leakage into sweep ranking | VERIFIED (must-NOT did not happen) | Tuning-only fixture filtering is structural (`bench.py:249-258`) and `test_bench_sweep_never_searches_heldout_queries` passes with a sentinel. |
+| 20 | [Prohibition] No reranker construction on the off path | VERIFIED (must-NOT did not happen) | `search.py:915-920` checks opt-in before `create_reranker`; `bench.py:184-203` returns `None` before the factory unless `--rerank`. `test_off_by_default_constructs_no_reranker`, `test_bench_off_only_json_states_additive_no_reranker`, and the off-path snapshot test pass. |
 
 **Score:** 20/20 truths verified (0 present-but-behavior-unverified).
 
-### Documentation Corroboration Consistency (new since prior pass)
+### Post-Verification Change Review
 
-The new real-model row is checked against the code, not accepted as proof.
+The only change since the prior pass is the UAT frontmatter correction; no source, fixture, script, or test file changed.
 
-| Claim | Doc Location | Code / Gate Evidence | Result |
-|-------|--------------|----------------------|--------|
-| Deterministic snapshot remains the CI gate | `docs/benchmarking.md` §Evidence Table (deterministic) | `heldout_defaults.json` values reproduce exactly under `test_bench_snapshot.py`; that test asserts the snapshot's defaults equal live `Settings` in the same test | CONSISTENT — real-model row is not consumed by any test |
-| Real-model row is corroboration, not a gate | `docs/benchmarking.md` §Evidence Table (manual) | Labeled "a separate manual step, not a CI gate"; no test reads it | CONSISTENT |
-| Model identity: `Qwen/Qwen3-Embedding-0.6B`, `modelscope`, dim 1024 | real-model row | `settings.py:115-138` defaults are exactly `model_name="Qwen/Qwen3-Embedding-0.6B"`, `model_type="modelscope"`, `embedding_dim=1024` | CONSISTENT |
-| Evaluation path is equivalent to the snapshot test | real-model row | `tests/support/bench.py::build_bench_db` + `SearchEvaluator` + `SearchPipeline` is the same path `_measure_heldout` uses; only the embedder is swapped | CONSISTENT |
-| Synonym is the weakest category under both embedders | real-model row paragraph | Deterministic snapshot: synonym 0.2746, others >= 0.9735 — same ordering | CONSISTENT |
-| "0.9233 >= 0.8120 (no regression)" | real-model row paragraph | Cross-embedder corroboration (concept embedder vs real model), not a like-for-like gate; no code contradicts it | CONSISTENT, with the caveat that the numbers are manual and not independently reproducible here |
-| WINDOWS id 10 closed | `.planning/WINDOWS.md` | Row status `fixed`, `resolved_at` set; `open_count` 6 / `fixed_count` 4 | CONSISTENT |
-| UAT item 1 backed by measurement | `16-UAT.md` | `result: passed` plus the recorded model/hardware/date/metrics note | CONSISTENT |
+| Change | Current Codebase Evidence | Result |
+|--------|---------------------------|--------|
+| `16-UAT.md` frontmatter `status: passed` → `complete` (commit `353fe33`) | UAT `status: complete`; tests section still shows both scenarios `result: passed`; summary 2 passed / 0 pending / 0 blocked; item 1 carries the recorded 2026-11-12 real-model measurement, item 2 the operator-hardware latency pass. | Consistent with the canonical UAT status vocabulary. |
+| `docs/benchmarking.md` deterministic evidence table | Held-out 0.8120; per-category 0.9735/0.2746/1.0000/1.0000; tuning winner 20/1.0/0.5 at 0.8680 with a 30/45 tie group and no winner; held-out candidate 0.8186, delta +0.0066, verdict unchanged. Live recomputation reproduced the winner and 30/45 tie group; the snapshot reproduces 0.8120 and the category values. | Consistent; snapshot remains the CI gate. |
+| `docs/benchmarking.md` manual real-model row | Records Qwen/Qwen3-Embedding-0.6B (modelscope, dim 1024), macOS arm64 single-thread CPU, 2026-11-12, held-out nDCG@10 0.9233 / Hit@10 1.0, p50/p95 94.3/117.6 ms, explicitly labeled "a separate manual step, not a CI gate". Model identity matches `settings.py` defaults. | CORROBORATION — not consumed by any test; no code contradicts it. This verifier cannot independently re-run the real model, so it is recorded as manual evidence, not a gate. |
+| `.planning/WINDOWS.md` id 10 | Row is `fixed` with `resolved_at 2026-11-12T10:33:55.806Z`; frontmatter `open_count: 6`, `fixed_count: 4`. | Consistent; the Broken Window was closed only after the measurement was recorded. |
 
 ### Advisory (New Scope, Unevidenced)
 
-Re-verification evidence gating was applied. The only post-pass changes are documentation/ledger files; they were directly inspected and exercised by `tests/test_docs.py` plus the full phase-linked test set. No new-scope blocker or unevidenced advisory finding was raised.
+Re-verification evidence gating was applied. The only post-pass change is a planning-document status correction with no implementation input; it was inspected directly. No new-scope blocker or unevidenced advisory finding was raised.
 
 | # | Finding | Category | Why Advisory |
 |---|---------|----------|--------------|
@@ -296,34 +282,34 @@ Re-verification evidence gating was applied. The only post-pass changes are docu
 
 | Artifact | Expected | Status | Details |
 |----------|----------|--------|---------|
-| `src/sif/search/benchmark.py` | Metrics, category reports, fixed grid, tie ranking, held-out rule | VERIFIED | Substantive implementations at lines 21-657; consumed by CLI and deterministic snapshot. |
-| `src/sif/cli/commands/bench.py` | Report/sweep/rerank states, tuning guard, clamp, cached embedder | VERIFIED | Full orchestration present; 38 tests pass. |
-| `src/sif/config/settings.py` | Opt-in rerank, validated cap/threshold, shared resolver | VERIFIED | Fields and resolver present; 60 settings tests pass within the 310-test run. |
-| `src/sif/cli/commands/search.py` | Rerank opt-in and bounded candidate options | VERIFIED | Gate and resolver wiring intact; full CLI test file passes. |
-| `src/sif/search/rerank.py` | Relative threshold on all backends | VERIFIED | Shared post-normalization filter plus factory forwarding present; rerank/reranker tests pass. |
-| `src/sif/search/hybrid.py` | Binding over-fetch and candidate slice | VERIFIED | `fetch_options` reaches hybrid search/fusion and `results[:candidate_limit]` precedes rerank; hybrid tests pass. |
-| `src/sif/cli/error_handling.py` | Equivalent initialized database opener | VERIFIED | Caller-supplied `Database` construction + `init_schema()` + context management; error-convention tests pass. |
-| `src/sif/database/repositories.py` | WR-01 cache fix isolated from Phase 16 | VERIFIED | Only LLM cache expiry deletion changed; repository tests pass. |
-| `tests/fixtures/bench/` | Synthetic categorized pack and held-out snapshot | VERIFIED | 150 corpus docs, 56 queries, snapshot; direct integrity parse and 151-file drift check pass. |
-| `scripts/generate_bench_fixture.py` | Deterministic generator and pack-wide drift gate | VERIFIED | Probe exit 0; fixture contract suite passes. |
-| `tests/support/bench.py` | Deterministic ConceptEmbedder and real-schema index builder | VERIFIED | Used by live fixture/snapshot/CLI tests at HEAD. |
-| `docs/benchmarking.md` and related docs | Honest measurement/tuning documentation | VERIFIED | Documents the 45-config tuning-only grid, rounded 0.01 rules, cap/alpha/opt-in, deterministic snapshot values/verdict, and the manual real-model corroboration row; all docs tests pass. |
+| `src/sif/search/benchmark.py` | Metrics, category reports, fixed grid, tie ranking, held-out rule | VERIFIED | 657 lines of substantive implementation; consumed by the CLI and the deterministic snapshot. |
+| `src/sif/cli/commands/bench.py` | Report/sweep/rerank states, tuning guard, clamp, cached embedder | VERIFIED | 687 lines; orchestration and rendering present; 38 bench CLI tests pass. |
+| `src/sif/config/settings.py` | Opt-in rerank, validated cap/threshold, shared resolver | VERIFIED | Fields, bounds, and `resolve_candidate_limit` present. |
+| `src/sif/cli/commands/search.py` | Rerank opt-in and bounded candidate options | VERIFIED | Gate and shared resolver wired; search CLI tests pass. |
+| `src/sif/search/rerank.py` | Relative threshold on all backends | VERIFIED | Shared post-sort filter and factory forwarding present. |
+| `src/sif/search/hybrid.py` | Binding over-fetch and candidate slice | VERIFIED | `fetch_options` reaches search/fusion and `results[: candidate_limit]` precedes rerank. |
+| `src/sif/cli/error_handling.py` | Equivalent initialized database opener | VERIFIED | Caller-supplied `Database` construction + `init_schema()`; error-convention tests pass. |
+| `src/sif/database/repositories.py` | WR-01 cache fix isolated from Phase 16 | VERIFIED | Phase-unrelated cache-expiry change; repository tests pass. |
+| `tests/fixtures/bench/` | Synthetic categorized pack and held-out snapshot | VERIFIED | 150 corpus docs + 56 queries + snapshot; 151-file drift check passes. |
+| `scripts/generate_bench_fixture.py` | Deterministic generator and pack-wide drift gate | VERIFIED | Probe exit 0. |
+| `tests/support/bench.py` | Deterministic ConceptEmbedder and real-schema index builder | VERIFIED | Used by the live snapshot/fixture/CLI tests. |
+| `docs/benchmarking.md` and related docs | Honest measurement/tuning documentation | VERIFIED | Documents the grid, 0.01 rule, held-out rule, cap/alpha/opt-in, deterministic values/verdict, and the manual real-model corroboration row; `tests/test_docs.py` passes with `docs/benchmarking.md` in `DOCS_FILES`. |
 
-The plans use legacy free-form strings for `must_haves.artifacts` and `key_links`; the structured `verify.artifacts`/`verify.key-links` verbs therefore returned zero machine-parseable entries. They were not treated as evidence. The tables above and below record the manual existence/substance/wiring checks instead.
+The plans use legacy free-form strings for `must_haves.artifacts` and `key_links`, so the structured `verify.artifacts`/`verify.key-links` verbs return no machine-parseable entries. Those verbs were not treated as evidence; the manual level-1/2/3 checks above and below are the evidence.
 
 ### Key Link Verification
 
 | From | To | Via | Status | Details |
 |------|----|-----|--------|---------|
-| `bench_cmd` | `SearchEvaluator.report` | Fixture path -> corpus root -> measured search function | WIRED | Exact committed-pack CLI join test passes with non-zero nDCG/Hit. |
-| `bench_cmd` | Metric helpers | `report()` / `_measure_config()` | WIRED | No metric formulas inline in CLI; pure helpers tested independently. |
-| `_run_sweep` | Per-config `SearchOptions` | `dataclasses.replace` of rrf_k/BM25/vector weights | WIRED | 45-config grid and baseline reuse present; sweep tests pass. |
-| `_tuning_evaluator` | Sweep ranking | Tuning-only filtered fixture | WIRED | Held-out spy test passes. |
+| `bench_cmd` | `SearchEvaluator.report` | Fixture path -> declared `corpus_root` -> measured search function | WIRED | `test_cli_bench_committed_pack_nonzero_ndcg` runs the exact committed pack and asserts non-zero nDCG/Hit. |
+| `bench_cmd` | Metric helpers | `report()` / `_measure_config()` | WIRED | No metric formula inline in the CLI; helpers tested independently. |
+| `_run_sweep` | Per-config `SearchOptions` | `dataclasses.replace` of rrf_k/BM25/vector weights | WIRED | 45-config grid plus settings baseline reuse; sweep tests pass. |
+| `_tuning_evaluator` | Sweep ranking | Tuning-only filtered fixture | WIRED | Held-out sentinel spy test passes. |
 | `query_cmd` | `create_reranker` | `--rerank` OR `SIF_RERANK_ENABLED` gate | WIRED | Gate precedes factory; off-path tests pass. |
-| `query_cmd`/`bench_cmd` | `SearchOptions.candidate_limit` | Shared `resolve_candidate_limit` | WIRED | Both callers resolve through the same clamp. |
+| `query_cmd`/`bench_cmd` | `SearchOptions.candidate_limit` | Shared `resolve_candidate_limit` clamp | WIRED | Both callers resolve through the same 5..50 clamp. |
 | `SearchPipeline.search` | Reranker | Over-fetch -> fusion -> cap slice -> `rerank(top_k=limit)` | WIRED | Real-index candidate-count and composition tests pass. |
 | `heldout_defaults.json` | Settings defaults | Same-test recomputation and equality lock | WIRED | Snapshot reproduction/default-lock test passes. |
-| Rerank scoring | Relative threshold | Stable descending sort -> `>= top1*alpha` -> top_k | WIRED | Exact-half and threshold-before-truncation tests pass. |
+| Rerank scoring | Relative threshold | Stable descending sort -> `>= top1*alpha` -> top_k | WIRED | Exact-half, threshold-before-truncation, and off-path snapshot tests pass. |
 
 ### Data-Flow Trace (Level 4)
 
@@ -331,29 +317,28 @@ The plans use legacy free-form strings for `must_haves.artifacts` and `key_links
 |----------|---------------|--------|--------------------|--------|
 | `bench --json` | nDCG/Hit/p50/p95/categories | `SearchEvaluator.report` over measured `SearchPipeline` results | Yes | FLOWING |
 | `bench --sweep --json` | 45 configs, tie group, baseline/deltas | `_run_sweep` over tuning-only measured reports | Yes | FLOWING |
-| `heldout_defaults.json` | Defaults, held-out metrics, candidate, delta, verdict | Deterministic real SQLite/FTS/vector fixture index | Yes | FLOWING; recomputed by live test |
+| `heldout_defaults.json` | Defaults, held-out metrics, candidate, delta, verdict | Deterministic real SQLite/FTS/vector fixture index | Yes | FLOWING; recomputed by the live lock test |
 | Rerank output | Candidate list and retained scores | Hybrid over-fetch/fusion -> cap -> normalized rerank scores | Yes | FLOWING; real-index and scoring tests pass |
-| Benchmarking docs (deterministic table) | Deterministic evidence values | Committed snapshot and ranking | Yes | FLOWING; values match parsed snapshot and live sweep recomputation |
-| Benchmarking docs (real-model row) | Manual corroboration values | External real-model run (manual, uncommitted) | Manual only | CORROBORATION — correctly not wired into CI; deterministic snapshot remains the gate |
+| Benchmarking docs (deterministic table) | Deterministic evidence values | Committed snapshot and live sweep ranking | Yes | FLOWING; values match a fresh live recomputation |
+| Benchmarking docs (real-model row) | Manual corroboration values | External real-model run (manual, uncommitted) | Manual only | CORROBORATION — correctly not wired into CI; the deterministic snapshot remains the gate |
 
 ### Behavioral Spot-Checks
 
-All commands below were run by this verifier at HEAD `5d6d524` with `env -u FORCE_COLOR NO_COLOR=1` for pytest.
+All commands below were run by this verifier at HEAD `353fe33` with `env -u FORCE_COLOR NO_COLOR=1`.
 
 | Behavior | Command / Scope | Result | Status |
 |----------|-----------------|--------|--------|
-| Held-out lock, sweep, bench CLI | `pytest tests/unit/search/test_bench_snapshot.py tests/unit/search/test_sweep.py tests/unit/cli/test_bench.py --no-cov` | 65 passed in 4.40s | PASS |
-| Docs gate, rerank scoring, pipeline cap, factory forwarding, settings bounds, search CLI opt-in | `pytest tests/test_docs.py tests/unit/search/test_rerank.py tests/unit/search/test_hybrid.py tests/unit/inference/test_reranker.py tests/unit/config/test_settings.py tests/unit/cli/test_search.py --no-cov` | 310 passed in 9.85s | PASS |
-| Metric correctness, legacy compatibility, fixture integrity | `pytest tests/unit/search/test_benchmark_metrics.py tests/unit/search/test_benchmark.py tests/unit/search/test_bench_fixture.py --no-cov` | 86 passed in 0.38s | PASS |
-| Docs deterministic sweep figures (0.8680, 30/45 tie group) | Live `iter_grid` + `SearchEvaluator` + `rank_sweep` over the 36 tuning queries on the deterministic index | best 20/1.0/0.5, nDCG@10 0.8679671304, tie group 30, no winner | PASS |
-| Fixture shape and evidence values | Direct `json` parse of `queries.json` and `heldout_defaults.json` | 56/36/20; 14 per category; 9/5 split per category; grades 0-3; defaults/verdict as recorded | PASS |
-| HEAD full-suite gate | Supplied by orchestrator for HEAD before the docs-only commit; not re-run here | 1591 passed, 1 skipped, coverage 95.18%; ruff/format/ty clean | PASS (confirmed HEAD gate; docs-only commit cannot affect it, and all docs/phase tests re-ran green) |
+| Held-out lock, sweep, bench CLI | `pytest tests/unit/search/test_bench_snapshot.py tests/unit/search/test_sweep.py tests/unit/cli/test_bench.py --no-cov` | 65 passed in 4.11s | PASS |
+| Docs gate, metric correctness, fixture integrity, rerank scoring, pipeline cap, factory forwarding, settings bounds, search CLI opt-in | `pytest tests/test_docs.py tests/unit/search/test_benchmark.py tests/unit/search/test_benchmark_metrics.py tests/unit/search/test_bench_fixture.py tests/unit/search/test_rerank.py tests/unit/search/test_hybrid.py tests/unit/inference/test_reranker.py tests/unit/config/test_settings.py tests/unit/cli/test_search.py --no-cov` | 396 passed in 21.56s | PASS |
+| Docs deterministic sweep figures | Live `iter_grid` + `SearchEvaluator` + `rank_sweep` over the 36 tuning queries on the deterministic index | 45 unique configs; best `20/1.0/0.5`, nDCG@10 `0.867967130407773`; tie group 30; `winner_declared=False`; exact-0.01 pair declared a winner | PASS |
+| Fixture shape and evidence values | Direct `json` parse of `queries.json` and `heldout_defaults.json` | 56/36/20; 14 per category; 9/5 split per category; grades 0-3; every max grade ≥2; all relevance keys resolve; defaults/verdict as recorded | PASS |
+| HEAD full-suite gate | Supplied by orchestrator for HEAD: 1591 passed, 1 skipped @ 95.18% | PASS (confirmed; the only commits since are planning/documentation and cannot affect it, and all phase-linked tests re-ran green) | PASS |
 
-Total live focused evidence this pass: 461 tests passed across disjoint phase-linked files, with zero skips in these runs.
+Total live focused evidence this pass: 461 tests passed across the phase-linked files, with zero skips in these runs.
 
 ### Probe Execution
 
-No `scripts/*/tests/probe-*.sh` files or plan-declared shell probes exist for this phase. The phase's actual structural probe is the deterministic fixture drift gate.
+No `scripts/*/tests/probe-*.sh` files or plan-declared shell probes exist for this phase. The phase's structural probe is the deterministic fixture drift gate.
 
 | Probe | Command | Result | Status |
 |-------|---------|--------|--------|
@@ -385,23 +370,23 @@ No orphaned requirements: REQUIREMENTS.md maps exactly QUAL-05 and EVAL-01..04 t
 | `test_bench_snapshot.py` | EVAL-04 | Active | 0 | 0 | Recomputed values + default-lock mutation probes | OK |
 | `test_search.py`, `test_settings.py`, `test_hybrid.py`, `test_rerank.py`, `test_reranker.py` | QUAL-05 | Active | 0 | 0 | Boundary values, real-index candidate counts, off-path proofs | OK |
 
-The only disabled-test grep hits are conditional sqlite-vec runtime guards in `test_hybrid.py`; sqlite-vec is available here and all tests ran, so no requirement is hidden by a skip. Snapshot values are a regression lock recomputed from the deterministic index, not the sole correctness oracle: metric correctness is independently pinned by hand-calculated metric tests. The manual real-model row is not a test oracle. No insufficient assertions or disabled requirement proofs found.
+The only skip-pattern hits are conditional sqlite-vec runtime guards in `test_hybrid.py`; sqlite-vec is available here and all tests ran, so no requirement is hidden by a skip. Snapshot values are a regression lock recomputed from the deterministic index, not the sole correctness oracle: metric correctness is independently pinned by hand-calculated metric tests. The manual real-model row is not a test oracle. No insufficient assertions or disabled requirement proofs found.
 
 ### Anti-Patterns Found
 
 | File | Line | Pattern | Severity | Impact |
 |------|------|---------|----------|--------|
-| None | - | No TBD/FIXME/XXX/TODO/HACK/PLACEHOLDER markers, placeholder implementations, or unwired stubs in the changed docs/ledger files or the phase source/test/script files | - | - |
+| None | - | No TBD/FIXME/XXX/TODO/HACK/PLACEHOLDER markers, placeholder implementations, or unwired stubs in the phase source, tests, scripts, fixtures, docs, or changed ledger files | - | - |
 
 ### Human Verification
 
-N/A for this re-verification. The two planned manual-only items are dispositioned `passed` in `16-UAT.md` (2/2, 0 pending): item 2 (operator-hardware rerank latency) was already passed, and item 1 (real-model held-out evidence) is now backed by the recorded 2026-11-12 measurement and the corresponding Broken Window closure. The deterministic snapshot is still the CI gate; no truth is behavior-unverified.
+None pending. The two planned manual-only items are dispositioned `passed` in `16-UAT.md` (2/2, 0 pending, frontmatter now canonical `status: complete`): item 2 (operator-hardware rerank latency) was already passed, and item 1 (real-model held-out evidence) is backed by the recorded 2026-11-12 measurement and the corresponding Broken Window closure. The deterministic snapshot remains the CI gate; no truth is behavior-unverified.
 
 ### Gaps Summary
 
-No gaps and no regressions. The Phase 16 goal remains achieved at HEAD `5d6d524`: the categorized fixture is intact and generator-reproducible; the fixed sweep remains tuning-only with the strict rounded 0.01 tie rule (live recomputation reproduced 0.8680 and the 30/45 tie group); the held-out snapshot still recomputes and locks the shipped 60/1.0/1.0 defaults at nDCG@10 0.8120; rerank opt-in, candidate bounding, and relative-threshold behavior remain wired and test-proven. The post-pass change is documentation-only, and its new real-model row is honestly scoped as manual corroboration rather than replacing the deterministic CI gate.
+No gaps and no regressions. The Phase 16 goal holds at HEAD `353fe33`: the categorized synthetic fixture is intact and generator-reproducible; the fixed 45-configuration sweep remains tuning-only and applies the strict rounded 0.01 tie rule (a fresh live recomputation reproduced the `20/1.0/0.5` winner, nDCG@10 0.8680, and the 30/45 tie group with no winner); the held-out snapshot still recomputes and locks the shipped 60/1.0/1.0 defaults at nDCG@10 0.8120; and rerank opt-in, candidate bounding, and relative-threshold behavior remain wired and test-proven. The only post-pass change is the UAT status-vocabulary correction, backed by the recorded real-model measurement.
 
 ---
 
-_Verified: 2026-11-12T10:37:54Z_
+_Verified: 2026-11-12T10:42:35Z_
 _Verifier: Claude (gsd-verifier)_
