@@ -8,7 +8,7 @@ DocSift 是 [qmd](https://github.com/tobi/qmd) 的 Python 重构版本，一个�
 
 用户可以在自己的笔记和文档库中，用自然语言快速、准确地找到需要的信息——无论关键词是否匹配。
 
-## Current Milestone: v1.1 Live Index and Search Quality
+## Milestone v1.1: Live Index and Search Quality（已发布 2026-11-12）
 
 **Goal:** 让索引从手动 `index update` 变为自动常新（Live Index），并让搜索质量可配置、可量化、持续可调（Search Quality）。
 
@@ -52,7 +52,7 @@ DocSift 是 [qmd](https://github.com/tobi/qmd) 的 Python 重构版本，一个�
 - ✓ 搜索质量：Reranker 调优（显式 opt-in `SIF_RERANK_ENABLED`/`--rerank`、候选上限 5-50 夹取、相对阈值 α=0.5、over-fetch 让上限真正生效） — Validated in Phase 16
 - ✓ 技术债收口：symlink/别名路径经 `get`/`multi-get`/MCP `get_document` 解析到已索引文档（DEBT-PN）；旧版 FTS 触发器迁移 + 检测门控 rebuild 清除陈旧索引（CR-01）；`--xml` 输出恒为良构 XML（CR-02）；全部 26 处 CLI Database 构造点上下文管理器持有、异常路径确定性关闭（WR-01） — Validated in Phase 10.1（2026-11-06 重新验证 16/16 通过，fresh fingerprint）
 
-### Validated（v1.1 进行中）
+### Validated（v1.1 — shipped 2026-11-12）
 
 - ✓ Live Index：`sif watch` 前台命令（增量重索引 + 防抖） — Validated in Phase 12
 - ✓ Live Index：更新深度可配置（默认 BM25/FTS，`--embed` 开启向量自动更新） — Validated in Phase 12（与 MCP 内嵌刷新项合并验证 LIVE-05 深度矩阵）
@@ -112,6 +112,15 @@ DocSift 是 [qmd](https://github.com/tobi/qmd) 的 Python 重构版本，一个�
 | 文档内容永不作为 Rich markup 渲染 | get/multi-get 内容 `markup=False` 直出、表头 `escape()`——与 05-10/05-11 同类第三例；回归测试锁定（字面渲染、批次不中断、回退路径同等契约） | v1.0 Complete |
 | docs 局部套件 `--no-cov` | 全局 `addopts` 覆盖率 + `fail_under=90` 使 docs-only 运行必失败（CI 自 Phase 10 起恒红）；Makefile 与 docs.yml 双修 | v1.0 Complete |
 
+## Context（v1.1 shipped 2026-11-12）
+
+- 版本 1.1.0；7 phases (11–16.1), 27 plans, 67 tasks；~18,064 LOC src；52 feat commits since v1.0.1
+- 质量门禁：1591 passed, 1 skipped @ 95.18% coverage（fail_under=90 常驻）、ruff/format/ty 全绿
+- Live Index：WAL+flock 并发 DB 核心、`sif watch` 前台/MCP 内嵌/后台守护进程三宿主、命令前漂移刷新 + staleness 标记
+- Search Quality：可配置 RRF 权重、did-you-mean + 历史 + `sif suggest`、bench 扩充 + reranker 调优（held-out 论证下默认值不变）
+- Tech debt (16.1)：全 CLI 错误边界约定、cache TTL instant 比较、embedding cache factory 委派、公开 reconcile-enqueue API
+- 遗留（非阻塞）：WR-02 cleanup OperationalError 抑制（OQ2 有意保留）、14-IN-01 代码已修待 ledger 核销、info-findings 扫描、Phase 16 real-model 证据已记录（WINDOWS id 10 closed）
+
 ## Context（v1.0 shipped 2026-11-07）
 
 - 版本 1.0.0；692 commits（2026-04-14 → 2026-11-07）；src 12.5K 行 / tests 23.1K 行
@@ -136,4 +145,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-11-09 after Phase 16（v1.1 全部 6 阶段完成）*
+*Last updated: 2026-11-12 after v1.1 milestone（已发布：7 phases incl. 16.1 tech debt, 27 plans, 21/21 requirements）*

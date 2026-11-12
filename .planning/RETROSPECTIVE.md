@@ -39,3 +39,41 @@
 ### Cost Observations
 - 692 commits / 207 天(2026-04-14 → 2026-11-07);src 12.5K 行、tests 23.1K 行(测试:源 ≈ 1.8:1)
 - 里程碑收尾日单会话完成:ty 清债 quick task、文档全量核验、版本 1.0.0、四阶段验证再生、5 个 Critical 修复、归档
+
+## Milestone: v1.1 — Live Index and Search Quality
+
+**Shipped:** 2026-11-12
+**Phases:** 7 (11–16.1) | **Plans:** 27 | **Tasks:** 67
+
+### What Was Built
+- Concurrent-DB foundation: one connection factory (busy_timeout→WAL→synchronous + BEGIN IMMEDIATE) + kernel-flock single-writer arbitration; IncrementalIndexer as the one per-file update path.
+- Live Index hosts: `sif watch` foreground, MCP-embedded (`SIF_MCP_WATCH`), detached daemon + launchd/systemd install; pre-command drift refresh + staleness marking.
+- Search Quality: configurable RRF weights (byte-identical defaults), did-you-mean + history + `sif suggest`, bench expansion + reranker tuning (held-out verdict: defaults unchanged).
+- Tech debt (16.1): convention-wide CLI error boundary, instant-compare cache TTL, embedding-cache factory delegation, public reconcile-enqueue API.
+
+### What Worked
+- Tracer-first planning: each phase led with an end-to-end slice proven before expansion (11→watch, 15→weighted fusion, 16.1→error boundary).
+- Deterministic, time-bounded tests: two-writer subprocess proofs, real-FS e2e with deadline polls, fixed-TZ TTL regressions — no wall-clock races.
+- Honest held-out gate: the 0.01 tie rule and committed snapshot kept defaults from moving on tuning-set noise.
+- Ledger-closure culture: dispositions carried evidence, and re-verification at HEAD exposed a real cache-cleanup regression (WR-01) that was fixed and re-proven.
+
+### What Was Inefficient
+- Re-verification churn: editing covered docs (benchmarking.md, UAT) re-staled phases repeatedly, requiring multiple verifier passes near close.
+- The real-model bench hit MPS/joblib deadlocks and a cache-dir mismatch; the robust path was an in-process batched single-threaded evaluation rather than the CLI bench against a rebuilt index.
+- Phase 16.1's broad init_schema sweep touched many files, which invalidated several prior-phase fingerprints at once.
+
+### Patterns Established
+- One shared boundary/open helper for a convention-wide class of fixes (AST gate forbids regressions).
+- Derived signals over stored flags (staleness = no embeddings, not a maintained column).
+- Public narrow-intent APIs over private queue reach-ins (enqueue_reconcile).
+- Factory-single-sourcing for all DB pragmas; delegating caches to it rather than copying the recipe.
+
+### Key Lessons
+- Fix driven by a re-review during close is worth the extra verification pass — WR-01 would have shipped a cleanup-aborting bug.
+- Doc edits count as covered-input changes; batch them before the final verification, not after.
+- Model-runtime deadlocks (MPS + joblib) are solved by batching + single-thread + explicit device, not by retrying.
+
+### Cost Observations
+- Model mix: orchestrator on the configured profile; subagents (researcher/planner/checker/verifier/executors) in fresh contexts.
+- Sessions: one long continuous session spanning discuss→plan→execute→validate→secure→re-verify→close.
+- Notable: the audit's `tech_debt` verdict drove a focused 16.1 phase plus four retroactive coverage runs; all closed before archiving.
