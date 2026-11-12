@@ -42,6 +42,17 @@ def _get_default_db_path() -> str:
         raise click.ClickException(str(e)) from e
 
 
+def _settings_log_level() -> str:
+    """Resolve the configured log level, falling back to INFO on bad config."""
+    try:
+        settings = get_settings()
+    except ValidationError:
+        return "INFO"
+    if settings.debug:
+        return "DEBUG"
+    return settings.log_level
+
+
 @click.group()
 @click.version_option(version=__version__, prog_name="sif")
 @click.option(
@@ -60,8 +71,8 @@ def cli(ctx: click.Context, index: str, verbose: bool, quiet: bool) -> None:
     SIF indexes your documents and enables fast, intelligent search
     using BM25, vector similarity, and hybrid approaches.
     """
-    # Setup logging
-    log_level = "DEBUG" if verbose else ("WARNING" if quiet else "INFO")
+    # Setup logging: explicit flags win, then SIF_DEBUG / SIF_LOG_LEVEL.
+    log_level = "DEBUG" if verbose else ("WARNING" if quiet else _settings_log_level())
     setup_logging(log_level)
 
     # Ensure context object exists

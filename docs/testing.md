@@ -1,7 +1,7 @@
 <!-- generated-by: gsd-doc-writer -->
 # Testing
 
-SIF's test suite is built on [pytest](https://docs.pytest.org/) with coverage collected by pytest-cov. Tests live in `tests/` and are organized into unit, integration, and e2e tiers, plus three root-level suites for documentation validation, core-module smoke checks, and version-identity regression tests — 1610 tests in total (1609 passing and 1 opt-in skip), with a full run taking roughly a minute and a half. This guide covers how to run the suite, how the tiers are laid out, and how to write new tests using the shared fixtures and factories.
+SIF's test suite is built on [pytest](https://docs.pytest.org/) with coverage collected by pytest-cov. Tests live in `tests/` and are organized into unit, integration, and e2e tiers, plus three root-level suites for documentation validation, core-module smoke checks, and version-identity regression tests — 1629 tests in total (1628 passing and 1 opt-in skip), with a full run taking roughly a minute and a half. This guide covers how to run the suite, how the tiers are laid out, and how to write new tests using the shared fixtures and factories.
 
 ## Test framework and setup
 
@@ -193,7 +193,7 @@ Coverage is measured over `src/sif` on every run (via `addopts`) and reported th
 - `htmlcov/index.html` — browsable HTML report
 - `coverage.xml` — machine-readable report
 
-A minimum threshold **is** enforced: `[tool.coverage.report]` in `pyproject.toml` sets `fail_under = 90`, so any run whose total coverage falls below 90% fails with `Required test coverage of 90.0% not reached`. Note that this applies to partial runs too — running a single file or tier measures only that subset against the same 90% gate, so use `--no-cov` for focused work. At the time of writing, the full suite reports 95.25% coverage (7513 statements, 357 missed) with 1609 passed and 1 skipped.
+A minimum threshold **is** enforced: `[tool.coverage.report]` in `pyproject.toml` sets `fail_under = 90`, so any run whose total coverage falls below 90% fails with `Required test coverage of 90.0% not reached`. Note that this applies to partial runs too — running a single file or tier measures only that subset against the same 90% gate, so use `--no-cov` for focused work. At the time of writing, the full suite reports 95.06% coverage (7608 statements, 374 missed) with 1628 passed and 1 skipped.
 
 Artifacts are cleaned by `make clean` (removes `htmlcov/`, `.coverage`, `coverage.xml`).
 

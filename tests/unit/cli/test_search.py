@@ -3916,3 +3916,27 @@ class TestQueryHistoryWrite:
         assert result.exit_code == 0, result.output
         assert "No results found." in result.stdout
         assert "Did you mean" not in result.stdout
+
+
+def test_default_limit_reads_settings(monkeypatch) -> None:
+    """SIF_DEFAULT_LIMIT is the --limit default for the search trio."""
+    from types import SimpleNamespace
+
+    from sif.cli.commands import search as search_mod
+
+    monkeypatch.setattr(search_mod, "get_settings", lambda: SimpleNamespace(default_limit=7))
+
+    assert search_mod._default_limit() == 7
+
+
+def test_default_limit_falls_back_on_invalid_settings(monkeypatch) -> None:
+    """Invalid settings leave the historical default of 10 in place."""
+    from sif.cli.commands import search as search_mod
+    from sif.config.settings import Settings
+
+    def broken_settings():
+        return Settings(_env_file=None, default_limit=0)
+
+    monkeypatch.setattr(search_mod, "get_settings", broken_settings)
+
+    assert search_mod._default_limit() == 10

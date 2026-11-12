@@ -155,9 +155,9 @@ class PathContext:
 ```
 
 **Context Types:**
-- `global`: Applies to all searches (resolved via `list_by_type(ContextType.GLOBAL)` in `sif.core.context`)
-- `collection`: Applies to searches in a specific collection
-- `path`: Applies to searches in a specific path
+- `global`: Stored and listed as global guidance; not currently attached to search results
+- `collection`: Stored and listed per collection; not currently attached to search results
+- `path`: Attached to matching search results at read time
 
 **Example:**
 ```python
@@ -208,6 +208,9 @@ class SearchOptions:
     candidate_limit: int = 20
     intent: str | None = None
     snippet_max_length: int = 300
+    rrf_k: int = 60
+    bm25_weight: float = 1.0
+    vector_weight: float = 1.0
 ```
 
 **Example:**
@@ -238,6 +241,7 @@ class SearchResult:
     score: float
     content: str | None = None
     highlights: list[str] = field(default_factory=list)
+    vectors_stale: bool = False
     rank: int = 0
     scores: dict[str, float | None] = field(default_factory=dict)
     snippet: str | None = None
@@ -476,7 +480,7 @@ Validation that does exist lives elsewhere: the Pydantic API models in `sif.mode
 
 ## Serialization
 
-All domain models support JSON serialization via `to_dict()`. Deserialization via `from_dict()` is available on `Collection` only; `Document`, `DocumentChunk`, `PathContext`, and `SearchResult` have `to_dict()` but no `from_dict()`:
+Entity and result models support JSON serialization via `to_dict()`; `SearchOptions` is a query-options dataclass and has no `to_dict()`. Deserialization via `from_dict()` is available on `Collection` only; `Document`, `DocumentChunk`, `PathContext`, and `SearchResult` have `to_dict()` but no `from_dict()`:
 
 ```python
 from sif.core.models import Collection, SearchResult

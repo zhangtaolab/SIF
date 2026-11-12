@@ -20,7 +20,7 @@ from sif.database.repositories import (
     DocumentChunkRepository,
     DocumentRepository,
 )
-from sif.indexing.chunker import create_chunker
+from sif.indexing.chunker import create_chunker, token_size_to_chars
 from sif.indexing.incremental import IncrementalIndexer
 
 
@@ -295,7 +295,11 @@ def embed_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                         coll_repo.update(coll)
                     continue
 
-                chunker = create_chunker(chunk_strategy)
+                chunker = create_chunker(
+                    chunk_strategy,
+                    max_chunk_size=token_size_to_chars(settings.chunk_size),
+                    overlap=token_size_to_chars(settings.chunk_overlap),
+                )
 
                 # One searcher per collection. Construction failure (sqlite-vec
                 # unavailable) is user-facing and never swallowed (D-03 fail-fast).

@@ -461,3 +461,66 @@ class TestConfigOptionRemoved:
 
         assert result.exit_code == 0, result.output
         assert "--config" not in result.output
+
+
+def test_settings_log_level_controls_cli_logging(monkeypatch) -> None:
+    """SIF_LOG_LEVEL reaches setup_logging when no explicit flag is given."""
+    from types import SimpleNamespace
+
+    import click
+
+    from sif.cli import main as main_mod
+
+    calls: list[str] = []
+    monkeypatch.setattr(main_mod, "setup_logging", calls.append)
+    monkeypatch.setattr(
+        main_mod, "get_settings", lambda: SimpleNamespace(debug=False, log_level="DEBUG")
+    )
+
+    ctx = click.Context(main_mod.cli)
+    with ctx:
+        main_mod.cli.callback("unused.db", False, False)
+
+    assert calls == ["DEBUG"]
+
+
+def test_settings_debug_forces_debug_logging(monkeypatch) -> None:
+    """SIF_DEBUG=1 takes precedence over the configured log level."""
+    from types import SimpleNamespace
+
+    import click
+
+    from sif.cli import main as main_mod
+
+    calls: list[str] = []
+    monkeypatch.setattr(main_mod, "setup_logging", calls.append)
+    monkeypatch.setattr(
+        main_mod, "get_settings", lambda: SimpleNamespace(debug=True, log_level="ERROR")
+    )
+
+    ctx = click.Context(main_mod.cli)
+    with ctx:
+        main_mod.cli.callback("unused.db", False, False)
+
+    assert calls == ["DEBUG"]
+
+
+def test_explicit_quiet_flag_still_wins_over_settings(monkeypatch) -> None:
+    """-q keeps WARNING even when SIF_LOG_LEVEL requests DEBUG."""
+    from types import SimpleNamespace
+
+    import click
+
+    from sif.cli import main as main_mod
+
+    calls: list[str] = []
+    monkeypatch.setattr(main_mod, "setup_logging", calls.append)
+    monkeypatch.setattr(
+        main_mod, "get_settings", lambda: SimpleNamespace(debug=False, log_level="DEBUG")
+    )
+
+    ctx = click.Context(main_mod.cli)
+    with ctx:
+        main_mod.cli.callback("unused.db", False, True)
+
+    assert calls == ["WARNING"]

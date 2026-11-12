@@ -219,10 +219,11 @@ class _EmbedSession:
         try:
             from sif.config.settings import get_settings  # noqa: PLC0415
             from sif.embedding.manager import EmbeddingManager  # noqa: PLC0415
-            from sif.indexing.chunker import create_chunker  # noqa: PLC0415
+            from sif.indexing.chunker import create_chunker, token_size_to_chars  # noqa: PLC0415
             from sif.search.vector import VectorSearcher  # noqa: PLC0415
 
-            manager = EmbeddingManager.from_settings(get_settings())
+            settings = get_settings()
+            manager = EmbeddingManager.from_settings(settings)
             # Load eagerly (idempotent, cached) so backend-missing and
             # model-load failures surface here, fail-soft.
             manager.load_model()
@@ -239,7 +240,11 @@ class _EmbedSession:
                 )
             self._manager = manager
             self._searcher = VectorSearcher(self._conn, model_dim)
-            self._chunker = create_chunker("auto")  # embed_cmd's default strategy
+            self._chunker = create_chunker(
+                "auto",
+                max_chunk_size=token_size_to_chars(settings.chunk_size),
+                overlap=token_size_to_chars(settings.chunk_overlap),
+            )  # embed_cmd's default strategy
             self._ready = True
         except Exception as e:
             self._notify(on_event, f"error Embedding disabled for this watch session: {e}")

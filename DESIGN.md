@@ -227,7 +227,7 @@ class EmbeddingModel(ABC):
 2. CLI: Parse command, validate inputs
    │
    ▼
-3. CollectionManager: Create/update collection
+3. CollectionRepository: Create/update collection
    │
    ▼
 4. FileScanner: Scan directory for markdown files
@@ -257,10 +257,10 @@ class EmbeddingModel(ABC):
 1. User: sif search query "machine learning"
    │
    ▼
-2. CLI: Parse query, build SearchQuery
+2. CLI: Parse query, build SearchOptions
    │
    ▼
-3. SearchService: Select search strategy
+3. SearchPipeline: Select search strategy
    │
    ▼
 4. QueryExpansion (optional): Expand query
@@ -278,7 +278,7 @@ class EmbeddingModel(ABC):
 8. Reranker (optional): Rerank results
    │
    ▼
-9. Repository: Fetch document details
+9. Searchers: Fetch document details directly from SQLite
    │
    ▼
 10. CLI: Format and display results

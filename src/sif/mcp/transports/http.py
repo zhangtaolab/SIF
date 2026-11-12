@@ -36,9 +36,14 @@ from sif.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-DEFAULT_CORS_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"]
+DEFAULT_CORS_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:8080",
+    "http://127.0.0.1:8080",
+]
 DEFAULT_HOST = "127.0.0.1"
-DEFAULT_PORT = 3000
+DEFAULT_PORT = 8080
 SESSION_MAX_COUNT = 10000
 
 _sessions: OrderedDict[str, dict[str, Any]] = OrderedDict()

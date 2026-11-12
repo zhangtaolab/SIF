@@ -80,7 +80,7 @@ For a long-running server today, use `sif mcp http`.
 
 ### query
 
-Hybrid search combining BM25 full-text search, vector semantic search, and reranking.
+Hybrid search combining BM25 full-text search and vector semantic search.
 
 **Parameters:**
 | Parameter | Type | Required | Description |
@@ -118,7 +118,7 @@ overrides the setting for that query only.
       "path": "/notes/python/decorators.md",
       "title": "Python Decorators",
       "score": 0.89,
-      "content": "Full document content...",
+      "content": null,
       "highlights": ["decorators are a powerful"],
       "metadata": {}
     }
@@ -209,7 +209,7 @@ Get indexing status for all collections.
 |----------|---------|-------------|
 | `SIF_DB_PATH` | `~/.local/share/sif/sif.db` | Path to SQLite database |
 | `SIF_MCP_HOST` | `127.0.0.1` | HTTP server host |
-| `SIF_MCP_PORT` | `8080` | HTTP server port (settings default; not read by `sif mcp http`, which defaults to `--port 3000`) |
+| `SIF_MCP_PORT` | `8080` | HTTP server port (used by `sif mcp http` unless `--port` is given) |
 
 When `SIF_DB_PATH` is not set, the database path is computed in the platform data
 directory (via platformdirs) and the directory is created on first run —
@@ -345,7 +345,7 @@ server.register_tools(create_default_tools() + [PingToolHandler()])
 ### Network Security (HTTP Transport)
 
 - Default binds to localhost only
-- CORS defaults to `http://localhost:3000` and `http://127.0.0.1:3000`
+- CORS defaults to `http://localhost:3000`, `http://127.0.0.1:3000`, `http://localhost:8080`, and `http://127.0.0.1:8080`
 - Use firewall rules for remote access
 - Consider authentication for production use
 
@@ -377,7 +377,7 @@ sif mcp stdio
 
 # Test HTTP transport
 sif mcp http
-curl http://127.0.0.1:3000/health
+curl http://127.0.0.1:8080/health
 ```
 
 ### Tool Not Found

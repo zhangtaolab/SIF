@@ -203,7 +203,7 @@ python -c "import sqlite3; print(sqlite3.sqlite_version)"
 **Solution**:
 ```bash
 # Download model manually
-python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
+python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('Qwen/Qwen3-Embedding-0.6B')"
 
 # Or specify a local model path
 export SIF_MODEL_PATH=/path/to/local/model
@@ -229,7 +229,7 @@ If you encounter issues not covered here:
 
 1. Check the [GitHub Issues](https://github.com/zhangtaolab/sif/issues)
 2. Run with verbose mode: `sif -v <command>`
-3. Logs are written to stderr by default; `sif watch --detach` redirects stdout/stderr to a log file in the platform log directory (default `watch.log`, e.g. `~/Library/Logs/sif/watch.log` on macOS), and installed watch services also write log files there
+3. Logs are written to stderr by default; `sif watch --detach` redirects stdout/stderr to a log file in the platform log directory (default `watch.log`, e.g. `~/Library/Logs/sif/watch.log` on macOS). Installed watch services log there on macOS (launchd); on Linux the systemd unit logs to the journal (`journalctl --user -u <unit> -f`).
 
 ## Uninstallation
 

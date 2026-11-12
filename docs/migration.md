@@ -42,7 +42,6 @@ All environment variables changed prefix from `DOCSIFT_` to `SIF_`:
 | `DOCSIFT_LOG_LEVEL` | `SIF_LOG_LEVEL` |
 | `DOCSIFT_DEBUG` | `SIF_DEBUG` |
 | `DOCSIFT_APP_NAME` | `SIF_APP_NAME` |
-| `DOCSIFT_DEVICE` | No equivalent — device is auto-detected (CUDA → MPS → CPU) at model load; no `device` field exists in Settings |
 
 ### Data Paths
 

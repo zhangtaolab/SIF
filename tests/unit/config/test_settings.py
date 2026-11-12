@@ -248,3 +248,41 @@ def test_query_history_limit_rejects_zero_naming_the_field(
         m.setenv("SIF_QUERY_HISTORY_LIMIT", "0")
         with pytest.raises(ValidationError, match="query_history_limit"):
             Settings(_env_file=None)
+
+
+def test_default_search_type_rejects_unknown_value() -> None:
+    """SIF_DEFAULT_SEARCH_TYPE is limited to bm25, vector, and hybrid."""
+    with pytest.raises(ValidationError, match="default_search_type"):
+        Settings(_env_file=None, default_search_type="semantic")
+
+
+def test_mcp_transport_rejects_unknown_value() -> None:
+    """SIF_MCP_TRANSPORT is limited to stdio and http."""
+    with pytest.raises(ValidationError, match="mcp_transport"):
+        Settings(_env_file=None, mcp_transport="sse")
+
+
+def test_wired_settings_reach_settings_object() -> None:
+    """The formerly-unread settings are accepted and typed by Settings."""
+    settings = Settings(
+        _env_file=None,
+        debug=True,
+        log_level="debug",
+        chunk_size=256,
+        chunk_overlap=32,
+        default_search_type="bm25",
+        default_limit=5,
+        mcp_host="0.0.0.0",
+        mcp_port=9000,
+        mcp_transport="http",
+    )
+
+    assert settings.debug is True
+    assert settings.log_level == "DEBUG"
+    assert settings.chunk_size == 256
+    assert settings.chunk_overlap == 32
+    assert settings.default_search_type == "bm25"
+    assert settings.default_limit == 5
+    assert settings.mcp_host == "0.0.0.0"
+    assert settings.mcp_port == 9000
+    assert settings.mcp_transport == "http"

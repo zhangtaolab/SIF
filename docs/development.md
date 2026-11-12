@@ -402,7 +402,7 @@ from sif.utils.logging import setup_logging
 setup_logging("DEBUG")
 ```
 
-`SIF_LOG_LEVEL` is defined as a Settings field, but the CLI does not read it — use `--verbose`/`--quiet` for command-line runs.
+`SIF_LOG_LEVEL` is read by the CLI when neither `--verbose` nor `--quiet` is given; the flags win when present.
 
 ### IDE Setup
 

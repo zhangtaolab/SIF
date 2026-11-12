@@ -164,6 +164,7 @@ class SearchBackend:
                     conn,
                     embedder=self._embedder,
                     embedding_dim=self.settings.embedding_dim,
+                    default_search_type=self.settings.default_search_type,
                 )
             except RuntimeError:
                 # WR-08 (user decision): MCP-boundary carve-out — a missing

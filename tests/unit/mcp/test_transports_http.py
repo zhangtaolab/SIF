@@ -52,7 +52,12 @@ def client(mock_server):
 
 def test_default_cors_origins() -> None:
     """Test default CORS origins are non-wildcard."""
-    assert DEFAULT_CORS_ORIGINS == ["http://localhost:3000", "http://127.0.0.1:3000"]
+    assert DEFAULT_CORS_ORIGINS == [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:8080",
+        "http://127.0.0.1:8080",
+    ]
     assert "*" not in DEFAULT_CORS_ORIGINS
 
 

@@ -428,7 +428,7 @@ sif search query [OPTIONS]
 
 | Option | Short | Type | Default | Description |
 |--------|-------|------|---------|-------------|
-| `--limit` | `-n` | integer | `10` | Number of results |
+| `--limit` | `-n` | integer | — | Number of results (default: SIF_DEFAULT_LIMIT or 10) |
 | `--collection` | `-c` | text[] | — | Collection to search |
 | `--all` | `—` | flag | `false` | Search all collections |
 | `--min-score` | `—` | float | `0.0` | Minimum score threshold |
@@ -468,7 +468,7 @@ sif search search [OPTIONS]
 
 | Option | Short | Type | Default | Description |
 |--------|-------|------|---------|-------------|
-| `--limit` | `-n` | integer | `10` | Number of results |
+| `--limit` | `-n` | integer | — | Number of results (default: SIF_DEFAULT_LIMIT or 10) |
 | `--collection` | `-c` | text[] | — | Collection to search |
 | `--all` | `—` | flag | `false` | Search all collections |
 | `--min-score` | `—` | float | `0.0` | Minimum score threshold |
@@ -501,7 +501,7 @@ sif search vsearch [OPTIONS]
 
 | Option | Short | Type | Default | Description |
 |--------|-------|------|---------|-------------|
-| `--limit` | `-n` | integer | `10` | Number of results |
+| `--limit` | `-n` | integer | — | Number of results (default: SIF_DEFAULT_LIMIT or 10) |
 | `--collection` | `-c` | text[] | — | Collection to search |
 | `--all` | `—` | flag | `false` | Search all collections |
 | `--min-score` | `—` | float | `0.0` | Minimum score threshold |
@@ -526,8 +526,8 @@ sif mcp daemon [OPTIONS]
 
 | Option | Short | Type | Default | Description |
 |--------|-------|------|---------|-------------|
-| `--host` | `-h` | text | `127.0.0.1` | Host to bind to |
-| `--port` | `-p` | integer | `3000` | Port to listen on |
+| `--host` | `-h` | text | — | Host to bind to (default: SIF_MCP_HOST or 127.0.0.1) |
+| `--port` | `-p` | integer | — | Port to listen on (default: SIF_MCP_PORT or 8080) |
 | `--pid-file` | `—` | text | — | PID file path |
 | `--log-file` | `—` | text | — | Log file path |
 | `--stop` | `—` | flag | `false` | Stop the daemon |
@@ -544,8 +544,8 @@ sif mcp http [OPTIONS]
 
 | Option | Short | Type | Default | Description |
 |--------|-------|------|---------|-------------|
-| `--host` | `-h` | text | `127.0.0.1` | Host to bind to |
-| `--port` | `-p` | integer | `3000` | Port to listen on |
+| `--host` | `-h` | text | — | Host to bind to (default: SIF_MCP_HOST or 127.0.0.1) |
+| `--port` | `-p` | integer | — | Port to listen on (default: SIF_MCP_PORT or 8080) |
 | `--reload` | `—` | flag | `false` | Accepted for compatibility; currently has no effect |
 | `--cors-origins` | `—` | text[] | — | CORS allowed origins |
 

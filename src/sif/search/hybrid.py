@@ -149,6 +149,7 @@ class SearchPipeline:
         reranker: LlamaCppReranker | CrossEncoderReranker | Qwen3Reranker | None = None,
         snippet_extractor: SmartSnippetExtractor | None = None,
         embedding_dim: int = 768,
+        default_search_type: str = "hybrid",
     ) -> None:
         """Initialize search pipeline with optional components."""
         self.db = db
@@ -156,6 +157,7 @@ class SearchPipeline:
         self.query_expander = query_expander
         self.reranker = reranker
         self.snippet_extractor = snippet_extractor
+        self._default_search_type = default_search_type
 
     def search(  # noqa: C901, PLR0912
         self,
@@ -293,7 +295,12 @@ class SearchPipeline:
         return results
 
     def _parse_query_prefix(self, query: str) -> tuple[str, SearchType]:
-        """Parse query prefix to determine search mode."""
+        """Parse query prefix to determine search mode.
+
+        An explicit ``lex:``/``vec:``/``hyde:``/``expand:`` prefix always
+        wins. Unprefixed queries fall back to the configured default search
+        type (``hybrid`` unless ``SIF_DEFAULT_SEARCH_TYPE`` says otherwise).
+        """
         prefix_map = {
             "lex:": SearchType.BM25,
             "vec:": SearchType.VECTOR,
@@ -303,7 +310,11 @@ class SearchPipeline:
         for prefix, search_type in prefix_map.items():
             if query.startswith(prefix):
                 return query[len(prefix) :].strip(), search_type
-        return query, SearchType.HYBRID
+        fallback = {
+            "bm25": SearchType.BM25,
+            "vector": SearchType.VECTOR,
+        }.get(self._default_search_type, SearchType.HYBRID)
+        return query, fallback
 
     def _generate_hypothetical_document(self, query: str) -> str:
         """Generate a hypothetical ideal answer document for HyDE search.

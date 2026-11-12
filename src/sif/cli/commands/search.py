@@ -11,12 +11,14 @@ from typing import Any
 from xml.sax.saxutils import escape as xml_escape, quoteattr
 
 import click
+from pydantic import ValidationError
 from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
 
 from sif.cli.error_handling import open_initialized_database, sqlite_vec_remedy
 from sif.cli.formatters import add_line_numbers_to_results, prepend_line_numbers
+from sif.config.settings import get_settings
 from sif.core.models import Collection, QueryLogEntry, SearchOptions, SearchResult
 from sif.database.database import Database
 from sif.database.repositories import CollectionRepository, QueryLogRepository
@@ -42,6 +44,19 @@ _CONTENT_MAX_LEN = 200
 # [#xE000-#xFFFD] | [#x10000-#x10FFFF]. This class is its forbidden complement:
 # #x00-#x08, #x0B, #x0C, #x0E-#x1F, surrogates #xD800-#xDFFF, #xFFFE-#xFFFF.
 _XML_1_0_INVALID = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]")
+
+
+def _default_limit() -> int:
+    """Resolve SIF_DEFAULT_LIMIT for the search commands' --limit default."""
+    try:
+        return get_settings().default_limit
+    except ValidationError:
+        return 10
+
+
+def _resolve_limit(limit: int | None) -> int:
+    """Use the configured default limit when --limit was not supplied."""
+    return _default_limit() if limit is None else limit
 
 
 def _xml_sanitize(text: str) -> str:
@@ -413,7 +428,13 @@ def search_group() -> None:
 
 @search_group.command("search")
 @click.argument("query")
-@click.option("-n", "--limit", default=10, help="Number of results")
+@click.option(
+    "-n",
+    "--limit",
+    type=int,
+    default=None,
+    help="Number of results (default: SIF_DEFAULT_LIMIT or 10)",
+)
 @click.option("-c", "--collection", multiple=True, help="Collection to search")
 @click.option("--all", "search_all", is_flag=True, help="Search all collections")
 @click.option("--min-score", default=0.0, help="Minimum score threshold")
@@ -431,7 +452,7 @@ def search_group() -> None:
 def search_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     ctx: click.Context,
     query: str,
-    limit: int,
+    limit: int | None,
     collection: tuple[str, ...],
     search_all: bool,
     min_score: float,
@@ -448,6 +469,7 @@ def search_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
 ) -> None:
     """Search documents using BM25."""
     index_path = ctx.obj["index_path"]
+    limit = _resolve_limit(limit)
     quiet = quiet or ctx.obj.get("quiet", False)
     if quiet:
         set_quiet(True)
@@ -579,7 +601,13 @@ def search_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
 
 @search_group.command("vsearch")
 @click.argument("query")
-@click.option("-n", "--limit", default=10, help="Number of results")
+@click.option(
+    "-n",
+    "--limit",
+    type=int,
+    default=None,
+    help="Number of results (default: SIF_DEFAULT_LIMIT or 10)",
+)
 @click.option("-c", "--collection", multiple=True, help="Collection to search")
 @click.option("--all", "search_all", is_flag=True, help="Search all collections")
 @click.option("--min-score", default=0.0, help="Minimum score threshold")
@@ -597,7 +625,7 @@ def search_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
 def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     ctx: click.Context,
     query: str,
-    limit: int,
+    limit: int | None,
     collection: tuple[str, ...],
     search_all: bool,
     min_score: float,
@@ -610,6 +638,7 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
 ) -> None:
     """Search documents using vector similarity."""
     index_path = ctx.obj["index_path"]
+    limit = _resolve_limit(limit)
     quiet = quiet or ctx.obj.get("quiet", False)
     if quiet:
         set_quiet(True)
@@ -737,7 +766,13 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
 
 @search_group.command("query")
 @click.argument("query")
-@click.option("-n", "--limit", default=10, help="Number of results")
+@click.option(
+    "-n",
+    "--limit",
+    type=int,
+    default=None,
+    help="Number of results (default: SIF_DEFAULT_LIMIT or 10)",
+)
 @click.option("-c", "--collection", multiple=True, help="Collection to search")
 @click.option("--all", "search_all", is_flag=True, help="Search all collections")
 @click.option("--min-score", default=0.0, help="Minimum score threshold")
@@ -797,7 +832,7 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
 def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     ctx: click.Context,
     query: str,
-    limit: int,
+    limit: int | None,
     collection: tuple[str, ...],
     search_all: bool,
     min_score: float,
@@ -824,6 +859,7 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     This is the recommended search command for best results.
     """
     index_path = ctx.obj["index_path"]
+    limit = _resolve_limit(limit)
     quiet = quiet or ctx.obj.get("quiet", False)
     if quiet:
         set_quiet(True)
@@ -945,6 +981,7 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                     reranker=reranker,
                     snippet_extractor=snippet_extractor,
                     embedding_dim=embedding_dim,
+                    default_search_type=settings.default_search_type,
                 )
             except RuntimeError as e:
                 raise click.ClickException(sqlite_vec_remedy(e)) from e

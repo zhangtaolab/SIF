@@ -25,6 +25,26 @@ def mock_db():
     return MagicMock()
 
 
+def test_default_search_type_bm25_routes_unprefixed_query(mock_db):
+    """SIF_DEFAULT_SEARCH_TYPE=bm25 routes an unprefixed query to BM25."""
+    pipeline = SearchPipeline(mock_db, default_search_type="bm25")
+    pipeline.hybrid.bm25.search = MagicMock(return_value=[])
+
+    pipeline.search("plain query", SearchOptions())
+
+    pipeline.hybrid.bm25.search.assert_called_once()
+
+
+def test_default_search_type_hybrid_keeps_unprefixed_query_hybrid(mock_db):
+    """The default hybrid fallback still goes through HybridSearcher."""
+    pipeline = SearchPipeline(mock_db)
+    pipeline.hybrid.search = MagicMock(return_value=[])
+
+    pipeline.search("plain query", SearchOptions())
+
+    pipeline.hybrid.search.assert_called_once()
+
+
 @pytest.fixture
 def mock_embedder():
     """Create a mock embedder."""

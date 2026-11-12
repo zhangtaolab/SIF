@@ -34,6 +34,8 @@ class SentenceTransformerEmbedder(Embedder):
         model_name: str = "all-MiniLM-L6-v2",
         device: str | None = None,
         cache_dir: str | None = None,
+        max_tokens: int | None = None,
+        batch_size: int | None = None,
     ) -> None:
         """Initialize sentence transformer embedder.
 
@@ -41,6 +43,8 @@ class SentenceTransformerEmbedder(Embedder):
             model_name: HuggingFace model name
             device: Device to use (cpu, cuda, etc.)
             cache_dir: Cache directory for models
+            max_tokens: Maximum input tokens (sets the model's max_seq_length)
+            batch_size: Batch size for encode calls
         """
         try:
             from sentence_transformers import SentenceTransformer  # noqa: PLC0415
@@ -52,6 +56,7 @@ class SentenceTransformerEmbedder(Embedder):
             raise
 
         self.model_name = model_name
+        self._batch_size = batch_size
 
         if device is None:
             import torch  # noqa: PLC0415
@@ -80,7 +85,16 @@ class SentenceTransformerEmbedder(Embedder):
             )
 
         self._dimension: int = self.model.get_sentence_embedding_dimension()
+        if max_tokens is not None:
+            self.model.max_seq_length = max_tokens
         logger.info(f"Embedding dimension: {self._dimension}")
+
+    def _encode_kwargs(self) -> dict[str, Any]:
+        """Common encode kwargs, including the configured batch size."""
+        kwargs: dict[str, Any] = {"normalize_embeddings": True}
+        if self._batch_size is not None:
+            kwargs["batch_size"] = self._batch_size
+        return kwargs
 
     def embed(self, text: str) -> list[float]:
         """Embed a single text.
@@ -91,7 +105,7 @@ class SentenceTransformerEmbedder(Embedder):
         Returns:
             Embedding vector
         """
-        embedding = self.model.encode(text, normalize_embeddings=True)
+        embedding = self.model.encode(text, **self._encode_kwargs())
         result: list[float] = embedding.tolist()
         return result
 
@@ -106,8 +120,8 @@ class SentenceTransformerEmbedder(Embedder):
         """
         embeddings = self.model.encode(
             texts,
-            normalize_embeddings=True,
             show_progress_bar=len(texts) > _PROGRESS_BAR_THRESHOLD,
+            **self._encode_kwargs(),
         )
         result: list[list[float]] = embeddings.tolist()
         return result
@@ -121,13 +135,15 @@ class SentenceTransformerEmbedder(Embedder):
 class LlamaCppEmbedder(Embedder):
     """Embedder using llama-cpp-python."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         model_path: str | Path,
         n_ctx: int = 8192,
         n_threads: int | None = None,
         n_gpu_layers: int = 0,
         verbose: bool = False,
+        max_tokens: int | None = None,
+        batch_size: int | None = None,
     ) -> None:
         """Initialize llama.cpp embedder.
 
@@ -137,6 +153,8 @@ class LlamaCppEmbedder(Embedder):
             n_threads: Number of threads (auto if None)
             n_gpu_layers: Number of layers to offload to the GPU (0 = CPU only)
             verbose: Enable verbose output
+            max_tokens: Maximum input tokens (longer inputs are truncated)
+            batch_size: Accepted for config parity; llama.cpp embeds one at a time
         """
         try:
             from llama_cpp import Llama  # noqa: PLC0415
@@ -165,7 +183,25 @@ class LlamaCppEmbedder(Embedder):
         )
 
         self._dimension: int = self.model.n_embd()
+        self._max_tokens = max_tokens
+        self._batch_size = batch_size
         logger.info(f"Embedding dimension: {self._dimension}")
+
+    def _truncate(self, text: str) -> str:
+        """Truncate text to ``max_tokens`` when the backend can tokenize it."""
+        if self._max_tokens is None:
+            return text
+        tokenize = getattr(self.model, "tokenize", None)
+        detokenize = getattr(self.model, "detokenize", None)
+        if not callable(tokenize) or not callable(detokenize):
+            return text
+        try:
+            tokens = tokenize(text.encode("utf-8"))
+            if len(tokens) <= self._max_tokens:
+                return text
+            return detokenize(tokens[: self._max_tokens]).decode("utf-8", errors="ignore")
+        except Exception:
+            return text
 
     def embed(self, text: str) -> list[float]:
         """Embed a single text.
@@ -178,7 +214,7 @@ class LlamaCppEmbedder(Embedder):
         first, then L2-normalized: unit-length when the norm is positive;
         a zero-norm vector is returned unchanged.
         """
-        vector = self._unwrap_embedding(self.model.embed(text))
+        vector = self._unwrap_embedding(self.model.embed(self._truncate(text)))
         # Normalize
         norm = np.linalg.norm(vector)
         if norm > 0:
@@ -272,12 +308,14 @@ class LlamaCppEmbedder(Embedder):
 class ModelScopeEmbedder(Embedder):
     """Embedder that downloads from ModelScope and uses sentence-transformers."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         model_id: str = "iic/gte_Qwen2-7B-instruct",
         device: str | None = None,
         cache_dir: str | None = None,
         force_download: bool = False,
+        max_tokens: int | None = None,
+        batch_size: int | None = None,
     ) -> None:
         """Initialize ModelScope embedder.
 
@@ -286,6 +324,8 @@ class ModelScopeEmbedder(Embedder):
             device: Device to use
             cache_dir: Cache directory
             force_download: Force re-download
+            max_tokens: Maximum input tokens (sets the model's max_seq_length)
+            batch_size: Batch size for encode calls
         """
         # Download model from ModelScope
         downloader = ModelDownloader(cache_dir)
@@ -332,11 +372,21 @@ class ModelScopeEmbedder(Embedder):
 
         self._dimension: int = self.model.get_sentence_embedding_dimension()
         self.model_id = model_id
+        self._batch_size = batch_size
+        if max_tokens is not None:
+            self.model.max_seq_length = max_tokens
         logger.info(f"Embedding dimension: {self._dimension}")
+
+    def _encode_kwargs(self) -> dict[str, Any]:
+        """Common encode kwargs, including the configured batch size."""
+        kwargs: dict[str, Any] = {"normalize_embeddings": True}
+        if self._batch_size is not None:
+            kwargs["batch_size"] = self._batch_size
+        return kwargs
 
     def embed(self, text: str) -> list[float]:
         """Embed a single text."""
-        embedding = self.model.encode(text, normalize_embeddings=True)
+        embedding = self.model.encode(text, **self._encode_kwargs())
         result: list[float] = embedding.tolist()
         return result
 
@@ -344,8 +394,8 @@ class ModelScopeEmbedder(Embedder):
         """Embed multiple texts."""
         embeddings = self.model.encode(
             texts,
-            normalize_embeddings=True,
             show_progress_bar=len(texts) > _PROGRESS_BAR_THRESHOLD,
+            **self._encode_kwargs(),
         )
         result: list[list[float]] = embeddings.tolist()
         return result

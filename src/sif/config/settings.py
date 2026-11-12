@@ -202,12 +202,14 @@ class Settings(BaseSettings):
     chunk_size: int = Field(
         default=DEFAULT_CHUNK_SIZE,
         ge=100,
-        description="Default chunk size in tokens",
+        description="Default chunk size in tokens (converted to ~4 characters "
+        "per token for the character-based chunkers)",
     )
     chunk_overlap: int = Field(
         default=DEFAULT_CHUNK_OVERLAP,
         ge=0,
-        description="Default chunk overlap in tokens",
+        description="Default chunk overlap in tokens (converted to ~4 characters "
+        "per token for the character-based chunkers)",
     )
 
     # Search settings
@@ -363,6 +365,28 @@ class Settings(BaseSettings):
         if v_upper not in valid_levels:
             raise ValueError(f"Invalid log level: {v}. Must be one of {valid_levels}")
         return v_upper
+
+    @field_validator("default_search_type")
+    @classmethod
+    def validate_default_search_type(cls, v: str) -> str:
+        """Validate default_search_type is bm25, vector, or hybrid."""
+        valid_types = {"bm25", "vector", "hybrid"}
+        if v not in valid_types:
+            raise ValueError(
+                f"Invalid default_search_type: {v}. Must be one of {sorted(valid_types)}"
+            )
+        return v
+
+    @field_validator("mcp_transport")
+    @classmethod
+    def validate_mcp_transport(cls, v: str) -> str:
+        """Validate mcp_transport is stdio or http."""
+        valid_transports = {"stdio", "http"}
+        if v not in valid_transports:
+            raise ValueError(
+                f"Invalid mcp_transport: {v}. Must be one of {sorted(valid_transports)}"
+            )
+        return v
 
     def get_db_path(self) -> Path:
         """Get the database path, creating default if not set."""

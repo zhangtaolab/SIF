@@ -94,14 +94,14 @@ BM25/FTS5 keyword search and sqlite-vec vector search always run on CPU regardle
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
-| `SIF_CHUNK_SIZE` | int | `512` | Default chunk size in tokens |
-| `SIF_CHUNK_OVERLAP` | int | `128` | Default chunk overlap in tokens |
+| `SIF_CHUNK_SIZE` | int | `512` | Default chunk size in tokens (converted to ~4 characters per token for the character-based chunkers) |
+| `SIF_CHUNK_OVERLAP` | int | `128` | Default chunk overlap in tokens (converted to ~4 characters per token for the character-based chunkers) |
 
 ### Search Settings
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
-| `SIF_DEFAULT_SEARCH_TYPE` | str | `hybrid` | Default search type (bm25, vector, hybrid) |
+| `SIF_DEFAULT_SEARCH_TYPE` | str | `hybrid` | Default search type (bm25, vector, hybrid) (validated by `validate_default_search_type`) |
 | `SIF_DEFAULT_LIMIT` | int | `10` | Default search result limit |
 | `SIF_RRF_K` | int | `60` | RRF constant k for hybrid fusion (1/(k + rank)); smaller values differentiate top ranks more aggressively |
 | `SIF_BM25_WEIGHT` | float | `1.0` | BM25 source weight in hybrid RRF fusion; 1.0 with an equal vector weight reproduces the unweighted default |
@@ -129,7 +129,7 @@ BM25/FTS5 keyword search and sqlite-vec vector search always run on CPU regardle
 | `SIF_MCP_WATCH` | bool | `False` | Run the index watcher inside the MCP server so assistant queries hit a fresh index (opt-in via SIF_MCP_WATCH=1; both transports, BM25-only by design) |
 | `SIF_MCP_HOST` | str | `127.0.0.1` | MCP HTTP server host |
 | `SIF_MCP_PORT` | int | `8080` | MCP HTTP server port |
-| `SIF_MCP_TRANSPORT` | str | `stdio` | MCP transport type (stdio, http) |
+| `SIF_MCP_TRANSPORT` | str | `stdio` | MCP transport type (stdio, http) (validated by `validate_mcp_transport`) |
 
 ### Cache Settings
 
@@ -147,6 +147,8 @@ SIF validates configuration on startup. Invalid values will raise errors:
 | `watch_update_depth` | Must be one of: `bm25`, `embed` | `Invalid watch_update_depth: xyz. Must be one of ['bm25', 'embed']` |
 | `model_type` | Must be one of: `gguf`, `modelscope`, `openai`, `sentence_transformers` | `Invalid model_type: xyz. Must be one of ['gguf', 'modelscope', 'openai', 'sentence_transformers']` |
 | `reranker_model_type` | Must be one of: `gguf`, `sentence_transformers` | `Invalid reranker_model_type: xyz. Must be one of ['gguf', 'sentence_transformers']` |
+| `default_search_type` | Must be one of: `bm25`, `hybrid`, `vector` | `Invalid default_search_type: xyz. Must be one of ['bm25', 'hybrid', 'vector']` |
+| `mcp_transport` | Must be one of: `http`, `stdio` | `Invalid mcp_transport: xyz. Must be one of ['http', 'stdio']` |
 | `api_base` | Must start with `http://` or `https://` | `api_base must be an HTTP or HTTPS URL` |
 | `log_level` | Must be one of: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` | `Invalid log level: TRACE` |
 | `chunk_size` | Minimum 100 | `Input should be greater than or equal to 100` |
