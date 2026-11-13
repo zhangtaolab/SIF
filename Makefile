@@ -1,7 +1,7 @@
 # Makefile for SIF project
 # Provides convenient commands for common development tasks
 
-.PHONY: help install install-dev install-all test test-verbose test-fast docs-test docs-generate lint lint-fix format format-check typecheck coverage clean clean-all build docs pre-commit security all ci dev-setup dev-check update-deps info
+.PHONY: help install install-dev install-all test test-verbose test-fast docs-test docs-generate lint lint-fix format format-check typecheck coverage clean clean-all build docs security all ci dev-setup dev-check update-deps info
 
 # Default target
 help:
@@ -26,7 +26,6 @@ help:
 	@echo "  make typecheck    - Run type checking (ty)"
 	@echo "  make coverage     - Generate coverage report"
 	@echo "  make security     - Run security scan (bandit)"
-	@echo "  make pre-commit   - Run pre-commit hooks on all files"
 	@echo ""
 	@echo "Build & Release:"
 	@echo "  make build        - Build package distribution"
@@ -44,12 +43,10 @@ install:
 install-dev:
 	@echo "Installing SIF with development dependencies..."
 	pip install -e ".[dev]"
-	pre-commit install
 
 install-all:
 	@echo "Installing SIF with all dependencies..."
 	pip install -e ".[dev,all]"
-	pre-commit install
 
 # Testing targets
 test:
@@ -105,11 +102,6 @@ coverage:
 security:
 	@echo "Running security scan with bandit..."
 	bandit -r src/sif -c pyproject.toml
-
-# Pre-commit hooks target
-pre-commit:
-	@echo "Running pre-commit hooks on all files..."
-	pre-commit run --all-files
 
 # Build target
 build:
@@ -168,7 +160,6 @@ update-deps:
 	@echo "Updating dependencies..."
 	pip install --upgrade pip
 	pip install --upgrade -e ".[dev,all]"
-	pre-commit autoupdate
 
 # Show project info
 info:
@@ -176,4 +167,4 @@ info:
 	@echo "==========================="
 	@echo "Python version: $$(python --version)"
 	@echo "Installed packages:"
-	@pip list | grep -E "(sif|ruff|^ty|pytest|black|bandit)" || true
+	@pip list | grep -E "(sif|ruff|^ty|pytest|bandit)" || true

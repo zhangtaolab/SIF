@@ -102,3 +102,14 @@ def test_quickstart_example_compiles() -> None:
     assert "BM25Searcher" in text
     assert "BM25SearchStrategy" not in text
     assert "SearchContext" not in text
+
+
+def test_makefile_has_no_pre_commit_target() -> None:
+    """The Makefile never invokes a tool the repository does not configure."""
+    makefile_text = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
+    assert "pre-commit" not in makefile_text
+
+
+def test_pre_commit_config_absent() -> None:
+    """No pre-commit configuration was introduced by the cleanup."""
+    assert not (REPO_ROOT / ".pre-commit-config.yaml").exists()
