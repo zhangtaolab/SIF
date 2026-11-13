@@ -2,15 +2,19 @@
 gsd_state_version: "1.0"
 milestone: v1.2
 milestone_name: Search Precision and Agent Experience
+current_phase: 17
+current_phase_name: 1 of 8 in v1.2
 status: planning
-last_updated: "2026-11-13T02:52:28Z"
+stopped_at: Phase 17 context gathered
+last_updated: "2026-11-13T06:32:58.082Z"
 last_activity: 2026-11-13
+last_activity_desc: v1.2 roadmap created (8 phases, 39/39 requirements mapped)
+state_head: fd0250764f53e5bcf718271af395cf12298de04c
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
-  percent: 0
 ---
 
 # DocSift — Project State
@@ -80,8 +84,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-13T02:52:28Z
-Stopped at: v1.2 roadmap created (ROADMAP.md + STATE.md + REQUIREMENTS.md traceability)
-Resume file: None
+Last session: 2026-11-13T06:32:58.069Z
+Stopped at: Phase 17 context gathered
+Resume file: .planning/phases/17-engineering-foundation-ci-matrix-hygiene-pypi/17-CONTEXT.md
 
 - **Next expected action:** `/gsd-plan-phase 17` (Engineering Foundation). Execution order locked: 17 → 18 → 19 → 20 → 21 → 22 → 23 → 24; hard dependencies and cross-phase contracts in ROADMAP.md.
