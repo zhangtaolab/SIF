@@ -5,16 +5,16 @@ milestone_name: Search Precision and Agent Experience
 current_phase: 17
 current_phase_name: Engineering Foundation (CI Matrix + Hygiene + PyPI)
 status: executing
-stopped_at: Phase 17 context gathered
-last_updated: "2026-11-13T07:59:00.441Z"
+stopped_at: Completed 17-01-PLAN.md
+last_updated: "2026-11-13T08:49:20.314Z"
 last_activity: 2026-11-13
-last_activity_desc: v1.2 roadmap created (8 phases, 39/39 requirements mapped)
-state_head: 35f3658a7baa18ce4a8bc7f489de973b2c22731c
+last_activity_desc: Phase 17 execution started
+state_head: 223e395be39efd43f96227d78f4ec03904016c82
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 9
-  completed_plans: 0
+  completed_plans: 1
 ---
 
 # DocSift — Project State
@@ -30,10 +30,10 @@ progress:
 
 ## Current Position
 
-Phase: 17 (Engineering Foundation (CI Matrix + Hygiene + PyPI)) — READY TO EXECUTE
-Plan: — (roadmap created; plans TBD)
+Phase: 17 (Engineering Foundation (CI Matrix + Hygiene + PyPI)) — EXECUTING
+Plan: 2 of 9
 Status: Ready to execute
-Last activity: 2026-11-13 — v1.2 roadmap created (8 phases, 39/39 requirements mapped)
+Last activity: 2026-11-13 — Phase 17 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -44,6 +44,12 @@ Progress: [░░░░░░░░░░] 0%
 - **Velocity:** v1.0 shipped 68 plans / 11 phases (2026-04-14 → 2026-11-07); v1.1 shipped 27 plans / 7 phases (2026-11-07 → 2026-11-12); recent plans averaged ~13-20 min
 - **Suite at v1.1 close:** 1591 passed, 1 skipped @ 95.18% coverage (fail_under=90 active); ruff/format/ty green
 - **v1.2:** 0/8 phases, 0 plans — per-plan metrics start at Phase 17
+
+**Per-Plan Metrics:**
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| Phase 17 P01 | 11min | 3 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -56,6 +62,7 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - [v1.2 gate]: Harrier default switch ONLY on an EN+ZH held-out win beyond the 0.01 tie rule; embedder identity marker (not width-only — both models are 1024-dim) is a locked precondition: Phase 21 before Phase 23
 - [v1.2 deps]: exactly two new runtime deps — `mcp>=2.3.0,<3` (Phase 22), `rapidfuzz>=3.14.5,<4` (Phase 18); sentence-transformers stays 5.4.1
 - [v1.1 carryover]: WAL+flock concurrent DB core; one LiveIndexService watch core hosted three ways; IncrementalIndexer is the single per-file update path; rerank explicit opt-in; bench held-out tie rule round(delta,6) < 0.01
+- [Phase 17]: Hygiene deletions land as one atomic plan: modules + exports + fixtures + dependent tests + absence guards, so the suite never stops collecting
 
 ### Pending Todos
 
@@ -84,8 +91,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-13T06:32:58.069Z
-Stopped at: Phase 17 context gathered
-Resume file: .planning/phases/17-engineering-foundation-ci-matrix-hygiene-pypi/17-CONTEXT.md
+Last session: 2026-11-13T08:49:20.298Z
+Stopped at: Completed 17-01-PLAN.md
+Resume file: None
 
 - **Next expected action:** `/gsd-plan-phase 17` (Engineering Foundation). Execution order locked: 17 → 18 → 19 → 20 → 21 → 22 → 23 → 24; hard dependencies and cross-phase contracts in ROADMAP.md.

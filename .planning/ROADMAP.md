@@ -76,9 +76,9 @@ Full detail: `.planning/milestones/v1.1-ROADMAP.md`
   2. A Windows smoke run on hc remote yoga (uv python install first) proves fork/systemd/flock degrade honestly with clear messages — degradation asserted, NOT full Windows support
   3. `docsif` v1.1.x is installable from PyPI via trusted publishing — TestPyPI dry run passed, version single-sourced, PEP 740 attestations present, and the README `<!-- mcp-name: io.github.zhangtaolab/sif -->` marker landed BEFORE publish
   4. The repo is hygienic — dead `MigrationManager` + `models/search.py` + `search/strategy.py` quarantined/deleted (no tempting dead `filters` dict for Phase 20), tracked junk removed, Makefile/extras/pre-commit cleaned (black dropped; fastapi/uvicorn kept as core deps); the 3.13 classifier appears only once the matrix is green
-**Plans:** 9 plans
+**Plans:** 1/9 plans executed
 **Wave 1**
-- [ ] 17-01-PLAN.md — Repo hygiene core: dead layers, orphan export, pre-commit Makefile target
+- [x] 17-01-PLAN.md — Repo hygiene core: dead layers, orphan export, pre-commit Makefile target
 - [ ] 17-02-PLAN.md — CPU-torch lock + extras floors + black removal
 
 **Wave 2** *(blocked on Wave 1 completion)*
@@ -195,7 +195,7 @@ v1.2 contracts — defined ONCE; downstream phases consume, never redefine:
 | 15. Search Quality Configuration | v1.1 | 3/3 | Complete    | 2026-11-08 |
 | 16. Bench Expansion + Reranker Tuning | v1.1 | 6/6 | Complete    | 2026-11-09 |
 | 16.1. Address tech debt (CLI errors + cache TTL + enqueue API) | v1.1 | 5/5 | Complete    | 2026-11-12 |
-| 17. Engineering Foundation (CI + Hygiene + PyPI) | v1.2 | 0/7 | Planned | - |
+| 17. Engineering Foundation (CI + Hygiene + PyPI) | v1.2 | 1/9 | In Progress | - |
 | 18. Quality Instrument (Personal Bench + rapidfuzz) | v1.2 | 0/TBD | Not started | - |
 | 19. Search Correctness | v1.2 | 0/TBD | Not started | - |
 | 20. Metadata Filtering + Discovery | v1.2 | 0/TBD | Not started | - |
