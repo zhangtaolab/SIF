@@ -250,3 +250,33 @@ def test_matrix_excludes_tag_pushes() -> None:
     assert "tags:" not in text, (
         "test-matrix.yml must not trigger on tags (the release workflow owns v* tags)"
     )
+
+
+def test_lint_job_runs_repo_gates() -> None:
+    """The lint job runs ruff check, ruff format --check, and ty under Python 3.12."""
+    text = _workflow_text()
+    lint = _job_block(text, "lint")
+
+    commands = (
+        "uv run --frozen ruff check src tests",
+        "uv run --frozen ruff format --check src tests",
+        "uv run --frozen ty check src/sif",
+    )
+    missing = [command for command in commands if command not in lint]
+    assert missing == [], f"lint job is missing repo gates {missing}; lint job block: {lint!r}"
+
+    assert "python-version: '3.12'" in lint, (
+        f"lint job must set up Python 3.12; lint job block: {lint!r}"
+    )
+    assert "uv python install 3.12" in lint, (
+        f"lint job must install Python 3.12 with uv; lint job block: {lint!r}"
+    )
+    for forbidden in ("--no-cov", "secrets.", "id-token"):
+        assert forbidden not in lint, (
+            f"lint job must not contain {forbidden!r}; lint job block: {lint!r}"
+        )
+
+    test_job = _job_block(text, "test")
+    assert "ruff check" not in test_job, (
+        "ruff gates must live in the lint job, not the matrix test job"
+    )

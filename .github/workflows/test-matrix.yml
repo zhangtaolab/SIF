@@ -42,3 +42,33 @@ jobs:
 
       - name: Run full test suite
         run: env -u FORCE_COLOR NO_COLOR=1 uv run --frozen pytest
+
+  lint:
+    name: lint / py3.12 / ubuntu-latest
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: '3.12'
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install Python
+        run: uv python install 3.12
+
+      - name: Sync dependencies
+        run: uv sync --frozen --extra dev
+
+      - name: Ruff check
+        run: uv run --frozen ruff check src tests
+
+      - name: Ruff format check
+        run: uv run --frozen ruff format --check src tests
+
+      - name: Type check
+        run: uv run --frozen ty check src/sif
