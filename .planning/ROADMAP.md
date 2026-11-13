@@ -77,15 +77,24 @@ Full detail: `.planning/milestones/v1.1-ROADMAP.md`
   3. `docsif` v1.1.x is installable from PyPI via trusted publishing — TestPyPI dry run passed, version single-sourced, PEP 740 attestations present, and the README `<!-- mcp-name: io.github.zhangtaolab/sif -->` marker landed BEFORE publish
   4. The repo is hygienic — dead `MigrationManager` + `models/search.py` + `search/strategy.py` quarantined/deleted (no tempting dead `filters` dict for Phase 20), tracked junk removed, Makefile/extras/pre-commit cleaned (black dropped; fastapi/uvicorn kept as core deps); the 3.13 classifier appears only once the matrix is green
 **Plans:** 9 plans
+**Wave 1**
 - [ ] 17-01-PLAN.md — Repo hygiene core: dead layers, orphan export, pre-commit Makefile target
 - [ ] 17-02-PLAN.md — CPU-torch lock + extras floors + black removal
+
+**Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 17-03-PLAN.md — 8-cell CI matrix + lint/type job, proven green
 - [ ] 17-04-PLAN.md — Windows degradation guards + hc yoga smoke
-- [ ] 17-05-PLAN.md — Release artifacts: 1.1.2, README marker, publish workflow, 3.13 classifier
-- [ ] 17-06-PLAN.md — Release prerequisites (environments, publishers) + pre-tag gate
-- [ ] 17-07-PLAN.md — Tag v1.1.2, publish, attestation + install proofs
 - [ ] 17-08-PLAN.md — Documentation sweep: dead-layer prose + phantom pre-commit guidance
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 17-05-PLAN.md — Release artifacts: 1.1.2, README marker, publish workflow, 3.13 classifier
 - [ ] 17-09-PLAN.md — Tracked junk removal + final ENG-04 hygiene gate
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 17-06-PLAN.md — Release prerequisites (environments, publishers) + pre-tag gate
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [ ] 17-07-PLAN.md — Tag v1.1.2, publish, attestation + install proofs
 
 ### Phase 18: Quality Instrument (Personal Bench + rapidfuzz DYM)
 **Goal**: Users can measure search quality on their own corpus with trustworthy bias controls BEFORE any ranking behavior changes — the instrument that arbitrates the correctness fixes (19), the Harrier gate (23), and the tuning sweeps (24).
