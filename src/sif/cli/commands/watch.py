@@ -355,6 +355,14 @@ def _run_detach(
     with the long-lived opt-ins wired from settings; the original parent
     prints the armed PID (SC2) or raises the arming failure.
     """
+    if not hasattr(os, "fork"):
+        # D-06/ENG-02: refuse at the CLI boundary before any log-path or
+        # fork work, so Windows users get the cause and the remedy instead
+        # of a raw AttributeError traceback.
+        raise click.ClickException(
+            "--detach requires POSIX fork support and is not available on Windows; "
+            "run `sif watch` in the foreground instead."
+        )
     log_path = _daemon_log_path(log_file)
     pid_file = daemon.pid_path_for(params.index_path)
     armed_db: Database | None = None
@@ -414,7 +422,17 @@ def _run_stop(index_path: str | Path) -> None:
 
 
 def _service_manager() -> str:
-    """Derive the platform's service manager (D-13): launchd on macOS, systemd elsewhere."""
+    """Derive the platform's service manager (D-13): launchd on macOS, systemd elsewhere.
+
+    Windows has no supported watch service in this milestone: refuse with the
+    platform-specific cause and the foreground remedy BEFORE probing
+    systemctl/launchctl, so the message never points at a Linux-only tool.
+    """
+    if sys.platform == "win32":
+        raise click.ClickException(
+            "the watch service is not supported on Windows; "
+            "run `sif watch` in the foreground instead"
+        )
     return service.LAUNCHD_MANAGER if sys.platform == "darwin" else service.SYSTEMD_MANAGER
 
 

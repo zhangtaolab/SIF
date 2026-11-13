@@ -232,6 +232,12 @@ def detach(
         In the original parent: the arming outcome (pid or error). In the
         daemon grandchild: ``daemon=True`` — run the host body now.
     """
+    if not hasattr(os, "fork"):
+        # D-06/ENG-02: no os.fork (Windows) must fail with the cause and the
+        # remedy, never a raw AttributeError from os.pipe/os.fork below.
+        raise RuntimeError(
+            "detached mode requires POSIX fork (os.fork); use the foreground watch on Windows"
+        )
     read_fd, write_fd = os.pipe()
     pid = os.fork()
     if pid > 0:

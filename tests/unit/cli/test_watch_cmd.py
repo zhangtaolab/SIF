@@ -354,6 +354,22 @@ class TestDaemonFlagGuards:
         assert result.exit_code != 0
         assert "--log-file requires --detach" in result.output
 
+    def test_detach_without_fork_is_refused(self, tmp_path, monkeypatch) -> None:
+        """D-06/ENG-02: no os.fork (Windows) refuses with cause+remedy, no traceback."""
+        monkeypatch.setattr(watch_mod, "os", SimpleNamespace())
+
+        with patch("sif.config.settings.get_settings", return_value=_test_settings()):
+            result = CliRunner().invoke(
+                watch_mod.watch_cmd,
+                ["--detach"],
+                obj={"index_path": tmp_path / "watch.db"},
+            )
+
+        assert result.exit_code != 0
+        assert "--detach requires POSIX fork" in result.output
+        assert "foreground" in result.output
+        assert "Traceback" not in result.output
+
     def test_help_lists_daemon_lifecycle_flags(self) -> None:
         """--help surfaces --detach, --stop, and --log-file."""
         result = CliRunner().invoke(watch_mod.watch_cmd, ["--help"])
@@ -472,6 +488,24 @@ class TestServiceFlags:
 
         assert result.exit_code != 0
         assert "mutually exclusive" in result.output
+
+    def test_windows_refuses_the_service_with_the_foreground_remedy(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """D-06/ENG-02: win32 refuses before any systemctl probe, no traceback."""
+        monkeypatch.setattr(watch_mod, "sys", SimpleNamespace(platform="win32"))
+
+        with patch("sif.config.settings.get_settings", return_value=_test_settings()):
+            result = CliRunner().invoke(
+                watch_mod.watch_cmd,
+                ["--install-service"],
+                obj={"index_path": tmp_path / "watch.db"},
+            )
+
+        assert result.exit_code != 0
+        assert "not supported on Windows" in result.output
+        assert "foreground" in result.output
+        assert "Traceback" not in result.output
 
     def test_argv_tail_pins_the_installed_depth(self) -> None:
         """WR-03/IN-01: embed installs bake --embed; EVERY BM25 install bakes

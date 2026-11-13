@@ -515,3 +515,19 @@ class TestDetachTimeout:
         assert outcome.daemon is False
         assert "terminated" in (outcome.error or "")
         assert killed == [(4321, signal.SIGKILL)]
+
+
+class TestDetachPlatformGuard:
+    """D-06/ENG-02: no os.fork (Windows) fails with cause+remedy, not AttributeError."""
+
+    def test_detach_requires_fork(self, monkeypatch, tmp_path) -> None:
+        """The library boundary names POSIX fork and the foreground remedy."""
+        monkeypatch.setattr(daemon, "os", SimpleNamespace())
+
+        with pytest.raises(RuntimeError) as excinfo:
+            daemon.detach(tmp_path / "watch.log", lambda: None)
+
+        message = str(excinfo.value)
+        assert "POSIX fork" in message
+        assert "os.fork" in message
+        assert "foreground" in message
