@@ -5,16 +5,16 @@ milestone_name: Search Precision and Agent Experience
 current_phase: 17
 current_phase_name: Engineering Foundation (CI Matrix + Hygiene + PyPI)
 status: executing
-stopped_at: Completed 17-01-PLAN.md
-last_updated: "2026-11-13T08:49:20.314Z"
+stopped_at: Completed 17-02-PLAN.md
+last_updated: "2026-11-13T08:57:29.527Z"
 last_activity: 2026-11-13
 last_activity_desc: Phase 17 execution started
-state_head: 223e395be39efd43f96227d78f4ec03904016c82
+state_head: f33f389c5da06e99083a3034cf7fa426b23490be
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 9
-  completed_plans: 1
+  completed_plans: 2
 ---
 
 # DocSift — Project State
@@ -31,7 +31,7 @@ progress:
 ## Current Position
 
 Phase: 17 (Engineering Foundation (CI Matrix + Hygiene + PyPI)) — EXECUTING
-Plan: 2 of 9
+Plan: 3 of 9
 Status: Ready to execute
 Last activity: 2026-11-13 — Phase 17 execution started
 
@@ -50,6 +50,7 @@ Progress: [░░░░░░░░░░] 0%
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
 | Phase 17 P01 | 11min | 3 tasks | 14 files |
+| Phase 17 P02 | 6min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -63,6 +64,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - [v1.2 deps]: exactly two new runtime deps — `mcp>=2.3.0,<3` (Phase 22), `rapidfuzz>=3.14.5,<4` (Phase 18); sentence-transformers stays 5.4.1
 - [v1.1 carryover]: WAL+flock concurrent DB core; one LiveIndexService watch core hosted three ways; IncrementalIndexer is the single per-file update path; rerank explicit opt-in; bench held-out tie rule round(delta,6) < 0.01
 - [Phase 17]: Hygiene deletions land as one atomic plan: modules + exports + fixtures + dependent tests + absence guards, so the suite never stops collecting
+- [Phase 17]: uv.lock torch upgraded to the documented 2.14.1/2.15.0 fleets (uv lock --upgrade-package torch) so macOS/Windows PyPI torch matches the Linux CPU fleet instead of lagging at 2.11.0
+- [Phase 17]: Lock/packaging guards assert structure (a +cpu torch from the explicit CPU index, no nvidia/triton/black, explicit + Linux-marker index) not exact transitive versions, per D-02
 
 ### Pending Todos
 
@@ -91,8 +94,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-13T08:49:20.298Z
-Stopped at: Completed 17-01-PLAN.md
+Last session: 2026-11-13T08:57:29.510Z
+Stopped at: Completed 17-02-PLAN.md
 Resume file: None
 
 - **Next expected action:** `/gsd-plan-phase 17` (Engineering Foundation). Execution order locked: 17 → 18 → 19 → 20 → 21 → 22 → 23 → 24; hard dependencies and cross-phase contracts in ROADMAP.md.
