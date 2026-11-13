@@ -126,11 +126,11 @@ class LlamaCppReranker:
         """Load the GGUF model."""
         if self._model is not None:
             return
-        from llama_cpp import Llama  # noqa: PLC0415
-
         path = self._model_path or self._model_name
         if not path:
             raise ValueError("No model_path or model_name provided for LlamaCppReranker")
+        from llama_cpp import Llama  # noqa: PLC0415
+
         logger.info(f"Loading GGUF reranker model: {path}")
         self._model = Llama(
             model_path=str(path),

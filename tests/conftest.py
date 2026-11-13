@@ -1,6 +1,7 @@
 """Shared pytest fixtures for SIF tests."""
 
 import hashlib
+import logging
 import os
 
 # Add src to path for imports
@@ -48,6 +49,26 @@ def _hermetic_color_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     for var in _COLOR_ENV_VARS:
         monkeypatch.delenv(var, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_sif_logging() -> None:
+    """Reset leaked ``sif`` logger state before every test.
+
+    The root ``cli`` callback runs ``setup_logging``, which sets
+    ``propagate = False`` on the ``sif`` logger and attaches a stderr handler.
+    pytest 9.0.x attaches caplog's capture handler to the root logger only, so
+    leaked state silently silences every later ``caplog`` assertion (the 8-cell
+    CI matrix runs the locked 9.0.3; newer pytest papers over the leak).
+    Reset the namespace root and the global disable level so test order never
+    decides whether a caplog assertion can see SIF log records.
+    """
+    sif_logger = logging.getLogger("sif")
+    sif_logger.setLevel(logging.NOTSET)
+    sif_logger.propagate = True
+    sif_logger.disabled = False
+    sif_logger.handlers = []
+    logging.Logger.manager.disable = logging.NOTSET
 
 
 # =============================================================================
