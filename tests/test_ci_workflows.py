@@ -15,6 +15,10 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PYPROJECT = REPO_ROOT / "pyproject.toml"
 UV_LOCK = REPO_ROOT / "uv.lock"
+DOCS_ROOT = REPO_ROOT / "docs"
+INSTALLATION = DOCS_ROOT / "installation.md"
+GENERATOR_OWNED_DOCS = {"cli-reference.md", "configuration.md"}
+BLACK_DEV_REQUIREMENT = "black>=23.0.0"
 CPU_INDEX_URL = "https://download.pytorch.org/whl/cpu"
 CPU_TORCH_VERSION = re.compile(r'version = "2\.[0-9]+\.[0-9]+\+cpu"')
 CUDA_PACKAGE_LINE = re.compile(r'^name = "(nvidia-[^"]*|triton)"$', re.MULTILINE)
@@ -133,3 +137,25 @@ def test_pyproject_has_no_black_section() -> None:
     assert match is None, (
         f"pyproject.toml still starts a [tool.black] table at offset {match.start()}"
     )
+
+
+def test_installation_docs_match_extras() -> None:
+    """Installation docs carry the new floors and no dev black requirement."""
+    text = INSTALLATION.read_text(encoding="utf-8")
+
+    for required in ("sentence-transformers>=5.4.1", "torch"):
+        assert required in text, f"docs/installation.md is missing {required!r}"
+    assert BLACK_DEV_REQUIREMENT not in text, (
+        f"docs/installation.md still lists the removed dev requirement {BLACK_DEV_REQUIREMENT!r}"
+    )
+
+    offenders: list[str] = []
+    for doc in sorted(DOCS_ROOT.rglob("*.md")):
+        if doc.name in GENERATOR_OWNED_DOCS:
+            continue
+        lines = doc.read_text(encoding="utf-8").splitlines()
+        for lineno, line in enumerate(lines, start=1):
+            if BLACK_DEV_REQUIREMENT in line:
+                offenders.append(f"{doc.relative_to(REPO_ROOT)}:{lineno}: {line.strip()}")
+
+    assert offenders == [], f"docs still advertise {BLACK_DEV_REQUIREMENT!r}: {offenders}"

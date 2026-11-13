@@ -61,7 +61,9 @@ pip install "docsif[embed]"
 ```
 
 This installs:
-- `sentence-transformers>=2.2.0`
+- `sentence-transformers>=5.4.1`
+- `torch`
+- `modelscope>=1.36.0`
 - `numpy>=1.24.0`
 
 With this extra installed, the local embedding backends pick their compute device automatically at model load — CUDA GPU where torch has it, Apple Metal (MPS) on arm64 macOS, otherwise CPU. No extra setup or configuration is needed; see [Configuration](configuration.md) for per-backend details.
@@ -77,7 +79,7 @@ pip install "docsif[dev]"
 This installs:
 - `pytest>=7.0.0`
 - `pytest-cov>=4.0.0`
-- `black>=23.0.0`
+- `pytest-asyncio>=0.23.0`
 - `ruff>=0.1.0`
 - `ty>=0.0.1`
 
@@ -88,6 +90,14 @@ To install everything:
 ```bash
 pip install "docsif[all]"
 ```
+
+This installs every optional dependency group:
+- `sentence-transformers>=5.4.1`
+- `torch`
+- `llama-cpp-python>=0.3.35`
+- `modelscope>=1.36.0`
+- `numpy>=1.24.0`
+- `openai>=2.0.0`
 
 ## Platform-Specific Instructions
 
