@@ -1,9 +1,8 @@
 """Regression guards for CI-facing packaging and workflow state (Phase 17).
 
-Text-level assertions only: ``uv.lock`` and ``pyproject.toml`` are read as
-files, so the guards stay dependency-free on every Python in the CI matrix.
-The CI matrix workflow guards land with plan 17-03; this module owns the
-lock/packaging half.
+Text-level assertions only: ``uv.lock``, ``pyproject.toml``, and the workflow
+files are read as files, so the guards stay dependency-free on every Python in
+the CI matrix.
 """
 
 from __future__ import annotations
@@ -24,6 +23,10 @@ CPU_TORCH_VERSION = re.compile(r'version = "2\.[0-9]+\.[0-9]+\+cpu"')
 CUDA_PACKAGE_LINE = re.compile(r'^name = "(nvidia-[^"]*|triton)"$', re.MULTILINE)
 BLACK_PACKAGE_LINE = re.compile(r'^name = "black"$', re.MULTILINE)
 BLACK_SECTION = re.compile(r"^\[tool\.black\]", re.MULTILINE)
+WORKFLOWS = REPO_ROOT / ".github" / "workflows"
+TEST_MATRIX = WORKFLOWS / "test-matrix.yml"
+SETUP_UV_SHA = "astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2"
+PYTHON_VERSION_MATRIX = "python-version: ['3.10', '3.11', '3.12', '3.13']"
 
 
 def _section(text: str, name: str) -> str:
@@ -50,6 +53,20 @@ def _pyproject_text() -> str:
 
 def _uv_lock_text() -> str:
     return UV_LOCK.read_text(encoding="utf-8")
+
+
+def _workflow_text() -> str:
+    return TEST_MATRIX.read_text(encoding="utf-8")
+
+
+def _job_block(text: str, job_id: str) -> str:
+    """Return the raw YAML text of one top-level job block."""
+    header = re.compile(rf"^  {re.escape(job_id)}:\s*$", re.MULTILINE).search(text)
+    assert header is not None, f"missing job '{job_id}' in .github/workflows/test-matrix.yml"
+    start = header.end()
+    next_job = re.compile(r"^  [A-Za-z0-9_-]+:\s*$", re.MULTILINE).search(text, start)
+    end = next_job.start() if next_job is not None else len(text)
+    return text[start:end]
 
 
 def test_lock_has_cpu_torch() -> None:
@@ -159,3 +176,77 @@ def test_installation_docs_match_extras() -> None:
                 offenders.append(f"{doc.relative_to(REPO_ROOT)}:{lineno}: {line.strip()}")
 
     assert offenders == [], f"docs still advertise {BLACK_DEV_REQUIREMENT!r}: {offenders}"
+
+
+def test_matrix_declares_eight_cells() -> None:
+    """The matrix is a fixed literal 4 Python versions x 2 operating systems."""
+    text = _workflow_text()
+
+    missing = [
+        value
+        for value in ("'3.10'", "'3.11'", "'3.12'", "'3.13'", "ubuntu-latest", "macos-latest")
+        if value not in text
+    ]
+    assert missing == [], f"test-matrix.yml is missing matrix cells {missing}; text: {text!r}"
+    assert "fail-fast: false" in text, (
+        "test-matrix.yml must disable fail-fast so every cell reports"
+    )
+    assert "cancel-in-progress: true" in text, (
+        "test-matrix.yml must cancel superseded runs per ref; text: " + repr(text)
+    )
+    count = text.count(PYTHON_VERSION_MATRIX)
+    assert count == 1, (
+        "test-matrix.yml must declare the contiguous python-version list exactly once; "
+        f"found {count}: {PYTHON_VERSION_MATRIX!r}"
+    )
+
+
+def test_matrix_runs_full_suite_with_coverage() -> None:
+    """Each cell syncs the frozen lock and runs bare pytest so fail_under=90 applies."""
+    text = _workflow_text()
+
+    assert "uv sync --frozen --extra dev --extra embed" in text, (
+        "test-matrix.yml must sync the frozen lock with the dev and embed extras"
+    )
+    assert "uv run --frozen pytest" in text, (
+        "test-matrix.yml must run the full suite through the frozen environment"
+    )
+    for forbidden in ("--no-cov", "-p no:"):
+        assert forbidden not in text, (
+            f"test-matrix.yml must not disable coverage with {forbidden!r}; text: {text!r}"
+        )
+
+
+def test_matrix_has_least_privilege() -> None:
+    """PR-triggered jobs get read-only contents and no secret or OIDC surface."""
+    text = _workflow_text()
+
+    assert "permissions:" in text, "test-matrix.yml must declare workflow permissions"
+    assert "contents: read" in text, "test-matrix.yml must grant only contents: read"
+    for forbidden in ("pull_request_target", "secrets.", "id-token"):
+        assert forbidden not in text, (
+            f"test-matrix.yml must not contain {forbidden!r}; text: {text!r}"
+        )
+
+
+def test_setup_uv_is_sha_pinned() -> None:
+    """The third-party uv action is pinned to the verified commit SHA."""
+    text = _workflow_text()
+
+    assert SETUP_UV_SHA in text, f"test-matrix.yml is missing the pinned action {SETUP_UV_SHA!r}"
+    floating = re.findall(r"astral-sh/setup-uv@v[0-9][^\s]*", text)
+    assert floating == [], (
+        f"test-matrix.yml uses a floating setup-uv ref {floating}; pin the commit SHA instead"
+    )
+
+
+def test_matrix_excludes_tag_pushes() -> None:
+    """Only branch pushes and pull requests trigger the matrix; tags never do."""
+    text = _workflow_text()
+
+    assert re.search(r"^  push:\n    branches:", text, re.MULTILINE) is not None, (
+        "test-matrix.yml push trigger must declare branches:; text: " + repr(text)
+    )
+    assert "tags:" not in text, (
+        "test-matrix.yml must not trigger on tags (the release workflow owns v* tags)"
+    )
