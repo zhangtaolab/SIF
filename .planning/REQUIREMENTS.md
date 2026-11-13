@@ -12,7 +12,7 @@ Each maps to exactly one roadmap phase. Checkboxes mark committed scope.
 
 ### Engineering Foundation & Distribution (ENG)
 
-- [ ] **ENG-01**: Contributor can run the full test suite on a green CI matrix (py3.10–3.13 × ubuntu/macos, full suite per cell, fail_under=90, CPU torch on Linux, tolerant of both py3.10/3.11+ resolution fleets) on every push/PR.
+- [x] **ENG-01**: Contributor can run the full test suite on a green CI matrix (py3.10–3.13 × ubuntu/macos, full suite per cell, fail_under=90, CPU torch on Linux, tolerant of both py3.10/3.11+ resolution fleets) on every push/PR.
 - [ ] **ENG-02**: Contributor can verify Windows graceful degradation via a CI smoke run on hc remote yoga (uv python install first; assert fork/systemd/flock degrade honestly — not full Windows support).
 - [ ] **ENG-03**: Maintainer can publish `docsif` to PyPI via trusted publishing (README `<!-- mcp-name: io.github.zhangtaolab/sif -->` marker before publish; TestPyPI dry run; version single-sourced; PEP 740 attestations).
 - [x] **ENG-04**: Contributor works in a hygienic repo (dead `MigrationManager` + `models/search.py` + `search/strategy.py` quarantined/deleted; tracked junk removed; Makefile/extras/pre-commit cleaned, black dropped, fastapi/uvicorn kept as core deps; 3.13 classifier added only when green).
@@ -129,7 +129,7 @@ Populated during roadmap creation. Each requirement maps to exactly one phase.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| ENG-01 | Phase 17 | Pending |
+| ENG-01 | Phase 17 | Complete |
 | ENG-02 | Phase 17 | Pending |
 | ENG-03 | Phase 17 | Pending |
 | ENG-04 | Phase 17 | Complete |
