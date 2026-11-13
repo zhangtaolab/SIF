@@ -107,16 +107,3 @@ class RRFFusion:
             fused_results.append(result)
 
         return fused_results
-
-
-def compute_rrf_score(rank: int, k: int = 60) -> float:
-    """Compute RRF score for a single rank.
-
-    Args:
-        rank: The rank position (1-indexed)
-        k: RRF constant
-
-    Returns:
-        RRF score
-    """
-    return 1.0 / (k + rank)

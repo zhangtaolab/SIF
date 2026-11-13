@@ -50,6 +50,3 @@ DEFAULT_IGNORE_PATTERNS = [
     "*.tmp",
     "*.temp",
 ]
-
-# Database schema versions
-CURRENT_SCHEMA_VERSION = 1

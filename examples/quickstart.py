@@ -19,6 +19,7 @@ This example will:
 """
 
 import os
+import sqlite3
 import sys
 import tempfile
 from pathlib import Path
@@ -165,28 +166,25 @@ def example_database_operations() -> None:
     print("=" * 60)
     
     try:
-        from sif.database import DatabaseConnection, MigrationManager
-        
+        from sif.database.database import Database
+
         # Create a temporary database
         with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
             db_path = tmp.name
-        
+
         print(f"\n1. Creating database at: {db_path}")
-        db = DatabaseConnection(db_path)
-        
-        print("2. Running migrations...")
-        migrations = MigrationManager(db)
-        migrations.run_migrations()
-        print("   ✓ Migrations completed")
-        
-        print("3. Checking connection...")
-        version = db.execute("SELECT sqlite_version()")[0][0]
-        print(f"   ✓ SQLite version: {version}")
-        
-        db.close()
+        with Database(db_path) as db:
+            print("2. Initializing schema...")
+            db.init_schema()
+            print("   ✓ Schema initialized")
+
+            print("3. Checking connection...")
+            version = db.connection.execute("SELECT sqlite_version()").fetchone()[0]
+            print(f"   ✓ SQLite version: {version}")
+
         os.unlink(db_path)
         print("4. Cleanup completed")
-        
+
     except ImportError as e:
         print(f"   ✗ Import error: {e}")
         print("   Make sure SIF is installed: pip install docsif")
@@ -241,22 +239,23 @@ def example_search() -> None:
     print("=" * 60)
     
     try:
-        from sif.search import BM25SearchStrategy, SearchContext
-        
-        print("\n1. Creating search strategy...")
-        strategy = BM25SearchStrategy()
-        print("   ✓ BM25 search strategy created")
-        
-        print("\n2. Search strategy info:")
-        print(f"   - Name: {strategy.name}")
-        print(f"   - Description: {strategy.description}")
-        print(f"   - Requires embedding: {strategy.requires_embedding}")
-        
+        from sif.search import BM25Searcher
+
+        print("\n1. Creating BM25 searcher...")
+        connection = sqlite3.connect(":memory:")
+        searcher = BM25Searcher(connection)
+        print("   ✓ BM25Searcher created")
+        connection.close()
+
+        print("\n2. Searcher info:")
+        print(f"   - Type: {type(searcher).__name__}")
+        print("   - Backend: SQLite FTS5 full-text search")
+
         # Note: Actual search requires an indexed database
         print("\n3. To perform actual searches:")
-        print("   - Index your documents first: sif update")
-        print("   - Then search: sif search 'your query'")
-        
+        print("   - Index your documents first: sif index update")
+        print("   - Then search: sif search search 'your query'")
+
     except ImportError as e:
         print(f"   ✗ Import error: {e}")
     except Exception as e:
