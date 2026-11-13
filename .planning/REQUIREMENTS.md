@@ -129,13 +129,51 @@ Populated during roadmap creation. Each requirement maps to exactly one phase.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (pending roadmap) | — | Pending |
+| ENG-01 | Phase 17 | Pending |
+| ENG-02 | Phase 17 | Pending |
+| ENG-03 | Phase 17 | Pending |
+| ENG-04 | Phase 17 | Pending |
+| EVAL-01 | Phase 18 | Pending |
+| EVAL-02 | Phase 18 | Pending |
+| QUAL-01 | Phase 18 | Pending |
+| QUAL-02 | Phase 24 | Pending |
+| QUAL-03 | Phase 24 | Pending |
+| CORR-01 | Phase 19 | Pending |
+| CORR-02 | Phase 19 | Pending |
+| CORR-03 | Phase 19 | Pending |
+| CORR-04 | Phase 19 | Pending |
+| CORR-05 | Phase 19 | Pending |
+| CORR-06 | Phase 21 | Pending |
+| FILT-01 | Phase 20 | Pending |
+| FILT-02 | Phase 20 | Pending |
+| FILT-03 | Phase 20 | Pending |
+| FILT-04 | Phase 20 | Pending |
+| FILT-05 | Phase 20 | Pending |
+| SCALE-01 | Phase 21 | Pending |
+| SCALE-02 | Phase 21 | Pending |
+| SCALE-03 | Phase 21 | Pending |
+| EMB-01 | Phase 21 | Pending |
+| EMB-02 | Phase 21 | Pending |
+| MCP-01 | Phase 22 | Pending |
+| MCP-02 | Phase 22 | Pending |
+| MCP-03 | Phase 22 | Pending |
+| MCP-04 | Phase 22 | Pending |
+| MCP-05 | Phase 22 | Pending |
+| MCP-06 | Phase 22 | Pending |
+| MCP-07 | Phase 22 | Pending |
+| MCP-08 | Phase 22 | Pending |
+| MCP-09 | Phase 22 | Pending |
+| MODEL-01 | Phase 23 | Pending |
+| MODEL-02 | Phase 23 | Pending |
+| MODELS-01 | Phase 24 | Pending |
+| MODELS-02 | Phase 24 | Pending |
+| DOCS-01 | Phase 24 | Pending |
 
 **Coverage:**
 - v1.2 requirements: 39 total
-- Mapped to phases: 0
-- Unmapped: 39 ⚠️ (pending roadmap)
+- Mapped to phases: 39
+- Unmapped: 0 ✓ (100% coverage — every requirement maps to exactly one phase)
 
 ---
 *Requirements defined: 2026-11-13*
-*Last updated: 2026-11-13 after v1.2 scoping (namespace=qmd.metadata, model arms=d)*
+*Last updated: 2026-11-13 after v1.2 roadmap creation (traceability: 39/39 mapped to Phases 17-24; namespace=qmd.metadata, model arms=d)*
