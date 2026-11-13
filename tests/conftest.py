@@ -21,7 +21,6 @@ from sif.core.collection import Collection
 from sif.core.context import Context, ContextType
 from sif.core.document import Document, DocumentChunk, DocumentMetadata
 from sif.database.connection import DatabaseConnection
-from sif.models.search import SearchOptions, SearchResult
 
 
 # Scrub ambient color-forcing env vars BEFORE any test module imports sif.cli: every
@@ -381,63 +380,6 @@ def sample_context() -> Context:
         created_at=datetime.now(timezone.utc),
         updated_at=datetime.now(timezone.utc),
     )
-
-
-# =============================================================================
-# Search Fixtures
-# =============================================================================
-
-
-@pytest.fixture
-def sample_search_options() -> SearchOptions:
-    """Return sample search options."""
-    return SearchOptions(
-        limit=10,
-        offset=0,
-        threshold=0.0,
-        include_chunks=True,
-        include_metadata=True,
-        highlight_matches=True,
-        bm25_k1=1.5,
-        bm25_b=0.75,
-        vector_weight=0.7,
-        bm25_weight=0.3,
-        rrf_k=60,
-    )
-
-
-@pytest.fixture
-def sample_search_result() -> SearchResult:
-    """Return a sample search result."""
-    return SearchResult(
-        document_id=str(uuid.uuid4()),
-        document_path="/path/to/result.md",
-        document_title="Test Result",
-        score=0.95,
-        bm25_score=0.90,
-        vector_score=0.85,
-        content_preview="This is a preview of the result...",
-        matched_chunks=[],
-        highlights=["matched term"],
-        metadata={"author": "Test"},
-    )
-
-
-@pytest.fixture
-def sample_search_results() -> list[SearchResult]:
-    """Return a list of sample search results."""
-    return [
-        SearchResult(
-            document_id=str(uuid.uuid4()),
-            document_path=f"/path/to/result_{i}.md",
-            document_title=f"Result {i}",
-            score=0.95 - (i * 0.05),
-            bm25_score=0.90 - (i * 0.03),
-            vector_score=0.85 - (i * 0.04),
-            content_preview=f"Preview of result {i}...",
-        )
-        for i in range(5)
-    ]
 
 
 # =============================================================================

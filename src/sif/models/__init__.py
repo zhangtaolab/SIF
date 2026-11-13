@@ -31,13 +31,6 @@ from sif.models.embedding import (
     EmbeddingRequest,
     EmbeddingResponse,
 )
-from sif.models.search import (
-    SearchOptions,
-    SearchQuery,
-    SearchResponse,
-    SearchResult,
-    SearchType,
-)
 
 
 __all__ = [
@@ -57,9 +50,4 @@ __all__ = [
     "EmbeddingModelInfo",
     "EmbeddingRequest",
     "EmbeddingResponse",
-    "SearchOptions",
-    "SearchQuery",
-    "SearchResponse",
-    "SearchResult",
-    "SearchType",
 ]
