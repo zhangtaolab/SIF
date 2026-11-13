@@ -153,7 +153,7 @@ DocSift 是 [qmd](https://github.com/tobi/qmd) 的 Python 重构版本，一个�
 | 文档内容永不作为 Rich markup 渲染 | get/multi-get 内容 `markup=False` 直出、表头 `escape()`——与 05-10/05-11 同类第三例；回归测试锁定（字面渲染、批次不中断、回退路径同等契约） | v1.0 Complete |
 | docs 局部套件 `--no-cov` | 全局 `addopts` 覆盖率 + `fail_under=90` 使 docs-only 运行必失败（CI 自 Phase 10 起恒红）；Makefile 与 docs.yml 双修 | v1.0 Complete |
 | v1.2 范围四决策（2026-11-13）：PDF 不做；MCP 升级 SDK v2；Harrier 纳入但 held-out 门禁；Windows 推迟 + CI smoke | 用户拍板；研究三路交叉验证（代码库差距/qmd 生态/技术选型） | — Pending |
-| Harrier 默认切换门禁：EN+ZH held-out 胜出 + embedder 身份标记（非仅宽度） | 独立证据仅英文（localGPT A/B nDCG 0.915 vs 0.805）；Harrier 与 Qwen3-0.6B 同 1024 维，宽度守护会静默接受坏切换；query 侧必须 prompt_name | — Pending |
+| Harrier 默认切换门禁：EN+ZH held-out 胜出 + embedder 身份标记（非仅宽度） | 独立证据仅英文（localGPT A/B nDCG 0.915 vs Qwen3-Embedding-4B 0.875；此前转述的 vs-0.6B 0.805 未在该精确值核实）；Harrier 与 Qwen3-0.6B 同 1024 维，宽度守护会静默接受坏切换；query 侧必须 prompt_name | — Pending |
 | Windows smoke 走 hc remote yoga（Win11 26300） | 用户指定；yoga 未装 Python（仅 Store alias），CI phase 需先 uv/Python setup | — Pending |
 | DYM 选型：rapidfuzz 测量替换 > symspellpy 推迟 > spellfix1 跳过 | 个人 KB 规模 difflib 已够用；rapidfuzz 去首字母桶是召回修复；symspellpy 仅 >200k 词表再议 | — Pending |
 
