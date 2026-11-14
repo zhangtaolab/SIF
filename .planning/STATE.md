@@ -5,11 +5,11 @@ milestone_name: Search Precision and Agent Experience
 current_phase: 17
 current_phase_name: Engineering Foundation (CI Matrix + Hygiene + PyPI)
 status: executing
-stopped_at: "Completed 17-06-PLAN.md — release gate verified; release_head c819f67228152f2544e79a864b9a9e12dbc79f69; next: 17-07 tag/publish"
-last_updated: "2026-11-14T05:33:13.979Z"
-last_activity: 2026-11-13
-last_activity_desc: Phase 17 execution started
-state_head: c819f67228152f2544e79a864b9a9e12dbc79f69
+stopped_at: "17-07 halted at Task 1 — tag v1.1.2 pushed on c819f67228152f2544e79a864b9a9e12dbc79f69; Publish run 43562577065 build success, TestPyPI invalid-publisher, PyPI skipped; no upload, version unconsumed"
+last_updated: "2026-11-14T05:42:04.718Z"
+last_activity: 2026-11-14
+last_activity_desc: 17-07 tag pushed; Publish run halted at TestPyPI publisher match
+state_head: b0b4258535d50f552c5957ee5a28bb7999059f97
 progress:
   total_phases: 8
   completed_phases: 0
@@ -32,8 +32,8 @@ progress:
 
 Phase: 17 (Engineering Foundation (CI Matrix + Hygiene + PyPI)) — EXECUTING
 Plan: 9 of 9
-Status: Ready to execute
-Last activity: 2026-11-13 — Phase 17 execution started
+Status: Blocked at 17-07 Task 1 — TestPyPI trusted publisher does not match the OIDC claims (invalid-publisher); fix the registration, then re-run Publish run 43562577065
+Last activity: 2026-11-14 — 17-07 tag pushed; Publish run halted at TestPyPI publisher match
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -86,6 +86,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - [Phase 17]: 17-06: maintainer confirmed both browser-only registrations on 2026-11-14 — PyPI trusted publisher for docsif (owner zhangtaolab, repo sif, workflow publish.yml, environment pypi) and TestPyPI pending publisher (project docsif, environment testpypi); end-to-end proof is the 17-07 OIDC publish
 - [Phase 17]: 17-06: pre-tag gate bound to release_head c819f67228152f2544e79a864b9a9e12dbc79f69 — Test Matrix run 43561542242 green (8 py cells + lint); only src/sif change since smoke 48759e2c is _version.py (1.1.1 -> 1.1.2)
 - [Phase 17]: 17-06: 17-07 must tag exactly the recorded release_head, never the later SUMMARY/STATE/ROADMAP metadata commit, which has no matrix run of its own
+- [Phase 17]: 17-07: tagged release_head c819f67228152f2544e79a864b9a9e12dbc79f69 as v1.1.2 and pushed it; Publish run 43562577065 built successfully but TestPyPI token exchange failed invalid-publisher and the PyPI job was skipped — no upload to either index, so version 1.1.2 is not consumed
+- [Phase 17]: 17-07 root cause: the OIDC claim repository is zhangtaolab/SIF (canonical uppercase); warehouse matches repository_name exactly and lowercases only environment names; the recorded TestPyPI pending publisher used lowercase sif — both publishers must specify SIF before the re-run
 
 ### Pending Todos
 
@@ -96,6 +98,7 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 - ⚠️ [Phase 11 re-review, advisory] WR-03 init_schema raw tracebacks, WR-04 impossible-state guards, IN-05 model-type set duplication — carried in 11-REVIEW-DISPOSITION.md (WR-01/WR-02 fixed)
 - [Research gaps — resolve at plan time] qmd filter AST is UNRELEASED (re-verify CHANGELOG at Phase 20); MCP py3.10 install/import smoke at Phase 22 start; transport_security spoofed-header proof before deleting custom middleware (22); documents_fts_v vocab shadow survival on populated DB (19); contexts normalization decision touches a locked Key Decision (21 discussion)
+- 🔴 [17-07 halting blocker — browser-only] TestPyPI pending publisher does not match the OIDC claims (`repository` `zhangtaolab/SIF`, `environment` `testpypi`, workflow `publish.yml`, owner id 21210477) → invalid-publisher at token exchange. Fix on TestPyPI account publishing: project docsif, owner zhangtaolab, repository **SIF** (uppercase), workflow filename publish.yml, environment testpypi; also verify the PyPI trusted publisher for docsif uses SIF and environment pypi. Then resume with `gh run rerun 43562577065 --failed`. Nothing was uploaded; tag v1.1.2 stays on c819f67 and version 1.1.2 is unconsumed.
 
 ### Roadmap Evolution
 
@@ -114,8 +117,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-14T05:33:13.958Z
-Stopped at: Completed 17-06-PLAN.md — release gate verified; release_head c819f67228152f2544e79a864b9a9e12dbc79f69; next: 17-07 tag/publish
+Last session: 2026-11-14T05:42:04.718Z
+Stopped at: 17-07 halted at Task 1 — tag v1.1.2 pushed on c819f67228152f2544e79a864b9a9e12dbc79f69; Publish run 43562577065 build success, TestPyPI invalid-publisher, PyPI skipped; no upload, version unconsumed
 Resume file: None
 
-- **Next expected action:** execute 17-07 — tag exactly `release_head` c819f67228152f2544e79a864b9a9e12dbc79f69 as v1.1.2, push the tag, and verify the OIDC publish, PyPI marker, PEP 740 attestations, and fresh-venv installs. Execution order for the rest of v1.2: 17 → 18 → 19 → 20 → 21 → 22 → 23 → 24; hard dependencies and cross-phase contracts in ROADMAP.md.
+- **Next expected action:** maintainer corrects the TestPyPI pending publisher and PyPI trusted publisher to repository `SIF` (uppercase) with environments `testpypi` / `pypi` and workflow filename `publish.yml`, then re-runs the failed jobs of Publish run `43562577065` on tag `v1.1.2`. After green, resume 17-07 at Task 1 verify (PyPI JSON version + mcp-name marker, three job successes), then Task 2 (pypi-attestations verification, PyPI and TestPyPI fresh-venv install proofs). Execution order for the rest of v1.2: 17 → 18 → 19 → 20 → 21 → 22 → 23 → 24; hard dependencies and cross-phase contracts in ROADMAP.md.
