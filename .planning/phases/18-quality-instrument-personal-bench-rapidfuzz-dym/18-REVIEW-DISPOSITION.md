@@ -5,7 +5,7 @@ titles: json
 findings:
   - id: CR-01
     severity: critical
-    disposition: open
+    disposition: fixed
     title: "Reserved-prefix titles/body/replay queries abort the entire eval"
   - id: WR-01
     severity: warning
@@ -17,7 +17,7 @@ findings:
     title: "The saved-run writer never validates what it writes; the CLI can produce runs its own loader refuses"
   - id: WR-03
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "`RecursionError` from a deeply nested saved-run file escapes as a traceback"
   - id: WR-04
     severity: warning
@@ -37,7 +37,7 @@ findings:
     title: "`retrieval: \"hybrid\"` is reported without verifying the index has any vectors"
   - id: WR-08
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "The overlap budget is blind to CJK title echoes"
   - id: WR-09
     severity: warning
@@ -91,24 +91,24 @@ findings:
     severity: info
     disposition: open
     title: "`load_document_metadata` claims it cannot materialize the corpus, but it does"
-open: 22
+open: 19
 total: 22
-recorded: 2026-11-14T16:00:44.115Z
+recorded: 2026-11-14T16:21:50.449Z
 ---
 
 # Phase 18: Code Review Disposition
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| CR-01 | critical | open | - |
+| CR-01 | critical | fixed | 18-REVIEW-FIX.md |
 | WR-01 | warning | open | - |
 | WR-02 | warning | open | - |
-| WR-03 | warning | open | - |
+| WR-03 | warning | fixed | 18-REVIEW-FIX.md |
 | WR-04 | warning | open | - |
 | WR-05 | warning | open | - |
 | WR-06 | warning | open | - |
 | WR-07 | warning | open | - |
-| WR-08 | warning | open | - |
+| WR-08 | warning | fixed | 18-REVIEW-FIX.md |
 | WR-09 | warning | open | - |
 | WR-10 | warning | open | - |
 | IN-01 | info | open | - |
