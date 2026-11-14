@@ -11,7 +11,9 @@ skips when ``sqlite-vec`` is unavailable (same discipline as
 from __future__ import annotations
 
 import hashlib
+import json
 import sqlite3
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -157,3 +159,16 @@ def seed_query_log(conn: sqlite3.Connection, queries: list[str]) -> None:
             keep=500,
         )
     conn.commit()
+
+
+def rewrite_saved_run(path: Path, mutate: Callable[[dict], None]) -> Path:
+    """Apply a mutation to an auto-saved run file and write it back.
+
+    Comparison tests use this to simulate a tampered/malformed saved run
+    without hand-writing an entire envelope: the mutation edits the parsed
+    JSON in place, then the file is rewritten deterministically.
+    """
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    mutate(data)
+    Path(path).write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    return Path(path)

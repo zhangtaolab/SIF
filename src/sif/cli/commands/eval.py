@@ -13,6 +13,7 @@ goes through ``click.echo`` (never Rich) so the stream strict-parses.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -25,7 +26,7 @@ from rich.table import Table
 
 from sif.cli.error_handling import open_initialized_database
 from sif.config.settings import Settings, get_settings, resolve_candidate_limit
-from sif.core.models import Embedder, SearchOptions
+from sif.core.models import Embedder, SearchOptions, SearchResult
 from sif.database.database import Database
 from sif.database.repositories import CollectionRepository
 from sif.embedding.manager import EmbeddingManager
@@ -34,13 +35,20 @@ from sif.search.personal_bench import (
     INITIAL_SAMPLE_DOCUMENTS,
     MIN_DOCUMENTS,
     SUPPRESS_BELOW,
+    ComparisonReport,
+    DocumentRecord,
     PersonalReport,
+    SavedRun,
     build_personal_report,
+    compare_saved_run,
     ensure_heldout,
     evaluate_known_items,
     load_document_metadata,
     load_replay_queries,
+    load_saved_run,
     replay_leg,
+    require_matching_corpus,
+    resolve_saved_targets,
     run_to_saved,
     write_saved_run,
 )
@@ -305,6 +313,239 @@ def _save_run(
     return path
 
 
+def _model_label(model: dict[str, Any] | None) -> str:
+    """One model-identity label with saved/config text escaped (T-18-01)."""
+    if model is None:
+        return "no model (bm25)"
+    return (
+        f"{_cell(str(model['model_name']))} "
+        f"({_cell(str(model['model_type']))}, {model['dimension']}d)"
+    )
+
+
+def _print_comparison_warnings(
+    saved: SavedRun,
+    comparison: ComparisonReport,
+    model_identity: dict[str, Any] | None,
+) -> None:
+    """Every comparison caveat goes to stderr; stdout stays clean (T-18-10)."""
+    if comparison.suppressed:
+        console_err.print(
+            f"[yellow]Suppressed groups (N < {SUPPRESS_BELOW}): "
+            f"{', '.join(comparison.suppressed)}[/yellow]",
+            soft_wrap=True,
+        )
+    if comparison.model_mismatch:
+        console_err.print(
+            "[yellow]Model identity differs: the saved run used "
+            f"{_model_label(saved.model)}, the current run uses "
+            f"{_model_label(model_identity)}. The comparison is still "
+            "reported; only a corpus-fingerprint mismatch refuses one.[/yellow]",
+            soft_wrap=True,
+        )
+    if not comparison.replay.available:
+        console_err.print(
+            f"[yellow]Replay stability unavailable: {comparison.replay.note}[/yellow]",
+            soft_wrap=True,
+        )
+
+
+def _load_settings(index_path: Path) -> Settings:
+    """Resolve settings after the index-existence guard (loud failures)."""
+    if not index_path.exists():
+        raise click.ClickException("No index found. Run 'sif index update' first.")
+    try:
+        return get_settings()
+    except ValidationError as e:
+        raise click.ClickException(str(e)) from e
+
+
+def _load_saved(compare: Path | None) -> SavedRun | None:
+    """Load and validate the saved run before any search (D-12)."""
+    if compare is None:
+        return None
+    try:
+        return load_saved_run(compare)
+    except ValueError as e:
+        raise click.ClickException(f"Compare failed: {e}") from e
+
+
+def _search_fn(
+    db: Database,
+    embedder: Embedder | None,
+    embedding_dim: int,
+    options: SearchOptions,
+) -> Callable[[str], list[SearchResult]]:
+    """One hoisted pipeline per run (never per query)."""
+    pipeline = SearchPipeline(
+        db.connection,
+        embedder=embedder,
+        embedding_dim=embedding_dim,
+    )
+    return lambda query: pipeline.search(query, options)
+
+
+def _save_and_render(
+    report: PersonalReport,
+    settings: Settings,
+    no_save: bool,
+    output_json: bool,
+    extra: dict[str, Any] | None = None,
+) -> None:
+    """Serialize one report, auto-save it, and render (one writer path)."""
+    payload = report.to_dict()
+    if extra:
+        payload.update(extra)
+    run_path = _save_run(report, settings, no_save)
+    payload["run_path"] = str(run_path) if run_path is not None else None
+    _render_personal(payload, output_json)
+
+
+def _run_fresh(  # noqa: PLR0913
+    db: Database,
+    metadata: list[DocumentRecord],
+    collection_ids: list[str] | None,
+    settings: Settings,
+    bm25_only: bool,
+    limit: int,
+    output_json: bool,
+    no_save: bool,
+) -> None:
+    """Synthesize, evaluate, and render a fresh personal run."""
+    if len(metadata) < MIN_DOCUMENTS:
+        raise click.ClickException(
+            f"Personal eval needs at least {MIN_DOCUMENTS} indexed documents in "
+            f"scope; found {len(metadata)}. Index more documents with "
+            "'sif index update' and retry."
+        )
+    # Bodies load only for the sampled subset; widening re-samples the
+    # deterministic prefix and loads only the newly added documents.
+    try:
+        sampled, synthesis = ensure_heldout(metadata, db.connection)
+    except ValueError as e:
+        raise click.ClickException(str(e)) from e
+    manager, embedding_dim, model_identity = _load_embedder(settings, bm25_only)
+    embedder: Embedder | None = manager.model if manager is not None else None
+    retrieval = "bm25" if bm25_only else "hybrid"
+    options = _build_options(
+        limit,
+        resolve_candidate_limit(None, settings),
+        settings,
+        collection_ids,
+    )
+    try:
+        with db.connection:
+            search = _search_fn(db, embedder, embedding_dim, options)
+            evaluations = evaluate_known_items(synthesis.queries, search)
+            # Replay runs after the known-item evaluation on the same hoisted
+            # pipeline and options; it never enters the metrics.
+            replay = replay_leg(load_replay_queries(db.connection), search)
+    except click.ClickException:
+        raise
+    except Exception as e:
+        raise click.ClickException(f"Personal eval failed: {e}") from e
+    notes = [
+        "Known-item labels: the target document is grade 1 and all other "
+        "documents grade 0; NDCG@10 is a rank-sensitive known-item metric, "
+        "not a graded-relevance score.",
+        "Title queries are exact-term (unbudgeted); body queries are paraphrased "
+        "and rejected above a 0.60 token Jaccard against the target title plus "
+        "opening text.",
+        "Replay stability against a saved baseline is computed by --compare "
+        "(Plan 03); a fresh run has no baseline.",
+    ]
+    if len(sampled) > INITIAL_SAMPLE_DOCUMENTS:
+        notes.append(
+            f"Sampling widened from the initial {INITIAL_SAMPLE_DOCUMENTS} "
+            f"documents to {len(sampled)} to satisfy the held-out floor."
+        )
+    if bm25_only:
+        notes.append("Retrieval mode is BM25-only (--bm25-only): no embedder was loaded.")
+    elif settings.model_type in _REMOTE_MODEL_TYPES:
+        notes.append(
+            f"Embedding provider '{settings.model_type}' is remote-capable: "
+            "synthesized query text is sent to it; --bm25-only keeps the run local."
+        )
+    report = build_personal_report(
+        retrieval=retrieval,
+        top_k=limit,
+        metadata=metadata,
+        sampled=sampled,
+        model=model_identity,
+        synthesis=synthesis,
+        evaluations=evaluations,
+        replay=replay,
+        notes=notes,
+    )
+    _save_and_render(report, settings, no_save, output_json)
+
+
+def _run_compare(  # noqa: PLR0913
+    db: Database,
+    metadata: list[DocumentRecord],
+    collection_ids: list[str] | None,
+    saved: SavedRun,
+    settings: Settings,
+    bm25_only: bool,
+    limit: int,
+    output_json: bool,
+    no_save: bool,
+) -> None:
+    """Re-evaluate the saved query set at the saved depth, then render."""
+    # Refuse a different corpus and unresolvable targets before the embedder
+    # loads or any search runs (T-18-09, T-18-08).
+    try:
+        require_matching_corpus(saved, metadata)
+        resolve_saved_targets(saved, db.connection)
+    except ValueError as e:
+        raise click.ClickException(str(e)) from e
+    manager, embedding_dim, model_identity = _load_embedder(settings, bm25_only)
+    embedder: Embedder | None = manager.model if manager is not None else None
+    retrieval = "bm25" if bm25_only else "hybrid"
+    if limit != saved.top_k:
+        console_err.print(
+            "[yellow]Compare mode uses the saved run's retrieval depth "
+            f"top_k={saved.top_k}; ignoring -n {limit}.[/yellow]",
+            soft_wrap=True,
+        )
+    if retrieval != saved.retrieval:
+        console_err.print(
+            "[yellow]Retrieval mode differs: the saved run used "
+            f"'{saved.retrieval}', the current run uses '{retrieval}'. "
+            "Both modes are recorded in the comparison.[/yellow]",
+            soft_wrap=True,
+        )
+    # Both arms evaluate at the saved depth, so -n never silently moves it.
+    options = _build_options(
+        saved.top_k,
+        resolve_candidate_limit(None, settings),
+        settings,
+        collection_ids,
+    )
+    try:
+        with db.connection:
+            comparison = compare_saved_run(
+                saved,
+                metadata,
+                _search_fn(db, embedder, embedding_dim, options),
+                conn=db.connection,
+                retrieval=retrieval,
+                model=model_identity,
+            )
+    except click.ClickException:
+        raise
+    except Exception as e:
+        raise click.ClickException(f"Personal eval failed: {e}") from e
+    _print_comparison_warnings(saved, comparison, model_identity)
+    _save_and_render(
+        comparison.current_report,
+        settings,
+        no_save,
+        output_json,
+        extra={"comparison": comparison.to_dict()},
+    )
+
+
 def run_personal(  # noqa: PLR0913
     index_path: Path,
     bm25_only: bool,
@@ -313,109 +554,48 @@ def run_personal(  # noqa: PLR0913
     search_all: bool,
     output_json: bool,
     no_save: bool = False,
+    compare: Path | None = None,
 ) -> None:
-    """Run the title+body personal evaluation end to end.
+    """Run the personal evaluation end to end (fresh or ``--compare``).
 
     Missing index and insufficient corpus/query counts exit 1 with a named
     cause and remedy; the default hybrid path loads the configured embedder
     and fails loudly when it is unavailable (D-11). Held-out widening runs
     before any search, and known-item metrics come solely from the
-    per-query evaluator over title+body queries.
+    per-query evaluator over title+body queries. With ``--compare`` the
+    saved run is loaded and validated before any search, its fingerprint and
+    targets are checked before the embedder loads, and the saved query set is
+    re-evaluated in saved order at the saved depth.
     """
-    if not index_path.exists():
-        raise click.ClickException("No index found. Run 'sif index update' first.")
-    try:
-        settings = get_settings()
-    except ValidationError as e:
-        raise click.ClickException(str(e)) from e
-
+    settings = _load_settings(index_path)
+    saved = _load_saved(compare)
     with open_initialized_database(index_path, Database) as db:
         collection_ids = _resolve_collection_ids(db, collection, search_all)
         # Whole-corpus pass: metadata only, never bodies (T-18-02).
         metadata = load_document_metadata(db.connection, collection_ids)
-        if len(metadata) < MIN_DOCUMENTS:
-            raise click.ClickException(
-                f"Personal eval needs at least {MIN_DOCUMENTS} indexed documents in "
-                f"scope; found {len(metadata)}. Index more documents with "
-                "'sif index update' and retry."
+        if saved is not None:
+            _run_compare(
+                db,
+                metadata,
+                collection_ids,
+                saved,
+                settings,
+                bm25_only,
+                limit,
+                output_json,
+                no_save,
             )
-        # Bodies load only for the sampled subset; widening re-samples the
-        # deterministic prefix and loads only the newly added documents.
-        try:
-            sampled, synthesis = ensure_heldout(metadata, db.connection)
-        except ValueError as e:
-            raise click.ClickException(str(e)) from e
-
-        manager, embedding_dim, model_identity = _load_embedder(settings, bm25_only)
-        embedder: Embedder | None = manager.model if manager is not None else None
-        options = _build_options(
-            limit,
-            resolve_candidate_limit(None, settings),
-            settings,
+            return
+        _run_fresh(
+            db,
+            metadata,
             collection_ids,
+            settings,
+            bm25_only,
+            limit,
+            output_json,
+            no_save,
         )
-        # One hoisted pipeline per run (never per query); search failures
-        # surface as a ClickException rather than a raw traceback.
-        try:
-            with db.connection:
-                pipeline = SearchPipeline(
-                    db.connection,
-                    embedder=embedder,
-                    embedding_dim=embedding_dim,
-                )
-                evaluations = evaluate_known_items(
-                    synthesis.queries,
-                    lambda query: pipeline.search(query, options),
-                )
-                # Replay runs after the known-item evaluation on the same
-                # hoisted pipeline and options; it never enters the metrics.
-                replay = replay_leg(
-                    load_replay_queries(db.connection),
-                    lambda query: pipeline.search(query, options),
-                )
-        except click.ClickException:
-            raise
-        except Exception as e:
-            raise click.ClickException(f"Personal eval failed: {e}") from e
-
-        retrieval = "bm25" if bm25_only else "hybrid"
-        notes = [
-            "Known-item labels: the target document is grade 1 and all other "
-            "documents grade 0; NDCG@10 is a rank-sensitive known-item metric, "
-            "not a graded-relevance score.",
-            "Title queries are exact-term (unbudgeted); body queries are paraphrased "
-            "and rejected above a 0.60 token Jaccard against the target title plus "
-            "opening text.",
-            "Replay stability against a saved baseline is computed by --compare "
-            "(Plan 03); a fresh run has no baseline.",
-        ]
-        if len(sampled) > INITIAL_SAMPLE_DOCUMENTS:
-            notes.append(
-                f"Sampling widened from the initial {INITIAL_SAMPLE_DOCUMENTS} "
-                f"documents to {len(sampled)} to satisfy the held-out floor."
-            )
-        if bm25_only:
-            notes.append("Retrieval mode is BM25-only (--bm25-only): no embedder was loaded.")
-        elif settings.model_type in _REMOTE_MODEL_TYPES:
-            notes.append(
-                f"Embedding provider '{settings.model_type}' is remote-capable: "
-                "synthesized query text is sent to it; --bm25-only keeps the run local."
-            )
-        report = build_personal_report(
-            retrieval=retrieval,
-            top_k=limit,
-            metadata=metadata,
-            sampled=sampled,
-            model=model_identity,
-            synthesis=synthesis,
-            evaluations=evaluations,
-            replay=replay,
-            notes=notes,
-        )
-        payload = report.to_dict()
-        run_path = _save_run(report, settings, no_save)
-        payload["run_path"] = str(run_path) if run_path is not None else None
-        _render_personal(payload, output_json)
 
 
 def _index_path(ctx: click.Context) -> Path:
@@ -432,6 +612,11 @@ def _index_path(ctx: click.Context) -> Path:
 
 @click.group("eval", invoke_without_command=True)
 @click.option("--personal", is_flag=True, help="Measure quality on the indexed personal corpus")
+@click.option(
+    "--compare",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Compare against a saved run (evaluates its query set)",
+)
 @click.option(
     "--no-save",
     is_flag=True,
@@ -450,6 +635,7 @@ def _index_path(ctx: click.Context) -> Path:
 def eval_group(  # noqa: PLR0913
     ctx: click.Context,
     personal: bool,
+    compare: Path | None,
     no_save: bool,
     bm25_only: bool,
     limit: int,
@@ -466,7 +652,10 @@ def eval_group(  # noqa: PLR0913
     query_log replay stability leg. Hybrid retrieval is the default; pass
     --bm25-only when the embed extra is unavailable (the default path fails
     loudly with an install remedy). Every run is saved under the cache
-    directory unless --no-save. --json emits strict JSON.
+    directory unless --no-save. With --compare, a saved run is re-evaluated
+    over its own query set at its saved depth and paired deltas are reported
+    with a seeded 95% bootstrap CI and the 1/N noise floor; a corpus
+    fingerprint mismatch refuses the comparison. --json emits strict JSON.
     """
     if ctx.invoked_subcommand is not None:
         return
@@ -480,4 +669,5 @@ def eval_group(  # noqa: PLR0913
         search_all,
         output_json,
         no_save,
+        compare,
     )

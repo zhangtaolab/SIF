@@ -27,7 +27,7 @@ from sif.search.personal_bench import (
     sample_documents,
 )
 from tests.support.bench import EMBEDDING_DIM, ConceptEmbedder
-from tests.support.eval import build_personal_db
+from tests.support.eval import build_personal_db, rewrite_saved_run
 
 
 _UNSET = object()
@@ -396,6 +396,7 @@ def test_personal_help_lists_options() -> None:
     assert result.exit_code == 0
     for option in (
         "--personal",
+        "--compare",
         "--no-save",
         "--bm25-only",
         "--limit",
@@ -1008,3 +1009,389 @@ class TestSavedRunsCli:
         assert saved.retrieval == payload["retrieval"]
         assert saved.model == payload["model"]
         assert {record.split for record in saved.queries} == {"tuning", "heldout"}
+
+
+# --- Task 2: --compare pairing, refusal, and the noise gate -----------------
+
+
+class _OptionsSpyPipeline:
+    """Pipeline stand-in recording every query and its search depth."""
+
+    seen: ClassVar[list[str]] = []
+    limits: ClassVar[list[int]] = []
+
+    def __init__(self, *_args: object, **_kwargs: object) -> None:
+        pass
+
+    def search(self, query: str, options: object) -> list:
+        _OptionsSpyPipeline.seen.append(query)
+        _OptionsSpyPipeline.limits.append(int(options.limit))  # type: ignore[attr-defined]
+        return [
+            SearchResult(
+                document_id=f"rid-{index}",
+                title="title",
+                path=f"/p/{index}.md",
+                collection_name="collection",
+                score=1.0,
+            )
+            for index in range(3)
+        ]
+
+
+def _fresh_saved_run(
+    db_path: Path,
+    settings: Settings,
+    *,
+    pipeline: object | None = None,
+    manager: object = _UNSET,
+    extra_args: tuple[str, ...] = ("--bm25-only",),
+) -> tuple[Path, dict]:
+    """Run a fresh personal eval and return its auto-saved run path + payload."""
+    result = _invoke(
+        db_path,
+        ["--personal", *extra_args, "--json"],
+        settings=settings,
+        pipeline=pipeline,
+        manager=manager,
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert payload["run_path"] is not None
+    return Path(payload["run_path"]), payload
+
+
+class TestCompareCli:
+    def test_compare_evaluates_exactly_the_saved_queries_in_saved_order(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        db_path = build_personal_db(tmp_path / "personal.db", documents=60)
+        settings = _settings(tmp_path)
+        _ReplaySpyPipeline.seen = []
+        saved_path, _payload = _fresh_saved_run(
+            db_path,
+            settings,
+            pipeline=_ReplaySpyPipeline,
+        )
+        saved_queries = [record.query for record in load_saved_run(saved_path).queries]
+
+        _SpyPipeline.seen = []
+        result = _invoke(
+            db_path,
+            ["--personal", "--compare", str(saved_path), "--bm25-only", "--json"],
+            settings=settings,
+            pipeline=_SpyPipeline,
+        )
+
+        assert result.exit_code == 0, result.output
+        # No synthesized title/body text that is not in the saved file.
+        assert _SpyPipeline.seen == saved_queries
+        payload = json.loads(result.stdout)
+        assert payload["comparison"]["baseline"]["num_queries"] == len(saved_queries)
+        assert payload["comparison"]["current"]["num_queries"] == len(saved_queries)
+        assert payload["comparison"]["top_k"] == 10
+
+    def test_compare_fingerprint_mismatch_exits_one_with_both_values(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        db_path = build_personal_db(tmp_path / "personal.db", documents=60)
+        settings = _settings(tmp_path)
+        saved_path, payload = _fresh_saved_run(
+            db_path,
+            settings,
+            pipeline=_ReplaySpyPipeline,
+        )
+        current_fingerprint = payload["corpus"]["fingerprint"]
+        rewrite_saved_run(
+            saved_path,
+            lambda data: data["corpus"].__setitem__(
+                "fingerprint",
+                "deadbeefdeadbeef",
+            ),
+        )
+
+        result = _invoke(
+            db_path,
+            ["--personal", "--compare", str(saved_path), "--bm25-only", "--json"],
+            settings=settings,
+            pipeline=_SpyPipeline,
+        )
+
+        assert result.exit_code == 1
+        assert "deadbeefdeadbeef" in result.output
+        assert current_fingerprint in result.output
+        assert "refusing" in result.output
+        assert "Traceback" not in result.output
+
+    def test_compare_missing_target_exits_one_naming_the_path(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        db_path = build_personal_db(tmp_path / "personal.db", documents=60)
+        settings = _settings(tmp_path)
+        saved_path, _payload = _fresh_saved_run(
+            db_path,
+            settings,
+            pipeline=_ReplaySpyPipeline,
+        )
+
+        def _stale_target(data: dict) -> None:
+            data["queries"][0]["target_doc_id"] = "missing-doc"
+            data["queries"][0]["target_path"] = "/no/such/path.md"
+
+        rewrite_saved_run(saved_path, _stale_target)
+
+        result = _invoke(
+            db_path,
+            ["--personal", "--compare", str(saved_path), "--bm25-only", "--json"],
+            settings=settings,
+            pipeline=_SpyPipeline,
+        )
+
+        assert result.exit_code == 1
+        assert "/no/such/path.md" in result.output
+        assert "Traceback" not in result.output
+
+    def test_compare_autosaves_one_new_run_and_no_save_writes_none(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        db_path = build_personal_db(tmp_path / "personal.db", documents=60)
+        settings = _settings(tmp_path)
+        saved_path, _payload = _fresh_saved_run(
+            db_path,
+            settings,
+            pipeline=_ReplaySpyPipeline,
+        )
+        saved = load_saved_run(saved_path)
+
+        result = _invoke(
+            db_path,
+            ["--personal", "--compare", str(saved_path), "--bm25-only", "--json"],
+            settings=settings,
+            pipeline=_SpyPipeline,
+        )
+
+        assert result.exit_code == 0, result.output
+        files = _saved_files(tmp_path)
+        assert len(files) == 2
+        new_path = next(path for path in files if path != saved_path)
+        assert json.loads(result.stdout)["run_path"] == str(new_path)
+        new_run = load_saved_run(new_path)
+        assert [record.query for record in new_run.queries] == [
+            record.query for record in saved.queries
+        ]
+        assert [record.split for record in new_run.queries] == [
+            record.split for record in saved.queries
+        ]
+        assert new_run.top_k == saved.top_k
+        # The current arm supplied the retrieval arrays (empty for this spy).
+        assert all(record.retrieved == [] for record in new_run.queries)
+
+        skipped = _invoke(
+            db_path,
+            [
+                "--personal",
+                "--compare",
+                str(saved_path),
+                "--bm25-only",
+                "--json",
+                "--no-save",
+            ],
+            settings=settings,
+            pipeline=_SpyPipeline,
+        )
+
+        assert skipped.exit_code == 0, skipped.output
+        assert json.loads(skipped.stdout)["run_path"] is None
+        assert len(_saved_files(tmp_path)) == 2
+
+    def test_compare_uses_saved_depth_and_warns_when_limit_differs(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        db_path = build_personal_db(tmp_path / "personal.db", documents=60)
+        settings = _settings(tmp_path)
+        _ReplaySpyPipeline.seen = []
+        saved_path, _payload = _fresh_saved_run(
+            db_path,
+            settings,
+            pipeline=_ReplaySpyPipeline,
+            extra_args=("--bm25-only", "-n", "5"),
+        )
+        assert load_saved_run(saved_path).top_k == 5
+
+        _OptionsSpyPipeline.seen = []
+        _OptionsSpyPipeline.limits = []
+        result = _invoke(
+            db_path,
+            [
+                "--personal",
+                "--compare",
+                str(saved_path),
+                "--bm25-only",
+                "-n",
+                "20",
+                "--json",
+            ],
+            settings=settings,
+            pipeline=_OptionsSpyPipeline,
+        )
+
+        assert result.exit_code == 0, result.output
+        assert _OptionsSpyPipeline.limits == [5] * len(_OptionsSpyPipeline.seen)
+        assert "top_k=5" in result.stderr
+        assert "ignoring" in result.stderr
+
+    def test_compare_retrieval_mode_difference_warns_and_still_reports(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        db_path = build_personal_db(tmp_path / "personal.db", documents=60)
+        settings = _settings(tmp_path)
+        _ReplaySpyPipeline.seen = []
+        saved_path, _payload = _fresh_saved_run(
+            db_path,
+            settings,
+            pipeline=_ReplaySpyPipeline,
+            manager=_manager(),
+            extra_args=(),
+        )
+        assert load_saved_run(saved_path).retrieval == "hybrid"
+
+        result = _invoke(
+            db_path,
+            ["--personal", "--compare", str(saved_path), "--bm25-only", "--json"],
+            settings=settings,
+            pipeline=_OptionsSpyPipeline,
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "hybrid" in result.stderr
+        assert "bm25" in result.stderr
+        payload = json.loads(result.stdout)
+        assert payload["comparison"]["retrieval"] == {
+            "saved": "hybrid",
+            "current": "bm25",
+        }
+
+    def test_compare_reports_group_gates_and_suppressed_names(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        zh_titles = [f"如何配置 {index}" for index in range(9)]
+        en_titles = [f"Unique title {index}" for index in range(9, 50)]
+        db_path = build_personal_db(
+            tmp_path / "personal.db",
+            documents=50,
+            titles=zh_titles + en_titles,
+        )
+        settings = _settings(tmp_path)
+        _ReplaySpyPipeline.seen = []
+        saved_path, _payload = _fresh_saved_run(
+            db_path,
+            settings,
+            pipeline=_ReplaySpyPipeline,
+        )
+        suppressed_name = "leg=title/language=zh/length=medium"
+
+        result = _invoke(
+            db_path,
+            ["--personal", "--compare", str(saved_path), "--bm25-only", "--json"],
+            settings=settings,
+            pipeline=_OptionsSpyPipeline,
+        )
+
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.stdout)
+        comparison = payload["comparison"]
+        assert suppressed_name in comparison["suppressed"]
+        assert suppressed_name in result.stderr
+        groups = {
+            (group["leg"], group["language"], group["length_bucket"]): group
+            for group in comparison["groups"]
+        }
+        assert ("title", "en", "medium") in groups
+        assert ("body", "en", "long") in groups
+        assert not any(
+            group["leg"] == "title" and group["language"] == "zh" for group in comparison["groups"]
+        )
+        for key in (
+            "n",
+            "mean_delta",
+            "ci_low",
+            "ci_high",
+            "helped",
+            "hurt",
+            "unchanged",
+            "winner",
+        ):
+            assert key in groups[("title", "en", "medium")]
+        assert set(comparison["splits"]) == {"tuning", "heldout"}
+        assert comparison["splits"]["tuning"]["diagnostic"] is True
+        assert comparison["splits"]["heldout"]["diagnostic"] is False
+        assert "noise_floor" in comparison["delta"]
+        assert "warrants_default_change" in comparison["gate"]
+
+    def test_compare_over_an_empty_query_list_exits_one(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        db_path = build_personal_db(tmp_path / "personal.db", documents=60)
+        settings = _settings(tmp_path)
+        saved_path, _payload = _fresh_saved_run(
+            db_path,
+            settings,
+            pipeline=_ReplaySpyPipeline,
+        )
+        rewrite_saved_run(saved_path, lambda data: data.__setitem__("queries", []))
+
+        result = _invoke(
+            db_path,
+            ["--personal", "--compare", str(saved_path), "--bm25-only", "--json"],
+            settings=settings,
+            pipeline=_SpyPipeline,
+        )
+
+        assert result.exit_code == 1
+        assert "queries" in result.output
+        assert "Traceback" not in result.output
+
+    def test_compare_warns_on_model_identity_mismatch(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        db_path = build_personal_db(tmp_path / "personal.db", documents=60)
+        settings = _settings(tmp_path)
+        _ReplaySpyPipeline.seen = []
+        saved_path, _payload = _fresh_saved_run(
+            db_path,
+            settings,
+            pipeline=_ReplaySpyPipeline,
+            manager=_manager(),
+            extra_args=(),
+        )
+        rewrite_saved_run(
+            saved_path,
+            lambda data: data.__setitem__(
+                "model",
+                {
+                    "model_name": "different-model",
+                    "model_type": "sentence_transformers",
+                    "dimension": EMBEDDING_DIM,
+                },
+            ),
+        )
+
+        result = _invoke(
+            db_path,
+            ["--personal", "--compare", str(saved_path), "--json"],
+            settings=settings,
+            manager=_manager(),
+            pipeline=_OptionsSpyPipeline,
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "different-model" in result.stderr
+        assert "model" in result.stderr.lower()

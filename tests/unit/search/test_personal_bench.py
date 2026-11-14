@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+from sif.core.models import SearchResult
 from sif.search.benchmark import QueryEvaluation
 from sif.search.personal_bench import (
     EXACT_TERM_LEGS,
@@ -37,6 +38,8 @@ from sif.search.personal_bench import (
     PersonalQueryRecord,
     PersonalReport,
     ReplayResult,
+    SavedQueryRecord,
+    SavedRun,
     SynthesisResult,
     SynthesizedQuery,
     apply_overlap_budget,
@@ -45,6 +48,7 @@ from sif.search.personal_bench import (
     build_personal_report,
     build_query_records,
     classify_language,
+    compare_saved_run,
     corpus_fingerprint,
     dedupe_queries,
     ensure_heldout,
@@ -54,9 +58,14 @@ from sif.search.personal_bench import (
     load_replay_queries,
     load_sampled_content,
     load_saved_run,
+    noise_gate,
     normalize_text,
+    paired_bootstrap,
     replay_leg,
+    replay_stability,
+    require_matching_corpus,
     require_minimum_queries,
+    resolve_saved_targets,
     run_to_saved,
     saved_run_to_dict,
     split_queries,
@@ -1347,3 +1356,606 @@ class TestCorpusFingerprint:
         assert corpus_fingerprint(changed_size) != base
         # Title/content (and therefore mtime-like metadata) are excluded.
         assert corpus_fingerprint(same_content_identity) == base
+
+
+# --- Task 2: paired bootstrap, noise gate, comparison ------------------------
+
+
+def _saved_query(
+    query: str,
+    *,
+    target_doc_id: str = "doc-1",
+    target_path: str = "/corpus/1.md",
+    leg: str = "title",
+    language: str = "en",
+    length_bucket: str = "long",
+    split: str = "heldout",
+    retrieved: list[str] | None = None,
+    retrieved_doc_ids: list[str] | None = None,
+) -> SavedQueryRecord:
+    """One saved query record with rank-aligned retrieval arrays."""
+    return SavedQueryRecord(
+        query=query,
+        target_path=target_path,
+        target_doc_id=target_doc_id,
+        leg=leg,
+        language=language,
+        length_bucket=length_bucket,
+        split=split,
+        grade=1,
+        retrieved=retrieved if retrieved is not None else [target_path],
+        retrieved_doc_ids=(retrieved_doc_ids if retrieved_doc_ids is not None else [target_doc_id]),
+    )
+
+
+def _saved_run(
+    queries: list[SavedQueryRecord],
+    *,
+    fingerprint: str,
+    retrieval: str = "hybrid",
+    top_k: int = 10,
+    replay: list[dict] | None = None,
+    model: dict | None = None,
+) -> SavedRun:
+    """A minimal valid saved run for comparison tests."""
+    return SavedRun(
+        version=SAVED_RUN_VERSION,
+        created_at="2026-11-14T00:00:00+00:00",
+        top_k=top_k,
+        corpus={"fingerprint": fingerprint, "documents": 50, "sampled": 50},
+        retrieval=retrieval,
+        model=model,
+        queries=queries,
+        replay={"available": bool(replay), "queries": list(replay or [])},
+    )
+
+
+def _metadata(*pairs: tuple[str, str]) -> list[DocumentRecord]:
+    """Current-corpus metadata records (id, path) with stable checksums."""
+    return [
+        DocumentRecord(
+            id=doc_id,
+            path=path,
+            title=doc_id,
+            checksum=doc_id,
+            file_size=1,
+        )
+        for doc_id, path in pairs
+    ]
+
+
+def _compare_conn(*pairs: tuple[str, str]) -> sqlite3.Connection:
+    """In-memory current ``documents`` table for target resolution."""
+    conn = sqlite3.connect(":memory:")
+    conn.execute("CREATE TABLE documents (id TEXT PRIMARY KEY, path TEXT NOT NULL)")
+    conn.executemany("INSERT INTO documents (id, path) VALUES (?, ?)", list(pairs))
+    conn.commit()
+    return conn
+
+
+def _hit(doc_id: str, path: str = "/corpus/1.md") -> SearchResult:
+    """A SearchResult carrying the document id both arms grade through."""
+    return SearchResult(
+        document_id=doc_id,
+        title="title",
+        path=path,
+        collection_name="collection",
+        score=1.0,
+    )
+
+
+class TestPairedBootstrap:
+    def test_is_deterministic_for_a_fixed_list(self) -> None:
+        deltas = [0.1, 0.2, 0.4, 0.0, 0.3]
+
+        first = paired_bootstrap(deltas)
+        second = paired_bootstrap(deltas)
+
+        assert first.sufficient is True
+        assert (first.mean, first.ci_low, first.ci_high) == (
+            second.mean,
+            second.ci_low,
+            second.ci_high,
+        )
+        assert first.mean == pytest.approx(0.2)
+        assert first.ci_low <= first.mean <= first.ci_high
+
+    def test_zero_variance_positive_list_excludes_zero(self) -> None:
+        result = paired_bootstrap([0.1] * 5)
+
+        assert result.mean == pytest.approx(0.1)
+        assert result.ci_low == pytest.approx(0.1)
+        assert result.ci_high == pytest.approx(0.1)
+        assert result.ci_low > 0
+
+    def test_empty_list_is_insufficient(self) -> None:
+        result = paired_bootstrap([])
+
+        assert result.sufficient is False
+        assert (result.mean, result.ci_low, result.ci_high) == (0.0, 0.0, 0.0)
+
+
+class TestNoiseGate:
+    def test_exactly_one_hundredth_with_a_positive_ci_declares_a_winner(self) -> None:
+        gate = noise_gate([0.0] * 10, [0.01] * 10)
+
+        assert gate.n == 10
+        assert gate.mean_delta == pytest.approx(0.01)
+        assert gate.ci_low > 0
+        assert gate.winner is True
+        assert gate.regression is False
+
+    def test_below_the_tie_rule_never_declares_a_winner(self) -> None:
+        gate = noise_gate([0.0] * 10, [0.0099] * 10)
+
+        assert gate.mean_delta == pytest.approx(0.0099)
+        assert gate.ci_low > 0
+        assert gate.winner is False
+
+    def test_ci_containing_zero_never_declares_a_winner(self) -> None:
+        gate = noise_gate([0.0, 0.0], [0.0, 0.02])
+
+        assert gate.mean_delta == pytest.approx(0.01)
+        assert gate.ci_low <= 0 <= gate.ci_high
+        assert gate.winner is False
+
+    def test_helped_hurt_unchanged_and_the_one_over_n_floor(self) -> None:
+        gate = noise_gate([0.0, 0.5, 0.2], [0.02, 0.49, 0.2])
+
+        assert gate.n == 3
+        assert gate.helped == 1
+        assert gate.hurt == 1
+        assert gate.unchanged == 1
+        assert gate.noise_floor == pytest.approx(1 / 3)
+        assert gate.sufficient is True
+
+    def test_a_negative_delta_flags_regression_but_never_wins(self) -> None:
+        gate = noise_gate([0.5] * 10, [0.4] * 10)
+
+        assert gate.mean_delta == pytest.approx(-0.1)
+        assert gate.ci_high < 0
+        assert gate.regression is True
+        assert gate.winner is False
+
+    def test_empty_series_is_insufficient_and_has_no_floor(self) -> None:
+        gate = noise_gate([], [])
+
+        assert gate.sufficient is False
+        assert gate.winner is False
+        assert gate.regression is False
+        assert gate.n == 0
+        assert gate.noise_floor == 0.0
+
+
+class TestReplayStability:
+    def test_jaccard_and_top_one_stability_against_the_snapshot(self) -> None:
+        saved_replay = {
+            "available": True,
+            "queries": [{"query": "alpha", "top_k_paths": ["/p/a.md", "/p/b.md"]}],
+        }
+        current = {"alpha": ["/p/b.md", "/p/c.md"]}
+
+        stability = replay_stability(saved_replay, current)
+
+        assert stability.available is True
+        assert stability.baseline_available is True
+        assert stability.num_queries == 1
+        assert stability.jaccard_at_10 == pytest.approx(1 / 3)
+        assert stability.top1_stability == 0.0
+
+    def test_no_saved_snapshot_is_unavailable(self) -> None:
+        stability = replay_stability(
+            {"available": False, "queries": []},
+            {"alpha": ["/p/a.md"]},
+        )
+
+        assert stability.available is False
+        assert stability.baseline_available is False
+        assert "saved" in stability.note.lower()
+
+    def test_no_current_top_k_is_unavailable(self) -> None:
+        stability = replay_stability(
+            {
+                "available": True,
+                "queries": [{"query": "alpha", "top_k_paths": ["/p/a.md"]}],
+            },
+            {},
+        )
+
+        assert stability.available is False
+        assert stability.baseline_available is True
+
+
+class TestCompareSavedRun:
+    def test_evaluates_exactly_the_saved_queries_in_saved_order(self) -> None:
+        pairs = (("doc-1", "/corpus/1.md"), ("doc-2", "/corpus/2.md"))
+        metadata = _metadata(*pairs)
+        saved = _saved_run(
+            [
+                _saved_query(
+                    "second",
+                    target_doc_id="doc-2",
+                    target_path="/corpus/2.md",
+                    split="heldout",
+                ),
+                _saved_query(
+                    "first",
+                    target_doc_id="doc-1",
+                    target_path="/corpus/1.md",
+                    split="tuning",
+                ),
+            ],
+            fingerprint=corpus_fingerprint(metadata),
+        )
+        targets = {
+            "first": ("doc-1", "/corpus/1.md"),
+            "second": ("doc-2", "/corpus/2.md"),
+        }
+        calls: list[str] = []
+
+        def search(query: str) -> list[SearchResult]:
+            calls.append(query)
+            doc_id, path = targets[query]
+            return [_hit(doc_id, path)]
+
+        comparison = compare_saved_run(
+            saved,
+            metadata,
+            search,
+            conn=_compare_conn(*pairs),
+            retrieval="bm25",
+            model=None,
+        )
+
+        assert calls == ["second", "first"]
+        assert [record.query for record in comparison.current_report.records] == [
+            "second",
+            "first",
+        ]
+        assert [record.split for record in comparison.current_report.records] == [
+            "heldout",
+            "tuning",
+        ]
+        assert comparison.current_report.top_k == saved.top_k
+        assert comparison.current_metrics["ndcg_at_10"] == pytest.approx(1.0)
+        assert comparison.baseline_metrics["ndcg_at_10"] == pytest.approx(1.0)
+        assert comparison.overall.mean_delta == pytest.approx(0.0)
+
+    def test_fingerprint_mismatch_refuses_and_names_both_values(self) -> None:
+        pairs = (("doc-1", "/corpus/1.md"),)
+        metadata = _metadata(*pairs)
+        saved = _saved_run(
+            [_saved_query("note")],
+            fingerprint="savedfingerprint",
+        )
+
+        with pytest.raises(ValueError, match="refusing") as excinfo:
+            compare_saved_run(
+                saved,
+                metadata,
+                lambda _query: [],
+                conn=_compare_conn(*pairs),
+                retrieval="bm25",
+                model=None,
+            )
+
+        message = str(excinfo.value)
+        assert "savedfingerprint" in message
+        assert corpus_fingerprint(metadata) in message
+
+    def test_target_resolves_by_document_id_before_path(self) -> None:
+        pairs = (("doc-a", "/shared.md"), ("doc-b", "/shared.md"))
+        metadata = _metadata(*pairs)
+        saved = _saved_run(
+            [
+                _saved_query(
+                    "note",
+                    target_doc_id="doc-a",
+                    target_path="/shared.md",
+                    retrieved=["/shared.md"],
+                    retrieved_doc_ids=["doc-b"],
+                )
+            ],
+            fingerprint=corpus_fingerprint(metadata),
+        )
+
+        comparison = compare_saved_run(
+            saved,
+            metadata,
+            lambda _query: [_hit("doc-b", "/shared.md")],
+            conn=_compare_conn(*pairs),
+            retrieval="bm25",
+            model=None,
+        )
+
+        # The current arm grades the other copy as a miss against doc-a, so a
+        # shared path cannot turn one arm's retrieval into a hit for the other.
+        assert comparison.baseline_metrics["ndcg_at_10"] == 0.0
+        assert comparison.current_metrics["ndcg_at_10"] == 0.0
+        assert comparison.overall.mean_delta == 0.0
+
+    def test_stale_id_with_an_ambiguous_path_is_a_loud_error(self) -> None:
+        pairs = (("doc-a", "/shared.md"), ("doc-b", "/shared.md"))
+        metadata = _metadata(*pairs)
+        saved = _saved_run(
+            [
+                _saved_query(
+                    "note",
+                    target_doc_id="stale",
+                    target_path="/shared.md",
+                )
+            ],
+            fingerprint=corpus_fingerprint(metadata),
+        )
+
+        with pytest.raises(ValueError, match=re.escape("/shared.md")) as excinfo:
+            compare_saved_run(
+                saved,
+                metadata,
+                lambda _query: [],
+                conn=_compare_conn(*pairs),
+                retrieval="bm25",
+                model=None,
+            )
+
+        assert "refusing" in str(excinfo.value)
+
+    def test_unique_path_is_the_only_fallback(self) -> None:
+        pairs = (("doc-u", "/unique.md"),)
+        metadata = _metadata(*pairs)
+        saved = _saved_run(
+            [
+                _saved_query(
+                    "note",
+                    target_doc_id="stale",
+                    target_path="/unique.md",
+                    retrieved=["/unique.md"],
+                    retrieved_doc_ids=["other"],
+                )
+            ],
+            fingerprint=corpus_fingerprint(metadata),
+        )
+
+        comparison = compare_saved_run(
+            saved,
+            metadata,
+            lambda _query: [_hit("doc-u", "/unique.md")],
+            conn=_compare_conn(*pairs),
+            retrieval="bm25",
+            model=None,
+        )
+
+        assert comparison.current_metrics["ndcg_at_10"] == pytest.approx(1.0)
+        assert comparison.baseline_metrics["ndcg_at_10"] == 0.0
+        assert comparison.overall.winner is True
+        assert comparison.warrants_default_change is True
+
+    def test_repeated_target_id_counts_once_and_never_exceeds_one(self) -> None:
+        pairs = (("doc-1", "/corpus/1.md"),)
+        metadata = _metadata(*pairs)
+        saved = _saved_run(
+            [
+                _saved_query(
+                    "note",
+                    retrieved=["/a", "/b", "/c"],
+                    retrieved_doc_ids=["doc-1", "doc-1", "doc-1"],
+                )
+            ],
+            fingerprint=corpus_fingerprint(metadata),
+        )
+
+        comparison = compare_saved_run(
+            saved,
+            metadata,
+            lambda _query: [_hit("doc-1", "/corpus/1.md")],
+            conn=_compare_conn(*pairs),
+            retrieval="bm25",
+            model=None,
+        )
+
+        assert comparison.baseline_metrics["ndcg_at_10"] == 1.0
+
+    def test_groups_are_declared_order_and_small_groups_are_named(self) -> None:
+        pairs = (("doc-1", "/corpus/1.md"),)
+        metadata = _metadata(*pairs)
+        records = [
+            _saved_query(
+                f"title {index}",
+                leg="title",
+                language="en",
+                length_bucket="long",
+                split="tuning",
+                retrieved=["/corpus/1.md"],
+                retrieved_doc_ids=["missing"],
+            )
+            for index in range(5)
+        ]
+        records += [
+            _saved_query(
+                f"body {index}",
+                leg="body",
+                language="zh",
+                length_bucket="short",
+                split="heldout",
+                retrieved=["/corpus/1.md"],
+                retrieved_doc_ids=["missing"],
+            )
+            for index in range(10)
+        ]
+        saved = _saved_run(records, fingerprint=corpus_fingerprint(metadata))
+
+        comparison = compare_saved_run(
+            saved,
+            metadata,
+            lambda _query: [_hit("doc-1", "/corpus/1.md")],
+            conn=_compare_conn(*pairs),
+            retrieval="bm25",
+            model=None,
+        )
+
+        assert [
+            (group.leg, group.language, group.length_bucket, group.gate.n)
+            for group in comparison.groups
+        ] == [("body", "zh", "short", 10)]
+        assert comparison.suppressed == ["leg=title/language=en/length=long"]
+        assert comparison.groups[0].gate.winner is True
+        data = comparison.to_dict()
+        assert data["groups"][0]["diagnostic"] is True
+        assert data["groups"][0]["n"] == 10
+        assert set(data["groups"][0]) >= {
+            "mean_delta",
+            "ci_low",
+            "ci_high",
+            "helped",
+            "hurt",
+            "unchanged",
+            "winner",
+        }
+        assert data["splits"]["tuning"]["diagnostic"] is True
+        assert data["splits"]["heldout"]["diagnostic"] is False
+
+    def test_only_the_held_out_gate_warrants_a_defaults_change(self) -> None:
+        pairs = (("doc-1", "/corpus/1.md"),)
+        metadata = _metadata(*pairs)
+        tuning_only = [
+            _saved_query(
+                f"tuning {index}",
+                split="tuning",
+                retrieved=["/corpus/1.md"],
+                retrieved_doc_ids=["missing"],
+            )
+            for index in range(10)
+        ]
+        saved = _saved_run(tuning_only, fingerprint=corpus_fingerprint(metadata))
+
+        comparison = compare_saved_run(
+            saved,
+            metadata,
+            lambda _query: [_hit("doc-1", "/corpus/1.md")],
+            conn=_compare_conn(*pairs),
+            retrieval="bm25",
+            model=None,
+        )
+
+        assert comparison.overall.winner is True
+        assert comparison.splits["tuning"].winner is True
+        assert comparison.splits["heldout"].sufficient is False
+        assert comparison.warrants_default_change is False
+
+    def test_replay_stability_uses_the_saved_snapshot(self) -> None:
+        pairs = (("doc-1", "/corpus/1.md"),)
+        metadata = _metadata(*pairs)
+        saved = _saved_run(
+            [
+                _saved_query(
+                    "known",
+                    retrieved=["/corpus/1.md"],
+                    retrieved_doc_ids=["doc-1"],
+                )
+            ],
+            fingerprint=corpus_fingerprint(metadata),
+            replay=[
+                {
+                    "query": "alpha",
+                    "top_k_paths": ["/p/a.md", "/p/b.md"],
+                }
+            ],
+        )
+
+        def search(query: str) -> list[SearchResult]:
+            if query == "known":
+                return [_hit("doc-1", "/corpus/1.md")]
+            return [_hit("rid-0", "/p/b.md"), _hit("rid-1", "/p/c.md")]
+
+        comparison = compare_saved_run(
+            saved,
+            metadata,
+            search,
+            conn=_compare_conn(*pairs),
+            retrieval="bm25",
+            model=None,
+        )
+
+        assert comparison.replay.available is True
+        assert comparison.replay.baseline_available is True
+        assert comparison.replay.jaccard_at_10 == pytest.approx(1 / 3)
+        assert comparison.replay.top1_stability == 0.0
+        assert comparison.current_report.replay.top_k_paths["alpha"] == [
+            "/p/b.md",
+            "/p/c.md",
+        ]
+
+    def test_no_saved_replay_snapshot_reports_unavailable(self) -> None:
+        pairs = (("doc-1", "/corpus/1.md"),)
+        metadata = _metadata(*pairs)
+        saved = _saved_run(
+            [_saved_query("known")],
+            fingerprint=corpus_fingerprint(metadata),
+        )
+
+        comparison = compare_saved_run(
+            saved,
+            metadata,
+            lambda _query: [_hit("doc-1", "/corpus/1.md")],
+            conn=_compare_conn(*pairs),
+            retrieval="bm25",
+            model=None,
+        )
+
+        assert comparison.replay.available is False
+        assert comparison.replay.baseline_available is False
+        assert comparison.current_report.replay.available is False
+
+    def test_saved_depth_retrieval_and_model_identity_are_carried(self) -> None:
+        pairs = (("doc-1", "/corpus/1.md"),)
+        metadata = _metadata(*pairs)
+        saved = _saved_run(
+            [_saved_query("note")],
+            fingerprint=corpus_fingerprint(metadata),
+            top_k=5,
+            retrieval="hybrid",
+            model={"model_name": "saved", "model_type": "sentence_transformers", "dimension": 8},
+        )
+
+        comparison = compare_saved_run(
+            saved,
+            metadata,
+            lambda _query: [_hit("doc-1")],
+            conn=_compare_conn(*pairs),
+            retrieval="bm25",
+            model={"model_name": "current", "model_type": "sentence_transformers", "dimension": 8},
+        )
+
+        assert comparison.top_k == 5
+        assert comparison.current_report.top_k == 5
+        assert comparison.retrieval == {"saved": "hybrid", "current": "bm25"}
+        assert comparison.model_mismatch is True
+        data = comparison.to_dict()
+        assert data["top_k"] == 5
+        assert data["retrieval"] == {"saved": "hybrid", "current": "bm25"}
+
+    def test_empty_saved_query_set_is_refused(self) -> None:
+        pairs = (("doc-1", "/corpus/1.md"),)
+        metadata = _metadata(*pairs)
+        saved = _saved_run([], fingerprint=corpus_fingerprint(metadata))
+
+        with pytest.raises(ValueError, match="empty"):
+            compare_saved_run(
+                saved,
+                metadata,
+                lambda _query: [],
+                conn=_compare_conn(*pairs),
+                retrieval="bm25",
+                model=None,
+            )
+
+    def test_require_matching_corpus_and_target_resolution_are_shared(self) -> None:
+        pairs = (("doc-1", "/corpus/1.md"),)
+        metadata = _metadata(*pairs)
+        saved = _saved_run(
+            [_saved_query("note")],
+            fingerprint=corpus_fingerprint(metadata),
+        )
+
+        assert require_matching_corpus(saved, metadata) == corpus_fingerprint(metadata)
+        assert resolve_saved_targets(saved, _compare_conn(*pairs)) == ["doc-1"]

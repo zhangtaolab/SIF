@@ -22,6 +22,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import random
 import re
 import sqlite3
 import unicodedata
@@ -33,7 +34,15 @@ from typing import Any, NoReturn
 
 from sif.core.models import SearchResult
 from sif.database.repositories import QueryLogRepository
-from sif.search.benchmark import QueryEvaluation, SearchEvaluator
+from sif.search.benchmark import (
+    DEFAULT_K,
+    EPSILON,
+    QueryEvaluation,
+    SearchEvaluator,
+    hit_at_k,
+    ndcg_at_k,
+    percentile,
+)
 
 
 # Declared leg order (D-01): title and body are known-item synthesis; replay
@@ -332,6 +341,172 @@ class PersonalReport:
             "suppressed": list(self.suppressed),
             "replay": self.replay.to_dict(),
             "notes": list(self.notes),
+        }
+
+
+@dataclass(frozen=True)
+class BootstrapResult:
+    """Seeded percentile-bootstrap result over paired per-query deltas (D-07).
+
+    ``sufficient`` is False for an empty delta list, in which case the mean
+    and both CI bounds are 0.0 — an empty comparison never invents a number.
+    """
+
+    mean: float
+    ci_low: float
+    ci_high: float
+    sufficient: bool
+    resamples: int = BOOTSTRAP_RESAMPLES
+    seed: int = 0
+
+
+@dataclass(frozen=True)
+class GateResult:
+    """One noise-gate measurement: paired deltas, CI, counts, and the rule.
+
+    ``winner`` requires a CI excluding zero AND a rounded mean delta of at
+    least ``EPSILON`` (0.01); ``regression`` mirrors that for a CI excluding
+    zero with a mean delta at most ``-EPSILON``. ``noise_floor`` is 1/N.
+    """
+
+    n: int
+    baseline_mean: float
+    current_mean: float
+    mean_delta: float
+    ci_low: float
+    ci_high: float
+    helped: int
+    hurt: int
+    unchanged: int
+    noise_floor: float
+    winner: bool
+    regression: bool
+    sufficient: bool
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize with a fixed key order."""
+        return {
+            "n": self.n,
+            "baseline_mean": self.baseline_mean,
+            "current_mean": self.current_mean,
+            "mean_delta": self.mean_delta,
+            "ci_low": self.ci_low,
+            "ci_high": self.ci_high,
+            "helped": self.helped,
+            "hurt": self.hurt,
+            "unchanged": self.unchanged,
+            "noise_floor": self.noise_floor,
+            "winner": self.winner,
+            "regression": self.regression,
+            "sufficient": self.sufficient,
+        }
+
+
+@dataclass(frozen=True)
+class GroupGate:
+    """One diagnosed leg x language x length group (diagnostic only, D-08)."""
+
+    leg: str
+    language: str
+    length_bucket: str
+    gate: GateResult
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize the group identity plus its gate, marked diagnostic."""
+        data: dict[str, Any] = {
+            "leg": self.leg,
+            "language": self.language,
+            "length_bucket": self.length_bucket,
+            "diagnostic": True,
+        }
+        data.update(self.gate.to_dict())
+        return data
+
+
+@dataclass(frozen=True)
+class ReplayStability:
+    """Replay stability against the saved snapshot (D-02).
+
+    ``available`` is False when there is no saved snapshot or no current
+    top-k to compare; ``baseline_available`` reports whether a saved replay
+    snapshot exists at all. Jaccard is order-insensitive, so top-1 stability
+    is reported alongside it.
+    """
+
+    available: bool
+    baseline_available: bool
+    num_queries: int
+    jaccard_at_10: float
+    top1_stability: float
+    note: str
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize with a fixed key order."""
+        return {
+            "available": self.available,
+            "baseline_available": self.baseline_available,
+            "num_queries": self.num_queries,
+            "jaccard_at_10": self.jaccard_at_10,
+            "top1_stability": self.top1_stability,
+            "note": self.note,
+        }
+
+
+@dataclass(frozen=True)
+class ComparisonReport:
+    """The paired saved-vs-current comparison (D-07/D-12).
+
+    ``current_report`` is the single ``PersonalReport`` contract ``--compare``
+    auto-saves; ``splits`` and ``groups`` are gate results, and only the
+    held-out summary gate can warrant a defaults change (``warrants_default_change``).
+    """
+
+    current_report: PersonalReport
+    baseline_metrics: dict[str, float]
+    current_metrics: dict[str, float]
+    overall: GateResult
+    splits: dict[str, GateResult]
+    groups: list[GroupGate]
+    suppressed: list[str]
+    replay: ReplayStability
+    retrieval: dict[str, str]
+    top_k: int
+    warrants_default_change: bool
+    model_mismatch: bool
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize the comparison object for ``--json`` output."""
+        return {
+            "baseline": dict(self.baseline_metrics),
+            "current": dict(self.current_metrics),
+            "delta": {
+                "mean": self.overall.mean_delta,
+                "helped": self.overall.helped,
+                "hurt": self.overall.hurt,
+                "unchanged": self.overall.unchanged,
+                "n": self.overall.n,
+                "noise_floor": self.overall.noise_floor,
+            },
+            "ci": {"low": self.overall.ci_low, "high": self.overall.ci_high},
+            "gate": {
+                **self.overall.to_dict(),
+                "warrants_default_change": self.warrants_default_change,
+            },
+            "splits": {
+                "tuning": {
+                    **self.splits["tuning"].to_dict(),
+                    "diagnostic": True,
+                },
+                "heldout": {
+                    **self.splits["heldout"].to_dict(),
+                    "diagnostic": False,
+                },
+            },
+            "groups": [group.to_dict() for group in self.groups],
+            "suppressed": list(self.suppressed),
+            "replay": self.replay.to_dict(),
+            "retrieval": dict(self.retrieval),
+            "top_k": self.top_k,
         }
 
 
@@ -1031,12 +1206,16 @@ def build_personal_report(  # noqa: PLR0913
     evaluations: Sequence[QueryEvaluation],
     replay: ReplayResult,
     notes: list[str],
+    corpus: CorpusSummary | None = None,
 ) -> PersonalReport:
     """Assemble the one report contract from synthesis + per-query evaluation.
 
     Metrics, splits, groups, and records are computed exactly once here; the
     CLI renders ``to_dict()`` and never recomputes a field. Known-item
     metrics are means over title+body records only — replay never enters.
+    ``corpus`` overrides the computed summary so ``--compare`` can carry the
+    saved sample size and the recomputed current fingerprint without a
+    synthetic sampled-document list.
     """
     records = build_query_records(synthesis.queries, evaluations)
     groups, suppressed = group_metrics(records)
@@ -1061,7 +1240,7 @@ def build_personal_report(  # noqa: PLR0913
         "hit_at_10": _mean([record.hit_at_10 for record in records]),
         "num_queries": len(records),
     }
-    corpus = CorpusSummary(
+    corpus_summary = corpus or CorpusSummary(
         documents=len(metadata),
         sampled=len(sampled),
         fingerprint=corpus_fingerprint(metadata),
@@ -1070,7 +1249,7 @@ def build_personal_report(  # noqa: PLR0913
     return PersonalReport(
         retrieval=retrieval,
         top_k=top_k,
-        corpus=corpus,
+        corpus=corpus_summary,
         model=model,
         metrics=metrics,
         splits=splits,
@@ -1494,3 +1673,406 @@ def load_saved_run(path: str | Path) -> SavedRun:
         raise
     except (KeyError, TypeError) as error:  # pragma: no cover - defensive
         raise ValueError(f"Invalid saved run {source}: {error}") from error
+
+
+def paired_bootstrap(
+    deltas: Sequence[float],
+    resamples: int = BOOTSTRAP_RESAMPLES,
+    seed: int = 0,
+) -> BootstrapResult:
+    """Seeded percentile bootstrap over paired per-query deltas (D-07).
+
+    ``random.Random(seed)`` draws ``rng.randrange(n)`` in a fixed loop order,
+    so the same delta list produces the same mean and CI on every run and
+    machine. Percentiles reuse ``benchmark.percentile`` (p in 0-100, linear
+    interpolation). An empty input is ``sufficient=False`` with zero values.
+    """
+    if resamples <= 0:
+        raise ValueError("resamples must be positive")
+    if not deltas:
+        return BootstrapResult(
+            mean=0.0,
+            ci_low=0.0,
+            ci_high=0.0,
+            sufficient=False,
+            resamples=resamples,
+            seed=seed,
+        )
+    rng = random.Random(seed)
+    n = len(deltas)
+    means = [sum(deltas[rng.randrange(n)] for _ in range(n)) / n for _ in range(resamples)]
+    return BootstrapResult(
+        mean=_mean(deltas),
+        ci_low=percentile(means, 2.5),
+        ci_high=percentile(means, 97.5),
+        sufficient=True,
+        resamples=resamples,
+        seed=seed,
+    )
+
+
+def noise_gate(
+    baseline_values: Sequence[float],
+    current_values: Sequence[float],
+) -> GateResult:
+    """Paired noise gate: rounded deltas, CI, counts, 1/N, and the tie rule.
+
+    Per-query deltas are ``round(current - baseline, 6)`` (the house rounded
+    arithmetic), the mean is bootstrapped, and a winner requires a CI
+    excluding zero AND ``round(mean_delta, 6) >= EPSILON``. A negative
+    winner is only a regression flag, never a defaults change. Empty input
+    is insufficient with a 0.0 noise floor.
+    """
+    if len(baseline_values) != len(current_values):
+        raise ValueError(
+            "baseline and current series must pair one-to-one; got "
+            f"{len(baseline_values)} and {len(current_values)} values"
+        )
+    deltas = [
+        round(current - baseline, 6)
+        for baseline, current in zip(baseline_values, current_values, strict=True)
+    ]
+    if not deltas:
+        return GateResult(
+            n=0,
+            baseline_mean=0.0,
+            current_mean=0.0,
+            mean_delta=0.0,
+            ci_low=0.0,
+            ci_high=0.0,
+            helped=0,
+            hurt=0,
+            unchanged=0,
+            noise_floor=0.0,
+            winner=False,
+            regression=False,
+            sufficient=False,
+        )
+    bootstrap = paired_bootstrap(deltas)
+    excludes_zero = bootstrap.ci_low > 0 or bootstrap.ci_high < 0
+    improvement = round(bootstrap.mean, 6) >= EPSILON
+    regression = round(bootstrap.mean, 6) <= -EPSILON
+    return GateResult(
+        n=len(deltas),
+        baseline_mean=_mean(baseline_values),
+        current_mean=_mean(current_values),
+        mean_delta=bootstrap.mean,
+        ci_low=bootstrap.ci_low,
+        ci_high=bootstrap.ci_high,
+        helped=sum(1 for delta in deltas if delta > 0),
+        hurt=sum(1 for delta in deltas if delta < 0),
+        unchanged=sum(1 for delta in deltas if delta == 0),
+        noise_floor=1.0 / len(deltas),
+        winner=excludes_zero and improvement,
+        regression=excludes_zero and regression,
+        sufficient=True,
+    )
+
+
+def group_noise_gates(
+    saved_queries: Sequence[SavedQueryRecord],
+    baseline_values: Sequence[float],
+    current_values: Sequence[float],
+) -> tuple[list[GroupGate], list[str]]:
+    """Per-group gates in declared order, with <10 groups named not zeroed.
+
+    Groups are keyed by the saved record's ``(leg, language, length_bucket)``
+    and emitted in ``LEGS x LANGUAGES x LENGTH_BUCKETS`` order. Only present
+    groups with 1..``SUPPRESS_BELOW``-1 queries are suppressed and named, so
+    an unobserved combination never produces a rendered zero row (D-08).
+    """
+    if not (len(saved_queries) == len(baseline_values) == len(current_values)):
+        raise ValueError("saved queries and both metric series must have equal lengths")
+    buckets: dict[tuple[str, str, str], list[int]] = {}
+    for index, record in enumerate(saved_queries):
+        if record.leg not in ("title", "body"):
+            continue
+        key = (record.leg, record.language, record.length_bucket)
+        buckets.setdefault(key, []).append(index)
+    groups: list[GroupGate] = []
+    suppressed: list[str] = []
+    for leg in ("title", "body"):
+        for language in LANGUAGES:
+            for length in LENGTH_BUCKETS:
+                indices = buckets.get((leg, language, length))
+                if not indices:
+                    continue
+                name = f"leg={leg}/language={language}/length={length}"
+                if len(indices) < SUPPRESS_BELOW:
+                    suppressed.append(name)
+                    continue
+                groups.append(
+                    GroupGate(
+                        leg=leg,
+                        language=language,
+                        length_bucket=length,
+                        gate=noise_gate(
+                            [baseline_values[index] for index in indices],
+                            [current_values[index] for index in indices],
+                        ),
+                    )
+                )
+    return groups, suppressed
+
+
+def replay_stability(
+    saved_replay: dict[str, Any],
+    current_top_k_paths: dict[str, list[str]],
+) -> ReplayStability:
+    """Replay stability against the saved snapshot (Jaccard@10 + top-1).
+
+    Only queries present on both sides are compared. ``available`` is False
+    when the saved run has no replay snapshot or no current top-k exists for
+    its queries; a missing side reports the reason instead of inventing a
+    number. Sets are compared order-insensitively, so top-1 stability is
+    reported alongside the Jaccard means.
+    """
+    saved_entries = saved_replay.get("queries", [])
+    baseline_available = bool(saved_entries)
+    if not baseline_available:
+        return ReplayStability(
+            available=False,
+            baseline_available=False,
+            num_queries=0,
+            jaccard_at_10=0.0,
+            top1_stability=0.0,
+            note="No saved replay snapshot; stability is unavailable for this comparison.",
+        )
+    joined = [entry for entry in saved_entries if entry["query"] in current_top_k_paths]
+    if not joined:
+        return ReplayStability(
+            available=False,
+            baseline_available=True,
+            num_queries=0,
+            jaccard_at_10=0.0,
+            top1_stability=0.0,
+            note="No current replay results for the saved queries; stability is unavailable.",
+        )
+    jaccards: list[float] = []
+    top1: list[float] = []
+    for entry in joined:
+        saved_paths = list(entry["top_k_paths"])
+        current_paths = list(current_top_k_paths[entry["query"]])
+        jaccards.append(jaccard(set(saved_paths[:10]), set(current_paths[:10])))
+        top1.append(
+            1.0
+            if saved_paths[:1] and current_paths[:1] and saved_paths[0] == current_paths[0]
+            else 0.0
+        )
+    return ReplayStability(
+        available=True,
+        baseline_available=True,
+        num_queries=len(joined),
+        jaccard_at_10=_mean(jaccards),
+        top1_stability=_mean(top1),
+        note=(
+            "Stability against the saved replay snapshot: Jaccard@10 and "
+            "top-1 match over the shared queries."
+        ),
+    )
+
+
+def require_matching_corpus(
+    saved: SavedRun,
+    current_metadata: Sequence[DocumentRecord],
+) -> str:
+    """Return the current fingerprint or refuse a different corpus (T-18-09).
+
+    The saved fingerprint is never trusted as the current value: it is
+    recomputed from ALL in-scope current metadata and compared, naming both
+    values on mismatch.
+    """
+    current = corpus_fingerprint(current_metadata)
+    if current != saved.corpus["fingerprint"]:
+        raise ValueError(
+            "Corpus fingerprint mismatch: saved run has "
+            f"{saved.corpus['fingerprint']!r}, current index has {current!r}; "
+            "refusing to compare different corpora."
+        )
+    return current
+
+
+def resolve_saved_targets(
+    saved: SavedRun,
+    conn: sqlite3.Connection,
+) -> list[str]:
+    """Resolve every saved target by document id first, then unique path.
+
+    Ids are looked up with a parameterized ``documents`` query; the path
+    fallback is used only when exactly one current document has that path.
+    Zero or multiple path matches raise a ``ValueError`` naming the path
+    instead of guessing (the same file may be indexed in two collections).
+    Saved paths are never opened; they are comparison keys only.
+    """
+    resolved: list[str] = []
+    for index, record in enumerate(saved.queries):
+        row = conn.execute(
+            "SELECT id FROM documents WHERE id = ? LIMIT 1",
+            (record.target_doc_id,),
+        ).fetchone()
+        if row is not None:
+            resolved.append(str(row[0]))
+            continue
+        rows = conn.execute(
+            "SELECT id FROM documents WHERE path = ? LIMIT 2",
+            (record.target_path,),
+        ).fetchall()
+        if len(rows) != 1:
+            matches = "no current document" if not rows else f"{len(rows)} current documents"
+            raise ValueError(
+                f"Saved query {index} target is missing from the current index: "
+                f"document id {record.target_doc_id!r} was not found and path "
+                f"{record.target_path!r} matches {matches}; refusing to guess."
+            )
+        resolved.append(str(rows[0][0]))
+    return resolved
+
+
+def _dedupe_first(values: Sequence[str]) -> list[str]:
+    """Drop repeated values, keeping each first occurrence's rank."""
+    seen: set[str] = set()
+    unique: list[str] = []
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        unique.append(value)
+    return unique
+
+
+def _baseline_query_metrics(record: SavedQueryRecord) -> tuple[float, float]:
+    """Recompute one baseline nDCG@10/Hit@10 from saved document ids.
+
+    Grading is id-keyed: grade 1 iff a retrieved id equals the record's
+    ``target_doc_id``. Repeated ids are deduped by first occurrence, so at
+    most one grade-1 hit exists and baseline nDCG@10 can never exceed 1.0.
+    Paths never decide a grade.
+    """
+    grades = [
+        1 if doc_id == record.target_doc_id else 0
+        for doc_id in _dedupe_first(record.retrieved_doc_ids)
+    ]
+    return (
+        ndcg_at_k(grades, [1], DEFAULT_K),
+        hit_at_k(grades, DEFAULT_K),
+    )
+
+
+def compare_saved_run(  # noqa: PLR0913
+    saved: SavedRun,
+    current_metadata: Sequence[DocumentRecord],
+    search_fn: Callable[[str], list[SearchResult]],
+    *,
+    conn: sqlite3.Connection,
+    retrieval: str,
+    model: dict[str, Any] | None,
+) -> ComparisonReport:
+    """Compare a saved run against the current engine, paired by construction.
+
+    Refuses a corpus-fingerprint mismatch; resolves targets by id (unique-path
+    fallback); evaluates exactly the saved query set in saved order through
+    ``SearchEvaluator.evaluate_per_query``; grades the saved arm through its
+    own ``retrieved_doc_ids`` against ``target_doc_id`` (first-occurrence
+    dedupe); and reports the seeded paired-bootstrap gate overall, per split,
+    and per group. The returned ``current_report`` is the single
+    ``PersonalReport`` contract ``run_to_saved`` consumes.
+    """
+    if not saved.queries:
+        raise ValueError(
+            "Saved run contains no query records; refusing to compare an empty query set."
+        )
+    fingerprint = require_matching_corpus(saved, current_metadata)
+    resolved_ids = resolve_saved_targets(saved, conn)
+    queries = [
+        SynthesizedQuery(
+            query=record.query,
+            target_doc_id=resolved_id,
+            target_path=record.target_path,
+            leg=record.leg,
+            language=record.language,
+            length_bucket=record.length_bucket,
+            split=record.split,
+        )
+        for record, resolved_id in zip(saved.queries, resolved_ids, strict=True)
+    ]
+    evaluations = evaluate_known_items(queries, search_fn)
+    baseline_pairs = [_baseline_query_metrics(record) for record in saved.queries]
+    baseline_ndcg = [pair[0] for pair in baseline_pairs]
+    baseline_hit = [pair[1] for pair in baseline_pairs]
+    current_ndcg = [evaluation.ndcg_at_10 for evaluation in evaluations]
+    current_hit = [evaluation.hit_at_10 for evaluation in evaluations]
+    overall = noise_gate(baseline_ndcg, current_ndcg)
+    split_indices: dict[str, list[int]] = {"tuning": [], "heldout": []}
+    for index, record in enumerate(saved.queries):
+        split_indices[record.split].append(index)
+    splits = {
+        split: noise_gate(
+            [baseline_ndcg[index] for index in indices],
+            [current_ndcg[index] for index in indices],
+        )
+        for split, indices in split_indices.items()
+    }
+    groups, suppressed = group_noise_gates(
+        saved.queries,
+        baseline_ndcg,
+        current_ndcg,
+    )
+    replay_queries = (
+        [entry["query"] for entry in saved.replay["queries"]] if saved.replay["available"] else []
+    )
+    current_replay = replay_leg(replay_queries, search_fn)
+    stability = replay_stability(saved.replay, current_replay.top_k_paths)
+    current_replay = replace(
+        current_replay,
+        baseline_available=stability.baseline_available,
+    )
+    synthesis = SynthesisResult(
+        queries=queries,
+        rejected_empty={"title": 0, "body": 0},
+        rejected_duplicate={"title": 0, "body": 0},
+        rejected_overlap={"title": 0, "body": 0},
+    )
+    current_report = build_personal_report(
+        retrieval=retrieval,
+        top_k=saved.top_k,
+        metadata=current_metadata,
+        sampled=(),
+        model=model,
+        synthesis=synthesis,
+        evaluations=evaluations,
+        replay=current_replay,
+        notes=[
+            "Comparison run: the saved query set was re-evaluated in saved "
+            "order with no synthesis, overlap filtering, or split reassignment."
+        ],
+        corpus=CorpusSummary(
+            documents=len(current_metadata),
+            sampled=saved.corpus["sampled"],
+            fingerprint=fingerprint,
+            widened=False,
+        ),
+    )
+    return ComparisonReport(
+        current_report=current_report,
+        baseline_metrics={
+            "ndcg_at_10": _mean(baseline_ndcg),
+            "hit_at_10": _mean(baseline_hit),
+            "num_queries": len(baseline_ndcg),
+        },
+        current_metrics={
+            "ndcg_at_10": _mean(current_ndcg),
+            "hit_at_10": _mean(current_hit),
+            "num_queries": len(current_ndcg),
+        },
+        overall=overall,
+        splits=splits,
+        groups=groups,
+        suppressed=suppressed,
+        replay=stability,
+        retrieval={"saved": saved.retrieval, "current": retrieval},
+        top_k=saved.top_k,
+        # Only the held-out summary gate can warrant a defaults change; the
+        # tuning and per-group gates are diagnostic (D-07, T-18-10).
+        warrants_default_change=splits["heldout"].winner,
+        model_mismatch=(saved.model != model),
+    )
