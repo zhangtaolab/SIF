@@ -595,8 +595,13 @@ def _run_fresh(  # noqa: PLR0913
             search = _search_fn(db, embedder, embedding_dim, options)
             evaluations = evaluate_known_items(synthesis.queries, search)
             # Replay runs after the known-item evaluation on the same hoisted
-            # pipeline and options; it never enters the metrics.
-            replay = replay_leg(load_replay_queries(db.connection), search)
+            # pipeline and options; it never enters the metrics. The setting
+            # is a global read opt-out (SIF_QUERY_HISTORY_ENABLED=0), so a
+            # disabled history must never read the local query_log (WR-04).
+            if settings.query_history_enabled:
+                replay = replay_leg(load_replay_queries(db.connection), search)
+            else:
+                replay = replay_leg([], search)
     except click.ClickException:
         raise
     except Exception as e:
@@ -616,6 +621,8 @@ def _run_fresh(  # noqa: PLR0913
             f"Sampling widened from the initial {INITIAL_SAMPLE_DOCUMENTS} "
             f"documents to {len(sampled)} to satisfy the held-out floor."
         )
+    if not settings.query_history_enabled:
+        notes.append("Replay skipped: SIF_QUERY_HISTORY_ENABLED=0 disables query-history reads.")
     if bm25_only:
         notes.append("Retrieval mode is BM25-only (--bm25-only): no embedder was loaded.")
     elif settings.model_type in _REMOTE_MODEL_TYPES:

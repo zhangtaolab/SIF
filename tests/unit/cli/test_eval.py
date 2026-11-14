@@ -946,6 +946,30 @@ class TestReplayCli:
         assert "queries 0" in table_result.output
         assert "CLI-biased" in table_result.output
 
+    def test_disabled_query_history_never_reads_the_log(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        db_path = build_personal_db(tmp_path / "personal.db", documents=60)
+        _seed(db_path, ["secret history query"])
+
+        _SpyPipeline.seen = []
+        result = _invoke(
+            db_path,
+            ["--personal", "--bm25-only", "--json"],
+            settings=_settings(tmp_path, query_history_enabled=False),
+            pipeline=_SpyPipeline,
+        )
+
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.stdout)
+        assert payload["replay"]["available"] is False
+        assert payload["replay"]["num_queries"] == 0
+        # The disabled read opt-out means the stored text never reaches the
+        # pipeline (and therefore never reaches a remote provider).
+        assert "secret history query" not in _SpyPipeline.seen
+        assert any("SIF_QUERY_HISTORY_ENABLED" in note for note in payload["notes"])
+
     def test_query_log_replays_normalized_sorted_unique_queries(self, tmp_path: Path) -> None:
         db_path = build_personal_db(tmp_path / "personal.db", documents=60)
         _seed(db_path, ["Zeta", "alpha", "  ALPHA  ", "beta"])
