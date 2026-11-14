@@ -1495,6 +1495,25 @@ class TestCompareCli:
         assert "queries" in result.output
         assert "Traceback" not in result.output
 
+    def test_compare_deeply_nested_saved_run_is_a_click_exception(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        db_path = build_personal_db(tmp_path / "personal.db", documents=60)
+        nested = tmp_path / "nested.json"
+        nested.write_text("[" * 100_000 + "]" * 100_000, encoding="utf-8")
+
+        result = _invoke(
+            db_path,
+            ["--personal", "--compare", str(nested), "--bm25-only", "--json"],
+            settings=_settings(tmp_path),
+            pipeline=_SpyPipeline,
+        )
+
+        assert result.exit_code == 1
+        assert "nested too deeply" in result.output
+        assert "Traceback" not in result.output
+
     def test_compare_warns_on_model_identity_mismatch(
         self,
         tmp_path: Path,

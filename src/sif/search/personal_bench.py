@@ -1682,6 +1682,11 @@ def load_saved_run(path: str | Path) -> SavedRun:
         )
     try:
         data = json.loads(source.read_text(encoding="utf-8"))
+    except RecursionError as error:
+        # CPython's JSON decoder raises RecursionError for deeply nested
+        # input (well under the byte cap); untrusted input must still become
+        # the documented ValueError, never a traceback (WR-03).
+        raise ValueError(f"Cannot load saved run {source}: JSON is nested too deeply") from error
     except (OSError, ValueError) as error:
         raise ValueError(f"Cannot load saved run {source}: {error}") from error
     try:

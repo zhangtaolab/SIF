@@ -1354,6 +1354,16 @@ def test_load_translates_corrupt_and_missing_files_to_value_error(tmp_path: Path
         load_saved_run(tmp_path / "missing.json")
 
 
+def test_load_translates_deeply_nested_json_to_value_error(tmp_path: Path) -> None:
+    nested = tmp_path / "nested.json"
+    # ~200 KB, well under the byte cap, but deep enough that CPython's JSON
+    # decoder raises RecursionError instead of ValueError (WR-03).
+    nested.write_text("[" * 100_000 + "]" * 100_000, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="nested too deeply"):
+        load_saved_run(nested)
+
+
 def test_load_treats_saved_paths_as_opaque_values(tmp_path: Path) -> None:
     data = _saved_dict()
     data["queries"][0]["target_path"] = "/nonexistent/target.md"
