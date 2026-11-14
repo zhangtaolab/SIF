@@ -20,7 +20,7 @@ Each maps to exactly one roadmap phase. Checkboxes mark committed scope.
 ### Quality Instrument (EVAL)
 
 - [x] **EVAL-01**: User can measure search quality on their own corpus via `sif eval --personal` (known-item synthesis through the legacy fixture schema + `SearchEvaluator` reuse + query_log replay with documented CLI-only bias).
-- [ ] **EVAL-02**: User can trust the personal bench's bias controls (paraphrase overlap budget; per-leg × per-language × per-category reports; hash-split tuning/held-out; paired deltas + noise gate).
+- [x] **EVAL-02**: User can trust the personal bench's bias controls (paraphrase overlap budget; per-leg × per-language × per-category reports; hash-split tuning/held-out; paired deltas + noise gate).
 
 ### Search Quality Tuning (QUAL)
 
@@ -134,7 +134,7 @@ Populated during roadmap creation. Each requirement maps to exactly one phase.
 | ENG-03 | Phase 17 | Complete |
 | ENG-04 | Phase 17 | Complete |
 | EVAL-01 | Phase 18 | Complete |
-| EVAL-02 | Phase 18 | Pending |
+| EVAL-02 | Phase 18 | Complete |
 | QUAL-01 | Phase 18 | Pending |
 | QUAL-02 | Phase 24 | Pending |
 | QUAL-03 | Phase 24 | Pending |

@@ -5,16 +5,16 @@ milestone_name: Search Precision and Agent Experience
 current_phase: 18
 current_phase_name: Quality Instrument (Personal Bench + rapidfuzz DYM)
 status: executing
-stopped_at: Completed 18-01-PLAN.md
-last_updated: "2026-11-14T14:42:20.920Z"
+stopped_at: Completed 18-02-PLAN.md
+last_updated: "2026-11-14T15:01:32.055Z"
 last_activity: 2026-11-14
 last_activity_desc: Phase 17 complete, transitioned to Phase 18
-state_head: bbaf3ce5e56e362e318f4e729e3f6937012cd53c
+state_head: 12c8014a29f5664911db8229faa328ff2d31766e
 progress:
   total_phases: 8
   completed_phases: 1
   total_plans: 13
-  completed_plans: 10
+  completed_plans: 11
 ---
 
 # DocSift — Project State
@@ -59,6 +59,7 @@ Progress: [█░░░░░░░░░] 13%
 | Phase 17 P06 | 3h30m | 3 tasks | 3 files |
 | Phase 17 P07 | 3h41m | 2 tasks | 4 files |
 | Phase 18 P01 | 8min | 3 tasks | 9 files |
+| Phase 18 P02 | 13min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -102,6 +103,10 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - [Phase 18]: 18-01: sampling is sha256(path\0checksum) digest then path then id; empty titles and NFC-normalized duplicate titles are counted rejections, never emitted
 - [Phase 18]: 18-01: hybrid is the eval default and fails loudly with the docsif[embed] + --bm25-only remedy; --bm25-only never constructs EmbeddingManager; openai/modelscope disclosure goes to stderr
 - [Phase 18]: 18-01: docs generator treats a subcommand-less Click group as a leaf, so sif eval has a generator-owned CLI reference section
+- [Phase 18]: 18-02: per-leg budget — title exact-term/unbudgeted, body token Jaccard <=0.60, replay not synthesized; empty/overlap/duplicate rejections are counted per leg.
+- [Phase 18]: 18-02: split = sha256(normalized query)[0] < 128; ensure_heldout widens the deterministic prefix from 50 docs toward min(corpus, 250) until 50 accepted / 25 held-out, loading bodies only for newly added docs.
+- [Phase 18]: 18-02: PersonalReport carries corpus/top_k/model/records with rank-aligned retrieved_doc_ids; groups emit in leg x language x length order and <10 groups are named, never rendered as zero.
+- [Phase 18]: 18-02: replay reads query_log only, normalizes/dedupes/sorts/caps at 500, stores rank-ordered paths only, and never enters known-item metrics/splits/groups.
 
 ### Pending Todos
 
@@ -131,8 +136,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-14T14:42:20.787Z
-Stopped at: Completed 18-01-PLAN.md
+Last session: 2026-11-14T15:01:31.934Z
+Stopped at: Completed 18-02-PLAN.md
 Resume file: None
 
 - **Next expected action:** run Phase 17 verification (`/gsd-verify-work 17`) to confirm the four ENG success criteria against the shipped state, then mark Phase 17 complete and proceed to Phase 18. Release evidence lives in `17-07-SUMMARY.md`: tag `v1.1.2` on `c819f67`, Publish run `43562577065` attempt 4 (all three jobs success), PyPI JSON `1.1.2` with the `mcp-name` marker, `pypi-attestations` `OK` against `https://github.com/zhangtaolab/SIF`, and both fresh-venv install proofs. Execution order for the rest of v1.2: 17 → 18 → 19 → 20 → 21 → 22 → 23 → 24; hard dependencies and cross-phase contracts in ROADMAP.md.
