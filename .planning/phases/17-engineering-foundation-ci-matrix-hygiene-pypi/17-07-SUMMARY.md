@@ -15,11 +15,11 @@ affects: []
 
 # Actuals (#2632) — partial: plan halted at Task 1's external publisher-config blocker after one retry
 actuals:
-  tokens: 12025
+  tokens: 5658
   tasks: 0
-  commits: 1
+  commits: 2
   plan_head_before: b0b4258535d50f552c5957ee5a28bb7999059f97
-  plan_head_after: 29514ef3c33e572d6967275af7a280831ca4945b
+  plan_head_after: ce05d7c3a1b5253a8bf7f1bac1f650c0f10cb0e0
 
 tech-stack:
   added: []
