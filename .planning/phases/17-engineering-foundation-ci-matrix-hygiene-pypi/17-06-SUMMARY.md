@@ -14,11 +14,11 @@ affects: [17-07]
 
 # Actuals (#2632) — partial: plan halted at Task 2's blocking human-action checkpoint
 actuals:
-  tokens: 3200
+  tokens: 4550
   tasks: 1
-  commits: 0
+  commits: 2
   plan_head_before: 5215d8bd7a9eecf3a3420b7651560425c783bc1a
-  plan_head_after: 5215d8bd7a9eecf3a3420b7651560425c783bc1a
+  plan_head_after: 661caff0c2ec71488d8ec83c185003b210abd42a
 
 tech-stack:
   added: []
@@ -164,7 +164,7 @@ The gate itself must be re-run after Task 2 because the branch push and the rele
 
 No commits for Task 1: it created external GitHub state only and modified no files. The plan's metadata commit (this SUMMARY, STATE.md, ROADMAP.md) is the only commit from this run.
 
-Measured commit count from the plan ledger (`plan_head_before` `5215d8b`): 0 task commits.
+Measured commit count from the plan ledger (`plan_head_before` `5215d8b`): 2 metadata commits (`1d95846`, `661caff`), 0 task commits — no product or test file changed in this run.
 
 ## Files Created/Modified
 
@@ -202,8 +202,9 @@ Do not use the workflow display name `Publish`; the registered value must be the
 
 ## Self-Check: PASSED (partial run)
 
-- Both environments exist and were re-read from the API after creation.
-- No file was created or modified except this SUMMARY; no product/test file changed.
+- Both environments exist, were re-read from the API after creation, and match `publish.yml`'s job environments.
+- `.planning/phases/17-engineering-foundation-ci-matrix-hygiene-pypi/17-06-SUMMARY.md` exists on disk.
+- Commits `1d95846` (this SUMMARY) and `661caff` (STATE + ROADMAP checkpoint record) are ancestors of HEAD; the measured ledger count is 2 metadata commits and 0 task commits (no product/test file changed).
 - No registration is claimed; the checkpoint explicitly states nothing was registered.
 
 ---
