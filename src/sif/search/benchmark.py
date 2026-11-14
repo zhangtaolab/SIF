@@ -214,6 +214,26 @@ class QueryItem:
     grades: dict[str, int] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class QueryEvaluation:
+    """One query's evaluated ranking (Phase 18, EVAL-01, additive).
+
+    Carries the fixture-comparison keys in rank order, their grades, and the
+    per-query metric pair. ``report()``/``BenchReport.to_dict()`` stay
+    byte-identical; this record is the per-query surface personal-bench
+    grouping and paired comparisons consume. ``retrieved_paths`` holds the
+    result paths exactly as the searcher returned them (saved-run substrate);
+    it never contains document content.
+    """
+
+    query: str
+    retrieved_keys: list[str]
+    retrieved_paths: list[str]
+    grades: list[int]
+    ndcg_at_10: float
+    hit_at_10: float
+
+
 @dataclass
 class CategoryMetrics:
     """Aggregated graded metrics for one reporting category."""
@@ -523,6 +543,38 @@ class SearchEvaluator:
         root = self.corpus_root if self.corpus_root is not None else Path()
         keys = [result_key(result, self.relevance_key, root) for result in results]
         return [item.grades.get(key, 0) for key in keys]
+
+    def evaluate_per_query(
+        self,
+        search_fn: Callable[[str], list[SearchResult]],
+        k: int = DEFAULT_K,
+    ) -> list[QueryEvaluation]:
+        """Run exactly one search per fixture query, returning per-query records.
+
+        Additive surface (Phase 18, EVAL-01): the metric math is the same
+        ``result_key``/``_grades_for``/``ndcg_at_k``/``hit_at_k`` path
+        ``report()`` uses, so a group-level report can be assembled after the
+        fact without reimplementing a single metric. Records follow fixture
+        order; no clock parameter (personal runs measure quality, not latency).
+        """
+        root = self.corpus_root if self.corpus_root is not None else Path()
+        evaluations: list[QueryEvaluation] = []
+        for item in self.query_items:
+            results = search_fn(item.query)
+            keys = [result_key(result, self.relevance_key, root) for result in results]
+            retrieved = self._grades_for(item, results)
+            ideal = list(item.grades.values())
+            evaluations.append(
+                QueryEvaluation(
+                    query=item.query,
+                    retrieved_keys=keys,
+                    retrieved_paths=[result.path for result in results],
+                    grades=retrieved,
+                    ndcg_at_10=ndcg_at_k(retrieved, ideal, k),
+                    hit_at_10=hit_at_k(retrieved, k),
+                )
+            )
+        return evaluations
 
     def evaluate(
         self,
