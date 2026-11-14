@@ -8,8 +8,10 @@ same query set on every machine (research Pitfall 9).
 
 Privacy (EVAL-01): the whole-corpus pass reads metadata columns only
 (``id, path, title, checksum, file_size``); document bodies are loaded solely
-for the bounded sampled subset (``load_sampled_content``), and nothing here
-uploads or serializes document content.
+for the bounded sampled subset (``load_sampled_content``). A saved run stores
+the synthesized body-leg query string — a short normalized excerpt of the
+sampled document's later prose (at most 10 tokens) — but never a full body,
+snippet, or embedding; nothing here uploads document content.
 
 Bias controls (EVAL-02): the title leg is exact-term and unbudgeted, the body
 leg rejects candidates whose token Jaccard against the target's title plus
@@ -262,7 +264,7 @@ class ReplayResult:
 
 @dataclass(frozen=True)
 class SavedQueryRecord:
-    """One query in a versioned saved run (D-10/D-12; never document content).
+    """One query in a versioned saved run (D-10/D-12; no full document body).
 
     ``retrieved`` and ``retrieved_doc_ids`` are rank-aligned: index ``i`` is
     the result at rank ``i`` (``""`` when that result carries no document id).
@@ -326,7 +328,12 @@ class PersonalReport:
     mode: str = "personal"
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize with a fixed key order and no document content."""
+        """Serialize with a fixed key order; query text and paths only.
+
+        A body-leg query string is a short synthesized excerpt of the target
+        document (documented in ``docs/benchmarking.md``); no full body,
+        snippet, or embedding is emitted.
+        """
         return {
             "mode": self.mode,
             "retrieval": self.retrieval,
@@ -1273,7 +1280,9 @@ def run_to_saved(report: PersonalReport) -> SavedRun:
     ``ComparisonReport.current_report``, so both paths share one record
     source and one ``created_at`` stamp (taken here, at call time).
     ``report.records`` map in order to query records; replay paths and the
-    corpus identity come from the same report. No document content is read.
+    corpus identity come from the same report. No document body is read: a
+    body-leg query string is the short synthesized excerpt documented in
+    ``docs/benchmarking.md``, never the document's full content.
     """
     return SavedRun(
         version=SAVED_RUN_VERSION,
@@ -1314,8 +1323,9 @@ def run_to_saved(report: PersonalReport) -> SavedRun:
 def saved_run_to_dict(run: SavedRun) -> dict[str, Any]:
     """Serialize a saved run with a fixed, versioned key order.
 
-    Every document-derived value is a path, an id, or a query string; no
-    document body, snippet, or embedding is ever emitted (T-18-08).
+    Every document-derived value is a path, an id, or the synthesized query
+    string (whose body-leg excerpt is documented in ``docs/benchmarking.md``);
+    no full document body, snippet, or embedding is ever emitted (T-18-08).
     """
     return {
         "version": run.version,

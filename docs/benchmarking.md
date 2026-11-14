@@ -168,7 +168,7 @@ Every run auto-saves one JSON file under the SIF cache directory unless `--no-sa
 <cache_dir>/eval/eval-<corpus-fingerprint[:12]>-<UTC timestamp>.json
 ```
 
-`<cache_dir>` is the platform cache directory (for example `~/Library/Caches/sif/eval/` on macOS or `~/.cache/sif/eval/` on Linux; `SIF_CACHE_DIR` overrides it). The run is versioned (`version: 1`) and holds only query text, target/retrieved paths and document ids, leg/language/length/split, grade, retrieval depth (`top_k`), corpus fingerprint and document counts, model identity, and replay paths. It never contains document content, snippets, or embeddings, lives only on the local machine, and is never uploaded. The `--json` payload carries `run_path`; the path itself is announced on stderr so stdout stays pipe-clean.
+`<cache_dir>` is the platform cache directory (for example `~/Library/Caches/sif/eval/` on macOS or `~/.cache/sif/eval/` on Linux; `SIF_CACHE_DIR` overrides it). The run is versioned (`version: 1`) and holds query text, target/retrieved paths and document ids, leg/language/length/split, grade, retrieval depth (`top_k`), corpus fingerprint and document counts, model identity, and replay paths. The only document-derived text in the file is the body-leg query string: a short normalized excerpt of the sampled document's later prose (at most 10 tokens, markup- and punctuation-stripped), stored as the query so `--compare` can replay it. The file never contains full document bodies, snippets, or embeddings; it lives only on the local machine and is never uploaded. The `--json` payload carries `run_path`; the path itself is announced on stderr so stdout stays pipe-clean.
 
 ### Comparing against a saved run (`--compare`)
 

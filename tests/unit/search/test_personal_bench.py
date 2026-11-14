@@ -1061,16 +1061,35 @@ class TestSavedRunContract:
 
         assert not path.exists()
 
-    def test_saved_file_contains_no_document_body_text(self, tmp_path: Path) -> None:
-        run = run_to_saved(_report_for_saved_runs())
+    def test_saved_file_stores_only_the_body_excerpt_never_the_full_body(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        excerpt = "document body 022 discusses local search quality retrieval metrics deterministic"
+        report = _report_for_saved_runs()
+        report = replace(
+            report,
+            records=[
+                report.records[0],
+                replace(report.records[1], query=excerpt, leg="body"),
+            ],
+        )
+        run = run_to_saved(report)
         path = tmp_path / "eval-run.json"
 
         write_saved_run(run, path)
         text = path.read_text(encoding="utf-8")
 
+        # The body-leg query text IS a short normalized excerpt and is saved
+        # as the query (so --compare can replay it) ...
+        assert excerpt in text
+        # ... but the document's full prose (opening context and tail) never
+        # reaches the file, and the forbidden content keys stay absent.
+        assert "Introductory context for note 022" not in text
+        assert "evaluation on a personal corpus" not in text
         assert '"content"' not in text
         assert '"body":' not in text
-        assert "Document body" not in text
+        assert '"snippet"' not in text
 
 
 _ENVELOPE_DEFECTS = [

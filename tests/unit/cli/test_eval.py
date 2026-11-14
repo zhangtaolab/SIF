@@ -1074,7 +1074,13 @@ class TestSavedRunsCli:
             assert len(record.retrieved) == len(record.retrieved_doc_ids)
         text = files[0].read_text(encoding="utf-8")
         assert '"content"' not in text
-        assert "Document body" not in text
+        # The body leg's query text is a short normalized excerpt and is
+        # stored as the query ...
+        assert "document body" in text
+        # ... but the fixture's full body (opening context and later prose)
+        # never reaches the saved file.
+        assert "Introductory context" not in text
+        assert "evaluation on a personal corpus" not in text
         assert "snippet" not in text
 
     def test_no_save_writes_no_run_and_reports_none(self, tmp_path: Path) -> None:
