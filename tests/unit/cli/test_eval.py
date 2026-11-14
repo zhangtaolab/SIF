@@ -492,3 +492,57 @@ def test_normalize_text_is_nfc_casefolded_and_whitespace_collapsed() -> None:
     assert normalize_text("  Same\t TITLE\n\n") == "same title"
     decomposed = unicodedata.normalize("NFD", "Café")
     assert normalize_text(decomposed) == normalize_text("Café")
+
+
+class TestDisclosureAndMarkup:
+    """T-18-15 provider disclosure and T-18-01 markup escaping."""
+
+    def test_remote_model_type_discloses_on_stderr_only(self, tmp_path: Path) -> None:
+        db_path = build_personal_db(tmp_path / "personal.db", documents=60)
+        settings = _settings(tmp_path, model_type="modelscope")
+
+        result = _invoke(
+            db_path,
+            ["--personal", "--json"],
+            settings=settings,
+            manager=_manager(),
+        )
+
+        assert result.exit_code == 0, result.output
+        # The stderr console notice names the provider and the local alternative.
+        assert "Embedding provider 'modelscope' is remote-capable" in result.stderr
+        assert "--bm25-only" in result.stderr
+        # Stdout is strict JSON; the report itself names the provider too.
+        payload = json.loads(result.stdout)
+        assert payload["model"]["model_type"] == "modelscope"
+        assert any("remote-capable" in note for note in payload["notes"])
+
+    def test_bm25_only_prints_no_remote_disclosure(self, tmp_path: Path) -> None:
+        db_path = build_personal_db(tmp_path / "personal.db", documents=60)
+        settings = _settings(tmp_path, model_type="modelscope")
+
+        result = _invoke(
+            db_path,
+            ["--personal", "--bm25-only", "--json"],
+            settings=settings,
+            pipeline=_SpyPipeline,
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "remote-capable" not in result.stderr
+
+    def test_model_name_markup_is_escaped_in_the_table(self, tmp_path: Path) -> None:
+        db_path = build_personal_db(tmp_path / "personal.db", documents=60)
+        settings = _settings(tmp_path, model_name="[bold]evil[/bold]")
+
+        result = _invoke(
+            db_path,
+            ["--personal"],
+            settings=settings,
+            manager=_manager(),
+            pipeline=_SpyPipeline,
+        )
+
+        assert result.exit_code == 0, result.output
+        # Escaped markup renders literally; unescaped markup would print "evil".
+        assert "[bold]evil[/bold]" in result.output
