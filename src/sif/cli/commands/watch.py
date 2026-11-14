@@ -54,6 +54,7 @@ from sif.database.repositories import CollectionRepository
 from sif.indexing.watcher import FileWatcher, WatchConfig
 from sif.utils import daemon, service
 from sif.utils.logging import get_logger
+from sif.utils.progress import spinner_name
 
 
 console = Console()
@@ -192,7 +193,7 @@ def run_watch_host(db: Database, selected: list[Collection], params: WatchHostPa
         for coll in selected:
             console.print(f"\n[bold]Reconciling collection: {escape(coll.name)}[/bold]")
             with Progress(
-                SpinnerColumn(),
+                SpinnerColumn(spinner_name(console)),
                 TextColumn("[progress.description]{task.description}"),
                 console=console,
             ) as progress:

@@ -22,6 +22,7 @@ from sif.database.repositories import (
 )
 from sif.indexing.chunker import create_chunker, token_size_to_chars
 from sif.indexing.incremental import IncrementalIndexer
+from sif.utils.progress import spinner_name
 
 
 console = Console()
@@ -89,7 +90,7 @@ def update_cmd(ctx: click.Context, collection: str | None, force: bool) -> None:
                 _run_pre_update_hook(coll)
 
                 with Progress(
-                    SpinnerColumn(),
+                    SpinnerColumn(spinner_name(console)),
                     TextColumn("[progress.description]{task.description}"),
                     console=console,
                 ) as progress:

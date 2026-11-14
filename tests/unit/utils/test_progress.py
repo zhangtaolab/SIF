@@ -1,8 +1,11 @@
 """Behavior tests for Rich and no-op progress trackers."""
 
+import io
+
+from rich.console import Console
 from rich.progress import BarColumn, SpinnerColumn, TaskID, TextColumn
 
-from sif.utils.progress import NullProgressTracker, RichProgressTracker
+from sif.utils.progress import NullProgressTracker, RichProgressTracker, spinner_name
 
 
 class TestProgressTracker:
@@ -91,3 +94,40 @@ class TestProgressTracker:
         assert tracker.update() is None
         assert tracker.update(3) is None
         assert tracker.finish() is None
+
+
+class _EncodedStream(io.StringIO):
+    """A text stream with a pinned declared encoding for the spinner probe."""
+
+    def __init__(self, encoding: str | None) -> None:
+        super().__init__()
+        self._declared_encoding = encoding
+
+    @property
+    def encoding(self) -> str | None:
+        """Report the pinned encoding instead of StringIO's read-only one."""
+        return self._declared_encoding
+
+
+class TestSpinnerName:
+    """Spinner frames degrade to ASCII when the stream cannot encode braille."""
+
+    def test_utf8_stream_keeps_default_braille_spinner(self) -> None:
+        """A UTF-8 stream can encode the default braille frames."""
+        assert spinner_name(Console(file=_EncodedStream("utf-8"))) == "dots"
+
+    def test_gbk_stream_falls_back_to_ascii_spinner(self) -> None:
+        """A GBK stream cannot encode braille, so ASCII frames are selected."""
+        assert spinner_name(Console(file=_EncodedStream("gbk"))) == "line"
+
+    def test_ascii_stream_falls_back_to_ascii_spinner(self) -> None:
+        """A pure-ASCII stream also degrades to the ASCII spinner."""
+        assert spinner_name(Console(file=_EncodedStream("ascii"))) == "line"
+
+    def test_unknown_encoding_falls_back_to_ascii_spinner(self) -> None:
+        """An unknown codec is treated as unsafe rather than crashing the CLI."""
+        assert spinner_name(Console(file=_EncodedStream("not-a-real-codec"))) == "line"
+
+    def test_stream_without_encoding_keeps_default_spinner(self) -> None:
+        """A stream that declares no encoding keeps the default spinner."""
+        assert spinner_name(Console(file=_EncodedStream(None))) == "dots"

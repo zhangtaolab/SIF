@@ -2,12 +2,40 @@
 
 from typing import Protocol
 
+from rich import get_console
+from rich.console import Console
 from rich.progress import BarColumn, Progress as RichProgress, SpinnerColumn, TaskID, TextColumn
 
 from sif.utils.logging import get_logger
 
 
 logger = get_logger(__name__)
+
+# First frame of Rich's default "dots" spinner; used only as an encoding probe.
+_SPINNER_PROBE_FRAME = "⠋"
+_BRAILLE_SPINNER = "dots"
+_ASCII_SPINNER = "line"
+
+
+def spinner_name(console: Console | None = None) -> str:
+    """Return a Rich spinner whose frames the console's stream can encode.
+
+    Rich's default "dots" spinner renders braille frames. On a legacy Windows
+    console whose output is redirected to a non-UTF-8 code page (for example
+    GBK), writing the final live frame raises ``UnicodeEncodeError`` and turns
+    an otherwise successful command into a raw traceback. The "line" spinner
+    is pure ASCII, so it degrades honestly on any ASCII-compatible code page
+    (ENG-02).
+    """
+    stream = (console or get_console()).file
+    encoding = getattr(stream, "encoding", None)
+    if not encoding:
+        return _BRAILLE_SPINNER
+    try:
+        _SPINNER_PROBE_FRAME.encode(encoding)
+    except (LookupError, UnicodeEncodeError):
+        return _ASCII_SPINNER
+    return _BRAILLE_SPINNER
 
 
 class ProgressTracker(Protocol):
@@ -41,7 +69,10 @@ class RichProgressTracker:
             description: Task description
             total: Total items (None for indeterminate)
         """
-        columns = [SpinnerColumn(), TextColumn("[progress.description]{task.description}")]
+        columns = [
+            SpinnerColumn(spinner_name()),
+            TextColumn("[progress.description]{task.description}"),
+        ]
         if total:
             columns.extend(
                 [BarColumn(), TextColumn("[progress.percentage]{task.percentage:>3.0f}%")]
