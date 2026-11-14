@@ -247,6 +247,8 @@ The watch hosts run steps 7–10 continuously as filesystem events settle, and o
 
 The MCP `query` tool takes the same path without the CLI's drift check: `SearchBackend.hybrid_search()` builds a `SearchPipeline` per call on a fresh `DatabaseConnection` inside an `asyncio.to_thread` worker.
 
+Quality is measured alongside this path rather than inside it: `sif bench` scores the committed synthetic fixture, while `sif eval --personal` (`sif/search/personal_bench.py`) synthesizes deterministic known-item queries from the user's own indexed documents and gates comparisons between saved runs on a paired-bootstrap confidence interval.
+
 ## Watch Hosts and Index Freshness
 
 Live indexing is built on one host-agnostic core. `FileWatcher` (`sif/indexing/watcher.py`) owns the observer → debouncer → `fold_events` → worker-thread → per-burst `index_lock` → `IncrementalIndexer` pipeline. Hosts supply `on_event`/`on_batch` callbacks, so the core imports no UI. Depth is tiered: updates are BM25-only by default, and `--embed` (or `SIF_WATCH_UPDATE_DEPTH=embed`) opts into an inline chunk-and-embed leg that computes embeddings outside write transactions.
@@ -669,10 +671,11 @@ Two SQLite-backed cache surfaces exist:
 
 ## Suggestions and Query History
 
-`sif suggest QUERY` and the did-you-mean path share one `SuggestionEngine` (`sif/search/suggest.py`) that ranks three display-only sections: prefix completions and did-you-mean rewrites from the `documents_fts_v` vocabulary, and history from the `query_log` table. The engine never rewrites or re-executes a user's query, and every `sqlite3.OperationalError` path degrades to empty suggestions with a warning rather than failing the command.
+`sif suggest QUERY` and the did-you-mean path share one `SuggestionEngine` (`sif/search/suggest.py`) that ranks three display-only sections: prefix completions and did-you-mean rewrites from the `documents_fts_v` vocabulary, and history from the `query_log` table. Prefix completions are a bisect over the sorted stems; did-you-mean scores every out-of-vocab token against the full vocabulary with rapidfuzz's Indel ratio (`fuzz.ratio`, 0-100 scale, internal cutoff 75.0 — no setting or flag) and orders matches by score, then term, then document frequency. The engine never rewrites or re-executes a user's query, every emitted rewrite still probes the index and returns at least one hit, and every `sqlite3.OperationalError` path degrades to empty suggestions with a warning rather than failing the command.
 
 - **History writes**: the CLI search trio records `(query, result count, collections)` through `QueryLogRepository.add()`, which trims to the most recent `SIF_QUERY_HISTORY_LIMIT` rows (default 500) in the same transaction. `SIF_QUERY_HISTORY_ENABLED=0` disables both writes and reads; `sif suggest --clear-history` empties the table.
 - **Ranking**: history weight halves every 14 days of age; suggestions are truncated and escaped before display so bracketed text renders literally.
+- **Tokenizer-bounded recall**: did-you-mean candidates come from the FTS5 porter vocabulary, so CJK lexical recall stays bounded by the tokenizer (a contiguous CJK run is one term). The rapidfuzz swap fixes Latin-script first-letter typos; it does not claim a Chinese did-you-mean improvement.
 
 ## Context System
 
@@ -702,7 +705,8 @@ The seams that make the layering work, as a quick index. Code for several of the
 | Domain entities: `Collection`, `Document`, `DocumentChunk`, `SearchResult`, `SearchOptions`, `PathContext`, `QueryLogEntry` | `sif/core/models.py`, `sif/core/collection.py`, `sif/core/document.py` | Plain dataclasses exchanged across every layer, free of I/O and framework coupling. |
 | Repository protocols (`CollectionRepository`, `DocumentRepository`, `ContextRepository`) and the `Repository` ABC | `sif/core/collection.py`, `sif/core/document.py`, `sif/core/context.py`, `sif/database/repository.py` | Callers use the concrete SQLite repositories (`sif/database/repositories.py`) directly; those classes provide the operations but do not inherit these protocols, and the `Repository` ABC is exercised only by tests. |
 | `SearchPipeline` / `HybridSearcher` | `sif/search/hybrid.py` | Orchestration: prefix routing (`lex:`, `vec:`, `hyde:`, `expand:`), RRF fusion, optional query expansion and reranking, snippet extraction, context and staleness attachment. |
-| `SuggestionEngine` | `sif/search/suggest.py` | Display-only prefix completions, did-you-mean rewrites, and history ranking over the FTS vocabulary and `query_log`. |
+| `SuggestionEngine` | `sif/search/suggest.py` | Display-only prefix completions, did-you-mean rewrites scored with the full-vocabulary rapidfuzz Indel ratio (`fuzz.ratio`, 0-100, cutoff 75.0), and history ranking over the FTS vocabulary and `query_log`. |
+| `PersonalBench` (personal eval) | `sif/search/personal_bench.py` | Deterministic personal-corpus known-item bench: title/body synthesis, per-leg overlap budget, sha256 sampling and split, grouped reports, saved-run comparison, and a paired-bootstrap noise gate. |
 | `Chunker` hierarchy and `create_chunker()` | `sif/indexing/chunker.py` | Chunking strategies (`FixedSizeChunker`, `MarkdownChunker`, `CodeChunker`, `AutoChunker`) selected by a factory function. |
 | `IncrementalIndexer`, `FileWatcher`, `drift` helpers | `sif/indexing/incremental.py`, `sif/indexing/watcher.py`, `sif/indexing/drift.py` | The one per-file update loop, the host-agnostic live-index pipeline, and bounded pre-search refresh. |
 | `EmbeddingModel` (ABC), `EmbeddingModelFactory`, `EmbeddingManager` | `sif/embedding/model.py`, `sif/embedding/factory.py`, `sif/embedding/manager.py` | Provider isolation: the factory builds an embedder per `ModelType` (llama.cpp GGUF, Sentence Transformers, OpenAI-compatible, ModelScope); the manager lazy-loads and caches the instance and fronts the embedding cache. |

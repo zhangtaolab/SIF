@@ -15,10 +15,11 @@ never crash a search command.
 from __future__ import annotations
 
 import bisect
-import difflib
 import math
 import sqlite3
 from datetime import datetime, timezone
+
+from rapidfuzz import fuzz, process
 
 from sif.config.settings import Settings, get_settings
 from sif.database.repositories import QueryLogRepository
@@ -39,6 +40,15 @@ _VOCAB_DDL = """
 # Prefix completions below this length would enumerate huge ranges for
 # near-zero signal (planner discretion, pinned by test).
 MIN_PREFIX_LEN = 2
+
+# Did-you-mean similarity cutoff on rapidfuzz's Indel 0-100 scale (QUAL-01,
+# D-14/D-16): an internal constant, never a setting or flag. Re-measured
+# 2026-11-14 on the committed bench vocabulary (422 porter stems) and a
+# 73k-term synthetic vocabulary: cutoff 70 admits ~15% more candidates with no
+# additional first-letter recall, cutoff 80 loses recall (0.799-0.813 vs
+# 0.956-1.000), and 75 keeps the high-recall point at ~1.7 ms/query. The
+# cutoff is inclusive (>=).
+_DYM_CUTOFF = 75.0
 
 # History ranking half-life (planner discretion, D-13): a query's weight
 # halves every 14 days of age.
@@ -248,30 +258,30 @@ class SuggestionEngine:
         return tokens
 
     def _close_matches(self, token: str, n: int = 3) -> list[str]:
-        """Close vocab matches for a candidate token over a first-letter±1 bucket.
+        """Close vocab matches for a candidate token over the full vocabulary.
 
         ``n`` bounds each candidate's alternate matches and, through
         ``_expand_variants``, the DYM section — ``sif suggest --limit`` flows
-        here so every section honours the flag (WR-02). Full-vocab difflib
-        costs ~46 ms/word at 73k terms (measured); the bucket prefilter cuts
-        that to ~11 ms at a documented recall cost (first-letter typos ≥ 2
-        letters away escape the bucket — Pitfall 2). Equal-ratio matches
-        resolve in sorted-term order: difflib's internal ``nlargest`` breaks
-        ties by heap mechanics, so the returned matches are re-sorted here by
-        (ratio desc, term asc) for a stable, reproducible order across
-        interpreters.
+        here so every section honours the flag (WR-02). QUAL-01: the old
+        first-letter±1 bucket recalled only 7.0% of first-letter typos; this
+        full-vocabulary rapidfuzz Indel scan (``fuzz.ratio``, 0-100) recalls
+        them at 0.956-1.000 on the measured typo batteries at the pinned
+        ``_DYM_CUTOFF`` and costs ~1.7 ms/query at 73k terms. ``limit=None``
+        returns every above-cutoff candidate so the document-frequency
+        tie-break is real; the explicit sort fixes output order as score
+        desc -> term asc -> df desc, deterministic for a fixed vocabulary.
         """
-        first = ord(token[0])
-        bucket = [term for term in self._terms if abs(ord(term[0]) - first) <= 1]
-        matches = difflib.get_close_matches(token, bucket, n=n, cutoff=0.75)
-        if len(matches) > 1:
-            matches.sort(key=lambda term: (-_ratio(term, token), term))
-        return matches
-
-
-def _ratio(left: str, right: str) -> float:
-    """Similarity ratio for two short strings (tie-break ordering)."""
-    return difflib.SequenceMatcher(None, left, right).ratio()
+        if not token or not self._terms:
+            return []
+        matches = process.extract(
+            token,
+            self._terms,
+            scorer=fuzz.ratio,
+            limit=None,
+            score_cutoff=_DYM_CUTOFF,
+        )
+        matches.sort(key=lambda match: (-match[1], match[0], -self._df.get(match[0], 0)))
+        return [term for term, _score, _index in matches[:n]]
 
 
 def _rank_history(
