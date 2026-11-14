@@ -104,9 +104,9 @@ Full detail: `.planning/milestones/v1.1-ROADMAP.md`
   1. User can run `sif eval --personal` on their own indexed corpus with no manual labeling — known-item synthesis through the legacy fixture schema + `SearchEvaluator` reuse + query_log replay produce a quality report, with the CLI-only replay bias documented
   2. User can trust the personal bench's numbers — paraphrase overlap budget enforced, per-leg × per-language × per-category reports, hash-split tuning/held-out separation, paired deltas with a noise gate (one query ≈ 0.014 nDCG at personal N vs the 0.01 tie rule)
   3. User gets faster, higher-recall did-you-mean suggestions — rapidfuzz measured swap drops first-letter bucketing, stays within the ≤10 ms budget, cutoff deliberately re-measured on the 0–100 Indel scale, tie-break/probe contracts preserved
-**Plans:** 4 plans
+**Plans:** 1/4 plans executed
 **Wave 1**
-- [ ] 18-01-PLAN.md — Personal-eval tracer: title-leg known-item measurement end-to-end + docs generator leaf-group fix
+- [x] 18-01-PLAN.md — Personal-eval tracer: title-leg known-item measurement end-to-end + docs generator leaf-group fix
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 18-02-PLAN.md — Body/replay legs + per-leg overlap budget + hash split/suppressed group report
@@ -205,7 +205,7 @@ v1.2 contracts — defined ONCE; downstream phases consume, never redefine:
 | 16. Bench Expansion + Reranker Tuning | v1.1 | 6/6 | Complete    | 2026-11-09 |
 | 16.1. Address tech debt (CLI errors + cache TTL + enqueue API) | v1.1 | 5/5 | Complete    | 2026-11-12 |
 | 17. Engineering Foundation (CI + Hygiene + PyPI) | v1.2 | 9/9 | Complete    | 2026-11-14 |
-| 18. Quality Instrument (Personal Bench + rapidfuzz) | v1.2 | 0/4 | Planned | - |
+| 18. Quality Instrument (Personal Bench + rapidfuzz) | v1.2 | 1/4 | In Progress | - |
 | 19. Search Correctness | v1.2 | 0/TBD | Not started | - |
 | 20. Metadata Filtering + Discovery | v1.2 | 0/TBD | Not started | - |
 | 21. Scale, Maintenance + Embedder Identity | v1.2 | 0/TBD | Not started | - |

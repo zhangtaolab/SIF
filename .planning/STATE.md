@@ -5,16 +5,16 @@ milestone_name: Search Precision and Agent Experience
 current_phase: 18
 current_phase_name: Quality Instrument (Personal Bench + rapidfuzz DYM)
 status: executing
-stopped_at: Phase 18 context gathered
-last_updated: "2026-11-14T14:29:21.626Z"
+stopped_at: Completed 18-01-PLAN.md
+last_updated: "2026-11-14T14:42:20.920Z"
 last_activity: 2026-11-14
 last_activity_desc: Phase 17 complete, transitioned to Phase 18
-state_head: ba8cd96052f9b60cabe06f7efd02fb9a135c23a9
+state_head: bbaf3ce5e56e362e318f4e729e3f6937012cd53c
 progress:
   total_phases: 8
   completed_phases: 1
   total_plans: 13
-  completed_plans: 9
+  completed_plans: 10
 ---
 
 # DocSift — Project State
@@ -58,6 +58,7 @@ Progress: [█░░░░░░░░░] 13%
 | Phase 17 P09 | 3min | 2 tasks | 8 files |
 | Phase 17 P06 | 3h30m | 3 tasks | 3 files |
 | Phase 17 P07 | 3h41m | 2 tasks | 4 files |
+| Phase 18 P01 | 8min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -97,6 +98,10 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - [Phase 17]: 17-07: the TestPyPI blocker was the pending publisher; after the maintainer created and verified it (project docsif, publisher GitHub, repository zhangtaolab/SIF, workflow publish.yml, environment testpypi) the very next OIDC attempt minted successfully — the claim set had been correct all along and no further publisher change was needed
 - [Phase 17]: 17-07: attestation verification must use the canonical repository case https://github.com/zhangtaolab/SIF — pypi-attestations 0.0.31 compares the signed repository string to the URL path with an exact case-sensitive !=, so the lowercase URL in the PyPI docs example reports a false identity mismatch; the canonical-case run prints OK
 - [Phase 17]: 17-07: version 1.1.2 is now legitimately consumed by a complete release (nothing was uploaded on attempts 1-3); no patch bump, no artifact mutation, and no manual upload was needed
+- [Phase 18]: 18-01: title leg is exact-term (one title query per sampled doc, no overlap budget) and reuses the legacy binary fixture schema (target=1); the additive SearchEvaluator.evaluate_per_query keeps bench output byte-identical
+- [Phase 18]: 18-01: sampling is sha256(path\0checksum) digest then path then id; empty titles and NFC-normalized duplicate titles are counted rejections, never emitted
+- [Phase 18]: 18-01: hybrid is the eval default and fails loudly with the docsif[embed] + --bm25-only remedy; --bm25-only never constructs EmbeddingManager; openai/modelscope disclosure goes to stderr
+- [Phase 18]: 18-01: docs generator treats a subcommand-less Click group as a leaf, so sif eval has a generator-owned CLI reference section
 
 ### Pending Todos
 
@@ -126,8 +131,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-14T13:09:36.764Z
-Stopped at: Phase 18 context gathered
-Resume file: /Users/forrest/GitHub/SIF/.planning/phases/18-quality-instrument-personal-bench-rapidfuzz-dym/18-CONTEXT.md
+Last session: 2026-11-14T14:42:20.787Z
+Stopped at: Completed 18-01-PLAN.md
+Resume file: None
 
 - **Next expected action:** run Phase 17 verification (`/gsd-verify-work 17`) to confirm the four ENG success criteria against the shipped state, then mark Phase 17 complete and proceed to Phase 18. Release evidence lives in `17-07-SUMMARY.md`: tag `v1.1.2` on `c819f67`, Publish run `43562577065` attempt 4 (all three jobs success), PyPI JSON `1.1.2` with the `mcp-name` marker, `pypi-attestations` `OK` against `https://github.com/zhangtaolab/SIF`, and both fresh-venv install proofs. Execution order for the rest of v1.2: 17 → 18 → 19 → 20 → 21 → 22 → 23 → 24; hard dependencies and cross-phase contracts in ROADMAP.md.
