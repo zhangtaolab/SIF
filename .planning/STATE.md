@@ -5,16 +5,16 @@ milestone_name: Search Precision and Agent Experience
 current_phase: 17
 current_phase_name: Engineering Foundation (CI Matrix + Hygiene + PyPI)
 status: executing
-stopped_at: Completed 17-04-PLAN.md
-last_updated: "2026-11-14T01:26:55.900Z"
+stopped_at: Completed 17-08-PLAN.md
+last_updated: "2026-11-14T01:36:43.092Z"
 last_activity: 2026-11-13
 last_activity_desc: Phase 17 execution started
-state_head: 48759e2c532d01d92a0deef08520a58c41115378
+state_head: 2926b9f1696d1f63a4a3e6d5164398cb0f5da34a
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 9
-  completed_plans: 4
+  completed_plans: 5
 ---
 
 # DocSift — Project State
@@ -31,7 +31,7 @@ progress:
 ## Current Position
 
 Phase: 17 (Engineering Foundation (CI Matrix + Hygiene + PyPI)) — EXECUTING
-Plan: 5 of 9
+Plan: 6 of 9
 Status: Ready to execute
 Last activity: 2026-11-13 — Phase 17 execution started
 
@@ -53,6 +53,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 17 P02 | 6min | 2 tasks | 4 files |
 | Phase 17 P03 | 21min | 3 tasks | 4 files |
 | Phase 17 P04 | 30min | 3 tasks | 10 files |
+| Phase 17 P08 | 9 | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -73,6 +74,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - [Phase 17]: LlamaCppReranker validates the missing model path before importing llama_cpp so clean dev+embed CI environments raise the documented ValueError
 - [Phase 17]: Windows degradation guards sit at both detach boundaries (daemon.detach RuntimeError + CLI ClickException) and in _service_manager for win32; the yoga smoke is argv-only, temp-DB, and model-free, with evidence recorded as smoke_head in the SUMMARY
 - [Phase 17]: Rich spinners select the ASCII 'line' spinner when the console stream cannot encode braille frames (GBK) — found by the first yoga smoke as a UnicodeEncodeError on the missing-root path
+- [Phase 17]: Docs absence guards scan docs/**/*.md (changelog exempt by resolved path) plus DESIGN.md for dotted imports, slash paths, and bare name.py tree entries in one literal list
+- [Phase 17]: Removed stale models/search.py tree entries from architecture.md and DESIGN.md alongside the migrations.py/strategy.py rows; bandit VERIFY guard asserts exactly one docs marker remains
 
 ### Pending Todos
 
@@ -101,8 +104,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-14T01:26:55.882Z
-Stopped at: Completed 17-04-PLAN.md
+Last session: 2026-11-14T01:36:43.073Z
+Stopped at: Completed 17-08-PLAN.md
 Resume file: None
 
 - **Next expected action:** `/gsd-plan-phase 17` (Engineering Foundation). Execution order locked: 17 → 18 → 19 → 20 → 21 → 22 → 23 → 24; hard dependencies and cross-phase contracts in ROADMAP.md.
