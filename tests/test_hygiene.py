@@ -59,6 +59,11 @@ def _doc_files() -> list[Path]:
     return files
 
 
+def _docs_without_changelog() -> list[Path]:
+    """Return every docs page except the changelog (release history is exempt)."""
+    return [path for path in sorted(DOCS_ROOT.rglob("*.md")) if path.resolve() != CHANGELOG_PATH]
+
+
 def _offenders(literal: str) -> list[str]:
     """Return repo-relative paths whose source text contains ``literal``."""
     return [
@@ -128,6 +133,42 @@ def test_docs_do_not_describe_dead_layers() -> None:
     ]
     if offenders:
         pytest.fail("dead-layer documentation survives:\n" + "\n".join(offenders))
+
+
+def test_docs_do_not_mention_pre_commit_target() -> None:
+    """No docs page promises a pre-commit target the repository does not have."""
+    offenders = [
+        f"{token!r} in {path.relative_to(REPO_ROOT)}"
+        for token in ("make pre-commit", "pre-commit install", "pre-commit autoupdate")
+        for path in _docs_without_changelog()
+        if token in path.read_text(encoding="utf-8")
+    ]
+    if offenders:
+        pytest.fail("phantom pre-commit guidance survives:\n" + "\n".join(offenders))
+
+
+def test_pre_commit_verify_markers_cleared() -> None:
+    """No VERIFY marker about the phantom pre-commit flow survives."""
+    offenders = [
+        str(path.relative_to(REPO_ROOT))
+        for path in _docs_without_changelog()
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if "VERIFY:" in line and "pre-commit" in line
+    ]
+    if offenders:
+        pytest.fail("pre-commit VERIFY markers survive in: " + ", ".join(offenders))
+
+
+def test_bandit_verify_marker_retained() -> None:
+    """Exactly one docs VERIFY marker survives, and it is the bandit marker."""
+    markers = [
+        f"{path.relative_to(REPO_ROOT)}: {line.strip()}"
+        for path in _docs_without_changelog()
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if "VERIFY:" in line
+    ]
+    assert len(markers) == 1, f"expected exactly one docs VERIFY marker, found: {markers}"
+    assert "bandit" in markers[0], f"surviving VERIFY marker is not the bandit one: {markers[0]}"
 
 
 def test_quickstart_example_compiles() -> None:

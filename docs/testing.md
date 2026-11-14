@@ -17,10 +17,6 @@ Install them together with the package:
 pip install -e ".[dev]"
 ```
 
-`make install-dev` performs the same install and then runs `pre-commit install` to install the repository's Git hooks.
-
-<!-- VERIFY: make install-dev ends with `pre-commit install`, but no .pre-commit-config.yaml is present in the repository -->
-
 Pytest is configured in the `[tool.pytest.ini_options]` section of `pyproject.toml`:
 
 | Option | Value | Meaning |
@@ -183,7 +179,7 @@ The pack lives in `tests/fixtures/bench/` and its structure and tuning/held-out 
 
 ### Updating documentation tests
 
-`tests/test_docs.py` validates only the files listed in its `DOCS_FILES` constant. If you add a new docs page containing runnable code blocks, add its path to `DOCS_FILES` so its examples are validated too. Commands that must not execute are excluded via `SKIP_COMMAND_PATTERNS` in the same file — currently `mcp http`, `mcp daemon`, `mcp stdio`, `pull `, `index embed`, `pip install`, `git clone`, `git checkout`, `pre-commit install`, and `bench `. The module's 13 tests also guard against removed command names (`sif collection create`, `sif mcp start`, and others), stale default model names, bare `sif search <query>` usage, positional arguments on option-only commands, phantom environment variables in `configuration.md`, and drift between `cli-reference.md` and the live Click command tree.
+`tests/test_docs.py` validates only the files listed in its `DOCS_FILES` constant. If you add a new docs page containing runnable code blocks, add its path to `DOCS_FILES` so its examples are validated too. Commands that must not execute are excluded via `SKIP_COMMAND_PATTERNS` in the same file — currently `mcp http`, `mcp daemon`, `mcp stdio`, `pull `, `index embed`, `pip install`, `git clone`, `git checkout`, and `bench `. The module's 13 tests also guard against removed command names (`sif collection create`, `sif mcp start`, and others), stale default model names, bare `sif search <query>` usage, positional arguments on option-only commands, phantom environment variables in `configuration.md`, and drift between `cli-reference.md` and the live Click command tree.
 
 ## Coverage
 

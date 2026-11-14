@@ -41,7 +41,6 @@ SKIP_COMMAND_PATTERNS = [
     "pip install",
     "git clone",
     "git checkout",
-    "pre-commit install",
     "bench ",
 ]
 

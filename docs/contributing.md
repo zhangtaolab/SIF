@@ -383,7 +383,7 @@ The `Makefile` wraps the common development commands:
 
 | Target | What it runs | Notes |
 |--------|--------------|-------|
-| `make install-dev` | `pip install -e ".[dev]"` + `pre-commit install` | See pre-commit caveat below |
+| `make install-dev` | `pip install -e ".[dev]"` | |
 | `make test` | `pytest --cov=src/sif ...` | Coverage is also on by default via `pyproject.toml` `addopts` |
 | `make test-fast` | `pytest -x -q` | Coverage still applies via `addopts`; stops at first failure |
 | `make docs-test` | `pytest tests/test_docs.py -v --no-cov` | Same docs validation CI runs |
@@ -394,8 +394,6 @@ The `Makefile` wraps the common development commands:
 | `make security` | `bandit -r src/sif -c pyproject.toml` | bandit is not in the `[dev]` extras; install it separately |
 | `make all` | lint + typecheck + test | Quick combined check |
 | `make ci` | format-check + lint + typecheck + security + test | Full local CI-equivalent run |
-
-`make install-dev`, `make install-all`, and `make pre-commit` invoke the `pre-commit` tool, but no `.pre-commit-config.yaml` is committed to the repository. <!-- VERIFY: make install-dev/install-all/pre-commit reference .pre-commit-config.yaml, which is not in the repository -->
 
 ## Questions?
 

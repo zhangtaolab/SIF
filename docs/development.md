@@ -623,8 +623,6 @@ ty check src/sif
 ty check --python .venv/bin/python src/sif
 ```
 
-**`make install-dev` stops at `pre-commit install`:** the repository has no `.pre-commit-config.yaml` and `pre-commit` is not in the `[dev]` extras. Use `pip install -e ".[dev]"` for setup, or install and configure pre-commit first.
-
 ## Resources
 
 - [Python Documentation](https://docs.python.org/3/)
@@ -647,10 +645,10 @@ The [Makefile](../Makefile) defines convenience targets for every common develop
 | Command | Description |
 |---------|-------------|
 | `make install` | Install the package with basic dependencies (`pip install -e .`) |
-| `make install-dev` | Install with development dependencies (`pip install -e ".[dev]"`) and run `pre-commit install` |
-| `make install-all` | Install with all optional dependencies (`pip install -e ".[dev,all]"`) and run `pre-commit install` |
+| `make install-dev` | Install with development dependencies (`pip install -e ".[dev]"`) |
+| `make install-all` | Install with all optional dependencies (`pip install -e ".[dev,all]"`) |
 | `make dev-setup` | Alias for `make install-dev` |
-| `make update-deps` | Upgrade pip, reinstall all dependencies, run `pre-commit autoupdate` |
+| `make update-deps` | Upgrade pip and reinstall all dependencies |
 
 ### Testing and Quality
 
@@ -666,7 +664,6 @@ The [Makefile](../Makefile) defines convenience targets for every common develop
 | `make typecheck` | Type check with ty (`ty check src/sif`) |
 | `make coverage` | Generate an HTML coverage report at `htmlcov/index.html` |
 | `make security` | Run a bandit security scan (`bandit -r src/sif -c pyproject.toml`) |
-| `make pre-commit` | Run pre-commit hooks on all files (`pre-commit run --all-files`) |
 
 ### Build and Maintenance
 
@@ -682,8 +679,6 @@ The [Makefile](../Makefile) defines convenience targets for every common develop
 | `make ci` | Run all CI checks locally: `format-check`, `lint`, `typecheck`, `security`, `test` |
 | `make dev-check` | Format, lint with auto-fix, then type check |
 | `make info` | Print the Python version and installed tool versions |
-
-The pre-commit targets (`make install-dev`, `make install-all`, `make pre-commit`, `make update-deps`) invoke `pre-commit`, but the repository has no `.pre-commit-config.yaml` and `pre-commit` is not part of the `[dev]` extras. Run `make install` or `pip install -e ".[dev]"` for a working environment, and add a pre-commit configuration before relying on those targets. <!-- VERIFY: make install-dev, make install-all, make pre-commit, and make update-deps reference .pre-commit-config.yaml and the pre-commit package, neither of which is in the repository or the [dev] extras -->
 
 The `security` target requires `bandit`, and `make build` requires `build`; none of these are included in the `[dev]` extras, so install them separately when needed. `check-wheel-contents` and `twine` are optional — `make build` skips them with a message when they are missing.
 
