@@ -5,11 +5,11 @@ titles: json
 findings:
   - id: CR-01
     severity: critical
-    disposition: open
+    disposition: fixed
     title: "Windows smoke has no platform guard — an accidental POSIX run installs a persistent launchd/systemd service and forks a daemon"
   - id: WR-01
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "Shared progress renderer passes user data through Rich markup unescaped — silent text loss and `MarkupError` crashes"
   - id: WR-02
     severity: warning
@@ -21,11 +21,11 @@ findings:
     title: "Docs still describe test infrastructure deleted by this phase"
   - id: WR-04
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "`examples/quickstart.py` is broken at runtime and prints commands that do not exist"
   - id: WR-05
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "Documented local quality gates fail on a clean checkout"
   - id: WR-06
     severity: warning
@@ -37,7 +37,7 @@ findings:
     title: "Publish workflow has no concurrency guard"
   - id: WR-08
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "`sif watch --stop` can crash with `PermissionError` instead of failing closed"
   - id: WR-09
     severity: warning
@@ -67,24 +67,24 @@ findings:
     severity: info
     disposition: open
     title: "`--embed` and `--no-embed` together are accepted; embed silently wins"
-open: 16
+open: 11
 total: 16
-recorded: 2026-11-14T09:58:49.920Z
+recorded: 2026-11-14T10:12:13Z
 ---
 
 # Phase 17: Code Review Disposition
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| CR-01 | critical | open | - |
-| WR-01 | warning | open | - |
+| CR-01 | critical | fixed | fix b0d45bf |
+| WR-01 | warning | fixed | fix b0d45bf |
 | WR-02 | warning | open | - |
 | WR-03 | warning | open | - |
-| WR-04 | warning | open | - |
-| WR-05 | warning | open | - |
+| WR-04 | warning | fixed | fix b0d45bf |
+| WR-05 | warning | fixed | fix b0d45bf |
 | WR-06 | warning | open | - |
 | WR-07 | warning | open | - |
-| WR-08 | warning | open | - |
+| WR-08 | warning | fixed | fix b0d45bf |
 | WR-09 | warning | open | - |
 | IN-01 | info | open | - |
 | IN-02 | info | open | - |
