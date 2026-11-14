@@ -242,7 +242,7 @@ sif eval --personal --json
 sif eval --personal --compare <cache_dir>/eval/eval-<fingerprint>-<timestamp>.json
 ```
 
-Use `--no-save` on a diagnostic run that should not become a comparison substrate, and `--bm25-only` when the embed extra is unavailable (the default hybrid path fails loudly with an install remedy).
+Use `--no-save` on a diagnostic run that should not become a comparison substrate, and `--bm25-only` when the embed extra is unavailable (the default hybrid path fails loudly with an install remedy). Hybrid is the default and also requires the scoped index to contain embeddings: if it has none, the run fails with the `sif index embed` remedy instead of silently reporting BM25 results as `hybrid`. Pass `--bm25-only` to measure the BM25 path explicitly.
 
 Rerank latency probe on live search:
 

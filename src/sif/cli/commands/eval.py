@@ -13,6 +13,7 @@ goes through ``click.echo`` (never Rich) so the stream strict-parses.
 from __future__ import annotations
 
 import json
+import sqlite3
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
@@ -132,6 +133,44 @@ def _build_options(
         rrf_k=settings.rrf_k,
         bm25_weight=settings.bm25_weight,
         vector_weight=settings.vector_weight,
+    )
+
+
+def _has_scoped_embeddings(db: Database, collection_ids: list[str] | None) -> bool:
+    """True when the scoped index has at least one vector row (WR-07).
+
+    A cheap existence probe over ``document_embeddings`` (the vec0 metadata
+    columns are unindexed, so one LIMIT 1 scan is the batching-rule shape).
+    A missing vec0 table counts as no coverage — the caller's remedy names
+    the embed step either way.
+    """
+    if collection_ids is not None and not collection_ids:
+        return False
+    try:
+        if collection_ids is None:
+            row = db.connection.execute("SELECT 1 FROM document_embeddings LIMIT 1").fetchone()
+        else:
+            placeholders = ", ".join("?" for _ in collection_ids)
+            row = db.connection.execute(
+                "SELECT 1 FROM document_embeddings de "
+                "JOIN documents d ON d.id = de.document_id "
+                f"WHERE d.collection_id IN ({placeholders}) LIMIT 1",
+                list(collection_ids),
+            ).fetchone()
+    except sqlite3.OperationalError:
+        return False
+    return row is not None
+
+
+def _require_scoped_embeddings(db: Database, collection_ids: list[str] | None) -> None:
+    """Fail loudly instead of labelling BM25 results as hybrid (WR-07)."""
+    if _has_scoped_embeddings(db, collection_ids):
+        return
+    raise click.ClickException(
+        "Hybrid retrieval is the default, but the index has no embeddings in "
+        "scope; results would silently be BM25-only. Build the vectors with "
+        "'sif index embed' (after installing the embed extra) — or pass "
+        "--bm25-only to measure the BM25 path explicitly."
     )
 
 
@@ -558,7 +597,7 @@ def _save_and_render(
     _render_personal(payload, output_json)
 
 
-def _run_fresh(  # noqa: PLR0913
+def _run_fresh(  # noqa: C901, PLR0913
     db: Database,
     metadata: list[DocumentRecord],
     collection_ids: list[str] | None,
@@ -575,6 +614,10 @@ def _run_fresh(  # noqa: PLR0913
             f"scope; found {len(metadata)}. Index more documents with "
             "'sif index update' and retry."
         )
+    # A hybrid-labelled run must have vectors to search; never let an
+    # un-embedded index silently produce BM25 results under a hybrid label.
+    if not bm25_only:
+        _require_scoped_embeddings(db, collection_ids)
     # Bodies load only for the sampled subset; widening re-samples the
     # deterministic prefix and loads only the newly added documents.
     try:
@@ -663,6 +706,8 @@ def _run_compare(  # noqa: PLR0913
         resolve_saved_targets(saved, db.connection)
     except ValueError as e:
         raise click.ClickException(str(e)) from e
+    if not bm25_only:
+        _require_scoped_embeddings(db, collection_ids)
     manager, embedding_dim, model_identity = _load_embedder(settings, bm25_only)
     embedder: Embedder | None = manager.model if manager is not None else None
     retrieval = "bm25" if bm25_only else "hybrid"

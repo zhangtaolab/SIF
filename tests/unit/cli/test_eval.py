@@ -60,6 +60,23 @@ def _manager(embedder: ConceptEmbedder | None = None) -> MagicMock:
     return manager
 
 
+def _delete_embeddings(db_path: Path) -> None:
+    """Turn an embedded fixture index into a BM25-only index (WR-07)."""
+    import sqlite3
+
+    import sqlite_vec
+
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.enable_load_extension(True)
+        sqlite_vec.load(conn)
+        conn.enable_load_extension(False)
+        conn.execute("DELETE FROM document_embeddings")
+        conn.commit()
+    finally:
+        conn.close()
+
+
 class _SpyPipeline:
     """SearchPipeline stand-in recording every query in call order."""
 
@@ -456,6 +473,43 @@ class TestPersonalEvalEdges:
         assert 'pip install "docsif[embed]"' in result.output
         assert "--bm25-only" in result.output
         assert "Traceback" not in result.output
+
+    def test_hybrid_run_on_a_non_embedded_index_fails_with_the_embed_remedy(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        db_path = build_personal_db(tmp_path / "personal.db", documents=60)
+        _delete_embeddings(db_path)
+
+        _SpyPipeline.seen = []
+        result = _invoke(
+            db_path,
+            ["--personal", "--json"],
+            settings=_settings(tmp_path),
+            manager=_manager(),
+            pipeline=_SpyPipeline,
+        )
+
+        assert result.exit_code == 1
+        assert "sif index embed" in result.output
+        assert "--bm25-only" in result.output
+        assert "Traceback" not in result.output
+        # No search ran under a false "hybrid" label.
+        assert _SpyPipeline.seen == []
+
+    def test_bm25_only_runs_on_a_non_embedded_index(self, tmp_path: Path) -> None:
+        db_path = build_personal_db(tmp_path / "personal.db", documents=60)
+        _delete_embeddings(db_path)
+
+        result = _invoke(
+            db_path,
+            ["--personal", "--bm25-only", "--json"],
+            settings=_settings(tmp_path),
+            pipeline=_SpyPipeline,
+        )
+
+        assert result.exit_code == 0, result.output
+        assert json.loads(result.stdout)["retrieval"] == "bm25"
 
     def test_embed_model_load_failure_names_the_cause(self, tmp_path: Path) -> None:
         db_path = build_personal_db(tmp_path / "personal.db", documents=60)
