@@ -5,16 +5,16 @@ milestone_name: Search Precision and Agent Experience
 current_phase: 18
 current_phase_name: Quality Instrument (Personal Bench + rapidfuzz DYM)
 status: executing
-stopped_at: Completed 18-04-PLAN.md
-last_updated: "2026-11-14T15:15:55.874Z"
+stopped_at: Completed 18-03-PLAN.md
+last_updated: "2026-11-14T15:33:22.696Z"
 last_activity: 2026-11-14
 last_activity_desc: Phase 17 complete, transitioned to Phase 18
-state_head: 27c3d2f869ef9034da8761831f98017eaf8fe448
+state_head: e7489c83320f8360fcc8293d3f04c961bdc34ecf
 progress:
   total_phases: 8
   completed_phases: 1
   total_plans: 13
-  completed_plans: 12
+  completed_plans: 13
 ---
 
 # DocSift — Project State
@@ -61,6 +61,7 @@ Progress: [█░░░░░░░░░] 13%
 | Phase 18 P01 | 8min | 3 tasks | 9 files |
 | Phase 18 P02 | 13min | 3 tasks | 6 files |
 | Phase 18 P04 | 8min | 3 tasks | 5 files |
+| Phase 18 P03 | 12min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -112,6 +113,10 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - [Phase 18]: 18-04: rapidfuzz>=3.14.5,<4 is locked; uv.lock resolves 3.14.5 on py3.10 and 3.14.6 on py3.11+ with an add-only diff (212 insertions, 0 deletions).
 - [Phase 18]: 18-04: the 75.0 cutoff is inclusive (>=, no epsilon); resturant -> restaur at exactly 75.0 is test-pinned, while probe/hit, prefix, and history contracts stay byte-identical.
 - [Phase 18]: 18-04: measured p50 1.513 ms at 73,040 terms (rapidfuzz 3.14.6); local first-letter recall 0.956 at cutoffs 70/75 vs 0.799 at 80, with 70 adding candidates and no recall.
+- [Phase 18]: 18-03: saved runs are version 1 under <cache_dir>/eval with a 5 MB/10k cap, pre-decode size check, full envelope+record validation (bool-as-int, NaN/Infinity, content/snippet rejected), and rank-aligned retrieved_doc_ids as the comparison identity; created_at is stamped in run_to_saved.
+- [Phase 18]: 18-03: --compare evaluates exactly the saved query set in saved order at saved.top_k with no synthesis, refuses a corpus-fingerprint mismatch naming both values, resolves targets id-first with a unique-path fallback, and grades both arms through document id (first-occurrence dedupe) so baseline nDCG@10 cannot exceed 1.0.
+- [Phase 18]: 18-03: the noise gate is a seeded 10,000-resample percentile bootstrap; a winner needs a CI excluding zero AND round(mean_delta,6) >= 0.01, the report carries N/1/N/helped-hurt-unchanged, groups <10 are suppressed and named, and only the held-out summary gate sets warrants_default_change.
+- [Phase 18]: 18-03: replay stability is Jaccard@10 + top-1 against the saved snapshot or available:false with a reason; comparison tables label tuning/per-group rows diagnostic and keep suppressed names and replay-unavailable notices on stderr.
 
 ### Pending Todos
 
@@ -141,8 +146,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-14T15:15:55.740Z
-Stopped at: Completed 18-04-PLAN.md
+Last session: 2026-11-14T15:33:22.576Z
+Stopped at: Completed 18-03-PLAN.md
 Resume file: None
 
 - **Next expected action:** run Phase 17 verification (`/gsd-verify-work 17`) to confirm the four ENG success criteria against the shipped state, then mark Phase 17 complete and proceed to Phase 18. Release evidence lives in `17-07-SUMMARY.md`: tag `v1.1.2` on `c819f67`, Publish run `43562577065` attempt 4 (all three jobs success), PyPI JSON `1.1.2` with the `mcp-name` marker, `pypi-attestations` `OK` against `https://github.com/zhangtaolab/SIF`, and both fresh-venv install proofs. Execution order for the rest of v1.2: 17 → 18 → 19 → 20 → 21 → 22 → 23 → 24; hard dependencies and cross-phase contracts in ROADMAP.md.
