@@ -629,7 +629,11 @@ sampled documents; NDCG@10/Hit@10 are reported overall and per leg x
 language x length bucket with small-group suppression, alongside the
 query_log replay stability leg. Hybrid retrieval is the default; pass
 --bm25-only when the embed extra is unavailable (the default path fails
-loudly with an install remedy). --json emits strict JSON.
+loudly with an install remedy). Every run is saved under the cache
+directory unless --no-save. With --compare, a saved run is re-evaluated
+over its own query set at its saved depth and paired deltas are reported
+with a seeded 95% bootstrap CI and the 1/N noise floor; a corpus
+fingerprint mismatch refuses the comparison. --json emits strict JSON.
 
 ```bash
 sif eval [OPTIONS]
@@ -640,6 +644,8 @@ sif eval [OPTIONS]
 | Option | Short | Type | Default | Description |
 |--------|-------|------|---------|-------------|
 | `--personal` | `—` | flag | `false` | Measure quality on the indexed personal corpus |
+| `--compare` | `—` | file | — | Compare against a saved run (evaluates its query set) |
+| `--no-save` | `—` | flag | `false` | Do not write the run to the cache directory |
 | `--bm25-only` | `—` | flag | `false` | Explicitly skip the embedder (hybrid is the default; keeps the run local) |
 | `--limit` | `-n` | integer | `10` | Number of results per query |
 | `--collection` | `-c` | text[] | — | Collection to evaluate |

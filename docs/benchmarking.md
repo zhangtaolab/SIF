@@ -142,6 +142,65 @@ A `change-warranted` verdict is recorded (snapshot + this document) and names it
 
 The committed snapshot `tests/fixtures/bench/heldout_defaults.json` locks the shipped defaults to measured evidence: `tests/unit/search/test_bench_snapshot.py` recomputes the held-out metrics from the deterministic index using the `Settings`-derived configuration, asserts they equal the committed values exactly, and asserts the snapshot's `defaults` object equals the live `Settings` defaults **in the same test** — so changing a default without regenerating the metrics, or editing the snapshot to mask a regression, fails CI.
 
+## Personal Bench (`sif eval --personal`)
+
+The committed fixture pack remains the defaults gate. The personal bench is a third instrument for measuring search quality on your own indexed corpus with no manual relevance labels.
+
+### The three query legs
+
+| Leg | Source | Semantics |
+|-----|--------|-----------|
+| `title` | each sampled document's title/H1 | Exact-term known-item: the query IS the title, so this leg is exempt from the paraphrase budget |
+| `body` | one later prose sentence from the document | Paraphrased known-item: rejected when token Jaccard against the target's title plus first 200 characters exceeds `0.60` |
+| `replay` | normalized `query_log` history | Stability, not quality: no labels, no splits, never gates defaults; only CLI searches are logged, so it is a CLI-biased sample |
+
+Known-item labels are binary: the target document is grade 1 and every other document grade 0, using the same legacy fixture schema as `sif bench`. NDCG@10 is therefore a rank-sensitive known-item metric, not a graded-relevance score. Empty, duplicate, and overlap rejections are counted per leg so a query set never shrinks silently.
+
+### Deterministic sampling and the tuning/held-out split
+
+A personal run requires at least 50 indexed documents in scope and at least 50 accepted queries; below either floor it exits non-zero with the counts and the `sif index update` remedy. Documents are ordered by `sha256(path + NUL + checksum)`, then path, then id, so the same index yields the same query set on every machine; mtime is not part of the identity. Queries split 50/50 by `sha256(normalized query)[0] < 128` (NFC + casefold + whitespace collapse first). The held-out floor is 25, so the sampler widens from the initial 50 documents toward `min(corpus, 250)` until both the accepted-query and held-out floors hold; a widened sample is a superset of the previous prefix.
+
+### Saved runs: location, schema, privacy
+
+Every run auto-saves one JSON file under the SIF cache directory unless `--no-save`:
+
+```
+<cache_dir>/eval/eval-<corpus-fingerprint[:12]>-<UTC timestamp>.json
+```
+
+`<cache_dir>` is the platform cache directory (for example `~/Library/Caches/sif/eval/` on macOS or `~/.cache/sif/eval/` on Linux; `SIF_CACHE_DIR` overrides it). The run is versioned (`version: 1`) and holds only query text, target/retrieved paths and document ids, leg/language/length/split, grade, retrieval depth (`top_k`), corpus fingerprint and document counts, model identity, and replay paths. It never contains document content, snippets, or embeddings, lives only on the local machine, and is never uploaded. The `--json` payload carries `run_path`; the path itself is announced on stderr so stdout stays pipe-clean.
+
+### Comparing against a saved run (`--compare`)
+
+`sif eval --personal --compare <saved-run.json>` re-evaluates exactly the saved run's query set, in saved order, against the current engine. It performs no synthesis, no overlap filtering, and no split reassignment: the two arms answer the same queries over the same corpus by construction.
+
+- **Corpus guard.** The current corpus fingerprint is recomputed from all in-scope document metadata and must equal the saved fingerprint. A mismatch refuses the comparison, naming both values; a silently compared different corpus would manufacture a delta.
+- **Target identity.** Each saved target resolves by document id first, with an exact-path fallback only when exactly one current document has that path. Zero or multiple path matches refuse rather than guess (the same file may be indexed in two collections).
+- **Id-keyed grading for both arms.** The baseline arm recomputes nDCG@10/Hit@10 from the saved `retrieved_doc_ids` against the saved `target_doc_id`; the current arm grades `evaluate_per_query` keys against the resolved current id. Repeated ids are deduped by first occurrence, so a path duplicated across collections cannot turn one arm's retrieval into a hit for the other and baseline nDCG@10 never exceeds 1.0.
+- **Saved depth wins.** Both arms evaluate at the saved `top_k`; a different `-n` is reported on stderr and ignored. A saved-vs-current retrieval-mode difference warns on stderr and is recorded in the comparison JSON, as is a model-identity mismatch; only the corpus fingerprint refuses a comparison.
+- **Auto-save.** The comparison auto-saves a new run built from the current arm (same query texts, count, and order as the compared run) unless `--no-save`.
+
+### The paired-bootstrap noise gate
+
+For every query the comparison computes the paired delta `round(current - baseline, 6)`. The mean delta is bootstrapped with `random.Random(0)` and exactly 10,000 resamples; the 95% interval uses the house `percentile` (linear interpolation). A winner is declared only when both hold:
+
+1. the 95% CI excludes zero, and
+2. `round(mean_delta, 6) >= 0.01`.
+
+Exactly 0.01 clears the bar; 0.0099 does not; a CI that includes zero never declares a winner. The report always prints N, the `1/N` per-query noise floor, and helped/hurt/unchanged counts — at N≈71 the floor is ~0.014, visibly larger than the 0.01 tie rule, so a nominal 0.01 "win" on a small set is exposed as noise.
+
+Only the **held-out** summary gate can warrant a defaults change. Tuning and per-group gates are diagnostic and labeled so. Groups are leg × language × length-bucket combinations; groups with fewer than 10 queries are omitted and named on stderr, never rendered as a zero row.
+
+### Replay stability
+
+Replay compares each saved replay query's top-k path list with the current top-k for the same query: mean Jaccard@10 (order-insensitive) plus top-1 match (order-sensitive). With no saved replay snapshot, or no current results, the report says `available: false` with the reason rather than inventing a number. Replay never enters nDCG/Hit, splits, groups, or the gate.
+
+### Comparability rules
+
+- A fresh run is **not** comparable across an overlap-budget, sampling, or split change: the saved query set is the pairing contract, and a changed synthesizer produces a different set. Start a new baseline instead.
+- Within the same corpus fingerprint, `--compare` is the only honest way to read a delta; the fingerprint refusal is deliberate.
+- Every saved run lives under the local cache directory, never in the repository.
+
 ## Rerank States
 
 Reranking is **explicit opt-in and defaults off**: pass `--rerank` or set `SIF_RERANK_ENABLED=1`. The off path never constructs a reranker model (zero-cost by construction).
@@ -172,7 +231,16 @@ sif bench tests/fixtures/bench/queries.json --json
 # 4. Sweep the grid on the tuning split (rerank states optional)
 sif bench tests/fixtures/bench/queries.json --sweep --json
 sif bench tests/fixtures/bench/queries.json --sweep --rerank --json
+
+# 5. Personal bench on your own index (auto-saves under <cache_dir>/eval/)
+sif eval --personal
+sif eval --personal --json
+
+# 6. Compare a later run against a saved baseline (both arms at its top_k)
+sif eval --personal --compare <cache_dir>/eval/eval-<fingerprint>-<timestamp>.json
 ```
+
+Use `--no-save` on a diagnostic run that should not become a comparison substrate, and `--bm25-only` when the embed extra is unavailable (the default hybrid path fails loudly with an install remedy).
 
 Rerank latency probe on live search:
 

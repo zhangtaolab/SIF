@@ -1395,3 +1395,125 @@ class TestCompareCli:
         assert result.exit_code == 0, result.output
         assert "different-model" in result.stderr
         assert "model" in result.stderr.lower()
+
+
+# --- Task 3: comparison rendering -------------------------------------------
+
+
+class TestCompareRendering:
+    def _fixture(self, tmp_path: Path) -> tuple[Path, Settings, Path]:
+        """50-document corpus with a 9-query suppressed group and a saved run."""
+        zh_titles = [f"如何配置 {index}" for index in range(9)]
+        en_titles = [f"Unique title {index}" for index in range(9, 50)]
+        db_path = build_personal_db(
+            tmp_path / "personal.db",
+            documents=50,
+            titles=zh_titles + en_titles,
+        )
+        settings = _settings(tmp_path)
+        _ReplaySpyPipeline.seen = []
+        saved_path, _payload = _fresh_saved_run(
+            db_path,
+            settings,
+            pipeline=_ReplaySpyPipeline,
+        )
+        return db_path, settings, saved_path
+
+    def test_compare_table_renders_summary_context_and_group_rows(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        db_path, settings, saved_path = self._fixture(tmp_path)
+
+        result = _invoke(
+            db_path,
+            ["--personal", "--compare", str(saved_path), "--bm25-only"],
+            settings=settings,
+            pipeline=_OptionsSpyPipeline,
+        )
+
+        assert result.exit_code == 0, result.output
+        for expected in (
+            "Personal Search Comparison",
+            "Overall",
+            "Tuning",
+            "Held-out",
+            "diagnostic",
+            "Noise floor",
+            "Corpus fingerprint match",
+            "Replay stability",
+            "Groups",
+            "Suppressed groups",
+            "Winner",
+            "Baseline",
+            "Current",
+            "Mean",
+            "delta",
+        ):
+            assert expected in result.stdout, expected
+        suppressed_name = "leg=title/language=zh/length=medium"
+        assert suppressed_name in result.stderr
+        assert suppressed_name not in result.stdout
+
+    def test_compare_table_reports_replay_unavailable_on_stderr(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        db_path, settings, saved_path = self._fixture(tmp_path)
+
+        result = _invoke(
+            db_path,
+            ["--personal", "--compare", str(saved_path), "--bm25-only"],
+            settings=settings,
+            pipeline=_OptionsSpyPipeline,
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "Replay stability unavailable" in result.stderr
+        assert "unavailable" in result.stdout
+
+    def test_compare_json_carries_the_full_comparison_object(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        db_path, settings, saved_path = self._fixture(tmp_path)
+
+        result = _invoke(
+            db_path,
+            ["--personal", "--compare", str(saved_path), "--bm25-only", "--json"],
+            settings=settings,
+            pipeline=_OptionsSpyPipeline,
+        )
+
+        assert result.exit_code == 0, result.output
+        comparison = json.loads(result.stdout)["comparison"]
+        assert set(comparison) >= {
+            "baseline",
+            "current",
+            "delta",
+            "ci",
+            "gate",
+            "splits",
+            "groups",
+            "suppressed",
+            "replay",
+            "retrieval",
+            "top_k",
+        }
+        assert set(comparison["baseline"]) == {
+            "ndcg_at_10",
+            "hit_at_10",
+            "num_queries",
+        }
+        assert set(comparison["delta"]) >= {
+            "mean",
+            "helped",
+            "hurt",
+            "unchanged",
+            "n",
+            "noise_floor",
+        }
+        assert set(comparison["ci"]) == {"low", "high"}
+        assert comparison["gate"]["warrants_default_change"] is False
+        assert isinstance(comparison["replay"]["available"], bool)
+        assert isinstance(comparison["top_k"], int)

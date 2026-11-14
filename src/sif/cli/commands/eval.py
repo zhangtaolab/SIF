@@ -264,16 +264,159 @@ def _render_footer(payload: dict[str, Any]) -> None:
     console.print(mode_line)
 
 
+def _format_ci(gate: dict[str, Any]) -> str:
+    """One 95% CI cell, four decimals."""
+    return f"[{gate['ci_low']:.4f}, {gate['ci_high']:.4f}]"
+
+
+def _winner_cell(gate: dict[str, Any]) -> str:
+    """Winner cell: improvement, regression, or no (never a silent zero)."""
+    if gate.get("winner"):
+        return "yes (improvement)"
+    if gate.get("regression"):
+        return "yes (regression)"
+    return "no"
+
+
+def _comparison_summary_table(comparison: dict[str, Any]) -> Table:
+    """Overall, tuning, and held-out gate rows plus their paired metrics."""
+    table = Table(title="Personal Search Comparison")
+    for column in (
+        "Scope",
+        "N",
+        "Baseline NDCG@10",
+        "Current NDCG@10",
+        "Mean delta",
+        "95% CI",
+        "Helped/Hurt/Unchanged",
+        "Winner",
+    ):
+        table.add_column(column, style="cyan")
+    rows = (
+        (
+            "Overall",
+            comparison["gate"],
+            comparison["baseline"]["ndcg_at_10"],
+            comparison["current"]["ndcg_at_10"],
+        ),
+        (
+            "Tuning (diagnostic)",
+            comparison["splits"]["tuning"],
+            comparison["splits"]["tuning"]["baseline_mean"],
+            comparison["splits"]["tuning"]["current_mean"],
+        ),
+        (
+            "Held-out",
+            comparison["splits"]["heldout"],
+            comparison["splits"]["heldout"]["baseline_mean"],
+            comparison["splits"]["heldout"]["current_mean"],
+        ),
+    )
+    for scope, gate, baseline, current in rows:
+        table.add_row(
+            scope,
+            str(gate["n"]),
+            f"{baseline:.4f}",
+            f"{current:.4f}",
+            f"{gate['mean_delta']:+.4f}",
+            _format_ci(gate),
+            f"{gate['helped']}/{gate['hurt']}/{gate['unchanged']}",
+            _winner_cell(gate),
+        )
+    return table
+
+
+def _comparison_context_table(comparison: dict[str, Any]) -> Table:
+    """Noise floor, fingerprint match, replay stability, and mode context."""
+    table = Table(title="Comparison Context")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Value", style="green")
+    table.add_row("Noise floor (1/N)", f"{comparison['gate']['noise_floor']:.4f}")
+    # A mismatch refuses the comparison, so a rendered comparison matched.
+    table.add_row("Corpus fingerprint match", "yes")
+    replay = comparison["replay"]
+    if replay["available"]:
+        table.add_row(
+            "Replay stability (Jaccard@10)",
+            f"{replay['jaccard_at_10']:.4f}",
+        )
+        table.add_row(
+            "Replay stability (top-1)",
+            f"{replay['top1_stability']:.4f}",
+        )
+    else:
+        table.add_row("Replay stability", "unavailable")
+    table.add_row(
+        "Retrieval mode",
+        f"saved {comparison['retrieval']['saved']} / current {comparison['retrieval']['current']}",
+    )
+    table.add_row("Saved top_k", str(comparison["top_k"]))
+    table.add_row(
+        "Suppressed groups",
+        f"{len(comparison['suppressed'])} (names on stderr)",
+    )
+    return table
+
+
+def _comparison_groups_table(groups: list[dict[str, Any]]) -> Table:
+    """One diagnostic row per non-suppressed leg x language x length group."""
+    table = Table(title="Groups (diagnostic)")
+    for column in (
+        "Leg",
+        "Language",
+        "Length",
+        "N",
+        "Baseline NDCG@10",
+        "Current NDCG@10",
+        "Mean delta",
+        "95% CI",
+        "Helped/Hurt/Unchanged",
+        "Winner",
+    ):
+        table.add_column(column, style="cyan")
+    for group in groups:
+        table.add_row(
+            group["leg"],
+            group["language"],
+            group["length_bucket"],
+            str(group["n"]),
+            f"{group['baseline_mean']:.4f}",
+            f"{group['current_mean']:.4f}",
+            f"{group['mean_delta']:+.4f}",
+            _format_ci(group),
+            f"{group['helped']}/{group['hurt']}/{group['unchanged']}",
+            _winner_cell(group),
+        )
+    return table
+
+
+def _render_comparison(payload: dict[str, Any]) -> None:
+    """Render a saved-vs-current comparison (tables only; JSON bypasses)."""
+    comparison = payload["comparison"]
+    console.print(_comparison_summary_table(comparison))
+    console.print(_comparison_context_table(comparison))
+    if comparison["groups"]:
+        console.print(_comparison_groups_table(comparison["groups"]))
+    else:
+        console.print(
+            f"[dim]No leg x language x length group reached the N >= {SUPPRESS_BELOW} floor.[/dim]"
+        )
+    _render_footer(payload)
+
+
 def _render_personal(payload: dict[str, Any], output_json: bool) -> None:
     """Render the report as strict JSON or Rich tables.
 
     The CLI never recomputes a metric, split, group, or suppression: it only
-    formats ``PersonalReport.to_dict()``. Every user/config-derived cell is
-    truncated then markup-escaped (T-18-06); group names come from fixed
-    enums.
+    formats ``PersonalReport.to_dict()`` (plus the ``comparison`` object on
+    ``--compare``). Every user/config-derived cell is truncated then
+    markup-escaped (T-18-06); group names come from fixed enums.
     """
     if output_json:
         click.echo(json.dumps(payload, indent=2))
+        return
+    if "comparison" in payload:
+        _render_comparison(payload)
         return
     console.print(_summary_table(payload))
     console.print(_legs_table(payload["queries"]["by_leg"]))
