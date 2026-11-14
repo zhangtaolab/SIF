@@ -1,11 +1,13 @@
-"""Personal evaluation commands (Phase 18, EVAL-01).
+"""Personal evaluation commands (Phase 18, EVAL-01/EVAL-02).
 
 ``sif eval --personal`` measures search quality on the user's own indexed
-corpus: documents are sampled deterministically, one title/H1 known-item
-query is synthesized per sampled document, and the existing
-``SearchEvaluator`` metric math reports NDCG@10/Hit@10. Table output follows
-the ``sif bench`` convention; ``--json`` goes through ``click.echo`` (never
-Rich) so the stream strict-parses.
+corpus with three query legs: title/H1 (exact-term), body snippet
+(paraphrased, overlap-budgeted), and query_log replay (stability only).
+Documents are sampled deterministically, held-out widening keeps the
+tuning/held-out floors, and the existing ``SearchEvaluator`` metric math
+reports NDCG@10/Hit@10 per leg x language x length bucket with small-group
+suppression. Table output follows the ``sif bench`` convention; ``--json``
+goes through ``click.echo`` (never Rich) so the stream strict-parses.
 """
 
 from __future__ import annotations
@@ -26,17 +28,17 @@ from sif.core.models import Embedder, SearchOptions
 from sif.database.database import Database
 from sif.database.repositories import CollectionRepository
 from sif.embedding.manager import EmbeddingManager
-from sif.search.benchmark import QueryEvaluation
 from sif.search.hybrid import SearchPipeline
 from sif.search.personal_bench import (
+    INITIAL_SAMPLE_DOCUMENTS,
     MIN_DOCUMENTS,
-    SynthesisResult,
-    corpus_fingerprint,
+    REPLAY_BIAS_NOTE,
+    SUPPRESS_BELOW,
+    ReplayResult,
+    build_personal_report,
+    ensure_heldout,
     evaluate_known_items,
     load_document_metadata,
-    require_minimum_queries,
-    sample_documents,
-    synthesize_title_queries,
 )
 from sif.utils.logging import get_logger
 
@@ -159,67 +161,83 @@ def _load_embedder(
     return manager, embedding_dim, identity
 
 
-def _personal_payload(  # noqa: PLR0913
-    *,
-    retrieval: str,
-    documents: int,
-    sampled: int,
-    fingerprint: str,
-    model: dict[str, Any] | None,
-    synthesis: SynthesisResult,
-    evaluations: list[QueryEvaluation],
-    notes: list[str],
-) -> dict[str, Any]:
-    """Build the strict-JSON payload with integer counts and no content keys."""
-    return {
-        "mode": "personal",
-        "retrieval": retrieval,
-        "corpus": {
-            "documents": documents,
-            "sampled": sampled,
-            "fingerprint": fingerprint,
-        },
-        "model": model,
-        "queries": {
-            "accepted": len(synthesis.queries),
-            # Per-leg tallies (Plan 02); the Plan 01 flat keys stay integer
-            # totals so existing JSON consumers do not move.
-            "rejected_empty": sum(synthesis.rejected_empty.values()),
-            "rejected_duplicate": sum(synthesis.rejected_duplicate.values()),
-        },
-        "metrics": {
-            "ndcg_at_10": _mean([evaluation.ndcg_at_10 for evaluation in evaluations]),
-            "hit_at_10": _mean([evaluation.hit_at_10 for evaluation in evaluations]),
-            "num_queries": len(evaluations),
-        },
-        "notes": notes,
-    }
+def _budget_cell(counts: dict[str, Any]) -> str:
+    """One per-leg budget description (fixed vocabulary, never user text)."""
+    if counts["budget"] is None:
+        return "exact-term" if counts["exact_term"] else "not synthesized"
+    return f"Jaccard <= {counts['budget']:.2f}"
 
 
-def _render_personal(payload: dict[str, Any], output_json: bool) -> None:
-    """Render the personal report as strict JSON or a Rich metric table.
-
-    Every table cell is a count or a metric — never a title, path, or body.
-    The model identity line is truncated and markup-escaped because the model
-    name/type come from user configuration (T-18-01).
-    """
-    if output_json:
-        click.echo(json.dumps(payload, indent=2))
-        return
+def _summary_table(payload: dict[str, Any]) -> Table:
+    """The headline counts and known-item metrics table."""
     corpus = payload["corpus"]
     queries = payload["queries"]
     metrics = payload["metrics"]
+    sampled = str(corpus["sampled"])
+    if corpus["widened"]:
+        sampled += " (widened)"
     table = Table(title="Personal Search Quality")
     table.add_column("Metric", style="cyan")
     table.add_column("Value", style="green", justify="right")
     table.add_row("Documents", str(corpus["documents"]))
-    table.add_row("Sampled documents", str(corpus["sampled"]))
+    table.add_row("Sampled documents", sampled)
     table.add_row("Queries", str(queries["accepted"]))
     table.add_row("NDCG@10", f"{metrics['ndcg_at_10']:.4f}")
     table.add_row("Hit@10", f"{metrics['hit_at_10']:.4f}")
-    table.add_row("Rejected (empty title)", str(queries["rejected_empty"]))
+    table.add_row("Rejected (empty)", str(queries["rejected_empty"]))
     table.add_row("Rejected (duplicate)", str(queries["rejected_duplicate"]))
-    console.print(table)
+    table.add_row("Rejected (overlap)", str(queries["rejected_overlap"]))
+    table.add_row("Split (tuning)", str(payload["splits"]["tuning"]))
+    table.add_row("Split (held-out)", str(payload["splits"]["heldout"]))
+    return table
+
+
+def _legs_table(by_leg: dict[str, Any]) -> Table:
+    """Per-leg accepted and rejection counts with the applied budget."""
+    table = Table(title="Per-leg synthesis")
+    for column in ("Leg", "Budget", "Accepted", "Empty", "Duplicate", "Overlap"):
+        table.add_column(column, style="cyan" if column == "Leg" else "green")
+    for leg, counts in by_leg.items():
+        table.add_row(
+            leg,
+            _budget_cell(counts),
+            str(counts["accepted"]),
+            str(counts["rejected_empty"]),
+            str(counts["rejected_duplicate"]),
+            str(counts["rejected_overlap"]),
+        )
+    return table
+
+
+def _groups_table(groups: list[dict[str, Any]]) -> Table:
+    """One row per non-suppressed leg x language x length group."""
+    table = Table(title="Groups (leg x language x length)")
+    for column in ("Leg", "Language", "Length", "N", "NDCG@10", "Hit@10"):
+        table.add_column(column, style="cyan")
+    for group in groups:
+        table.add_row(
+            group["leg"],
+            group["language"],
+            group["length_bucket"],
+            str(group["count"]),
+            f"{group['ndcg_at_10']:.4f}",
+            f"{group['hit_at_10']:.4f}",
+        )
+    return table
+
+
+def _render_replay(replay: dict[str, Any]) -> None:
+    """Replay counts and the CLI-only bias note (stability, never quality)."""
+    baseline = "yes" if replay["baseline_available"] else "no"
+    console.print(
+        f"Replay (stability, not quality): queries {replay['num_queries']} "
+        f"· baseline available: {baseline}"
+    )
+    console.print(f"[dim]{_cell(str(replay['bias']))}[/dim]")
+
+
+def _render_footer(payload: dict[str, Any]) -> None:
+    """Notes plus the retrieval/model identity line."""
     for note in payload["notes"]:
         console.print(f"[dim]{_cell(str(note))}[/dim]")
     model = payload["model"]
@@ -232,6 +250,28 @@ def _render_personal(payload: dict[str, Any], output_json: bool) -> None:
     console.print(mode_line)
 
 
+def _render_personal(payload: dict[str, Any], output_json: bool) -> None:
+    """Render the report as strict JSON or Rich tables.
+
+    The CLI never recomputes a metric, split, group, or suppression: it only
+    formats ``PersonalReport.to_dict()``. Every user/config-derived cell is
+    truncated then markup-escaped (T-18-06); group names come from fixed
+    enums.
+    """
+    if output_json:
+        click.echo(json.dumps(payload, indent=2))
+        return
+    console.print(_summary_table(payload))
+    console.print(_legs_table(payload["queries"]["by_leg"]))
+    if payload["groups"]:
+        console.print(_groups_table(payload["groups"]))
+    if payload["suppressed"]:
+        names = ", ".join(payload["suppressed"])
+        console.print(f"[dim]Suppressed groups (N < {SUPPRESS_BELOW}): {names}[/dim]")
+    _render_replay(payload["replay"])
+    _render_footer(payload)
+
+
 def run_personal(  # noqa: PLR0913
     index_path: Path,
     bm25_only: bool,
@@ -240,11 +280,13 @@ def run_personal(  # noqa: PLR0913
     search_all: bool,
     output_json: bool,
 ) -> None:
-    """Run the title-leg personal evaluation end to end.
+    """Run the title+body personal evaluation end to end.
 
     Missing index and insufficient corpus/query counts exit 1 with a named
     cause and remedy; the default hybrid path loads the configured embedder
-    and fails loudly when it is unavailable (D-11).
+    and fails loudly when it is unavailable (D-11). Held-out widening runs
+    before any search, and known-item metrics come solely from the
+    per-query evaluator over title+body queries.
     """
     if not index_path.exists():
         raise click.ClickException("No index found. Run 'sif index update' first.")
@@ -263,10 +305,10 @@ def run_personal(  # noqa: PLR0913
                 f"scope; found {len(metadata)}. Index more documents with "
                 "'sif index update' and retry."
             )
-        sampled = sample_documents(metadata)
-        synthesis = synthesize_title_queries(sampled)
+        # Bodies load only for the sampled subset; widening re-samples the
+        # deterministic prefix and loads only the newly added documents.
         try:
-            require_minimum_queries(synthesis)
+            sampled, synthesis = ensure_heldout(metadata, db.connection)
         except ValueError as e:
             raise click.ClickException(str(e)) from e
 
@@ -297,11 +339,28 @@ def run_personal(  # noqa: PLR0913
             raise click.ClickException(f"Personal eval failed: {e}") from e
 
         retrieval = "bm25" if bm25_only else "hybrid"
+        replay = ReplayResult(
+            available=False,
+            num_queries=0,
+            baseline_available=False,
+            top_k_paths={},
+            bias=REPLAY_BIAS_NOTE,
+        )
         notes = [
             "Known-item labels: the target document is grade 1 and all other "
             "documents grade 0; NDCG@10 is a rank-sensitive known-item metric, "
             "not a graded-relevance score.",
+            "Title queries are exact-term (unbudgeted); body queries are paraphrased "
+            "and rejected above a 0.60 token Jaccard against the target title plus "
+            "opening text.",
+            "Replay stability against a saved baseline is computed by --compare "
+            "(Plan 03); a fresh run has no baseline.",
         ]
+        if len(sampled) > INITIAL_SAMPLE_DOCUMENTS:
+            notes.append(
+                f"Sampling widened from the initial {INITIAL_SAMPLE_DOCUMENTS} "
+                f"documents to {len(sampled)} to satisfy the held-out floor."
+            )
         if bm25_only:
             notes.append("Retrieval mode is BM25-only (--bm25-only): no embedder was loaded.")
         elif settings.model_type in _REMOTE_MODEL_TYPES:
@@ -309,17 +368,18 @@ def run_personal(  # noqa: PLR0913
                 f"Embedding provider '{settings.model_type}' is remote-capable: "
                 "synthesized query text is sent to it; --bm25-only keeps the run local."
             )
-        payload = _personal_payload(
+        report = build_personal_report(
             retrieval=retrieval,
-            documents=len(metadata),
-            sampled=len(sampled),
-            fingerprint=corpus_fingerprint(metadata),
+            top_k=limit,
+            metadata=metadata,
+            sampled=sampled,
             model=model_identity,
             synthesis=synthesis,
             evaluations=evaluations,
+            replay=replay,
             notes=notes,
         )
-        _render_personal(payload, output_json)
+        _render_personal(report.to_dict(), output_json)
 
 
 def _index_path(ctx: click.Context) -> Path:
@@ -357,11 +417,13 @@ def eval_group(  # noqa: PLR0913
 ) -> None:
     """Measure search quality on your own indexed corpus.
 
-    With --personal, one title/H1 known-item query is synthesized per
-    deterministically sampled document and NDCG@10/Hit@10 are reported from
-    the existing evaluator metric math. Hybrid retrieval is the default;
-    pass --bm25-only when the embed extra is unavailable (the default path
-    fails loudly with an install remedy). --json emits strict JSON.
+    With --personal, title/H1 (exact-term) and body-snippet (paraphrased,
+    overlap-budgeted) known-item queries are synthesized from deterministically
+    sampled documents; NDCG@10/Hit@10 are reported overall and per leg x
+    language x length bucket with small-group suppression, alongside the
+    query_log replay stability leg. Hybrid retrieval is the default; pass
+    --bm25-only when the embed extra is unavailable (the default path fails
+    loudly with an install remedy). --json emits strict JSON.
     """
     if ctx.invoked_subcommand is not None:
         return

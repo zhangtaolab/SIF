@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from contextlib import ExitStack
 from pathlib import Path
 from typing import Any, ClassVar
 from unittest.mock import MagicMock, patch
 
+import pytest
 from click.testing import CliRunner, Result
 
 from sif.cli.commands.eval import eval_group
@@ -15,7 +17,10 @@ from sif.config.settings import Settings
 from sif.core.models import SearchResult
 from sif.search.benchmark import SearchEvaluator
 from sif.search.personal_bench import (
+    HELDOUT_MIN,
+    INITIAL_SAMPLE_DOCUMENTS,
     DocumentRecord,
+    assign_split,
     normalize_text,
     sample_documents,
 )
@@ -259,6 +264,9 @@ class TestPersonalEvalCli:
         assert "NDCG@10" in result.output
         assert "Hit@10" in result.output
         assert "Documents" in result.output
+        assert "Per-leg synthesis" in result.output
+        assert "Groups (leg x language x length)" in result.output
+        assert "Replay (stability, not quality)" in result.output
         # Bodies never reach output: only counts and metrics are rendered.
         assert "Document body" not in result.output
 
@@ -276,22 +284,44 @@ class TestPersonalEvalCli:
         payload = json.loads(result.stdout)
         assert payload["mode"] == "personal"
         assert payload["retrieval"] == "hybrid"
+        assert payload["top_k"] == 10
         assert payload["corpus"]["documents"] == 60
-        assert payload["corpus"]["sampled"] == 60
+        # Plan 02 starts from the deterministic 50-document slice; this
+        # fixture meets both floors without widening.
+        assert payload["corpus"]["sampled"] == INITIAL_SAMPLE_DOCUMENTS
+        assert payload["corpus"]["widened"] is False
         assert len(payload["corpus"]["fingerprint"]) == 16
         assert payload["model"] == {
             "model_name": "Qwen/Qwen3-Embedding-0.6B",
             "model_type": "sentence_transformers",
             "dimension": EMBEDDING_DIM,
         }
-        assert payload["queries"] == {
-            "accepted": 60,
-            "rejected_empty": 0,
-            "rejected_duplicate": 0,
-        }
+        # Both known-item legs are synthesized by default.
+        assert payload["queries"]["accepted"] == 100
+        assert payload["queries"]["rejected_empty"] == 0
+        assert payload["queries"]["rejected_duplicate"] == 0
+        assert payload["queries"]["rejected_overlap"] == 0
+        assert payload["queries"]["by_leg"]["title"]["accepted"] == 50
+        assert payload["queries"]["by_leg"]["body"]["accepted"] == 50
+        assert payload["queries"]["by_leg"]["title"]["budget"] is None
+        assert payload["queries"]["by_leg"]["title"]["exact_term"] is True
+        assert payload["queries"]["by_leg"]["body"]["budget"] == pytest.approx(0.60)
         assert payload["metrics"]["num_queries"] == payload["queries"]["accepted"]
         assert isinstance(payload["metrics"]["ndcg_at_10"], float)
         assert isinstance(payload["metrics"]["hit_at_10"], float)
+        assert sum(payload["splits"].values()) == 100
+        assert payload["splits"]["heldout"] >= HELDOUT_MIN
+        # Both 50-query groups are above the suppression floor.
+        assert [
+            (g["leg"], g["language"], g["length_bucket"], g["count"]) for g in payload["groups"]
+        ] == [
+            ("title", "en", "long", 50),
+            ("body", "en", "long", 50),
+        ]
+        assert payload["suppressed"] == []
+        assert payload["replay"]["available"] is False
+        assert payload["replay"]["num_queries"] == 0
+        assert "stability" in payload["replay"]["bias"]
         assert payload["notes"]
         assert "content" not in payload
         assert "Document body" not in result.stdout
@@ -319,7 +349,7 @@ class TestPersonalEvalCli:
 
         assert first.exit_code == 0, first.output
         assert second.exit_code == 0, second.output
-        assert len(first_queries) == 60
+        assert len(first_queries) == 100
         assert _SpyPipeline.seen == first_queries
 
     def test_bm25_only_reports_bm25_and_never_builds_embedder(self, tmp_path: Path) -> None:
@@ -416,10 +446,12 @@ class TestPersonalEvalEdges:
         assert "--bm25-only" in result.output
 
     def test_empty_title_is_rejected_and_never_emitted(self, tmp_path: Path) -> None:
-        titles = [""] + [f"Unique title {index}" for index in range(1, 60)]
+        # Exactly 50 documents: the initial slice IS the corpus, so the
+        # empty-title document is always sampled (no path-dependent flake).
+        titles = [""] + [f"Unique title {index}" for index in range(1, 50)]
         db_path = build_personal_db(
             tmp_path / "personal.db",
-            documents=60,
+            documents=50,
             titles=titles,
         )
 
@@ -434,19 +466,22 @@ class TestPersonalEvalEdges:
         assert result.exit_code == 0, result.output
         payload = json.loads(result.stdout)
         assert payload["queries"]["rejected_empty"] == 1
-        assert payload["queries"]["accepted"] == 59
+        assert payload["queries"]["by_leg"]["title"]["accepted"] == 49
+        assert payload["queries"]["by_leg"]["body"]["accepted"] == 50
+        assert payload["queries"]["accepted"] == 99
         assert "" not in _SpyPipeline.seen
         assert all(query.strip() for query in _SpyPipeline.seen)
 
     def test_duplicate_normalized_title_keeps_the_first_and_counts_it(self, tmp_path: Path) -> None:
+        # Exactly 50 documents: both duplicate-title documents are sampled.
         titles = [
             "  Same  TITLE  ",
             "same title",
-            *[f"Unique title {index}" for index in range(2, 60)],
+            *[f"Unique title {index}" for index in range(2, 50)],
         ]
         db_path = build_personal_db(
             tmp_path / "personal.db",
-            documents=60,
+            documents=50,
             titles=titles,
         )
 
@@ -461,15 +496,19 @@ class TestPersonalEvalEdges:
         assert result.exit_code == 0, result.output
         payload = json.loads(result.stdout)
         assert payload["queries"]["rejected_duplicate"] == 1
-        assert payload["queries"]["accepted"] == 59
+        assert payload["queries"]["by_leg"]["title"]["accepted"] == 49
+        assert payload["queries"]["accepted"] == 99
         assert len([q for q in _SpyPipeline.seen if normalize_text(q) == "same title"]) == 1
 
     def test_insufficient_accepted_queries_exits_one_with_counts(self, tmp_path: Path) -> None:
+        # Both legs must fail to reach the floor: 11 empty titles and 60
+        # empty bodies leave exactly 49 accepted title queries.
         titles = [f"Unique title {index}" for index in range(49)] + [""] * 11
         db_path = build_personal_db(
             tmp_path / "personal.db",
             documents=60,
             titles=titles,
+            bodies=[""] * 60,
         )
 
         result = _invoke(
@@ -481,7 +520,8 @@ class TestPersonalEvalEdges:
 
         assert result.exit_code == 1
         assert "accepted 49" in result.output
-        assert "rejected 11" in result.output
+        assert "rejected 71" in result.output
+        assert "71 empty" in result.output
         assert "sif index update" in result.output
         assert "Traceback" not in result.output
 
@@ -546,3 +586,189 @@ class TestDisclosureAndMarkup:
         assert result.exit_code == 0, result.output
         # Escaped markup renders literally; unescaped markup would print "evil".
         assert "[bold]evil[/bold]" in result.output
+
+
+# --- Task 2: two-leg default, widening, suppression -------------------------
+
+
+def _long_body(index: int, candidate: str) -> str:
+    """Body whose candidate sentence starts beyond the 200-char window."""
+    filler = (
+        "Introductory context for this note spans several sentences of background "
+        "material so the candidate prose sits beyond the opening synthesis window. "
+        "Additional context keeps the note realistic and moves the useful sentence "
+        "further down the document body. "
+    )
+    return f"Intro note {index}. {filler}{candidate}."
+
+
+def _tuning_body(index: int) -> str:
+    """A body whose body-leg query text hashes into the tuning split."""
+    candidate_index = index * 1000
+    while True:
+        candidate = (
+            f"candidate query {candidate_index} discusses retrieval quality sampling metrics"
+        )
+        if assign_split(candidate) == "tuning":
+            return _long_body(index, candidate)
+        candidate_index += 1
+
+
+def _titles_with_split(count: int, split: str, start: int = 0) -> list[str]:
+    """Distinct titles whose title-leg query text hashes into ``split``."""
+    titles: list[str] = []
+    index = start
+    while len(titles) < count:
+        candidate = f"Note group {index} about topic {index * 7}"
+        if assign_split(candidate) == split:
+            titles.append(candidate)
+        index += 1
+    return titles
+
+
+def _widening_fixture(db_path: Path) -> tuple[Path, set[str], dict[str, str]]:
+    """60 docs whose initial 50-doc slice has only 24 held-out queries.
+
+    Every body query is tuning; the initial slice gets 24 held-out titles,
+    and the 10 documents outside the slice get held-out titles. The initial
+    slice is computed with the exact absolute paths the DB builder stores, so
+    the deterministic sample order is reproduced.
+    """
+    bodies = [_tuning_body(index) for index in range(60)]
+    corpus_dir = db_path.parent / "corpus"
+    records = [
+        DocumentRecord(
+            id=f"doc-{index:03d}",
+            path=str(corpus_dir / f"{index:03d}.md"),
+            title="",
+            checksum=hashlib.sha256(body.encode()).hexdigest(),
+            file_size=len(body.encode()),
+        )
+        for index, body in enumerate(bodies)
+    ]
+    initial_ids = {doc.id for doc in sample_documents(records, limit=INITIAL_SAMPLE_DOCUMENTS)}
+    initial = [doc for doc in records if doc.id in initial_ids]
+    outside = [doc for doc in records if doc.id not in initial_ids]
+    heldout_titles = _titles_with_split(24, "heldout", start=1000)
+    tuning_titles = _titles_with_split(len(initial) - 24, "tuning", start=2000)
+    outside_titles = _titles_with_split(len(outside), "heldout", start=3000)
+    title_by_id: dict[str, str] = {}
+    for doc, title in zip(initial[:24], heldout_titles, strict=False):
+        title_by_id[doc.id] = title
+    for doc, title in zip(initial[24:], tuning_titles, strict=False):
+        title_by_id[doc.id] = title
+    for doc, title in zip(outside, outside_titles, strict=False):
+        title_by_id[doc.id] = title
+    titles = [title_by_id[f"doc-{index:03d}"] for index in range(60)]
+    db_path = build_personal_db(
+        db_path,
+        documents=60,
+        titles=titles,
+        bodies=bodies,
+    )
+    return db_path, initial_ids, title_by_id
+
+
+class TestTwoLegDefault:
+    def test_default_run_evaluates_title_and_body_queries(self, tmp_path: Path) -> None:
+        db_path = build_personal_db(tmp_path / "personal.db", documents=60)
+
+        _SpyPipeline.seen = []
+        result = _invoke(
+            db_path,
+            ["--personal", "--bm25-only", "--json"],
+            settings=_settings(tmp_path),
+            pipeline=_SpyPipeline,
+        )
+
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.stdout)
+        assert payload["queries"]["by_leg"]["title"]["accepted"] > 0
+        assert payload["queries"]["by_leg"]["body"]["accepted"] > 0
+        # The pipeline sees both legs' query text (not a title-only set).
+        assert any(query.startswith("Personal note") for query in _SpyPipeline.seen)
+        assert any(query.startswith("document body") for query in _SpyPipeline.seen)
+
+    def test_held_out_widening_reaches_the_floor_and_evaluates_outside_docs(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        db_path, initial_ids, title_by_id = _widening_fixture(tmp_path / "personal.db")
+        outside_titles = {
+            title for doc_id, title in title_by_id.items() if doc_id not in initial_ids
+        }
+
+        _SpyPipeline.seen = []
+        result = _invoke(
+            db_path,
+            ["--personal", "--bm25-only", "--json"],
+            settings=_settings(tmp_path),
+            pipeline=_SpyPipeline,
+        )
+
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.stdout)
+        assert payload["corpus"]["sampled"] == 60
+        assert payload["corpus"]["widened"] is True
+        assert payload["splits"]["heldout"] >= HELDOUT_MIN
+        assert outside_titles & set(_SpyPipeline.seen)
+
+    def test_impossible_held_out_floor_exits_one_with_counts(self, tmp_path: Path) -> None:
+        titles = _titles_with_split(50, "tuning", start=0)
+        bodies = [_tuning_body(index) for index in range(50)]
+        db_path = build_personal_db(
+            tmp_path / "personal.db",
+            documents=50,
+            titles=titles,
+            bodies=bodies,
+        )
+
+        result = _invoke(
+            db_path,
+            ["--personal", "--bm25-only", "--json"],
+            settings=_settings(tmp_path),
+            pipeline=_SpyPipeline,
+        )
+
+        assert result.exit_code == 1
+        assert "held-out" in result.output
+        assert "tuning" in result.output
+        assert "sif index update" in result.output
+        assert "Traceback" not in result.output
+
+    def test_small_group_is_suppressed_and_named_in_json_and_table(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        zh_titles = [f"如何配置 {index}" for index in range(9)]
+        en_titles = [f"Unique title {index}" for index in range(9, 50)]
+        db_path = build_personal_db(
+            tmp_path / "personal.db",
+            documents=50,
+            titles=zh_titles + en_titles,
+        )
+        settings = _settings(tmp_path)
+        suppressed_name = "leg=title/language=zh/length=medium"
+
+        json_result = _invoke(
+            db_path,
+            ["--personal", "--bm25-only", "--json"],
+            settings=settings,
+            pipeline=_SpyPipeline,
+        )
+        assert json_result.exit_code == 0, json_result.output
+        payload = json.loads(json_result.stdout)
+        assert suppressed_name in payload["suppressed"]
+        assert not any(
+            group["leg"] == "title" and group["language"] == "zh" for group in payload["groups"]
+        )
+
+        table_result = _invoke(
+            db_path,
+            ["--personal", "--bm25-only"],
+            settings=settings,
+            pipeline=_SpyPipeline,
+        )
+        assert table_result.exit_code == 0, table_result.output
+        assert "Suppressed groups" in table_result.output
+        assert suppressed_name in table_result.output

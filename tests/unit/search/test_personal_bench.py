@@ -8,23 +8,45 @@ grouping, and the replay leg.
 
 from __future__ import annotations
 
+import hashlib
 import sqlite3
 
 import pytest
 
+from sif.search.benchmark import QueryEvaluation
 from sif.search.personal_bench import (
     EXACT_TERM_LEGS,
+    HELDOUT_MIN,
+    INITIAL_SAMPLE_DOCUMENTS,
+    LANGUAGES,
     LEG_BUDGETS,
+    LEGS,
+    LENGTH_BUCKETS,
+    MIN_QUERIES,
     OVERLAP_BUDGET,
+    SUPPRESS_BELOW,
+    CorpusSummary,
     DocumentRecord,
+    GroupMetrics,
+    PersonalQueryRecord,
+    PersonalReport,
+    ReplayResult,
+    SynthesisResult,
     SynthesizedQuery,
     apply_overlap_budget,
+    assign_split,
     body_candidate,
+    build_personal_report,
+    build_query_records,
     classify_language,
     dedupe_queries,
+    ensure_heldout,
+    group_metrics,
     jaccard,
     length_bucket,
     load_sampled_content,
+    normalize_text,
+    split_queries,
     strip_markup,
     synthesize_body_queries,
     synthesize_known_item_queries,
@@ -297,3 +319,370 @@ class TestLoadSampledContent:
         )
 
         assert load_sampled_content(conn, ["doc-2", "missing"]) == {"doc-2": "second body"}
+
+
+# --- Task 2: deterministic split, held-out widening, groups, report ---------
+
+
+def _long_body(index: int, candidate: str) -> str:
+    """Body whose candidate sentence starts beyond the 200-char window."""
+    filler = (
+        "Introductory context for this note spans several sentences of background "
+        "material so the candidate prose sits beyond the opening synthesis window. "
+        "Additional context keeps the note realistic and moves the useful sentence "
+        "further down the document body. "
+    )
+    return f"Intro note {index}. {filler}{candidate}."
+
+
+def _body_candidate_text(index: int) -> str:
+    """The body query text a ``_long_body`` document synthesizes."""
+    return f"candidate query {index} discusses retrieval quality sampling metrics"
+
+
+def _tuning_bodies(count: int) -> list[str]:
+    """Bodies whose body-leg query text lands in the tuning split."""
+    bodies: list[str] = []
+    index = 0
+    while len(bodies) < count:
+        candidate = _body_candidate_text(index)
+        if assign_split(candidate) == "tuning":
+            bodies.append(_long_body(index, candidate))
+        index += 1
+    return bodies
+
+
+def _titles_with_split(count: int, split: str, start: int = 0) -> list[str]:
+    """Distinct titles whose title-leg query text lands in ``split``."""
+    titles: list[str] = []
+    index = start
+    while len(titles) < count:
+        candidate = f"Note group {index} about topic {index * 7}"
+        if assign_split(candidate) == split:
+            titles.append(candidate)
+        index += 1
+    return titles
+
+
+def _records_for_metadata(
+    bodies: list[str],
+    *,
+    path_prefix: str = "/corpus",
+) -> list[DocumentRecord]:
+    """Metadata records with the checksum the DB builder will store."""
+    return [
+        DocumentRecord(
+            id=f"doc-{index:03d}",
+            path=f"{path_prefix}/{index:03d}.md",
+            title="",
+            checksum=hashlib.sha256(body.encode()).hexdigest(),
+            file_size=len(body.encode()),
+        )
+        for index, body in enumerate(bodies)
+    ]
+
+
+class TestSplit:
+    def test_assign_split_is_stable_and_matches_the_sha256_rule(self) -> None:
+        texts = ["alpha beta", "gamma", "如何配置检索", "note 1", "another query"]
+        for text in texts:
+            digest = hashlib.sha256(normalize_text(text).encode("utf-8")).digest()
+            expected = "tuning" if digest[0] < 128 else "heldout"
+            assert assign_split(text) == expected
+            assert assign_split(f"  {text.upper()}  ") == expected
+
+    def test_split_queries_leaves_replay_splitless(self) -> None:
+        title = _query("alpha beta", leg="title")
+        body = _query("gamma delta epsilon four", leg="body")
+        replay = _query("logged query", leg="replay")
+
+        split = split_queries([title, body, replay])
+
+        assert split[0].split == assign_split("alpha beta")
+        assert split[1].split == assign_split("gamma delta epsilon four")
+        assert split[2].split is None
+
+
+class TestEnsureHeldout:
+    def test_widens_to_the_cap_when_the_initial_slice_has_too_few_held_out(self) -> None:
+        bodies = _tuning_bodies(60)
+        metadata = _records_for_metadata(bodies)
+        initial_ids = {
+            doc.id
+            for doc in __import__(
+                "sif.search.personal_bench", fromlist=["sample_documents"]
+            ).sample_documents(metadata, limit=INITIAL_SAMPLE_DOCUMENTS)
+        }
+        initial = [doc for doc in metadata if doc.id in initial_ids]
+        outside = [doc for doc in metadata if doc.id not in initial_ids]
+
+        heldout_titles = _titles_with_split(24, "heldout", start=1000)
+        tuning_titles = _titles_with_split(len(initial) - 24, "tuning", start=2000)
+        outside_titles = _titles_with_split(len(outside), "heldout", start=3000)
+        title_by_id: dict[str, str] = {}
+        for doc, title in zip(initial[: len(heldout_titles)], heldout_titles, strict=False):
+            title_by_id[doc.id] = title
+        for doc, title in zip(initial[len(heldout_titles) :], tuning_titles, strict=False):
+            title_by_id[doc.id] = title
+        for doc, title in zip(outside, outside_titles, strict=False):
+            title_by_id[doc.id] = title
+        titled = [
+            DocumentRecord(
+                id=doc.id,
+                path=doc.path,
+                title=title_by_id[doc.id],
+                checksum=doc.checksum,
+                file_size=doc.file_size,
+            )
+            for doc in metadata
+        ]
+        conn = _RecordingConnection(
+            {doc.id: bodies[int(doc.id.split("-")[1])] for doc in titled},
+        )
+
+        sampled, synthesis = ensure_heldout(titled, conn)  # type: ignore[arg-type]
+
+        assert len(sampled) == 60
+        assert sum(1 for q in synthesis.queries if q.split == "heldout") >= HELDOUT_MIN
+        # Bodies were loaded for the initial slice, then only for the 10 new docs.
+        assert [len(call[1]) for call in conn.calls] == [50, 10]
+
+    def test_impossible_floor_at_the_cap_raises_a_counted_value_error(self) -> None:
+        bodies = _tuning_bodies(50)
+        metadata = _records_for_metadata(bodies)
+        titles = _titles_with_split(50, "tuning", start=0)
+        titled = [
+            DocumentRecord(
+                id=doc.id,
+                path=doc.path,
+                title=title,
+                checksum=doc.checksum,
+                file_size=doc.file_size,
+            )
+            for doc, title in zip(metadata, titles, strict=True)
+        ]
+        conn = _RecordingConnection({doc.id: bodies[int(doc.id.split("-")[1])] for doc in titled})
+
+        with pytest.raises(ValueError, match="held-out") as excinfo:
+            ensure_heldout(titled, conn)  # type: ignore[arg-type]
+
+        message = str(excinfo.value)
+        assert "held-out" in message
+        assert "tuning" in message
+        assert "accepted" in message
+
+    def test_no_widening_when_the_floors_are_met(self) -> None:
+        bodies = _tuning_bodies(50)
+        metadata = _records_for_metadata(bodies)
+        titles = _titles_with_split(24, "tuning", start=0) + _titles_with_split(
+            26, "heldout", start=5000
+        )
+        titled = [
+            DocumentRecord(
+                id=doc.id,
+                path=doc.path,
+                title=title,
+                checksum=doc.checksum,
+                file_size=doc.file_size,
+            )
+            for doc, title in zip(metadata, titles, strict=True)
+        ]
+        conn = _RecordingConnection({doc.id: bodies[int(doc.id.split("-")[1])] for doc in titled})
+
+        sampled, synthesis = ensure_heldout(titled, conn)  # type: ignore[arg-type]
+
+        assert len(sampled) == 50
+        assert len(conn.calls) == 1
+        assert len(synthesis.queries) >= MIN_QUERIES
+        assert sum(1 for q in synthesis.queries if q.split == "heldout") >= HELDOUT_MIN
+
+
+def _record(
+    leg: str,
+    language: str,
+    length_bucket: str,
+    *,
+    ndcg: float = 1.0,
+    hit: float = 1.0,
+) -> PersonalQueryRecord:
+    return PersonalQueryRecord(
+        query="query",
+        target_doc_id="doc-1",
+        target_path="/corpus/1.md",
+        leg=leg,
+        language=language,
+        length_bucket=length_bucket,
+        split="tuning",
+        ndcg_at_10=ndcg,
+        hit_at_10=hit,
+        retrieved_doc_ids=["doc-1"],
+        retrieved_paths=["/corpus/1.md"],
+    )
+
+
+class TestGroups:
+    def test_nine_query_group_is_suppressed_and_named(self) -> None:
+        records = [_record("title", "en", "long") for _ in range(9)]
+        records += [_record("body", "zh", "short") for _ in range(10)]
+
+        groups, suppressed = group_metrics(records)
+
+        assert [(g.leg, g.language, g.length_bucket) for g in groups] == [("body", "zh", "short")]
+        assert suppressed == ["leg=title/language=en/length=long"]
+
+    def test_groups_follow_declared_order_and_are_means(self) -> None:
+        records = [_record("title", "en", "short") for _ in range(10)]
+        records += [_record("title", "zh", "medium") for _ in range(10)]
+        records += [_record("body", "en", "long") for _ in range(10)]
+        records += [_record("body", "mixed", "short") for _ in range(10)]
+        records[0] = _record("title", "en", "short", ndcg=0.0, hit=0.0)
+
+        groups, suppressed = group_metrics(records)
+
+        assert suppressed == []
+        assert [(g.leg, g.language, g.length_bucket) for g in groups] == [
+            ("title", "en", "short"),
+            ("title", "zh", "medium"),
+            ("body", "en", "long"),
+            ("body", "mixed", "short"),
+        ]
+        assert groups[0].count == 10
+        assert groups[0].ndcg_at_10 == pytest.approx(0.9)
+
+    def test_declared_axes_are_the_report_vocabulary(self) -> None:
+        assert LEGS == ("title", "body", "replay")
+        assert LANGUAGES == ("en", "zh", "mixed")
+        assert LENGTH_BUCKETS == ("short", "medium", "long")
+        assert SUPPRESS_BELOW == 10
+
+
+class TestPersonalReport:
+    def test_records_are_rank_aligned_with_the_evaluation(self) -> None:
+        query = _query("alpha beta", leg="title")
+        split = split_queries([query])[0]
+        evaluation = QueryEvaluation(
+            query=query.query,
+            retrieved_keys=["doc-1", ""],
+            retrieved_paths=["/corpus/1.md", "/corpus/9.md"],
+            grades=[1, 0],
+            ndcg_at_10=1.0,
+            hit_at_10=1.0,
+        )
+
+        records = build_query_records([split], [evaluation])
+
+        assert records[0].retrieved_doc_ids == ["doc-1", ""]
+        assert len(records[0].retrieved_doc_ids) == len(records[0].retrieved_paths)
+
+    def test_to_dict_keeps_plan_01_keys_and_adds_the_new_sections(self) -> None:
+        records = [_record("title", "en", "long") for _ in range(10)]
+        records += [_record("body", "en", "long") for _ in range(10)]
+        replay = ReplayResult(
+            available=False,
+            num_queries=0,
+            baseline_available=False,
+            top_k_paths={},
+            bias="Replay measures stability.",
+        )
+        report = PersonalReport(
+            retrieval="hybrid",
+            top_k=10,
+            corpus=CorpusSummary(
+                documents=60,
+                sampled=50,
+                fingerprint="0123456789abcdef",
+                widened=False,
+            ),
+            model={"model_name": "m", "model_type": "t", "dimension": 8},
+            metrics={"ndcg_at_10": 0.5, "hit_at_10": 0.5, "num_queries": 20},
+            splits={"tuning": 20, "heldout": 0},
+            groups=[GroupMetrics("title", "en", "long", 10, 1.0, 1.0)],
+            suppressed=["leg=body/language=zh/length=short"],
+            queries={
+                "accepted": 20,
+                "rejected_empty": 0,
+                "rejected_duplicate": 0,
+                "rejected_overlap": 0,
+                "by_leg": {},
+            },
+            records=records,
+            replay=replay,
+            notes=["note"],
+        )
+
+        data = report.to_dict()
+
+        for key in (
+            "mode",
+            "retrieval",
+            "corpus.documents",
+            "corpus.sampled",
+            "corpus.fingerprint",
+            "queries.accepted",
+            "queries.rejected_empty",
+            "queries.rejected_duplicate",
+            "metrics",
+            "notes",
+            "model",
+        ):
+            cursor: object = data
+            for part in key.split("."):
+                cursor = cursor[part]  # type: ignore[index]
+        for key in ("top_k", "splits", "groups", "suppressed", "replay"):
+            assert key in data
+        assert data["groups"] == [
+            {
+                "leg": "title",
+                "language": "en",
+                "length_bucket": "long",
+                "count": 10,
+                "ndcg_at_10": 1.0,
+                "hit_at_10": 1.0,
+            }
+        ]
+
+    def test_build_report_splits_groups_and_metrics_come_from_records(self) -> None:
+        queries = [_query("alpha beta", leg="title", doc=1)]
+        queries += [_query("gamma delta epsilon four", leg="body", doc=1)]
+        split = split_queries(queries)
+        evaluations = [
+            QueryEvaluation(
+                query=q.query,
+                retrieved_keys=["doc-1"],
+                retrieved_paths=["/corpus/1.md"],
+                grades=[1],
+                ndcg_at_10=1.0,
+                hit_at_10=1.0,
+            )
+            for q in split
+        ]
+        synthesis = SynthesisResult(
+            queries=split,
+            rejected_empty={"title": 0, "body": 0},
+            rejected_duplicate={"title": 0, "body": 0},
+            rejected_overlap={"title": 0, "body": 0},
+        )
+        replay = ReplayResult(False, 0, False, {}, "bias")
+        metadata = _records_for_metadata(["body one", "body two"])
+
+        report = build_personal_report(
+            retrieval="bm25",
+            top_k=10,
+            metadata=metadata,
+            sampled=metadata,
+            model=None,
+            synthesis=synthesis,
+            evaluations=evaluations,
+            replay=replay,
+            notes=[],
+        )
+
+        assert report.metrics["num_queries"] == 2
+        assert report.metrics["ndcg_at_10"] == 1.0
+        assert sum(report.splits.values()) == 2
+        assert report.corpus.documents == 2
+        assert report.corpus.sampled == 2
+        assert report.corpus.widened is False
+        assert report.queries["by_leg"]["title"]["budget"] is None
+        assert report.queries["by_leg"]["title"]["exact_term"] is True
+        assert report.queries["by_leg"]["body"]["budget"] == pytest.approx(0.60)

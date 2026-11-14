@@ -2,7 +2,7 @@
 
 Pure domain module: no Click or Rich imports. Every stage is deterministic —
 normalization is NFC + casefold + whitespace collapse, sampling and
-fingerprinting use ``hashlib.sha256`` (never the salted builtin ``hash()``),
+fingerprinting use ``hashlib.sha256`` (never Python's salted builtin hash),
 and outputs are ordered by explicit sort keys so the same index yields the
 same query set on every machine (research Pitfall 9).
 
@@ -43,11 +43,18 @@ MIN_DOCUMENTS = 50
 MIN_QUERIES = 50
 MAX_QUERIES = 500
 MAX_SAMPLE_DOCUMENTS = 250
+INITIAL_SAMPLE_DOCUMENTS = MIN_DOCUMENTS
 HELDOUT_MIN = 25
 SUPPRESS_BELOW = 10
 OVERLAP_BUDGET = 0.60
 RUN_SCHEMA_VERSION = 1
 BOOTSTRAP_RESAMPLES = 10_000
+MAX_REPLAY_QUERIES = 500
+REPLAY_BIAS_NOTE = (
+    "Replay measures stability against a saved baseline, not absolute quality. "
+    "Only CLI searches are logged (MCP queries are not logged), so replay is a "
+    "CLI-biased sample."
+)
 
 # D-05 per-leg budget: the title leg IS the title (exact-term, exempt), the
 # body leg is paraphrased and budgeted, and replay synthesizes nothing.
@@ -79,6 +86,7 @@ _BODY_MAX_TOKENS = 10
 # Language/length thresholds (research A9; EVAL-02 discretion pinned tests).
 _ZH_RATIO = 0.5
 _EN_RATIO = 0.1
+_SPLIT_THRESHOLD = 128  # sha256 digest[0] < 128 -> tuning (stable 50/50)
 _SHORT_MAX_UNITS = 2
 _MEDIUM_MAX_UNITS = 5
 # SQLite's default host-parameter limit is 999; keep well below it.
@@ -136,6 +144,137 @@ class SynthesisResult:
     rejected_overlap: dict[str, int]
 
 
+@dataclass(frozen=True)
+class CorpusSummary:
+    """The corpus identity a report carries (Plan 03's saved-run envelope)."""
+
+    documents: int
+    sampled: int
+    fingerprint: str
+    widened: bool
+
+
+@dataclass(frozen=True)
+class GroupMetrics:
+    """One leg x language x length-bucket group (D-08; count >= SUPPRESS_BELOW)."""
+
+    leg: str
+    language: str
+    length_bucket: str
+    count: int
+    ndcg_at_10: float
+    hit_at_10: float
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize with a fixed key order (never a tuple-keyed dict)."""
+        return {
+            "leg": self.leg,
+            "language": self.language,
+            "length_bucket": self.length_bucket,
+            "count": self.count,
+            "ndcg_at_10": self.ndcg_at_10,
+            "hit_at_10": self.hit_at_10,
+        }
+
+
+@dataclass(frozen=True)
+class PersonalQueryRecord:
+    """One evaluated known-item query with its identity, split, and ranking.
+
+    ``retrieved_doc_ids`` is rank-aligned with ``retrieved_paths`` (one string
+    per retrieved rank, ``""`` when a result carries no document id), so the
+    saved-run writer (Plan 03) can grade by document id without re-deriving
+    ranks from paths. ``target_path`` is an inspection value, never content.
+    """
+
+    query: str
+    target_doc_id: str
+    target_path: str
+    leg: str
+    language: str
+    length_bucket: str
+    split: str
+    ndcg_at_10: float
+    hit_at_10: float
+    retrieved_doc_ids: list[str]
+    retrieved_paths: list[str]
+
+
+@dataclass(frozen=True)
+class ReplayResult:
+    """The query_log replay leg: stability data only, never quality metrics.
+
+    ``available`` reports whether replay data exists at all;
+    ``baseline_available`` whether a saved snapshot exists to compare against
+    (always False on a fresh run; Plan 03 computes stability on ``--compare``).
+    ``top_k_paths`` maps normalized query text to rank-ordered result paths —
+    paths only, never content or snippets (T-18-04).
+    """
+
+    available: bool
+    num_queries: int
+    baseline_available: bool
+    top_k_paths: dict[str, list[str]]
+    bias: str
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize the replay section with a fixed key order."""
+        return {
+            "available": self.available,
+            "num_queries": self.num_queries,
+            "baseline_available": self.baseline_available,
+            "queries": {query: list(paths) for query, paths in self.top_k_paths.items()},
+            "bias": self.bias,
+        }
+
+
+@dataclass(frozen=True)
+class PersonalReport:
+    """The full personal-eval report: identity, metrics, groups, and records.
+
+    Built once by ``build_personal_report`` and rendered by the CLI through
+    ``to_dict()``; the Plan 01 keys stay intact while ``top_k``, ``splits``,
+    ``groups``, ``suppressed``, and ``replay`` are additive. ``records`` is the
+    ordered per-query substrate Plan 03's ``run_to_saved`` consumes.
+    """
+
+    retrieval: str
+    top_k: int
+    corpus: CorpusSummary
+    model: dict[str, Any] | None
+    metrics: dict[str, float]
+    splits: dict[str, int]
+    groups: list[GroupMetrics]
+    suppressed: list[str]
+    queries: dict[str, Any]
+    records: list[PersonalQueryRecord]
+    replay: ReplayResult
+    notes: list[str]
+    mode: str = "personal"
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize with a fixed key order and no document content."""
+        return {
+            "mode": self.mode,
+            "retrieval": self.retrieval,
+            "top_k": self.top_k,
+            "corpus": {
+                "documents": self.corpus.documents,
+                "sampled": self.corpus.sampled,
+                "fingerprint": self.corpus.fingerprint,
+                "widened": self.corpus.widened,
+            },
+            "model": self.model,
+            "queries": self.queries,
+            "metrics": self.metrics,
+            "splits": self.splits,
+            "groups": [group.to_dict() for group in self.groups],
+            "suppressed": list(self.suppressed),
+            "replay": self.replay.to_dict(),
+            "notes": list(self.notes),
+        }
+
+
 def normalize_text(text: str) -> str:
     """NFC-normalize, casefold, and collapse whitespace to single spaces.
 
@@ -157,6 +296,34 @@ def jaccard(left: set[str], right: set[str]) -> float:
     if not union:
         return 1.0
     return len(left & right) / len(union)
+
+
+def _mean(values: Sequence[float]) -> float:
+    """Arithmetic mean; empty input yields 0.0 (house style)."""
+    return sum(values) / len(values) if values else 0.0
+
+
+def assign_split(query: str) -> str:
+    """Deterministic 50/50 split by the sha256 digest of normalized text (D-06).
+
+    ``digest[0] < 128`` is ``tuning``; otherwise ``heldout``. Only
+    ``hashlib.sha256`` is stable across processes and machines — the salted
+    salted builtin hash is never used (research Pitfall 9).
+    """
+    digest = hashlib.sha256(normalize_text(query).encode("utf-8")).digest()
+    return "tuning" if digest[0] < _SPLIT_THRESHOLD else "heldout"
+
+
+def split_queries(queries: Sequence[SynthesizedQuery]) -> list[SynthesizedQuery]:
+    """Assign a split to title/body queries; replay queries stay splitless.
+
+    Replay measures stability, never a tuning/held-out decision, so it is
+    excluded from the split vocabulary by construction (research A6).
+    """
+    return [
+        replace(query, split=assign_split(query.query)) if query.leg in ("title", "body") else query
+        for query in queries
+    ]
 
 
 def _is_cjk(character: str) -> bool:
@@ -528,6 +695,70 @@ def synthesize_known_item_queries(
     )
 
 
+def ensure_heldout(
+    metadata: Sequence[DocumentRecord],
+    conn: sqlite3.Connection,
+    *,
+    initial: int = INITIAL_SAMPLE_DOCUMENTS,
+    cap: int = MAX_SAMPLE_DOCUMENTS,
+) -> tuple[list[DocumentRecord], SynthesisResult]:
+    """Sample, synthesize, split, and widen until both floors are met (D-06).
+
+    Starts from the first ``initial`` documents in deterministic sample order
+    (strictly smaller than the cap whenever the corpus has more documents),
+    loads bodies only for that slice, and while accepted queries are below
+    ``MIN_QUERIES`` or held-out queries below ``HELDOUT_MIN`` doubles the
+    limit toward ``min(len(metadata), cap)``. A widened sample is a superset
+    of the previous prefix, so bodies load only for the newly added
+    documents. Only a floor still unmet at the cap raises a counted
+    ``ValueError`` naming accepted, tuning, held-out, and rejection counts.
+    """
+    if not metadata:
+        raise ValueError(
+            "Personal eval needs indexed documents; found 0. "
+            "Index documents with 'sif index update' and retry."
+        )
+    hard_cap = min(len(metadata), cap)
+    limit = max(1, min(initial, hard_cap))
+    sampled = sample_documents(metadata, limit=limit)
+    contents = load_sampled_content(conn, [doc.id for doc in sampled])
+    docs = [replace(doc, content=contents.get(doc.id, "")) for doc in sampled]
+    synthesis = _synthesize_and_split(docs)
+    accepted = synthesis.queries
+    heldout = sum(1 for query in accepted if query.split == "heldout")
+    while (len(accepted) < MIN_QUERIES or heldout < HELDOUT_MIN) and limit < hard_cap:
+        new_limit = min(limit * 2, hard_cap)
+        previous_ids = {doc.id for doc in sampled}
+        sampled = sample_documents(metadata, limit=new_limit)
+        added = [doc for doc in sampled if doc.id not in previous_ids]
+        contents.update(load_sampled_content(conn, [doc.id for doc in added]))
+        docs = [replace(doc, content=contents.get(doc.id, "")) for doc in sampled]
+        synthesis = _synthesize_and_split(docs)
+        accepted = synthesis.queries
+        heldout = sum(1 for query in accepted if query.split == "heldout")
+        limit = new_limit
+    if len(accepted) < MIN_QUERIES or heldout < HELDOUT_MIN:
+        tuning = len(accepted) - heldout
+        empty = sum(synthesis.rejected_empty.values())
+        duplicate = sum(synthesis.rejected_duplicate.values())
+        overlap = sum(synthesis.rejected_overlap.values())
+        raise ValueError(
+            f"Personal eval needs at least {MIN_QUERIES} accepted queries with "
+            f"{HELDOUT_MIN} held out; accepted {len(accepted)} "
+            f"(tuning {tuning}, held-out {heldout}) from {len(sampled)} sampled "
+            f"documents; rejected {empty + duplicate + overlap} "
+            f"({empty} empty, {duplicate} duplicate, {overlap} overlap). "
+            "Index more documents with 'sif index update' and retry."
+        )
+    return sampled, synthesis
+
+
+def _synthesize_and_split(docs: Sequence[DocumentRecord]) -> SynthesisResult:
+    """Synthesize title+body queries over pre-loaded docs, then split them."""
+    synthesis = synthesize_known_item_queries(docs)
+    return replace(synthesis, queries=split_queries(synthesis.queries))
+
+
 def build_legacy_fixture(queries: Sequence[SynthesizedQuery]) -> dict[str, Any]:
     """Build the legacy binary fixture the evaluator already parses (D-04).
 
@@ -589,3 +820,159 @@ def evaluate_known_items(
     """
     evaluator = SearchEvaluator(build_legacy_fixture(queries))
     return evaluator.evaluate_per_query(search_fn)
+
+
+def group_metrics(
+    records: Sequence[PersonalQueryRecord],
+) -> tuple[list[GroupMetrics], list[str]]:
+    """Group known-item records by leg x language x length bucket (D-08).
+
+    Groups are emitted in declared ``LEGS x LANGUAGES x LENGTH_BUCKETS``
+    order. Groups with fewer than ``SUPPRESS_BELOW`` queries are omitted and
+    their stable names (``leg=.../language=.../length=...``) are returned so
+    a small sample is never rendered as a zero row. Replay records never
+    enter (they are not known-item records).
+    """
+    buckets: dict[tuple[str, str, str], list[PersonalQueryRecord]] = {}
+    for record in records:
+        if record.leg not in ("title", "body"):
+            continue
+        key = (record.leg, record.language, record.length_bucket)
+        buckets.setdefault(key, []).append(record)
+    groups: list[GroupMetrics] = []
+    suppressed: list[str] = []
+    for leg in LEGS:
+        if leg not in ("title", "body"):
+            continue
+        for language in LANGUAGES:
+            for length in LENGTH_BUCKETS:
+                members = buckets.get((leg, language, length))
+                if not members:
+                    continue
+                name = f"leg={leg}/language={language}/length={length}"
+                if len(members) < SUPPRESS_BELOW:
+                    suppressed.append(name)
+                    continue
+                groups.append(
+                    GroupMetrics(
+                        leg=leg,
+                        language=language,
+                        length_bucket=length,
+                        count=len(members),
+                        ndcg_at_10=_mean([member.ndcg_at_10 for member in members]),
+                        hit_at_10=_mean([member.hit_at_10 for member in members]),
+                    )
+                )
+    return groups, suppressed
+
+
+def build_query_records(
+    queries: Sequence[SynthesizedQuery],
+    evaluations: Sequence[QueryEvaluation],
+) -> list[PersonalQueryRecord]:
+    """Pair per-query evaluations with their synthesized metadata, in order.
+
+    ``retrieved_doc_ids`` is the evaluator's ``retrieved_keys`` — one string
+    per retrieved rank, ``""`` when a result carries no document id — so it
+    stays rank-aligned with ``retrieved_paths`` (Plan 03's grading identity).
+    """
+    if len(queries) != len(evaluations):
+        raise ValueError(
+            f"Expected one evaluation per synthesized query; "
+            f"got {len(queries)} queries and {len(evaluations)} evaluations."
+        )
+    return [
+        PersonalQueryRecord(
+            query=query.query,
+            target_doc_id=query.target_doc_id,
+            target_path=query.target_path,
+            leg=query.leg,
+            language=query.language,
+            length_bucket=query.length_bucket,
+            split=query.split or assign_split(query.query),
+            ndcg_at_10=evaluation.ndcg_at_10,
+            hit_at_10=evaluation.hit_at_10,
+            retrieved_doc_ids=list(evaluation.retrieved_keys),
+            retrieved_paths=list(evaluation.retrieved_paths),
+        )
+        for query, evaluation in zip(queries, evaluations, strict=True)
+    ]
+
+
+def _per_leg_queries(records: Sequence[PersonalQueryRecord]) -> dict[str, Any]:
+    """Per-leg accepted/rejection counts plus the applied budget (D-05)."""
+    by_leg: dict[str, Any] = {}
+    for leg in ("title", "body"):
+        members = [record for record in records if record.leg == leg]
+        by_leg[leg] = {
+            "accepted": len(members),
+            "rejected_empty": 0,
+            "rejected_duplicate": 0,
+            "rejected_overlap": 0,
+            "budget": LEG_BUDGETS[leg],
+            "exact_term": leg in EXACT_TERM_LEGS,
+        }
+    return by_leg
+
+
+def build_personal_report(  # noqa: PLR0913
+    *,
+    retrieval: str,
+    top_k: int,
+    metadata: Sequence[DocumentRecord],
+    sampled: Sequence[DocumentRecord],
+    model: dict[str, Any] | None,
+    synthesis: SynthesisResult,
+    evaluations: Sequence[QueryEvaluation],
+    replay: ReplayResult,
+    notes: list[str],
+) -> PersonalReport:
+    """Assemble the one report contract from synthesis + per-query evaluation.
+
+    Metrics, splits, groups, and records are computed exactly once here; the
+    CLI renders ``to_dict()`` and never recomputes a field. Known-item
+    metrics are means over title+body records only — replay never enters.
+    """
+    records = build_query_records(synthesis.queries, evaluations)
+    groups, suppressed = group_metrics(records)
+    splits = {
+        split: sum(1 for record in records if record.split == split)
+        for split in ("tuning", "heldout")
+    }
+    by_leg = _per_leg_queries(records)
+    for leg, counts in by_leg.items():
+        counts["rejected_empty"] = synthesis.rejected_empty.get(leg, 0)
+        counts["rejected_duplicate"] = synthesis.rejected_duplicate.get(leg, 0)
+        counts["rejected_overlap"] = synthesis.rejected_overlap.get(leg, 0)
+    queries = {
+        "accepted": len(records),
+        "rejected_empty": sum(synthesis.rejected_empty.values()),
+        "rejected_duplicate": sum(synthesis.rejected_duplicate.values()),
+        "rejected_overlap": sum(synthesis.rejected_overlap.values()),
+        "by_leg": by_leg,
+    }
+    metrics = {
+        "ndcg_at_10": _mean([record.ndcg_at_10 for record in records]),
+        "hit_at_10": _mean([record.hit_at_10 for record in records]),
+        "num_queries": len(records),
+    }
+    corpus = CorpusSummary(
+        documents=len(metadata),
+        sampled=len(sampled),
+        fingerprint=corpus_fingerprint(metadata),
+        widened=len(sampled) > INITIAL_SAMPLE_DOCUMENTS,
+    )
+    return PersonalReport(
+        retrieval=retrieval,
+        top_k=top_k,
+        corpus=corpus,
+        model=model,
+        metrics=metrics,
+        splits=splits,
+        groups=groups,
+        suppressed=suppressed,
+        queries=queries,
+        records=records,
+        replay=replay,
+        notes=list(notes),
+    )
