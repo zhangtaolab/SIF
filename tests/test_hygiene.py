@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -19,6 +20,17 @@ DOCS_ROOT = REPO_ROOT / "docs"
 DESIGN_PATH = REPO_ROOT / "DESIGN.md"
 CHANGELOG_PATH = (DOCS_ROOT / "changelog.md").resolve()
 SELF_PATH = Path(__file__).resolve()
+
+
+JUNK_PATHS = (
+    "MagicMock/mock/4398091296",
+    "MagicMock/mock/4419046432",
+    "MagicMock/mock/4419497200",
+    "MagicMock/mock/4426075504",
+    "quick_test.py",
+    "simple_test.py",
+    "verify_imports.py",
+)
 
 
 DEAD_DOC_LITERALS = (
@@ -196,3 +208,37 @@ def test_makefile_has_no_pre_commit_target() -> None:
 def test_pre_commit_config_absent() -> None:
     """No pre-commit configuration was introduced by the cleanup."""
     assert not (REPO_ROOT / ".pre-commit-config.yaml").exists()
+
+
+def _tracked_files() -> list[str]:
+    """Return every path the git index tracks, skipping when git cannot report."""
+    if shutil.which("git") is None:
+        pytest.skip("git is unavailable; cannot verify the tracked-junk baseline")
+    completed = subprocess.run(
+        ["git", "ls-files"],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        pytest.skip(
+            "git ls-files failed; cannot verify the tracked-junk baseline: "
+            f"{completed.stderr.strip()}"
+        )
+    return completed.stdout.splitlines()
+
+
+def test_tracked_junk_removed() -> None:
+    """The seven tracked junk paths are gone from disk and from the git index."""
+    on_disk = [relative for relative in JUNK_PATHS if (REPO_ROOT / relative).exists()]
+    assert not on_disk, f"junk paths remain on disk: {on_disk}"
+
+    tracked = _tracked_files()
+    assert "pyproject.toml" in tracked, (
+        "git ls-files listed no project files; cannot verify junk absence"
+    )
+    junk_tracked = sorted(
+        line for line in tracked if line in JUNK_PATHS or line.startswith("MagicMock/")
+    )
+    assert not junk_tracked, f"junk paths are still tracked: {junk_tracked}"
