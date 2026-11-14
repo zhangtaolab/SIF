@@ -20,12 +20,16 @@ counted per leg — a query set never shrinks silently (research Pitfall 1).
 from __future__ import annotations
 
 import hashlib
+import json
+import math
 import re
 import sqlite3
 import unicodedata
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
-from typing import Any
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, NoReturn
 
 from sif.core.models import SearchResult
 from sif.database.repositories import QueryLogRepository
@@ -49,6 +53,20 @@ HELDOUT_MIN = 25
 SUPPRESS_BELOW = 10
 OVERLAP_BUDGET = 0.60
 RUN_SCHEMA_VERSION = 1
+# Versioned saved-run contract (D-10/D-12): every personal run is written
+# under the cache directory unless --no-save, and --compare consumes it.
+SAVED_RUN_VERSION = 1
+MAX_SAVED_RECORDS = 10_000
+MAX_SAVED_FILE_BYTES = 5 * 1024 * 1024
+_SAVED_QUERY_MAX_CHARS = 10_000
+_SAVED_PATH_MAX_CHARS = 4_096
+_SAVED_ID_MAX_CHARS = 512
+_SAVED_FINGERPRINT_MAX_CHARS = 64
+_SAVED_MODEL_FIELD_MAX_CHARS = 512
+_SAVED_RETRIEVAL_MODES = frozenset({"hybrid", "bm25"})
+_SAVED_LEGS = frozenset({"title", "body"})
+_SAVED_SPLITS = frozenset({"tuning", "heldout"})
+_SAVED_FORBIDDEN_KEYS = frozenset({"content", "snippet"})
 BOOTSTRAP_RESAMPLES = 10_000
 MAX_REPLAY_QUERIES = 500
 REPLAY_BIAS_NOTE = (
@@ -227,6 +245,47 @@ class ReplayResult:
             "queries": {query: list(paths) for query, paths in self.top_k_paths.items()},
             "bias": self.bias,
         }
+
+
+@dataclass(frozen=True)
+class SavedQueryRecord:
+    """One query in a versioned saved run (D-10/D-12; never document content).
+
+    ``retrieved`` and ``retrieved_doc_ids`` are rank-aligned: index ``i`` is
+    the result at rank ``i`` (``""`` when that result carries no document id).
+    Document ids are the identity both comparison arms grade through;
+    paths remain inspection values and a unique-match fallback.
+    """
+
+    query: str
+    target_path: str
+    target_doc_id: str
+    leg: str
+    language: str
+    length_bucket: str
+    split: str
+    retrieved: list[str]
+    retrieved_doc_ids: list[str]
+    grade: int = 1
+
+
+@dataclass(frozen=True)
+class SavedRun:
+    """The versioned run envelope ``--compare`` consumes (D-12).
+
+    ``top_k`` records the retrieval depth so both comparison arms evaluate at
+    the saved depth; ``corpus`` carries the fingerprint that refuses a
+    different corpus; ``replay`` stores rank-ordered paths only.
+    """
+
+    version: int
+    created_at: str
+    top_k: int
+    corpus: dict[str, Any]
+    retrieval: str
+    model: dict[str, Any] | None
+    queries: list[SavedQueryRecord]
+    replay: dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -1022,3 +1081,416 @@ def build_personal_report(  # noqa: PLR0913
         replay=replay,
         notes=list(notes),
     )
+
+
+def run_to_saved(report: PersonalReport) -> SavedRun:
+    """Build the versioned saved run from the one report contract (D-10/D-12).
+
+    The fresh path passes its own ``PersonalReport``; ``--compare`` passes
+    ``ComparisonReport.current_report``, so both paths share one record
+    source and one ``created_at`` stamp (taken here, at call time).
+    ``report.records`` map in order to query records; replay paths and the
+    corpus identity come from the same report. No document content is read.
+    """
+    return SavedRun(
+        version=SAVED_RUN_VERSION,
+        created_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        top_k=report.top_k,
+        corpus={
+            "fingerprint": report.corpus.fingerprint,
+            "documents": report.corpus.documents,
+            "sampled": report.corpus.sampled,
+        },
+        retrieval=report.retrieval,
+        model=dict(report.model) if report.model is not None else None,
+        queries=[
+            SavedQueryRecord(
+                query=record.query,
+                target_path=record.target_path,
+                target_doc_id=record.target_doc_id,
+                leg=record.leg,
+                language=record.language,
+                length_bucket=record.length_bucket,
+                split=record.split,
+                grade=1,
+                retrieved=list(record.retrieved_paths),
+                retrieved_doc_ids=list(record.retrieved_doc_ids),
+            )
+            for record in report.records
+        ],
+        replay={
+            "available": report.replay.available,
+            "queries": [
+                {"query": query, "top_k_paths": list(paths)}
+                for query, paths in report.replay.top_k_paths.items()
+            ],
+        },
+    )
+
+
+def saved_run_to_dict(run: SavedRun) -> dict[str, Any]:
+    """Serialize a saved run with a fixed, versioned key order.
+
+    Every document-derived value is a path, an id, or a query string; no
+    document body, snippet, or embedding is ever emitted (T-18-08).
+    """
+    return {
+        "version": run.version,
+        "created_at": run.created_at,
+        "top_k": run.top_k,
+        "corpus": {
+            "fingerprint": run.corpus["fingerprint"],
+            "documents": run.corpus["documents"],
+            "sampled": run.corpus["sampled"],
+        },
+        "retrieval": run.retrieval,
+        "model": dict(run.model) if run.model is not None else None,
+        "queries": [
+            {
+                "query": record.query,
+                "target_path": record.target_path,
+                "target_doc_id": record.target_doc_id,
+                "leg": record.leg,
+                "language": record.language,
+                "length_bucket": record.length_bucket,
+                "split": record.split,
+                "grade": record.grade,
+                "retrieved": list(record.retrieved),
+                "retrieved_doc_ids": list(record.retrieved_doc_ids),
+            }
+            for record in run.queries
+        ],
+        "replay": {
+            "available": run.replay["available"],
+            "queries": [
+                {
+                    "query": entry["query"],
+                    "top_k_paths": list(entry["top_k_paths"]),
+                }
+                for entry in run.replay["queries"]
+            ],
+        },
+    }
+
+
+def _saved_defect(field: str, detail: str) -> NoReturn:
+    """Raise a saved-run validation error naming the offending field path."""
+    raise ValueError(f"Invalid saved run field '{field}': {detail}")
+
+
+def _saved_dict(value: object, field: str) -> dict[str, Any]:
+    """Require a JSON object, never escaping as a KeyError/TypeError."""
+    if not isinstance(value, dict):
+        _saved_defect(field, f"expected a JSON object, got {type(value).__name__}")
+    return value
+
+
+def _saved_str(
+    value: object,
+    field: str,
+    *,
+    max_length: int | None = None,
+    non_empty: bool = False,
+) -> str:
+    """Require a string, optionally capped and non-empty."""
+    if not isinstance(value, str):
+        _saved_defect(field, f"expected a string, got {type(value).__name__}")
+    if non_empty and not value:
+        _saved_defect(field, "must be a non-empty string")
+    if max_length is not None and len(value) > max_length:
+        _saved_defect(field, f"must be at most {max_length} characters")
+    return value
+
+
+def _saved_int(
+    value: object,
+    field: str,
+    *,
+    minimum: int | None = None,
+    maximum: int | None = None,
+) -> int:
+    """Require a real integer (bool and non-finite floats rejected)."""
+    if isinstance(value, float) and not math.isfinite(value):
+        _saved_defect(field, f"must be a finite number, got {value!r}")
+    if isinstance(value, bool) or not isinstance(value, int):
+        _saved_defect(field, f"expected an integer, got {type(value).__name__}")
+    if minimum is not None and value < minimum:
+        _saved_defect(field, f"must be >= {minimum}, got {value}")
+    if maximum is not None and value > maximum:
+        _saved_defect(field, f"must be <= {maximum}, got {value}")
+    return value
+
+
+def _saved_str_list(
+    value: object,
+    field: str,
+    *,
+    max_length: int,
+    max_items: int | None = None,
+) -> list[str]:
+    """Require a list of capped strings; entry defects name ``field[i]``."""
+    if not isinstance(value, list):
+        _saved_defect(field, f"expected a list of strings, got {type(value).__name__}")
+    if max_items is not None and len(value) > max_items:
+        _saved_defect(field, f"must contain at most {max_items} entries")
+    return [
+        _saved_str(item, f"{field}[{index}]", max_length=max_length)
+        for index, item in enumerate(value)
+    ]
+
+
+def _validate_saved_record(item: object, index: int) -> SavedQueryRecord:
+    """Validate one query record; every defect names its field path."""
+    field = f"queries[{index}]"
+    record = _saved_dict(item, field)
+    for forbidden in _SAVED_FORBIDDEN_KEYS:
+        if forbidden in record:
+            _saved_defect(
+                f"{field}.{forbidden}",
+                "saved runs never store document content or snippets",
+            )
+    query = _saved_str(
+        record.get("query"),
+        f"{field}.query",
+        max_length=_SAVED_QUERY_MAX_CHARS,
+    )
+    target_path = _saved_str(
+        record.get("target_path"),
+        f"{field}.target_path",
+        max_length=_SAVED_PATH_MAX_CHARS,
+    )
+    target_doc_id = _saved_str(
+        record.get("target_doc_id"),
+        f"{field}.target_doc_id",
+        max_length=_SAVED_ID_MAX_CHARS,
+    )
+    leg = _saved_str(record.get("leg"), f"{field}.leg")
+    if leg not in _SAVED_LEGS:
+        _saved_defect(f"{field}.leg", f"must be one of {sorted(_SAVED_LEGS)}, got {leg!r}")
+    language = _saved_str(record.get("language"), f"{field}.language")
+    if language not in LANGUAGES:
+        _saved_defect(
+            f"{field}.language",
+            f"must be one of {list(LANGUAGES)}, got {language!r}",
+        )
+    length = _saved_str(record.get("length_bucket"), f"{field}.length_bucket")
+    if length not in LENGTH_BUCKETS:
+        _saved_defect(
+            f"{field}.length_bucket",
+            f"must be one of {list(LENGTH_BUCKETS)}, got {length!r}",
+        )
+    split = _saved_str(record.get("split"), f"{field}.split")
+    if split not in _SAVED_SPLITS:
+        _saved_defect(
+            f"{field}.split",
+            f"must be one of {sorted(_SAVED_SPLITS)}, got {split!r}",
+        )
+    grade = record.get("grade")
+    if isinstance(grade, bool) or not isinstance(grade, int) or grade != 1:
+        _saved_defect(f"{field}.grade", f"must be the integer 1, got {grade!r}")
+    retrieved = _saved_str_list(
+        record.get("retrieved"),
+        f"{field}.retrieved",
+        max_length=_SAVED_PATH_MAX_CHARS,
+        max_items=MAX_SAVED_RECORDS,
+    )
+    retrieved_doc_ids = _saved_str_list(
+        record.get("retrieved_doc_ids"),
+        f"{field}.retrieved_doc_ids",
+        max_length=_SAVED_ID_MAX_CHARS,
+        max_items=MAX_SAVED_RECORDS,
+    )
+    if len(retrieved) != len(retrieved_doc_ids):
+        _saved_defect(
+            f"{field}.retrieved_doc_ids",
+            "must be rank-aligned with "
+            f"'{field}.retrieved' (got {len(retrieved_doc_ids)} ids for "
+            f"{len(retrieved)} paths)",
+        )
+    return SavedQueryRecord(
+        query=query,
+        target_path=target_path,
+        target_doc_id=target_doc_id,
+        leg=leg,
+        language=language,
+        length_bucket=length,
+        split=split,
+        grade=1,
+        retrieved=retrieved,
+        retrieved_doc_ids=retrieved_doc_ids,
+    )
+
+
+def _validate_saved_replay(value: object) -> dict[str, Any]:
+    """Validate the replay snapshot: booleans, strings, and path lists only."""
+    replay = _saved_dict(value, "replay")
+    available = replay.get("available")
+    if not isinstance(available, bool):
+        _saved_defect("replay.available", "must be a boolean")
+    queries = replay.get("queries")
+    if not isinstance(queries, list):
+        _saved_defect("replay.queries", "must be a list")
+    if len(queries) > MAX_SAVED_RECORDS:
+        _saved_defect(
+            "replay.queries",
+            f"must contain at most {MAX_SAVED_RECORDS} entries",
+        )
+    entries: list[dict[str, Any]] = []
+    for index, item in enumerate(queries):
+        field = f"replay.queries[{index}]"
+        entry = _saved_dict(item, field)
+        for forbidden in _SAVED_FORBIDDEN_KEYS:
+            if forbidden in entry:
+                _saved_defect(
+                    f"{field}.{forbidden}",
+                    "saved runs never store document content or snippets",
+                )
+        query = _saved_str(
+            entry.get("query"),
+            f"{field}.query",
+            max_length=_SAVED_QUERY_MAX_CHARS,
+        )
+        paths = _saved_str_list(
+            entry.get("top_k_paths"),
+            f"{field}.top_k_paths",
+            max_length=_SAVED_PATH_MAX_CHARS,
+            max_items=MAX_SAVED_RECORDS,
+        )
+        entries.append({"query": query, "top_k_paths": paths})
+    return {"available": available, "queries": entries}
+
+
+def validate_saved_run(data: object) -> SavedRun:
+    """Validate a whole saved-run envelope before trusting any record (T-18-07).
+
+    The full envelope is type/range-checked with ``.get``/``isinstance`` so a
+    malformed file can never escape as a ``KeyError``/``TypeError``; version,
+    caps, enums, and rank-aligned arrays are enforced, and every defect raises
+    ``ValueError`` naming the offending field path.
+    """
+    if not isinstance(data, dict):
+        raise ValueError(
+            f"Invalid saved run root: expected a JSON object, got {type(data).__name__}"
+        )
+    version = _saved_int(data.get("version"), "version")
+    if version != SAVED_RUN_VERSION:
+        _saved_defect(
+            "version",
+            f"unsupported schema version {version!r}; expected {SAVED_RUN_VERSION}",
+        )
+    created_at = _saved_str(data.get("created_at"), "created_at")
+    corpus = _saved_dict(data.get("corpus"), "corpus")
+    fingerprint = _saved_str(
+        corpus.get("fingerprint"),
+        "corpus.fingerprint",
+        max_length=_SAVED_FINGERPRINT_MAX_CHARS,
+        non_empty=True,
+    )
+    documents = _saved_int(corpus.get("documents"), "corpus.documents", minimum=0)
+    sampled = _saved_int(corpus.get("sampled"), "corpus.sampled", minimum=0)
+    if sampled > documents:
+        _saved_defect(
+            "corpus.sampled",
+            f"must not exceed 'corpus.documents' ({documents}), got {sampled}",
+        )
+    retrieval = _saved_str(data.get("retrieval"), "retrieval")
+    if retrieval not in _SAVED_RETRIEVAL_MODES:
+        _saved_defect(
+            "retrieval",
+            f"must be one of {sorted(_SAVED_RETRIEVAL_MODES)}, got {retrieval!r}",
+        )
+    top_k = _saved_int(data.get("top_k"), "top_k", minimum=1)
+    model_data = data.get("model")
+    model: dict[str, Any] | None = None
+    if model_data is not None:
+        model_dict = _saved_dict(model_data, "model")
+        model = {
+            "model_name": _saved_str(
+                model_dict.get("model_name"),
+                "model.model_name",
+                max_length=_SAVED_MODEL_FIELD_MAX_CHARS,
+            ),
+            "model_type": _saved_str(
+                model_dict.get("model_type"),
+                "model.model_type",
+                max_length=_SAVED_MODEL_FIELD_MAX_CHARS,
+            ),
+            "dimension": _saved_int(
+                model_dict.get("dimension"),
+                "model.dimension",
+                minimum=1,
+            ),
+        }
+    queries_data = data.get("queries")
+    if not isinstance(queries_data, list):
+        _saved_defect("queries", "must be a list")
+    if not queries_data:
+        _saved_defect("queries", "must contain at least one query record")
+    if len(queries_data) > MAX_SAVED_RECORDS:
+        _saved_defect(
+            "queries",
+            f"must contain at most {MAX_SAVED_RECORDS} query records",
+        )
+    queries = [_validate_saved_record(item, index) for index, item in enumerate(queries_data)]
+    replay = _validate_saved_replay(data.get("replay"))
+    return SavedRun(
+        version=version,
+        created_at=created_at,
+        top_k=top_k,
+        corpus={
+            "fingerprint": fingerprint,
+            "documents": documents,
+            "sampled": sampled,
+        },
+        retrieval=retrieval,
+        model=model,
+        queries=queries,
+        replay=replay,
+    )
+
+
+def write_saved_run(run: SavedRun, path: str | Path) -> Path:
+    """Write a saved run atomically (sibling temp file then ``replace``).
+
+    The directory is created if needed. No path named inside the run is
+    ever opened: the destination is the caller's explicit path.
+    """
+    destination = Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_name(f".{destination.name}.tmp")
+    temporary.write_text(
+        json.dumps(saved_run_to_dict(run), indent=2) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(destination)
+    return destination
+
+
+def load_saved_run(path: str | Path) -> SavedRun:
+    """Load and fully validate a saved run, failing loudly on any defect.
+
+    The 5 MB cap is enforced from the file size before decode; OSError,
+    decode errors, and any structural defect become ``ValueError`` with the
+    cause retained (the CLI translates it to ``ClickException``). Saved
+    paths are opaque values — nothing from the file is ever opened.
+    """
+    source = Path(path)
+    try:
+        size = source.stat().st_size
+    except OSError as error:
+        raise ValueError(f"Cannot read saved run {source}: {error}") from error
+    if size > MAX_SAVED_FILE_BYTES:
+        raise ValueError(
+            f"Saved run {source} is {size} bytes; exceeds the "
+            f"{MAX_SAVED_FILE_BYTES}-byte cap. Refusing to load it."
+        )
+    try:
+        data = json.loads(source.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise ValueError(f"Cannot load saved run {source}: {error}") from error
+    try:
+        return validate_saved_run(data)
+    except ValueError:
+        raise
+    except (KeyError, TypeError) as error:  # pragma: no cover - defensive
+        raise ValueError(f"Invalid saved run {source}: {error}") from error

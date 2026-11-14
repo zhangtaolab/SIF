@@ -19,8 +19,10 @@ from sif.search.benchmark import SearchEvaluator
 from sif.search.personal_bench import (
     HELDOUT_MIN,
     INITIAL_SAMPLE_DOCUMENTS,
+    SAVED_RUN_VERSION,
     DocumentRecord,
     assign_split,
+    load_saved_run,
     normalize_text,
     sample_documents,
 )
@@ -394,6 +396,7 @@ def test_personal_help_lists_options() -> None:
     assert result.exit_code == 0
     for option in (
         "--personal",
+        "--no-save",
         "--bm25-only",
         "--limit",
         "--collection",
@@ -915,3 +918,93 @@ class TestReplayCli:
             assert without[key] == with_replay[key]
         assert without["replay"]["available"] is False
         assert with_replay["replay"]["available"] is True
+
+
+# --- Task 1: auto-saved runs ------------------------------------------------
+
+
+def _saved_files(root: Path) -> list[Path]:
+    """Every auto-saved run under ``<cache_dir>/eval`` (sorted, stable)."""
+    return sorted((root / "eval").glob("eval-*.json"))
+
+
+class TestSavedRunsCli:
+    def test_personal_run_writes_exactly_one_versioned_run(self, tmp_path: Path) -> None:
+        db_path = build_personal_db(tmp_path / "personal.db", documents=60)
+
+        _ReplaySpyPipeline.seen = []
+        result = _invoke(
+            db_path,
+            ["--personal", "--bm25-only", "--json"],
+            settings=_settings(tmp_path),
+            pipeline=_ReplaySpyPipeline,
+        )
+
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.stdout)
+        files = _saved_files(tmp_path)
+        assert len(files) == 1
+        assert payload["run_path"] == str(files[0])
+
+        saved = load_saved_run(files[0])
+        assert saved.version == SAVED_RUN_VERSION == 1
+        assert saved.top_k == 10
+        assert saved.corpus["fingerprint"] == payload["corpus"]["fingerprint"]
+        assert len(saved.queries) == payload["queries"]["accepted"]
+        assert [record.query for record in saved.queries] == _ReplaySpyPipeline.seen
+        for record in saved.queries:
+            assert len(record.retrieved) == len(record.retrieved_doc_ids)
+        text = files[0].read_text(encoding="utf-8")
+        assert '"content"' not in text
+        assert "Document body" not in text
+        assert "snippet" not in text
+
+    def test_no_save_writes_no_run_and_reports_none(self, tmp_path: Path) -> None:
+        db_path = build_personal_db(tmp_path / "personal.db", documents=60)
+
+        result = _invoke(
+            db_path,
+            ["--personal", "--bm25-only", "--json", "--no-save"],
+            settings=_settings(tmp_path),
+            pipeline=_ReplaySpyPipeline,
+        )
+
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.stdout)
+        assert payload["run_path"] is None
+        assert _saved_files(tmp_path) == []
+
+    def test_saved_path_is_announced_on_stderr_only(self, tmp_path: Path) -> None:
+        db_path = build_personal_db(tmp_path / "personal.db", documents=60)
+
+        result = _invoke(
+            db_path,
+            ["--personal", "--bm25-only"],
+            settings=_settings(tmp_path),
+            pipeline=_ReplaySpyPipeline,
+        )
+
+        assert result.exit_code == 0, result.output
+        files = _saved_files(tmp_path)
+        assert len(files) == 1
+        assert str(files[0]) in result.stderr
+        assert str(files[0]) not in result.stdout
+
+    def test_saved_run_is_built_from_the_report_contract(self, tmp_path: Path) -> None:
+        db_path = build_personal_db(tmp_path / "personal.db", documents=60)
+
+        result = _invoke(
+            db_path,
+            ["--personal", "--bm25-only", "--json"],
+            settings=_settings(tmp_path),
+            pipeline=_ReplaySpyPipeline,
+        )
+
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.stdout)
+        saved = load_saved_run(_saved_files(tmp_path)[0])
+        assert saved.corpus["documents"] == payload["corpus"]["documents"]
+        assert saved.corpus["sampled"] == payload["corpus"]["sampled"]
+        assert saved.retrieval == payload["retrieval"]
+        assert saved.model == payload["model"]
+        assert {record.split for record in saved.queries} == {"tuning", "heldout"}

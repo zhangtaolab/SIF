@@ -9,7 +9,10 @@ grouping, and the replay leg.
 from __future__ import annotations
 
 import hashlib
+import re
 import sqlite3
+from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
@@ -22,8 +25,11 @@ from sif.search.personal_bench import (
     LEG_BUDGETS,
     LEGS,
     LENGTH_BUCKETS,
+    MAX_SAVED_FILE_BYTES,
+    MAX_SAVED_RECORDS,
     MIN_QUERIES,
     OVERLAP_BUDGET,
+    SAVED_RUN_VERSION,
     SUPPRESS_BELOW,
     CorpusSummary,
     DocumentRecord,
@@ -39,6 +45,7 @@ from sif.search.personal_bench import (
     build_personal_report,
     build_query_records,
     classify_language,
+    corpus_fingerprint,
     dedupe_queries,
     ensure_heldout,
     group_metrics,
@@ -46,14 +53,19 @@ from sif.search.personal_bench import (
     length_bucket,
     load_replay_queries,
     load_sampled_content,
+    load_saved_run,
     normalize_text,
     replay_leg,
     require_minimum_queries,
+    run_to_saved,
+    saved_run_to_dict,
     split_queries,
     strip_markup,
     synthesize_body_queries,
     synthesize_known_item_queries,
     token_set,
+    validate_saved_run,
+    write_saved_run,
 )
 
 
@@ -859,3 +871,479 @@ class TestOrchestratorContentLoading:
 
         assert conn.calls[0][1] == ["doc-1"]
         assert [query.leg for query in result.queries] == ["title", "body"]
+
+
+# --- Task 1: versioned saved runs -------------------------------------------
+
+
+def _saved_record(
+    *,
+    query: str = "alpha beta",
+    target_doc_id: str = "doc-1",
+    target_path: str = "/corpus/1.md",
+    leg: str = "title",
+    split: str = "tuning",
+    retrieved: list[str] | None = None,
+    retrieved_doc_ids: list[str] | None = None,
+) -> PersonalQueryRecord:
+    """One report record with rank-aligned retrieval arrays for saving."""
+    return PersonalQueryRecord(
+        query=query,
+        target_doc_id=target_doc_id,
+        target_path=target_path,
+        leg=leg,
+        language="en",
+        length_bucket="long",
+        split=split,
+        ndcg_at_10=1.0,
+        hit_at_10=1.0,
+        retrieved_doc_ids=(
+            retrieved_doc_ids if retrieved_doc_ids is not None else [target_doc_id, ""]
+        ),
+        retrieved_paths=(retrieved if retrieved is not None else [target_path, "/corpus/9.md"]),
+    )
+
+
+def _report_for_saved_runs() -> PersonalReport:
+    """A two-query report carrying every field ``run_to_saved`` consumes."""
+    records = [
+        _saved_record(),
+        _saved_record(
+            query="gamma delta",
+            target_doc_id="doc-2",
+            target_path="/corpus/2.md",
+            leg="body",
+            split="heldout",
+        ),
+    ]
+    return PersonalReport(
+        retrieval="hybrid",
+        top_k=10,
+        corpus=CorpusSummary(
+            documents=60,
+            sampled=50,
+            fingerprint="0123456789abcdef",
+            widened=False,
+        ),
+        model={"model_name": "m", "model_type": "t", "dimension": 8},
+        metrics={"ndcg_at_10": 1.0, "hit_at_10": 1.0, "num_queries": 2},
+        splits={"tuning": 1, "heldout": 1},
+        groups=[],
+        suppressed=[],
+        queries={
+            "accepted": 2,
+            "rejected_empty": 0,
+            "rejected_duplicate": 0,
+            "rejected_overlap": 0,
+            "by_leg": {},
+        },
+        records=records,
+        replay=ReplayResult(
+            available=True,
+            num_queries=1,
+            baseline_available=False,
+            top_k_paths={"alpha": ["/p/a.md", "/p/b.md"]},
+            bias="bias",
+        ),
+        notes=["note"],
+    )
+
+
+def _saved_dict() -> dict:
+    """The canonical serialized saved run (validated by construction)."""
+    return saved_run_to_dict(run_to_saved(_report_for_saved_runs()))
+
+
+def _all_keys(value: object) -> set[str]:
+    """Every dict key anywhere in a JSON-shaped payload."""
+    keys: set[str] = set()
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            keys.add(str(key))
+            keys |= _all_keys(nested)
+    elif isinstance(value, list):
+        for nested in value:
+            keys |= _all_keys(nested)
+    return keys
+
+
+class TestSavedRunContract:
+    def test_round_trips_with_version_fixed_order_and_no_content(self) -> None:
+        run = run_to_saved(_report_for_saved_runs())
+        data = saved_run_to_dict(run)
+
+        assert data["version"] == SAVED_RUN_VERSION == 1
+        assert list(data) == [
+            "version",
+            "created_at",
+            "top_k",
+            "corpus",
+            "retrieval",
+            "model",
+            "queries",
+            "replay",
+        ]
+        assert list(data["corpus"]) == ["fingerprint", "documents", "sampled"]
+        assert list(data["queries"][0]) == [
+            "query",
+            "target_path",
+            "target_doc_id",
+            "leg",
+            "language",
+            "length_bucket",
+            "split",
+            "grade",
+            "retrieved",
+            "retrieved_doc_ids",
+        ]
+        assert list(data["replay"]) == ["available", "queries"]
+        assert validate_saved_run(data) == run
+        assert not ({"content", "body", "snippet", "embedding"} & _all_keys(data))
+
+    def test_created_at_is_a_utc_iso_timestamp_stamped_by_run_to_saved(self) -> None:
+        run = run_to_saved(_report_for_saved_runs())
+
+        assert run.created_at.endswith("+00:00")
+        assert "T" in run.created_at
+
+    def test_top_k_and_retrieved_arrays_are_rank_aligned(self) -> None:
+        report = _report_for_saved_runs()
+        run = run_to_saved(report)
+
+        assert run.top_k == report.top_k == 10
+        for record in run.queries:
+            assert len(record.retrieved) == len(record.retrieved_doc_ids)
+
+    def test_write_and_load_round_trip(self, tmp_path: Path) -> None:
+        run = run_to_saved(_report_for_saved_runs())
+        path = tmp_path / "eval" / "eval-run.json"
+
+        write_saved_run(run, path)
+
+        assert path.exists()
+        assert load_saved_run(path) == run
+
+    def test_saved_file_contains_no_document_body_text(self, tmp_path: Path) -> None:
+        run = run_to_saved(_report_for_saved_runs())
+        path = tmp_path / "eval-run.json"
+
+        write_saved_run(run, path)
+        text = path.read_text(encoding="utf-8")
+
+        assert '"content"' not in text
+        assert '"body":' not in text
+        assert "Document body" not in text
+
+
+_ENVELOPE_DEFECTS = [
+    ("root-not-object", lambda _data: [], "root"),
+    (
+        "missing-version",
+        lambda data: {key: value for key, value in data.items() if key != "version"},
+        "version",
+    ),
+    ("version-not-int", lambda data: {**data, "version": "1"}, "version"),
+    ("version-bool", lambda data: {**data, "version": True}, "version"),
+    ("wrong-version", lambda data: {**data, "version": 2}, "version"),
+    ("created-at-not-str", lambda data: {**data, "created_at": 5}, "created_at"),
+    (
+        "corpus-missing",
+        lambda data: {key: value for key, value in data.items() if key != "corpus"},
+        "corpus",
+    ),
+    ("corpus-not-dict", lambda data: {**data, "corpus": []}, "corpus"),
+    (
+        "fingerprint-not-str",
+        lambda data: {**data, "corpus": {**data["corpus"], "fingerprint": 5}},
+        "corpus.fingerprint",
+    ),
+    (
+        "fingerprint-empty",
+        lambda data: {**data, "corpus": {**data["corpus"], "fingerprint": ""}},
+        "corpus.fingerprint",
+    ),
+    (
+        "fingerprint-too-long",
+        lambda data: {**data, "corpus": {**data["corpus"], "fingerprint": "x" * 65}},
+        "corpus.fingerprint",
+    ),
+    (
+        "documents-not-int",
+        lambda data: {**data, "corpus": {**data["corpus"], "documents": "60"}},
+        "corpus.documents",
+    ),
+    (
+        "documents-bool",
+        lambda data: {**data, "corpus": {**data["corpus"], "documents": True}},
+        "corpus.documents",
+    ),
+    (
+        "sampled-not-int",
+        lambda data: {**data, "corpus": {**data["corpus"], "sampled": 1.5}},
+        "corpus.sampled",
+    ),
+    (
+        "sampled-nan",
+        lambda data: {
+            **data,
+            "corpus": {**data["corpus"], "sampled": float("nan")},
+        },
+        "corpus.sampled",
+    ),
+    (
+        "sampled-negative",
+        lambda data: {**data, "corpus": {**data["corpus"], "sampled": -1}},
+        "corpus.sampled",
+    ),
+    (
+        "sampled-exceeds-documents",
+        lambda data: {
+            **data,
+            "corpus": {
+                **data["corpus"],
+                "sampled": data["corpus"]["documents"] + 1,
+            },
+        },
+        "corpus.sampled",
+    ),
+    ("retrieval-unknown", lambda data: {**data, "retrieval": "vector"}, "retrieval"),
+    (
+        "top-k-missing",
+        lambda data: {key: value for key, value in data.items() if key != "top_k"},
+        "top_k",
+    ),
+    ("top-k-not-int", lambda data: {**data, "top_k": "10"}, "top_k"),
+    ("top-k-bool", lambda data: {**data, "top_k": True}, "top_k"),
+    ("top-k-zero", lambda data: {**data, "top_k": 0}, "top_k"),
+    ("top-k-infinity", lambda data: {**data, "top_k": float("inf")}, "top_k"),
+    ("model-not-dict", lambda data: {**data, "model": []}, "model"),
+    (
+        "model-name-not-str",
+        lambda data: {**data, "model": {**data["model"], "model_name": 5}},
+        "model.model_name",
+    ),
+    (
+        "model-dimension-zero",
+        lambda data: {**data, "model": {**data["model"], "dimension": 0}},
+        "model.dimension",
+    ),
+    ("queries-not-list", lambda data: {**data, "queries": {}}, "queries"),
+    ("queries-empty", lambda data: {**data, "queries": []}, "queries"),
+    (
+        "queries-too-many",
+        lambda data: {
+            **data,
+            "queries": [data["queries"][0]] * (MAX_SAVED_RECORDS + 1),
+        },
+        "queries",
+    ),
+    ("replay-not-dict", lambda data: {**data, "replay": []}, "replay"),
+    (
+        "replay-available-not-bool",
+        lambda data: {**data, "replay": {"available": "yes", "queries": []}},
+        "replay.available",
+    ),
+    (
+        "replay-queries-not-list",
+        lambda data: {**data, "replay": {"available": True, "queries": {}}},
+        "replay.queries",
+    ),
+    (
+        "replay-entry-not-dict",
+        lambda data: {
+            **data,
+            "replay": {"available": True, "queries": ["alpha"]},
+        },
+        "replay.queries[0]",
+    ),
+    (
+        "replay-entry-missing-top-k-paths",
+        lambda data: {
+            **data,
+            "replay": {"available": True, "queries": [{"query": "alpha"}]},
+        },
+        "replay.queries[0].top_k_paths",
+    ),
+    (
+        "replay-path-not-str",
+        lambda data: {
+            **data,
+            "replay": {
+                "available": True,
+                "queries": [{"query": "alpha", "top_k_paths": [1]}],
+            },
+        },
+        "replay.queries[0].top_k_paths[0]",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("mutator", "field"),
+    [(mutator, field) for _label, mutator, field in _ENVELOPE_DEFECTS],
+    ids=[label for label, _mutator, _field in _ENVELOPE_DEFECTS],
+)
+def test_envelope_defects_raise_value_error_naming_the_field(
+    mutator: object,
+    field: str,
+) -> None:
+    data = mutator(_saved_dict())  # type: ignore[operator]
+
+    with pytest.raises(ValueError, match=re.escape(field)):
+        validate_saved_run(data)
+
+
+_RECORD_DEFECTS = [
+    ("query-not-str", lambda record: {**record, "query": 5}, "queries[0].query"),
+    (
+        "query-too-long",
+        lambda record: {**record, "query": "x" * 10_001},
+        "queries[0].query",
+    ),
+    (
+        "target-path-not-str",
+        lambda record: {**record, "target_path": 5},
+        "queries[0].target_path",
+    ),
+    (
+        "target-doc-id-not-str",
+        lambda record: {**record, "target_doc_id": 5},
+        "queries[0].target_doc_id",
+    ),
+    ("grade-zero", lambda record: {**record, "grade": 0}, "queries[0].grade"),
+    ("grade-bool", lambda record: {**record, "grade": True}, "queries[0].grade"),
+    ("grade-two", lambda record: {**record, "grade": 2}, "queries[0].grade"),
+    (
+        "split-unknown",
+        lambda record: {**record, "split": "validation"},
+        "queries[0].split",
+    ),
+    ("leg-replay", lambda record: {**record, "leg": "replay"}, "queries[0].leg"),
+    ("leg-bogus", lambda record: {**record, "leg": "bogus"}, "queries[0].leg"),
+    (
+        "language-unknown",
+        lambda record: {**record, "language": "fr"},
+        "queries[0].language",
+    ),
+    (
+        "length-unknown",
+        lambda record: {**record, "length_bucket": "tiny"},
+        "queries[0].length_bucket",
+    ),
+    (
+        "retrieved-not-list",
+        lambda record: {**record, "retrieved": {}},
+        "queries[0].retrieved",
+    ),
+    (
+        "retrieved-element-not-str",
+        lambda record: {**record, "retrieved": [1]},
+        "queries[0].retrieved[0]",
+    ),
+    (
+        "retrieved-path-too-long",
+        lambda record: {**record, "retrieved": ["x" * 4_097]},
+        "queries[0].retrieved[0]",
+    ),
+    (
+        "retrieved-doc-ids-not-list",
+        lambda record: {**record, "retrieved_doc_ids": {}},
+        "queries[0].retrieved_doc_ids",
+    ),
+    (
+        "retrieved-doc-ids-element-not-str",
+        lambda record: {**record, "retrieved_doc_ids": [1]},
+        "queries[0].retrieved_doc_ids[0]",
+    ),
+    (
+        "retrieved-doc-ids-too-long",
+        lambda record: {**record, "retrieved_doc_ids": ["x" * 513]},
+        "queries[0].retrieved_doc_ids[0]",
+    ),
+    (
+        "retrieved-not-rank-aligned",
+        lambda record: {
+            **record,
+            "retrieved_doc_ids": record["retrieved_doc_ids"][:-1],
+        },
+        "queries[0].retrieved_doc_ids",
+    ),
+    (
+        "content-key",
+        lambda record: {**record, "content": "secret body"},
+        "queries[0].content",
+    ),
+    (
+        "snippet-key",
+        lambda record: {**record, "snippet": "secret body"},
+        "queries[0].snippet",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("mutator", "field"),
+    [(mutator, field) for _label, mutator, field in _RECORD_DEFECTS],
+    ids=[label for label, _mutator, _field in _RECORD_DEFECTS],
+)
+def test_record_defects_raise_value_error_naming_the_field(
+    mutator: object,
+    field: str,
+) -> None:
+    data = _saved_dict()
+    data["queries"] = [mutator(dict(data["queries"][0]))]  # type: ignore[operator]
+
+    with pytest.raises(ValueError, match=re.escape(field)):
+        validate_saved_run(data)
+
+
+def test_load_rejects_an_oversized_file_before_decoding(tmp_path: Path) -> None:
+    path = tmp_path / "oversized.json"
+    path.write_text("x" * (MAX_SAVED_FILE_BYTES + 1), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="cap"):
+        load_saved_run(path)
+
+
+def test_load_translates_corrupt_and_missing_files_to_value_error(tmp_path: Path) -> None:
+    corrupt = tmp_path / "corrupt.json"
+    corrupt.write_text("{not json", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="saved run"):
+        load_saved_run(corrupt)
+    with pytest.raises(ValueError, match="saved run"):
+        load_saved_run(tmp_path / "missing.json")
+
+
+def test_load_treats_saved_paths_as_opaque_values(tmp_path: Path) -> None:
+    data = _saved_dict()
+    data["queries"][0]["target_path"] = "/nonexistent/target.md"
+    data["queries"][0]["retrieved"] = ["/nonexistent/retrieved.md"]
+    data["queries"][0]["retrieved_doc_ids"] = ["doc-1"]
+    path = tmp_path / "opaque.json"
+    path.write_text(__import__("json").dumps(data), encoding="utf-8")
+
+    assert load_saved_run(path).queries[0].target_path == "/nonexistent/target.md"
+
+
+class TestCorpusFingerprint:
+    def test_same_corpus_is_stable_and_order_independent(self) -> None:
+        docs = [_doc(index) for index in range(5)]
+
+        assert corpus_fingerprint(docs) == corpus_fingerprint(list(reversed(docs)))
+
+    def test_checksum_and_file_size_changes_move_the_fingerprint(self) -> None:
+        docs = [_doc(index) for index in range(3)]
+        base = corpus_fingerprint(docs)
+
+        changed_checksum = [replace(docs[0], checksum="different"), *docs[1:]]
+        changed_size = [replace(docs[0], file_size=docs[0].file_size + 1), *docs[1:]]
+        same_content_identity = [
+            replace(docs[0], title="A different title", content="a body"),
+            *docs[1:],
+        ]
+
+        assert corpus_fingerprint(changed_checksum) != base
+        assert corpus_fingerprint(changed_size) != base
+        # Title/content (and therefore mtime-like metadata) are excluded.
+        assert corpus_fingerprint(same_content_identity) == base

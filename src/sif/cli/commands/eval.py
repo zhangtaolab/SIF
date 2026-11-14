@@ -13,6 +13,7 @@ goes through ``click.echo`` (never Rich) so the stream strict-parses.
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -33,12 +34,15 @@ from sif.search.personal_bench import (
     INITIAL_SAMPLE_DOCUMENTS,
     MIN_DOCUMENTS,
     SUPPRESS_BELOW,
+    PersonalReport,
     build_personal_report,
     ensure_heldout,
     evaluate_known_items,
     load_document_metadata,
     load_replay_queries,
     replay_leg,
+    run_to_saved,
+    write_saved_run,
 )
 from sif.utils.logging import get_logger
 
@@ -274,6 +278,33 @@ def _render_personal(payload: dict[str, Any], output_json: bool) -> None:
     _render_footer(payload)
 
 
+def _save_run(
+    report: PersonalReport,
+    settings: Settings,
+    no_save: bool,
+) -> Path | None:
+    """Write the run under ``<cache_dir>/eval`` unless ``--no-save`` (D-10).
+
+    The filename is ``eval-<fingerprint12>-<UTC timestamp>.json``; the write
+    is atomic (sibling temp file then ``replace``). The path is announced on
+    stderr so stdout stays pipe-clean for ``--json``.
+    """
+    if no_save:
+        return None
+    run = run_to_saved(report)
+    cache_dir = Path(settings.get_cache_dir()) / "eval"
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    path = cache_dir / f"eval-{run.corpus['fingerprint'][:12]}-{timestamp}.json"
+    try:
+        write_saved_run(run, path)
+    except OSError as error:
+        raise click.ClickException(
+            f"Could not save the personal eval run to {path}: {error}"
+        ) from error
+    console_err.print(f"[dim]Saved run: {path}[/dim]", soft_wrap=True)
+    return path
+
+
 def run_personal(  # noqa: PLR0913
     index_path: Path,
     bm25_only: bool,
@@ -281,6 +312,7 @@ def run_personal(  # noqa: PLR0913
     collection: tuple[str, ...],
     search_all: bool,
     output_json: bool,
+    no_save: bool = False,
 ) -> None:
     """Run the title+body personal evaluation end to end.
 
@@ -380,7 +412,10 @@ def run_personal(  # noqa: PLR0913
             replay=replay,
             notes=notes,
         )
-        _render_personal(report.to_dict(), output_json)
+        payload = report.to_dict()
+        run_path = _save_run(report, settings, no_save)
+        payload["run_path"] = str(run_path) if run_path is not None else None
+        _render_personal(payload, output_json)
 
 
 def _index_path(ctx: click.Context) -> Path:
@@ -398,6 +433,11 @@ def _index_path(ctx: click.Context) -> Path:
 @click.group("eval", invoke_without_command=True)
 @click.option("--personal", is_flag=True, help="Measure quality on the indexed personal corpus")
 @click.option(
+    "--no-save",
+    is_flag=True,
+    help="Do not write the run to the cache directory",
+)
+@click.option(
     "--bm25-only",
     is_flag=True,
     help="Explicitly skip the embedder (hybrid is the default; keeps the run local)",
@@ -410,6 +450,7 @@ def _index_path(ctx: click.Context) -> Path:
 def eval_group(  # noqa: PLR0913
     ctx: click.Context,
     personal: bool,
+    no_save: bool,
     bm25_only: bool,
     limit: int,
     collection: tuple[str, ...],
@@ -424,7 +465,8 @@ def eval_group(  # noqa: PLR0913
     language x length bucket with small-group suppression, alongside the
     query_log replay stability leg. Hybrid retrieval is the default; pass
     --bm25-only when the embed extra is unavailable (the default path fails
-    loudly with an install remedy). --json emits strict JSON.
+    loudly with an install remedy). Every run is saved under the cache
+    directory unless --no-save. --json emits strict JSON.
     """
     if ctx.invoked_subcommand is not None:
         return
@@ -437,4 +479,5 @@ def eval_group(  # noqa: PLR0913
         collection,
         search_all,
         output_json,
+        no_save,
     )
