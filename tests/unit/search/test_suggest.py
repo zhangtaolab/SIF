@@ -9,12 +9,12 @@ searcher on a real DB built from the production DDL.
 
 from __future__ import annotations
 
-import difflib
 import sqlite3
 import time
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from rapidfuzz import fuzz, process
 
 from sif.config.settings import Settings
 from sif.core.models import QueryLogEntry, SearchOptions
@@ -255,6 +255,71 @@ class TestDidYouMean:
         for _ in range(3):
             assert engine.did_you_mean("machien quantom") == first
 
+    def test_first_letter_typo_is_recalled(self, vocab_db):
+        """QUAL-01: the full scan reaches first-letter typos the bucket missed.
+
+        ``xuantum`` differs from the stem ``quantum`` only in its first letter
+        (``x`` vs ``q``, seven codepoints apart), so the old +/-1-letter bucket
+        never handed ``quantum`` to difflib; the full-vocabulary Indel scan
+        scores it 85.7 and recalls it at the pinned 75.0 cutoff.
+        """
+        engine = SuggestionEngine(vocab_db)
+        assert engine.did_you_mean("xuantum") == ["quantum"]
+
+    def test_cutoff_boundary_includes_exactly_75(self):
+        """D-14 edge: a score of exactly 75.0 is included (``>=``, no epsilon)."""
+        conn = _fixture_db(("r1", "rest"), ("r2", "restaurant"))
+        try:
+            engine = SuggestionEngine(conn)
+            engine._ensure_loaded()
+            # Indel math, identical on rapidfuzz 3.14.5 and 3.14.6.
+            assert fuzz.ratio("resturant", "restaur") == pytest.approx(75.0)
+            assert engine._close_matches("resturant") == ["restaur"]
+            assert engine.did_you_mean("resturant") == ["restaur"]
+        finally:
+            conn.close()
+
+    def test_cutoff_boundary_excludes_below_75(self):
+        """D-14 edge: a sub-cutoff candidate is excluded; no epsilon widening."""
+        conn = _fixture_db(("x1", "abcxy"))
+        try:
+            engine = SuggestionEngine(conn)
+            engine._ensure_loaded()
+            assert fuzz.ratio("abcde", "abcxy") == pytest.approx(60.0)
+            assert engine._close_matches("abcde") == []
+            assert engine.did_you_mean("abcde") == []
+        finally:
+            conn.close()
+
+    def test_equal_scores_order_by_term_and_are_stable(self):
+        """D-15: equal scores sort term ascending; repeated scans are identical."""
+        conn = _fixture_db(("v1", "corner store"), ("v2", "cornet music"))
+        try:
+            engine = SuggestionEngine(conn)
+            engine._ensure_loaded()
+            assert engine._close_matches("cornex", n=10) == ["corner", "cornet"]
+            assert engine._close_matches("cornex", n=10) == ["corner", "cornet"]
+        finally:
+            conn.close()
+
+    def test_empty_token_and_empty_vocab_return_no_matches(self):
+        """AGREED EDGE: an empty token or vocabulary returns [] instead of raising."""
+        conn = _fixture_db()
+        try:
+            engine = SuggestionEngine(conn)
+            engine._ensure_loaded()
+            assert engine._close_matches("") == []
+            assert engine._close_matches("quant") == []
+        finally:
+            conn.close()
+        conn = _fixture_db(("q1", "quantum"))
+        try:
+            engine = SuggestionEngine(conn)
+            engine._ensure_loaded()
+            assert engine._close_matches("") == []
+        finally:
+            conn.close()
+
     def test_empty_and_metachar_only_queries_return_empty(self, vocab_db):
         """No usable tokens -> no suggestions, no crash."""
         engine = SuggestionEngine(vocab_db)
@@ -287,13 +352,13 @@ def _big_vocab_docs() -> list[tuple[str, str]]:
 
 
 class TestCoreBudget:
-    """D-14: bucketed matching proven deterministically; generous wall bound."""
+    """QUAL-01: full-vocabulary scan proven deterministically; generous wall bound."""
 
-    def test_bucketed_dym_under_budget_on_60k_vocab(self, monkeypatch):
-        """Core (prefix + DYM incl. vocab scan) < 1.0 s; bucket < 10% of vocab.
+    def test_full_vocab_dym_under_budget_on_60k_vocab(self, monkeypatch):
+        """The whole sorted vocabulary is scanned; core DYM < 1.0 s.
 
-        The bucket assertion is deterministic — it catches a full-scan
-        regression without timing races (plan Task 2, Test 5).
+        The choice-count assertion is deterministic — it catches a return to
+        the first-letter bucket without timing races (plan Task 3).
         """
         conn = _big_vocab_conn()
         try:
@@ -301,13 +366,13 @@ class TestCoreBudget:
             assert vocab_size >= 60_000
 
             calls: list[int] = []
-            real = difflib.get_close_matches
+            real_extract = process.extract
 
-            def spy(word, possibilities, n=3, cutoff=0.6):  # type: ignore[no-untyped-def]
-                calls.append(len(possibilities))
-                return real(word, possibilities, n=n, cutoff=cutoff)
+            def spy(query, choices, **kwargs):  # type: ignore[no-untyped-def]
+                calls.append(len(choices))
+                return real_extract(query, choices, **kwargs)
 
-            monkeypatch.setattr(difflib, "get_close_matches", spy)
+            monkeypatch.setattr(process, "extract", spy)
 
             engine = SuggestionEngine(conn)
             start = time.perf_counter()
@@ -316,8 +381,8 @@ class TestCoreBudget:
             elapsed = time.perf_counter() - start
 
             assert completions, "expected 'm0' completions in the synthetic vocab"
-            assert calls, "DYM never consulted difflib"
-            assert max(calls) < vocab_size * 0.10
+            assert calls, "DYM never consulted rapidfuzz.process.extract"
+            assert max(calls) == vocab_size
             assert elapsed < 1.0
         finally:
             conn.close()
