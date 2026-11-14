@@ -40,7 +40,7 @@ verified: "2026-11-14"
 | T-18-01 | Spoofing | `eval.py` table cells | medium | mitigate | Truncate then `rich.markup.escape()` every title/path-derived cell; tests assert bracket text renders literally. | closed |
 | T-18-02 | Denial of Service | `load_document_metadata` / synthesis | medium | mitigate | Whole-corpus pass selects metadata columns only (`include_content=False`), iterates the cursor, never `fetchall()`s the corpus; bodies load only for the bounded sample (≤250 docs); query candidates capped at 500. | closed |
 | T-18-03 | Tampering | collection scope resolution | low | mitigate | `CollectionRepository.get_by_name` / parameterized SQL only; never interpolates collection names into SQL. | closed |
-| T-18-04 | Information Disclosure | replay/report serialization | high | mitigate | Replay records store query text and top-k paths only; `_SAVED_FORBIDDEN_KEYS = {"content", "snippet"}` rejects body text; tests assert no content key. | closed |
+| T-18-04 | Information Disclosure | replay/report serialization | high | mitigate | Saved runs store title-leg query text and a short normalized body excerpt (never full bodies, snippets, or embeddings); `_SAVED_FORBIDDEN_KEYS` rejects content/snippet keys; docs and tests state the excerpt explicitly. | closed |
 | T-18-05 | Denial of Service | body synthesis / Jaccard / grouping | medium | mitigate | Body candidates capped at 10 tokens, replay at 500, synthesized queries at 500; Jaccard on token sets in one pass; content loaded only for the sampled subset. | closed |
 | T-18-06 | Spoofing | group names / query cells in Rich output | medium | mitigate | Truncate then `rich.markup.escape()` every query/path-derived cell; group names built from fixed enums, not user text. | closed |
 | T-18-07 | Tampering / Denial of Service | `load_saved_run` / `validate_saved_run` | high | mitigate | `MAX_SAVED_FILE_BYTES = 5 MB`, `MAX_SAVED_RECORDS = 10_000`, `version == 1`; envelope and every record type/range/enum-checked with `.get`/`isinstance`; non-finite floats and bool-as-int rejected; all defects → `ValueError` → `ClickException` naming the field path. | closed |
@@ -51,7 +51,7 @@ verified: "2026-11-14"
 | T-18-12 | Denial of Service | full-vocabulary `process.extract` | medium | mitigate | `score_cutoff=75.0` bounds candidates; measured p50 1.513 ms/query at 73,040 terms vs ~5.9 ms for the old bucket; the budget test asserts a generous CI ceiling and the SUMMARY records p50/p95. | closed |
 | T-18-13 | Tampering / Integrity | emitted suggestions | high | mitigate | Every variant still flows through `_hits`/`_probe` (≥1 document); `_probe` remains fail-soft; SC2 tests stay in place. | closed |
 | T-18-14 | Spoofing | suggestion output / CLI table | low | mitigate | Existing `_cell` truncate-then-escape convention in `sif suggest`; no new output surface. | closed |
-| T-18-15 | Information Disclosure | configured embedder provider | medium | mitigate | The provider is named in the report; for `openai`/`modelscope` types a stderr disclosure states synthesized query text reaches that provider and names `--bm25-only` as the local path; eval-owned code never uploads or serializes personal data. | closed |
+| T-18-15 | Information Disclosure | configured embedder provider | medium | mitigate | The provider is named in the report; for `openai`/`modelscope` types a stderr disclosure states document titles, body-sentence excerpts, and replay query history reach that provider and names `--bm25-only` as the local path; eval-owned code never uploads or serializes personal data. | closed |
 | T-18-SC | Tampering | dependency installs | high | mitigate | The phase's only new package is rapidfuzz, gated by the 18-04 blocking human checkpoint and the lock verification; every other plan installs nothing. | closed |
 
 *Status: open · closed · open — below high threshold (non-blocking)*
@@ -71,6 +71,7 @@ No accepted risks.
 | Audit Date | Threats Total | Closed | Open | Run By |
 |------------|---------------|--------|------|--------|
 | 2026-11-14 | 16 | 16 | 0 | Claude (gsd-secure-phase, ASVS L1, block_on high) |
+| 2026-11-15 | 16 | 16 | 0 | Claude (post-fix reconciliation: CR-01/WR-01..WR-10 fixed) |
 
 ---
 
