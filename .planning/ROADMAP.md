@@ -91,7 +91,7 @@ Full detail: `.planning/milestones/v1.1-ROADMAP.md`
 - [x] 17-09-PLAN.md — Tracked junk removal + final ENG-04 hygiene gate
 
 **Wave 4** *(blocked on Wave 3 completion)*
-- [x] 17-06-PLAN.md — Release prerequisites (environments, publishers) + pre-tag gate — SUMMARY status halted at Task 2 (publisher registration); pre-tag gate pending
+- [x] 17-06-PLAN.md — Release prerequisites (environments, publishers) + pre-tag gate — COMPLETE: both environments created, publisher registrations maintainer-confirmed, Test Matrix run 43561542242 green (8 cells + lint) on gate-verified release_head c819f67; smoke diff limited to src/sif/_version.py
 
 **Wave 5** *(blocked on Wave 4 completion)*
 - [ ] 17-07-PLAN.md — Tag v1.1.2, publish, attestation + install proofs

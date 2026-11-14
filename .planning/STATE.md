@@ -5,11 +5,11 @@ milestone_name: Search Precision and Agent Experience
 current_phase: 17
 current_phase_name: Engineering Foundation (CI Matrix + Hygiene + PyPI)
 status: executing
-stopped_at: 17-06 halted at Task 2 checkpoint (publisher registration); environments pypi/testpypi created
-last_updated: "2026-11-14T02:06:43.898Z"
+stopped_at: "Completed 17-06-PLAN.md — release gate verified; release_head c819f67228152f2544e79a864b9a9e12dbc79f69; next: 17-07 tag/publish"
+last_updated: "2026-11-14T05:33:13.979Z"
 last_activity: 2026-11-13
 last_activity_desc: Phase 17 execution started
-state_head: 1d958467ecc94fdb27c0dec1e81a9be7fd1cfab2
+state_head: c819f67228152f2544e79a864b9a9e12dbc79f69
 progress:
   total_phases: 8
   completed_phases: 0
@@ -23,7 +23,7 @@ progress:
 
 - **Name:** DocSift (package `sif`, PyPI `docsif`)
 - **Core Value:** 用户可以在自己的笔记和文档库中，用自然语言快速、准确地找到需要的信息——无论关键词是否匹配。
-- **Current Focus:** v1.2 Search Precision and Agent Experience — roadmap created (Phases 17-24); Phase 17 ready to plan
+- **Current Focus:** v1.2 Search Precision and Agent Experience — Phase 17 executing (8/9 plans complete); next is 17-07 (tag exact release_head, OIDC publish, attestation/install proofs)
 - **Tech Stack:** Python 3.10+, SQLite (FTS5 + sqlite-vec), Click, Pydantic, sentence-transformers 5.4.1 (locked), llama-cpp-python; v1.2 adds ONLY `mcp>=2.3.0,<3` + `rapidfuzz>=3.14.5,<4`
 - See: .planning/PROJECT.md (updated 2026-11-13)
 - Archives: v1.0/v1.1 phase artifacts, full decision logs, per-plan metrics under .planning/milestones/
@@ -31,7 +31,7 @@ progress:
 ## Current Position
 
 Phase: 17 (Engineering Foundation (CI Matrix + Hygiene + PyPI)) — EXECUTING
-Plan: 8 of 9
+Plan: 9 of 9
 Status: Ready to execute
 Last activity: 2026-11-13 — Phase 17 execution started
 
@@ -56,6 +56,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 17 P08 | 9 | 2 tasks | 9 files |
 | Phase 17 P05 | 7min | 3 tasks | 8 files |
 | Phase 17 P09 | 3min | 2 tasks | 8 files |
+| Phase 17 P06 | 3h30m | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -82,6 +83,9 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - [Phase 17]: Publish workflow builds once and hands the dist artifact to job-scoped OIDC publish jobs (TestPyPI then PyPI); skip-existing only on TestPyPI; no secrets
 - [Phase 17]: 3.13 classifier added only after gh run 43399300651 proved the 8-cell matrix green; README mcp-name marker verified inside the built wheel METADATA
 - [Phase 17]: Tracked-junk guard requires a pyproject.toml sentinel in git ls-files so an empty/misrooted listing cannot pass vacuously; git-unavailable skips are explicit, never silent passes
+- [Phase 17]: 17-06: maintainer confirmed both browser-only registrations on 2026-11-14 — PyPI trusted publisher for docsif (owner zhangtaolab, repo sif, workflow publish.yml, environment pypi) and TestPyPI pending publisher (project docsif, environment testpypi); end-to-end proof is the 17-07 OIDC publish
+- [Phase 17]: 17-06: pre-tag gate bound to release_head c819f67228152f2544e79a864b9a9e12dbc79f69 — Test Matrix run 43561542242 green (8 py cells + lint); only src/sif change since smoke 48759e2c is _version.py (1.1.1 -> 1.1.2)
+- [Phase 17]: 17-06: 17-07 must tag exactly the recorded release_head, never the later SUMMARY/STATE/ROADMAP metadata commit, which has no matrix run of its own
 
 ### Pending Todos
 
@@ -92,7 +96,6 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 - ⚠️ [Phase 11 re-review, advisory] WR-03 init_schema raw tracebacks, WR-04 impossible-state guards, IN-05 model-type set duplication — carried in 11-REVIEW-DISPOSITION.md (WR-01/WR-02 fixed)
 - [Research gaps — resolve at plan time] qmd filter AST is UNRELEASED (re-verify CHANGELOG at Phase 20); MCP py3.10 install/import smoke at Phase 22 start; transport_security spoofed-header proof before deleting custom middleware (22); documents_fts_v vocab shadow survival on populated DB (19); contexts normalization decision touches a locked Key Decision (21 discussion)
-- 17-06 halted at Task 2 (blocking human-action): maintainer must register the PyPI trusted publisher for docsif (owner zhangtaolab, repository sif, workflow filename publish.yml, environment pypi) and the TestPyPI pending publisher (project docsif, environment testpypi); the pre-tag gate and 17-07's tag publish remain blocked until both entries exist.
 
 ### Roadmap Evolution
 
@@ -111,8 +114,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-14T02:06:43.879Z
-Stopped at: 17-06 halted at Task 2 checkpoint (publisher registration); environments pypi/testpypi created
+Last session: 2026-11-14T05:33:13.958Z
+Stopped at: Completed 17-06-PLAN.md — release gate verified; release_head c819f67228152f2544e79a864b9a9e12dbc79f69; next: 17-07 tag/publish
 Resume file: None
 
-- **Next expected action:** `/gsd-plan-phase 17` (Engineering Foundation). Execution order locked: 17 → 18 → 19 → 20 → 21 → 22 → 23 → 24; hard dependencies and cross-phase contracts in ROADMAP.md.
+- **Next expected action:** execute 17-07 — tag exactly `release_head` c819f67228152f2544e79a864b9a9e12dbc79f69 as v1.1.2, push the tag, and verify the OIDC publish, PyPI marker, PEP 740 attestations, and fresh-venv installs. Execution order for the rest of v1.2: 17 → 18 → 19 → 20 → 21 → 22 → 23 → 24; hard dependencies and cross-phase contracts in ROADMAP.md.
