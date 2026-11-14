@@ -519,11 +519,20 @@ def _search_fn(
     embedding_dim: int,
     options: SearchOptions,
 ) -> Callable[[str], list[SearchResult]]:
-    """One hoisted pipeline per run (never per query)."""
+    """One hoisted literal-mode pipeline per run (never per query, CR-01).
+
+    Known-item and replay text is searched literally: a document title such
+    as ``vec: embedding notes`` or a logged ``hyde: ...`` query must never be
+    reinterpreted as a search operator (which would abort the run without an
+    embedder). ``default_search_type`` follows the measured retrieval mode so
+    the pipeline performs exactly what the report labels.
+    """
     pipeline = SearchPipeline(
         db.connection,
         embedder=embedder,
         embedding_dim=embedding_dim,
+        default_search_type="hybrid" if embedder is not None else "bm25",
+        parse_prefix=False,
     )
     return lambda query: pipeline.search(query, options)
 

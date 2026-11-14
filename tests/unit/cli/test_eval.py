@@ -14,8 +14,9 @@ from click.testing import CliRunner, Result
 
 from sif.cli.commands.eval import eval_group
 from sif.config.settings import Settings
-from sif.core.models import SearchResult
+from sif.core.models import SearchOptions, SearchResult
 from sif.search.benchmark import SearchEvaluator
+from sif.search.hybrid import SearchPipeline
 from sif.search.personal_bench import (
     HELDOUT_MIN,
     INITIAL_SAMPLE_DOCUMENTS,
@@ -776,6 +777,77 @@ class TestTwoLegDefault:
         assert table_result.exit_code == 0, table_result.output
         assert "Suppressed groups" in table_result.output
         assert suppressed_name in table_result.output
+
+
+class _LiteralRecordingPipeline(SearchPipeline):
+    """Real pipeline that records the literal query text the eval sends."""
+
+    seen: ClassVar[list[str]] = []
+
+    def search(
+        self,
+        query: str,
+        options: SearchOptions | None = None,
+    ) -> list[SearchResult]:
+        _LiteralRecordingPipeline.seen.append(query)
+        return super().search(query, options)
+
+
+class TestLiteralPrefixedQueries:
+    """CR-01: eval text is searched literally, never as a reserved operator."""
+
+    def test_vec_and_hyde_titles_and_history_run_as_literal_text(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        # A title is synthesized verbatim, so it can begin with a reserved
+        # operator prefix. Every title carries one of the two prefixes, so the
+        # deterministic 50-document sample necessarily includes both kinds;
+        # with prefix parsing active they would route to vector/HyDE search
+        # and abort the whole run in --bm25-only mode.
+        titles = [
+            f"vec: embedding notes {index}" if index % 2 == 0 else f"hyde: retrieval notes {index}"
+            for index in range(60)
+        ]
+        bodies = [
+            _long_body(
+                index,
+                (
+                    "hyde: retrieval notes discuss local search quality and evaluation"
+                    if index == 1
+                    else f"document body {index:03d} discusses local search quality retrieval"
+                ),
+            )
+            for index in range(60)
+        ]
+        db_path = build_personal_db(
+            tmp_path / "personal.db",
+            documents=60,
+            titles=titles,
+            bodies=bodies,
+        )
+        _seed(db_path, ["vec: history query", "hyde: history query", "alpha beta"])
+
+        _LiteralRecordingPipeline.seen = []
+        result = _invoke(
+            db_path,
+            ["--personal", "--bm25-only", "--json"],
+            settings=_settings(tmp_path),
+            pipeline=_LiteralRecordingPipeline,
+        )
+
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.stdout)
+        assert payload["queries"]["accepted"] >= 50
+        # The reserved-prefix title and replay text reached the searcher as
+        # literal query text (and the run completed instead of aborting).
+        assert any(
+            query.startswith("vec: embedding notes") for query in _LiteralRecordingPipeline.seen
+        )
+        assert any(
+            query.startswith("hyde: retrieval notes") for query in _LiteralRecordingPipeline.seen
+        )
+        assert {"vec: history query", "hyde: history query"} <= set(_LiteralRecordingPipeline.seen)
 
 
 # --- Task 3: query_log replay leg ------------------------------------------

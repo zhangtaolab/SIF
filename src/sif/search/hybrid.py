@@ -150,23 +150,32 @@ class SearchPipeline:
         snippet_extractor: SmartSnippetExtractor | None = None,
         embedding_dim: int = 768,
         default_search_type: str = "hybrid",
+        parse_prefix: bool = True,
     ) -> None:
-        """Initialize search pipeline with optional components."""
+        """Initialize search pipeline with optional components.
+
+        ``parse_prefix=False`` makes ``search()`` treat every query as
+        literal text and route it through ``default_search_type``: the
+        personal eval uses this so a document title (or logged replay query)
+        that happens to start with ``vec:``/``hyde:``/``lex:``/``expand:`` is
+        measured as text instead of being reinterpreted as an operator.
+        """
         self.db = db
         self.hybrid = HybridSearcher(db, embedder, embedding_dim)
         self.query_expander = query_expander
         self.reranker = reranker
         self.snippet_extractor = snippet_extractor
         self._default_search_type = default_search_type
+        self._parse_prefix = parse_prefix
 
-    def search(  # noqa: C901, PLR0912
+    def search(  # noqa: C901, PLR0912, PLR0915
         self,
         query: str,
         options: SearchOptions | None = None,
     ) -> list[SearchResult]:
-        """Execute full search pipeline with prefix routing.
+        """Execute full search pipeline with optional prefix routing.
 
-        1. Parse query prefix to determine search mode
+        1. Parse query prefix to determine search mode (unless literal mode)
         2. Route to appropriate search mode (BM25, vector, HyDE, hybrid)
         3. Expand query (optional, for expand: prefix or default hybrid)
         4. Search with each query variant
@@ -177,8 +186,12 @@ class SearchPipeline:
         if options is None:
             options = SearchOptions()
 
-        # Parse query prefix
-        parsed_query, search_type = self._parse_query_prefix(query)
+        # Literal mode (personal eval): never reinterpret query text as an
+        # operator prefix; use the configured default mode directly.
+        if self._parse_prefix:
+            parsed_query, search_type = self._parse_query_prefix(query)
+        else:
+            parsed_query, search_type = query, self._default_search_type_enum()
 
         # Apply intent if provided
         if options.intent:
@@ -294,6 +307,13 @@ class SearchPipeline:
                 result.snippet = self.snippet_extractor.extract(text, query_terms)
         return results
 
+    def _default_search_type_enum(self) -> SearchType:
+        """Resolve the configured default type for unprefixed/literal queries."""
+        return {
+            "bm25": SearchType.BM25,
+            "vector": SearchType.VECTOR,
+        }.get(self._default_search_type, SearchType.HYBRID)
+
     def _parse_query_prefix(self, query: str) -> tuple[str, SearchType]:
         """Parse query prefix to determine search mode.
 
@@ -310,11 +330,7 @@ class SearchPipeline:
         for prefix, search_type in prefix_map.items():
             if query.startswith(prefix):
                 return query[len(prefix) :].strip(), search_type
-        fallback = {
-            "bm25": SearchType.BM25,
-            "vector": SearchType.VECTOR,
-        }.get(self._default_search_type, SearchType.HYBRID)
-        return query, fallback
+        return query, self._default_search_type_enum()
 
     def _generate_hypothetical_document(self, query: str) -> str:
         """Generate a hypothetical ideal answer document for HyDE search.
