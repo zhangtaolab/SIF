@@ -540,6 +540,28 @@ def token_set(text: str) -> set[str]:
     return set(_TOKEN_RE.findall(normalize_text(text)))
 
 
+def _budget_units(text: str) -> set[str]:
+    """Comparison units for the overlap budget: CJK bigrams plus ASCII tokens.
+
+    Whole CJK runs stay the FTS matching unit (``token_set``), but they are
+    the wrong unit for plagiarism control: a verbatim CJK prefix of the title
+    is a different whole-run token and would score zero overlap. The budget
+    therefore compares CJK character bigrams (a single character for a
+    one-character run) alongside ASCII tokens; search tokenization is
+    unchanged (WR-08).
+    """
+    units: set[str] = set()
+    for token in _TOKEN_RE.findall(normalize_text(text)):
+        if _CJK_RUN_RE.fullmatch(token):
+            if len(token) == 1:
+                units.add(token)
+            else:
+                units.update(token[index : index + 2] for index in range(len(token) - 1))
+        else:
+            units.add(token)
+    return units
+
+
 def jaccard(left: set[str], right: set[str]) -> float:
     """Set Jaccard similarity; two empty sets are identical by definition."""
     union = left | right
@@ -927,9 +949,11 @@ def apply_overlap_budget(
 
     Body queries are measured by token Jaccard against the target document's
     title tokens plus the first 200 body characters; ``> OVERLAP_BUDGET``
-    rejects (exactly 0.60 is accepted). Title queries are exact-term and stay
-    unbudgeted, replay is never synthesized, and every rejection is counted
-    per leg.
+    rejects (exactly 0.60 is accepted). CJK runs are compared as character
+    bigrams so a verbatim Chinese prefix of the title cannot score zero
+    overlap (WR-08); ASCII tokens and the FTS matching tokenizer are
+    unchanged. Title queries are exact-term and stay unbudgeted, replay is
+    never synthesized, and every rejection is counted per leg.
     """
     kept: list[SynthesizedQuery] = []
     rejected_overlap: dict[str, int] = {}
@@ -940,8 +964,8 @@ def apply_overlap_budget(
         doc = docs_by_id.get(query.target_doc_id)
         title = doc.title if doc is not None else ""
         opening = (doc.content or "")[:_OPENING_CHARS] if doc is not None else ""
-        target_tokens = token_set(f"{title} {opening}")
-        if jaccard(token_set(query.query), target_tokens) > OVERLAP_BUDGET:
+        target_units = _budget_units(f"{title} {opening}")
+        if jaccard(_budget_units(query.query), target_units) > OVERLAP_BUDGET:
             rejected_overlap["body"] = rejected_overlap.get("body", 0) + 1
             continue
         kept.append(query)

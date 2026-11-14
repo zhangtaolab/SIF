@@ -217,6 +217,32 @@ class TestOverlapBudget:
         assert "title" in EXACT_TERM_LEGS
         assert "replay" not in EXACT_TERM_LEGS
 
+    def test_cjk_title_prefix_body_candidate_is_rejected(self) -> None:
+        title = "如何配置混合搜索引擎的权重"
+        doc = _doc(1, title=title, content=f"{title}。")
+        # A verbatim 10-character prefix of the title: whole-run tokenization
+        # would score zero overlap, so the budget compares CJK bigrams.
+        query = _query("如何配置混合搜索引擎", doc=1)
+
+        kept, rejected = apply_overlap_budget([query], {"doc-1": doc})
+
+        assert kept == []
+        assert rejected == {"body": 1}
+
+    def test_paraphrased_cjk_body_candidate_is_kept(self) -> None:
+        title = "如何配置混合搜索引擎的权重"
+        doc = _doc(1, title=title, content=f"{title}。")
+        query = _query("如何调整混合检索系统的参数", doc=1)
+
+        kept, rejected = apply_overlap_budget([query], {"doc-1": doc})
+
+        assert [q.query for q in kept] == ["如何调整混合检索系统的参数"]
+        assert rejected == {}
+
+    def test_budget_units_keep_whole_cjk_runs_for_search(self) -> None:
+        # The FTS matching unit is unchanged; only the budget uses bigrams.
+        assert token_set("如何配置 混合 Search") == {"如何配置", "混合", "search"}
+
 
 class TestDedupe:
     def test_duplicate_across_title_and_body_keeps_title_and_counts_body(self) -> None:
