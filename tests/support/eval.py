@@ -34,10 +34,19 @@ def _default_titles(count: int) -> list[str]:
 
 
 def _body(title: str, index: int) -> str:
-    """A deterministic body well over the 12-token floor, distinct per document."""
+    """A deterministic body whose candidate sentence starts beyond 200 chars.
+
+    The opening window (title + introductory context) is deliberately longer
+    than 200 characters so the body leg picks the later "Document body"
+    sentence instead of echoing the title (research Open Question 9).
+    """
     return (
-        f"{title}. Document body {index:03d} discusses local search quality, "
-        "retrieval metrics, deterministic sampling, and evaluation on a personal corpus."
+        f"{title}. Introductory context for note {index:03d} spans a range of "
+        "personal knowledge management topics, local retrieval workflows, and "
+        "evaluation methodology in enough detail to push the candidate prose "
+        f"past the opening window. Document body {index:03d} discusses local "
+        "search quality, retrieval metrics, deterministic sampling, and "
+        "evaluation on a personal corpus."
     )
 
 
@@ -46,20 +55,25 @@ def build_personal_db(
     *,
     documents: int = 60,
     titles: list[str] | None = None,
+    bodies: list[str] | None = None,
     embedder: ConceptEmbedder | None = None,
     embedding_dim: int = EMBEDDING_DIM,
 ) -> Path:
     """Build a real on-disk personal index with ``documents`` curated docs.
 
-    One collection (enabled by default), unique titles by default, >=12-token
-    bodies, sha256 checksums, one chunk per document, and one vec0 embedding
-    per chunk through ``ConceptEmbedder``. The on-disk vec0 dimension matters:
-    ``Database.init_schema`` (called by ``open_initialized_database``)
-    validates it against ``get_settings().embedding_dim``, so tests must patch
-    settings with the same ``embedding_dim`` used here.
+    One collection (enabled by default), unique titles by default, bodies
+    long enough for the body leg (or explicit ``bodies`` for split-control
+    fixtures), sha256 checksums, one chunk per document, and one vec0
+    embedding per chunk through ``ConceptEmbedder``. The on-disk vec0
+    dimension matters: ``Database.init_schema`` (called by
+    ``open_initialized_database``) validates it against
+    ``get_settings().embedding_dim``, so tests must patch settings with the
+    same ``embedding_dim`` used here.
     """
     if titles is not None and len(titles) != documents:
         raise ValueError("titles must have exactly one entry per document")
+    if bodies is not None and len(bodies) != documents:
+        raise ValueError("bodies must have exactly one entry per document")
     resolved_titles = titles if titles is not None else _default_titles(documents)
     model = embedder or ConceptEmbedder()
     db_path = Path(db_path)
@@ -88,7 +102,7 @@ def build_personal_db(
         embeddings: list[tuple[str, str, str, list[float]]] = []
         for index in range(documents):
             title = resolved_titles[index]
-            body = _body(title, index)
+            body = bodies[index] if bodies is not None else _body(title, index)
             doc_id = f"doc-{index:03d}"
             chunk_id = f"chunk-{index:03d}"
             path = corpus_dir / f"{index:03d}.md"

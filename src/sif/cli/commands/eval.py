@@ -182,8 +182,10 @@ def _personal_payload(  # noqa: PLR0913
         "model": model,
         "queries": {
             "accepted": len(synthesis.queries),
-            "rejected_empty": synthesis.rejected_empty,
-            "rejected_duplicate": synthesis.rejected_duplicate,
+            # Per-leg tallies (Plan 02); the Plan 01 flat keys stay integer
+            # totals so existing JSON consumers do not move.
+            "rejected_empty": sum(synthesis.rejected_empty.values()),
+            "rejected_duplicate": sum(synthesis.rejected_duplicate.values()),
         },
         "metrics": {
             "ndcg_at_10": _mean([evaluation.ndcg_at_10 for evaluation in evaluations]),
