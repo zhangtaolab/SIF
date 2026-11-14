@@ -94,7 +94,7 @@ Full detail: `.planning/milestones/v1.1-ROADMAP.md`
 - [x] 17-06-PLAN.md — Release prerequisites (environments, publishers) + pre-tag gate — COMPLETE: both environments created, publisher registrations maintainer-confirmed, Test Matrix run 43561542242 green (8 cells + lint) on gate-verified release_head c819f67; smoke diff limited to src/sif/_version.py
 
 **Wave 5** *(blocked on Wave 4 completion)*
-- [ ] 17-07-PLAN.md — Tag v1.1.2, publish, attestation + install proofs — BLOCKED at Task 1: tag v1.1.2 pushed on release_head c819f67; Publish run 43562577065 build success, TestPyPI `invalid-publisher`, PyPI skipped; no upload, version unconsumed. Fix TestPyPI/PyPI publisher repository name to `SIF` (uppercase), then `gh run rerun 43562577065 --failed`
+- [ ] 17-07-PLAN.md — Tag v1.1.2, publish, attestation + install proofs — BLOCKED at Task 1 after one retry: tag v1.1.2 pushed on release_head c819f67; Publish run 43562577065 attempts 1-2 both failed at TestPyPI token exchange with `invalid-publisher` (claims repository zhangtaolab/SIF, environment testpypi, workflow publish.yml); build success and reused in attempt 2 (no rebuild), PyPI skipped; no upload, version unconsumed. Verify/delete-and-recreate the saved TestPyPI pending publisher for docsif and the PyPI trusted publisher, then re-run the failed jobs once
 
 ### Phase 18: Quality Instrument (Personal Bench + rapidfuzz DYM)
 **Goal**: Users can measure search quality on their own corpus with trustworthy bias controls BEFORE any ranking behavior changes — the instrument that arbitrates the correctness fixes (19), the Harrier gate (23), and the tuning sweeps (24).
