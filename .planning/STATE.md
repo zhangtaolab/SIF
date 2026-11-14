@@ -5,16 +5,16 @@ milestone_name: Search Precision and Agent Experience
 current_phase: 17
 current_phase_name: Engineering Foundation (CI Matrix + Hygiene + PyPI)
 status: executing
-stopped_at: "17-07 halted at Task 1 after the final retry — tag v1.1.2 on c819f67; Publish run 43562577065 attempt 3: build reused (no rebuild), TestPyPI still invalid-publisher even after the pending publisher was deleted and re-created with exact fields, PyPI skipped; no upload, version unconsumed; next step requires a browser-side publisher diagnosis or an explicit trusted-publishing fallback decision"
-last_updated: "2026-11-14T06:04:10.000Z"
+stopped_at: Completed 17-07 — docsif 1.1.2 published to TestPyPI and PyPI (run 43562577065 attempt 4, all three jobs success); Phase 17 is 9/9 plans, next action is phase verification
+last_updated: "2026-11-14T09:31:35.547Z"
 last_activity: 2026-11-14
-last_activity_desc: 17-07 final policy-allowed rerun (attempt 3) still invalid-publisher; stopped without looping, recorded blocker
-state_head: 29514ef3c33e572d6967275af7a280831ca4945b
+last_activity_desc: 17-07 completed — Publish run 43562577065 attempt 4 all three jobs success; docsif 1.1.2 on PyPI and TestPyPI, attestation verified, both install proofs green
+state_head: bd8f514516370fee9b60c2207bcd4b3879d3bbf5
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 9
-  completed_plans: 8
+  completed_plans: 9
 ---
 
 # DocSift — Project State
@@ -23,17 +23,17 @@ progress:
 
 - **Name:** DocSift (package `sif`, PyPI `docsif`)
 - **Core Value:** 用户可以在自己的笔记和文档库中，用自然语言快速、准确地找到需要的信息——无论关键词是否匹配。
-- **Current Focus:** v1.2 Search Precision and Agent Experience — Phase 17 executing (8/9 plans complete); next is 17-07, blocked on the browser-only TestPyPI/PyPI publisher registration (final retry attempt 3 still `invalid-publisher` after the pending publisher was deleted and re-created with exact fields)
+- **Current Focus:** v1.2 Search Precision and Agent Experience — Phase 17 executing (9/9 plans complete); the PyPI release shipped (`docsif 1.1.2` on both indexes, attested and install-proven), so the next action is Phase 17 verification (`/gsd-verify-work 17`)
 - **Tech Stack:** Python 3.10+, SQLite (FTS5 + sqlite-vec), Click, Pydantic, sentence-transformers 5.4.1 (locked), llama-cpp-python; v1.2 adds ONLY `mcp>=2.3.0,<3` + `rapidfuzz>=3.14.5,<4`
 - See: .planning/PROJECT.md (updated 2026-11-13)
 - Archives: v1.0/v1.1 phase artifacts, full decision logs, per-plan metrics under .planning/milestones/
 
 ## Current Position
 
-Phase: 17 (Engineering Foundation (CI Matrix + Hygiene + PyPI)) — EXECUTING
+Phase: 17 (Engineering Foundation (CI Matrix + Hygiene + PyPI)) — EXECUTING (all plans complete; awaiting phase verification)
 Plan: 9 of 9
-Status: Blocked at 17-07 Task 1 after the final policy-allowed retry (attempt 3) — TestPyPI token exchange still returns invalid-publisher although the OIDC claim carries repository zhangtaolab/SIF, and a delete-and-re-create of the pending publisher with exact fields did not change the failure; the remaining cause is outside this environment (wrong index/account/record or a warehouse-side fault)
-Last activity: 2026-11-14 — 17-07 final rerun (attempt 3) still invalid-publisher; stopped without looping and recorded the blocker
+Status: 17-07 complete — tag v1.1.2 on release_head c819f67 drove Publish run 43562577065 attempt 4 to success (build artifact reused from attempt 1, never rebuilt; TestPyPI and PyPI both green). docsif 1.1.2 is served by PyPI with the mcp-name marker, PEP 740 provenance verifies against zhangtaolab/SIF, and fresh venvs install 1.1.2 from both indexes. No blockers remain.
+Last activity: 2026-11-14 — 17-07 published docsif 1.1.2 and closed the TestPyPI publisher blocker; next is Phase 17 verification
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -57,6 +57,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 17 P05 | 7min | 3 tasks | 8 files |
 | Phase 17 P09 | 3min | 2 tasks | 8 files |
 | Phase 17 P06 | 3h30m | 3 tasks | 3 files |
+| Phase 17 P07 | 3h41m | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -92,6 +93,10 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - [Phase 17]: 17-07 stopped after the single policy-allowed retry — no upload reached either index (TestPyPI 404; PyPI latest 1.0.1, no 1.1.2), so version 1.1.2 is unconsumed and tag v1.1.2 stays on c819f67; the next fix is verifying/deleting-and-recreating the saved TestPyPI pending publisher (project docsif, owner zhangtaolab, repo SIF, workflow publish.yml, environment testpypi)
 - [Phase 17]: 17-07 final retry (attempt 3): after the maintainer deleted and re-created the TestPyPI pending publisher with the exact expected fields and re-saved the PyPI trusted publisher, `gh run rerun 43562577065 --failed` failed identically at token exchange (`invalid-publisher`, same claims, Build distributions still reused with attempt-1 timestamps). Re-creating the record rules out form-value drift; the residual cause is a wrong index/account/record or a warehouse-side fault, so the workflow was not rerun again
 - [Phase 17]: 17-07 did NOT fall back to an API-token/manual upload — that would deviate from the plan's trusted-publishing prohibition and requires an explicit one-way user decision plus a plan amendment; artifacts must be the same bytes (no rebuild, no version mutation)
+- [Phase 17]: 17-07 complete: tag v1.1.2 on release_head c819f67228152f2544e79a864b9a9e12dbc79f69 published docsif 1.1.2 to TestPyPI and PyPI on Publish run 43562577065 attempt 4 — Build distributions, Publish to TestPyPI, and Publish to PyPI all success; the build artifact (id 14100657070, created 05:39:35Z) was reused from attempt 1, so no rebuild and no retag occurred
+- [Phase 17]: 17-07: the TestPyPI blocker was the pending publisher; after the maintainer created and verified it (project docsif, publisher GitHub, repository zhangtaolab/SIF, workflow publish.yml, environment testpypi) the very next OIDC attempt minted successfully — the claim set had been correct all along and no further publisher change was needed
+- [Phase 17]: 17-07: attestation verification must use the canonical repository case https://github.com/zhangtaolab/SIF — pypi-attestations 0.0.31 compares the signed repository string to the URL path with an exact case-sensitive !=, so the lowercase URL in the PyPI docs example reports a false identity mismatch; the canonical-case run prints OK
+- [Phase 17]: 17-07: version 1.1.2 is now legitimately consumed by a complete release (nothing was uploaded on attempts 1-3); no patch bump, no artifact mutation, and no manual upload was needed
 
 ### Pending Todos
 
@@ -102,7 +107,7 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 - ⚠️ [Phase 11 re-review, advisory] WR-03 init_schema raw tracebacks, WR-04 impossible-state guards, IN-05 model-type set duplication — carried in 11-REVIEW-DISPOSITION.md (WR-01/WR-02 fixed)
 - [Research gaps — resolve at plan time] qmd filter AST is UNRELEASED (re-verify CHANGELOG at Phase 20); MCP py3.10 install/import smoke at Phase 22 start; transport_security spoofed-header proof before deleting custom middleware (22); documents_fts_v vocab shadow survival on populated DB (19); contexts normalization decision touches a locked Key Decision (21 discussion)
-- 🔴 [17-07 halting blocker — browser-only] TestPyPI pending publisher still does not match the OIDC claims after the delete-and-re-create with the exact expected fields (`repository` `zhangtaolab/SIF`, `repository_owner` `zhangtaolab`, owner id `21210477`, workflow `publish.yml`, environment `testpypi`) → `invalid-publisher` at token exchange on attempts 1, 2, and 3. The failure is deterministic and identical, so do NOT rerun blindly: confirm the saved entry lives on **test.pypi.org** (not pypi.org) under the account that owns `docsif` rights, re-check the exact project/filename strings, and if still failing escalate to PyPI support with run 43562577065's claim dump. A trusted-publishing fallback to an API-token publish is a one-way decision requiring a plan amendment. Nothing was uploaded on any attempt; tag v1.1.2 stays on c819f67 and version 1.1.2 is unconsumed. The final policy-allowed retry was consumed.
+- ✅ [17-07 resolved 2026-11-14] The TestPyPI `invalid-publisher` blocker was the missing/mismatched pending publisher. The maintainer created and verified it (project `docsif`, publisher GitHub, repository `zhangtaolab/SIF`, workflow `publish.yml`, environment `testpypi`); the next OIDC attempt minted successfully on Publish run `43562577065` attempt 4. No trusted-publishing fallback was needed. Nothing had been uploaded on attempts 1-3, so version 1.1.2 was published cleanly rather than consumed by a partial upload.
 
 ### Roadmap Evolution
 
@@ -121,8 +126,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-14T06:04:10.000Z
-Stopped at: 17-07 halted at Task 1 after the final retry — tag v1.1.2 on c819f67; Publish run 43562577065 attempt 3: build reused (no rebuild), TestPyPI still invalid-publisher after delete-and-re-create with exact fields, PyPI skipped; no upload, version unconsumed
+Last session: 2026-11-14T09:31:35.526Z
+Stopped at: Completed 17-07 — docsif 1.1.2 published to TestPyPI and PyPI (run 43562577065 attempt 4, all three jobs success); Phase 17 is 9/9 plans, next action is phase verification
 Resume file: None
 
-- **Next expected action:** maintainer confirms the saved TestPyPI pending publisher lives on test.pypi.org under the correct account (project `docsif`, owner `zhangtaolab`, repository `SIF`, workflow filename `publish.yml`, environment `testpypi`) and the PyPI trusted publisher for `docsif` (environment `pypi`); if all exact and still failing, escalate to PyPI support with the run-43562577065 claim dump, or make the explicit one-way decision to switch to an API-token publish (plan amendment required). Do NOT rerun blindly — attempts 1-3 are deterministic `invalid-publisher`. After a green TestPyPI + PyPI run, complete 17-07 Task 1 verify (PyPI JSON version + mcp-name marker, three job successes), then Task 2 (pypi-attestations verification, PyPI and TestPyPI fresh-venv install proofs). Execution order for the rest of v1.2: 17 → 18 → 19 → 20 → 21 → 22 → 23 → 24; hard dependencies and cross-phase contracts in ROADMAP.md.
+- **Next expected action:** run Phase 17 verification (`/gsd-verify-work 17`) to confirm the four ENG success criteria against the shipped state, then mark Phase 17 complete and proceed to Phase 18. Release evidence lives in `17-07-SUMMARY.md`: tag `v1.1.2` on `c819f67`, Publish run `43562577065` attempt 4 (all three jobs success), PyPI JSON `1.1.2` with the `mcp-name` marker, `pypi-attestations` `OK` against `https://github.com/zhangtaolab/SIF`, and both fresh-venv install proofs. Execution order for the rest of v1.2: 17 → 18 → 19 → 20 → 21 → 22 → 23 → 24; hard dependencies and cross-phase contracts in ROADMAP.md.

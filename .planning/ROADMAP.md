@@ -76,7 +76,7 @@ Full detail: `.planning/milestones/v1.1-ROADMAP.md`
   2. A Windows smoke run on hc remote yoga (uv python install first) proves fork/systemd/flock degrade honestly with clear messages — degradation asserted, NOT full Windows support
   3. `docsif` v1.1.x is installable from PyPI via trusted publishing — TestPyPI dry run passed, version single-sourced, PEP 740 attestations present, and the README `<!-- mcp-name: io.github.zhangtaolab/sif -->` marker landed BEFORE publish
   4. The repo is hygienic — dead `MigrationManager` + `models/search.py` + `search/strategy.py` quarantined/deleted (no tempting dead `filters` dict for Phase 20), tracked junk removed, Makefile/extras/pre-commit cleaned (black dropped; fastapi/uvicorn kept as core deps); the 3.13 classifier appears only once the matrix is green
-**Plans:** 8/9 plans executed
+**Plans:** 9/9 plans executed
 **Wave 1**
 - [x] 17-01-PLAN.md — Repo hygiene core: dead layers, orphan export, pre-commit Makefile target
 - [x] 17-02-PLAN.md — CPU-torch lock + extras floors + black removal
@@ -94,7 +94,7 @@ Full detail: `.planning/milestones/v1.1-ROADMAP.md`
 - [x] 17-06-PLAN.md — Release prerequisites (environments, publishers) + pre-tag gate — COMPLETE: both environments created, publisher registrations maintainer-confirmed, Test Matrix run 43561542242 green (8 cells + lint) on gate-verified release_head c819f67; smoke diff limited to src/sif/_version.py
 
 **Wave 5** *(blocked on Wave 4 completion)*
-- [ ] 17-07-PLAN.md — Tag v1.1.2, publish, attestation + install proofs — BLOCKED at Task 1 after the final policy-allowed retry: tag v1.1.2 pushed on release_head c819f67; Publish run 43562577065 attempts 1-3 all failed at TestPyPI token exchange with `invalid-publisher` (claims repository zhangtaolab/SIF, environment testpypi, workflow publish.yml); build success and reused in attempts 2-3 (never rebuilt), PyPI skipped; no upload, version unconsumed. Deleting and re-creating the pending publisher with exact fields between attempts 2 and 3 did not change the failure — do NOT rerun blindly; confirm the entry is on test.pypi.org under the right account, escalate to PyPI support with the claim dump, or make an explicit one-way decision to switch to an API-token publish (plan amendment)
+- [x] 17-07-PLAN.md — Tag v1.1.2, publish, attestation + install proofs — COMPLETE: tag v1.1.2 on release_head c819f67 (never moved); Publish run 43562577065 attempt 4 success after the maintainer created and verified the TestPyPI pending publisher — Build distributions success with the attempt-1 artifact reused (no rebuild), Publish to TestPyPI success, Publish to PyPI success; PyPI serves 1.1.2 with the mcp-name marker; PEP 740 attestation verifies against `https://github.com/zhangtaolab/SIF`; fresh venvs install 1.1.2 from PyPI and TestPyPI
 
 ### Phase 18: Quality Instrument (Personal Bench + rapidfuzz DYM)
 **Goal**: Users can measure search quality on their own corpus with trustworthy bias controls BEFORE any ranking behavior changes — the instrument that arbitrates the correctness fixes (19), the Harrier gate (23), and the tuning sweeps (24).
@@ -195,7 +195,7 @@ v1.2 contracts — defined ONCE; downstream phases consume, never redefine:
 | 15. Search Quality Configuration | v1.1 | 3/3 | Complete    | 2026-11-08 |
 | 16. Bench Expansion + Reranker Tuning | v1.1 | 6/6 | Complete    | 2026-11-09 |
 | 16.1. Address tech debt (CLI errors + cache TTL + enqueue API) | v1.1 | 5/5 | Complete    | 2026-11-12 |
-| 17. Engineering Foundation (CI + Hygiene + PyPI) | v1.2 | 8/9 | In Progress | - |
+| 17. Engineering Foundation (CI + Hygiene + PyPI) | v1.2 | 9/9 | In Progress | - |
 | 18. Quality Instrument (Personal Bench + rapidfuzz) | v1.2 | 0/TBD | Not started | - |
 | 19. Search Correctness | v1.2 | 0/TBD | Not started | - |
 | 20. Metadata Filtering + Discovery | v1.2 | 0/TBD | Not started | - |

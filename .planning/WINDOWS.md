@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 2
+open_count: 0
 waived_count: 3
-fixed_count: 7
+fixed_count: 9
 total_count: 12
-last_updated: 2026-11-14T06:04:10.000Z
+last_updated: 2026-11-14T09:32:00.124Z
 ---
 
 # Broken Windows Ledger
@@ -25,8 +25,8 @@ last_updated: 2026-11-14T06:04:10.000Z
 | 8 | 10.1 | deviation | .planning/phases/10.1-address-tech-debt-path-normalization-review-findings-cr-01-c/10.1-01-PLAN.md |  | Plan verify command 'pytest <2 files> -q' structurally cannot exit 0 under the 10-07 fail_under=90 gate (scoped run ~38% total); test signal verified via --no-cov plus full-suite 968-pass at 96.22% | waived | Historical plan artifact re-validated: the 10.1-01-PLAN.md verify command scoped two test files under the repo-wide coverage gate (fail_under=90 in pyproject.toml), which structurally cannot exit 0 from a scoped run (~38% total); the test signal was verified via --no-cov plus a full-suite 968-pass at 96.22%, and phase 10.1 is complete with the plan archived under .planning/milestones/v1.0-phases/, so the command is not re-runnable as written. Waived as a past planning-constraint record, not a live defect. | 2026-11-06T00:59:43.130Z | 2026-11-12T11:54:14.304Z |
 | 9 | 12 | deviation | docs/cli-reference.md |  | Full-suite docs gate test_docs.py::test_cli_reference_has_all_commands red until 12-03 runs make docs-generate (docs regen is assigned to the final plan; hand-editing prohibited) | fixed |  | 2026-11-07T09:42:25.792Z | 2026-11-07T10:58:23.037Z |
 | 10 | 16 | unrun-verify | docs/benchmarking.md |  | Manual real-model held-out evidence row is 'not yet measured' (plan-mandated label; deterministic snapshot is committed) — record model/hardware/date/nDCG per 16-VALIDATION.md Manual-Only Verifications | fixed |  | 2026-11-08T15:41:08.355Z | 2026-11-12T10:33:55.806Z |
-| 11 | 17 | unmet-truth | .planning/phases/17-engineering-foundation-ci-matrix-hygiene-pypi/17-07-PLAN.md |  | Publish run 43562577065 is not green: Publish to TestPyPI returns invalid-publisher at OIDC token exchange on attempts 1-3, including after the pending publisher was deleted and re-created with exact fields; PyPI job skipped; release not shipped | open |  | 2026-11-14T05:50:50.007Z |  |
-| 12 | 17 | unrun-verify | .planning/phases/17-engineering-foundation-ci-matrix-hygiene-pypi/17-07-PLAN.md |  | Task 2 unrun pending publish: pypi-attestations verify, fresh-venv PyPI install proof, fresh-venv TestPyPI install proof | open |  | 2026-11-14T05:50:50.115Z |  |
+| 11 | 17 | unmet-truth | .planning/phases/17-engineering-foundation-ci-matrix-hygiene-pypi/17-07-PLAN.md |  | Publish run 43562577065 is not green: Publish to TestPyPI returns invalid-publisher at OIDC token exchange on attempts 1-3, including after the pending publisher was deleted and re-created with exact fields; PyPI job skipped; release not shipped | fixed |  | 2026-11-14T05:50:50.007Z | 2026-11-14T09:32:00.013Z |
+| 12 | 17 | unrun-verify | .planning/phases/17-engineering-foundation-ci-matrix-hygiene-pypi/17-07-PLAN.md |  | Task 2 unrun pending publish: pypi-attestations verify, fresh-venv PyPI install proof, fresh-venv TestPyPI install proof | fixed |  | 2026-11-14T05:50:50.115Z | 2026-11-14T09:32:00.124Z |
 
 ````json
 [
@@ -163,10 +163,10 @@ last_updated: 2026-11-14T06:04:10.000Z
     "file": ".planning/phases/17-engineering-foundation-ci-matrix-hygiene-pypi/17-07-PLAN.md",
     "line": null,
     "description": "Publish run 43562577065 is not green: Publish to TestPyPI returns invalid-publisher at OIDC token exchange on attempts 1-3, including after the pending publisher was deleted and re-created with exact fields; PyPI job skipped; release not shipped",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-11-14T05:50:50.007Z",
-    "resolved_at": null,
+    "resolved_at": "2026-11-14T09:32:00.013Z",
     "milestone": "v1.2"
   },
   {
@@ -176,10 +176,10 @@ last_updated: 2026-11-14T06:04:10.000Z
     "file": ".planning/phases/17-engineering-foundation-ci-matrix-hygiene-pypi/17-07-PLAN.md",
     "line": null,
     "description": "Task 2 unrun pending publish: pypi-attestations verify, fresh-venv PyPI install proof, fresh-venv TestPyPI install proof",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-11-14T05:50:50.115Z",
-    "resolved_at": null,
+    "resolved_at": "2026-11-14T09:32:00.124Z",
     "milestone": "v1.2"
   }
 ]
