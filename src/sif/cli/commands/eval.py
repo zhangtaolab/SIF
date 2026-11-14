@@ -65,9 +65,9 @@ console = Console()
 # pollute stdout, which stays clean for `sif eval --personal --json | jq`.
 console_err = Console(stderr=True)
 
-# Remote-capable embedding backends: synthesized query text crosses the
-# machine boundary, so the run discloses it and names the local alternative
-# (T-18-15, D-11).
+# Remote-capable embedding backends: document titles, body-sentence excerpts,
+# and replayed query history cross the machine boundary, so the run discloses
+# the actual data and names the local alternative (T-18-15, D-11).
 _REMOTE_MODEL_TYPES = frozenset({"openai", "modelscope"})
 
 # Truncate then escape one config/user-derived cell (T-18-01, suggest.py
@@ -219,8 +219,10 @@ def _load_embedder(
     if settings.model_type in _REMOTE_MODEL_TYPES:
         console_err.print(
             f"[yellow]Embedding provider '{settings.model_type}' is remote-capable: "
-            "synthesized query text is sent to the configured provider. "
-            "Pass --bm25-only to keep the run local.[/yellow]"
+            "document titles, body-sentence excerpts, and replay query history "
+            "(when query history is enabled) are sent to the configured "
+            "provider for embedding. Pass --bm25-only to keep the run "
+            "local.[/yellow]"
         )
     return manager, embedding_dim, identity
 
@@ -683,7 +685,9 @@ def _run_fresh(  # noqa: C901, PLR0913
     elif settings.model_type in _REMOTE_MODEL_TYPES:
         notes.append(
             f"Embedding provider '{settings.model_type}' is remote-capable: "
-            "synthesized query text is sent to it; --bm25-only keeps the run local."
+            "document titles, body-sentence excerpts, and replay query history "
+            "(when query history is enabled) are sent to it for embedding; "
+            "--bm25-only keeps the run local."
         )
     report = build_personal_report(
         retrieval=retrieval,

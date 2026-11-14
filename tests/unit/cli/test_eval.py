@@ -707,13 +707,21 @@ class TestDisclosureAndMarkup:
         )
 
         assert result.exit_code == 0, result.output
-        # The stderr console notice names the provider and the local alternative.
+        # The stderr console notice names the provider, the actual data that
+        # crosses the boundary, and the local alternative (WR-10).
         assert "Embedding provider 'modelscope' is remote-capable" in result.stderr
+        assert "document titles" in result.stderr
+        assert "body-sentence excerpts" in result.stderr
+        assert "replay query history" in result.stderr
         assert "--bm25-only" in result.stderr
-        # Stdout is strict JSON; the report itself names the provider too.
+        # Stdout is strict JSON; the report notes carry the same disclosure.
         payload = json.loads(result.stdout)
         assert payload["model"]["model_type"] == "modelscope"
-        assert any("remote-capable" in note for note in payload["notes"])
+        note = next(note for note in payload["notes"] if "remote-capable" in note)
+        assert "document titles" in note
+        assert "body-sentence excerpts" in note
+        assert "replay query history" in note
+        assert "--bm25-only" in note
 
     def test_bm25_only_prints_no_remote_disclosure(self, tmp_path: Path) -> None:
         db_path = build_personal_db(tmp_path / "personal.db", documents=60)
