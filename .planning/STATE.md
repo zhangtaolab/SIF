@@ -5,16 +5,16 @@ milestone_name: Search Precision and Agent Experience
 current_phase: 18
 current_phase_name: Quality Instrument (Personal Bench + rapidfuzz DYM)
 status: executing
-stopped_at: Completed 18-02-PLAN.md
-last_updated: "2026-11-14T15:01:32.055Z"
+stopped_at: Completed 18-04-PLAN.md
+last_updated: "2026-11-14T15:15:55.874Z"
 last_activity: 2026-11-14
 last_activity_desc: Phase 17 complete, transitioned to Phase 18
-state_head: 12c8014a29f5664911db8229faa328ff2d31766e
+state_head: 27c3d2f869ef9034da8761831f98017eaf8fe448
 progress:
   total_phases: 8
   completed_phases: 1
   total_plans: 13
-  completed_plans: 11
+  completed_plans: 12
 ---
 
 # DocSift — Project State
@@ -60,6 +60,7 @@ Progress: [█░░░░░░░░░] 13%
 | Phase 17 P07 | 3h41m | 2 tasks | 4 files |
 | Phase 18 P01 | 8min | 3 tasks | 9 files |
 | Phase 18 P02 | 13min | 3 tasks | 6 files |
+| Phase 18 P04 | 8min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -107,6 +108,10 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - [Phase 18]: 18-02: split = sha256(normalized query)[0] < 128; ensure_heldout widens the deterministic prefix from 50 docs toward min(corpus, 250) until 50 accepted / 25 held-out, loading bodies only for newly added docs.
 - [Phase 18]: 18-02: PersonalReport carries corpus/top_k/model/records with rank-aligned retrieved_doc_ids; groups emit in leg x language x length order and <10 groups are named, never rendered as zero.
 - [Phase 18]: 18-02: replay reads query_log only, normalizes/dedupes/sorts/caps at 500, stores rank-ordered paths only, and never enters known-item metrics/splits/groups.
+- [Phase 18]: 18-04: did-you-mean scans the full sorted vocabulary with rapidfuzz fuzz.ratio at internal _DYM_CUTOFF=75.0 (limit=None, sort score desc -> term asc -> df desc, slice to n); the first-letter bucket, difflib import, and _ratio helper are deleted.
+- [Phase 18]: 18-04: rapidfuzz>=3.14.5,<4 is locked; uv.lock resolves 3.14.5 on py3.10 and 3.14.6 on py3.11+ with an add-only diff (212 insertions, 0 deletions).
+- [Phase 18]: 18-04: the 75.0 cutoff is inclusive (>=, no epsilon); resturant -> restaur at exactly 75.0 is test-pinned, while probe/hit, prefix, and history contracts stay byte-identical.
+- [Phase 18]: 18-04: measured p50 1.513 ms at 73,040 terms (rapidfuzz 3.14.6); local first-letter recall 0.956 at cutoffs 70/75 vs 0.799 at 80, with 70 adding candidates and no recall.
 
 ### Pending Todos
 
@@ -136,8 +141,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-14T15:01:31.934Z
-Stopped at: Completed 18-02-PLAN.md
+Last session: 2026-11-14T15:15:55.740Z
+Stopped at: Completed 18-04-PLAN.md
 Resume file: None
 
 - **Next expected action:** run Phase 17 verification (`/gsd-verify-work 17`) to confirm the four ENG success criteria against the shipped state, then mark Phase 17 complete and proceed to Phase 18. Release evidence lives in `17-07-SUMMARY.md`: tag `v1.1.2` on `c819f67`, Publish run `43562577065` attempt 4 (all three jobs success), PyPI JSON `1.1.2` with the `mcp-name` marker, `pypi-attestations` `OK` against `https://github.com/zhangtaolab/SIF`, and both fresh-venv install proofs. Execution order for the rest of v1.2: 17 → 18 → 19 → 20 → 21 → 22 → 23 → 24; hard dependencies and cross-phase contracts in ROADMAP.md.
