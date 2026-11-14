@@ -1535,12 +1535,15 @@ class TestPairedBootstrap:
 
 
 class TestNoiseGate:
-    def test_exactly_one_hundredth_with_a_positive_ci_declares_a_winner(self) -> None:
-        gate = noise_gate([0.0] * 10, [0.01] * 10)
+    def test_exactly_one_hundredth_above_the_noise_floor_declares_a_winner(self) -> None:
+        # N=200 -> floor 0.005, so the 0.01 tie rule is strictly above noise.
+        gate = noise_gate([0.0] * 200, [0.01] * 200)
 
-        assert gate.n == 10
+        assert gate.n == 200
+        assert gate.noise_floor == pytest.approx(0.005)
         assert gate.mean_delta == pytest.approx(0.01)
         assert gate.ci_low > 0
+        assert gate.sufficient is True
         assert gate.winner is True
         assert gate.regression is False
 
@@ -1566,12 +1569,46 @@ class TestNoiseGate:
         assert gate.hurt == 1
         assert gate.unchanged == 1
         assert gate.noise_floor == pytest.approx(1 / 3)
+        # Fewer than SUPPRESS_BELOW paired queries: visible, not sufficient.
+        assert gate.sufficient is False
+        assert gate.winner is False
+
+    def test_nine_paired_queries_cannot_win_but_ten_can(self) -> None:
+        nine = noise_gate([0.0] * 9, [0.5] * 9)
+        ten = noise_gate([0.0] * 10, [0.5] * 10)
+
+        assert nine.n == 9
+        assert nine.noise_floor == pytest.approx(1 / 9)
+        assert nine.sufficient is False
+        assert nine.winner is False
+        assert ten.n == 10
+        assert ten.sufficient is True
+        assert ten.winner is True
+
+    def test_mean_delta_at_the_noise_floor_never_wins(self) -> None:
+        # N=100 -> floor exactly 0.01; equality is not strictly above noise.
+        gate = noise_gate([0.0] * 100, [0.01] * 100)
+
+        assert gate.noise_floor == pytest.approx(0.01)
+        assert gate.mean_delta == pytest.approx(0.01)
         assert gate.sufficient is True
+        assert gate.ci_low > 0
+        assert gate.winner is False
+
+    def test_mean_delta_below_the_noise_floor_never_wins(self) -> None:
+        # The review's N=25 example: floor 0.04 > the 0.01 mean delta.
+        gate = noise_gate([0.0] * 25, [0.01] * 25)
+
+        assert gate.noise_floor == pytest.approx(0.04)
+        assert gate.mean_delta == pytest.approx(0.01)
+        assert gate.sufficient is True
+        assert gate.winner is False
 
     def test_a_negative_delta_flags_regression_but_never_wins(self) -> None:
-        gate = noise_gate([0.5] * 10, [0.4] * 10)
+        gate = noise_gate([0.5] * 20, [0.4] * 20)
 
         assert gate.mean_delta == pytest.approx(-0.1)
+        assert gate.noise_floor == pytest.approx(0.05)
         assert gate.ci_high < 0
         assert gate.regression is True
         assert gate.winner is False
@@ -1786,8 +1823,13 @@ class TestCompareSavedRun:
 
         assert comparison.current_metrics["ndcg_at_10"] == pytest.approx(1.0)
         assert comparison.baseline_metrics["ndcg_at_10"] == 0.0
-        assert comparison.overall.winner is True
-        assert comparison.warrants_default_change is True
+        # A single paired query is below the noise-gate N floor: the delta is
+        # visible but can never warrant a defaults change (WR-06).
+        assert comparison.overall.n == 1
+        assert comparison.overall.noise_floor == pytest.approx(1.0)
+        assert comparison.overall.sufficient is False
+        assert comparison.overall.winner is False
+        assert comparison.warrants_default_change is False
 
     def test_repeated_target_id_counts_once_and_never_exceeds_one(self) -> None:
         pairs = (("doc-1", "/corpus/1.md"),)

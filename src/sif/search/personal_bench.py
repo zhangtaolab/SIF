@@ -375,9 +375,13 @@ class BootstrapResult:
 class GateResult:
     """One noise-gate measurement: paired deltas, CI, counts, and the rule.
 
-    ``winner`` requires a CI excluding zero AND a rounded mean delta of at
-    least ``EPSILON`` (0.01); ``regression`` mirrors that for a CI excluding
-    zero with a mean delta at most ``-EPSILON``. ``noise_floor`` is 1/N.
+    ``sufficient`` requires at least ``SUPPRESS_BELOW`` paired queries — the
+    same floor small groups are suppressed at. A winner additionally needs a
+    CI excluding zero, a rounded mean delta of at least ``EPSILON`` (0.01),
+    and an absolute mean delta strictly above the displayed ``1/N`` noise
+    floor; ``regression`` mirrors that for a negative delta. A small or
+    below-floor gate stays visible as a diagnostic but can never warrant a
+    defaults change. ``noise_floor`` is 1/N (0.0 for an empty series).
     """
 
     n: int
@@ -1750,10 +1754,13 @@ def noise_gate(
     """Paired noise gate: rounded deltas, CI, counts, 1/N, and the tie rule.
 
     Per-query deltas are ``round(current - baseline, 6)`` (the house rounded
-    arithmetic), the mean is bootstrapped, and a winner requires a CI
-    excluding zero AND ``round(mean_delta, 6) >= EPSILON``. A negative
-    winner is only a regression flag, never a defaults change. Empty input
-    is insufficient with a 0.0 noise floor.
+    arithmetic) and the mean is bootstrapped. ``sufficient`` requires at
+    least ``SUPPRESS_BELOW`` paired queries. A winner requires all of: the
+    N floor, a CI excluding zero, ``round(mean_delta, 6) >= EPSILON``, and an
+    absolute mean delta strictly above the displayed 1/N noise floor — so a
+    nominal 0.01 win can never outrank its own noise floor (WR-06). A
+    negative winner is only a regression flag, never a defaults change.
+    Empty input is insufficient with a 0.0 noise floor.
     """
     if len(baseline_values) != len(current_values):
         raise ValueError(
@@ -1781,23 +1788,27 @@ def noise_gate(
             sufficient=False,
         )
     bootstrap = paired_bootstrap(deltas)
+    mean_delta = bootstrap.mean
+    noise_floor = 1.0 / len(deltas)
     excludes_zero = bootstrap.ci_low > 0 or bootstrap.ci_high < 0
-    improvement = round(bootstrap.mean, 6) >= EPSILON
-    regression = round(bootstrap.mean, 6) <= -EPSILON
+    improvement = round(mean_delta, 6) >= EPSILON
+    regression = round(mean_delta, 6) <= -EPSILON
+    sufficient = len(deltas) >= SUPPRESS_BELOW
+    exceeds_floor = abs(mean_delta) > noise_floor
     return GateResult(
         n=len(deltas),
         baseline_mean=_mean(baseline_values),
         current_mean=_mean(current_values),
-        mean_delta=bootstrap.mean,
+        mean_delta=mean_delta,
         ci_low=bootstrap.ci_low,
         ci_high=bootstrap.ci_high,
         helped=sum(1 for delta in deltas if delta > 0),
         hurt=sum(1 for delta in deltas if delta < 0),
         unchanged=sum(1 for delta in deltas if delta == 0),
-        noise_floor=1.0 / len(deltas),
-        winner=excludes_zero and improvement,
-        regression=excludes_zero and regression,
-        sufficient=True,
+        noise_floor=noise_floor,
+        winner=sufficient and excludes_zero and improvement and exceeds_floor,
+        regression=sufficient and excludes_zero and regression and exceeds_floor,
+        sufficient=sufficient,
     )
 
 

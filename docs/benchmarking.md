@@ -182,12 +182,14 @@ Every run auto-saves one JSON file under the SIF cache directory unless `--no-sa
 
 ### The paired-bootstrap noise gate
 
-For every query the comparison computes the paired delta `round(current - baseline, 6)`. The mean delta is bootstrapped with `random.Random(0)` and exactly 10,000 resamples; the 95% interval uses the house `percentile` (linear interpolation). A winner is declared only when both hold:
+For every query the comparison computes the paired delta `round(current - baseline, 6)`. The mean delta is bootstrapped with `random.Random(0)` and exactly 10,000 resamples; the 95% interval uses the house `percentile` (linear interpolation). A winner is declared only when all four hold:
 
-1. the 95% CI excludes zero, and
-2. `round(mean_delta, 6) >= 0.01`.
+1. at least 10 paired queries (the same `SUPPRESS_BELOW` floor used for group suppression),
+2. the 95% CI excludes zero,
+3. `round(mean_delta, 6) >= 0.01`, and
+4. the absolute mean delta is strictly above the displayed `1/N` noise floor.
 
-Exactly 0.01 clears the bar; 0.0099 does not; a CI that includes zero never declares a winner. The report always prints N, the `1/N` per-query noise floor, and helped/hurt/unchanged counts — at N≈71 the floor is ~0.014, visibly larger than the 0.01 tie rule, so a nominal 0.01 "win" on a small set is exposed as noise.
+Exactly 0.01 clears the tie rule when the floor is below it (N > 100); 0.0099 does not; a CI that includes zero never declares a winner. The floor is a real veto: at N=25 it is 0.04, so a 0.01 mean delta cannot win, and at N≈71 it is ~0.014. A gate below either floor is still reported with its N and `sufficient`/`winner` flags — `sufficient` is false below 10 paired queries — but can never set `warrants_default_change`.
 
 Only the **held-out** summary gate can warrant a defaults change. Tuning and per-group gates are diagnostic and labeled so. Groups are leg × language × length-bucket combinations; groups with fewer than 10 queries are omitted and named on stderr, never rendered as a zero row.
 
