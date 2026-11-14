@@ -107,10 +107,10 @@ Full detail: `.planning/milestones/v1.1-ROADMAP.md`
 **Plans:** 4 plans
 **Wave 1**
 - [ ] 18-01-PLAN.md — Personal-eval tracer: title-leg known-item measurement end-to-end + docs generator leaf-group fix
-- [ ] 18-04-PLAN.md — rapidfuzz DYM swap + packaging (blocking package-legitimacy checkpoint before install)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 18-02-PLAN.md — Body/replay legs + per-leg overlap budget + hash split/suppressed group report
+- [ ] 18-04-PLAN.md — rapidfuzz DYM swap + packaging (blocking package-legitimacy checkpoint before install)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 - [ ] 18-03-PLAN.md — Saved runs, `--compare`, corpus-fingerprint refusal, paired-bootstrap noise gate, docs narrative

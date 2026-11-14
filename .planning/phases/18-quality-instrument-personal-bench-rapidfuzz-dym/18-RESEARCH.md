@@ -580,27 +580,41 @@ Per Click's docs, group options are parsed before the subcommand and `ctx.invoke
 | A11 | Corpus fingerprint = sha256 over sorted `path\0checksum\0file_size`, truncated; mtime excluded | Pattern 5 | Including mtime would refuse comparisons after touch-only changes; excluding checksum would miss content edits. |
 | A12 | DB-backed tests can use `ConceptEmbedder` + `build_bench_db`-style fixtures without a model download | Validation | A real-model dependency would make CI slow/flaky; the embed extra is present but not needed for unit tests. |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+All twelve questions are resolved by the phase plans; each item records the decision inline.
 
 1. **Title-leg overlap budget (highest priority).** D-05's single 0.60 budget is incompatible with a verbatim title query.
    - What we know: the title leg is the exact-term category (PITFALLS Pitfall 4 explicitly recommends keeping exact-term and paraphrased categories distinct).
    - What's unclear: whether the user intended "per-leg budget" to mean per-leg *values* (title exempt) or the same 0.60 applied per leg.
    - Recommendation: title = exempt and reported as exact-term; body = 0.60 vs title + first 200 chars; replay = no synthesis. Record the applied budgets in the report and SUMMARY. Confirm in plan/discuss if the planner wants to re-litigate.
+   - **Resolved (18-02):** per-leg budgets — title is exact-term/unbudgeted (`budget=None`, `exact_term=True`, overlap rejections always 0), body uses token Jaccard ≤0.60 against title + first 200 chars, replay synthesizes nothing; all three rejection counts are reported per leg.
 2. **Sampling arithmetic.** D-03 says "minimum 50 queries, maximum 500, proportional to corpus size."
    - Recommendation: sample `n_docs = min(eligible_docs, 250)` docs (floor 25 once ≥50 docs exist), generate one title + one body query each → 50–500 queries; if accepted queries fall below 50 after rejection, widen the sample up to the corpus; if still short, fail with an explicit message.
+   - **Resolved (18-01/18-02):** the known-item run starts from `INITIAL_SAMPLE_DOCUMENTS = 50` documents (strictly smaller than the cap whenever the corpus exceeds 50 docs) in deterministic `(sha256, path, id)` order, and `ensure_heldout` doubles the slice toward `min(eligible, MAX_SAMPLE_DOCUMENTS=250)` while accepted queries < 50 OR held-out < 25; `run_personal` invokes the widening before evaluation. Only a floor still unmet at the cap raises a counted `ValueError`. The whole-corpus pass is metadata-only; bodies load for the sampled subset only.
 3. **Saved-run fields.** D-10 says "query/path/split/leg/language/grade only."
    - Recommendation: also store `target_doc_id` and `retrieved` (top-k paths), because `--compare` needs them; never store content. Version the schema (`version: 1`) and validate on load.
+   - **Resolved (18-03):** saved runs store `target_doc_id` plus rank-ordered `retrieved` paths in addition to D-10's fields, version 1, full envelope + record validation, never content.
 4. **`--compare` query set.** Recommendation: use the saved run's exact query set and re-run it against the current engine; fresh synthesis only on a non-compare run.
+   - **Resolved (18-03):** `--compare` evaluates exactly the saved query set in saved order; no re-synthesis, overlap filter, or split reassignment.
 5. **Embedder identity on comparison.** Phase 21 adds a persisted identity; Phase 18 can record `model_name`, `model_type`, and `dimension` in the saved run.
    - Recommendation: record and warn on mismatch; refuse only on corpus-fingerprint mismatch (D-12). Refusing on model identity now would block legitimate same-model re-runs before Phase 21 exists.
+   - **Resolved (18-01/18-03):** the run records `model_name`/`model_type`/`dimension`; a comparison mismatch warns on stderr, and only the corpus fingerprint refuses.
 6. **Missing index / insufficient corpus exit behavior.** `sif bench` prints a notice and returns 0; `sif eval --personal` has explicit 50-doc/50-query thresholds.
    - Recommendation: ClickException (exit 1) with "No index found. Run 'sif index update' first." and an explicit count on insufficient corpus — a measurement command should fail loudly.
+   - **Resolved (18-01/18-02):** missing index and insufficient counts exit 1 with named counts and the `sif index update` remedy; the measurement command fails loudly.
 7. **Replay leg with no history.** Recommendation: report `available: false` with the CLI-only bias note and exit 0; never fail the whole run.
+   - **Resolved (18-02):** an empty `query_log` yields `replay.available: false`, a zero count, and the CLI-only bias note; the run still exits 0.
 8. **Personal bench latency reporting.** Recommendation: skip warm-up/latency (not a requirement); one search per query. If added later, reuse `measure_query_times`.
+   - **Resolved (18-01):** no latency reporting; one search per query and no clock parameter in `evaluate_per_query`.
 9. **Body snippet shape.** Recommendation: strip fenced code/URLs/markdown, choose a deterministic prose sentence from later than the opening, take up to ~10 tokens, reject if <4 tokens or if it fails the overlap budget; count rejections.
+   - **Resolved (18-02):** deterministic later-prose sentence, markup/URL/code stripped, at most 10 tokens, reject <4 tokens, then the 0.60 Jaccard budget; rejections counted per leg.
 10. **Duplicate queries.** Recommendation: normalize and dedupe; if the same query targets different documents, keep the first in deterministic order and count a rejection (avoids ambiguous known-item labels).
+    - **Resolved (18-01/18-02):** NFC + casefold + whitespace normalization; declared leg order (title before body); first record kept, each later collision counted as a duplicate.
 11. **Cutoff measurement artifact.** Recommendation: keep the measurement as a unit test (generated typo recall at 75) plus the SUMMARY evidence table; no new CLI knob and no extra script unless the planner wants reproducibility outside tests.
+    - **Resolved (18-04):** `_DYM_CUTOFF = 75.0` is an internal constant pinned by recall/boundary/determinism tests; the 70/75/80 evidence table and measured p50 are recorded in `18-04-SUMMARY.md`; no setting, flag, or script.
 12. **`sif eval` fixture alias.** Recommendation: stay personal-only in Phase 18; the group leaves room for a future fixture subcommand/flag.
+    - **Resolved (18-01/18-03):** personal-only in Phase 18; the `eval` group shape leaves room for an additive fixture subcommand later.
 
 ## Environment Availability
 
