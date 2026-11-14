@@ -57,7 +57,7 @@ Full detail: `.planning/milestones/v1.1-ROADMAP.md`
 **Locked scope (2026-11-13 — do not re-open):** metadata namespace = `qmd.metadata` compatible (migration parity); model arms MINIMAL (user decision "d") — Phase 23 tests ONLY Harrier native vs Qwen3-Embedding-0.6B baseline (GGUF Harrier arm = conditional follow-up MODEL-F1, not a v1.2 phase; bge-reranker-v2-m3 evaluation OUT); full Windows deferred to v2 (Phase 17 ships a degradation SMOKE only, via hc remote yoga — Python not preinstalled, `uv python install` first); exactly TWO new runtime deps total — `mcp>=2.3.0,<3` (Phase 22) and `rapidfuzz>=3.14.5,<4` (Phase 18); sentence-transformers stays locked 5.4.1; PDF/HTML/EPUB, chat-with-notes, ANN, semantic/late chunking, spellfix1 all OUT (see REQUIREMENTS.md Out of Scope).
 
 - [x] **Phase 17: Engineering Foundation (CI Matrix + Hygiene + PyPI)** - Green py3.10–3.13 × ubuntu/macos test matrix, Windows degradation smoke (hc yoga), dead-layer/repo cleanup, trusted-publishing release of `docsif` v1.1.x (completed 2026-11-14)
-- [ ] **Phase 18: Quality Instrument (Personal Bench + rapidfuzz DYM)** - `sif eval --personal` known-item measurement with bias controls; measured rapidfuzz did-you-mean swap
+- [x] **Phase 18: Quality Instrument (Personal Bench + rapidfuzz DYM)** - `sif eval --personal` known-item measurement with bias controls; measured rapidfuzz did-you-mean swap (completed 2026-11-15)
 - [ ] **Phase 19: Search Correctness** - Frontmatter-only edit freshness, per-doc dedup pre-fusion, deterministic pagination, title-FTS ranking, single context/staleness attach
 - [ ] **Phase 20: Metadata Filtering + Discovery** - qmd-parity recursive filter AST applied pre-RRF, built-in path/mtime fields, typed frontmatter storage, `metadata` discovery tool
 - [ ] **Phase 21: Scale, Maintenance + Embedder Identity** - Bounded staleness/context reads, `index vacuum` + backup, streaming embed, `index_meta` embedder identity + role-aware embed
@@ -104,7 +104,7 @@ Full detail: `.planning/milestones/v1.1-ROADMAP.md`
   1. User can run `sif eval --personal` on their own indexed corpus with no manual labeling — known-item synthesis through the legacy fixture schema + `SearchEvaluator` reuse + query_log replay produce a quality report, with the CLI-only replay bias documented
   2. User can trust the personal bench's numbers — paraphrase overlap budget enforced, per-leg × per-language × per-category reports, hash-split tuning/held-out separation, paired deltas with a noise gate (one query ≈ 0.014 nDCG at personal N vs the 0.01 tie rule)
   3. User gets faster, higher-recall did-you-mean suggestions — rapidfuzz measured swap drops first-letter bucketing, stays within the ≤10 ms budget, cutoff deliberately re-measured on the 0–100 Indel scale, tie-break/probe contracts preserved
-**Plans:** 4/4 plans executed
+**Plans:** 4/4 plans complete
 **Wave 1**
 - [x] 18-01-PLAN.md — Personal-eval tracer: title-leg known-item measurement end-to-end + docs generator leaf-group fix
 
@@ -205,7 +205,7 @@ v1.2 contracts — defined ONCE; downstream phases consume, never redefine:
 | 16. Bench Expansion + Reranker Tuning | v1.1 | 6/6 | Complete    | 2026-11-09 |
 | 16.1. Address tech debt (CLI errors + cache TTL + enqueue API) | v1.1 | 5/5 | Complete    | 2026-11-12 |
 | 17. Engineering Foundation (CI + Hygiene + PyPI) | v1.2 | 9/9 | Complete    | 2026-11-14 |
-| 18. Quality Instrument (Personal Bench + rapidfuzz) | v1.2 | 4/4 | In Progress | - |
+| 18. Quality Instrument (Personal Bench + rapidfuzz) | v1.2 | 4/4 | Complete    | 2026-11-15 |
 | 19. Search Correctness | v1.2 | 0/TBD | Not started | - |
 | 20. Metadata Filtering + Discovery | v1.2 | 0/TBD | Not started | - |
 | 21. Scale, Maintenance + Embedder Identity | v1.2 | 0/TBD | Not started | - |
