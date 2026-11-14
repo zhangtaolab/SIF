@@ -243,8 +243,28 @@ def _run_table(
     return [step for step, ok in results if not ok]
 
 
+def _is_windows() -> bool:
+    """Return True on Windows.
+
+    Kept as a function so a static analyzer on a POSIX host cannot narrow
+    ``sys.platform`` to its literal and declare the rest of ``main``
+    unreachable.
+    """
+    return sys.platform == "win32"
+
+
 def main() -> int:
     """Run the CLI degradation assertion table; return 0 only when all pass."""
+    # CR-01: the last two assertions expect Windows-only refusals. On POSIX
+    # those commands succeed — forking a real daemon and installing a
+    # persistent launchd/systemd service — so refuse before touching the
+    # machine. `make windows-smoke` is the only supported entry point.
+    if not _is_windows():
+        _emit(
+            "REFUSED: this smoke asserts Windows-only degradation refusals; "
+            f"run it on Windows (current platform: {sys.platform})"
+        )
+        return 2
     head = _preflight_head()
     if head is None:
         return 1

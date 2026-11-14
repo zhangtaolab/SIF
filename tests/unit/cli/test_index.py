@@ -1,11 +1,13 @@
 """Tests for index CLI commands."""
 
+import io
 import types
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
+from rich.console import Console
 
 from sif.cli.commands.index import embed_cmd
 from sif.config.settings import Settings
@@ -572,3 +574,31 @@ class TestEmbedCommand:
         mock_manager.embed.assert_called_once()
         assert mock_manager.embed.call_args[0][0] == ["hello world"]
         mock_searcher.add_embeddings_batch.assert_called_once()
+
+
+class TestRenderIndexEvent:
+    """WR-01: user data must never be interpreted as Rich markup."""
+
+    def _console(self) -> tuple[Console, io.StringIO]:
+        buffer = io.StringIO()
+        return Console(file=buffer, force_terminal=False, width=200), buffer
+
+    def test_unchanged_payload_preserves_brackets(self) -> None:
+        from sif.cli.commands.index import _render_index_event
+
+        console, buffer = self._console()
+        on_event = _render_index_event(console, MagicMock(), 0)
+
+        on_event("unchanged report[v2].md")
+
+        assert "report[v2].md" in buffer.getvalue()
+
+    def test_error_payload_preserves_closing_tag(self) -> None:
+        from sif.cli.commands.index import _render_index_event
+
+        console, buffer = self._console()
+        on_event = _render_index_event(console, MagicMock(), 0)
+
+        on_event("error report[/dim].md")
+
+        assert "report[/dim].md" in buffer.getvalue()

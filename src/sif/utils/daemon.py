@@ -77,8 +77,12 @@ class DetachOutcome:
 class StopOutcome:
     """Result of :func:`stop_daemon` for the CLI's user-facing messaging."""
 
-    status: str  # "stopped" | "not_running" | "stale"
+    status: str  # "stopped" | "not_running" | "stale" | "permission_denied"
     pid: int | None = None
+
+
+class _SignalPermissionError(Exception):
+    """A corroborated PID could not be signalled (EPERM: another user's process)."""
 
 
 def pid_path_for(db_path: str | Path) -> Path:
@@ -318,7 +322,13 @@ def stop_daemon(
     if not corroborate_pid(payload):
         remove_pid_file(pid_path)
         return StopOutcome("stale", pid=pid)
-    _terminate_corroborated(pid, term_timeout_s, kill_timeout_s, poll_interval_s, now)
+    try:
+        _terminate_corroborated(pid, term_timeout_s, kill_timeout_s, poll_interval_s, now)
+    except _SignalPermissionError:
+        # WR-08: another user's process cannot be signalled. Keep the PID file
+        # so a later privileged stop can still find it; never crash the CLI.
+        logger.warning("Daemon PID %s belongs to another user; not signalled", pid)
+        return StopOutcome("permission_denied", pid=pid)
     remove_pid_file(pid_path)
     return StopOutcome("stopped", pid=pid)
 
@@ -346,6 +356,8 @@ def _signal_or_confirm_gone(pid: int, sig: int) -> bool:
         os.kill(pid, sig)
     except ProcessLookupError:
         return True
+    except PermissionError as exc:
+        raise _SignalPermissionError(str(pid)) from exc
     return False
 
 
@@ -362,6 +374,8 @@ def _wait_gone(
             os.kill(pid, 0)
         except ProcessLookupError:
             return True
+        except PermissionError as exc:
+            raise _SignalPermissionError(str(pid)) from exc
         if now() >= deadline:
             return False
         time.sleep(poll_interval_s)

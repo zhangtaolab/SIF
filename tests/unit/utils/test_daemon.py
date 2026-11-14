@@ -424,6 +424,29 @@ class TestStopEscalation:
         assert outcome.status == "stale"
         assert not pid_file.exists()
 
+    def test_permission_denied_is_reported_and_pid_file_kept(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """WR-08: a corroborated PID owned by another user never crashes the CLI.
+
+        It returns ``permission_denied`` and keeps the PID file so a later
+        privileged stop can still find the daemon.
+        """
+        pid_file = tmp_path / "sif.db.watch.pid"
+        _write_payload(pid_file)
+
+        def fake_kill(_pid: int, _sig: int) -> None:
+            raise PermissionError(1, "Operation not permitted")
+
+        monkeypatch.setattr(daemon.os, "kill", fake_kill)
+        monkeypatch.setattr(daemon, "corroborate_pid", lambda _payload: True)
+
+        outcome = daemon.stop_daemon(pid_file)
+
+        assert outcome.status == "permission_denied"
+        assert outcome.pid == 999999
+        assert pid_file.exists()
+
     def test_missing_file_is_not_running(self, tmp_path: Path, monkeypatch) -> None:
         monkeypatch.setattr(daemon.os, "kill", lambda _pid, _sig: pytest.fail("signal sent"))
 
@@ -462,6 +485,20 @@ class TestStopCliPath:
         watch_mod._run_stop("/tmp/sif.db")
         output = capsys.readouterr().out
         assert "stopped" in output
+        assert "4242" in output
+
+    def test_permission_denied_message(self, monkeypatch, capsys) -> None:
+        """WR-08: the CLI names the ownership problem instead of claiming stale."""
+        from sif.cli.commands import watch as watch_mod
+
+        monkeypatch.setattr(
+            daemon,
+            "stop_daemon",
+            lambda _path: daemon.StopOutcome("permission_denied", pid=4242),
+        )
+        watch_mod._run_stop("/tmp/sif.db")
+        output = capsys.readouterr().out
+        assert "another user" in output
         assert "4242" in output
 
 

@@ -1,367 +1,86 @@
 #!/usr/bin/env python3
-"""
-SIF Quickstart Example
+"""SIF quickstart: index a temporary notes directory and search it.
 
-This script demonstrates the basic usage of SIF for document indexing and search.
+Run from a checkout with the development environment installed:
 
-Prerequisites:
-    pip install docsif
+    python examples/quickstart.py
 
-Usage:
-    python quickstart.py
-
-This example will:
-    1. Initialize a SIF database
-    2. Add a document collection
-    3. Index documents
-    4. Perform searches
-    5. Display results
+The example uses a temporary ``SIF_DB_PATH``, so it never touches your real
+index. It drives the same CLI surface a user would — ``collection add``,
+``index update``, BM25 ``search``, and ``status`` — then shows the equivalent
+Python API.
 """
 
+from __future__ import annotations
+
+import json
 import os
-import sqlite3
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
-# Add src to path for development testing
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+CLI = [sys.executable, "-m", "sif.cli.main"]
 
 
-def create_sample_documents(base_path: Path) -> None:
-    """Create sample documents for demonstration."""
-    print("Creating sample documents...")
-    
-    # Create sample markdown files
-    docs_dir = base_path / "documents"
-    docs_dir.mkdir(exist_ok=True)
-    
-    # Sample document 1: Python guide
-    (docs_dir / "python_guide.md").write_text("""# Python Programming Guide
-
-## Introduction
-
-Python is a high-level, interpreted programming language known for its simplicity
-and readability. It was created by Guido van Rossum and first released in 1991.
-
-## Key Features
-
-- **Easy to learn**: Python has a simple syntax similar to English
-- **Versatile**: Can be used for web development, data science, AI, and more
-- **Large community**: Extensive libraries and frameworks available
-- **Cross-platform**: Runs on Windows, macOS, and Linux
-
-## Getting Started
-
-To start programming in Python:
-
-1. Install Python from python.org
-2. Write your first script: `print("Hello, World!")`
-3. Run it with: `python hello.py`
-
-## Popular Libraries
-
-- **NumPy**: Numerical computing
-- **Pandas**: Data manipulation
-- **Django**: Web framework
-- **TensorFlow**: Machine learning
-""")
-    
-    # Sample document 2: Machine learning intro
-    (docs_dir / "ml_intro.md").write_text("""# Introduction to Machine Learning
-
-## What is Machine Learning?
-
-Machine Learning (ML) is a subset of artificial intelligence that enables systems
-to learn and improve from experience without being explicitly programmed.
-
-## Types of Machine Learning
-
-### Supervised Learning
-The algorithm learns from labeled training data to make predictions.
-Examples: Classification, Regression
-
-### Unsupervised Learning
-The algorithm finds patterns in unlabeled data.
-Examples: Clustering, Dimensionality Reduction
-
-### Reinforcement Learning
-The algorithm learns by interacting with an environment.
-Examples: Game playing, Robotics
-
-## Key Concepts
-
-- **Features**: Input variables used for prediction
-- **Labels**: Output variables we want to predict
-- **Model**: The learned relationship between features and labels
-- **Training**: Process of learning from data
-- **Inference**: Using a trained model to make predictions
-
-## Popular ML Frameworks
-
-- **Scikit-learn**: General-purpose ML library
-- **TensorFlow**: Deep learning framework by Google
-- **PyTorch**: Deep learning framework by Meta
-- **XGBoost**: Gradient boosting library
-""")
-    
-    # Sample document 3: Database basics
-    (docs_dir / "database_basics.md").write_text("""# Database Fundamentals
-
-## What is a Database?
-
-A database is an organized collection of data stored and accessed electronically.
-Databases allow efficient storage, retrieval, and manipulation of data.
-
-## Types of Databases
-
-### Relational Databases (SQL)
-Store data in tables with predefined relationships.
-Examples: PostgreSQL, MySQL, SQLite, Oracle
-
-### NoSQL Databases
-Store data in flexible formats like documents or key-value pairs.
-Examples: MongoDB, Redis, Cassandra, DynamoDB
-
-## SQL Basics
-
-```sql
--- Create a table
-CREATE TABLE users (
-    id INTEGER PRIMARY KEY,
-    name TEXT NOT NULL,
-    email TEXT UNIQUE
-);
-
--- Insert data
-INSERT INTO users (name, email) VALUES ('Alice', 'alice@example.com');
-
--- Query data
-SELECT * FROM users WHERE name = 'Alice';
-```
-
-## ACID Properties
-
-- **Atomicity**: All operations succeed or none do
-- **Consistency**: Database remains in a valid state
-- **Isolation**: Concurrent transactions don't interfere
-- **Durability**: Committed data survives failures
-
-## Database Design
-
-Good database design involves:
-1. Normalization to reduce redundancy
-2. Proper indexing for query performance
-3. Choosing appropriate data types
-4. Defining relationships between tables
-""")
-    
-    print(f"  Created 3 sample documents in {docs_dir}")
-
-
-def example_database_operations() -> None:
-    """Demonstrate basic database operations."""
-    print("\n" + "=" * 60)
-    print("Example 1: Database Operations")
-    print("=" * 60)
-    
-    try:
-        from sif.database.database import Database
-
-        # Create a temporary database
-        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-            db_path = tmp.name
-
-        print(f"\n1. Creating database at: {db_path}")
-        with Database(db_path) as db:
-            print("2. Initializing schema...")
-            db.init_schema()
-            print("   ✓ Schema initialized")
-
-            print("3. Checking connection...")
-            version = db.connection.execute("SELECT sqlite_version()").fetchone()[0]
-            print(f"   ✓ SQLite version: {version}")
-
-        os.unlink(db_path)
-        print("4. Cleanup completed")
-
-    except ImportError as e:
-        print(f"   ✗ Import error: {e}")
-        print("   Make sure SIF is installed: pip install docsif")
-    except Exception as e:
-        print(f"   ✗ Error: {e}")
-
-
-def example_collection_management() -> None:
-    """Demonstrate collection management."""
-    print("\n" + "=" * 60)
-    print("Example 2: Collection Management")
-    print("=" * 60)
-    
-    try:
-        from sif.core import Collection
-        
-        # Create a temporary directory for the collection
-        with tempfile.TemporaryDirectory() as tmpdir:
-            print(f"\n1. Creating collection from: {tmpdir}")
-            
-            collection = Collection(
-                name="example_docs",
-                path=Path(tmpdir),
-                description="Example document collection"
-            )
-            
-            print(f"   ✓ Collection created: {collection.name}")
-            print(f"   ✓ Path: {collection.path}")
-            print(f"   ✓ Description: {collection.description}")
-            
-            # Create some sample files
-            (Path(tmpdir) / "doc1.md").write_text("# Sample Document 1\nContent here.")
-            (Path(tmpdir) / "doc2.md").write_text("# Sample Document 2\nMore content.")
-            
-            print("2. Scanning for documents...")
-            documents = collection.scan_documents()
-            print(f"   ✓ Found {len(documents)} documents")
-            
-            for doc in documents:
-                print(f"      - {doc.path.name}")
-                
-    except ImportError as e:
-        print(f"   ✗ Import error: {e}")
-    except Exception as e:
-        print(f"   ✗ Error: {e}")
-
-
-def example_search() -> None:
-    """Demonstrate search functionality."""
-    print("\n" + "=" * 60)
-    print("Example 3: Search Operations")
-    print("=" * 60)
-    
-    try:
-        from sif.search import BM25Searcher
-
-        print("\n1. Creating BM25 searcher...")
-        connection = sqlite3.connect(":memory:")
-        searcher = BM25Searcher(connection)
-        print("   ✓ BM25Searcher created")
-        connection.close()
-
-        print("\n2. Searcher info:")
-        print(f"   - Type: {type(searcher).__name__}")
-        print("   - Backend: SQLite FTS5 full-text search")
-
-        # Note: Actual search requires an indexed database
-        print("\n3. To perform actual searches:")
-        print("   - Index your documents first: sif index update")
-        print("   - Then search: sif search search 'your query'")
-
-    except ImportError as e:
-        print(f"   ✗ Import error: {e}")
-    except Exception as e:
-        print(f"   ✗ Error: {e}")
-
-
-def example_cli_usage() -> None:
-    """Demonstrate CLI usage examples."""
-    print("\n" + "=" * 60)
-    print("Example 4: CLI Usage")
-    print("=" * 60)
-    
-    print("""
-Common SIF CLI commands:
-
-# Show help
-sif --help
-
-# Add a collection
-sif collection add /path/to/documents --name mydocs
-
-# List collections
-sif collection list
-
-# Update index
-sif update
-
-# Search documents
-sif search "machine learning"
-sif search "python tutorial" --limit 20
-
-# Vector search
-sif vsearch "similar documents" --collection mydocs
-
-# Get document by path
-sif get /path/to/document.md
-
-# Check status
-sif status
-
-# Start MCP server
-sif mcp stdio    # For Claude Desktop
-sif mcp http     # HTTP server
-""")
-
-
-def example_configuration() -> None:
-    """Demonstrate configuration."""
-    print("\n" + "=" * 60)
-    print("Example 5: Configuration")
-    print("=" * 60)
-    
-    try:
-        from sif.cli.config import Config
-        
-        print("\n1. Loading configuration...")
-        config = Config()
-        print("   ✓ Configuration loaded")
-        
-        print("\n2. Default configuration paths:")
-        print(f"   - Config dir: {config.get_config_dir()}")
-        print(f"   - Data dir: {config.get_data_dir()}")
-        
-        print("\n3. To customize configuration:")
-        print("   - Create: ~/.config/sif/config.yaml")
-        print("   - See example_config.yaml for options")
-        
-    except ImportError as e:
-        print(f"   ✗ Import error: {e}")
-    except Exception as e:
-        print(f"   ✗ Error: {e}")
+def run_cli(args: list[str], env: dict[str, str]) -> str:
+    """Run one ``sif`` command and return its stdout; raise on failure."""
+    result = subprocess.run(
+        [*CLI, *args],
+        cwd=PROJECT_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip()
+        raise RuntimeError(f"`sif {' '.join(args)}` failed (exit {result.returncode}): {detail}")
+    return result.stdout
 
 
 def main() -> int:
-    """Main function demonstrating SIF usage."""
-    print("=" * 60)
-    print("SIF Quickstart Example")
-    print("=" * 60)
-    print()
-    print("This script demonstrates basic SIF functionality.")
-    print()
-    
-    # Run examples
-    example_database_operations()
-    example_collection_management()
-    example_search()
-    example_cli_usage()
-    example_configuration()
-    
-    # Summary
-    print("\n" + "=" * 60)
-    print("Quickstart Complete!")
-    print("=" * 60)
-    print("""
-Next steps:
-    1. Install SIF: pip install docsif
-    2. Add a collection: sif collection add /path/to/docs
-    3. Update index: sif update
-    4. Search: sif search "your query"
+    """Run the CLI walkthrough against a throwaway database."""
+    with tempfile.TemporaryDirectory(prefix="sif-quickstart-") as raw_tmp:
+        tmp = Path(raw_tmp)
+        docs = tmp / "notes"
+        docs.mkdir()
+        (docs / "python.md").write_text(
+            "# Python\n\nPython is a readable programming language.\n", encoding="utf-8"
+        )
+        (docs / "search.md").write_text(
+            "# Search\n\nHybrid search combines BM25 keywords with vectors.\n",
+            encoding="utf-8",
+        )
 
-For more information:
-    - Documentation: https://sif.readthedocs.io
-    - CLI help: sif --help
-    - GitHub: https://github.com/sif/sif
-""")
-    
+        env = os.environ.copy()
+        env["SIF_DB_PATH"] = str(tmp / "sif.db")
+        env["PYTHONPATH"] = os.pathsep.join(
+            [str(PROJECT_ROOT / "src"), env.get("PYTHONPATH", "")]
+        ).rstrip(os.pathsep)
+
+        print(f"Using temporary database: {env['SIF_DB_PATH']}")
+        print(f"Indexing: {docs}")
+        print(run_cli(["collection", "add", str(docs), "--name", "quickstart"], env), end="")
+        print(run_cli(["index", "update"], env), end="")
+
+        payload = json.loads(run_cli(["search", "search", "Python", "--json"], env))
+        print(f"\nBM25 results for 'Python': {len(payload)}")
+        for rank, result in enumerate(payload, start=1):
+            label = result.get("title") or result.get("path") or "?"
+            print(f"  {rank}. {label}")
+
+        print(run_cli(["status"], env), end="")
+
+    print("\nPython API equivalent:")
+    print("  from sif.config.settings import get_settings")
+    print("  from sif.database.database import Database")
+    print("  from sif.search.bm25 import BM25Searcher")
+    print("  settings = get_settings()")
+    print("  with Database(str(settings.get_db_path())) as db:")
+    print("      results = BM25Searcher(db.connection).search('Python')")
     return 0
 
 

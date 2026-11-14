@@ -114,3 +114,13 @@ def test_empty_expected_version_is_rejected(tmp_path: Path) -> None:
     """An empty version literal would make the version assertion vacuous."""
     with pytest.raises(ValueError, match="version literal"):
         build_cli_invocations("python", tmp_path, "")
+
+
+def test_main_refuses_on_non_windows(monkeypatch, capsys) -> None:
+    """CR-01: never fork a daemon or install a service on a POSIX host."""
+    import scripts.windows_smoke as smoke
+
+    monkeypatch.setattr(smoke.sys, "platform", "darwin")
+
+    assert smoke.main() == 2
+    assert "REFUSED" in capsys.readouterr().out

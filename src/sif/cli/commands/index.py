@@ -9,6 +9,7 @@ from pathlib import Path
 
 import click
 from rich.console import Console
+from rich.markup import escape
 from rich.progress import Progress, SpinnerColumn, TaskID, TextColumn
 
 from sif.cli.error_handling import open_initialized_database
@@ -162,9 +163,9 @@ def _render_index_event(
             progress.update(task, total=int(payload))
             console.print(f"  Found {payload} files")
         elif code == "unchanged":
-            console.print(f"  [dim]Unchanged: {payload}[/dim]")
+            console.print(f"  [dim]Unchanged: {escape(payload)}[/dim]")
         elif code == "error":
-            console.print(f"  [red]{payload}[/red]")
+            console.print(f"  [red]{escape(payload)}[/red]")
         progress.advance(task)
 
     return _on_event

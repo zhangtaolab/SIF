@@ -418,6 +418,12 @@ def _run_stop(index_path: str | Path) -> None:
         console.print(f"[green]Watch daemon stopped (PID {outcome.pid}).[/green]")
     elif outcome.status == "not_running":
         console.print("[yellow]Watch daemon is not running.[/yellow]")
+    elif outcome.status == "permission_denied":
+        assert outcome.pid is not None
+        console.print(
+            f"[yellow]Watch daemon (PID {outcome.pid}) belongs to another user; "
+            "not stopped. Run as its owner to stop it.[/yellow]"
+        )
     else:
         console.print("[yellow]Watch daemon is not running (stale PID file removed).[/yellow]")
 
