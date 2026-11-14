@@ -35,6 +35,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - N/A
 
+## [1.1.2] - 2026-11-13
+
+### Changed
+- The release version is now `1.1.2`, still single-sourced in `src/sif/_version.py`.
+- Dead layers removed: `MigrationManager`, `src/sif/models/search.py`, and `src/sif/search/strategy.py` are gone; their tests and fixtures were deleted with them.
+- The phantom `make pre-commit` target and its documentation were removed (no `.pre-commit-config.yaml` exists; `make ci` covers format, lint, type, and tests).
+- `black` was dropped from the development dependencies; `ruff format` remains the formatter.
+- `torch` is declared directly in the `embed` and `all` extras with a Linux CPU index, so Linux CI resolves CPU torch instead of the multi-GB CUDA stack.
+- Added a tag-triggered release workflow that builds once and publishes to TestPyPI then PyPI via trusted publishing (PEP 740 attestations, no API tokens), and added the `<!-- mcp-name: io.github.zhangtaolab/sif -->` marker to the README for MCP Registry ownership.
+- The Python 3.13 classifier is now declared after the CI matrix proved green on 3.13.
+
+### Fixed
+- `sif watch --detach` and `sif watch --install-service` now refuse on Windows with a clear cause and remedy instead of a raw traceback.
+- The index progress spinner stays encodable on legacy Windows consoles (GBK), so `sif index update` no longer crashes on the missing-root warning path.
+- `LlamaCppReranker.load()` validates a missing model path before importing `llama_cpp`, raising the documented `ValueError` in environments without the optional dependency.
+
 ## [1.1.1] - 2026-11-12
 
 ### Changed
@@ -236,7 +252,8 @@ Thanks to all contributors who have helped shape SIF!
 
 ---
 
-[Unreleased]: https://github.com/zhangtaolab/sif/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/zhangtaolab/sif/compare/v1.1.2...HEAD
 [0.1.0]: https://github.com/zhangtaolab/sif/releases/tag/v0.1.0
+[1.1.2]: https://github.com/zhangtaolab/sif/releases/tag/v1.1.2
 [1.1.1]: https://github.com/zhangtaolab/sif/releases/tag/v1.1.1
 [1.0.1]: https://github.com/zhangtaolab/sif/releases/tag/v1.0.1

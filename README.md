@@ -1,4 +1,5 @@
 <!-- generated-by: gsd-doc-writer -->
+<!-- mcp-name: io.github.zhangtaolab/sif -->
 # SIF
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
