@@ -565,34 +565,37 @@ class CustomModel(BaseModel):
 
 ## Release Process
 
-### Version Bump
+1. **Bump the version.** Update `__version__` in `src/sif/_version.py` to the new version. It is the single version literal: packaging, `sif.__version__`, `sif.cli.__version__`, `APP_VERSION`, and the MCP `serverInfo` version all derive from it.
 
-1. Update `__version__` in `src/sif/_version.py` (currently `1.1.1`)
+2. **Update the changelog.** Add the release section and its compare/release links in `docs/changelog.md`.
 
-2. Update `docs/changelog.md`
+3. **Run the Windows degradation smoke.** On a clean checkout of the release commit, run `make windows-smoke` against the Windows host (hc remote yoga) and record the tested HEAD that the script prints. This is an on-demand, pre-release step only — never a per-PR or scheduled job.
 
-3. Create a git tag (existing tags use the `vX.Y[.Z]` form):
+4. **Commit and confirm CI.** Commit the release changes and confirm the Test Matrix is green on that commit: all eight py3.10–3.13 × ubuntu/macos cells plus the lint job.
 
-```bash
-git tag -a v1.1.1 -m "Release version 1.1.1"
-git push origin v1.1.1
-```
-
-### Build Package
+5. **Tag the release.** Create and push an annotated tag (tags use the `vX.Y[.Z]` form), for example:
 
 ```bash
-# Install build tools
-pip install build twine
-
-# Build package (hatchling backend)
-python -m build
-
-# Check package
-twine check dist/*
-
-# Upload to PyPI (maintainers only)
-twine upload dist/*
+git tag -a v1.1.2 -m "Release version 1.1.2"
+git push origin v1.1.2
 ```
+
+6. **Let the Publish workflow release it.** The `Publish` workflow is triggered by the `v*` tag. It builds the distributions once, checks the metadata, uploads the built artifact, and then publishes it to TestPyPI first and PyPI second through trusted publishing (GitHub OIDC environments `testpypi` and `pypi`) with PEP 740 attestations. There is no manual upload step and no API token. The build job fails before building if the tag does not exactly equal `v` + the `src/sif/_version.py` literal.
+
+7. **Verify the release.** Confirm the published version through the PyPI JSON API, check the attestation, and install into a scratch virtual environment:
+
+```bash
+curl -s https://pypi.org/pypi/docsif/1.1.2/json | python -c "import json, sys; print(json.load(sys.stdin)['info']['version'])"
+
+uvx pypi-attestations verify pypi \
+  --repository https://github.com/zhangtaolab/sif \
+  pypi:docsif-1.1.2-py3-none-any.whl
+
+python -m venv /tmp/sif-release-venv
+uv pip install --python /tmp/sif-release-venv/bin/python docsif==1.1.2
+```
+
+TestPyPI installs do not mirror dependencies, so add `--extra-index-url https://pypi.org/simple` when testing the TestPyPI artifact.
 
 ## Troubleshooting
 

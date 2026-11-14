@@ -141,6 +141,8 @@ Using PowerShell:
 pip install docsif
 ```
 
+**Windows (degradation smoke)**: Windows is degradation-only in v1.2 — the CLI works, but POSIX-only features (detached watch, service install, `fcntl` index locking) refuse or degrade with clear messages instead of running. Before a release, maintainers run `make windows-smoke` on a Windows host (hc remote yoga) to prove the degradation is honest.
+
 ## Verifying Installation
 
 After installation, verify SIF is working:
@@ -155,7 +157,7 @@ sif --help
 
 Expected output:
 ```
-sif, version 1.1.1
+sif, version 1.1.2
 
 Usage: sif [OPTIONS] COMMAND [ARGS]...
 

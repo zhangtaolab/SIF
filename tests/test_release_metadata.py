@@ -12,6 +12,8 @@ CHANGELOG = REPO_ROOT / "docs" / "changelog.md"
 VERSION_MODULE = REPO_ROOT / "src" / "sif" / "_version.py"
 PYPROJECT = REPO_ROOT / "pyproject.toml"
 PUBLISH_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "publish.yml"
+DEVELOPMENT = REPO_ROOT / "docs" / "development.md"
+INSTALLATION = REPO_ROOT / "docs" / "installation.md"
 
 MCP_NAME_MARKER = "<!-- mcp-name: io.github.zhangtaolab/sif -->"
 
@@ -128,3 +130,28 @@ def test_publish_workflow_has_no_secrets() -> None:
     """Trusted publishing means no token secrets are referenced anywhere."""
     text = PUBLISH_WORKFLOW.read_text(encoding="utf-8")
     assert "secrets." not in text
+
+
+def test_3_13_classifier_present() -> None:
+    """The 3.13 classifier is declared, after 3.12, on green matrix evidence."""
+    text = PYPROJECT.read_text(encoding="utf-8")
+    classifier_312 = '"Programming Language :: Python :: 3.12"'
+    classifier_313 = '"Programming Language :: Python :: 3.13"'
+    assert classifier_313 in text
+    assert text.index(classifier_312) < text.index(classifier_313)
+
+
+def test_release_process_docs_name_the_workflow() -> None:
+    """Release docs describe the tag-triggered Publish workflow, not twine upload."""
+    text = DEVELOPMENT.read_text(encoding="utf-8")
+    release = text[text.index("## Release Process") :]
+    assert "Publish workflow" in release
+    assert "git push origin v" in release
+    assert "trusted publishing" in release
+    assert "twine upload" not in text
+
+
+def test_windows_smoke_is_documented() -> None:
+    """Both release docs point maintainers at the pre-release Windows smoke."""
+    assert "make windows-smoke" in DEVELOPMENT.read_text(encoding="utf-8")
+    assert "make windows-smoke" in INSTALLATION.read_text(encoding="utf-8")
