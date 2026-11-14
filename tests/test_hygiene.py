@@ -15,7 +15,27 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = REPO_ROOT / "src"
 TESTS_ROOT = REPO_ROOT / "tests"
 EXAMPLES_ROOT = REPO_ROOT / "examples"
+DOCS_ROOT = REPO_ROOT / "docs"
+DESIGN_PATH = REPO_ROOT / "DESIGN.md"
+CHANGELOG_PATH = (DOCS_ROOT / "changelog.md").resolve()
 SELF_PATH = Path(__file__).resolve()
+
+
+DEAD_DOC_LITERALS = (
+    "sif.models.search",
+    "sif/search/strategy.py",
+    "sif/search/strategy",
+    "sif/database/migrations.py",
+    "MigrationManager",
+    "SearchStrategy",
+    "SearchContext",
+    "Searchable",
+    "compute_rrf_score",
+    "CURRENT_SCHEMA_VERSION",
+    "migrations.py",
+    "strategy.py",
+    "legacy migration module",
+)
 
 
 def _python_files() -> list[Path]:
@@ -26,6 +46,16 @@ def _python_files() -> list[Path]:
             if path.resolve() == SELF_PATH:
                 continue
             files.append(path)
+    return files
+
+
+def _doc_files() -> list[Path]:
+    """Return every hand-maintained doc the absence scan covers (self/changelog excluded)."""
+    files = [DESIGN_PATH]
+    for path in sorted(DOCS_ROOT.rglob("*.md")):
+        if path.resolve() in (CHANGELOG_PATH, SELF_PATH):
+            continue
+        files.append(path)
     return files
 
 
@@ -86,6 +116,18 @@ def test_current_schema_version_removed() -> None:
     """The schema-version constant leaves with the dead migration layer."""
     constants_text = (SRC_ROOT / "sif" / "config" / "constants.py").read_text(encoding="utf-8")
     assert "CURRENT_SCHEMA_VERSION" not in constants_text
+
+
+def test_docs_do_not_describe_dead_layers() -> None:
+    """Hand-maintained docs describe only the surviving layers."""
+    offenders = [
+        f"{literal!r} in {path.relative_to(REPO_ROOT)}"
+        for literal in DEAD_DOC_LITERALS
+        for path in _doc_files()
+        if literal in path.read_text(encoding="utf-8")
+    ]
+    if offenders:
+        pytest.fail("dead-layer documentation survives:\n" + "\n".join(offenders))
 
 
 def test_quickstart_example_compiles() -> None:

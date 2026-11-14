@@ -55,7 +55,7 @@ SIF is a local CLI search engine for indexing and searching markdown documents. 
 
 #### Strategy Pattern
 - **Purpose**: Pluggable search algorithms
-- **Location**: `src/sif/search/strategy.py`
+- **Location**: `src/sif/search/bm25.py`, `src/sif/search/vector.py`, `src/sif/search/hybrid.py`
 - **Implementations**:
   - `BM25Searcher`: Full-text search via SQLite FTS5
   - `VectorSearcher`: Semantic search via embeddings
@@ -93,7 +93,6 @@ src/sif/
 │   ├── collection.py        # Collection request/response models
 │   ├── document.py          # Document request/response models
 │   ├── context.py           # Context request/response models
-│   ├── search.py            # Search query and result models
 │   ├── embedding.py         # Embedding configuration models
 │   └── download.py          # Model download models
 ├── database/                # Data access layer
@@ -103,10 +102,8 @@ src/sif/
 │   ├── repository.py        # Repository interfaces
 │   ├── repositories.py      # Repository implementations
 │   ├── schema.py            # Schema creation (tables, FTS5, vectors)
-│   └── migrations.py        # Database migrations
 ├── search/                  # Search functionality
 │   ├── __init__.py
-│   ├── strategy.py          # Search strategy interface
 │   ├── bm25.py              # BM25 search implementation
 │   ├── vector.py            # Vector search implementation
 │   ├── hybrid.py            # Hybrid search and search pipeline
@@ -186,18 +183,6 @@ class Repository(ABC, Generic[T]):
     
     @abstractmethod
     def delete(self, entity_id: str) -> bool: ...
-```
-
-### Search Strategy Interface
-
-```python
-class SearchStrategy(ABC):
-    @abstractmethod
-    def search(
-        self,
-        context: SearchContext,
-        options: SearchOptions,
-    ) -> list[SearchResult]: ...
 ```
 
 ### Embedding Model Interface

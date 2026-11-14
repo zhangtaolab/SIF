@@ -468,8 +468,7 @@ Runtime schema creation lives in `SchemaManager.create_all()` in `src/sif/databa
 
 - For a new column, follow `_add_column_if_missing` (see `collections.pre_update_cmd` at `src/sif/database/schema.py`), which checks `PRAGMA table_info` before altering the table so existing indexes pick the column up in place.
 - For data rewrites, follow `_migrate_path_contexts()`, which moves `path_contexts` rows into `contexts` inside a SAVEPOINT.
-- `src/sif/database/migrations.py` holds a separate versioned `MigrationManager` baseline (`CURRENT_SCHEMA_VERSION` in `src/sif/config/constants.py`). It is exported from `sif.database` and has its own tests, but `Database` does not invoke it — editing only `migrations.py` will not migrate existing indexes.
-- Update the schema tests under `tests/unit/database/` (`test_schema.py`, `test_migrations.py`).
+- Update the schema tests under `tests/unit/database/` (`test_schema.py`).
 
 `Database.reset()` drops and recreates the schema when you need a clean local index.
 
@@ -492,35 +491,31 @@ sif search search "test query"
 
 ### New Search Strategy
 
-1. Create a subclass in `src/sif/search/` that implements the `SearchStrategy` ABC from `src/sif/search/strategy.py`:
+1. Add a searcher module under `src/sif/search/` that takes a `sqlite3.Connection` (plus any embedder it needs) and exposes a `search` method returning `list[SearchResult]`. Use the `SearchOptions` and `SearchResult` dataclasses from `sif.core.models` — they are the types the live searchers accept and return:
 
 ```python
 # src/sif/search/custom.py
-from sif.models.search import SearchOptions, SearchResult
-from sif.search.strategy import SearchContext, SearchStrategy
+import sqlite3
+
+from sif.core.models import SearchOptions, SearchResult
 
 
-class CustomSearchStrategy(SearchStrategy):
+class CustomSearcher:
+    def __init__(self, db: sqlite3.Connection) -> None:
+        self.db = db
+
     def search(
         self,
-        context: SearchContext,
-        options: SearchOptions,
+        query: str,
+        options: SearchOptions | None = None,
     ) -> list[SearchResult]:
-        """Execute search and return results."""
-        ...
-
-    def search_batch(
-        self,
-        contexts: list[SearchContext],
-        options: SearchOptions,
-    ) -> list[list[SearchResult]]:
-        """Execute batch search."""
+        """Execute the custom search and return ranked results."""
         ...
 ```
 
 2. Add tests in `tests/unit/search/`.
 
-3. Route it from `SearchPipeline.search()` in `src/sif/search/hybrid.py`. The CLI (`src/sif/cli/commands/search.py`) and MCP backend (`src/sif/mcp/backend.py`) both construct `SearchPipeline`, so wiring it there covers both front ends.
+3. Wire it into the live search path in `src/sif/search/hybrid.py`: construct it in `HybridSearcher` and fuse its results, or route a new query prefix from `SearchPipeline.search()`. The CLI (`src/sif/cli/commands/search.py`) and MCP backend (`src/sif/mcp/backend.py`) both construct `SearchPipeline`, so wiring it there covers both front ends.
 
 ### New CLI Command
 

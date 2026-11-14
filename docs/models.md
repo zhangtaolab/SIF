@@ -476,7 +476,7 @@ The domain dataclasses in `sif.core.models` perform no field validation. The lim
 - `content`: 1-5000 characters (convention, not enforced)
 - `context_type`: Restricted to `path`, `collection`, `global` by a database CHECK constraint
 
-Validation that does exist lives elsewhere: the Pydantic API models in `sif.models` enforce their own limits (`CollectionBase.name` is 1-255 characters; `SearchQuery.query` and `ContextBase.content` require at least 1 character with no upper bound; `sif.models.search.SearchOptions` bounds `limit` to 1-100 and `threshold` to 0.0-1.0).
+Validation that does exist lives elsewhere: the Pydantic API models in `sif.models` enforce their own limits (`CollectionBase.name` is 1-255 characters; `ContextBase.content` requires at least 1 character with no upper bound).
 
 ## Serialization
 

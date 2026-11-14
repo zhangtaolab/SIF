@@ -224,20 +224,7 @@ class Context:
 
 ## Models Module
 
-### Search Models
-
-```python
-from sif.models.search import SearchQuery, SearchResult, SearchOptions, SearchType
-```
-
-#### Enum: `SearchType`
-
-```python
-class SearchType(str, Enum):
-    BM25 = "bm25"
-    VECTOR = "vector"
-    HYBRID = "hybrid"
-```
+### Search Options
 
 #### Class: `SearchOptions`
 
@@ -276,56 +263,6 @@ options = SearchOptions(limit=10, rrf_k=40, bm25_weight=0.7, vector_weight=0.3)
 
 # Reranker over-fetch pool (used only on the enabled --rerank path)
 options = SearchOptions(limit=10, candidate_limit=30)
-```
-
-#### Class: `SearchQuery`
-
-```python
-class SearchQuery(BaseModel):
-    query: str = Field(..., min_length=1)
-    collection_ids: list[str] | None = None
-    search_type: SearchType = SearchType.HYBRID
-    options: SearchOptions = Field(default_factory=SearchOptions)
-    filters: dict[str, Any] = Field(default_factory=dict)
-```
-
-**Usage:**
-```python
-query = SearchQuery(
-    query="python decorators",
-    collection_ids=["collection-uuid"],
-    search_type=SearchType.HYBRID,
-    options=SearchOptions(limit=15)
-)
-```
-
-#### Class: `SearchResult`
-
-```python
-class SearchResult(BaseModel):
-    document_id: str
-    document_path: str
-    document_title: str | None = None
-    score: float
-    bm25_score: float | None = None
-    vector_score: float | None = None
-    content_preview: str | None = None
-    matched_chunks: list[dict[str, Any]] = Field(default_factory=list)
-    highlights: list[str] = Field(default_factory=list)
-    metadata: dict[str, Any] = Field(default_factory=dict)
-```
-
-#### Class: `SearchResponse`
-
-```python
-class SearchResponse(BaseModel):
-    query: str
-    search_type: SearchType
-    total: int
-    results: list[SearchResult]
-    search_time_ms: float
-    expanded_query: str | None = None
-    expansion_terms: list[str] = Field(default_factory=list)
 ```
 
 ### Collection Models
@@ -375,42 +312,9 @@ class CollectionResponse(BaseModel):
 ### Search Strategies
 
 ```python
-from sif.search.strategy import SearchStrategy, SearchContext
 from sif.search.bm25 import BM25Searcher
 from sif.search.vector import VectorSearcher
 from sif.search.hybrid import HybridSearcher
-```
-
-#### Class: `SearchContext`
-
-```python
-@dataclass
-class SearchContext:
-    query: str
-    query_embedding: list[float] | None = None
-    expanded_query: str | None = None
-    collection_ids: list[str] | None = None
-    context_string: str = ""
-    filters: dict[str, Any] | None = None
-```
-
-#### Class: `SearchStrategy` (Abstract)
-
-```python
-class SearchStrategy(ABC):
-    @abstractmethod
-    def search(
-        self,
-        context: SearchContext,
-        options: SearchOptions,
-    ) -> list[SearchResult]: ...
-    
-    @abstractmethod
-    def search_batch(
-        self,
-        contexts: list[SearchContext],
-        options: SearchOptions,
-    ) -> list[list[SearchResult]]: ...
 ```
 
 #### Class: `BM25Searcher`
@@ -451,7 +355,7 @@ results = searcher.search("python decorators", options)
 ### RRF (Reciprocal Rank Fusion)
 
 ```python
-from sif.search.rrf import RRFFusion, compute_rrf_score
+from sif.search.rrf import RRFFusion
 ```
 
 #### Class: `RRFFusion`
@@ -473,13 +377,6 @@ class RRFFusion:
 — and is never normalized. `weights=None` means `1.0` for every list (the
 byte-identical default). `k=None` falls back to the constructor `k`; a
 per-call `k` overrides it without mutating the instance.
-
-#### Function: `compute_rrf_score`
-
-```python
-def compute_rrf_score(rank: int, k: int = 60) -> float:
-    """Compute the RRF score 1 / (k + rank) for a single 1-indexed rank."""
-```
 
 **Usage:**
 ```python
@@ -867,38 +764,6 @@ manager.add_path(collection.id, "~/Documents/ideas")
 
 # Delete collection
 manager.delete_collection(collection.id)
-```
-
-### Custom Search Strategy Example
-
-```python
-from sif.search.strategy import SearchStrategy, SearchContext
-from sif.models.search import SearchOptions, SearchResult
-
-class CustomSearchStrategy(SearchStrategy):
-    """Custom search strategy example."""
-    
-    def __init__(self, repository):
-        self._repository = repository
-    
-    def search(
-        self,
-        context: SearchContext,
-        options: SearchOptions,
-    ) -> list[SearchResult]:
-        # Custom search logic
-        results = []
-        
-        # ... implement custom search ...
-        
-        return results
-    
-    def search_batch(
-        self,
-        contexts: list[SearchContext],
-        options: SearchOptions,
-    ) -> list[list[SearchResult]]:
-        return [self.search(ctx, options) for ctx in contexts]
 ```
 
 ## Type Hints
