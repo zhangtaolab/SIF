@@ -15,7 +15,8 @@ provides:
   - "Install proofs: fresh /tmp venvs report `sif, version 1.1.2` from PyPI and from TestPyPI (PyPI extra index for dependencies)"
 affects: ["22"]
 
-# Actuals (#2632) — measured from the plan ledger; tokens = chars/4 over the realized planning diff
+# Actuals (#2632) — measured from the plan ledger; tokens = chars/4 over the realized planning diff.
+# commits/plan_head_after are as of THIS SUMMARY's write; the SUMMARY's own metadata commit comes after them.
 actuals:
   tokens: 9560
   tasks: 2
