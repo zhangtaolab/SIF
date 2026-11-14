@@ -198,9 +198,19 @@ def _load_embedder(
             "Fix the model configuration or pass --bm25-only."
         ) from e
     # IN-07 precedent (bench.py): prefer the loaded model's metadata dimension;
-    # probe only when it has no usable integer dimension.
-    model_dim = manager.get_model_info().get("embedding_dim")
-    embedding_dim = model_dim if isinstance(model_dim, int) else len(manager.embed_single("probe"))
+    # probe only when it has no usable integer dimension. Both the metadata
+    # lookup and the probe are model calls, so both stay inside a translation
+    # boundary (WR-09).
+    try:
+        model_dim = manager.get_model_info().get("embedding_dim")
+        embedding_dim = (
+            model_dim if isinstance(model_dim, int) else len(manager.embed_single("probe"))
+        )
+    except Exception as e:
+        raise click.ClickException(
+            f"Failed to determine the embedding dimension: {e}. "
+            "Fix the model configuration or pass --bm25-only."
+        ) from e
     identity: dict[str, Any] = {
         "model_name": settings.model_name,
         "model_type": settings.model_type,
@@ -624,6 +634,8 @@ def _run_fresh(  # noqa: C901, PLR0913
         sampled, synthesis = ensure_heldout(metadata, db.connection)
     except ValueError as e:
         raise click.ClickException(str(e)) from e
+    except (sqlite3.Error, OSError) as e:
+        raise click.ClickException(f"Personal eval failed: {e}") from e
     manager, embedding_dim, model_identity = _load_embedder(settings, bm25_only)
     embedder: Embedder | None = manager.model if manager is not None else None
     retrieval = "bm25" if bm25_only else "hybrid"
@@ -779,9 +791,15 @@ def run_personal(  # noqa: PLR0913
     settings = _load_settings(index_path)
     saved = _load_saved(compare)
     with open_initialized_database(index_path, Database) as db:
-        collection_ids = _resolve_collection_ids(db, collection, search_all)
-        # Whole-corpus pass: metadata only, never bodies (T-18-02).
-        metadata = load_document_metadata(db.connection, collection_ids)
+        # Collection resolution and the whole-corpus metadata pass are DB
+        # reads outside ``open_initialized_database``'s construction boundary;
+        # a locked/corrupt index must still be a ClickException (WR-09).
+        try:
+            collection_ids = _resolve_collection_ids(db, collection, search_all)
+            # Whole-corpus pass: metadata only, never bodies (T-18-02).
+            metadata = load_document_metadata(db.connection, collection_ids)
+        except (sqlite3.Error, OSError) as e:
+            raise click.ClickException(f"Personal eval failed: {e}") from e
         if saved is not None:
             _run_compare(
                 db,

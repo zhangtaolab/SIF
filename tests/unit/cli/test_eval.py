@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sqlite3
 from contextlib import ExitStack
 from pathlib import Path
 from typing import Any, ClassVar
@@ -524,6 +525,83 @@ class TestPersonalEvalEdges:
         assert result.exit_code == 1
         assert "weights download failed" in result.output
         assert "--bm25-only" in result.output
+
+    def test_metadata_load_sqlite_error_is_a_click_exception(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        db_path = build_personal_db(tmp_path / "personal.db", documents=60)
+
+        with patch(
+            "sif.cli.commands.eval.load_document_metadata",
+            side_effect=sqlite3.OperationalError("database is locked"),
+        ):
+            result = _invoke(
+                db_path,
+                ["--personal", "--bm25-only", "--json"],
+                settings=_settings(tmp_path),
+                pipeline=_SpyPipeline,
+            )
+
+        assert result.exit_code == 1
+        assert "database is locked" in result.output
+        assert "Traceback" not in result.output
+
+    def test_heldout_sqlite_error_is_a_click_exception(self, tmp_path: Path) -> None:
+        db_path = build_personal_db(tmp_path / "personal.db", documents=60)
+
+        with patch(
+            "sif.cli.commands.eval.ensure_heldout",
+            side_effect=sqlite3.OperationalError("disk I/O error"),
+        ):
+            result = _invoke(
+                db_path,
+                ["--personal", "--bm25-only", "--json"],
+                settings=_settings(tmp_path),
+                pipeline=_SpyPipeline,
+            )
+
+        assert result.exit_code == 1
+        assert "disk I/O error" in result.output
+        assert "Traceback" not in result.output
+
+    def test_cache_dir_oserror_is_a_click_exception(self, tmp_path: Path) -> None:
+        db_path = build_personal_db(tmp_path / "personal.db", documents=60)
+
+        with patch.object(
+            Settings,
+            "get_cache_dir",
+            side_effect=OSError("read-only cache"),
+        ):
+            result = _invoke(
+                db_path,
+                ["--personal", "--bm25-only", "--json"],
+                settings=_settings(tmp_path),
+                pipeline=_ReplaySpyPipeline,
+            )
+
+        assert result.exit_code == 1
+        assert "Could not save the personal eval run" in result.output
+        assert "read-only cache" in result.output
+        assert "Traceback" not in result.output
+
+    def test_embedder_probe_failure_is_a_click_exception(self, tmp_path: Path) -> None:
+        db_path = build_personal_db(tmp_path / "personal.db", documents=60)
+        manager = _manager()
+        manager.get_model_info.return_value = {}
+        manager.embed_single.side_effect = RuntimeError("probe failed")
+
+        result = _invoke(
+            db_path,
+            ["--personal", "--json"],
+            settings=_settings(tmp_path),
+            manager=manager,
+        )
+
+        assert result.exit_code == 1
+        assert "Failed to determine the embedding dimension" in result.output
+        assert "probe failed" in result.output
+        assert "Traceback" not in result.output
 
     def test_empty_title_is_rejected_and_never_emitted(self, tmp_path: Path) -> None:
         # Exactly 50 documents: the initial slice IS the corpus, so the
