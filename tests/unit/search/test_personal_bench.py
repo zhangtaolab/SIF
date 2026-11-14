@@ -28,6 +28,7 @@ from sif.search.personal_bench import (
     LENGTH_BUCKETS,
     MAX_SAVED_FILE_BYTES,
     MAX_SAVED_RECORDS,
+    MAX_TOP_K,
     MIN_QUERIES,
     OVERLAP_BUDGET,
     SAVED_RUN_VERSION,
@@ -1032,6 +1033,34 @@ class TestSavedRunContract:
         assert path.exists()
         assert load_saved_run(path) == run
 
+    def test_run_to_saved_caps_retrieval_arrays_at_top_k(self) -> None:
+        report = _report_for_saved_runs()
+        record = _saved_record(
+            retrieved=["/p/1.md", "/p/2.md", "/p/3.md"],
+            retrieved_doc_ids=["doc-1", "doc-2", "doc-3"],
+        )
+        report = replace(report, top_k=2, records=[record])
+
+        run = run_to_saved(report)
+
+        assert run.top_k == 2
+        assert run.queries[0].retrieved == ["/p/1.md", "/p/2.md"]
+        assert run.queries[0].retrieved_doc_ids == ["doc-1", "doc-2"]
+
+    def test_write_saved_run_refuses_a_payload_over_the_size_cap(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        run = run_to_saved(_report_for_saved_runs())
+        path = tmp_path / "oversized.json"
+        monkeypatch.setattr("sif.search.personal_bench.MAX_SAVED_FILE_BYTES", 64)
+
+        with pytest.raises(ValueError, match="exceeds"):
+            write_saved_run(run, path)
+
+        assert not path.exists()
+
     def test_saved_file_contains_no_document_body_text(self, tmp_path: Path) -> None:
         run = run_to_saved(_report_for_saved_runs())
         path = tmp_path / "eval-run.json"
@@ -1124,6 +1153,7 @@ _ENVELOPE_DEFECTS = [
     ("top-k-not-int", lambda data: {**data, "top_k": "10"}, "top_k"),
     ("top-k-bool", lambda data: {**data, "top_k": True}, "top_k"),
     ("top-k-zero", lambda data: {**data, "top_k": 0}, "top_k"),
+    ("top-k-too-large", lambda data: {**data, "top_k": MAX_TOP_K + 1}, "top_k"),
     ("top-k-infinity", lambda data: {**data, "top_k": float("inf")}, "top_k"),
     ("model-not-dict", lambda data: {**data, "model": []}, "model"),
     (

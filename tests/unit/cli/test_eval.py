@@ -1103,6 +1103,50 @@ class TestSavedRunsCli:
         assert saved.model == payload["model"]
         assert {record.split for record in saved.queries} == {"tuning", "heldout"}
 
+    def test_non_default_depth_round_trips_through_the_loader(self, tmp_path: Path) -> None:
+        db_path = build_personal_db(tmp_path / "personal.db", documents=60)
+
+        result = _invoke(
+            db_path,
+            ["--personal", "--bm25-only", "-n", "3", "--json"],
+            settings=_settings(tmp_path),
+            pipeline=_ReplaySpyPipeline,
+        )
+
+        assert result.exit_code == 0, result.output
+        saved = load_saved_run(_saved_files(tmp_path)[0])
+        assert saved.top_k == 3
+        assert all(len(record.retrieved) <= 3 for record in saved.queries)
+        assert all(len(record.retrieved_doc_ids) <= 3 for record in saved.queries)
+
+    def test_unserializable_query_fails_before_any_file_is_written(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        # The saved-run loader caps query text at 10,000 characters; the
+        # writer must validate first instead of emitting a file it rejects.
+        # Every title is long so the deterministic 50-document sample cannot
+        # exclude the offending query by chance (tmp paths vary per session).
+        titles = [f"{'x' * 10_001} {index}" for index in range(60)]
+        db_path = build_personal_db(
+            tmp_path / "personal.db",
+            documents=60,
+            titles=titles,
+        )
+
+        result = _invoke(
+            db_path,
+            ["--personal", "--bm25-only", "--json"],
+            settings=_settings(tmp_path),
+            pipeline=_ReplaySpyPipeline,
+        )
+
+        assert result.exit_code == 1
+        assert "Could not save the personal eval run" in result.output
+        assert "queries" in result.output
+        assert "Traceback" not in result.output
+        assert _saved_files(tmp_path) == []
+
 
 # --- Task 2: --compare pairing, refusal, and the noise gate -----------------
 

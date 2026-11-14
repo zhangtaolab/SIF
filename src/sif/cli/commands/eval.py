@@ -51,6 +51,8 @@ from sif.search.personal_bench import (
     require_matching_corpus,
     resolve_saved_targets,
     run_to_saved,
+    saved_run_to_dict,
+    validate_saved_run,
     write_saved_run,
 )
 from sif.utils.logging import get_logger
@@ -437,22 +439,24 @@ def _save_run(
 ) -> Path | None:
     """Write the run under ``<cache_dir>/eval`` unless ``--no-save`` (D-10).
 
-    The filename is ``eval-<fingerprint12>-<UTC timestamp>.json``; the write
-    is atomic (sibling temp file then ``replace``). The path is announced on
-    stderr so stdout stays pipe-clean for ``--json``.
+    The envelope is validated against the loader's own contract before any
+    file is created (WR-02): a run the tool cannot load again is a writer
+    bug, not a saved baseline. The filename is
+    ``eval-<fingerprint12>-<UTC timestamp>.json``; the write is atomic
+    (sibling temp file then ``replace``) and size-capped. The path is
+    announced on stderr so stdout stays pipe-clean for ``--json``.
     """
     if no_save:
         return None
     run = run_to_saved(report)
-    cache_dir = Path(settings.get_cache_dir()) / "eval"
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-    path = cache_dir / f"eval-{run.corpus['fingerprint'][:12]}-{timestamp}.json"
     try:
+        validate_saved_run(saved_run_to_dict(run))
+        cache_dir = Path(settings.get_cache_dir()) / "eval"
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+        path = cache_dir / f"eval-{run.corpus['fingerprint'][:12]}-{timestamp}.json"
         write_saved_run(run, path)
-    except OSError as error:
-        raise click.ClickException(
-            f"Could not save the personal eval run to {path}: {error}"
-        ) from error
+    except (OSError, ValueError) as error:
+        raise click.ClickException(f"Could not save the personal eval run: {error}") from error
     console_err.print(f"[dim]Saved run: {path}[/dim]", soft_wrap=True)
     return path
 

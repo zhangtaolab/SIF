@@ -1296,8 +1296,8 @@ def run_to_saved(report: PersonalReport) -> SavedRun:
                 length_bucket=record.length_bucket,
                 split=record.split,
                 grade=1,
-                retrieved=list(record.retrieved_paths),
-                retrieved_doc_ids=list(record.retrieved_doc_ids),
+                retrieved=list(record.retrieved_paths[: report.top_k]),
+                retrieved_doc_ids=list(record.retrieved_doc_ids[: report.top_k]),
             )
             for record in report.records
         ],
@@ -1582,7 +1582,12 @@ def validate_saved_run(data: object) -> SavedRun:
             "retrieval",
             f"must be one of {sorted(_SAVED_RETRIEVAL_MODES)}, got {retrieval!r}",
         )
-    top_k = _saved_int(data.get("top_k"), "top_k", minimum=1)
+    top_k = _saved_int(
+        data.get("top_k"),
+        "top_k",
+        minimum=1,
+        maximum=MAX_TOP_K,
+    )
     model_data = data.get("model")
     model: dict[str, Any] | None = None
     if model_data is not None:
@@ -1633,18 +1638,26 @@ def validate_saved_run(data: object) -> SavedRun:
 
 
 def write_saved_run(run: SavedRun, path: str | Path) -> Path:
-    """Write a saved run atomically (sibling temp file then ``replace``).
+    """Write a saved run atomically, refusing anything the loader would reject.
 
-    The directory is created if needed. No path named inside the run is
-    ever opened: the destination is the caller's explicit path.
+    The serialized payload is size-checked against ``MAX_SAVED_FILE_BYTES``
+    before any file is created, so the writer can never emit a file its own
+    loader rejects as oversized. The write is a sibling temp file followed by
+    ``replace``. No path named inside the run is ever opened: the destination
+    is the caller's explicit path.
     """
+    payload = json.dumps(saved_run_to_dict(run), indent=2) + "\n"
+    encoded = payload.encode("utf-8")
+    if len(encoded) > MAX_SAVED_FILE_BYTES:
+        raise ValueError(
+            f"Saved run is {len(encoded)} bytes; exceeds the "
+            f"{MAX_SAVED_FILE_BYTES}-byte cap. Reduce -n/--limit or the "
+            "evaluated corpus scope."
+        )
     destination = Path(path)
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.with_name(f".{destination.name}.tmp")
-    temporary.write_text(
-        json.dumps(saved_run_to_dict(run), indent=2) + "\n",
-        encoding="utf-8",
-    )
+    temporary.write_bytes(encoded)
     temporary.replace(destination)
     return destination
 
