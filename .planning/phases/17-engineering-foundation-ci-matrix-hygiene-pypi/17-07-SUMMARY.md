@@ -13,13 +13,13 @@ provides:
   - "Proof that no artifact reached either index: TestPyPI still 404 for docsif, PyPI still serves only 1.0.1 with no 1.1.2 release"
 affects: []
 
-# Actuals (#2632) — partial: plan halted at Task 1's external publisher-config blocker after one retry
+# Actuals (#2632) — partial: plan halted at Task 1's external publisher-config blocker after one retry; commits measured from the plan ledger before the final ledger commit
 actuals:
-  tokens: 5658
+  tokens: 6642
   tasks: 0
-  commits: 2
+  commits: 3
   plan_head_before: b0b4258535d50f552c5957ee5a28bb7999059f97
-  plan_head_after: ce05d7c3a1b5253a8bf7f1bac1f650c0f10cb0e0
+  plan_head_after: 118526ab34081707102d3a3122017922db467dc6
 
 tech-stack:
   added: []
@@ -159,6 +159,7 @@ No local command can read or change these browser-only registrations; the next O
 - `.planning/phases/17-engineering-foundation-ci-matrix-hygiene-pypi/17-07-SUMMARY.md` — this attempt-2 checkpoint record (updated from the attempt-1 halt).
 - `.planning/STATE.md` — halt position, blocker, decisions updated to attempt 2.
 - `.planning/ROADMAP.md` — 17-07 annotated blocked after retry; plan count stays 8/9.
+- `.planning/WINDOWS.md` — two open blocker entries appended: `unmet-truth` (run 43562577065 not green) and `unrun-verify` (Task 2 attestation/install proofs pending).
 - No product or test file changed; no package installed; the tag was not modified.
 
 ## Deviations from Plan
