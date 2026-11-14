@@ -5,16 +5,16 @@ milestone_name: Search Precision and Agent Experience
 current_phase: 17
 current_phase_name: Engineering Foundation (CI Matrix + Hygiene + PyPI)
 status: executing
-stopped_at: Completed 17-09-PLAN.md
-last_updated: "2026-11-14T01:58:00.904Z"
+stopped_at: 17-06 halted at Task 2 checkpoint (publisher registration); environments pypi/testpypi created
+last_updated: "2026-11-14T02:06:43.898Z"
 last_activity: 2026-11-13
 last_activity_desc: Phase 17 execution started
-state_head: 8e4090dc1fa52b0c5447b31c6adae523d445e203
+state_head: 1d958467ecc94fdb27c0dec1e81a9be7fd1cfab2
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 9
-  completed_plans: 7
+  completed_plans: 8
 ---
 
 # DocSift — Project State
@@ -92,6 +92,7 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 - ⚠️ [Phase 11 re-review, advisory] WR-03 init_schema raw tracebacks, WR-04 impossible-state guards, IN-05 model-type set duplication — carried in 11-REVIEW-DISPOSITION.md (WR-01/WR-02 fixed)
 - [Research gaps — resolve at plan time] qmd filter AST is UNRELEASED (re-verify CHANGELOG at Phase 20); MCP py3.10 install/import smoke at Phase 22 start; transport_security spoofed-header proof before deleting custom middleware (22); documents_fts_v vocab shadow survival on populated DB (19); contexts normalization decision touches a locked Key Decision (21 discussion)
+- 17-06 halted at Task 2 (blocking human-action): maintainer must register the PyPI trusted publisher for docsif (owner zhangtaolab, repository sif, workflow filename publish.yml, environment pypi) and the TestPyPI pending publisher (project docsif, environment testpypi); the pre-tag gate and 17-07's tag publish remain blocked until both entries exist.
 
 ### Roadmap Evolution
 
@@ -110,8 +111,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-14T01:58:00.881Z
-Stopped at: Completed 17-09-PLAN.md
+Last session: 2026-11-14T02:06:43.879Z
+Stopped at: 17-06 halted at Task 2 checkpoint (publisher registration); environments pypi/testpypi created
 Resume file: None
 
 - **Next expected action:** `/gsd-plan-phase 17` (Engineering Foundation). Execution order locked: 17 → 18 → 19 → 20 → 21 → 22 → 23 → 24; hard dependencies and cross-phase contracts in ROADMAP.md.
