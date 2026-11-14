@@ -56,7 +56,7 @@ Full detail: `.planning/milestones/v1.1-ROADMAP.md`
 
 **Locked scope (2026-11-13 — do not re-open):** metadata namespace = `qmd.metadata` compatible (migration parity); model arms MINIMAL (user decision "d") — Phase 23 tests ONLY Harrier native vs Qwen3-Embedding-0.6B baseline (GGUF Harrier arm = conditional follow-up MODEL-F1, not a v1.2 phase; bge-reranker-v2-m3 evaluation OUT); full Windows deferred to v2 (Phase 17 ships a degradation SMOKE only, via hc remote yoga — Python not preinstalled, `uv python install` first); exactly TWO new runtime deps total — `mcp>=2.3.0,<3` (Phase 22) and `rapidfuzz>=3.14.5,<4` (Phase 18); sentence-transformers stays locked 5.4.1; PDF/HTML/EPUB, chat-with-notes, ANN, semantic/late chunking, spellfix1 all OUT (see REQUIREMENTS.md Out of Scope).
 
-- [ ] **Phase 17: Engineering Foundation (CI Matrix + Hygiene + PyPI)** - Green py3.10–3.13 × ubuntu/macos test matrix, Windows degradation smoke (hc yoga), dead-layer/repo cleanup, trusted-publishing release of `docsif` v1.1.x
+- [x] **Phase 17: Engineering Foundation (CI Matrix + Hygiene + PyPI)** - Green py3.10–3.13 × ubuntu/macos test matrix, Windows degradation smoke (hc yoga), dead-layer/repo cleanup, trusted-publishing release of `docsif` v1.1.x (completed 2026-11-14)
 - [ ] **Phase 18: Quality Instrument (Personal Bench + rapidfuzz DYM)** - `sif eval --personal` known-item measurement with bias controls; measured rapidfuzz did-you-mean swap
 - [ ] **Phase 19: Search Correctness** - Frontmatter-only edit freshness, per-doc dedup pre-fusion, deterministic pagination, title-FTS ranking, single context/staleness attach
 - [ ] **Phase 20: Metadata Filtering + Discovery** - qmd-parity recursive filter AST applied pre-RRF, built-in path/mtime fields, typed frontmatter storage, `metadata` discovery tool
@@ -76,7 +76,7 @@ Full detail: `.planning/milestones/v1.1-ROADMAP.md`
   2. A Windows smoke run on hc remote yoga (uv python install first) proves fork/systemd/flock degrade honestly with clear messages — degradation asserted, NOT full Windows support
   3. `docsif` v1.1.x is installable from PyPI via trusted publishing — TestPyPI dry run passed, version single-sourced, PEP 740 attestations present, and the README `<!-- mcp-name: io.github.zhangtaolab/sif -->` marker landed BEFORE publish
   4. The repo is hygienic — dead `MigrationManager` + `models/search.py` + `search/strategy.py` quarantined/deleted (no tempting dead `filters` dict for Phase 20), tracked junk removed, Makefile/extras/pre-commit cleaned (black dropped; fastapi/uvicorn kept as core deps); the 3.13 classifier appears only once the matrix is green
-**Plans:** 9/9 plans executed
+**Plans:** 9/9 plans complete
 **Wave 1**
 - [x] 17-01-PLAN.md — Repo hygiene core: dead layers, orphan export, pre-commit Makefile target
 - [x] 17-02-PLAN.md — CPU-torch lock + extras floors + black removal
@@ -195,7 +195,7 @@ v1.2 contracts — defined ONCE; downstream phases consume, never redefine:
 | 15. Search Quality Configuration | v1.1 | 3/3 | Complete    | 2026-11-08 |
 | 16. Bench Expansion + Reranker Tuning | v1.1 | 6/6 | Complete    | 2026-11-09 |
 | 16.1. Address tech debt (CLI errors + cache TTL + enqueue API) | v1.1 | 5/5 | Complete    | 2026-11-12 |
-| 17. Engineering Foundation (CI + Hygiene + PyPI) | v1.2 | 9/9 | In Progress | - |
+| 17. Engineering Foundation (CI + Hygiene + PyPI) | v1.2 | 9/9 | Complete    | 2026-11-14 |
 | 18. Quality Instrument (Personal Bench + rapidfuzz) | v1.2 | 0/TBD | Not started | - |
 | 19. Search Correctness | v1.2 | 0/TBD | Not started | - |
 | 20. Metadata Filtering + Discovery | v1.2 | 0/TBD | Not started | - |
