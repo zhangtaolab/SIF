@@ -16,6 +16,7 @@ from sif.core.models import SearchResult
 from sif.search.benchmark import SearchEvaluator
 from sif.search.personal_bench import (
     DocumentRecord,
+    normalize_text,
     sample_documents,
 )
 from tests.support.bench import EMBEDDING_DIM, ConceptEmbedder
@@ -370,3 +371,124 @@ def test_personal_help_lists_options() -> None:
         "--json",
     ):
         assert option in result.output
+
+
+class TestPersonalEvalEdges:
+    """Threshold, degradation, and collision rules (D-11, EVAL-01 edges)."""
+
+    def test_fewer_than_min_documents_exits_one_with_count_and_remedy(self, tmp_path: Path) -> None:
+        db_path = build_personal_db(tmp_path / "small.db", documents=49)
+
+        result = _invoke(db_path, ["--personal"], settings=_settings(tmp_path))
+
+        assert result.exit_code == 1
+        assert "49" in result.output
+        assert "sif index update" in result.output
+        assert "Traceback" not in result.output
+
+    def test_missing_embed_backend_names_the_install_remedy(self, tmp_path: Path) -> None:
+        db_path = build_personal_db(tmp_path / "personal.db", documents=60)
+
+        result = _invoke(
+            db_path,
+            ["--personal"],
+            settings=_settings(tmp_path),
+            manager_side_effect=ImportError("No module named 'sentence_transformers'"),
+        )
+
+        assert result.exit_code == 1
+        assert 'pip install "docsif[embed]"' in result.output
+        assert "--bm25-only" in result.output
+        assert "Traceback" not in result.output
+
+    def test_embed_model_load_failure_names_the_cause(self, tmp_path: Path) -> None:
+        db_path = build_personal_db(tmp_path / "personal.db", documents=60)
+
+        result = _invoke(
+            db_path,
+            ["--personal"],
+            settings=_settings(tmp_path),
+            manager_side_effect=RuntimeError("weights download failed"),
+        )
+
+        assert result.exit_code == 1
+        assert "weights download failed" in result.output
+        assert "--bm25-only" in result.output
+
+    def test_empty_title_is_rejected_and_never_emitted(self, tmp_path: Path) -> None:
+        titles = [""] + [f"Unique title {index}" for index in range(1, 60)]
+        db_path = build_personal_db(
+            tmp_path / "personal.db",
+            documents=60,
+            titles=titles,
+        )
+
+        _SpyPipeline.seen = []
+        result = _invoke(
+            db_path,
+            ["--personal", "--bm25-only", "--json"],
+            settings=_settings(tmp_path),
+            pipeline=_SpyPipeline,
+        )
+
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.stdout)
+        assert payload["queries"]["rejected_empty"] == 1
+        assert payload["queries"]["accepted"] == 59
+        assert "" not in _SpyPipeline.seen
+        assert all(query.strip() for query in _SpyPipeline.seen)
+
+    def test_duplicate_normalized_title_keeps_the_first_and_counts_it(self, tmp_path: Path) -> None:
+        titles = [
+            "  Same  TITLE  ",
+            "same title",
+            *[f"Unique title {index}" for index in range(2, 60)],
+        ]
+        db_path = build_personal_db(
+            tmp_path / "personal.db",
+            documents=60,
+            titles=titles,
+        )
+
+        _SpyPipeline.seen = []
+        result = _invoke(
+            db_path,
+            ["--personal", "--bm25-only", "--json"],
+            settings=_settings(tmp_path),
+            pipeline=_SpyPipeline,
+        )
+
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.stdout)
+        assert payload["queries"]["rejected_duplicate"] == 1
+        assert payload["queries"]["accepted"] == 59
+        assert len([q for q in _SpyPipeline.seen if normalize_text(q) == "same title"]) == 1
+
+    def test_insufficient_accepted_queries_exits_one_with_counts(self, tmp_path: Path) -> None:
+        titles = [f"Unique title {index}" for index in range(49)] + [""] * 11
+        db_path = build_personal_db(
+            tmp_path / "personal.db",
+            documents=60,
+            titles=titles,
+        )
+
+        result = _invoke(
+            db_path,
+            ["--personal", "--bm25-only", "--json"],
+            settings=_settings(tmp_path),
+            pipeline=_SpyPipeline,
+        )
+
+        assert result.exit_code == 1
+        assert "accepted 49" in result.output
+        assert "rejected 11" in result.output
+        assert "sif index update" in result.output
+        assert "Traceback" not in result.output
+
+
+def test_normalize_text_is_nfc_casefolded_and_whitespace_collapsed() -> None:
+    import unicodedata
+
+    assert normalize_text("  Same\t TITLE\n\n") == "same title"
+    decomposed = unicodedata.normalize("NFD", "Café")
+    assert normalize_text(decomposed) == normalize_text("Café")
