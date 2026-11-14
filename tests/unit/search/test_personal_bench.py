@@ -44,8 +44,11 @@ from sif.search.personal_bench import (
     group_metrics,
     jaccard,
     length_bucket,
+    load_replay_queries,
     load_sampled_content,
     normalize_text,
+    replay_leg,
+    require_minimum_queries,
     split_queries,
     strip_markup,
     synthesize_body_queries,
@@ -686,3 +689,173 @@ class TestPersonalReport:
         assert report.queries["by_leg"]["title"]["budget"] is None
         assert report.queries["by_leg"]["title"]["exact_term"] is True
         assert report.queries["by_leg"]["body"]["budget"] == pytest.approx(0.60)
+
+
+# --- Task 3: query_log replay leg ------------------------------------------
+
+
+def _query_log_db(queries: list[str]) -> sqlite3.Connection:
+    """In-memory query_log with the production columns (history() source)."""
+    conn = sqlite3.connect(":memory:")
+    conn.execute(
+        "CREATE TABLE query_log (id TEXT PRIMARY KEY, query TEXT NOT NULL,"
+        " result_count INTEGER NOT NULL DEFAULT 0,"
+        " collections TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL)"
+    )
+    conn.executemany(
+        "INSERT INTO query_log (id, query, result_count, collections, created_at)"
+        " VALUES (?, ?, 0, '[]', ?)",
+        [
+            (f"log-{index}", query, f"2026-11-14T00:{index % 60:02d}:00+00:00")
+            for index, query in enumerate(queries)
+        ],
+    )
+    conn.commit()
+    return conn
+
+
+def _path_result(path: str) -> object:
+    from sif.core.models import SearchResult
+
+    return SearchResult(
+        document_id=f"id-{path}",
+        title="title",
+        path=path,
+        collection_name="collection",
+        score=1.0,
+    )
+
+
+class TestReplay:
+    def test_empty_query_log_yields_an_unavailable_leg(self) -> None:
+        conn = _query_log_db([])
+
+        assert load_replay_queries(conn) == []
+        replay = replay_leg([], lambda _query: [])
+
+        assert replay.available is False
+        assert replay.num_queries == 0
+        assert replay.baseline_available is False
+        assert replay.top_k_paths == {}
+        assert "stability" in replay.bias
+        assert "CLI" in replay.bias
+
+    def test_queries_are_normalized_deduped_and_sorted(self) -> None:
+        conn = _query_log_db(["Zeta", "alpha", "  ALPHA  ", "beta"])
+
+        assert load_replay_queries(conn) == ["alpha", "beta", "zeta"]
+
+    def test_replay_queries_are_capped_at_500(self) -> None:
+        conn = _query_log_db([f"query {index:04d}" for index in range(600)])
+
+        queries = load_replay_queries(conn)
+
+        assert len(queries) == 500
+        assert queries[0] == "query 0000"
+        assert queries[-1] == "query 0499"
+
+    def test_one_search_per_query_with_rank_ordered_paths(self) -> None:
+        calls: list[str] = []
+
+        def search(query: str) -> list:
+            calls.append(query)
+            return [_path_result(f"/p/{query}/{index}.md") for index in range(12)]
+
+        replay = replay_leg(["alpha", "beta"], search, k=10)
+
+        assert calls == ["alpha", "beta"]
+        assert replay.available is True
+        assert replay.num_queries == 2
+        assert replay.top_k_paths["alpha"] == [f"/p/alpha/{index}.md" for index in range(10)]
+        assert replay.top_k_paths["beta"] == [f"/p/beta/{index}.md" for index in range(10)]
+
+    def test_duplicate_text_collapses_to_one_search_and_record(self) -> None:
+        calls: list[str] = []
+
+        def search(query: str) -> list:
+            calls.append(query)
+            return [_path_result(f"/p/{query}.md")]
+
+        replay = replay_leg([" Alpha ", "alpha"], search, k=10)
+
+        assert calls == ["alpha"]
+        assert list(replay.top_k_paths) == ["alpha"]
+        assert replay.num_queries == 1
+
+    def test_group_metrics_never_include_replay_records(self) -> None:
+        records = [_record("title", "en", "long") for _ in range(10)]
+        records.append(_record("replay", "en", "long"))
+
+        groups, suppressed = group_metrics(records)
+
+        assert [(g.leg, g.language, g.length_bucket) for g in groups] == [("title", "en", "long")]
+        assert suppressed == []
+
+    def test_known_item_report_sections_ignore_replay(self) -> None:
+        def make(replay: ReplayResult) -> dict:
+            records = [_record("title", "en", "long") for _ in range(10)]
+            report = PersonalReport(
+                retrieval="hybrid",
+                top_k=10,
+                corpus=CorpusSummary(60, 50, "f" * 16, False),
+                model=None,
+                metrics={"ndcg_at_10": 1.0, "hit_at_10": 1.0, "num_queries": 10},
+                splits={"tuning": 10, "heldout": 0},
+                groups=[GroupMetrics("title", "en", "long", 10, 1.0, 1.0)],
+                suppressed=[],
+                queries={"accepted": 10, "by_leg": {}},
+                records=records,
+                replay=replay,
+                notes=[],
+            )
+            return report.to_dict()
+
+        without = make(ReplayResult(False, 0, False, {}, "bias"))
+        with_replay = make(ReplayResult(True, 1, False, {"alpha": ["/p/a.md"]}, "bias"))
+
+        assert without["metrics"] == with_replay["metrics"]
+        assert without["splits"] == with_replay["splits"]
+        assert without["groups"] == with_replay["groups"]
+        assert without["queries"] == with_replay["queries"]
+        assert without["replay"] != with_replay["replay"]
+
+
+class TestMinimumGuard:
+    def test_below_the_floor_raises_with_the_counted_breakdown(self) -> None:
+        synthesis = SynthesisResult(
+            queries=[_query("alpha", doc=1), _query("beta", doc=2)],
+            rejected_empty={"title": 1, "body": 2},
+            rejected_duplicate={"title": 1, "body": 0},
+            rejected_overlap={"title": 0, "body": 3},
+        )
+
+        with pytest.raises(ValueError, match="accepted 2") as excinfo:
+            require_minimum_queries(synthesis)
+
+        message = str(excinfo.value)
+        assert "rejected 7" in message
+        assert "3 empty" in message
+        assert "1 duplicate" in message
+        assert "3 overlap" in message
+
+    def test_at_the_floor_passes(self) -> None:
+        synthesis = SynthesisResult(
+            queries=[_query(f"query {index}", doc=index) for index in range(MIN_QUERIES)],
+            rejected_empty={"title": 0, "body": 0},
+            rejected_duplicate={"title": 0, "body": 0},
+            rejected_overlap={"title": 0, "body": 0},
+        )
+
+        require_minimum_queries(synthesis)
+
+
+class TestOrchestratorContentLoading:
+    def test_bodies_load_only_for_the_given_records(self) -> None:
+        content = _long_prose("candidate sentence about retrieval quality")
+        conn = _RecordingConnection({"doc-1": content})
+        metadata = [_doc(1, title="Alpha", content=None)]
+
+        result = synthesize_known_item_queries(metadata, conn)  # type: ignore[arg-type]
+
+        assert conn.calls[0][1] == ["doc-1"]
+        assert [query.leg for query in result.queries] == ["title", "body"]

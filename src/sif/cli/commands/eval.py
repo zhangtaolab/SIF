@@ -32,13 +32,13 @@ from sif.search.hybrid import SearchPipeline
 from sif.search.personal_bench import (
     INITIAL_SAMPLE_DOCUMENTS,
     MIN_DOCUMENTS,
-    REPLAY_BIAS_NOTE,
     SUPPRESS_BELOW,
-    ReplayResult,
     build_personal_report,
     ensure_heldout,
     evaluate_known_items,
     load_document_metadata,
+    load_replay_queries,
+    replay_leg,
 )
 from sif.utils.logging import get_logger
 
@@ -233,7 +233,9 @@ def _render_replay(replay: dict[str, Any]) -> None:
         f"Replay (stability, not quality): queries {replay['num_queries']} "
         f"· baseline available: {baseline}"
     )
-    console.print(f"[dim]{_cell(str(replay['bias']))}[/dim]")
+    # The bias note is a fixed module constant, so it is never truncated —
+    # the CLI-only limitation must remain readable in full.
+    console.print(f"[dim]{escape(str(replay['bias']))}[/dim]")
 
 
 def _render_footer(payload: dict[str, Any]) -> None:
@@ -333,19 +335,18 @@ def run_personal(  # noqa: PLR0913
                     synthesis.queries,
                     lambda query: pipeline.search(query, options),
                 )
+                # Replay runs after the known-item evaluation on the same
+                # hoisted pipeline and options; it never enters the metrics.
+                replay = replay_leg(
+                    load_replay_queries(db.connection),
+                    lambda query: pipeline.search(query, options),
+                )
         except click.ClickException:
             raise
         except Exception as e:
             raise click.ClickException(f"Personal eval failed: {e}") from e
 
         retrieval = "bm25" if bm25_only else "hybrid"
-        replay = ReplayResult(
-            available=False,
-            num_queries=0,
-            baseline_available=False,
-            top_k_paths={},
-            bias=REPLAY_BIAS_NOTE,
-        )
         notes = [
             "Known-item labels: the target document is grade 1 and all other "
             "documents grade 0; NDCG@10 is a rank-sensitive known-item metric, "

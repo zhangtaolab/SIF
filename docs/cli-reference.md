@@ -623,11 +623,13 @@ sif cleanup [OPTIONS]
 
 Measure search quality on your own indexed corpus.
 
-With --personal, one title/H1 known-item query is synthesized per
-deterministically sampled document and NDCG@10/Hit@10 are reported from
-the existing evaluator metric math. Hybrid retrieval is the default;
-pass --bm25-only when the embed extra is unavailable (the default path
-fails loudly with an install remedy). --json emits strict JSON.
+With --personal, title/H1 (exact-term) and body-snippet (paraphrased,
+overlap-budgeted) known-item queries are synthesized from deterministically
+sampled documents; NDCG@10/Hit@10 are reported overall and per leg x
+language x length bucket with small-group suppression, alongside the
+query_log replay stability leg. Hybrid retrieval is the default; pass
+--bm25-only when the embed extra is unavailable (the default path fails
+loudly with an install remedy). --json emits strict JSON.
 
 ```bash
 sif eval [OPTIONS]

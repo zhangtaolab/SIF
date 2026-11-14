@@ -772,3 +772,146 @@ class TestTwoLegDefault:
         assert table_result.exit_code == 0, table_result.output
         assert "Suppressed groups" in table_result.output
         assert suppressed_name in table_result.output
+
+
+# --- Task 3: query_log replay leg ------------------------------------------
+
+
+class _ReplaySpyPipeline:
+    """Pipeline stand-in returning fixed paths and recording every query."""
+
+    seen: ClassVar[list[str]] = []
+
+    def __init__(self, *_args: object, **_kwargs: object) -> None:
+        pass
+
+    def search(self, query: str, _options: object) -> list:
+        _ReplaySpyPipeline.seen.append(query)
+        return [
+            SearchResult(
+                document_id=f"rid-{index}",
+                title="title",
+                path=f"/p/{index}.md",
+                collection_name="collection",
+                score=1.0,
+            )
+            for index in range(3)
+        ]
+
+
+def _seed(db_path: Path, queries: list[str]) -> None:
+    """Seed query_log into an existing on-disk index."""
+    import sqlite3
+
+    from tests.support.eval import seed_query_log
+
+    conn = sqlite3.connect(str(db_path))
+    try:
+        seed_query_log(conn, queries)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+class TestReplayCli:
+    def test_empty_history_is_unavailable_and_never_fails_the_run(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        db_path = build_personal_db(tmp_path / "personal.db", documents=60)
+        settings = _settings(tmp_path)
+
+        json_result = _invoke(
+            db_path,
+            ["--personal", "--bm25-only", "--json"],
+            settings=settings,
+            pipeline=_SpyPipeline,
+        )
+
+        assert json_result.exit_code == 0, json_result.output
+        payload = json.loads(json_result.stdout)
+        assert payload["replay"]["available"] is False
+        assert payload["replay"]["num_queries"] == 0
+        assert payload["replay"]["baseline_available"] is False
+        assert payload["replay"]["queries"] == {}
+        assert "stability" in payload["replay"]["bias"]
+        assert "CLI" in payload["replay"]["bias"]
+
+        table_result = _invoke(
+            db_path,
+            ["--personal", "--bm25-only"],
+            settings=settings,
+            pipeline=_SpyPipeline,
+        )
+
+        assert table_result.exit_code == 0, table_result.output
+        assert "Replay (stability, not quality)" in table_result.output
+        assert "queries 0" in table_result.output
+        assert "CLI-biased" in table_result.output
+
+    def test_query_log_replays_normalized_sorted_unique_queries(self, tmp_path: Path) -> None:
+        db_path = build_personal_db(tmp_path / "personal.db", documents=60)
+        _seed(db_path, ["Zeta", "alpha", "  ALPHA  ", "beta"])
+
+        _ReplaySpyPipeline.seen = []
+        result = _invoke(
+            db_path,
+            ["--personal", "--bm25-only", "--json"],
+            settings=_settings(tmp_path),
+            pipeline=_ReplaySpyPipeline,
+        )
+
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.stdout)
+        assert payload["replay"]["available"] is True
+        assert payload["replay"]["num_queries"] == 3
+        assert list(payload["replay"]["queries"]) == ["alpha", "beta", "zeta"]
+        assert payload["replay"]["queries"]["alpha"] == ["/p/0.md", "/p/1.md", "/p/2.md"]
+        # One search per unique replay query ran through the hoisted pipeline.
+        assert [
+            query for query in _ReplaySpyPipeline.seen if query in {"alpha", "beta", "zeta"}
+        ] == [
+            "alpha",
+            "beta",
+            "zeta",
+        ]
+
+    def test_replay_never_changes_known_item_metrics_splits_or_groups(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        db_path = build_personal_db(tmp_path / "personal.db", documents=60)
+        settings = _settings(tmp_path)
+
+        fresh = _invoke(
+            db_path,
+            ["--personal", "--bm25-only", "--json"],
+            settings=settings,
+            pipeline=_ReplaySpyPipeline,
+        )
+        _seed(db_path, ["alpha", "beta"])
+        replayed = _invoke(
+            db_path,
+            ["--personal", "--bm25-only", "--json"],
+            settings=settings,
+            pipeline=_ReplaySpyPipeline,
+        )
+
+        assert fresh.exit_code == 0, fresh.output
+        assert replayed.exit_code == 0, replayed.output
+        without = json.loads(fresh.stdout)
+        with_replay = json.loads(replayed.stdout)
+        for key in (
+            "metrics",
+            "splits",
+            "groups",
+            "suppressed",
+            "queries",
+            "corpus",
+            "top_k",
+            "model",
+            "retrieval",
+        ):
+            assert without[key] == with_replay[key]
+        assert without["replay"]["available"] is False
+        assert with_replay["replay"]["available"] is True

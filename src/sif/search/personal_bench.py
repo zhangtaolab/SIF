@@ -28,6 +28,7 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from sif.core.models import SearchResult
+from sif.database.repositories import QueryLogRepository
 from sif.search.benchmark import QueryEvaluation, SearchEvaluator
 
 
@@ -530,6 +531,51 @@ def load_sampled_content(
         for row in conn.execute(statement, chunk):
             contents[str(row[0])] = str(row[1])
     return contents
+
+
+def load_replay_queries(conn: sqlite3.Connection) -> list[str]:
+    """Load the replay query set from ``query_log`` — the only replay source.
+
+    ``QueryLogRepository.history()`` returns one ``(query, count, last_used)``
+    row per exact query string; the replay set is normalized (NFC/casefold/
+    whitespace), deduped, sorted lexicographically ascending (never SQL row
+    order), and capped at ``MAX_REPLAY_QUERIES`` (D-02, T-18-05). Only query
+    text is read — never document content.
+    """
+    history = QueryLogRepository(conn).history()
+    normalized = {normalize_text(query) for query, _count, _last_used in history}
+    normalized.discard("")
+    return sorted(normalized)[:MAX_REPLAY_QUERIES]
+
+
+def replay_leg(
+    queries: Sequence[str],
+    search_fn: Callable[[str], list[SearchResult]],
+    k: int = 10,
+) -> ReplayResult:
+    """Run one search per unique normalized query; record top-k paths.
+
+    Replay is a stability instrument, not a quality metric: it computes no
+    nDCG/Hit/group/split and never invents a baseline. Duplicate query text
+    collapses to one record (first occurrence wins), so the dict key is the
+    normalized query. Only result paths are stored (T-18-04).
+    """
+    top_k_paths: dict[str, list[str]] = {}
+    seen: set[str] = set()
+    for raw in queries:
+        query = normalize_text(raw)
+        if not query or query in seen:
+            continue
+        seen.add(query)
+        results = search_fn(query)
+        top_k_paths[query] = [result.path for result in results[: max(0, k)]]
+    return ReplayResult(
+        available=bool(top_k_paths),
+        num_queries=len(top_k_paths),
+        baseline_available=False,
+        top_k_paths=top_k_paths,
+        bias=REPLAY_BIAS_NOTE,
+    )
 
 
 def sample_documents(
