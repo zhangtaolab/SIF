@@ -91,9 +91,15 @@ def traverse_commands(
     cmd: click.Command,
     path: str = "",
 ) -> list[tuple[str, click.Command]]:
-    """Recursively traverse the Click command tree."""
+    """Recursively traverse the Click command tree.
+
+    A group with no subcommands is itself a leaf (``sif eval`` is a command
+    group whose default action lives on the group): recursing into it would
+    contribute zero entries and the generated reference would silently omit
+    the command.
+    """
     results: list[tuple[str, click.Command]] = []
-    if isinstance(cmd, click.Group):
+    if isinstance(cmd, click.Group) and cmd.commands:
         for name, subcmd in cmd.commands.items():
             new_path = f"{path} {name}".strip()
             results.extend(traverse_commands(subcmd, new_path))
@@ -172,6 +178,7 @@ GROUP_ORDER: list[tuple[str, str]] = [
     ("search", "Search Commands"),
     ("mcp", "MCP Commands"),
     ("bench", "Other Commands"),
+    ("eval", "Other Commands"),
     ("pull", "Other Commands"),
     ("ls", "Other Commands"),
     ("status", "Other Commands"),

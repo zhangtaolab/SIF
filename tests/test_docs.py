@@ -259,6 +259,7 @@ class TestDocsCodeBlocks:
         "search": ["search", "query", "vsearch"],
         "get": ["get", "multi-get"],
         "mcp": ["stdio", "http", "daemon"],
+        "eval": [],
         "config": ["show"],
     }
 

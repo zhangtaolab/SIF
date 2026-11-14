@@ -53,6 +53,7 @@ sif
 ├── ls              List indexed documents as a virtual file tree.
 ├── pull            Download a GGUF model file.
 ├── bench           Run benchmark evaluation against a fixture file.
+├── eval            Measure search quality on your own indexed corpus.
 ├── suggest         Show prefix completions, did-you-mean rewrites, and query history.
 ├── watch           Watch collections and keep the index current as files change.
 ├── status          Show index status.
@@ -617,6 +618,31 @@ sif cleanup [OPTIONS]
 | Option | Short | Type | Default | Description |
 |--------|-------|------|---------|-------------|
 | `--yes` | `—` | flag | `false` | Confirm the action without prompting. |
+
+### `eval`
+
+Measure search quality on your own indexed corpus.
+
+With --personal, one title/H1 known-item query is synthesized per
+deterministically sampled document and NDCG@10/Hit@10 are reported from
+the existing evaluator metric math. Hybrid retrieval is the default;
+pass --bm25-only when the embed extra is unavailable (the default path
+fails loudly with an install remedy). --json emits strict JSON.
+
+```bash
+sif eval [OPTIONS]
+```
+
+**Options:**
+
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--personal` | `—` | flag | `false` | Measure quality on the indexed personal corpus |
+| `--bm25-only` | `—` | flag | `false` | Explicitly skip the embedder (hybrid is the default; keeps the run local) |
+| `--limit` | `-n` | integer | `10` | Number of results per query |
+| `--collection` | `-c` | text[] | — | Collection to evaluate |
+| `--all` | `—` | flag | `false` | Evaluate all collections |
+| `--json` | `—` | flag | `false` | Output as JSON |
 
 ### `ls`
 
