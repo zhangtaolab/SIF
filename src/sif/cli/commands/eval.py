@@ -33,6 +33,7 @@ from sif.embedding.manager import EmbeddingManager
 from sif.search.hybrid import SearchPipeline
 from sif.search.personal_bench import (
     INITIAL_SAMPLE_DOCUMENTS,
+    MAX_TOP_K,
     MIN_DOCUMENTS,
     SUPPRESS_BELOW,
     ComparisonReport,
@@ -779,7 +780,13 @@ def _index_path(ctx: click.Context) -> Path:
     is_flag=True,
     help="Explicitly skip the embedder (hybrid is the default; keeps the run local)",
 )
-@click.option("-n", "--limit", default=10, help="Number of results per query")
+@click.option(
+    "-n",
+    "--limit",
+    default=10,
+    type=click.IntRange(1, MAX_TOP_K),
+    help=f"Number of results per query (1-{MAX_TOP_K})",
+)
 @click.option("-c", "--collection", multiple=True, help="Collection to evaluate")
 @click.option("--all", "search_all", is_flag=True, help="Evaluate all collections")
 @click.option("--json", "output_json", is_flag=True, help="Output as JSON")

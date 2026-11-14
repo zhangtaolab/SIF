@@ -20,6 +20,7 @@ from sif.search.hybrid import SearchPipeline
 from sif.search.personal_bench import (
     HELDOUT_MIN,
     INITIAL_SAMPLE_DOCUMENTS,
+    MAX_TOP_K,
     SAVED_RUN_VERSION,
     DocumentRecord,
     assign_split,
@@ -389,6 +390,26 @@ class TestPersonalEvalCli:
 
         assert result.exit_code == 1
         assert "No index found. Run 'sif index update' first." in result.output
+
+    @pytest.mark.parametrize("bad_limit", ["0", "-1", str(MAX_TOP_K + 1)])
+    def test_limit_outside_the_supported_range_is_a_usage_error(
+        self,
+        tmp_path: Path,
+        bad_limit: str,
+    ) -> None:
+        db_path = build_personal_db(tmp_path / "personal.db", documents=60)
+
+        result = _invoke(
+            db_path,
+            ["--personal", "--bm25-only", "-n", bad_limit],
+            settings=_settings(tmp_path),
+            pipeline=_SpyPipeline,
+        )
+
+        assert result.exit_code == 2
+        assert "Invalid value" in result.output
+        # The command never ran, so nothing was auto-saved.
+        assert not (tmp_path / "eval").exists()
 
 
 def test_personal_help_lists_options() -> None:

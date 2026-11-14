@@ -647,7 +647,7 @@ sif eval [OPTIONS]
 | `--compare` | `—` | file | — | Compare against a saved run (evaluates its query set) |
 | `--no-save` | `—` | flag | `false` | Do not write the run to the cache directory |
 | `--bm25-only` | `—` | flag | `false` | Explicitly skip the embedder (hybrid is the default; keeps the run local) |
-| `--limit` | `-n` | integer | `10` | Number of results per query |
+| `--limit` | `-n` | integer range | `10` | Number of results per query (1-200) |
 | `--collection` | `-c` | text[] | — | Collection to evaluate |
 | `--all` | `—` | flag | `false` | Evaluate all collections |
 | `--json` | `—` | flag | `false` | Output as JSON |

@@ -67,6 +67,10 @@ RUN_SCHEMA_VERSION = 1
 SAVED_RUN_VERSION = 1
 MAX_SAVED_RECORDS = 10_000
 MAX_SAVED_FILE_BYTES = 5 * 1024 * 1024
+# Retrieval-depth ceiling (WR-01/WR-02): compare mode uses a saved run's
+# ``top_k`` as its search depth, so an untrusted file must not be able to
+# request an arbitrary depth. The CLI's -n/--limit uses the same bound.
+MAX_TOP_K = 200
 _SAVED_QUERY_MAX_CHARS = 10_000
 _SAVED_PATH_MAX_CHARS = 4_096
 _SAVED_ID_MAX_CHARS = 512
