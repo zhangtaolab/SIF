@@ -8,6 +8,7 @@ from collections.abc import Callable
 from typing import Any, TypeVar
 
 from sif.config.settings import Settings, get_settings
+from sif.core.filters import FilterNode
 from sif.core.models import SearchOptions
 from sif.database.connection import DatabaseConnection
 from sif.database.database import Database
@@ -153,6 +154,7 @@ class SearchBackend:
         rrf_k: int | None = None,
         bm25_weight: float | None = None,
         vector_weight: float | None = None,
+        filter_node: FilterNode | None = None,
     ) -> list[SearchResult]:
         """Perform hybrid search.
 
@@ -161,7 +163,11 @@ class SearchBackend:
         resolved values ride SearchOptions into the pipeline. ``offset``
         (CORR-03/D-05) rides the same SearchOptions object into the
         pipeline's single offset slice. ``per_chunk`` (CORR-02/D-01) rides it
-        into the vector leg's chunk escape hatch.
+        into the vector leg's chunk escape hatch. ``filter_node`` (Phase 20
+        D-02) is the already-validated metadata AST; the parameter is named
+        ``filter_node`` rather than ``filter`` because ruff A002 flags a
+        function argument shadowing the builtin (annotated model fields are
+        exempt, A003 does not apply).
 
         When sqlite-vec is unavailable (SearchPipeline construction raises
         ``RuntimeError``), the search degrades to BM25-only with a one-time
@@ -177,6 +183,10 @@ class SearchBackend:
                 min_score=min_score,
                 include_content=False,
                 include_highlights=True,
+                # Phase 20 D-02/D-17: None is the only unfiltered signal; a
+                # non-None AST is compiled pre-RRF on both legs, and the
+                # BM25-only fallback below receives this same options object.
+                filter=filter_node,
                 rrf_k=rrf_k if rrf_k is not None else self.settings.rrf_k,
                 bm25_weight=(bm25_weight if bm25_weight is not None else self.settings.bm25_weight),
                 vector_weight=(

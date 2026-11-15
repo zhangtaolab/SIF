@@ -246,6 +246,11 @@ class QueryInput(BaseModel):
     # Pagination (CORR-03/D-05): offset is an absolute row skip; a past-the-end
     # offset returns an empty page, never an error.
     offset: int = Field(default=0, ge=0)
+    # Metadata filter (Phase 20 D-02): a raw JSON AST validated inside the
+    # handler by the shared parse_filter, mirroring Phase 19's offset
+    # precedent. Raw dict on purpose — a validation failure must be a tool
+    # execution error with a controlled message, never a protocol error.
+    filter: dict[str, Any] | None = None
     # Per-chunk escape hatch (CORR-02/D-01): False keeps the per-document dedup
     # contract; True restores the ungrouped chunk rows. Only the chunk-capable
     # surfaces carry it — LexSearchInput is document-level.
@@ -281,6 +286,10 @@ class LexSearchInput(BaseModel):
     collections: list[str] | None = None
     limit: int = Field(default=10, ge=1)
     offset: int = Field(default=0, ge=0)
+    # Metadata filter (Phase 20 D-02): mirrors QueryInput.filter under the
+    # same Phase 19 offset precedent. Lex/vec tool registration stays Phase
+    # 22; the field is declared now so that registration has no filter gap.
+    filter: dict[str, Any] | None = None
 
 
 class LexSearchOutput(BaseModel):
@@ -302,6 +311,9 @@ class VecSearchInput(BaseModel):
     limit: int = Field(default=10, ge=1)
     offset: int = Field(default=0, ge=0)
     per_chunk: bool = False
+    # Metadata filter (Phase 20 D-02): mirrors QueryInput.filter for the same
+    # Phase 22 schema parity; registration stays Phase 22 (research Open Q1).
+    filter: dict[str, Any] | None = None
 
 
 class VecSearchOutput(BaseModel):

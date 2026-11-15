@@ -1215,3 +1215,162 @@ class TestSchemaInitializationAtStartup:
             )
         finally:
             conn.close()
+
+
+# =============================================================================
+# Phase 20 metadata filter surface (D-02/D-17)
+# =============================================================================
+
+_FILTER_PAYLOAD = {"field": "status", "operator": "eq", "value": "active"}
+_BAD_FILTER_PAYLOAD = {"field": "tags", "operator": "gt", "value": "x"}
+
+
+class TestFilterInputs:
+    """D-02: all three MCP search inputs carry ``filter``, defaulting to None."""
+
+    def test_query_input_accepts_and_retains_filter(self) -> None:
+        assert QueryInput(query="q").filter is None
+        assert QueryInput(query="q", filter=_FILTER_PAYLOAD).filter == _FILTER_PAYLOAD
+
+    def test_lex_search_input_accepts_and_retains_filter(self) -> None:
+        from sif.mcp.protocol import LexSearchInput
+
+        assert LexSearchInput(query="q").filter is None
+        assert LexSearchInput(query="q", filter=_FILTER_PAYLOAD).filter == _FILTER_PAYLOAD
+
+    def test_vec_search_input_accepts_and_retains_filter(self) -> None:
+        from sif.mcp.protocol import VecSearchInput
+
+        assert VecSearchInput(query="q").filter is None
+        assert VecSearchInput(query="q", filter=_FILTER_PAYLOAD).filter == _FILTER_PAYLOAD
+
+
+class TestQueryToolHandlerFilter:
+    """The hand-written schema stays in sync and validation is a tool error."""
+
+    def test_input_schema_declares_filter(self) -> None:
+        from sif.mcp.handlers import QueryToolHandler
+
+        props = QueryToolHandler.input_schema["properties"]
+        assert props["filter"] == {"type": "object"}
+        assert "filter" in QueryInput.model_fields
+
+    @pytest.mark.asyncio
+    async def test_handle_forwards_the_parsed_ast(self) -> None:
+        from sif.core.filters import parse_filter
+        from sif.mcp.handlers import QueryToolHandler
+
+        mock_backend = MagicMock()
+        mock_backend.hybrid_search = AsyncMock(return_value=[])
+
+        result = await QueryToolHandler().handle(
+            {"query": "q", "filter": _FILTER_PAYLOAD}, mock_backend
+        )
+
+        assert result.isError is False
+        kwargs = mock_backend.hybrid_search.call_args.kwargs
+        assert kwargs["filter_node"] == parse_filter(_FILTER_PAYLOAD)
+        assert kwargs["filter_node"] is not None
+
+    @pytest.mark.asyncio
+    async def test_handle_forwards_none_when_filter_absent(self) -> None:
+        from sif.mcp.handlers import QueryToolHandler
+
+        mock_backend = MagicMock()
+        mock_backend.hybrid_search = AsyncMock(return_value=[])
+
+        await QueryToolHandler().handle({"query": "q"}, mock_backend)
+
+        assert mock_backend.hybrid_search.call_args.kwargs["filter_node"] is None
+
+    @pytest.mark.asyncio
+    async def test_invalid_filter_returns_iserror_without_raising(self) -> None:
+        """D-17: an invalid AST is a controlled tool execution error."""
+        from sif.mcp.handlers import QueryToolHandler
+
+        mock_backend = MagicMock()
+        mock_backend.hybrid_search = AsyncMock(return_value=[])
+
+        result = await QueryToolHandler().handle(
+            {"query": "q", "filter": _BAD_FILTER_PAYLOAD}, mock_backend
+        )
+
+        assert result.isError is True
+        text = result.content[0].text or ""
+        assert text.startswith("filter.")
+        assert '"gt" requires a numeric value' in text
+        assert "tags" in text
+        mock_backend.hybrid_search.assert_not_called()
+
+
+class TestInvalidFilterIsNotAProtocolError:
+    """T-20-13/T-20-14: validation stays inside a successful JSON-RPC envelope."""
+
+    @pytest.mark.asyncio
+    async def test_invalid_filter_yields_success_envelope_with_iserror(self) -> None:
+        from sif.mcp.handlers import QueryToolHandler
+        from sif.mcp.protocol import JsonRpcRequest
+        from sif.mcp.server import MCPServer, ServerState
+
+        backend = MagicMock()
+        backend.hybrid_search = AsyncMock(return_value=[])
+        server = MCPServer(backend)
+        server.state = ServerState.INITIALIZED
+        server.register_tools([QueryToolHandler()])
+
+        response = await server.handle_request(
+            JsonRpcRequest(
+                id=1,
+                method="tools/call",
+                params={
+                    "name": "query",
+                    "arguments": {"query": "q", "filter": _BAD_FILTER_PAYLOAD},
+                },
+            )
+        )
+
+        assert response.error is None
+        assert response.result["isError"] is True
+        assert response.result["content"][0]["text"].startswith("filter.")
+        assert "error" not in response.model_dump(exclude_none=True)
+        assert backend.hybrid_search.call_count == 0
+
+
+class TestFilterThroughBackend:
+    """T-20-16: the parsed AST rides SearchOptions to every leg, or stays None."""
+
+    @pytest.mark.asyncio
+    async def test_filter_reaches_search_options_unchanged(self, backend) -> None:
+        from sif.core.filters import parse_filter
+
+        node = parse_filter(_FILTER_PAYLOAD)
+        with patch("sif.mcp.backend.SearchPipeline") as mock_pipeline:
+            mock_pipeline.return_value.search.return_value = [_weight_result()]
+            await backend.hybrid_search("test query", filter_node=node)
+
+        options = mock_pipeline.return_value.search.call_args[0][1]
+        assert options.filter is node
+
+    @pytest.mark.asyncio
+    async def test_bm25_fallback_receives_the_same_filter(self, backend) -> None:
+        from sif.core.filters import parse_filter
+
+        node = parse_filter(_FILTER_PAYLOAD)
+        with (
+            patch("sif.mcp.backend.SearchPipeline", side_effect=RuntimeError("no vec")),
+            patch("sif.mcp.backend.BM25Searcher") as mock_bm25_cls,
+        ):
+            mock_bm25_cls.return_value.search.return_value = []
+            await backend.hybrid_search("test query", filter_node=node)
+
+        options = mock_bm25_cls.return_value.search.call_args[0][1]
+        assert options.filter is node
+
+    @pytest.mark.asyncio
+    async def test_unfiltered_search_keeps_filter_none(self, backend) -> None:
+        with patch("sif.mcp.backend.SearchPipeline") as mock_pipeline:
+            mock_pipeline.return_value.search.return_value = [_weight_result()]
+            await backend.hybrid_search("test query")
+
+        options = mock_pipeline.return_value.search.call_args[0][1]
+        assert options.filter is None

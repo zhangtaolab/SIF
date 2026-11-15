@@ -6,6 +6,7 @@ import json
 from abc import ABC, abstractmethod
 from typing import Any, ClassVar
 
+from sif.core.filters import FilterValidationError, parse_filter
 from sif.mcp.protocol import (
     GetInput,
     GetOutput,
@@ -63,6 +64,10 @@ class QueryToolHandler(ToolHandler):
             # An unlisted property is invisible to MCP tool discovery even
             # though the model accepts it, so the two must stay in sync.
             "per_chunk": {"type": "boolean", "default": False},
+            # Phase 20 D-02 metadata filter: mirrors QueryInput.filter. The
+            # hand-written schema and the pydantic model must stay in sync —
+            # an unlisted property is invisible to MCP tool discovery.
+            "filter": {"type": "object"},
             "min_score": {"type": "number", "default": 0.0},
             # Phase 15 fusion overrides (D-04): omitted = server SIF_ settings.
             # The hand-written schema and the pydantic model must stay in
@@ -82,6 +87,17 @@ class QueryToolHandler(ToolHandler):
     ) -> ToolsCallResult:
         """Execute query tool."""
         input_data = QueryInput(**params)
+        # Phase 20 D-02/D-17: validate the caller-supplied AST with the one
+        # shared grammar. An invalid filter is a TOOL EXECUTION error inside
+        # a successful JSON-RPC response (SEP-1303) so the model can
+        # self-correct; it is never a JSON-RPC INVALID_PARAMS protocol error.
+        try:
+            filter_node = None if input_data.filter is None else parse_filter(input_data.filter)
+        except FilterValidationError as exc:
+            return ToolsCallResult(
+                content=[ToolContentItem(type="text", text=str(exc))],
+                isError=True,
+            )
         results = await backend.hybrid_search(
             query=input_data.query,
             collections=input_data.collections,
@@ -92,6 +108,7 @@ class QueryToolHandler(ToolHandler):
             rrf_k=input_data.rrf_k,
             bm25_weight=input_data.bm25_weight,
             vector_weight=input_data.vector_weight,
+            filter_node=filter_node,
         )
         output = QueryOutput(
             results=results,
