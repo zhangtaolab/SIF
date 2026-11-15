@@ -5,39 +5,39 @@ titles: json
 findings:
   - id: CR-01
     severity: critical
-    disposition: open
+    disposition: fixed
     title: "Bench embedder soft-fail is converted into an uncaught crash"
   - id: CR-02
     severity: critical
-    disposition: open
+    disposition: fixed
     title: "Identity decision is taken outside the index flock \u2014 concurrent writers can mix vector spaces and falsify the identity"
   - id: CR-03
     severity: critical
-    disposition: open
+    disposition: fixed
     title: "`sif index backup` / `sif index vacuum` silently create an empty index and report success"
   - id: WR-01
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "Reconcile assumes `document_embeddings` exists whenever the shadow does; `cleanup`/`vacuum` fail on stripped environments"
   - id: WR-02
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "Systemic model-output failures are classified as document-local (and retried forever by watch)"
   - id: WR-03
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "Backup copy is group/other-readable for the entire copy + integrity-check window"
   - id: WR-04
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "Backup target validation is check-then-use (symlink TOCTOU)"
   - id: WR-05
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "`vsearch` runs the query embedding (and can call a remote API) before its identity check"
   - id: WR-06
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "`StreamingEmbedWriter` clears the identity-write flag before the transaction commits"
   - id: IN-01
     severity: info
@@ -67,24 +67,24 @@ findings:
     severity: info
     disposition: open
     title: "Unreachable branch in `QueryExpansion.expand`"
-open: 16
+open: 7
 total: 16
-recorded: 2026-11-15T18:14:47Z
+recorded: 2026-11-15T18:26:19Z
 ---
 
 # Phase 21: Code Review Disposition
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| CR-01 | critical | open | - |
-| CR-02 | critical | open | - |
-| CR-03 | critical | open | - |
-| WR-01 | warning | open | - |
-| WR-02 | warning | open | - |
-| WR-03 | warning | open | - |
-| WR-04 | warning | open | - |
-| WR-05 | warning | open | - |
-| WR-06 | warning | open | - |
+| CR-01 | critical | fixed | 21-REVIEW-FIX.md |
+| CR-02 | critical | fixed | 21-REVIEW-FIX.md |
+| CR-03 | critical | fixed | 21-REVIEW-FIX.md |
+| WR-01 | warning | fixed | 21-REVIEW-FIX.md |
+| WR-02 | warning | fixed | 21-REVIEW-FIX.md |
+| WR-03 | warning | fixed | 21-REVIEW-FIX.md |
+| WR-04 | warning | fixed | 21-REVIEW-FIX.md |
+| WR-05 | warning | fixed | 21-REVIEW-FIX.md |
+| WR-06 | warning | fixed | 21-REVIEW-FIX.md |
 | IN-01 | info | open | - |
 | IN-02 | info | open | - |
 | IN-03 | info | open | - |
