@@ -125,6 +125,7 @@ class SearchBackend:
         query: str,
         collections: list[str] | None = None,
         limit: int = 10,
+        offset: int = 0,
         min_score: float = 0.0,
         rrf_k: int | None = None,
         bm25_weight: float | None = None,
@@ -134,7 +135,9 @@ class SearchBackend:
 
         Weight overrides (Phase 15, D-04): each ``None`` falls back to the
         server process's ``SIF_`` settings (request field ≈ CLI flag); the
-        resolved values ride SearchOptions into the pipeline.
+        resolved values ride SearchOptions into the pipeline. ``offset``
+        (CORR-03/D-05) rides the same SearchOptions object into the
+        pipeline's single offset slice.
 
         When sqlite-vec is unavailable (SearchPipeline construction raises
         ``RuntimeError``), the search degrades to BM25-only with a one-time
@@ -145,6 +148,7 @@ class SearchBackend:
         def _search(conn: Any) -> list[SearchResult]:
             options = SearchOptions(
                 limit=limit,
+                offset=offset,
                 min_score=min_score,
                 include_content=False,
                 include_highlights=True,

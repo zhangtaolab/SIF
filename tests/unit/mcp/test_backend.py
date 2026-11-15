@@ -504,6 +504,76 @@ class TestQueryToolHandlerWeightPassThrough:
         assert props["vector_weight"]["type"] == "number"
 
 
+class TestQueryInputOffsetValidation:
+    """CORR-03/D-05: offset is validated at the MCP boundary (ASVS V5)."""
+
+    def test_negative_offset_rejected(self) -> None:
+        """offset must be >= 0."""
+        with pytest.raises(ValidationError, match="offset"):
+            QueryInput(query="q", offset=-1)
+
+    def test_zero_and_positive_offset_accepted(self) -> None:
+        assert QueryInput(query="q").offset == 0
+        assert QueryInput(query="q", offset=3).offset == 3
+
+    def test_lex_and_vec_inputs_carry_validated_offset(self) -> None:
+        """Phase 22's lex/vec tools inherit a validated offset field."""
+        from sif.mcp.protocol import LexSearchInput, VecSearchInput
+
+        assert LexSearchInput(query="q").offset == 0
+        assert VecSearchInput(query="q", offset=4).offset == 4
+        with pytest.raises(ValidationError, match="offset"):
+            LexSearchInput(query="q", offset=-1)
+        with pytest.raises(ValidationError, match="offset"):
+            VecSearchInput(query="q", offset=-1)
+
+
+class TestQueryToolHandlerOffsetPassThrough:
+    """The handler advertises and forwards offset (CORR-03/D-05)."""
+
+    @pytest.mark.asyncio
+    async def test_handle_forwards_offset(self) -> None:
+        from sif.mcp.handlers import QueryToolHandler
+
+        mock_backend = MagicMock()
+        mock_backend.hybrid_search = AsyncMock(return_value=[])
+
+        await QueryToolHandler().handle({"query": "q", "offset": 7}, mock_backend)
+
+        assert mock_backend.hybrid_search.call_args.kwargs["offset"] == 7
+
+    def test_input_schema_declares_offset(self) -> None:
+        from sif.mcp.handlers import QueryToolHandler
+
+        props = QueryToolHandler.input_schema["properties"]
+        assert props["offset"] == {"type": "integer", "minimum": 0, "default": 0}
+
+
+class TestHybridSearchOffsetForwarding:
+    """offset rides SearchOptions into the pipeline (and the BM25 fallback)."""
+
+    @pytest.mark.asyncio
+    async def test_offset_rides_search_options_into_pipeline(self, backend) -> None:
+        with patch("sif.mcp.backend.SearchPipeline") as mock_pipeline:
+            mock_pipeline.return_value.search.return_value = [_weight_result()]
+            await backend.hybrid_search("test query", offset=3)
+
+        options = mock_pipeline.return_value.search.call_args[0][1]
+        assert options.offset == 3
+
+    @pytest.mark.asyncio
+    async def test_bm25_fallback_receives_the_same_offset(self, backend) -> None:
+        with (
+            patch("sif.mcp.backend.SearchPipeline", side_effect=RuntimeError("no vec")),
+            patch("sif.mcp.backend.BM25Searcher") as mock_bm25_cls,
+        ):
+            mock_bm25_cls.return_value.search.return_value = []
+            await backend.hybrid_search("test query", offset=3)
+
+        options = mock_bm25_cls.return_value.search.call_args[0][1]
+        assert options.offset == 3
+
+
 # =============================================================================
 # Zero-result suggestions (Phase 15, D-05/D-08)
 # =============================================================================

@@ -56,6 +56,9 @@ class QueryToolHandler(ToolHandler):
             "query": {"type": "string"},
             "collections": {"type": "array", "items": {"type": "string"}},
             "limit": {"type": "integer", "default": 10},
+            # CORR-03/D-05 pagination: the hand-written schema and the
+            # QueryInput.offset field (Field(ge=0)) must stay in sync.
+            "offset": {"type": "integer", "minimum": 0, "default": 0},
             "min_score": {"type": "number", "default": 0.0},
             # Phase 15 fusion overrides (D-04): omitted = server SIF_ settings.
             # The hand-written schema and the pydantic model must stay in
@@ -79,6 +82,7 @@ class QueryToolHandler(ToolHandler):
             query=input_data.query,
             collections=input_data.collections,
             limit=input_data.limit,
+            offset=input_data.offset,
             min_score=input_data.min_score,
             rrf_k=input_data.rrf_k,
             bm25_weight=input_data.bm25_weight,

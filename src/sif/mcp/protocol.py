@@ -243,6 +243,9 @@ class QueryInput(BaseModel):
     query: str
     collections: list[str] | None = None
     limit: int = Field(default=10, ge=1)
+    # Pagination (CORR-03/D-05): offset is an absolute row skip; a past-the-end
+    # offset returns an empty page, never an error.
+    offset: int = Field(default=0, ge=0)
     min_score: float = Field(default=0.0, ge=0.0)
     # Fusion overrides (Phase 15, D-03/D-04): None falls back to the server
     # process's SIF_ settings; ranges are enforced here (ASVS V5) so
@@ -263,11 +266,17 @@ class QueryOutput(BaseModel):
 
 
 class LexSearchInput(BaseModel):
-    """Input for lex_search tool."""
+    """Input for lex_search tool.
+
+    ``offset`` mirrors ``QueryInput`` so Phase 22's lex/vec tool registration
+    has no schema gap; the tool itself stays unregistered in Phase 19
+    (research Open Q1).
+    """
 
     query: str
     collections: list[str] | None = None
-    limit: int = 10
+    limit: int = Field(default=10, ge=1)
+    offset: int = Field(default=0, ge=0)
 
 
 class LexSearchOutput(BaseModel):
@@ -277,11 +286,16 @@ class LexSearchOutput(BaseModel):
 
 
 class VecSearchInput(BaseModel):
-    """Input for vec_search tool."""
+    """Input for vec_search tool.
+
+    ``offset`` mirrors ``QueryInput`` for the same Phase 22 schema parity;
+    registration stays there (research Open Q1).
+    """
 
     query: str
     collections: list[str] | None = None
-    limit: int = 10
+    limit: int = Field(default=10, ge=1)
+    offset: int = Field(default=0, ge=0)
 
 
 class VecSearchOutput(BaseModel):
