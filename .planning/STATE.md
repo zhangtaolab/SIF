@@ -5,16 +5,16 @@ milestone_name: Search Precision and Agent Experience
 current_phase: 21
 current_phase_name: Scale, Maintenance + Embedder Identity
 status: executing
-stopped_at: Completed 21-03-PLAN.md
-last_updated: "2026-11-15T16:49:13.267Z"
+stopped_at: Completed 21-08-PLAN.md
+last_updated: "2026-11-15T17:03:00.432Z"
 last_activity: 2026-11-16
 last_activity_desc: Phase 21 execution started
-state_head: b03574521b68766553615c9a46eec032cb31579e
+state_head: c8a9a7098e70567c8c3a90f565f00f4ec363bf24
 progress:
   total_phases: 8
   completed_phases: 4
   total_plans: 35
-  completed_plans: 30
+  completed_plans: 31
 ---
 
 # DocSift — Project State
@@ -31,7 +31,7 @@ progress:
 ## Current Position
 
 Phase: 21 (Scale, Maintenance + Embedder Identity) — EXECUTING
-Plan: 4 of 8
+Plan: 5 of 8
 Status: Ready to execute
 Last activity: 2026-11-16 — Phase 21 execution started
 
@@ -79,6 +79,7 @@ Progress: [█████░░░░░] 50%
 | Phase 21 P01 | 13min | 3 tasks | 14 files |
 | Phase 21 P02 | 18 | 3 tasks | 15 files |
 | Phase 21 P03 | 7min | 2 tasks | 4 files |
+| Phase 21 P08 | 12min | 2 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -206,6 +207,10 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - [Phase 21]: 21-03: the context-map cache is keyed by the resolved main DB path, never a connection object; :memory: databases and connections with an open transaction bypass it so no snapshot or uncommitted read is ever cached
 - [Phase 21]: 21-03: invalidation samples the repository write generation, the sentinel PRAGMA data_version, and the inode before building; any sentinel failure closes it, drops the entry, and bypasses without caching
 - [Phase 21]: 21-03: enrich_results gained keyword-only vectors_untrusted=False applied after the normal staleness pass; no call site changed, so two-argument callers and monkeypatched doubles stay intact
+- [Phase 21]: 21-08: IdentityDimensionError + dimension_mismatch_text + schema_dimension_remedy live in identity.py; the schema guard and OpenAI messages stay byte-identical (D-05/T-21-27)
+- [Phase 21]: 21-08: with an initial identity the schema width guard is check_identity(mode="init"); an injected dimension without one stays width-only and never reads settings (Phase 19 contract)
+- [Phase 21]: 21-08: create_all assumes a legacy populated index once (one warning, no blocking) after the shadow backfill; fresh/embeddings-empty indexes write no identity row (D-02/D-04)
+- [Phase 21]: 21-08: the watcher adopts manager.get_identity() in one short transaction (mismatch rolls back, one error event, embed disabled, BM25 continues); the MCP backend reuses one resolved prompt scheme for init_schema and factory.create_model and stores the full identity as self._identity (T-21-28)
 
 ### Pending Todos
 
@@ -235,8 +240,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-15T16:49:12.738Z
-Stopped at: Completed 21-03-PLAN.md
+Last session: 2026-11-15T17:02:59.824Z
+Stopped at: Completed 21-08-PLAN.md
 Resume file: None
 
 - **Next expected action:** plan and execute Phase 21 (Scale, Maintenance + Embedder Identity — SCALE-01..03, EMB-01/02), then 22 → 23 → 24. Phase 20 delivered FILT-01..05: shared 17-operator filter grammar on CLI+MCP, `path`/`mtime` built-ins, pre-RRF per-leg pushdown with the corrected vector escalation, typed kv storage + `index_meta`-gated backfill, and the `metadata` discovery tool whose envelope is the frozen Phase 22 contract. Two audits remain recorded as debt (see Blockers/Concerns): `/gsd-secure-phase 20` and `/gsd:validate-phase 20`.
