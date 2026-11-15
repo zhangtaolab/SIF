@@ -472,8 +472,11 @@ class ComparisonReport:
     """The paired saved-vs-current comparison (D-07/D-12).
 
     ``current_report`` is the single ``PersonalReport`` contract ``--compare``
-    auto-saves; ``splits`` and ``groups`` are gate results, and only the
-    held-out summary gate can warrant a defaults change (``warrants_default_change``).
+    auto-saves; ``splits``, ``legs``, ``leg_splits``, and ``groups`` are gate
+    results, and only the held-out summary gate can warrant a defaults change
+    (``warrants_default_change``). ``legs`` and ``leg_splits`` exist so the
+    D-12 clause "the title leg improves while body held-out does not regress"
+    is directly readable from ``--compare`` output.
     """
 
     current_report: PersonalReport
@@ -481,6 +484,8 @@ class ComparisonReport:
     current_metrics: dict[str, float]
     overall: GateResult
     splits: dict[str, GateResult]
+    legs: dict[str, GateResult]
+    leg_splits: dict[str, dict[str, GateResult]]
     groups: list[GroupGate]
     suppressed: list[str]
     replay: ReplayStability
@@ -516,6 +521,11 @@ class ComparisonReport:
                     **self.splits["heldout"].to_dict(),
                     "diagnostic": False,
                 },
+            },
+            "legs": {leg: gate.to_dict() for leg, gate in self.legs.items()},
+            "leg_splits": {
+                leg: {split: gate.to_dict() for split, gate in splits.items()}
+                for leg, splits in self.leg_splits.items()
             },
             "groups": [group.to_dict() for group in self.groups],
             "suppressed": list(self.suppressed),
@@ -1882,6 +1892,42 @@ def group_noise_gates(
     return groups, suppressed
 
 
+def leg_noise_gates(
+    saved_queries: Sequence[SavedQueryRecord],
+    baseline_values: Sequence[float],
+    current_values: Sequence[float],
+) -> tuple[dict[str, GateResult], dict[str, dict[str, GateResult]]]:
+    """Per-leg and per-leg x split paired gates for the D-12 rule.
+
+    Every leg present in the saved run gets a gate over all of its records and
+    a gate for each of ``tuning``/``heldout``. A split with no records in that
+    leg is passed two empty series, which ``noise_gate`` reports as
+    ``sufficient: False`` — never a fabricated zero winner.
+    """
+    if not (len(saved_queries) == len(baseline_values) == len(current_values)):
+        raise ValueError("saved queries and both metric series must have equal lengths")
+    indices: dict[str, dict[str, list[int]]] = {}
+    for index, record in enumerate(saved_queries):
+        per_split = indices.setdefault(record.leg, {"tuning": [], "heldout": []})
+        per_split.setdefault(record.split, []).append(index)
+    legs: dict[str, GateResult] = {}
+    leg_splits: dict[str, dict[str, GateResult]] = {}
+    for leg, per_split in indices.items():
+        all_indices = [index for split_indices in per_split.values() for index in split_indices]
+        legs[leg] = noise_gate(
+            [baseline_values[index] for index in all_indices],
+            [current_values[index] for index in all_indices],
+        )
+        leg_splits[leg] = {
+            split: noise_gate(
+                [baseline_values[index] for index in per_split.get(split, [])],
+                [current_values[index] for index in per_split.get(split, [])],
+            )
+            for split in ("tuning", "heldout")
+        }
+    return legs, leg_splits
+
+
 def replay_stability(
     saved_replay: dict[str, Any],
     current_top_k_paths: dict[str, list[str]],
@@ -2041,8 +2087,8 @@ def compare_saved_run(  # noqa: PLR0913
     ``SearchEvaluator.evaluate_per_query``; grades the saved arm through its
     own ``retrieved_doc_ids`` against ``target_doc_id`` (first-occurrence
     dedupe); and reports the seeded paired-bootstrap gate overall, per split,
-    and per group. The returned ``current_report`` is the single
-    ``PersonalReport`` contract ``run_to_saved`` consumes.
+    per leg, per leg x split, and per group. The returned ``current_report``
+    is the single ``PersonalReport`` contract ``run_to_saved`` consumes.
     """
     if not saved.queries:
         raise ValueError(
@@ -2079,6 +2125,7 @@ def compare_saved_run(  # noqa: PLR0913
         )
         for split, indices in split_indices.items()
     }
+    legs, leg_splits = leg_noise_gates(saved.queries, baseline_ndcg, current_ndcg)
     groups, suppressed = group_noise_gates(
         saved.queries,
         baseline_ndcg,
@@ -2133,6 +2180,8 @@ def compare_saved_run(  # noqa: PLR0913
         },
         overall=overall,
         splits=splits,
+        legs=legs,
+        leg_splits=leg_splits,
         groups=groups,
         suppressed=suppressed,
         replay=stability,

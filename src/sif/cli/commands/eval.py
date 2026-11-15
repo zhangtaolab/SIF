@@ -380,6 +380,63 @@ def _comparison_summary_table(comparison: dict[str, Any]) -> Table:
     return table
 
 
+def _comparison_legs_table(legs: dict[str, dict[str, Any]]) -> Table:
+    """Per-leg paired gates: the title-vs-body input to the D-12 rule."""
+    table = Table(title="Legs (D-12 gate input)")
+    for column in (
+        "Leg",
+        "N",
+        "Baseline NDCG@10",
+        "Current NDCG@10",
+        "Mean delta",
+        "95% CI",
+        "Helped/Hurt/Unchanged",
+        "Winner",
+    ):
+        table.add_column(column, style="cyan")
+    for leg, gate in legs.items():
+        table.add_row(
+            leg,
+            str(gate["n"]),
+            f"{gate['baseline_mean']:.4f}",
+            f"{gate['current_mean']:.4f}",
+            f"{gate['mean_delta']:+.4f}",
+            _format_ci(gate),
+            f"{gate['helped']}/{gate['hurt']}/{gate['unchanged']}",
+            _winner_cell(gate),
+        )
+    return table
+
+
+def _comparison_leg_splits_table(
+    leg_splits: dict[str, dict[str, dict[str, Any]]],
+) -> Table:
+    """Compact per-leg x split gates; an absent split shows N=0/insufficient."""
+    table = Table(title="Leg x split gates")
+    for column in (
+        "Leg",
+        "Split",
+        "N",
+        "Mean delta",
+        "95% CI",
+        "Winner",
+        "Sufficient",
+    ):
+        table.add_column(column, style="cyan")
+    for leg, splits in leg_splits.items():
+        for split, gate in splits.items():
+            table.add_row(
+                leg,
+                split,
+                str(gate["n"]),
+                f"{gate['mean_delta']:+.4f}",
+                _format_ci(gate),
+                _winner_cell(gate),
+                "yes" if gate["sufficient"] else "no",
+            )
+    return table
+
+
 def _comparison_context_table(comparison: dict[str, Any]) -> Table:
     """Noise floor, fingerprint match, replay stability, and mode context."""
     table = Table(title="Comparison Context")
@@ -448,6 +505,10 @@ def _render_comparison(payload: dict[str, Any]) -> None:
     """Render a saved-vs-current comparison (tables only; JSON bypasses)."""
     comparison = payload["comparison"]
     console.print(_comparison_summary_table(comparison))
+    if comparison.get("legs"):
+        console.print(_comparison_legs_table(comparison["legs"]))
+    if comparison.get("leg_splits"):
+        console.print(_comparison_leg_splits_table(comparison["leg_splits"]))
     console.print(_comparison_context_table(comparison))
     if comparison["groups"]:
         console.print(_comparison_groups_table(comparison["groups"]))

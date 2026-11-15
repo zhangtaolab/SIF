@@ -2086,3 +2086,102 @@ class TestCompareSavedRun:
 
         assert require_matching_corpus(saved, metadata) == corpus_fingerprint(metadata)
         assert resolve_saved_targets(saved, _compare_conn(*pairs)) == ["doc-1"]
+
+
+class TestPerLegNoiseGates:
+    """D-12: per-leg and per-leg x split gates make the strict rule readable."""
+
+    def _comparison(self, pairs: tuple[tuple[str, str], ...]):
+        metadata = _metadata(*pairs)
+        records = [
+            _saved_query(
+                f"title {index}",
+                leg="title",
+                split="heldout",
+                retrieved=["/corpus/1.md"],
+                retrieved_doc_ids=["missing"],
+            )
+            for index in range(10)
+        ]
+        records += [
+            _saved_query(
+                f"body {index}",
+                leg="body",
+                split="heldout",
+                retrieved=["/corpus/1.md"],
+                retrieved_doc_ids=["doc-1"],
+            )
+            for index in range(10)
+        ]
+        saved = _saved_run(records, fingerprint=corpus_fingerprint(metadata))
+        return compare_saved_run(
+            saved,
+            metadata,
+            lambda _query: [_hit("doc-1", "/corpus/1.md")],
+            conn=_compare_conn(*pairs),
+            retrieval="bm25",
+            model=None,
+        )
+
+    def test_legs_cover_exactly_the_saved_legs_and_partition_records(self) -> None:
+        comparison = self._comparison((("doc-1", "/corpus/1.md"),))
+
+        assert set(comparison.legs) == {"title", "body"}
+        assert comparison.legs["title"].n == 10
+        assert comparison.legs["body"].n == 10
+        # The title arm moves +1.0 and the body arm is unchanged, so the D-12
+        # 'title improves' clause and the 'body does not regress' clause have
+        # different verdicts on the same run.
+        assert comparison.legs["title"].mean_delta == pytest.approx(1.0)
+        assert comparison.legs["title"].winner is True
+        assert comparison.legs["body"].mean_delta == pytest.approx(0.0)
+        assert comparison.legs["body"].regression is False
+        for leg, legs_gate in comparison.legs.items():
+            split_gates = comparison.leg_splits[leg]
+            assert set(split_gates) == {"tuning", "heldout"}
+            assert sum(gate.n for gate in split_gates.values()) == legs_gate.n
+            assert split_gates["heldout"].n == 10
+
+    def test_an_absent_leg_split_is_insufficient_and_never_a_winner(self) -> None:
+        comparison = self._comparison((("doc-1", "/corpus/1.md"),))
+
+        empty = comparison.leg_splits["title"]["tuning"]
+        assert empty.n == 0
+        assert empty.sufficient is False
+        assert empty.winner is False
+        assert empty.mean_delta == 0.0
+        assert empty.noise_floor == 0.0
+
+    def test_to_dict_carries_leg_and_leg_split_gate_fields(self) -> None:
+        comparison = self._comparison((("doc-1", "/corpus/1.md"),))
+        data = comparison.to_dict()
+
+        assert set(data["legs"]) == {"title", "body"}
+        assert set(data["leg_splits"]) == {"title", "body"}
+        assert set(data["leg_splits"]["title"]) == {"tuning", "heldout"}
+        assert set(data["legs"]["title"]) == {
+            "n",
+            "baseline_mean",
+            "current_mean",
+            "mean_delta",
+            "ci_low",
+            "ci_high",
+            "helped",
+            "hurt",
+            "unchanged",
+            "noise_floor",
+            "winner",
+            "regression",
+            "sufficient",
+        }
+        assert data["legs"]["title"]["mean_delta"] == pytest.approx(1.0)
+        assert data["leg_splits"]["title"]["tuning"]["sufficient"] is False
+
+    def test_warrants_default_change_remains_the_held_out_summary_gate(self) -> None:
+        comparison = self._comparison((("doc-1", "/corpus/1.md"),))
+
+        assert comparison.warrants_default_change == comparison.splits["heldout"].winner
+        assert (
+            comparison.to_dict()["gate"]["warrants_default_change"]
+            == comparison.splits["heldout"].winner
+        )

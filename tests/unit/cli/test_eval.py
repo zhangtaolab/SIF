@@ -1781,6 +1781,31 @@ class TestCompareRendering:
         assert suppressed_name in result.stderr
         assert suppressed_name not in result.stdout
 
+    def test_compare_table_renders_per_leg_and_leg_split_gates(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        db_path, settings, saved_path = self._fixture(tmp_path)
+
+        result = _invoke(
+            db_path,
+            ["--personal", "--compare", str(saved_path), "--bm25-only"],
+            settings=settings,
+            pipeline=_OptionsSpyPipeline,
+        )
+
+        assert result.exit_code == 0, result.output
+        for expected in (
+            "Legs (D-12 gate input)",
+            "Leg x split gates",
+            "Sufficient",
+            "heldout",
+        ):
+            assert expected in result.stdout, expected
+        suppressed_name = "leg=title/language=zh/length=medium"
+        assert suppressed_name in result.stderr
+        assert suppressed_name not in result.stdout
+
     def test_compare_table_reports_replay_unavailable_on_stderr(
         self,
         tmp_path: Path,
@@ -1820,12 +1845,37 @@ class TestCompareRendering:
             "ci",
             "gate",
             "splits",
+            "legs",
+            "leg_splits",
             "groups",
             "suppressed",
             "replay",
             "retrieval",
             "top_k",
         }
+        assert set(comparison["legs"]) == {"title", "body"}
+        assert set(comparison["leg_splits"]) == {"title", "body"}
+        for leg in ("title", "body"):
+            assert set(comparison["leg_splits"][leg]) == {"tuning", "heldout"}
+            assert set(comparison["legs"][leg]) == {
+                "n",
+                "baseline_mean",
+                "current_mean",
+                "mean_delta",
+                "ci_low",
+                "ci_high",
+                "helped",
+                "hurt",
+                "unchanged",
+                "noise_floor",
+                "winner",
+                "regression",
+                "sufficient",
+            }
+            assert (
+                sum(gate["n"] for gate in comparison["leg_splits"][leg].values())
+                == comparison["legs"][leg]["n"]
+            )
         assert set(comparison["baseline"]) == {
             "ndcg_at_10",
             "hit_at_10",
