@@ -842,34 +842,20 @@ def _backfill_metadata_values(self) -> None:
 
 ---
 
-## Open Questions
+## Open Questions — ALL RESOLVED (2026-11-15; see `20-CONTEXT.md` D-18/D-19 and the amended D-07/D-11/D-14/D-15)
 
-1. **AST field name: `field` vs `key`.**
-   - What we know: current qmd main + pinned clone use `field`; the docs commit `abfabc5` used `key`. qmd is unreleased and may shift again.
-   - Recommendation: use `field`, pin the parity target to the current `[Unreleased]` era, and record the delta from `abfabc5` in the plan/SUMMARY. If the user's parity contract was written against the older docs, confirm before building.
+> Every question below was settled during the context reconciliation that followed this research.
+> The resolutions are authoritative in `20-CONTEXT.md`; this list is retained for provenance only.
 
-2. **`contains` on arrays: substring-any (qmd) vs membership (D-11).**
-   - What we know: qmd evaluates text operators per string value, so `contains: "sql"` matches an element `"sqlite"`. D-11 says "membership on arrays".
-   - Recommendation: implement qmd's substring-any semantics (SC-1 says "qmd semantics verbatim"), note that it is a superset of membership, and record the reading in the plan. Confirm with the user if D-11's wording is considered binding.
-
-3. **Collision precedence for `qmd.metadata` vs native frontmatter.**
-   - Recommendation: namespace wins on collision (explicit opt-in / migration parity); document it in the discovery description. Needs a recorded decision because "one flat key space" does not state the winner.
-
-4. **What does the discovery tool's single `limit` page?**
-   - What we know: qmd has `keyLimit` (50) and `valueLimit` (10) separately; D-15 locks one `limit`.
-   - Recommendation: `limit` = key-window size (default 50); a fixed internal value window of 10 per key/type; `remainingValues` exact. Alternatively interpret `limit` for both. Must be settled before freezing the Phase 22 schema.
-
-5. **Skip accounting shape.**
-   - Recommendation: `document_metadata_skips` sidecar (per key + reason); discovery reports `skippedKeys`. If the planner prefers one table, sentinel rows must be excluded from `exists`/`type` in the compiler.
-
-6. **Should `sif collection metadata` have `--filter`?**
-   - Recommendation: yes (qmd parity, D-15 filter-aware coverage, one validator). D-14's option list does not mention it, so treat as an additive decision.
-
-7. **Backfill startup cost / bounded pass.**
-   - Recommendation: full synchronous pass with per-document commits and a one-line notice; measure on a populated fixture. If unacceptable, a bounded pass plus a "metadata index upgrading" guard is needed — but never expose a half-populated filter store.
-
-8. **Remainder field casing.**
-   - D-15 names `totalKeys`/`remainingKeys`/`remainingValues` in camelCase while SIF MCP outputs are snake_case (`doc_id`, `collection_name`). Recommendation: follow D-15 literally for those three names (they are the frozen contract) and document the mixed casing; confirm at plan time.
+1. **AST field name: `field` vs `key`.** — **RESOLVED (D-18):** use `field`; pin to the current `[Unreleased]` era and record the `abfabc5` delta.
+   - What we know: current qmd main + pinned clone use `field`; the docs commit `abfabc5` used `key`.
+2. **`contains` on arrays: substring-any (qmd) vs membership.** — **RESOLVED (D-11 amended):** qmd's substring-any, per element. Membership is expressed by `in`/`all`. Success criterion 1 requires qmd semantics verbatim, so the earlier "membership on arrays" wording was an error.
+3. **Collision precedence for `qmd.metadata` vs native frontmatter.** — **RESOLVED (D-19):** namespace wins on collision; native fills the remaining keys.
+4. **What does the discovery tool's single `limit` page?** — **RESOLVED (D-14/D-15):** `limit` is the key window (default 50); `value_limit` windows each key's values (default 10); both remainders exact.
+5. **Skip accounting shape.** — **RESOLVED (D-07 amended):** a `document_metadata_skips` sidecar (key + reason), bounded at 64 rows/document; no sentinel value rows, so `exists`/`type` never see a fake entry. Reserved-name shadowing is not a skip.
+6. **Should `sif collection metadata` have `--filter`?** — **RESOLVED (D-14 amended):** yes; filter-aware coverage through the same validator.
+7. **Backfill startup cost / bounded pass.** — **RESOLVED (D-06 amended):** one full synchronous pass with per-document commits and a one-line stderr notice; the `index_meta.metadata_values_version` marker is written only after a complete pass; filtering is never served from a half-populated store.
+8. **Remainder field casing.** — **RESOLVED (D-15 amended):** keep the qmd camelCase names `totalKeys`/`remainingKeys`/`remainingValues`; the mixed casing against SIF's snake_case outputs is deliberate and part of the frozen Phase 22 contract.
 
 ---
 
