@@ -192,3 +192,79 @@ class TestQueryCommandOffset:
 
         assert result.exit_code == 2
         assert "Invalid value" in result.output
+
+
+class TestPerChunkPageContinuity:
+    """CORR-02/D-01: per-chunk pages count chunk rows and keep global ranks.
+
+    The fake searcher mirrors the real per-chunk contract (ungrouped chunk
+    rows, ``chunk_matches`` left at 0, ``rank = offset + position``); the
+    real search semantics live in the vector/hybrid/integration suites.
+    """
+
+    def _chunk_searcher(self) -> MagicMock:
+        searcher = MagicMock()
+
+        def _search(_query: str, options) -> list[SearchResult]:
+            return [
+                SearchResult(
+                    document_id="doc-1",
+                    title="Chunky Doc",
+                    path="/notes/chunky.md",
+                    collection_name="notes",
+                    score=0.9 - index * 0.01,
+                    rank=options.offset + index + 1,
+                    chunk_id=f"chunk-{options.offset + index}",
+                    sequence=options.offset + index,
+                    chunk_matches=0,
+                )
+                for index in range(options.limit)
+            ]
+
+        searcher.search.side_effect = _search
+        return searcher
+
+    def test_per_chunk_page_continuity(self) -> None:
+        """--per-chunk --offset 5 -n 5 renders chunk rows with ranks 6-10."""
+        searcher = self._chunk_searcher()
+        manager = MagicMock()
+        manager.embed_single.return_value = [0.0] * 8
+        with (
+            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+            patch(
+                "sif.cli.commands.search.CollectionRepository",
+                return_value=MagicMock(),
+            ),
+            patch("sif.search.vector.VectorSearcher", return_value=searcher),
+            patch(
+                "sif.embedding.manager.EmbeddingManager.from_settings",
+                return_value=manager,
+            ),
+            patch("sif.config.settings.get_settings", return_value=_settings_mock()),
+        ):
+            result = CliRunner().invoke(
+                vsearch_cmd,
+                [
+                    "apple",
+                    "--per-chunk",
+                    "--offset",
+                    "5",
+                    "-n",
+                    "5",
+                    "--json",
+                    "--no-refresh",
+                ],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code == 0, result.output
+        options = searcher.search.call_args[0][1]
+        assert options.per_chunk is True
+        assert options.offset == 5
+        assert options.limit == 5
+        payload = json.loads(result.output)
+        assert [row["rank"] for row in payload] == [6, 7, 8, 9, 10]
+        # Page size counts chunk rows, not distinct documents.
+        assert len(payload) == 5
+        assert [row["chunk_id"] for row in payload] == [f"chunk-{i}" for i in range(5, 10)]
+        assert [row["sequence"] for row in payload] == [5, 6, 7, 8, 9]

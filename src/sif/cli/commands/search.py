@@ -100,19 +100,39 @@ def _field(r: Any, name: str) -> Any:
 
 
 def _title_cell(r: Any) -> str:
-    """Build the Title cell for a Rich table row (D-12).
+    """Build the Title cell for a Rich table row (D-12, D-02).
 
     The title itself stays escape()d; a result whose vectors lag carries
-    the dim inline annotation beside it — no new column. The annotation
-    is a constant string (never document-derived text), so its markup is
-    ours to write unescaped; only the title passes through escape().
+    the dim inline annotation beside it — no new column. A deduped result
+    whose document matched more than once carries the collapsed match
+    count the same way. Both annotations are constant markup built from
+    an integer (never document-derived text), so their markup is ours to
+    write unescaped; only the title passes through escape().
     """
     title = str(_field(r, "title"))
     title = title[:_TITLE_MAX_LEN] + "..." if len(title) > _TITLE_MAX_LEN else title
     cell = escape(title)
     if _field(r, "vectors_stale"):
         cell += " [dim](stale vectors)[/dim]"
+    chunk_matches = _field(r, "chunk_matches")
+    if chunk_matches and chunk_matches > 1:
+        cell += f" [dim]({chunk_matches} chunk matches)[/dim]"
     return cell
+
+
+def _chunk_cell(r: Any) -> str:
+    """Build the Chunk cell for a per-chunk table row (D-03).
+
+    The display form is ``path#sequence`` when the row carries a chunk
+    sequence, falling back to the document path for document-level rows
+    (hybrid per-chunk pages can mix both). The path is document-derived,
+    so it passes through escape().
+    """
+    path = str(_field(r, "path"))
+    sequence = _field(r, "sequence")
+    if sequence is None or sequence == "":
+        return escape(path)
+    return escape(f"{path}#{sequence}")
 
 
 def _resolve_collections(
@@ -631,6 +651,11 @@ def search_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
 @click.option("--all", "search_all", is_flag=True, help="Search all collections")
 @click.option("--min-score", default=0.0, help="Minimum score threshold")
 @click.option("--full", is_flag=True, help="Include full content")
+@click.option(
+    "--per-chunk",
+    is_flag=True,
+    help="Return one row per matched chunk instead of one row per document",
+)
 @click.option("--line-numbers", is_flag=True, help="Show line numbers in content")
 @click.option("--json", "output_json", is_flag=True, help="Output as JSON")
 @click.option(
@@ -655,6 +680,7 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     model_type: str | None = None,
     no_refresh: bool = False,
     quiet: bool = False,
+    per_chunk: bool = False,
 ) -> None:
     """Search documents using vector similarity."""
     index_path = ctx.obj["index_path"]
@@ -702,6 +728,7 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             min_score=min_score,
             include_content=full,
             include_highlights=True,
+            per_chunk=per_chunk,
         )
 
         # Collection scope (D-04): resolve once for both the search filter
@@ -764,6 +791,11 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             table.add_column("#", style="cyan", justify="right")
             table.add_column("Score", style="green", justify="right")
             table.add_column("Title", style="yellow")
+            if per_chunk:
+                # D-03: chunk identity must be addressable in the table;
+                # the existing layout has no path column, so per-chunk mode
+                # adds one chunk cell rather than hiding path#sequence.
+                table.add_column("Chunk", style="magenta")
             table.add_column("Collection", style="blue")
             if line_numbers and any(getattr(r, "content", None) for r in results):
                 table.add_column("Content", style="white")
@@ -773,8 +805,10 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                     str(r.rank),
                     f"{r.score:.4f}",
                     _title_cell(r),
-                    escape(r.collection_name),
                 ]
+                if per_chunk:
+                    row.append(_chunk_cell(r))
+                row.append(escape(r.collection_name))
                 if line_numbers and (content := getattr(r, "content", None)):
                     content = prepend_line_numbers(content)
                     if len(content) > _CONTENT_MAX_LEN:
@@ -845,6 +879,11 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     default=None,
     help="Vector fusion weight (default: SIF_VECTOR_WEIGHT or 1.0)",
 )
+@click.option(
+    "--per-chunk",
+    is_flag=True,
+    help="Return one row per matched chunk instead of one row per document",
+)
 @click.option("--line-numbers", is_flag=True, help="Show line numbers in content")
 @click.option("--json", "output_json", is_flag=True, help="Output as JSON")
 @click.option("--csv", "output_csv", is_flag=True, help="Output as CSV")
@@ -884,6 +923,7 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     no_refresh: bool = False,
     rerank: bool = False,
     quiet: bool = False,
+    per_chunk: bool = False,
 ) -> None:
     """Search documents using hybrid approach (BM25 + Vector + RRF).
 
@@ -934,6 +974,7 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             rrf_k=rrf_k if rrf_k is not None else settings.rrf_k,
             bm25_weight=bm25_weight if bm25_weight is not None else settings.bm25_weight,
             vector_weight=(vector_weight if vector_weight is not None else settings.vector_weight),
+            per_chunk=per_chunk,
         )
 
         # Collection scope (D-04): resolve once for both the search filter
@@ -1083,6 +1124,11 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             table.add_column("#", style="cyan", justify="right")
             table.add_column("Score", style="green", justify="right")
             table.add_column("Title", style="yellow")
+            if per_chunk:
+                # D-03: per-chunk pages must expose path#sequence; the
+                # default layout has no path column, so one chunk cell is
+                # added in this mode only.
+                table.add_column("Chunk", style="magenta")
             table.add_column("Collection", style="blue")
             table.add_column("Snippet", style="white")
             if line_numbers and any(getattr(r, "content", None) for r in results):
@@ -1093,9 +1139,10 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                     str(r.rank),
                     f"{r.score:.4f}",
                     _title_cell(r),
-                    escape(r.collection_name),
-                    escape(_display_snippet(r)),
                 ]
+                if per_chunk:
+                    row.append(_chunk_cell(r))
+                row.extend([escape(r.collection_name), escape(_display_snippet(r))])
                 if line_numbers and (content := getattr(r, "content", None)):
                     content = prepend_line_numbers(content)
                     if len(content) > _CONTENT_MAX_LEN:

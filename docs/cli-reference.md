@@ -442,6 +442,7 @@ sif search query [OPTIONS]
 | `--rrf-k` | `—` | integer range | — | RRF k constant for hybrid fusion (default: SIF_RRF_K or 60) |
 | `--bm25-weight` | `—` | float range | — | BM25 fusion weight (default: SIF_BM25_WEIGHT or 1.0) |
 | `--vector-weight` | `—` | float range | — | Vector fusion weight (default: SIF_VECTOR_WEIGHT or 1.0) |
+| `--per-chunk` | `—` | flag | `false` | Return one row per matched chunk instead of one row per document |
 | `--line-numbers` | `—` | flag | `false` | Show line numbers in content |
 | `--json` | `—` | flag | `false` | Output as JSON |
 | `--csv` | `—` | flag | `false` | Output as CSV |
@@ -510,6 +511,7 @@ sif search vsearch [OPTIONS]
 | `--all` | `—` | flag | `false` | Search all collections |
 | `--min-score` | `—` | float | `0.0` | Minimum score threshold |
 | `--full` | `—` | flag | `false` | Include full content |
+| `--per-chunk` | `—` | flag | `false` | Return one row per matched chunk instead of one row per document |
 | `--line-numbers` | `—` | flag | `false` | Show line numbers in content |
 | `--json` | `—` | flag | `false` | Output as JSON |
 | `--model-type` | `—` | choice [sentence_transformers|gguf|openai|modelscope] | — | Embedding model type override |

@@ -4092,3 +4092,184 @@ class TestSingleEnrichmentOwner:
         assert len(calls) == 1
         assert calls[0] == []
         assert json.loads(result.stdout) == []
+
+
+class TestPerChunkSurfaces:
+    """CORR-02 (D-01/D-02/D-03): per-chunk escape hatch and chunk identity.
+
+    The searcher/pipeline is mocked here; the dedup and per-chunk fusion
+    semantics are covered by the search suites (19-06). These tests pin the
+    public CLI contract: the flag exists only on the two chunk-capable
+    commands, it threads into SearchOptions, and chunk fields reach JSON and
+    the Rich table.
+    """
+
+    @staticmethod
+    def _chunk_rows(count: int = 3, chunk_matches: int = 0) -> list[SearchResult]:
+        """Rows shaped like VectorSearcher's per-chunk output."""
+        return [
+            SearchResult(
+                document_id="doc1",
+                title="Chunky Doc",
+                path="/notes/chunky.md",
+                collection_name="notes",
+                score=0.9 - index * 0.01,
+                rank=index + 1,
+                chunk_id=f"chunk-{index}",
+                sequence=index,
+                chunk_matches=chunk_matches,
+            )
+            for index in range(count)
+        ]
+
+    @staticmethod
+    def _vsearch_settings() -> MagicMock:
+        return MagicMock(
+            model_name="all-MiniLM-L6-v2",
+            model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"},
+        )
+
+    def _invoke_vsearch(self, rows: list[SearchResult], args: list[str]):
+        searcher = MagicMock()
+        searcher.search.return_value = rows
+        repo = MagicMock()
+        repo.list_enabled.return_value = []
+        manager = MagicMock()
+        manager.embed_single.return_value = [0.0] * 8
+        with (
+            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
+            patch(
+                "sif.embedding.manager.EmbeddingManager.from_settings",
+                return_value=manager,
+            ),
+            patch("sif.search.vector.VectorSearcher", return_value=searcher),
+            patch("sif.config.settings.get_settings", return_value=self._vsearch_settings()),
+        ):
+            result = CliRunner().invoke(
+                vsearch_cmd,
+                args,
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+        return result, searcher
+
+    def _invoke_query(self, rows: list[SearchResult], args: list[str]):
+        pipeline = MagicMock()
+        pipeline.search.return_value = rows
+        repo = MagicMock()
+        repo.list_enabled.return_value = []
+        manager = MagicMock()
+        manager.embed_single.return_value = [0.0] * 8
+        manager.get_model_info.return_value = {"embedding_dim": 8}
+        settings = MagicMock(
+            model_name="all-MiniLM-L6-v2",
+            model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"},
+            rerank_enabled=False,
+            rerank_candidate_limit=20,
+            default_search_type="hybrid",
+            rrf_k=60,
+            bm25_weight=1.0,
+            vector_weight=1.0,
+            query_history_enabled=False,
+        )
+        with (
+            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
+            patch("sif.cli.commands.search.SearchPipeline", return_value=pipeline),
+            patch(
+                "sif.embedding.manager.EmbeddingManager.from_settings",
+                return_value=manager,
+            ),
+            patch("sif.config.settings.get_settings", return_value=settings),
+        ):
+            result = CliRunner().invoke(
+                query_cmd,
+                args,
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+        return result, pipeline
+
+    def test_search_command_does_not_accept_per_chunk(self) -> None:
+        """D-01: sif search is document-level and rejects --per-chunk."""
+        result = CliRunner().invoke(
+            search_cmd,
+            ["query", "--per-chunk"],
+            obj={"index_path": MagicMock(exists=lambda: True)},
+        )
+
+        assert result.exit_code == 2
+        assert "No such option" in result.output
+
+    def test_vsearch_per_chunk_threads_and_counts_chunk_rows(self) -> None:
+        """--per-chunk reaches SearchOptions and the JSON page is chunk rows."""
+        result, searcher = self._invoke_vsearch(
+            self._chunk_rows(3),
+            ["query", "--per-chunk", "--json", "--no-refresh"],
+        )
+
+        assert result.exit_code == 0, result.output
+        options = searcher.search.call_args[0][1]
+        assert options.per_chunk is True
+        payload = json.loads(result.output)
+        # Page size counts chunk rows, not documents: one document, three rows.
+        assert len(payload) == 3
+        assert [row["chunk_id"] for row in payload] == ["chunk-0", "chunk-1", "chunk-2"]
+        assert [row["sequence"] for row in payload] == [0, 1, 2]
+        assert all(row["chunk_matches"] == 0 for row in payload)
+
+    def test_query_per_chunk_threads_and_emits_chunk_fields(self) -> None:
+        """The hybrid per-chunk flag rides SearchOptions and JSON carries identity."""
+        result, pipeline = self._invoke_query(
+            self._chunk_rows(2),
+            ["query", "--per-chunk", "--json", "--no-refresh"],
+        )
+
+        assert result.exit_code == 0, result.output
+        options = pipeline.search.call_args[0][1]
+        assert options.per_chunk is True
+        payload = json.loads(result.output)
+        assert [row["chunk_id"] for row in payload] == ["chunk-0", "chunk-1"]
+        assert [row["sequence"] for row in payload] == [0, 1]
+
+    def test_per_chunk_table_renders_path_sequence(self) -> None:
+        """D-03: per-chunk table rows display path#sequence."""
+        result, _ = self._invoke_vsearch(
+            self._chunk_rows(1),
+            ["query", "--per-chunk", "--no-refresh"],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "/notes/chunky.md#0" in result.output
+
+    def test_default_json_rows_carry_chunk_matches(self) -> None:
+        """D-02: the default (deduped) JSON row carries the collapsed count."""
+        result, _ = self._invoke_vsearch(
+            self._chunk_rows(1, chunk_matches=4),
+            ["query", "--json", "--no-refresh"],
+        )
+
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.output)
+        assert payload[0]["chunk_matches"] == 4
+        assert payload[0]["chunk_id"] == "chunk-0"
+        assert payload[0]["sequence"] == 0
+
+    def test_default_table_annotates_multi_chunk_matches(self) -> None:
+        """D-02: the deduped table title cell shows (N chunk matches)."""
+        result, _ = self._invoke_vsearch(
+            self._chunk_rows(1, chunk_matches=4),
+            ["query", "--no-refresh"],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "(4 chunk matches)" in result.output
+
+    def test_default_table_omits_annotation_for_single_match(self) -> None:
+        """A one-chunk document shows no collapsed-match annotation."""
+        result, _ = self._invoke_vsearch(
+            self._chunk_rows(1, chunk_matches=1),
+            ["query", "--no-refresh"],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "chunk matches" not in result.output
