@@ -15,7 +15,7 @@ import click
 import pytest
 from click.testing import CliRunner, Result
 
-from sif.cli.main import _get_default_db_path, cli
+from sif.cli.main import _get_default_db_path, _vector_lag_text, cli
 from sif.config.settings import get_settings
 from sif.core.models import Collection, Document, DocumentChunk, PathContext
 from sif.database.database import Database
@@ -524,3 +524,69 @@ def test_explicit_quiet_flag_still_wins_over_settings(monkeypatch) -> None:
         main_mod.cli.callback("unused.db", False, True)
 
     assert calls == ["WARNING"]
+
+
+class TestVectorLagText:
+    """CORR-06: the status vector-lag text reads the derived shadow.
+
+    The four presentation states are the pre-change contract, asserted
+    byte-for-byte. The lagging count comes from one indexed anti-join over
+    ``documents``; the helper is exercised directly against a real in-memory
+    schema (no vec0 needed — the reader is the shadow).
+    """
+
+    @staticmethod
+    def _conn(
+        *,
+        shadow: bool = True,
+        shadow_rows: tuple[str, ...] = (),
+        document_ids: tuple[str, ...] = (),
+    ) -> sqlite3.Connection:
+        conn = sqlite3.connect(":memory:")
+        conn.execute("CREATE TABLE documents (id TEXT PRIMARY KEY)")
+        conn.executemany(
+            "INSERT INTO documents (id) VALUES (?)", [(doc_id,) for doc_id in document_ids]
+        )
+        if shadow:
+            conn.execute("CREATE TABLE embedded_documents (document_id TEXT PRIMARY KEY)")
+            conn.executemany(
+                "INSERT INTO embedded_documents (document_id) VALUES (?)",
+                [(doc_id,) for doc_id in shadow_rows],
+            )
+        return conn
+
+    def test_missing_shadow_renders_na(self) -> None:
+        conn = self._conn(shadow=False, document_ids=("d1",))
+        try:
+            assert _vector_lag_text(conn) == "n/a"
+        finally:
+            conn.close()
+
+    def test_empty_shadow_renders_no_vectors_state(self) -> None:
+        conn = self._conn(document_ids=("d1", "d2"))
+        try:
+            assert _vector_lag_text(conn) == "none (no vectors indexed)"
+        finally:
+            conn.close()
+
+    def test_one_lagging_document_is_singular(self) -> None:
+        conn = self._conn(shadow_rows=("d1",), document_ids=("d1", "d2"))
+        try:
+            assert _vector_lag_text(conn) == "1 document"
+        finally:
+            conn.close()
+
+    def test_multiple_lagging_documents_are_plural(self) -> None:
+        conn = self._conn(shadow_rows=("d1",), document_ids=("d1", "d2", "d3"))
+        try:
+            assert _vector_lag_text(conn) == "2 documents"
+        finally:
+            conn.close()
+
+    def test_shadow_rows_without_documents_do_not_count(self) -> None:
+        """An orphan shadow row cannot produce a negative/zero-document oddity."""
+        conn = self._conn(shadow_rows=("d-gone",), document_ids=())
+        try:
+            assert _vector_lag_text(conn) == "0 documents"
+        finally:
+            conn.close()

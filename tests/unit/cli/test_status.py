@@ -201,20 +201,22 @@ class TestWatchSection:
 
 
 class TestVectorLag:
-    """14-02 D-10: status renders a Vector lag row from the derived scan.
+    """14-02 D-10 + CORR-06: status renders a bounded Vector lag row.
 
     The Database stays mocked per the TestWatchSection culture; the probe
     source (embedded_document_ids) is patched at the module boundary for the
-    armed states, and the documents scan is fed through the mocked
-    connection's cursor.
+    armed states, and the anti-join COUNT(*) is fed through the mocked
+    connection's cursor. The row text is the pre-change presentation contract
+    byte-for-byte; only the read shape changed (one indexed anti-join instead
+    of a per-document iteration).
     """
 
-    def _invoke(self, db_path, monkeypatch, *, embedded=None, doc_ids=None, probe=None):
+    def _invoke(self, db_path, monkeypatch, *, embedded=None, lagging=0, probe=None):
         """Invoke status_cmd with the lag probe's sources controlled.
 
         embedded: value embedded_document_ids returns (patched only when
             given; use probe for the None / raising cases).
-        doc_ids: rows the ``SELECT id FROM documents`` scan yields.
+        lagging: row count the anti-join COUNT(*) cursor yields.
         probe: full replacement for sif.cli.main.embedded_document_ids.
         """
         db_path.touch()
@@ -224,51 +226,63 @@ class TestVectorLag:
             monkeypatch.setattr("sif.cli.main.embedded_document_ids", probe)
         elif embedded is not None:
             monkeypatch.setattr("sif.cli.main.embedded_document_ids", lambda _conn: embedded)
-        if doc_ids is not None:
-            mock_db.connection.execute.return_value = iter(doc_ids)
+        count_cursor = MagicMock()
+        count_cursor.fetchone.return_value = (lagging,)
+        mock_db.connection.execute.return_value = count_cursor
         monkeypatch.setattr("sif.utils.daemon.read_pid_file", lambda _path: None)
         with patch("sif.cli.main.Database") as mock_db_cls:
             mock_db_cls.return_value = mock_db
             mock_db.__enter__.return_value = mock_db
-            return CliRunner().invoke(status_cmd, [], obj={"index_path": db_path})
+            result = CliRunner().invoke(status_cmd, [], obj={"index_path": db_path})
+        return result, mock_db
 
     def test_lag_count_renders_documents(self, tmp_path, monkeypatch):
-        """Index with embeddings and 2 of 3 docs lagging -> '2 documents'."""
-        result = self._invoke(
-            tmp_path / "sif.db",
-            monkeypatch,
-            embedded={"d-embedded"},
-            doc_ids=[("d-embedded",), ("d-lag-1",), ("d-lag-2",)],
+        """Index with embeddings and docs lagging -> 'N documents' via one anti-join."""
+        result, mock_db = self._invoke(
+            tmp_path / "sif.db", monkeypatch, embedded={"d-embedded"}, lagging=2
         )
 
         assert result.exit_code == 0
         assert "Vector lag" in result.output
         assert "2 documents" in result.output
+        statements = [call[0][0] for call in mock_db.connection.execute.call_args_list]
+        assert any("NOT EXISTS" in sql and "embedded_documents" in sql for sql in statements)
+        # The old per-document iteration and its embedding scan are gone.
+        assert not any("SELECT id FROM documents" in sql for sql in statements)
+        assert not any("FROM document_embeddings" in sql for sql in statements)
+
+    def test_one_lagging_document_renders_singular(self, tmp_path, monkeypatch):
+        """Exactly one lagging document renders '1 document', never '1 documents'."""
+        result, _ = self._invoke(
+            tmp_path / "sif.db", monkeypatch, embedded={"d-embedded"}, lagging=1
+        )
+
+        assert result.exit_code == 0
+        assert "1 document" in result.output
+        assert "1 documents" not in result.output
 
     def test_zero_embeddings_renders_no_vectors_state(self, tmp_path, monkeypatch):
         """Pure-BM25 index (no embeddings at all) -> 'none (no vectors indexed)'."""
-        result = self._invoke(
-            tmp_path / "sif.db",
-            monkeypatch,
-            embedded=set(),
-            doc_ids=["d-1", "d-2"],
-        )
+        result, mock_db = self._invoke(tmp_path / "sif.db", monkeypatch, embedded=set(), lagging=99)
 
         assert result.exit_code == 0
         assert "Vector lag" in result.output
         assert "none (no vectors indexed)" in result.output
+        # The display gate returns before the count: no anti-join is issued.
+        mock_db.connection.execute.assert_not_called()
 
     def test_vec0_missing_renders_na(self, tmp_path, monkeypatch):
-        """No vec0 table -> the row reads n/a."""
-        result = self._invoke(tmp_path / "sif.db", monkeypatch, probe=lambda _conn: None)
+        """No vec0/shadow table -> the row reads n/a, and no count is issued."""
+        result, mock_db = self._invoke(tmp_path / "sif.db", monkeypatch, probe=lambda _conn: None)
 
         assert result.exit_code == 0
         assert "Vector lag" in result.output
         assert "n/a" in result.output
+        mock_db.connection.execute.assert_not_called()
 
     def test_probe_failure_renders_degraded_never_raises(self, tmp_path, monkeypatch):
         """Any unexpected probe failure renders the degraded text; exit stays 0."""
-        result = self._invoke(
+        result, _ = self._invoke(
             tmp_path / "sif.db",
             monkeypatch,
             probe=MagicMock(side_effect=RuntimeError("probe exploded")),

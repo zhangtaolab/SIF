@@ -139,26 +139,27 @@ def _watch_status_text(index_path: Path) -> str:
 
 
 def _vector_lag_text(conn: sqlite3.Connection) -> str:
-    """Vector-lag value for the status table (D-10).
+    """Vector-lag value for the status table (D-10, CORR-06).
 
     Same derived signal as the result marker (D-08): a document lags the
-    vector index when it has no rows in ``document_embeddings``. ``None``
-    (vec0 table missing) renders ``n/a``; an embeddings-free index renders
-    the no-vectors state so pure-BM25 users are not nagged. The documents
-    scan is iterated one row at a time and the embedded set is read via the
-    shared :func:`embedded_document_ids` (one batched scan — the vec0
-    batching rule).
+    vector index when it has no row in the derived ``embedded_documents``
+    shadow (a shadow row means at least one stored embedding). ``None``
+    (vec0 or shadow table missing) renders ``n/a``; an embeddings-free index
+    renders the no-vectors state so pure-BM25 users are not nagged. The
+    lagging count is one indexed anti-join over ``documents`` — replacing the
+    old per-document iteration, so status no longer scans
+    ``document_embeddings``.
     """
     embedded = embedded_document_ids(conn)
     if embedded is None:
         return "n/a"
     if not embedded:
         return "none (no vectors indexed)"
-    lagging = 0
-    cursor = conn.execute("SELECT id FROM documents")
-    for row in cursor:
-        if row[0] not in embedded:
-            lagging += 1
+    row = conn.execute(
+        "SELECT COUNT(*) FROM documents d WHERE NOT EXISTS ("
+        "SELECT 1 FROM embedded_documents ed WHERE ed.document_id = d.id)"
+    ).fetchone()
+    lagging = row[0]
     if lagging == 1:
         return "1 document"
     return f"{lagging} documents"
