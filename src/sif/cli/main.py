@@ -15,6 +15,7 @@ from sif import __version__
 from sif.cli.error_handling import open_initialized_database
 from sif.config.settings import get_settings
 from sif.database.database import Database
+from sif.database.maintenance import reconcile_embedded_documents
 from sif.database.repositories import LLMCacheRepository
 from sif.search.staleness import embedded_document_ids
 from sif.utils import daemon
@@ -258,12 +259,22 @@ def cleanup_cmd(ctx: click.Context) -> None:
                 except sqlite3.OperationalError:
                     embeddings_removed = 0
 
+                # D-10: repair the derived shadow in the SAME transaction so a
+                # raw vector delete or a document delete without a purge can
+                # never leave a stale or missing marker after cleanup. The
+                # helper is a no-op when the shadow table does not exist.
+                shadow_deleted, shadow_inserted = reconcile_embedded_documents(conn)
+
                 # Clean up expired LLM cache (WR-09: datetime comparison in the repository)
                 cache_removed = LLMCacheRepository(conn).clear_expired()
 
             console.print("[green]Cleanup complete:[/green]")
             console.print(f"  - Removed {chunks_removed} orphaned chunks")
             console.print(f"  - Removed {embeddings_removed} orphaned embeddings")
+            console.print(
+                "  - Reconciled embedded-document markers: "
+                f"{shadow_deleted} removed, {shadow_inserted} added"
+            )
             console.print(f"  - Removed {cache_removed} expired cache entries")
 
     except (sqlite3.Error, OSError) as e:

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import contextlib
+import json
 import os
+import re
 import sqlite3
 import time
 from collections.abc import Generator
@@ -19,6 +21,7 @@ from sif.cli.main import _get_default_db_path, _vector_lag_text, cli
 from sif.config.settings import get_settings
 from sif.core.models import Collection, Document, DocumentChunk, PathContext
 from sif.database.database import Database
+from sif.database.factory import create_connection
 from sif.database.repositories import (
     CollectionRepository,
     ContextRepository,
@@ -590,3 +593,90 @@ class TestVectorLagText:
             assert _vector_lag_text(conn) == "0 documents"
         finally:
             conn.close()
+
+
+class TestCleanupReconcile(RealDatabaseTestCase):
+    """D-10/D-13: cleanup repairs the derived shadow in its existing transaction."""
+
+    def _vector_dim(self, db_path: Path) -> int:
+        with contextlib.closing(sqlite3.connect(db_path)) as conn:
+            row = conn.execute(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='document_embeddings'"
+            ).fetchone()
+        assert row is not None, "the test needs a vec0-bearing database"
+        match = re.search(r"float\[(\d+)\]", row[0].lower())
+        assert match is not None
+        return int(match.group(1))
+
+    def _insert_vector_row(self, db_path: Path) -> None:
+        """Insert a raw vec0 row only; the derived shadow is left untouched."""
+        dim = self._vector_dim(db_path)
+        conn = create_connection(db_path)
+        try:
+            conn.execute(
+                "INSERT INTO document_embeddings "
+                "(embedding_id, document_id, chunk_id, embedding) "
+                "VALUES ('embedding-1', 'document-1', 'chunk-1', vec_f32(?))",
+                (json.dumps([0.1] * dim),),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _counts(self, db_path: Path) -> tuple[int, int]:
+        conn = create_connection(db_path)
+        try:
+            vectors = conn.execute("SELECT COUNT(*) FROM document_embeddings").fetchone()[0]
+            shadow = conn.execute("SELECT COUNT(*) FROM embedded_documents").fetchone()[0]
+        finally:
+            conn.close()
+        return int(vectors), int(shadow)
+
+    def test_cleanup_removes_orphan_vectors_and_never_resurrects_a_shadow_row(
+        self, tmp_path: Path
+    ) -> None:
+        """A document deleted without purging vectors leaves no shadow row."""
+        db_path = tmp_path / "sif.db"
+        self._seed_document(db_path)
+        self._insert_vector_row(db_path)
+
+        conn = create_connection(db_path)
+        try:
+            conn.execute("DELETE FROM documents WHERE id = 'document-1'")
+            conn.commit()
+        finally:
+            conn.close()
+        assert self._counts(db_path) == (1, 0)
+
+        result = self._invoke(db_path, "cleanup", confirm=True)
+
+        assert result.exit_code == 0, result.output
+        assert "Removed 1 orphaned embeddings" in result.output
+        assert "Reconciled embedded-document markers: 0 removed, 0 added" in result.output
+        assert self._counts(db_path) == (0, 0)
+
+    def test_cleanup_inserts_missing_shadow_rows_for_existing_documents(
+        self, tmp_path: Path
+    ) -> None:
+        """A raw vector write that skipped the shadow is repaired by cleanup."""
+        db_path = tmp_path / "sif.db"
+        self._seed_document(db_path)
+        self._insert_vector_row(db_path)
+        assert self._counts(db_path) == (1, 0)
+
+        result = self._invoke(db_path, "cleanup", confirm=True)
+
+        assert result.exit_code == 0, result.output
+        assert "Reconciled embedded-document markers: 0 removed, 1 added" in result.output
+        assert self._counts(db_path) == (1, 1)
+
+    def test_vec0_free_database_runs_cleanup_without_error(self, tmp_path: Path) -> None:
+        """A BM25-only database degrades to no markers instead of failing."""
+        db_path = tmp_path / "sif.db"
+        with patch("sif.database.factory._load_sqlite_vec"):
+            self._seed_document(db_path)
+            result = self._invoke(db_path, "cleanup", confirm=True)
+
+        assert result.exit_code == 0, result.output
+        assert "Reconciled embedded-document markers: 0 removed, 0 added" in result.output
+        assert "Removed 0 orphaned embeddings" in result.output

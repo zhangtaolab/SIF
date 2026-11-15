@@ -39,6 +39,8 @@ sif
 ├── index           Index management commands.
 │   ├── update          Update the index by scanning collections.
 │   ├── embed           Generate embeddings for documents.
+│   ├── vacuum          Reclaim unused space in the index database.
+│   ├── backup          Create a verified backup copy of the index database.
 │   └── status          Show index status.
 ├── search          Search commands.
 │   ├── search          Search documents using BM25.
@@ -398,6 +400,20 @@ sif get multi-get [OPTIONS]
 
 ## Index Commands
 
+### `index backup`
+
+Create a verified backup copy of the index database.
+
+```bash
+sif index backup [OPTIONS]
+```
+
+**Options:**
+
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--output` | `—` | path | — | Destination file for the verified backup copy |
+
 ### `index embed`
 
 Generate embeddings for documents.
@@ -438,6 +454,14 @@ sif index update [OPTIONS]
 |--------|-------|------|---------|-------------|
 | `--collection` | `-c` | text | — | Update specific collection only |
 | `--force` | `-f` | flag | `false` | Force re-index all documents |
+
+### `index vacuum`
+
+Reclaim unused space in the index database.
+
+```bash
+sif index vacuum [OPTIONS]
+```
 
 ## Search Commands
 
