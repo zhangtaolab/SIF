@@ -35,7 +35,7 @@ Each maps to exactly one roadmap phase. Checkboxes mark committed scope.
 - [x] **CORR-03**: User can paginate results deterministically (CLI `--offset` + MCP offset + hybrid single offset slice + BM25 min_score order; offset=0 reproduces the recorded contract; searchers return from rank 0).
 - [x] **CORR-04**: User gets title-aware ranking (title-FTS detect-and-rebuild migration + rewritten triggers + bm25() column weights bench-measured + mtime index; `documents_fts_v` vocab shadow survives rebuild).
 - [x] **CORR-05**: User gets results without redundant attach work (double-attach eliminated; ONE context/staleness attach at pipeline exit).
-- [ ] **CORR-06**: User gets fast searches without per-query full scans (bounded staleness/context reads via a transactional `embedded_documents` shadow reconciled in cleanup/vacuum; staleness stays derived; contexts keep verbatim two-sided normalization).
+- [x] **CORR-06**: User gets fast searches without per-query full scans (bounded staleness/context reads via a transactional `embedded_documents` shadow reconciled in cleanup/vacuum; staleness stays derived; contexts keep verbatim two-sided normalization).
 
 ### Metadata Filtering & Discovery (FILT)
 
@@ -143,7 +143,7 @@ Populated during roadmap creation. Each requirement maps to exactly one phase.
 | CORR-03 | Phase 19 | Complete |
 | CORR-04 | Phase 19 | Complete |
 | CORR-05 | Phase 19 | Complete |
-| CORR-06 | Phase 21 | Pending |
+| CORR-06 | Phase 21 | Complete |
 | FILT-01 | Phase 20 | Complete |
 | FILT-02 | Phase 20 | Complete |
 | FILT-03 | Phase 20 | Complete |
