@@ -263,6 +263,21 @@ class TestOperatorSemantics:
             )
         assert "caseInsensitive requires a string" in str(excinfo.value)
 
+    @pytest.mark.parametrize("operator", ["eq", "gt", "in", "nin", "all"])
+    def test_unbounded_integer_operand_is_a_validation_error(self, operator: str) -> None:
+        """WR-01: an integer outside the double range is invalid, never OverflowError.
+
+        ``math.isfinite(10**400)`` raises OverflowError because the conversion
+        to double overflows; the validator must stay total and report a normal
+        ``filter.<path>`` error instead.
+        """
+        value: Any = [10**400] if operator in {"in", "nin", "all"} else 10**400
+
+        with pytest.raises(FilterValidationError) as excinfo:
+            parse_filter({"field": "priority", "operator": operator, "value": value})
+
+        assert str(excinfo.value).startswith("filter.")
+
     def test_group_requires_operand(self) -> None:
         """and/or require at least one operand."""
         with pytest.raises(FilterValidationError) as excinfo:

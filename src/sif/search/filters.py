@@ -92,12 +92,25 @@ def _reject(node: Any, reason: str) -> NoReturn:
     raise FilterValidationError(_compiler_error_path(node), f'"{_operator_name(node)}" {reason}')
 
 
+def _is_finite_number(value: Any) -> bool:
+    """Total finite test for an arbitrary-precision JSON number (WR-01).
+
+    ``math.isfinite(10**400)`` raises ``OverflowError``; the compiler's
+    defense-in-depth rejections must never surface that as a raw exception
+    when an AST is constructed directly instead of through ``parse_filter``.
+    """
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
+
+
 def _value_type_of(node: Condition, value: Any) -> str:
     """Map one operand to its typed-store category (bool before number)."""
     if isinstance(value, bool):
         return "boolean"
     if isinstance(value, (int, float)):
-        if not math.isfinite(value):
+        if not _is_finite_number(value):
             _reject(node, "requires a finite numeric value")
         return "number"
     if isinstance(value, str) and value != "":
@@ -156,18 +169,21 @@ def _require_number(node: Condition) -> int | float:
     value = node.value
     if not isinstance(value, (int, float)) or isinstance(value, bool):
         _reject(node, "requires a numeric value")
-    if not math.isfinite(value):
+    if not _is_finite_number(value):
         _reject(node, "requires a finite numeric value")
     return value
 
 
 def _require_number_list(node: Condition) -> list[int | float]:
-    """Require a non-empty homogeneous numeric list operand."""
+    """Require a non-empty homogeneous finite numeric list operand."""
     values = node.value
     if not isinstance(values, list) or not values:
         _reject(node, "requires a non-empty numeric list")
     if not all(
-        isinstance(element, (int, float)) and not isinstance(element, bool) for element in values
+        isinstance(element, (int, float))
+        and not isinstance(element, bool)
+        and _is_finite_number(element)
+        for element in values
     ):
         _reject(node, "requires a non-empty numeric list")
     return cast("list[int | float]", values)

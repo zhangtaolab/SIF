@@ -311,8 +311,19 @@ def _pydantic_error_to_filter_error(exc: ValidationError) -> FilterValidationErr
 
 
 def _is_number(value: Any) -> bool:
-    """True for a finite JSON number; ``bool`` is never a number (D-10)."""
-    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+    """True for a finite JSON number; ``bool`` is never a number (D-10).
+
+    Total over arbitrary-precision integers (WR-01): ``math.isfinite(10**400)``
+    raises ``OverflowError`` because the conversion to double overflows, and a
+    validator must never raise anything but ``FilterValidationError`` for a
+    well-formed JSON payload.
+    """
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
 
 
 def _is_text(value: Any) -> bool:

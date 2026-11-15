@@ -980,6 +980,18 @@ class TestCollectionMetadata:
         assert result.exit_code != 0
         assert "Collection 'missing' not found" in result.output
 
+    def test_unbounded_integer_filter_is_a_user_error(self, tmp_path: Path) -> None:
+        """WR-01: a huge integer operand uses the ClickException boundary."""
+        db_path = tmp_path / "never.db"
+        payload = '{"field":"priority","operator":"gt","value":' + "9" * 400 + "}"
+
+        result = self._invoke(db_path, "--filter", payload)
+
+        assert result.exit_code != 0
+        assert "filter.gt" in result.output
+        assert "OverflowError" not in result.output
+        assert not db_path.exists()
+
     def test_invalid_filter_and_match_fail_before_the_database_opens(self, tmp_path: Path) -> None:
         """Validation precedes ``open_initialized_database`` (D-17)."""
         db_path = tmp_path / "never.db"

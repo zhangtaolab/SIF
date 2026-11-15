@@ -205,6 +205,28 @@ class TestFilterOptionMatrix:
         refresh.assert_not_called()
 
     @pytest.mark.parametrize("cmd", _RESULT_COMMANDS)
+    def test_unbounded_integer_operand_is_a_user_error(self, cmd: object) -> None:
+        """WR-01: a huge JSON integer names the filter path, never overflows raw."""
+        opened = MagicMock()
+        refresh = MagicMock()
+        payload = '{"field": "priority", "operator": "gt", "value": ' + "9" * 400 + "}"
+        with (
+            patch("sif.cli.commands.search.open_initialized_database", opened),
+            patch("sif.cli.commands.search._pre_search_refresh", refresh),
+        ):
+            result = CliRunner().invoke(
+                cmd,
+                ["needle", "--filter", payload],
+                obj={"index_path": _index_path()},
+            )
+
+        assert result.exit_code != 0
+        assert "filter.gt" in result.output
+        assert "OverflowError" not in result.output
+        opened.assert_not_called()
+        refresh.assert_not_called()
+
+    @pytest.mark.parametrize("cmd", _RESULT_COMMANDS)
     def test_filtered_json_output_is_clean_json(self, cmd: object) -> None:
         """``--json`` stays machine-parseable with no notice text on stdout."""
         with (

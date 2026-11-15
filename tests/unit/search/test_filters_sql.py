@@ -442,6 +442,20 @@ class TestCompileFilterPerOperator:
         assert "IN (?)" in compile_filter(node)[0]
         assert "IN ()" not in compile_filter(node)[0]
 
+    @pytest.mark.parametrize(
+        "node",
+        [
+            Gt(field="priority", operator="gt", value=10**400),
+            In(field="priority", operator="in", value=[10**400]),
+        ],
+    )
+    def test_direct_ast_with_unbounded_integer_is_rejected(self, node: Any) -> None:
+        """WR-01: the compiler's finite check is total for directly built ASTs."""
+        with pytest.raises(FilterValidationError) as excinfo:
+            compile_filter(node)
+        assert str(excinfo.value).startswith(f"filter.{node.field}.{node.operator}:")
+        assert "finite" in str(excinfo.value)
+
 
 class TestCaseInsensitive:
     """D-10: ASCII-only case folding on both the column and the operand."""

@@ -1542,6 +1542,8 @@ class TestMetadataToolHandler:
             {"filter": {"field": "tags", "operator": "gt", "value": "x"}},
             {"match": {"field": "nope", "operator": "eq", "value": "x"}},
             {"filter": {"field": "tag", "operator": "nope", "value": "x"}},
+            # WR-01: an out-of-double-range integer must stay a controlled error.
+            {"filter": {"field": "priority", "operator": "gt", "value": 10**400}},
         ],
     )
     async def test_invalid_filter_or_match_is_a_tool_error(self, backend, payload) -> None:
