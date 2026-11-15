@@ -5,16 +5,16 @@ milestone_name: Search Precision and Agent Experience
 current_phase: 21
 current_phase_name: Scale, Maintenance + Embedder Identity
 status: executing
-stopped_at: Completed 21-08-PLAN.md
-last_updated: "2026-11-15T17:03:00.432Z"
+stopped_at: Completed 21-04-PLAN.md
+last_updated: "2026-11-15T17:18:36.000Z"
 last_activity: 2026-11-16
 last_activity_desc: Phase 21 execution started
-state_head: c8a9a7098e70567c8c3a90f565f00f4ec363bf24
+state_head: c9386e78c95babda34edb45b35ffc060432660c7
 progress:
   total_phases: 8
   completed_phases: 4
   total_plans: 35
-  completed_plans: 31
+  completed_plans: 32
 ---
 
 # DocSift — Project State
@@ -31,7 +31,7 @@ progress:
 ## Current Position
 
 Phase: 21 (Scale, Maintenance + Embedder Identity) — EXECUTING
-Plan: 5 of 8
+Plan: 6 of 8
 Status: Ready to execute
 Last activity: 2026-11-16 — Phase 21 execution started
 
@@ -80,6 +80,7 @@ Progress: [█████░░░░░] 50%
 | Phase 21 P02 | 18 | 3 tasks | 15 files |
 | Phase 21 P03 | 7min | 2 tasks | 4 files |
 | Phase 21 P08 | 12min | 2 tasks | 12 files |
+| Phase 21 P04 | 14min | 2 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -211,6 +212,9 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - [Phase 21]: 21-08: with an initial identity the schema width guard is check_identity(mode="init"); an injected dimension without one stays width-only and never reads settings (Phase 19 contract)
 - [Phase 21]: 21-08: create_all assumes a legacy populated index once (one warning, no blocking) after the shadow backfill; fresh/embeddings-empty indexes write no identity row (D-02/D-04)
 - [Phase 21]: 21-08: the watcher adopts manager.get_identity() in one short transaction (mismatch rolls back, one error event, embed disabled, BM25 continues); the MCP backend reuses one resolved prompt scheme for init_schema and factory.create_model and stores the full identity as self._identity (T-21-28)
+- [Phase 21]: 21-04: SearchPipeline evaluates an injected identity closure once per instance and only on VECTOR/HYDE/hybrid exits; the BM25 exit returns before the call so lexical search is check-free.
+- [Phase 21]: 21-04: a hybrid width mismatch runs the BM25 variant search through the same fusion/rerank/paginate/enrich path and marks every row stale; vec:/hyde: raise IdentityDimensionError, vsearch/bench/eval refuse with the shared search_dimension_error remedy.
+- [Phase 21]: 21-04: hosts only enforce when the manager returns a real EmbedderIdentity (injected doubles have no policy); CachedEmbedder memoizes role APIs by (role, text) via one-element batch calls, and expansion normalizes EmbeddingResponse vs bare-list candidates.
 
 ### Pending Todos
 
@@ -240,8 +244,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-15T17:02:59.824Z
-Stopped at: Completed 21-08-PLAN.md
+Last session: 2026-11-15T17:18:35.466Z
+Stopped at: Completed 21-04-PLAN.md
 Resume file: None
 
 - **Next expected action:** plan and execute Phase 21 (Scale, Maintenance + Embedder Identity — SCALE-01..03, EMB-01/02), then 22 → 23 → 24. Phase 20 delivered FILT-01..05: shared 17-operator filter grammar on CLI+MCP, `path`/`mtime` built-ins, pre-RRF per-leg pushdown with the corrected vector escalation, typed kv storage + `index_meta`-gated backfill, and the `metadata` discovery tool whose envelope is the frozen Phase 22 contract. Two audits remain recorded as debt (see Blockers/Concerns): `/gsd-secure-phase 20` and `/gsd:validate-phase 20`.
