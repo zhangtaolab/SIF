@@ -12,6 +12,7 @@ from sif.core.models import (
     DocumentChunk,
     PathContext,
     QueryLogEntry,
+    canonical_metadata_json,
 )
 from sif.utils.paths import normalize_path
 
@@ -160,7 +161,7 @@ class DocumentRepository:
                 document.mtime,
                 document.created_at.isoformat(),
                 document.updated_at.isoformat(),
-                json.dumps(document.metadata) if document.metadata else "{}",
+                canonical_metadata_json(document.metadata),
             ),
         )
 
@@ -229,7 +230,7 @@ class DocumentRepository:
                 document.file_size,
                 document.mtime,
                 document.updated_at.isoformat(),
-                json.dumps(document.metadata) if document.metadata else "{}",
+                canonical_metadata_json(document.metadata),
                 document.id,
             ),
         )

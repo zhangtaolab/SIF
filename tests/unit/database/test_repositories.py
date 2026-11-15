@@ -14,11 +14,17 @@ from __future__ import annotations
 import os
 import sqlite3
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
-from sif.core.models import Collection, Document, DocumentChunk, PathContext
+from sif.core.models import (
+    Collection,
+    Document,
+    DocumentChunk,
+    PathContext,
+    canonical_metadata_json,
+)
 from sif.database.repositories import (
     CollectionRepository,
     ContextRepository,
@@ -523,6 +529,68 @@ class TestRepositoryCoverage:
         assert repo.get("model", "persistent") is None
         assert repo.clear_expired() == 1
         assert repo.get("model", "short-lived") == "future response"
+
+
+class TestDocumentMetadataCanonicalStorage:
+    """D-08: metadata persistence uses the canonical serializer (Pitfall 10).
+
+    The stored string must be byte-equal to the checksum input, and typed YAML
+    values (``datetime.date``) must serialize through ``default=str`` instead
+    of raising ``TypeError`` and aborting the whole index update.
+    """
+
+    @staticmethod
+    def _seed_collection(db) -> Collection:
+        collection = Collection(id="coll-meta", name="meta", path="/meta")
+        CollectionRepository(db).create(collection)
+        return collection
+
+    def test_create_with_date_metadata_stores_canonical_iso_text(self, db):
+        """Create persists the canonical JSON; the date reloads as an ISO string."""
+        collection = self._seed_collection(db)
+        document = Document(
+            id="doc-date-create",
+            collection_id=collection.id,
+            path="/meta/dated.md",
+            content="body",
+            metadata={"date": date(2024, 1, 1), "tags": ["a", "b"]},
+        )
+        repo = DocumentRepository(db)
+
+        assert repo.create(document) is document
+
+        loaded = repo.get_by_id(document.id)
+        assert loaded is not None
+        assert loaded.metadata == {"date": "2024-01-01", "tags": ["a", "b"]}
+        stored = db.execute(
+            "SELECT metadata FROM documents WHERE id = ?", (document.id,)
+        ).fetchone()["metadata"]
+        # Byte-equal to the exact string the checksum hashed as its input.
+        assert stored == canonical_metadata_json(document.metadata)
+
+    def test_update_with_date_metadata_stores_canonical_iso_text(self, db):
+        """Update persists the canonical JSON; the date reloads as an ISO string."""
+        collection = self._seed_collection(db)
+        document = Document(
+            id="doc-date-update",
+            collection_id=collection.id,
+            path="/meta/updated.md",
+            content="body",
+            metadata={"date": date(2024, 1, 1)},
+        )
+        repo = DocumentRepository(db)
+        repo.create(document)
+
+        document.metadata = {"date": date(2025, 2, 3), "author": "Ada"}
+        assert repo.update(document) is document
+
+        loaded = repo.get_by_id(document.id)
+        assert loaded is not None
+        assert loaded.metadata == {"date": "2025-02-03", "author": "Ada"}
+        stored = db.execute(
+            "SELECT metadata FROM documents WHERE id = ?", (document.id,)
+        ).fetchone()["metadata"]
+        assert stored == canonical_metadata_json(document.metadata)
 
 
 class TestLLMCacheExpiryWR09:

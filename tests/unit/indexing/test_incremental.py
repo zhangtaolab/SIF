@@ -8,6 +8,7 @@ files durable (D-04) instead of rolling back the whole run.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -82,6 +83,15 @@ def _doc_row(db_path: Path, path: str) -> tuple[str, str, str]:
         return conn.execute(
             "SELECT title, content, checksum FROM documents WHERE path = ?", (path,)
         ).fetchone()
+    finally:
+        conn.close()
+
+
+def _doc_metadata(db_path: Path, path: str) -> str:
+    """Return the raw stored metadata JSON for one document path."""
+    conn = sqlite3.connect(str(db_path))
+    try:
+        return conn.execute("SELECT metadata FROM documents WHERE path = ?", (path,)).fetchone()[0]
     finally:
         conn.close()
 
@@ -203,6 +213,41 @@ class TestIncrementalIndexer:
         unknown_title, unknown_content, _ = _doc_row(db_path, str(notes / "mystery.zzz"))
         assert unknown_title == "Mystery title"
         assert unknown_content == unknown_doc
+
+    def test_yaml_date_frontmatter_indexes_without_type_error(self, tmp_path, monkeypatch) -> None:
+        """A `date:` frontmatter value persists as ISO text and never raises (Pitfall 10).
+
+        Before canonical storage, ``json.dumps(metadata)`` raised TypeError on
+        the parsed ``datetime.date`` and aborted the update. The stored body
+        must stay the frontmatter-stripped parsed body, byte for byte, and the
+        stored metadata string must reproduce the checksum input exactly.
+        """
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "incr.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        doc_file = notes / "dated.md"
+        doc_file.write_text(
+            "---\ntitle: Dated\ndate: 2024-01-01\n---\n# Dated\n\nBody text.\n",
+            encoding="utf-8",
+        )
+        _seed_collection(db_path, notes)
+
+        indexer, db, coll = _open_indexer(db_path)
+        try:
+            result = indexer.update_collection(coll)
+        finally:
+            db.close()
+
+        assert result == IncrementalResult(added=1, updated=0, removed=0)
+        title, stored_content, checksum = _doc_row(db_path, str(doc_file))
+        assert title == "Dated"
+        assert stored_content == "# Dated\n\nBody text."
+        stored_metadata = _doc_metadata(db_path, str(doc_file))
+        assert json.loads(stored_metadata) == {"title": "Dated", "date": "2024-01-01"}
+        # The round-tripped string form hashes to the stored checksum: the
+        # parse-time date object and the persisted ISO text canonicalize alike.
+        assert checksum == compute_checksum(stored_content, json.loads(stored_metadata))
 
     def test_modified_file_purges_stale_chunks_and_persists_fresh_checksum(
         self, tmp_path, monkeypatch
