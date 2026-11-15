@@ -1,13 +1,38 @@
 """Tests for vector search."""
 
+import json
+import logging
 import sqlite3
 from unittest.mock import MagicMock
 
 import pytest
 
-from sif.core.models import SearchOptions, SearchResult
+from sif.core.filters import parse_filter
+from sif.core.models import SearchOptions, SearchResult, canonical_metadata_json
+from sif.database.metadata_repository import MetadataValueRepository
+from sif.database.schema import SchemaManager
+from sif.search import vector as vector_module
 from sif.search.context_attach import enrich_results
+from sif.search.filters import count_documents_in_scope
 from sif.search.vector import VectorSearcher
+
+
+class _RecordingConnection:
+    """Connection proxy recording every statement the searcher executes."""
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        """Wrap the real connection without changing its behavior."""
+        self._conn = conn
+        self.calls: list[tuple[str, tuple[object, ...]]] = []
+
+    def execute(self, sql: str, parameters: tuple[object, ...] = ()) -> sqlite3.Cursor:
+        """Record the statement, then delegate to the wrapped connection."""
+        self.calls.append((sql, tuple(parameters)))
+        return self._conn.execute(sql, parameters)
+
+    def __getattr__(self, name: str):
+        """Delegate every other connection attribute."""
+        return getattr(self._conn, name)
 
 
 class TestVectorSearcher:
@@ -144,9 +169,16 @@ class TestVectorSearcher:
         """Test search includes collection filter."""
         mock_db = MagicMock()
         vec_cursor = MagicMock()
-        doc_cursor = MagicMock()
-        doc_cursor.fetchall.return_value = []
-        mock_db.execute.side_effect = [vec_cursor, doc_cursor]
+        vec_cursor.fetchall.return_value = []
+        count_cursor = MagicMock()
+        count_cursor.fetchone.return_value = (5,)
+
+        def _execute(sql: str, _params=()):
+            # D-08: a collection-only search issues three scoped COUNT
+            # statements (pre-count, denominator, vector count) before KNN.
+            return count_cursor if "COUNT(*)" in sql else vec_cursor
+
+        mock_db.execute.side_effect = _execute
 
         searcher = VectorSearcher(mock_db)
         searcher._vec_available = True
@@ -335,6 +367,281 @@ class TestVectorFilteredRecall:
 
             assert [r.document_id for r in results] == ["d1", "d2", "d3"]
             assert [r.rank for r in results] == [1, 2, 3]
+        finally:
+            conn.close()
+
+    # ------------------------------------------------------------------
+    # D-08/D-09: pre-count seeding, the corrected stop condition, and the
+    # too-selective notice. Every raw fixture below that a metadata-filtered
+    # case uses creates the production kv tables and seeds typed rows; the
+    # collection-only fixture needs only documents/embeddings.
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _vec_conn() -> sqlite3.Connection:
+        """Minimal real vec0 schema shared by the filtered-recall fixtures."""
+        import sqlite_vec
+
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            conn.enable_load_extension(True)
+            sqlite_vec.load(conn)
+            conn.enable_load_extension(False)
+        except Exception:
+            conn.close()
+            pytest.skip("sqlite-vec not available")
+
+        conn.execute(
+            "CREATE TABLE documents "
+            "(id TEXT PRIMARY KEY, collection_id TEXT, title TEXT, path TEXT)"
+        )
+        conn.execute("CREATE TABLE collections (id TEXT PRIMARY KEY, name TEXT)")
+        conn.execute("""
+            CREATE TABLE document_chunks (
+                id TEXT PRIMARY KEY, document_id TEXT NOT NULL, sequence INTEGER NOT NULL,
+                content TEXT NOT NULL, created_at TEXT NOT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE VIRTUAL TABLE document_embeddings USING vec0(
+                embedding_id TEXT PRIMARY KEY,
+                document_id TEXT NOT NULL,
+                chunk_id TEXT,
+                embedding FLOAT[2]
+            )
+        """)
+        return conn
+
+    def _build_tagged_db(self, count: int, tagged: set[int]) -> sqlite3.Connection:
+        """``count`` single-vector documents; indexes in ``tagged`` carry tag=rare."""
+        conn = self._vec_conn()
+        SchemaManager(conn)._create_metadata_tables()
+        conn.execute("INSERT INTO collections VALUES ('c1', 'one')")
+        repo = MetadataValueRepository(conn)
+        embeddings: list[tuple[str, str, str, list[float]]] = []
+        for index in range(count):
+            doc_id = f"d{index}"
+            conn.execute(
+                "INSERT INTO documents VALUES (?, 'c1', 'T', ?)",
+                (doc_id, f"/{doc_id}.md"),
+            )
+            tag = "rare" if index in tagged else "common"
+            repo.replace_from_canonical(doc_id, canonical_metadata_json({"tag": tag}))
+            embeddings.append((f"e{index}", doc_id, f"{doc_id}-chunk", [1.0, index * 0.001]))
+        VectorSearcher(conn, embedding_dim=2).add_embeddings_batch(embeddings)
+        conn.commit()
+        return conn
+
+    def _build_two_collection_db(self) -> sqlite3.Connection:
+        """100 documents; the two c2 documents sit at the farthest distances."""
+        conn = self._vec_conn()
+        conn.execute("INSERT INTO collections VALUES ('c1', 'one'), ('c2', 'two')")
+        embeddings: list[tuple[str, str, str, list[float]]] = []
+        for index in range(100):
+            doc_id = f"d{index}"
+            collection = "c2" if index >= 98 else "c1"
+            conn.execute(
+                "INSERT INTO documents VALUES (?, ?, 'T', ?)",
+                (doc_id, collection, f"/{doc_id}.md"),
+            )
+            embeddings.append((f"e{index}", doc_id, f"{doc_id}-chunk", [1.0, index * 0.001]))
+        VectorSearcher(conn, embedding_dim=2).add_embeddings_batch(embeddings)
+        return conn
+
+    def _build_per_chunk_db(self) -> sqlite3.Connection:
+        """Five tagged documents (seven chunks) plus five untagged ones (45 chunks).
+
+        The nearest 50 vectors hold six of the seven tagged chunks; the fifth
+        tagged document's only chunk is global rank 51, so a row-count
+        saturation test would stop one batch early.
+        """
+        conn = self._vec_conn()
+        SchemaManager(conn)._create_metadata_tables()
+        conn.execute("INSERT INTO collections VALUES ('c1', 'one')")
+        repo = MetadataValueRepository(conn)
+        embeddings: list[tuple[str, str, str, list[float]]] = []
+        tagged_chunks = {
+            "d-a": [0.01, 0.02],
+            "d-b": [0.03, 0.04],
+            "d-c": [0.05],
+            "d-d": [0.06],
+            "d-e": [0.60],
+        }
+        for doc_id, distances in tagged_chunks.items():
+            conn.execute(
+                "INSERT INTO documents VALUES (?, 'c1', 'T', ?)",
+                (doc_id, f"/{doc_id}.md"),
+            )
+            repo.replace_from_canonical(doc_id, canonical_metadata_json({"tag": "hit"}))
+            for ordinal, distance in enumerate(distances):
+                embeddings.append(
+                    (f"e-{doc_id}-{ordinal}", doc_id, f"{doc_id}-chunk", [1.0, distance])
+                )
+
+        untagged = [f"d-x{index}" for index in range(5)]
+        for doc_id in untagged:
+            conn.execute(
+                "INSERT INTO documents VALUES (?, 'c1', 'T', ?)",
+                (doc_id, f"/{doc_id}.md"),
+            )
+            repo.replace_from_canonical(doc_id, canonical_metadata_json({"tag": "miss"}))
+        # Ranks 7-50 are 44 untagged chunks; the 45th untagged chunk is last.
+        untagged_distances = [0.10 + 0.01 * index for index in range(44)] + [0.61]
+        for index, distance in enumerate(untagged_distances):
+            doc_id = untagged[index % len(untagged)]
+            embeddings.append((f"e-x{index}", doc_id, f"{doc_id}-chunk{index}", [1.0, distance]))
+        VectorSearcher(conn, embedding_dim=2).add_embeddings_batch(embeddings)
+        conn.commit()
+        return conn
+
+    def test_collection_only_search_returns_all_matching_documents(self, caplog) -> None:
+        """The measured bug: a 2-document collection over 100 docs returns both."""
+        conn = self._build_two_collection_db()
+        try:
+            assert count_documents_in_scope(conn, ["c2"]) == 2
+            searcher = VectorSearcher(conn, embedding_dim=2)
+            with caplog.at_level(logging.WARNING):
+                results = searcher.search(
+                    [1.0, 0.0], SearchOptions(limit=10, collection_ids=["c2"])
+                )
+
+            assert [r.document_id for r in results] == ["d98", "d99"]
+            assert [r.rank for r in results] == [1, 2]
+            # Collection-only searches are not metadata selectivity; never warn.
+            assert "highly selective" not in caplog.text
+        finally:
+            conn.close()
+
+    def test_two_percent_selectivity_returns_every_match(self) -> None:
+        """A 2 % tag filter (4 of 200) returns those four documents, never [].
+
+        The old post-JOIN saturation test stopped on batch one and returned an
+        empty page; the pre-count seed and the all-matches target close it.
+        """
+        conn = self._build_tagged_db(200, {100, 120, 140, 160})
+        try:
+            searcher = VectorSearcher(conn, embedding_dim=2)
+            filter_node = parse_filter({"field": "tag", "operator": "eq", "value": "rare"})
+            results = searcher.search([1.0, 0.0], SearchOptions(limit=10, filter=filter_node))
+
+            assert {r.document_id for r in results} == {"d100", "d120", "d140", "d160"}
+            assert len(results) == 4
+        finally:
+            conn.close()
+
+    def test_empty_match_returns_empty_before_any_knn(self) -> None:
+        """A filter matching nothing returns [] and never reaches the KNN."""
+        conn = self._build_tagged_db(20, {0})
+        try:
+            searcher = VectorSearcher(conn, embedding_dim=2)
+            recorder = _RecordingConnection(conn)
+            searcher.db = recorder
+            filter_node = parse_filter(
+                {"field": "no_such_key", "operator": "exists", "value": True}
+            )
+            results = searcher.search([1.0, 0.0], SearchOptions(limit=10, filter=filter_node))
+
+            assert results == []
+            assert not any("MATCH" in sql for sql, _ in recorder.calls)
+            assert any("COUNT(*)" in sql for sql, _ in recorder.calls)
+        finally:
+            conn.close()
+
+    def test_per_chunk_mode_sees_every_matching_document(self) -> None:
+        """Distinct-document counting (not row counting) ends escalation.
+
+        Six of the seven tagged chunks arrive in the first batch; only the
+        distinct-document test keeps escalating until the fifth tagged
+        document (global rank 51) is seen.
+        """
+        conn = self._build_per_chunk_db()
+        try:
+            searcher = VectorSearcher(conn, embedding_dim=2)
+            filter_node = parse_filter({"field": "tag", "operator": "eq", "value": "hit"})
+            results = searcher.search(
+                [1.0, 0.0],
+                SearchOptions(limit=20, per_chunk=True, filter=filter_node),
+            )
+
+            assert {r.document_id for r in results} == {"d-a", "d-b", "d-c", "d-d", "d-e"}
+            assert len(results) == 7
+            assert len([r for r in results if r.document_id == "d-a"]) == 2
+        finally:
+            conn.close()
+
+    def test_too_selective_notice_fires_once_with_formatted_counts(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Ceiling exhausted with a short page: one notice with reached/of/requested."""
+        monkeypatch.setattr(vector_module, "_MAX_FETCH_K", 8)
+        conn = self._build_tagged_db(20, {3, 4, 5, 10, 11, 12, 13, 14, 15, 16})
+        try:
+            searcher = VectorSearcher(conn, embedding_dim=2)
+            filter_node = parse_filter({"field": "tag", "operator": "eq", "value": "rare"})
+            with caplog.at_level(logging.WARNING):
+                results = searcher.search([1.0, 0.0], SearchOptions(limit=10, filter=filter_node))
+
+            notices = [
+                record for record in caplog.records if "highly selective" in record.getMessage()
+            ]
+            assert len(notices) == 1
+            # The three %d placeholders must match their arguments: reached
+            # (3 nearest tagged docs), matching total (10), requested (10).
+            assert "3 of 10 matching documents reached, 10 requested" in caplog.text
+            assert len(results) == 3
+        finally:
+            conn.close()
+
+    def test_short_page_below_page_target_logs_no_notice(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A filter matching fewer documents than requested is an honest short page."""
+        conn = self._build_tagged_db(200, {100, 120, 140, 160})
+        try:
+            searcher = VectorSearcher(conn, embedding_dim=2)
+            filter_node = parse_filter({"field": "tag", "operator": "eq", "value": "rare"})
+            with caplog.at_level(logging.WARNING):
+                results = searcher.search([1.0, 0.0], SearchOptions(limit=10, filter=filter_node))
+
+            assert len(results) == 4
+            assert "highly selective" not in caplog.text
+        finally:
+            conn.close()
+
+    def test_all_matches_found_logs_no_notice(self, caplog: pytest.LogCaptureFixture) -> None:
+        """Recall is complete even though the page is short: no notice."""
+        conn = self._build_tagged_db(30, set(range(20)))
+        try:
+            searcher = VectorSearcher(conn, embedding_dim=2)
+            filter_node = parse_filter({"field": "tag", "operator": "eq", "value": "rare"})
+            with caplog.at_level(logging.WARNING):
+                results = searcher.search([1.0, 0.0], SearchOptions(limit=10, filter=filter_node))
+
+            assert len(results) == 10
+            assert "highly selective" not in caplog.text
+        finally:
+            conn.close()
+
+    def test_unfiltered_unscoped_path_issues_only_the_pre_change_statement(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The byte-identical default: one KNN statement, no pre-count, no warning."""
+        conn = self._build_db()
+        try:
+            searcher = VectorSearcher(conn, embedding_dim=2)
+            recorder = _RecordingConnection(conn)
+            searcher.db = recorder
+            with caplog.at_level(logging.WARNING):
+                results = searcher.search([1.0, 0.0], SearchOptions(limit=3))
+
+            assert [r.document_id for r in results] == ["d1", "d2", "d3"]
+            assert len(recorder.calls) == 1
+            sql, params = recorder.calls[0]
+            assert "MATCH" in sql
+            assert "COUNT(*)" not in sql
+            assert params == (json.dumps([1.0, 0.0]), 50)
+            assert "highly selective" not in caplog.text
         finally:
             conn.close()
 

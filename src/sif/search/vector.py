@@ -4,15 +4,34 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from math import ceil
 
 from sif.core.models import SearchOptions, SearchResult
+from sif.search.filters import (
+    compile_filter,
+    count_documents_in_scope,
+    count_matching_documents,
+    count_vectors_in_scope,
+)
+from sif.utils.logging import get_logger
 
+
+logger = get_logger(__name__)
 
 # Hard ceiling for the KNN over-fetch depth (CORR-03 / research Open Q8): the
 # fetch window scales with limit+offset, but a huge offset must not turn into
 # unbounded brute-force work. An offset past this practical cap yields an
 # empty page rather than an ever-deeper KNN scan.
 _MAX_FETCH_K = 2048
+
+# D-09: the honest too-selective notice. Exactly three ``%d`` placeholders
+# (reached, matching total, requested page target); the argument count below
+# must match or logging raises while formatting. Emitted once per search on
+# stderr only — never into results, JSON, or MCP content.
+_TOO_SELECTIVE_MSG = (
+    "Metadata filter is highly selective earlier than the requested page: "
+    "%d of %d matching documents reached, %d requested; returning best-effort results"
+)
 
 
 class VectorSearcher:
@@ -77,6 +96,19 @@ class VectorSearcher:
         distinct target (``limit + offset``) is unmet — the independent
         ceiling bounds the work a huge offset can request. One page slice
         follows, and ranks are global across pages (``offset + position``).
+
+        Metadata/collection JOIN filters (D-08): the KNN MATCH runs before the
+        post-KNN JOIN, so ``len(rows)`` is a post-JOIN survivor count and
+        cannot signal saturation. When any JOIN filter is present the stop
+        condition instead keys on the selectivity pre-count (Pitfall 1): a
+        filtered search seeds ``fetch_k`` from ``page_target * total_in_scope /
+        pre_count``, stops once every matching document was seen (distinct
+        documents from raw rows, so ``min_score`` and duplicate chunks cannot
+        end escalation early), and returns ``[]`` before any KNN when nothing
+        matches. A metadata filter that exhausted ``_MAX_FETCH_K`` with a short
+        page logs the D-09 notice once; collection-only searches never warn.
+        The unfiltered, unscoped path is unchanged: no pre-count, no warning,
+        and the pre-Phase-20 statement bytes.
         """
         # Convert embedding to vec format
         embedding_str = self._embedding_to_vec(query_embedding)
@@ -88,6 +120,14 @@ class VectorSearcher:
         if options.collection_ids:
             placeholders = ", ".join(["?"] * len(options.collection_ids))
             collection_filter = f"AND d.collection_id IN ({placeholders})"
+
+        # Metadata filter (Phase 20, D-02/D-17): the compiled predicate rides
+        # the post-KNN JOIN WHERE beside the collection predicate, so it is
+        # applied before any result leaves this leg (never after fusion).
+        # Params land after the embedding/k/collection binds, matching
+        # placeholder order; None renders the byte-identical default path.
+        filter_clause, filter_params = compile_filter(options.filter, alias="d", scope="candidates")
+        filter_suffix = f" AND {filter_clause}" if filter_clause else ""
 
         # The KNN MATCH runs before the JOIN applies the collection filter, so
         # a tight k silently under-returns filtered searches (WR-04); the
@@ -115,24 +155,67 @@ class VectorSearcher:
             JOIN documents d ON de.document_id = d.id
             JOIN collections c ON d.collection_id = c.id
             LEFT JOIN document_chunks dc ON dc.id = de.chunk_id
-            WHERE embedding MATCH ? AND k = ? {collection_filter}
+            WHERE embedding MATCH ? AND k = ? {collection_filter}{filter_suffix}
             ORDER BY distance
         """
 
-        target = max(1, options.limit + options.offset)
-        fetch_k = min(max(target * 4, 50), _MAX_FETCH_K)
+        page_target = max(1, options.limit + options.offset)
+        is_metadata_filtered = options.filter is not None
+        # A collection-only search has the same post-JOIN saturation problem
+        # as a metadata filter (the measured bug reproduces with just
+        # collection_ids), so both take the pre-count branch. Only a metadata
+        # filter can produce the D-09 notice.
+        has_join_filter = is_metadata_filtered or bool(options.collection_ids)
+        pre_count = 0
+        total_vectors = 0
+        found = 0
+        fetch_k = min(max(page_target * 4, 50), _MAX_FETCH_K)
+        if has_join_filter:
+            pre_count, total_vectors, fetch_k = self._filtered_fetch_window(options, page_target)
+            if pre_count == 0:
+                # Empty-match sentinel: never degrade to the unfiltered set.
+                return []
+
         while True:
-            params = [embedding_str, fetch_k, *(options.collection_ids or [])]
+            params = [embedding_str, fetch_k, *(options.collection_ids or []), *filter_params]
             rows = self.db.execute(sql, params).fetchall()
             candidates = self._candidates(rows, options)
 
-            # Escalate only while the batch may have been truncated (it
-            # returned exactly k rows) and the target is unmet. The module
-            # constant is an independent ceiling (T-19-13): a huge offset
-            # degrades to an empty page instead of unbounded KNN work.
-            if len(candidates) >= target or len(rows) < fetch_k or fetch_k >= _MAX_FETCH_K:
+            if has_join_filter:
+                # Distinct documents from the RAW rows: _candidates drops
+                # min_score rows and collapses chunks, both of which would
+                # otherwise end escalation before every match was seen
+                # (Pitfall 14).
+                found = len({row["document_id"] for row in rows})
+                exhausted = (
+                    fetch_k >= _MAX_FETCH_K
+                    or found >= pre_count  # every matching document seen
+                    or fetch_k >= total_vectors  # KNN returned the whole table
+                )
+                stop = len(candidates) >= page_target or exhausted
+            else:
+                # Escalate only while the batch may have been truncated (it
+                # returned exactly k rows) and the target is unmet. The module
+                # constant is an independent ceiling (T-19-13): a huge offset
+                # degrades to an empty page instead of unbounded KNN work.
+                stop = (
+                    len(candidates) >= page_target or len(rows) < fetch_k or fetch_k >= _MAX_FETCH_K
+                )
+            if stop:
                 break
             fetch_k = min(fetch_k * 2, _MAX_FETCH_K)
+
+        # D-09: recall is provably incomplete only when the filter admits at
+        # least the requested page but the independent ceiling was exhausted
+        # with a short page. A filter matching fewer documents than requested
+        # yields an honest short page with no notice.
+        if (
+            is_metadata_filtered
+            and pre_count >= page_target
+            and fetch_k >= _MAX_FETCH_K
+            and len(candidates) < page_target
+        ):
+            logger.warning(_TOO_SELECTIVE_MSG, found, pre_count, page_target)
 
         # Take the requested page once, then number ranks globally (D-06):
         # rank = offset + position. The window trim keeps the WR-03 clamp:
@@ -145,6 +228,45 @@ class VectorSearcher:
                 result.content = self._get_document_content(result.document_id)
 
         return page
+
+    def _filtered_fetch_window(
+        self,
+        options: SearchOptions,
+        page_target: int,
+    ) -> tuple[int, int, int]:
+        """Pre-count and seed the fetch window for a JOIN-filtered search (D-08).
+
+        Returns ``(pre_count, total_vectors, fetch_k)``. ``pre_count`` is the
+        number of documents the filter admits inside the collection scope (or
+        the whole scope for a collection-only search, where the scope count IS
+        the all-matches target); the seeded window is the document-ratio
+        approximation of how deep the KNN must look, floored at the historical
+        surplus and bounded by the independent ceiling.
+
+        ``total_vectors`` is the **global** stored-vector count, not the
+        scoped one: it answers "has the KNN already returned every vector in
+        the table?", and the KNN scans the whole table before the post-KNN
+        JOIN applies any predicate. A scoped count would be far below the KNN
+        depth needed to reach a selective collection's rows in global
+        distance order and would end escalation on batch one — the very
+        under-return this loop exists to fix.
+        """
+        is_metadata_filtered = options.filter is not None
+        if is_metadata_filtered:
+            pre_count = count_matching_documents(self.db, options.filter, options.collection_ids)
+            total_in_scope = count_documents_in_scope(self.db, options.collection_ids)
+        else:
+            # A collection-only search: the scope count is both the admitted
+            # document count and the all-matches target.
+            total_in_scope = count_documents_in_scope(self.db, options.collection_ids)
+            pre_count = total_in_scope
+        if pre_count == 0:
+            return 0, 0, 0
+
+        total_vectors = count_vectors_in_scope(self.db, None)
+        seeded = ceil(page_target * total_in_scope / pre_count)
+        fetch_k = min(max(seeded, min(page_target * 4, 50)), _MAX_FETCH_K)
+        return pre_count, total_vectors, fetch_k
 
     def _candidates(self, rows: list[sqlite3.Row], options: SearchOptions) -> list[SearchResult]:
         """Build result rows from KNN output, deduped per document by default.
