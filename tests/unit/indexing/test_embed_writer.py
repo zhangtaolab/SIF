@@ -21,7 +21,11 @@ from sif.database.database import Database
 from sif.database.repositories import CollectionRepository, DocumentRepository
 from sif.embedding.identity import EmbedderIdentity, build_identity, read_identity, write_identity
 from sif.embedding.prompts import PromptScheme
-from sif.indexing.embed_writer import NORM_TOLERANCE, StreamingEmbedWriter
+from sif.indexing.embed_writer import (
+    NORM_TOLERANCE,
+    StreamingEmbedWriter,
+    SystemicEmbedError,
+)
 from sif.models.embedding import EmbeddingConfig, ModelType
 from sif.search.vector import VectorSearcher
 
@@ -66,10 +70,11 @@ class _FixedChunker:
 
     def __init__(self, texts: list[str]) -> None:
         self._texts = texts
+        self.last_chunks: list[DocumentChunk] = []
 
     def chunk(self, text: str) -> list[DocumentChunk]:  # noqa: ARG002
         """Build fresh chunk objects so re-embedding gets fresh ids."""
-        return [
+        self.last_chunks = [
             DocumentChunk(
                 content=content,
                 sequence=0,
@@ -78,6 +83,15 @@ class _FixedChunker:
             )
             for content in self._texts
         ]
+        return self.last_chunks
+
+
+class _OneChunkChunker:
+    """Return exactly one chunk holding the document body."""
+
+    def chunk(self, text: str) -> list[DocumentChunk]:
+        """Build one chunk from the text."""
+        return [DocumentChunk(content=text, sequence=0, start_pos=0, end_pos=len(text))]
 
 
 class _RecordingManager:
@@ -293,3 +307,104 @@ def test_whitespace_only_document_writes_nothing(tmp_path: Path) -> None:
 def test_norm_tolerance_is_pinned() -> None:
     """D-17's unit-norm tolerance is a public constant."""
     assert NORM_TOLERANCE == 1e-3
+
+
+def _garbage_vectors(kind: str, dim: int = DIM) -> list[list[float]]:
+    """Build one batch of model output exercising a D-17 garbage class."""
+    if kind == "count":
+        return []
+    if kind == "dimension":
+        return [[0.0] * (dim - 1)]
+    if kind == "nan":
+        return [[float("nan")] + [0.0] * (dim - 1)]
+    if kind == "inf":
+        return [[float("inf")] + [0.0] * (dim - 1)]
+    if kind == "norm":
+        return [[0.5] * dim]
+    return [[0.0] * dim]  # zero_norm
+
+
+@pytest.mark.parametrize("kind", ["count", "dimension", "nan", "inf", "norm", "zero_norm"])
+def test_garbage_batch_sanity_aborts_and_persists_nothing(tmp_path: Path, kind: str) -> None:
+    """D-17: every garbage class raises systemically and leaves no row."""
+    db, _coll, doc, searcher = _setup(tmp_path)
+    identity = _identity(normalized=(kind != "zero_norm"))
+    chunker = _FixedChunker(["garbage vector"])
+    writer = StreamingEmbedWriter(
+        db.connection,
+        _RecordingManager(db.connection, lambda _texts: _garbage_vectors(kind, identity.dimension)),
+        chunker,
+        searcher,
+        identity,
+        batch_size=32,
+        write_identity=True,
+    )
+
+    with pytest.raises(SystemicEmbedError) as excinfo:
+        writer.embed_document(doc)
+
+    message = str(excinfo.value)
+    assert identity.display_fingerprint() in message
+    assert doc.path in message
+    assert "batch 0" in message
+    if kind != "count":
+        assert "position 0" in message
+        assert chunker.last_chunks[0].id in message
+
+    try:
+        counts = _counts(db.connection, doc.id)
+        stored = read_identity(db.connection)
+    finally:
+        db.close()
+
+    assert counts == (0, 0, 0)
+    assert stored is None
+    assert writer.identity_pending is True
+
+
+def test_garbage_sanity_after_a_committed_document_leaves_it_intact(tmp_path: Path) -> None:
+    """An aborted document never rolls back or hides an earlier commit."""
+    db, coll, doc_a, searcher = _setup(tmp_path)
+    doc_b = Document(
+        path="/notes/b.md",
+        collection_id=coll.id,
+        content="beta body",
+        title="B",
+    )
+    with db.connection:
+        DocumentRepository(db.connection).create(doc_b)
+
+    call_count = 0
+
+    def vectors_for(texts: list[str]) -> list[list[float]]:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return [_unit_vector() for _ in texts]
+        return [[float("nan")] * DIM for _ in texts]
+
+    writer = StreamingEmbedWriter(
+        db.connection,
+        _RecordingManager(db.connection, vectors_for),
+        _OneChunkChunker(),
+        searcher,
+        _identity(),
+        batch_size=32,
+        write_identity=True,
+    )
+
+    try:
+        assert writer.embed_document(doc_a) == 1
+        with pytest.raises(SystemicEmbedError):
+            writer.embed_document(doc_b)
+        counts_a = _counts(db.connection, doc_a.id)
+        counts_b = _counts(db.connection, doc_b.id)
+        stored = read_identity(db.connection)
+    finally:
+        db.close()
+
+    assert counts_a == (1, 1, 1)
+    assert counts_b == (0, 0, 0)
+    assert stored is not None
+    assert stored.source == "verified"
+    assert writer.identity_pending is False

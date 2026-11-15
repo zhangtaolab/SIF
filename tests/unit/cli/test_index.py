@@ -832,3 +832,59 @@ class TestStreamingEmbed:
         assert stored.source == "verified"
         ids = _document_ids(db_path)
         assert _embedded_chunk_count(db_path, ids["/notes/a.md"]) >= 1
+
+    def test_vacuous_full_force_certification_is_replaced_by_the_first_write(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """An empty-index --force certifies vacuously; D-02 lets the next
+        embedder's first commit replace that identity as verified."""
+        self._delenv(monkeypatch)
+        db_path = tmp_path / "vacuous.db"
+        settings = self._settings()
+        _seed_real_index(db_path, settings, [])
+
+        first = _invoke_real_embed(
+            db_path, _streaming_manager(_identity("model-a")), settings, ["--force"]
+        )
+        assert first.exit_code == 0, first.output
+
+        conn = sqlite3.connect(str(db_path))
+        try:
+            vacuous = read_identity(conn)
+        finally:
+            conn.close()
+        assert vacuous is not None
+        assert vacuous.model_name == "model-a"
+        assert vacuous.source == "verified"
+
+        # A document arrives and a different same-dimension model runs without
+        # --force: zero stored vectors keep the accept-any-embedder rule open.
+        db = Database(db_path)
+        try:
+            with db.connection:
+                coll = CollectionRepository(db.connection).get_by_name("notes")
+                assert coll is not None
+                DocumentRepository(db.connection).create(
+                    Document(
+                        path="/notes/a.md",
+                        collection_id=coll.id,
+                        content="# A\n\nbody",
+                        title="A",
+                    )
+                )
+        finally:
+            db.close()
+
+        second = _invoke_real_embed(db_path, _streaming_manager(_identity("model-b")), settings, [])
+        assert second.exit_code == 0, second.output
+
+        conn = sqlite3.connect(str(db_path))
+        try:
+            replaced = read_identity(conn)
+        finally:
+            conn.close()
+        assert replaced is not None
+        assert replaced.model_name == "model-b"
+        assert replaced.source == "verified"
+        ids = _document_ids(db_path)
+        assert _embedded_chunk_count(db_path, ids["/notes/a.md"]) >= 1
