@@ -97,6 +97,72 @@ def _assert_page_continuity(search, label: str) -> None:
     assert search(_options(limit=3, offset=1000)) == [], label
 
 
+def _build_chunky_db() -> sqlite3.Connection:
+    """One six-chunk document plus fourteen single-chunk documents.
+
+    Every document matches "alpha"; the chunky document's six chunk rows are
+    the nearest vectors, so an undeduped vector page at ``limit=10`` would
+    return far fewer than ten distinct documents — CORR-02's regression.
+    """
+    import sqlite_vec
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    try:
+        conn.enable_load_extension(True)
+        sqlite_vec.load(conn)
+        conn.enable_load_extension(False)
+    except Exception:
+        conn.close()
+        pytest.skip("sqlite-vec not available")
+
+    SchemaManager(conn, embedding_dim=EMBEDDING_DIM).create_all()
+    now = "2026-11-15T00:00:00+00:00"
+    conn.execute(
+        "INSERT INTO collections (id, name, path, include_by_default, created_at, updated_at)"
+        " VALUES ('c1', 'notes', '/notes', 1, ?, ?)",
+        (now, now),
+    )
+    embedder = ConceptEmbedder()
+    embeddings: list[tuple[str, str, str, list[float]]] = []
+
+    def add_document(doc_id: str, content: str, chunks: list[tuple[str, int, str]]) -> None:
+        conn.execute(
+            "INSERT INTO documents (id, collection_id, path, filename, title, content,"
+            " checksum, mtime, created_at, updated_at)"
+            " VALUES (?, 'c1', ?, ?, ?, ?, ?, 1.0, ?, ?)",
+            (
+                doc_id,
+                f"/notes/{doc_id}.md",
+                f"{doc_id}.md",
+                f"Doc {doc_id}",
+                content,
+                f"checksum-{doc_id}",
+                now,
+                now,
+            ),
+        )
+        for chunk_id, sequence, chunk_content in chunks:
+            conn.execute(
+                "INSERT INTO document_chunks (id, document_id, sequence, content, created_at)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (chunk_id, doc_id, sequence, chunk_content, now),
+            )
+            embeddings.append((f"e-{chunk_id}", doc_id, chunk_id, embedder.embed(chunk_content)))
+
+    add_document(
+        "d-chunky",
+        "alpha " * 6 + "chunky document",
+        [(f"chunk-chunky-{sequence}", sequence, "alpha") for sequence in range(6)],
+    )
+    for index in range(14):
+        content = f"alpha unique{index} document body {index}"
+        add_document(f"d{index}", content, [(f"chunk-{index}", 0, content)])
+
+    VectorSearcher(conn, embedding_dim=EMBEDDING_DIM).add_embeddings_batch(embeddings)
+    return conn
+
+
 class TestConsistentPagination:
     """BM25, vector, and hybrid pages are slices of one ranked window."""
 
@@ -211,5 +277,74 @@ class TestRerankerWindowPagination:
             assert reranker.seen == 20
             assert reranker.top_k == 100
             assert len(results) == 20
+        finally:
+            conn.close()
+
+
+class TestChunkyDocumentDedup:
+    """CORR-02: a chunky document cannot eat another document's result slot."""
+
+    @staticmethod
+    def _vector_search(
+        conn: sqlite3.Connection,
+    ) -> tuple[VectorSearcher, list[float]]:
+        return VectorSearcher(conn, embedding_dim=EMBEDDING_DIM), ConceptEmbedder().embed("alpha")
+
+    def test_vector_limit_ten_returns_ten_distinct_documents(self) -> None:
+        """Six matching chunks of one document leave the page at ten documents."""
+        conn = _build_chunky_db()
+        try:
+            searcher, query_embedding = self._vector_search(conn)
+            results = searcher.search(query_embedding, _options(limit=10))
+
+            ids = [r.document_id for r in results]
+            assert len(ids) == 10
+            assert len(set(ids)) == 10
+            chunky = next(r for r in results if r.document_id == "d-chunky")
+            assert chunky.chunk_matches >= 5
+        finally:
+            conn.close()
+
+    def test_hybrid_default_limit_ten_returns_ten_distinct_documents(self) -> None:
+        """The hybrid default path dedups too and keeps the vector chunk identity."""
+        conn = _build_chunky_db()
+        try:
+            searcher = HybridSearcher(conn, embedder=ConceptEmbedder(), embedding_dim=EMBEDDING_DIM)
+            results = searcher.search("alpha", _options(limit=10))
+
+            ids = [r.document_id for r in results]
+            assert len(ids) == 10
+            assert len(set(ids)) == 10
+            chunky = next(r for r in results if r.document_id == "d-chunky")
+            assert chunky.chunk_matches >= 5
+            assert chunky.chunk_id is not None
+        finally:
+            conn.close()
+
+    def test_per_chunk_mode_returns_the_chunky_chunk_rows(self) -> None:
+        """per_chunk=True addresses every chunk row of the chunky document."""
+        conn = _build_chunky_db()
+        try:
+            searcher, query_embedding = self._vector_search(conn)
+            results = searcher.search(query_embedding, _options(limit=100, per_chunk=True))
+
+            chunky = [r for r in results if r.document_id == "d-chunky"]
+            assert len(chunky) == 6
+            assert {r.sequence for r in chunky} == set(range(6))
+            assert all(r.chunk_matches == 0 for r in results if r.chunk_id is not None)
+        finally:
+            conn.close()
+
+    def test_dedup_aware_page_continuity(self) -> None:
+        """Dedup does not break the same-window page definition on either path."""
+        conn = _build_chunky_db()
+        try:
+            searcher, query_embedding = self._vector_search(conn)
+            _assert_page_continuity(
+                lambda opts: searcher.search(query_embedding, opts), "vector-chunky"
+            )
+
+            hybrid = HybridSearcher(conn, embedder=ConceptEmbedder(), embedding_dim=EMBEDDING_DIM)
+            _assert_page_continuity(lambda opts: hybrid.search("alpha", opts), "hybrid-chunky")
         finally:
             conn.close()

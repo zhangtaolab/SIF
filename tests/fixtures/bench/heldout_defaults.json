@@ -11,7 +11,7 @@
     "rrf_k": 60,
     "vector_weight": 1.0
   },
-  "generated": "2026-11-08",
+  "generated": "2026-11-15",
   "heldout": {
     "hit_at_10": 0.85,
     "ndcg_at_10": 0.8120158986791898,
@@ -40,6 +40,7 @@
     }
   },
   "heldout_delta": 0.00662541159807295,
+  "rationale": "Regenerated 2026-11-15 for CORR-02 (per-document dedup). The default ranking contract changed from pre-dedup chunk-level fusion to one result row per document: VectorSearcher groups duplicate chunk rows by document before fusion (best-distance chunk wins) and carries chunk_id/sequence/chunk_matches into the result contract. Pre-dedup held-out (defaults rrf_k=60, bm25_weight=1.0, vector_weight=1.0): nDCG@10=0.8120158986791898, Hit@10=0.85; per_category nDCG/Hit: keyword 0.9734983536077081/1.0, multilingual 1.0/1.0, rival 1.0/1.0, synonym 0.2745652411090509/0.4. Post-dedup held-out: nDCG@10=0.8120158986791898, Hit@10=0.85; per_category: keyword 0.9734983536077081/1.0, multilingual 1.0/1.0, rival 1.0/1.0, synonym 0.2745652411090509/0.4 — identical because this deterministic fixture corpus has one chunk per document, so there are no duplicate chunk rows to collapse. The tuning-sweep candidate (rrf_k=20, bm25_weight=1.0, vector_weight=0.5) is likewise unchanged: pre-dedup nDCG@10=0.8186413102772627, Hit@10=0.85 (keyword 1.0/1.0); post-dedup nDCG@10=0.8186413102772627, Hit@10=0.85 (keyword 1.0/1.0), heldout_delta=0.00662541159807295, verdict unchanged. Granular ranking evidence is the regenerated SC1 hybrid golden (tests/unit/search/test_hybrid.py::TestHybridSC1PipelineGolden): its old→new bm25_score/rrf_score values are byte-identical (d3 0.9999989753435158 / 0.03252247488101534; d1 0.9999990673325406 / 0.031754032258064516), proving the vector/hybrid scoring path did not move while the result contract gained chunk identity; the dedup contract itself is exercised by the chunky-document integration regression in tests/integration/test_search_correctness.py. The --bm25-only B0/B1 saved runs are the BM25 no-drift check, not dedup evidence: dedup lives in the vector leg, which --bm25-only never constructs.",
   "verdict": "unchanged",
   "version": 1
 }

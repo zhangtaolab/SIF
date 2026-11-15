@@ -13,6 +13,18 @@ discipline, consistent with the rest of the suite). A real-model run is a
 separate manual evidence step (16-VALIDATION.md Manual-Only Verifications);
 this snapshot is the deterministic concept-embedder evidence (research
 Pitfall 5).
+
+Snapshot provenance (CORR-02, 2026-11-15): the committed numbers were
+regenerated through this same deterministic harness after per-document dedup
+landed in ``VectorSearcher`` (one result row per document, carrying chunk
+identity and a collapsed match count). This fixture corpus has exactly one
+chunk per document, so dedup moved no held-out metric; the snapshot's
+``rationale`` string records the pre-dedup and post-dedup totals and
+per-category values. The ranking-contract evidence is the regenerated SC1
+hybrid golden (byte-identical bm25_score/rrf_score values) plus the
+chunky-document integration regression in
+``tests/integration/test_search_correctness.py``; the ``--bm25-only`` saved
+runs are the BM25 no-drift check, not dedup evidence.
 """
 
 from __future__ import annotations
