@@ -23,9 +23,11 @@ import pytest
 
 from sif.core.filters import parse_filter
 from sif.core.models import Document, SearchOptions
+from sif.database.metadata_repository import MetadataValueRepository
 from sif.database.repositories import DocumentRepository
 from sif.database.schema import SchemaManager
 from sif.search.bm25 import BM25Searcher
+from sif.search.filters import count_matching_documents
 from sif.search.hybrid import HybridSearcher, SearchPipeline
 from sif.search.vector import VectorSearcher
 from tests.support.bench import EMBEDDING_DIM, ConceptEmbedder
@@ -129,6 +131,74 @@ def _build_corpus() -> sqlite3.Connection:
 def search_db() -> Iterator[sqlite3.Connection]:
     """One generated corpus for the whole battery; skips without sqlite-vec."""
     conn = _build_corpus()
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+DISCOVERY_COUNT = 12
+
+
+def _discovery_metadata(index: int) -> dict[str, Any]:
+    """A small corpus with rare tags, numeric cohorts, and one nested key."""
+    metadata: dict[str, Any] = {"tag": "rare" if index < 2 else "common"}
+    if index == 1:
+        metadata["priority"] = 10
+    elif index == 2:
+        metadata["priority"] = 20
+    elif index >= 8:
+        metadata["priority"] = index
+    if index == NESTED_INDEX:
+        metadata["nested"] = {"a": 1}  # D-07: skipped per key, never indexed
+        metadata["nested_owner"] = "yes"
+    return metadata
+
+
+def _build_discovery_corpus() -> sqlite3.Connection:
+    """Repository-built corpus for discovery parity, no sqlite-vec required.
+
+    Discovery reads only ``documents`` and the typed kv tables, so this
+    fixture deliberately skips the FTS/vec0 construction ``search_db`` needs.
+    """
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    manager = SchemaManager(conn)
+    manager._create_collections_table()
+    manager._create_documents_table()
+    manager._create_metadata_tables()
+    conn.execute(
+        "INSERT INTO collections (id, name, path, include_by_default, created_at, updated_at)"
+        " VALUES ('c1', 'notes', '/notes', 1, ?, ?)",
+        (NOW, NOW),
+    )
+    conn.execute(
+        "INSERT INTO collections (id, name, path, include_by_default, created_at, updated_at)"
+        " VALUES ('c2', 'archive', '/archive', 1, ?, ?)",
+        (NOW, NOW),
+    )
+    documents = DocumentRepository(conn)
+    for index in range(DISCOVERY_COUNT):
+        documents.create(
+            Document(
+                id=f"d{index}",
+                collection_id=C2 if index >= DISCOVERY_COUNT - 2 else C1,
+                path=f"/notes/doc-{index:03d}.md",
+                content=f"body {index}",
+                title=f"Doc {index}",
+                mtime=BASE_MTIME + index,
+                metadata=_discovery_metadata(index),
+            )
+        )
+    conn.commit()
+    return conn
+
+
+@pytest.fixture(scope="module")
+def discovery_db() -> Iterator[sqlite3.Connection]:
+    """Discovery corpus that runs on hosts without the sqlite-vec extension."""
+    conn = _build_discovery_corpus()
     try:
         yield conn
     finally:
@@ -422,3 +492,91 @@ class TestNoticeStaysOffStdout:
         assert captured.out == ""
         assert "highly selective" in caplog.text
         assert len(results) == 8
+
+
+class TestDiscoveryParity:
+    """D-16: discovery never lies, proven in both directions.
+
+    Uses ``discovery_db`` (a repository-built corpus without sqlite-vec), so
+    these assertions run on hosts where the extension is unavailable.
+    """
+
+    def _discover(self, conn: sqlite3.Connection, **overrides: Any) -> dict[str, Any]:
+        """Discover with the explicit no-filter/no-match defaults."""
+        params: dict[str, Any] = {
+            "collection_ids": None,
+            "filter_predicate": None,
+            "match_predicate": None,
+            "limit": 1000,
+            "value_limit": 100,
+        }
+        params.update(overrides)
+        return MetadataValueRepository(conn).discover(**params)
+
+    def test_every_reported_key_and_value_is_filterable(
+        self, discovery_db: sqlite3.Connection
+    ) -> None:
+        """reported => filterable: counts equal ``count_matching_documents``."""
+        result = self._discover(discovery_db)
+        assert result["keys"]
+        for entry in result["keys"]:
+            key = entry["key"]
+            present = parse_filter({"field": key, "operator": "exists", "value": True})
+            assert count_matching_documents(discovery_db, present, None) == entry["documents"]
+            for type_entry in entry["types"]:
+                assert type_entry["values"], f"{key}/{type_entry['type']} reports no values"
+                for value in type_entry["values"]:
+                    node = parse_filter({"field": key, "operator": "eq", "value": value["value"]})
+                    matches = count_matching_documents(discovery_db, node, None)
+                    assert matches == value["documents"]
+                    assert matches > 0
+
+    def test_every_filterable_key_is_reported(self, discovery_db: sqlite3.Connection) -> None:
+        """filterable => reported: the typed store's key set equals ``keys``."""
+        reported = {entry["key"] for entry in self._discover(discovery_db)["keys"]}
+        stored = {
+            row[0]
+            for row in discovery_db.execute(
+                "SELECT DISTINCT key FROM document_metadata_values"
+            ).fetchall()
+        }
+        assert reported == stored
+        assert "path" not in reported
+        assert "mtime" not in reported
+
+    def test_non_indexable_key_is_counted_not_filterable(
+        self, discovery_db: sqlite3.Connection
+    ) -> None:
+        """The nested key is skipped once, absent from keys, and matches nothing."""
+        result = self._discover(discovery_db)
+        assert result["skippedKeys"] == 1
+        assert "nested" not in {entry["key"] for entry in result["keys"]}
+        nested = parse_filter({"field": "nested", "operator": "exists", "value": True})
+        assert count_matching_documents(discovery_db, nested, None) == 0
+        owner = parse_filter({"field": "nested_owner", "operator": "eq", "value": "yes"})
+        assert count_matching_documents(discovery_db, owner, None) == 1
+
+    def test_built_ins_are_reported_and_filterable(self, discovery_db: sqlite3.Connection) -> None:
+        """``path``/``mtime`` are reported as built-ins and themselves filterable."""
+        result = self._discover(discovery_db)
+        assert [entry["key"] for entry in result["builtIns"]] == ["path", "mtime"]
+        assert [entry["documents"] for entry in result["builtIns"]] == [
+            DISCOVERY_COUNT,
+            DISCOVERY_COUNT,
+        ]
+
+        path_node = parse_filter({"field": "path", "operator": "prefix", "value": "/notes/doc-00"})
+        expected_paths = sum(
+            1
+            for index in range(DISCOVERY_COUNT)
+            if f"/notes/doc-{index:03d}.md".startswith("/notes/doc-00")
+        )
+        assert expected_paths
+        assert count_matching_documents(discovery_db, path_node, None) == expected_paths
+
+        mtime_node = parse_filter({"field": "mtime", "operator": "gte", "value": BASE_MTIME + 8})
+        expected_mtimes = sum(
+            1 for index in range(DISCOVERY_COUNT) if BASE_MTIME + index >= BASE_MTIME + 8
+        )
+        assert expected_mtimes
+        assert count_matching_documents(discovery_db, mtime_node, None) == expected_mtimes

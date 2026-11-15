@@ -16,7 +16,7 @@ from typing import Any
 
 import pytest
 
-from sif.core.filters import parse_filter
+from sif.core.filters import parse_filter, parse_match
 from sif.core.models import Collection, Document, canonical_metadata_json
 from sif.database.metadata_repository import (
     MetadataValueRepository,
@@ -27,7 +27,7 @@ from sif.database.metadata_repository import (
 )
 from sif.database.repositories import CollectionRepository, DocumentRepository
 from sif.database.schema import SchemaManager
-from sif.search.filters import count_matching_documents
+from sif.search.filters import compile_filter, compile_match, count_matching_documents
 
 
 @pytest.fixture
@@ -56,6 +56,7 @@ def _seed_document(
     metadata: dict[str, Any],
     document_id: str = "doc-1",
     path: str = "/notes/doc-1.md",
+    mtime: float | None = None,
 ) -> Document:
     """Write one document through the production repository path."""
     document = Document(
@@ -64,6 +65,7 @@ def _seed_document(
         path=path,
         content="body",
         metadata=metadata,
+        mtime=mtime if mtime is not None else datetime.now().timestamp(),
     )
     DocumentRepository(db).create(document)
     db.commit()
@@ -338,3 +340,288 @@ class TestBenchFixtureFilterable:
             count_matching_documents(bench_db, synonym_filter, None)
             == self._derived_distribution()["synonym"]
         )
+
+
+class TestDiscovery:
+    """D-15/D-20 discovery aggregates over the same store the filters read."""
+
+    def _discover(self, db: sqlite3.Connection, **overrides: Any) -> dict[str, Any]:
+        """Call ``discover`` with the explicit no-filter/no-match defaults."""
+        params: dict[str, Any] = {
+            "collection_ids": None,
+            "filter_predicate": None,
+            "match_predicate": None,
+        }
+        params.update(overrides)
+        return MetadataValueRepository(db).discover(**params)
+
+    @staticmethod
+    def _key(result: dict[str, Any], name: str) -> dict[str, Any]:
+        """Return one reported key entry by name."""
+        return next(entry for entry in result["keys"] if entry["key"] == name)
+
+    @staticmethod
+    def _seed_docs(
+        db: sqlite3.Connection, rows: list[tuple[str, dict[str, Any], float, str]]
+    ) -> None:
+        """Seed ``(document_id, metadata, mtime, path)`` rows through the repository."""
+        _seed_collection(db)
+        for document_id, metadata, mtime, path in rows:
+            _seed_document(db, metadata, document_id=document_id, path=path, mtime=mtime)
+
+    def test_envelope_is_frozen_and_omits_filtered_documents(self, db: sqlite3.Connection) -> None:
+        """No filter means no ``filteredDocuments``; builtIns are always present."""
+        self._seed_docs(db, [("d0", {"tag": "a"}, 100.0, "/notes/a.md")])
+        result = self._discover(db)
+        assert result["documents"] == 1
+        assert "filteredDocuments" not in result
+        assert list(result) == [
+            "documents",
+            "totalKeys",
+            "remainingKeys",
+            "skippedKeys",
+            "builtIns",
+            "keys",
+        ]
+        assert [entry["key"] for entry in result["builtIns"]] == ["path", "mtime"]
+
+    def test_median_is_exact_for_an_odd_numeric_cohort(self, db: sqlite3.Connection) -> None:
+        """Three numeric rows median to the middle value."""
+        self._seed_docs(
+            db,
+            [
+                ("d0", {"score": 30}, 100.0, "/notes/a.md"),
+                ("d1", {"score": 10}, 200.0, "/notes/b.md"),
+                ("d2", {"score": 20}, 300.0, "/notes/c.md"),
+            ],
+        )
+        entry = self._key(self._discover(db), "score")
+        assert entry["types"][0]["range"] == {"min": 10.0, "median": 20.0, "max": 30.0}
+
+    def test_median_is_exact_for_an_even_numeric_cohort(self, db: sqlite3.Connection) -> None:
+        """Four numeric rows median to the midpoint of positions two and three."""
+        self._seed_docs(
+            db,
+            [
+                ("d0", {"score": 10}, 100.0, "/notes/a.md"),
+                ("d1", {"score": 20}, 200.0, "/notes/b.md"),
+                ("d2", {"score": 30}, 300.0, "/notes/c.md"),
+                ("d3", {"score": 40}, 400.0, "/notes/d.md"),
+            ],
+        )
+        entry = self._key(self._discover(db), "score")
+        assert entry["types"][0]["range"] == {"min": 10.0, "median": 25.0, "max": 40.0}
+
+    def test_array_elements_each_contribute_one_numeric_row(self, db: sqlite3.Connection) -> None:
+        """A five-element cohort over two documents medians to the third value."""
+        self._seed_docs(
+            db,
+            [
+                ("d0", {"score": [1, 2, 3]}, 100.0, "/notes/a.md"),
+                ("d1", {"score": [4, 5]}, 200.0, "/notes/b.md"),
+            ],
+        )
+        entry = self._key(self._discover(db), "score")
+        type_entry = entry["types"][0]
+        assert type_entry["range"] == {"min": 1.0, "median": 3.0, "max": 5.0}
+        assert type_entry["documents"] == 2
+        assert type_entry["multiValued"] is True
+        assert type_entry["distinctValues"] == 5
+
+    def test_counts_are_documents_not_values(self, db: sqlite3.Connection) -> None:
+        """Key/type counts count documents; each value counts its documents."""
+        self._seed_docs(
+            db,
+            [
+                ("d0", {"topic": ["a", "b"]}, 100.0, "/notes/a.md"),
+                ("d1", {"topic": ["a"]}, 200.0, "/notes/b.md"),
+            ],
+        )
+        entry = self._key(self._discover(db), "topic")
+        assert entry["documents"] == 2
+        type_entry = entry["types"][0]
+        assert type_entry["documents"] == 2
+        assert type_entry["multiValued"] is True
+        assert {item["value"]: item["documents"] for item in type_entry["values"]} == {
+            "a": 2,
+            "b": 1,
+        }
+        assert type_entry["distinctValues"] == 2
+        assert type_entry["remainingValues"] == 0
+
+    def test_key_and_value_windows_report_exact_remainders(self, db: sqlite3.Connection) -> None:
+        """Window plus remainder equals the total at and beyond the boundary."""
+        rows = []
+        for index in range(5):
+            metadata = {f"k{key_index}": f"v{index}" for key_index in range(index + 1)}
+            rows.append((f"d{index}", metadata, 100.0 + index, f"/notes/d{index}.md"))
+        self._seed_docs(db, rows)
+
+        narrow = self._discover(db, limit=2, value_limit=1)
+        assert narrow["totalKeys"] == 5
+        assert narrow["remainingKeys"] == 3
+        assert [entry["key"] for entry in narrow["keys"]] == ["k0", "k1"]
+        k0 = self._key(narrow, "k0")
+        assert k0["documents"] == 5
+        assert k0["types"][0]["distinctValues"] == 5
+        assert len(k0["types"][0]["values"]) == 1
+        assert k0["types"][0]["remainingValues"] == 4
+
+        wide = self._discover(db, limit=5, value_limit=10)
+        assert wide["remainingKeys"] == 0
+        assert self._key(wide, "k0")["types"][0]["remainingValues"] == 0
+
+    def test_min_count_filters_values_and_keeps_distinct_counts_consistent(
+        self, db: sqlite3.Connection
+    ) -> None:
+        """``min_count`` drops low-count values without narrowing type documents."""
+        self._seed_docs(
+            db,
+            [
+                ("d0", {"tag": "common"}, 100.0, "/notes/a.md"),
+                ("d1", {"tag": "common"}, 200.0, "/notes/b.md"),
+                ("d2", {"tag": "rare"}, 300.0, "/notes/c.md"),
+            ],
+        )
+        narrow = self._key(self._discover(db, min_count=2), "tag")["types"][0]
+        assert narrow["documents"] == 3
+        assert narrow["values"] == [{"value": "common", "documents": 2}]
+        assert narrow["distinctValues"] == 1
+        assert narrow["remainingValues"] == 0
+
+        wide = self._key(self._discover(db, min_count=1), "tag")["types"][0]
+        assert wide["distinctValues"] == 2
+        assert wide["remainingValues"] == 0
+
+    def test_mixed_type_key_splits_with_a_range_only_on_number(
+        self, db: sqlite3.Connection
+    ) -> None:
+        """A key stored as a number and a string yields one type entry each."""
+        self._seed_docs(
+            db,
+            [
+                ("d0", {"mixed": 10}, 100.0, "/notes/a.md"),
+                ("d1", {"mixed": "ten"}, 200.0, "/notes/b.md"),
+            ],
+        )
+        entry = self._key(self._discover(db), "mixed")
+        assert entry["documents"] == 2
+        types = {type_entry["type"]: type_entry for type_entry in entry["types"]}
+        assert set(types) == {"number", "string"}
+        assert types["number"]["range"] == {"min": 10.0, "median": 10.0, "max": 10.0}
+        assert "range" not in types["string"]
+
+    def test_match_narrows_entries_but_not_document_denominators(
+        self, db: sqlite3.Connection
+    ) -> None:
+        """``match`` narrows keys/totalKeys; the denominators stay region-wide."""
+        self._seed_docs(
+            db,
+            [
+                ("d0", {"tag": "x"}, 100.0, "/notes/a.md"),
+                ("d1", {"tag": "y"}, 200.0, "/notes/b.md"),
+                ("d2", {"other": 1}, 300.0, "/notes/c.md"),
+            ],
+        )
+        match = compile_match(parse_match({"field": "key", "operator": "prefix", "value": "ta"}))
+        result = self._discover(db, match_predicate=match)
+        assert [entry["key"] for entry in result["keys"]] == ["tag"]
+        assert result["totalKeys"] == 1
+        assert result["documents"] == 3
+        assert [entry["documents"] for entry in result["builtIns"]] == [3, 3]
+
+    def test_nested_key_is_skipped_and_never_reported(self, db: sqlite3.Connection) -> None:
+        """A non-indexable key counts in ``skippedKeys`` and is absent from ``keys``."""
+        self._seed_docs(db, [("d0", {"nested": {"a": 1}, "good": "yes"}, 100.0, "/notes/a.md")])
+        result = self._discover(db)
+        assert result["skippedKeys"] == 1
+        assert [entry["key"] for entry in result["keys"]] == ["good"]
+
+    def test_reserved_frontmatter_names_are_built_ins_not_keys(
+        self, db: sqlite3.Connection
+    ) -> None:
+        """D-03: a native ``path``/``mtime`` key is shadowed, not a skip and not a key."""
+        self._seed_docs(
+            db, [("d0", {"path": "native", "mtime": 5, "tag": "x"}, 100.0, "/notes/a.md")]
+        )
+        result = self._discover(db)
+        assert [entry["key"] for entry in result["keys"]] == ["tag"]
+        assert result["skippedKeys"] == 0
+        assert [entry["key"] for entry in result["builtIns"]] == ["path", "mtime"]
+
+    def test_filter_predicate_narrows_counts_but_not_the_scope_denominator(
+        self, db: sqlite3.Connection
+    ) -> None:
+        """The filter narrows coverage (built-ins included); ``documents`` does not move."""
+        self._seed_docs(
+            db,
+            [
+                ("d0", {"tag": "rare", "priority": 1}, 100.0, "/notes/a.md"),
+                ("d1", {"tag": "common", "priority": 2}, 200.0, "/notes/b.md"),
+                ("d2", {"tag": "common"}, 300.0, "/notes/c.md"),
+            ],
+        )
+        predicate = compile_filter(
+            parse_filter({"field": "tag", "operator": "eq", "value": "common"}),
+            alias="d",
+            scope="corpus",
+        )
+        result = self._discover(db, filter_predicate=predicate)
+        assert result["documents"] == 3
+        assert result["filteredDocuments"] == 2
+        tag = self._key(result, "tag")
+        assert tag["documents"] == 2
+        assert tag["types"][0]["values"] == [{"value": "common", "documents": 2}]
+        priority = self._key(result, "priority")
+        assert priority["documents"] == 1
+        assert priority["types"][0]["range"] == {"min": 2.0, "median": 2.0, "max": 2.0}
+        path_entry, mtime_entry = result["builtIns"]
+        assert path_entry["documents"] == 2
+        assert mtime_entry["documents"] == 2
+        assert mtime_entry["types"][0]["range"] == {
+            "min": 200.0,
+            "median": 250.0,
+            "max": 300.0,
+        }
+
+    def test_built_ins_report_counts_distinct_values_and_no_values(
+        self, db: sqlite3.Connection
+    ) -> None:
+        """Built-ins carry region counts, a numeric range, and no inline values."""
+        self._seed_docs(
+            db,
+            [
+                ("d0", {"tag": "x"}, 100.0, "/notes/a.md"),
+                ("d1", {"tag": "x"}, 200.0, "/notes/b.md"),
+                ("d2", {"tag": "x"}, 300.0, "/notes/c.md"),
+            ],
+        )
+        path_entry, mtime_entry = self._discover(db)["builtIns"]
+        assert (path_entry["documents"], mtime_entry["documents"]) == (3, 3)
+        path_type = path_entry["types"][0]
+        assert path_type["distinctValues"] == 3
+        assert path_type["values"] == []
+        assert path_type["remainingValues"] == 3
+        mtime_type = mtime_entry["types"][0]
+        assert mtime_type["range"] == {"min": 100.0, "median": 200.0, "max": 300.0}
+        assert mtime_type["values"] == []
+        assert mtime_type["remainingValues"] == mtime_type["distinctValues"]
+
+    def test_match_leaves_built_ins_unchanged(self, db: sqlite3.Connection) -> None:
+        """The built-in section is invariant under the entry-scope ``match`` (D-20)."""
+        self._seed_docs(
+            db,
+            [
+                ("d0", {"tag": "x"}, 100.0, "/notes/a.md"),
+                ("d1", {"other": 1}, 200.0, "/notes/b.md"),
+            ],
+        )
+        baseline = self._discover(db)
+        matched = self._discover(
+            db,
+            match_predicate=compile_match(
+                parse_match({"field": "key", "operator": "prefix", "value": "ta"})
+            ),
+        )
+        assert matched["builtIns"] == baseline["builtIns"]
+        assert [entry["key"] for entry in matched["keys"]] == ["tag"]

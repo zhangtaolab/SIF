@@ -217,6 +217,104 @@ def typed_rows(canonical_json: str) -> tuple[list[TypedRow], list[SkippedKey]]:
     return rows, skipped
 
 
+_TYPE_ORDER = {"string": 0, "number": 1, "boolean": 2}
+
+
+def _collection_clause(collection_ids: list[str] | None) -> tuple[str, list[Any]]:
+    """Build the collection scope predicate (``None`` = every collection).
+
+    ``[]`` is the exclude-all sentinel (the same contract as
+    ``SearchOptions.collection_ids``): it renders an always-false predicate
+    rather than the invalid ``IN ()``.
+    """
+    if collection_ids is None:
+        return "", []
+    if not collection_ids:
+        return "AND 0 = 1", []
+    placeholders = ", ".join(["?"] * len(collection_ids))
+    return f"AND d.collection_id IN ({placeholders})", list(collection_ids)
+
+
+def _median(values: list[float]) -> float:
+    """Midpoint of the middle one or two sorted values (D-15)."""
+    return sum(values) / len(values)
+
+
+def _typed_value(value_type: str, text: Any, number: Any, boolean: Any) -> Any:
+    """Render one stored value in its typed JSON form."""
+    if value_type == "number":
+        return float(number)
+    if value_type == "boolean":
+        return bool(boolean)
+    return text
+
+
+@dataclass(frozen=True)
+class _DiscoveryQuery:
+    """Compiled discovery SQL fragments and their bound parameters (D-15/D-20).
+
+    ``region`` is the eligible-document CTE: the collection scope and the
+    caller-compiled filter predicate only. ``match`` narrows the reported
+    frontmatter entries, never the region.
+    """
+
+    region: str
+    scope_params: list[Any]
+    match_sql: str
+    match_params: list[Any]
+
+
+def _key_entries(
+    key_rows: list[tuple[Any, ...]],
+    type_rows: list[tuple[Any, ...]],
+    value_rows: list[tuple[Any, ...]],
+    medians: dict[str, float],
+    value_limit: int,
+) -> list[dict[str, Any]]:
+    """Assemble the ordered ``keys`` list from one page's batched aggregates."""
+    types_by_key: dict[str, list[dict[str, Any]]] = {str(row[0]): [] for row in key_rows}
+    for key, value_type, documents, multi_valued, minimum, maximum in type_rows:
+        entry: dict[str, Any] = {
+            "type": value_type,
+            "multiValued": bool(multi_valued),
+            "documents": int(documents),
+            "distinctValues": 0,
+            "values": [],
+            "remainingValues": 0,
+        }
+        if value_type == "number" and minimum is not None and maximum is not None:
+            entry["range"] = {
+                "min": float(minimum),
+                "median": float(medians.get(key, (minimum + maximum) / 2.0)),
+                "max": float(maximum),
+            }
+        types_by_key[str(key)].append(entry)
+
+    values_by_type: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for key, value_type, text, number, boolean, documents in value_rows:
+        values_by_type.setdefault((str(key), value_type), []).append(
+            {
+                "value": _typed_value(value_type, text, number, boolean),
+                "documents": int(documents),
+            }
+        )
+
+    for key, entries in types_by_key.items():
+        for entry in entries:
+            candidates = sorted(
+                values_by_type.get((key, entry["type"]), []),
+                key=lambda item: (-item["documents"], str(item["value"])),
+            )
+            entry["distinctValues"] = len(candidates)
+            entry["values"] = candidates[:value_limit]
+            entry["remainingValues"] = max(0, len(candidates) - len(entry["values"]))
+        entries.sort(key=lambda entry: _TYPE_ORDER[entry["type"]])
+    return [
+        {"key": key, "documents": int(documents), "types": types_by_key[key]}
+        for key, documents in key_rows
+    ]
+
+
 class MetadataValueRepository:
     """Typed kv rows for one document; mutations never commit (caller owns it).
 
@@ -280,3 +378,206 @@ class MetadataValueRepository:
             (document_id,),
         )
         return removed
+
+    def discover(  # noqa: PLR0913 — one keyword per the frozen D-15 input contract
+        self,
+        *,
+        collection_ids: list[str] | None,
+        filter_predicate: tuple[str, list[Any]] | None,
+        match_predicate: tuple[str, list[Any]] | None,
+        min_count: int = 1,
+        sort: str = "count",
+        limit: int = 50,
+        value_limit: int = 10,
+    ) -> dict[str, Any]:
+        """Report what metadata exists, over the same store the filters read (D-16).
+
+        The caller compiles the predicates (this layer never imports the
+        compiler): ``compile_filter(node, alias="d", scope="corpus")`` for the
+        filter and ``compile_match(node, alias="mv")`` for the entry-scope
+        match. An absent filter or match MUST be passed as ``None`` — a
+        non-``None`` empty fragment would falsely signal a supplied filter and
+        leak ``filteredDocuments`` into the no-filter envelope.
+
+        Envelope (frozen Phase 22 contract, D-15 + D-20): ``documents`` is the
+        scope denominator (collection predicate only — never narrowed by the
+        filter); ``filteredDocuments`` is present only when a filter was
+        supplied; ``totalKeys``/``remainingKeys`` window the frontmatter key
+        list; ``skippedKeys`` counts D-07 skips in the region; ``builtIns``
+        always carries exactly ``path`` then ``mtime`` computed from the
+        ``documents`` columns over the same filter-aware region, never from
+        ``document_metadata_values`` and never counted in ``keys``/
+        ``totalKeys``. ``match`` narrows only the frontmatter entries.
+
+        Every aggregate is bounded: at most the page's keys are aggregated and
+        each type's values are windowed at ``value_limit`` with an exact
+        remainder. Median positions use integer division so odd cohorts yield
+        one row and even cohorts two; the midpoint is computed in Python.
+        """
+        collection_sql, collection_params = _collection_clause(collection_ids)
+        filter_sql = ""
+        filter_params: list[Any] = []
+        if filter_predicate is not None:
+            predicate, filter_params = filter_predicate
+            filter_sql = f" AND {predicate}"
+        match_sql = ""
+        match_params: list[Any] = []
+        if match_predicate is not None:
+            predicate, match_params = match_predicate
+            match_sql = f" AND {predicate}"
+        query = _DiscoveryQuery(
+            region=(
+                "WITH region AS (SELECT d.id AS id, d.path AS path, d.mtime AS mtime "
+                f"FROM documents d WHERE 1 = 1 {collection_sql}{filter_sql})"
+            ),
+            scope_params=[*collection_params, *filter_params],
+            match_sql=match_sql,
+            match_params=list(match_params),
+        )
+
+        documents = self._count(
+            f"SELECT COUNT(*) FROM documents d WHERE 1 = 1 {collection_sql}",
+            collection_params,
+        )
+        result: dict[str, Any] = {"documents": documents}
+        if filter_predicate is not None:
+            result["filteredDocuments"] = self._count(
+                f"SELECT COUNT(*) FROM documents d WHERE 1 = 1 {collection_sql}{filter_sql}",
+                query.scope_params,
+            )
+
+        total_keys = self._count(
+            f"{query.region} SELECT COUNT(DISTINCT mv.key) FROM document_metadata_values mv "
+            f"JOIN region r ON mv.document_id = r.id WHERE 1 = 1{query.match_sql}",
+            [*query.scope_params, *query.match_params],
+        )
+        order = "documents DESC, key ASC" if sort == "count" else "key ASC"
+        key_rows = self.db.execute(
+            f"{query.region} SELECT mv.key AS key, "
+            f"COUNT(DISTINCT mv.document_id) AS documents "
+            f"FROM document_metadata_values mv JOIN region r ON mv.document_id = r.id "
+            f"WHERE 1 = 1{query.match_sql} GROUP BY mv.key ORDER BY {order} LIMIT ?",
+            [*query.scope_params, *query.match_params, limit],
+        ).fetchall()
+        keys = [str(row[0]) for row in key_rows]
+        type_rows, value_rows, medians = self._key_aggregates(query, keys, min_count)
+
+        result["totalKeys"] = total_keys
+        result["remainingKeys"] = max(0, total_keys - len(keys))
+        result["skippedKeys"] = self._count(
+            f"{query.region} SELECT COUNT(*) FROM document_metadata_skips s "
+            f"JOIN region r ON s.document_id = r.id",
+            query.scope_params,
+        )
+        result["builtIns"] = self._built_in_entries(query)
+        result["keys"] = _key_entries(key_rows, type_rows, value_rows, medians, value_limit)
+        return result
+
+    def _count(self, sql: str, params: list[Any]) -> int:
+        """Run one ``COUNT(*)``-shaped statement and return its integer result."""
+        row = self.db.execute(sql, params).fetchone()
+        return int(row[0]) if row is not None else 0
+
+    def _key_aggregates(
+        self, query: _DiscoveryQuery, keys: list[str], min_count: int
+    ) -> tuple[list[tuple[Any, ...]], list[tuple[Any, ...]], dict[str, float]]:
+        """Batch the page's type split, value counts, and numeric medians."""
+        if not keys:
+            return [], [], {}
+        placeholders = ", ".join(["?"] * len(keys))
+        params = [*query.scope_params, *keys, *query.match_params]
+        type_rows = self.db.execute(
+            f"{query.region} SELECT mv.key, mv.value_type, "
+            f"COUNT(DISTINCT mv.document_id), MAX(mv.ordinal) > 0, "
+            f"MIN(mv.number_value), MAX(mv.number_value) "
+            f"FROM document_metadata_values mv JOIN region r ON mv.document_id = r.id "
+            f"WHERE mv.key IN ({placeholders}){query.match_sql} "
+            f"GROUP BY mv.key, mv.value_type",
+            params,
+        ).fetchall()
+        value_rows = self.db.execute(
+            f"{query.region} SELECT mv.key, mv.value_type, mv.text_value, "
+            f"mv.number_value, mv.boolean_value, COUNT(DISTINCT mv.document_id) "
+            f"FROM document_metadata_values mv JOIN region r ON mv.document_id = r.id "
+            f"WHERE mv.key IN ({placeholders}){query.match_sql} "
+            f"GROUP BY mv.key, mv.value_type, mv.text_value, mv.number_value, "
+            f"mv.boolean_value HAVING COUNT(DISTINCT mv.document_id) >= ?",
+            [*params, min_count],
+        ).fetchall()
+        numeric_keys = sorted({str(row[0]) for row in type_rows if row[1] == "number"})
+        return type_rows, value_rows, self._medians(query, numeric_keys)
+
+    def _medians(self, query: _DiscoveryQuery, keys: list[str]) -> dict[str, float]:
+        """Exact medians over numeric VALUE rows (array elements each count)."""
+        if not keys:
+            return {}
+        placeholders = ", ".join(["?"] * len(keys))
+        rows = self.db.execute(
+            f"{query.region} SELECT key, number_value FROM ("
+            f"SELECT mv.key AS key, mv.number_value AS number_value, "
+            f"ROW_NUMBER() OVER (PARTITION BY mv.key ORDER BY mv.number_value) AS position, "
+            f"COUNT(*) OVER (PARTITION BY mv.key) AS total "
+            f"FROM document_metadata_values mv JOIN region r ON mv.document_id = r.id "
+            f"WHERE mv.value_type = 'number' AND mv.key IN ({placeholders}){query.match_sql}"
+            f") WHERE position IN ((total + 1) / 2, (total + 2) / 2) "
+            f"ORDER BY key, number_value",
+            [*query.scope_params, *keys, *query.match_params],
+        ).fetchall()
+        positions: dict[str, list[float]] = {}
+        for key, number in rows:
+            positions.setdefault(str(key), []).append(float(number))
+        return {key: _median(values) for key, values in positions.items()}
+
+    def _built_in_entries(self, query: _DiscoveryQuery) -> list[dict[str, Any]]:
+        """The fixed D-20 ``builtIns`` list: ``path`` then ``mtime`` (D-03).
+
+        Both are computed from the ``documents`` columns over the same
+        filter-aware region, never from the typed store, so a frontmatter key
+        with either reserved name can never masquerade as a built-in. Each
+        reports no inline values (``remainingValues == distinctValues``).
+        """
+        row = self.db.execute(
+            f"{query.region} SELECT COUNT(*), COUNT(DISTINCT path), COUNT(DISTINCT mtime), "
+            f"MIN(mtime), MAX(mtime) FROM region",
+            query.scope_params,
+        ).fetchone()
+        documents = int(row[0]) if row is not None else 0
+        path_values = int(row[1]) if row is not None else 0
+        mtime_values = int(row[2]) if row is not None else 0
+        path_type: dict[str, Any] = {
+            "type": "string",
+            "multiValued": False,
+            "documents": documents,
+            "distinctValues": path_values,
+            "values": [],
+            "remainingValues": path_values,
+        }
+        mtime_type: dict[str, Any] = {
+            "type": "number",
+            "multiValued": False,
+            "documents": documents,
+            "distinctValues": mtime_values,
+            "values": [],
+            "remainingValues": mtime_values,
+        }
+        if documents and row is not None and row[3] is not None and row[4] is not None:
+            mtime_type["range"] = {
+                "min": float(row[3]),
+                "median": self._mtime_median(query),
+                "max": float(row[4]),
+            }
+        return [
+            {"key": "path", "documents": documents, "types": [path_type]},
+            {"key": "mtime", "documents": documents, "types": [mtime_type]},
+        ]
+
+    def _mtime_median(self, query: _DiscoveryQuery) -> float:
+        """Median of the region's ``mtime`` values (same integer-division shape)."""
+        rows = self.db.execute(
+            f"{query.region} SELECT mtime FROM ("
+            f"SELECT mtime, ROW_NUMBER() OVER (ORDER BY mtime) AS position, "
+            f"COUNT(*) OVER () AS total FROM region"
+            f") WHERE position IN ((total + 1) / 2, (total + 2) / 2)",
+            query.scope_params,
+        ).fetchall()
+        return _median([float(row[0]) for row in rows])
