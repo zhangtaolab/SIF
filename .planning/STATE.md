@@ -5,16 +5,16 @@ milestone_name: Search Precision and Agent Experience
 current_phase: 19
 current_phase_name: Search Correctness
 status: executing
-stopped_at: Completed 19-06-PLAN.md
-last_updated: "2026-11-15T04:05:30.476Z"
+stopped_at: Completed 19-07-PLAN.md
+last_updated: "2026-11-15T04:17:14.965Z"
 last_activity: 2026-11-15
 last_activity_desc: Phase 19 execution started
-state_head: 657ff29c1f83cd023b2d5704b474672c06d810a1
+state_head: 3d098df5a162ac66a2e798e24649c0135ff880fc
 progress:
   total_phases: 8
   completed_phases: 2
   total_plans: 22
-  completed_plans: 19
+  completed_plans: 20
 ---
 
 # DocSift — Project State
@@ -31,7 +31,7 @@ progress:
 ## Current Position
 
 Phase: 19 (Search Correctness) — EXECUTING
-Plan: 7 of 9
+Plan: 8 of 9
 Status: Ready to execute
 Last activity: 2026-11-15 — Phase 19 execution started
 
@@ -68,6 +68,7 @@ Progress: [███░░░░░░░] 25%
 | Phase 19 P04 | 6 min | 2 tasks | 5 files |
 | Phase 19 P05 | 9min | 3 tasks | 15 files |
 | Phase 19 P06 | 13min | 3 tasks | 13 files |
+| Phase 19 P07 | 7min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -149,6 +150,11 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - [Phase 19]: 19-06: RRFFusion.fuse gained an optional key callable; chunk_key/fuse_key_for are the shared selectors at both fuse sites, and the merge adopts non-null chunk fields plus max(chunk_matches) without touching scores.
 - [Phase 19]: 19-06: the default hybrid path keeps the post-fusion safety-net dedup (now metadata-merging) and per-chunk mode skips it; the rerank rebuild preserves chunk identity (Rule 2).
 - [Phase 19]: 19-06: the SC1 hybrid golden was regenerated as the post-dedup baseline (scores unchanged on the one-chunk fixture); the held-out snapshot records identical pre/post numbers because the corpus has one chunk per document, with the rationale and the chunky-document regression carrying the contract evidence.
+- [Phase 19]: The chunk_matches annotation lives in the shared _title_cell, gated on chunk_matches > 1; BM25 rows cannot trigger it, so sif search needs no option and no new column.
+- [Phase 19]: Per-chunk table identity is a dedicated Chunk column (only in per-chunk mode) showing path#sequence, because no existing search table has a path column; document-level hybrid rows fall back to the bare path.
+- [Phase 19]: MCP chunk identity rides the existing metadata dict (vectors_stale precedent): the explicit boundary re-map copies chunk_id/sequence/chunk_matches and the exact-metadata-set tests were updated.
+- [Phase 19]: B1 is an identical-data baseline (same query set and retrieved ids as B0); the B0->B1 comparison is labeled the BM25 no-drift check because both arms are --bm25-only and never exercise the vector dedup path.
+- [Phase 19]: The dedup evidence is cited from the regenerated held-out snapshot (identical pre/post totals and per_category on the one-chunk-per-document fixture) and the SC1 golden byte-identical scores, never from the BM25 deltas; no defaults claim is made.
 
 ### Pending Todos
 
@@ -178,8 +184,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-15T04:05:30.258Z
-Stopped at: Completed 19-06-PLAN.md
+Last session: 2026-11-15T04:17:14.749Z
+Stopped at: Completed 19-07-PLAN.md
 Resume file: None
 
 - **Next expected action:** run Phase 17 verification (`/gsd-verify-work 17`) to confirm the four ENG success criteria against the shipped state, then mark Phase 17 complete and proceed to Phase 18. Release evidence lives in `17-07-SUMMARY.md`: tag `v1.1.2` on `c819f67`, Publish run `43562577065` attempt 4 (all three jobs success), PyPI JSON `1.1.2` with the `mcp-name` marker, `pypi-attestations` `OK` against `https://github.com/zhangtaolab/SIF`, and both fresh-venv install proofs. Execution order for the rest of v1.2: 17 → 18 → 19 → 20 → 21 → 22 → 23 → 24; hard dependencies and cross-phase contracts in ROADMAP.md.
