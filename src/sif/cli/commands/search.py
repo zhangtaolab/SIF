@@ -452,7 +452,9 @@ def search_group() -> None:
 @click.option(
     "-n",
     "--limit",
-    type=int,
+    # WR-02 (19 REVIEW): reject < 1 — a negative SQLite LIMIT means "no
+    # limit", and search/vsearch/query must agree on the page-size contract.
+    type=click.IntRange(min=1),
     default=None,
     help="Number of results (default: SIF_DEFAULT_LIMIT or 10)",
 )
@@ -637,7 +639,9 @@ def search_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
 @click.option(
     "-n",
     "--limit",
-    type=int,
+    # WR-02 (19 REVIEW): reject < 1 — a negative SQLite LIMIT means "no
+    # limit", and search/vsearch/query must agree on the page-size contract.
+    type=click.IntRange(min=1),
     default=None,
     help="Number of results (default: SIF_DEFAULT_LIMIT or 10)",
 )
@@ -827,7 +831,9 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
 @click.option(
     "-n",
     "--limit",
-    type=int,
+    # WR-02 (19 REVIEW): reject < 1 — a negative SQLite LIMIT means "no
+    # limit", and search/vsearch/query must agree on the page-size contract.
+    type=click.IntRange(min=1),
     default=None,
     help="Number of results (default: SIF_DEFAULT_LIMIT or 10)",
 )

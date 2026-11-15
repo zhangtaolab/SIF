@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock, patch
 
+import pytest
 from click.testing import CliRunner
 
 from sif.cli.commands.search import query_cmd, search_cmd, vsearch_cmd
@@ -268,3 +269,26 @@ class TestPerChunkPageContinuity:
         assert len(payload) == 5
         assert [row["chunk_id"] for row in payload] == [f"chunk-{i}" for i in range(5, 10)]
         assert [row["sequence"] for row in payload] == [5, 6, 7, 8, 9]
+
+
+class TestLimitLowerBound:
+    """WR-02: -n/--limit below 1 is a parse error on every search command.
+
+    Pre-fix ``sif search -n -1`` reached ``LIMIT -1`` (SQLite's "no limit")
+    and dumped the whole match set, while vsearch/query clamped to one row.
+    The shared ``click.IntRange(min=1)`` makes the flag mean one thing.
+    """
+
+    @pytest.mark.parametrize("command", [search_cmd, vsearch_cmd, query_cmd])
+    @pytest.mark.parametrize("value", ["0", "-1"])
+    def test_limit_below_one_is_rejected(self, command, value: str) -> None:
+        """0 and negative limits exit 2 before any search work starts."""
+        result = CliRunner().invoke(
+            command,
+            ["apple", "-n", value],
+            obj={"index_path": MagicMock(exists=lambda: True)},
+        )
+
+        assert result.exit_code == 2, result.output
+        assert "Invalid value" in result.output
+        assert "not in the range" in result.output
