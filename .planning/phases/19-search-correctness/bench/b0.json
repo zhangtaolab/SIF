@@ -1,0 +1,1682 @@
+{
+  "version": 1,
+  "created_at": "2026-11-15T03:25:51+00:00",
+  "top_k": 10,
+  "corpus": {
+    "fingerprint": "8c006123784348d1",
+    "documents": 150,
+    "sampled": 50
+  },
+  "retrieval": "bm25",
+  "model": null,
+  "queries": [
+    {
+      "query": "Saltiv Protocol Notes",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-024.md",
+      "target_doc_id": "91683f0a-8269-4182-9008-ff7e83e2ab97",
+      "leg": "title",
+      "language": "en",
+      "length_bucket": "medium",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-024.md",
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-023.md"
+      ],
+      "retrieved_doc_ids": [
+        "91683f0a-8269-4182-9008-ff7e83e2ab97",
+        "a7512123-2d7c-4c0b-8603-6053a786968e"
+      ]
+    },
+    {
+      "query": "Gluon Tether Field Guide",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-013-a.md",
+      "target_doc_id": "fa8a6829-a8e9-424f-9f5e-6a55a9f90e25",
+      "leg": "title",
+      "language": "en",
+      "length_bucket": "medium",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-013-a.md",
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-013-b.md"
+      ],
+      "retrieved_doc_ids": [
+        "fa8a6829-a8e9-424f-9f5e-6a55a9f90e25",
+        "e0108519-e07c-4fe2-918f-4babe7401dd6"
+      ]
+    },
+    {
+      "query": "Neural Networks Notes \u795e\u7ecf\u7f51\u7edc",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/multilingual/ml-002.md",
+      "target_doc_id": "b1517eb8-432a-4494-b757-354687b56f5e",
+      "leg": "title",
+      "language": "mixed",
+      "length_bucket": "long",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/multilingual/ml-002.md"
+      ],
+      "retrieved_doc_ids": [
+        "b1517eb8-432a-4494-b757-354687b56f5e"
+      ]
+    },
+    {
+      "query": "Gluon Tether Draft Notes",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-013-b.md",
+      "target_doc_id": "e0108519-e07c-4fe2-918f-4babe7401dd6",
+      "leg": "title",
+      "language": "en",
+      "length_bucket": "medium",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-013-b.md"
+      ],
+      "retrieved_doc_ids": [
+        "e0108519-e07c-4fe2-918f-4babe7401dd6"
+      ]
+    },
+    {
+      "query": "Data Mining Companion",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/multilingual/ml-022.md",
+      "target_doc_id": "254b10a5-a87e-4ffe-b85b-b74671c49955",
+      "leg": "title",
+      "language": "en",
+      "length_bucket": "medium",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/multilingual/ml-022.md"
+      ],
+      "retrieved_doc_ids": [
+        "254b10a5-a87e-4ffe-b85b-b74671c49955"
+      ]
+    },
+    {
+      "query": "Holography Handbook",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-004.md",
+      "target_doc_id": "d17dbe07-0aad-4f3a-918b-24518036688a",
+      "leg": "title",
+      "language": "en",
+      "length_bucket": "short",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-004.md"
+      ],
+      "retrieved_doc_ids": [
+        "d17dbe07-0aad-4f3a-918b-24518036688a"
+      ]
+    },
+    {
+      "query": "Thoulp Protocol Notes",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-012.md",
+      "target_doc_id": "e9aa3d92-1760-4375-ab6e-8ea310c20887",
+      "leg": "title",
+      "language": "en",
+      "length_bucket": "medium",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-012.md",
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-011.md"
+      ],
+      "retrieved_doc_ids": [
+        "e9aa3d92-1760-4375-ab6e-8ea310c20887",
+        "a3a2429d-90fc-4e87-9474-653053411ec5"
+      ]
+    },
+    {
+      "query": "Astronomy Handbook",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-014.md",
+      "target_doc_id": "8ca21681-a646-4677-8269-9e1e7a610bcf",
+      "leg": "title",
+      "language": "en",
+      "length_bucket": "short",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-014.md"
+      ],
+      "retrieved_doc_ids": [
+        "8ca21681-a646-4677-8269-9e1e7a610bcf"
+      ]
+    },
+    {
+      "query": "Fermentation Handbook",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-002.md",
+      "target_doc_id": "bee2e79b-ee13-4f5b-8553-d78657fbb43e",
+      "leg": "title",
+      "language": "en",
+      "length_bucket": "short",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-002.md"
+      ],
+      "retrieved_doc_ids": [
+        "bee2e79b-ee13-4f5b-8553-d78657fbb43e"
+      ]
+    },
+    {
+      "query": "Fermion Gate Draft Notes",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-017-b.md",
+      "target_doc_id": "2c0433ab-1c8c-4f4d-b671-482395b2f395",
+      "leg": "title",
+      "language": "en",
+      "length_bucket": "medium",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-017-b.md"
+      ],
+      "retrieved_doc_ids": [
+        "2c0433ab-1c8c-4f4d-b671-482395b2f395"
+      ]
+    },
+    {
+      "query": "Dolefl Protocol Notes",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-033.md",
+      "target_doc_id": "8f64ef5e-12a7-466f-9572-8efe8a9742bb",
+      "leg": "title",
+      "language": "en",
+      "length_bucket": "medium",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-033.md",
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-032.md"
+      ],
+      "retrieved_doc_ids": [
+        "8f64ef5e-12a7-466f-9572-8efe8a9742bb",
+        "c815ced4-af3c-4614-9bdf-bb143de83f67"
+      ]
+    },
+    {
+      "query": "Holography Field Guide",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-005.md",
+      "target_doc_id": "cc241ab4-ef51-4b03-8cc5-ea8576a7ca0a",
+      "leg": "title",
+      "language": "en",
+      "length_bucket": "medium",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-005.md"
+      ],
+      "retrieved_doc_ids": [
+        "cc241ab4-ef51-4b03-8cc5-ea8576a7ca0a"
+      ]
+    },
+    {
+      "query": "Wolxer Protocol Notes",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-026.md",
+      "target_doc_id": "7a24c608-4783-4a5a-aeb4-68fa83cf50e4",
+      "leg": "title",
+      "language": "en",
+      "length_bucket": "medium",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-026.md",
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-025.md"
+      ],
+      "retrieved_doc_ids": [
+        "7a24c608-4783-4a5a-aeb4-68fa83cf50e4",
+        "07422476-444c-4184-b329-71729d3e5e6f"
+      ]
+    },
+    {
+      "query": "Phase Array Draft Notes",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-002-b.md",
+      "target_doc_id": "c0362ec9-80a9-4134-baaa-3e74786be05d",
+      "leg": "title",
+      "language": "en",
+      "length_bucket": "medium",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-002-b.md"
+      ],
+      "retrieved_doc_ids": [
+        "c0362ec9-80a9-4134-baaa-3e74786be05d"
+      ]
+    },
+    {
+      "query": "Ivyjor Protocol Notes",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-035.md",
+      "target_doc_id": "20565f71-884a-4a68-b21d-534cd5bd556e",
+      "leg": "title",
+      "language": "en",
+      "length_bucket": "medium",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-035.md",
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-034.md"
+      ],
+      "retrieved_doc_ids": [
+        "20565f71-884a-4a68-b21d-534cd5bd556e",
+        "4080d327-2313-4668-b7f3-1e0a6122e8f1"
+      ]
+    },
+    {
+      "query": "Tachyon Beacon Draft Notes",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-008-b.md",
+      "target_doc_id": "86836234-b77d-4060-b7ee-50b21d1dab46",
+      "leg": "title",
+      "language": "en",
+      "length_bucket": "medium",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-008-b.md"
+      ],
+      "retrieved_doc_ids": [
+        "86836234-b77d-4060-b7ee-50b21d1dab46"
+      ]
+    },
+    {
+      "query": "Version Control Companion",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/multilingual/ml-031.md",
+      "target_doc_id": "12b8517e-1961-444e-9387-d15802a1fe4f",
+      "leg": "title",
+      "language": "en",
+      "length_bucket": "medium",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/multilingual/ml-031.md"
+      ],
+      "retrieved_doc_ids": [
+        "12b8517e-1961-444e-9387-d15802a1fe4f"
+      ]
+    },
+    {
+      "query": "Distributed Systems Companion",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/multilingual/ml-025.md",
+      "target_doc_id": "7b57698d-0f96-4c23-b28c-89e6dedff3c4",
+      "leg": "title",
+      "language": "en",
+      "length_bucket": "medium",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/multilingual/ml-025.md"
+      ],
+      "retrieved_doc_ids": [
+        "7b57698d-0f96-4c23-b28c-89e6dedff3c4"
+      ]
+    },
+    {
+      "query": "Glaciology Handbook",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-032.md",
+      "target_doc_id": "79e9e449-7138-4f19-8d0b-3ca4989d81f3",
+      "leg": "title",
+      "language": "en",
+      "length_bucket": "short",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-032.md"
+      ],
+      "retrieved_doc_ids": [
+        "79e9e449-7138-4f19-8d0b-3ca4989d81f3"
+      ]
+    },
+    {
+      "query": "Seismology Handbook",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-026.md",
+      "target_doc_id": "24debee2-d582-48b9-b07a-d01763bf29a9",
+      "leg": "title",
+      "language": "en",
+      "length_bucket": "short",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-026.md"
+      ],
+      "retrieved_doc_ids": [
+        "24debee2-d582-48b9-b07a-d01763bf29a9"
+      ]
+    },
+    {
+      "query": "Axion Mirror Draft Notes",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-012-b.md",
+      "target_doc_id": "3ca510e9-1935-45c8-a143-44d16101809c",
+      "leg": "title",
+      "language": "en",
+      "length_bucket": "medium",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-012-b.md"
+      ],
+      "retrieved_doc_ids": [
+        "3ca510e9-1935-45c8-a143-44d16101809c"
+      ]
+    },
+    {
+      "query": "Plasma Conduit Draft Notes",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-009-b.md",
+      "target_doc_id": "b801cc90-fde6-467a-b729-a354a9aa06c6",
+      "leg": "title",
+      "language": "en",
+      "length_bucket": "medium",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-009-b.md"
+      ],
+      "retrieved_doc_ids": [
+        "b801cc90-fde6-467a-b729-a354a9aa06c6"
+      ]
+    },
+    {
+      "query": "Neutrino Sink Field Guide",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-010-a.md",
+      "target_doc_id": "bd5693bd-9a8f-4c12-b28e-2bb3df65f5a6",
+      "leg": "title",
+      "language": "en",
+      "length_bucket": "medium",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-010-a.md",
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-010-b.md"
+      ],
+      "retrieved_doc_ids": [
+        "bd5693bd-9a8f-4c12-b28e-2bb3df65f5a6",
+        "da5fd7d3-43a3-45a5-b737-50e2ddf5cd19"
+      ]
+    },
+    {
+      "query": "Database Indexing Notes \u6570\u636e\u5e93\u7d22\u5f15",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/multilingual/ml-008.md",
+      "target_doc_id": "8a124762-a2d9-4e91-987f-d9a9dffc91b9",
+      "leg": "title",
+      "language": "mixed",
+      "length_bucket": "long",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/multilingual/ml-008.md"
+      ],
+      "retrieved_doc_ids": [
+        "8a124762-a2d9-4e91-987f-d9a9dffc91b9"
+      ]
+    },
+    {
+      "query": "Photography Field Guide",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-029.md",
+      "target_doc_id": "c322bc5c-f127-41ff-9cea-430dcc94b2dd",
+      "leg": "title",
+      "language": "en",
+      "length_bucket": "medium",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-029.md"
+      ],
+      "retrieved_doc_ids": [
+        "c322bc5c-f127-41ff-9cea-430dcc94b2dd"
+      ]
+    },
+    {
+      "query": "Nampex Protocol Notes",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-010.md",
+      "target_doc_id": "3d45afde-1188-4192-9fa4-da4240e6ef22",
+      "leg": "title",
+      "language": "en",
+      "length_bucket": "medium",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-010.md",
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-009.md"
+      ],
+      "retrieved_doc_ids": [
+        "3d45afde-1188-4192-9fa4-da4240e6ef22",
+        "8b5cc3da-c612-4e0f-b120-c1ff1bb0ef8e"
+      ]
+    },
+    {
+      "query": "Load Balancing Notes \u8d1f\u8f7d\u5747\u8861",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/multilingual/ml-016.md",
+      "target_doc_id": "6e9a62f1-a31c-4056-9cc1-ae36b65abf91",
+      "leg": "title",
+      "language": "mixed",
+      "length_bucket": "long",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/multilingual/ml-016.md"
+      ],
+      "retrieved_doc_ids": [
+        "6e9a62f1-a31c-4056-9cc1-ae36b65abf91"
+      ]
+    },
+    {
+      "query": "Cryptography Field Guide",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-017.md",
+      "target_doc_id": "297f11bf-dc9f-4757-9b7a-72e07a8f6d79",
+      "leg": "title",
+      "language": "en",
+      "length_bucket": "medium",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-017.md"
+      ],
+      "retrieved_doc_ids": [
+        "297f11bf-dc9f-4757-9b7a-72e07a8f6d79"
+      ]
+    },
+    {
+      "query": "Zorvex Protocol Notes",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-000.md",
+      "target_doc_id": "0ae96b60-123b-4527-aaa3-37cfd5147f85",
+      "leg": "title",
+      "language": "en",
+      "length_bucket": "medium",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-000.md"
+      ],
+      "retrieved_doc_ids": [
+        "0ae96b60-123b-4527-aaa3-37cfd5147f85"
+      ]
+    },
+    {
+      "query": "Cartography Field Guide",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-007.md",
+      "target_doc_id": "0365d005-9915-470c-b555-1842673b8fee",
+      "leg": "title",
+      "language": "en",
+      "length_bucket": "medium",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-007.md"
+      ],
+      "retrieved_doc_ids": [
+        "0365d005-9915-470c-b555-1842673b8fee"
+      ]
+    },
+    {
+      "query": "Castel Protocol Notes",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-006.md",
+      "target_doc_id": "7643cd2d-256b-40a3-8841-fd3735c1e008",
+      "leg": "title",
+      "language": "en",
+      "length_bucket": "medium",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-006.md",
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-005.md"
+      ],
+      "retrieved_doc_ids": [
+        "7643cd2d-256b-40a3-8841-fd3735c1e008",
+        "a41366cc-0834-47cb-a2ba-868de579355a"
+      ]
+    },
+    {
+      "query": "Database Indexing Companion",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/multilingual/ml-026.md",
+      "target_doc_id": "176723b4-dcc1-4007-860d-f3d7e1334f38",
+      "leg": "title",
+      "language": "en",
+      "length_bucket": "medium",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/multilingual/ml-026.md"
+      ],
+      "retrieved_doc_ids": [
+        "176723b4-dcc1-4007-860d-f3d7e1334f38"
+      ]
+    },
+    {
+      "query": "Warp Coil Draft Notes",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-001-b.md",
+      "target_doc_id": "c6b1c888-4c26-4b13-82c0-b7b374f98604",
+      "leg": "title",
+      "language": "en",
+      "length_bucket": "medium",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-001-b.md"
+      ],
+      "retrieved_doc_ids": [
+        "c6b1c888-4c26-4b13-82c0-b7b374f98604"
+      ]
+    },
+    {
+      "query": "Yevzet Protocol Notes",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-014.md",
+      "target_doc_id": "22fb4efc-d207-4aa1-b690-679b9d34a683",
+      "leg": "title",
+      "language": "en",
+      "length_bucket": "medium",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-014.md",
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-013.md"
+      ],
+      "retrieved_doc_ids": [
+        "22fb4efc-d207-4aa1-b690-679b9d34a683",
+        "2ae6697b-dc0d-4b26-bee1-5a2eb6484598"
+      ]
+    },
+    {
+      "query": "Boson Trap Field Guide",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-011-a.md",
+      "target_doc_id": "6963429e-0c2e-40c1-8345-5ea47c8ffd68",
+      "leg": "title",
+      "language": "en",
+      "length_bucket": "medium",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-011-a.md",
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-011-b.md"
+      ],
+      "retrieved_doc_ids": [
+        "6963429e-0c2e-40c1-8345-5ea47c8ffd68",
+        "7391f602-e4c3-428d-bb97-a08b7ea8120e"
+      ]
+    },
+    {
+      "query": "Hydrology Field Guide",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-019.md",
+      "target_doc_id": "4aaa930b-e2f3-44c9-9bde-917187e921e0",
+      "leg": "title",
+      "language": "en",
+      "length_bucket": "medium",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-019.md"
+      ],
+      "retrieved_doc_ids": [
+        "4aaa930b-e2f3-44c9-9bde-917187e921e0"
+      ]
+    },
+    {
+      "query": "Quark Forge Field Guide",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-015-a.md",
+      "target_doc_id": "74a18d3a-1493-448a-840e-08eee0bf9feb",
+      "leg": "title",
+      "language": "en",
+      "length_bucket": "medium",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-015-a.md",
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-015-b.md"
+      ],
+      "retrieved_doc_ids": [
+        "74a18d3a-1493-448a-840e-08eee0bf9feb",
+        "76d82617-eb37-4f99-aabd-630433cc2204"
+      ]
+    },
+    {
+      "query": "Ambbri Protocol Notes",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-015.md",
+      "target_doc_id": "1ab3fc91-44a5-4a72-9a75-bf88cf3f01d7",
+      "leg": "title",
+      "language": "en",
+      "length_bucket": "medium",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-015.md",
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-014.md"
+      ],
+      "retrieved_doc_ids": [
+        "1ab3fc91-44a5-4a72-9a75-bf88cf3f01d7",
+        "22fb4efc-d207-4aa1-b690-679b9d34a683"
+      ]
+    },
+    {
+      "query": "Monitoring Alerts Companion",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/multilingual/ml-033.md",
+      "target_doc_id": "576a19bf-d0a1-44fa-b491-9f6e81d6ad87",
+      "leg": "title",
+      "language": "en",
+      "length_bucket": "medium",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/multilingual/ml-033.md"
+      ],
+      "retrieved_doc_ids": [
+        "576a19bf-d0a1-44fa-b491-9f6e81d6ad87"
+      ]
+    },
+    {
+      "query": "Data Mining Notes \u6570\u636e\u6316\u6398",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/multilingual/ml-004.md",
+      "target_doc_id": "6625fac4-0048-4fb3-9c9f-f16f5e03cfde",
+      "leg": "title",
+      "language": "mixed",
+      "length_bucket": "long",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/multilingual/ml-004.md"
+      ],
+      "retrieved_doc_ids": [
+        "6625fac4-0048-4fb3-9c9f-f16f5e03cfde"
+      ]
+    },
+    {
+      "query": "Kelpri Protocol Notes",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-003.md",
+      "target_doc_id": "8f77b0da-b0be-48d8-9b68-017b92297783",
+      "leg": "title",
+      "language": "en",
+      "length_bucket": "medium",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-003.md",
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-002.md"
+      ],
+      "retrieved_doc_ids": [
+        "8f77b0da-b0be-48d8-9b68-017b92297783",
+        "b6ac9175-45fb-4739-bce9-fdf4f5f5d575"
+      ]
+    },
+    {
+      "query": "Hadron Lens Field Guide",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-016-a.md",
+      "target_doc_id": "8d7b9192-0a53-40f0-9896-17f402b2e8de",
+      "leg": "title",
+      "language": "en",
+      "length_bucket": "medium",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-016-a.md",
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-016-b.md"
+      ],
+      "retrieved_doc_ids": [
+        "8d7b9192-0a53-40f0-9896-17f402b2e8de",
+        "b40debd6-6326-4b99-b499-8b33091ee48d"
+      ]
+    },
+    {
+      "query": "Ilmusk Protocol Notes",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-029.md",
+      "target_doc_id": "327bc7cc-abbc-4876-8aa9-71814fce01a7",
+      "leg": "title",
+      "language": "en",
+      "length_bucket": "medium",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-029.md",
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-028.md"
+      ],
+      "retrieved_doc_ids": [
+        "327bc7cc-abbc-4876-8aa9-71814fce01a7",
+        "8fd0f476-1f9a-4833-bee2-a03175fe332c"
+      ]
+    },
+    {
+      "query": "Neutrino Sink Draft Notes",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-010-b.md",
+      "target_doc_id": "da5fd7d3-43a3-45a5-b737-50e2ddf5cd19",
+      "leg": "title",
+      "language": "en",
+      "length_bucket": "medium",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-010-b.md"
+      ],
+      "retrieved_doc_ids": [
+        "da5fd7d3-43a3-45a5-b737-50e2ddf5cd19"
+      ]
+    },
+    {
+      "query": "Linguistics Handbook",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-020.md",
+      "target_doc_id": "945b6689-8019-4b19-8e67-7b63f3aad220",
+      "leg": "title",
+      "language": "en",
+      "length_bucket": "short",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-020.md"
+      ],
+      "retrieved_doc_ids": [
+        "945b6689-8019-4b19-8e67-7b63f3aad220"
+      ]
+    },
+    {
+      "query": "Fulgri Protocol Notes",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-008.md",
+      "target_doc_id": "82dd9465-6d58-4f96-b7d1-c972bdcb2cb6",
+      "leg": "title",
+      "language": "en",
+      "length_bucket": "medium",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-008.md",
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-007.md"
+      ],
+      "retrieved_doc_ids": [
+        "82dd9465-6d58-4f96-b7d1-c972bdcb2cb6",
+        "ce6b735d-2d57-4578-a54c-d8b05af50709"
+      ]
+    },
+    {
+      "query": "Belcim Protocol Notes",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-032.md",
+      "target_doc_id": "c815ced4-af3c-4614-9bdf-bb143de83f67",
+      "leg": "title",
+      "language": "en",
+      "length_bucket": "medium",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-032.md",
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-031.md"
+      ],
+      "retrieved_doc_ids": [
+        "c815ced4-af3c-4614-9bdf-bb143de83f67",
+        "43f31726-8ff6-4e6a-826f-cb90b477875f"
+      ]
+    },
+    {
+      "query": "Acoustics Handbook",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-008.md",
+      "target_doc_id": "fff1c722-f947-49ff-b5b1-3158adf37939",
+      "leg": "title",
+      "language": "en",
+      "length_bucket": "short",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-008.md"
+      ],
+      "retrieved_doc_ids": [
+        "fff1c722-f947-49ff-b5b1-3158adf37939"
+      ]
+    },
+    {
+      "query": "Mycology Field Guide",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-037.md",
+      "target_doc_id": "9ba31c0a-6aa3-4043-a703-5579b4566744",
+      "leg": "title",
+      "language": "en",
+      "length_bucket": "medium",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-037.md"
+      ],
+      "retrieved_doc_ids": [
+        "9ba31c0a-6aa3-4043-a703-5579b4566744"
+      ]
+    },
+    {
+      "query": "Muon Detector Draft Notes",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-007-b.md",
+      "target_doc_id": "7d6f9d88-973b-47cb-a03f-e2938d4e02f9",
+      "leg": "title",
+      "language": "en",
+      "length_bucket": "medium",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-007-b.md"
+      ],
+      "retrieved_doc_ids": [
+        "7d6f9d88-973b-47cb-a03f-e2938d4e02f9"
+      ]
+    },
+    {
+      "query": "the successor module urkvos extends this protocol with wider handshakes",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-024.md",
+      "target_doc_id": "91683f0a-8269-4182-9008-ff7e83e2ab97",
+      "leg": "body",
+      "language": "en",
+      "length_bucket": "long",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-025.md",
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-024.md"
+      ],
+      "retrieved_doc_ids": [
+        "07422476-444c-4184-b329-71729d3e5e6f",
+        "91683f0a-8269-4182-9008-ff7e83e2ab97"
+      ]
+    },
+    {
+      "query": "appendix b compares gluon tether variants under sustained load with",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-013-a.md",
+      "target_doc_id": "fa8a6829-a8e9-424f-9f5e-6a55a9f90e25",
+      "leg": "body",
+      "language": "en",
+      "length_bucket": "long",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-013-a.md"
+      ],
+      "retrieved_doc_ids": [
+        "fa8a6829-a8e9-424f-9f5e-6a55a9f90e25"
+      ]
+    },
+    {
+      "query": "neural networks notes \u795e\u7ecf\u7f51\u7edc this survey covers",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/multilingual/ml-002.md",
+      "target_doc_id": "b1517eb8-432a-4494-b757-354687b56f5e",
+      "leg": "body",
+      "language": "mixed",
+      "length_bucket": "long",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/multilingual/ml-002.md"
+      ],
+      "retrieved_doc_ids": [
+        "b1517eb8-432a-4494-b757-354687b56f5e"
+      ]
+    },
+    {
+      "query": "gluon tether draft notes an abbreviated draft summarizing the gluon",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-013-b.md",
+      "target_doc_id": "e0108519-e07c-4fe2-918f-4babe7401dd6",
+      "leg": "body",
+      "language": "en",
+      "length_bucket": "long",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-013-b.md"
+      ],
+      "retrieved_doc_ids": [
+        "e0108519-e07c-4fe2-918f-4babe7401dd6"
+      ]
+    },
+    {
+      "query": "data mining companion a companion brief connecting \u6570\u636e\u6316",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/multilingual/ml-022.md",
+      "target_doc_id": "254b10a5-a87e-4ffe-b85b-b74671c49955",
+      "leg": "body",
+      "language": "en",
+      "length_bucket": "long",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/multilingual/ml-022.md"
+      ],
+      "retrieved_doc_ids": [
+        "254b10a5-a87e-4ffe-b85b-b74671c49955"
+      ]
+    },
+    {
+      "query": "holography handbook this holography handbook covers interference fringes and emulsion",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-004.md",
+      "target_doc_id": "d17dbe07-0aad-4f3a-918b-24518036688a",
+      "leg": "body",
+      "language": "en",
+      "length_bucket": "long",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-004.md"
+      ],
+      "retrieved_doc_ids": [
+        "d17dbe07-0aad-4f3a-918b-24518036688a"
+      ]
+    },
+    {
+      "query": "the successor module wokxan extends this protocol with wider handshakes",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-012.md",
+      "target_doc_id": "e9aa3d92-1760-4375-ab6e-8ea310c20887",
+      "leg": "body",
+      "language": "en",
+      "length_bucket": "long",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-013.md",
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-012.md"
+      ],
+      "retrieved_doc_ids": [
+        "2ae6697b-dc0d-4b26-bee1-5a2eb6484598",
+        "e9aa3d92-1760-4375-ab6e-8ea310c20887"
+      ]
+    },
+    {
+      "query": "astronomy handbook this astronomy handbook covers ephemeris parallax and apertures",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-014.md",
+      "target_doc_id": "8ca21681-a646-4677-8269-9e1e7a610bcf",
+      "leg": "body",
+      "language": "en",
+      "length_bucket": "long",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-014.md"
+      ],
+      "retrieved_doc_ids": [
+        "8ca21681-a646-4677-8269-9e1e7a610bcf"
+      ]
+    },
+    {
+      "query": "fermentation handbook this fermentation handbook covers brewing yeast and mash",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-002.md",
+      "target_doc_id": "bee2e79b-ee13-4f5b-8553-d78657fbb43e",
+      "leg": "body",
+      "language": "en",
+      "length_bucket": "long",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-002.md"
+      ],
+      "retrieved_doc_ids": [
+        "bee2e79b-ee13-4f5b-8553-d78657fbb43e"
+      ]
+    },
+    {
+      "query": "fermion gate draft notes an abbreviated draft summarizing the fermion",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-017-b.md",
+      "target_doc_id": "2c0433ab-1c8c-4f4d-b671-482395b2f395",
+      "leg": "body",
+      "language": "en",
+      "length_bucket": "long",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-017-b.md"
+      ],
+      "retrieved_doc_ids": [
+        "2c0433ab-1c8c-4f4d-b671-482395b2f395"
+      ]
+    },
+    {
+      "query": "the successor module golhup extends this protocol with wider handshakes",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-033.md",
+      "target_doc_id": "8f64ef5e-12a7-466f-9572-8efe8a9742bb",
+      "leg": "body",
+      "language": "en",
+      "length_bucket": "long",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-034.md",
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-033.md"
+      ],
+      "retrieved_doc_ids": [
+        "4080d327-2313-4668-b7f3-1e0a6122e8f1",
+        "8f64ef5e-12a7-466f-9572-8efe8a9742bb"
+      ]
+    },
+    {
+      "query": "holography field guide a compact holography reference for interference and",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-005.md",
+      "target_doc_id": "cc241ab4-ef51-4b03-8cc5-ea8576a7ca0a",
+      "leg": "body",
+      "language": "en",
+      "length_bucket": "long",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-005.md"
+      ],
+      "retrieved_doc_ids": [
+        "cc241ab4-ef51-4b03-8cc5-ea8576a7ca0a"
+      ]
+    },
+    {
+      "query": "the successor module yanzun extends this protocol with wider handshakes",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-026.md",
+      "target_doc_id": "7a24c608-4783-4a5a-aeb4-68fa83cf50e4",
+      "leg": "body",
+      "language": "en",
+      "length_bucket": "long",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-027.md",
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-026.md"
+      ],
+      "retrieved_doc_ids": [
+        "88e6b5fa-7e64-4315-95b0-37d9397b1d88",
+        "7a24c608-4783-4a5a-aeb4-68fa83cf50e4"
+      ]
+    },
+    {
+      "query": "phase array draft notes an abbreviated draft summarizing the phase",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-002-b.md",
+      "target_doc_id": "c0362ec9-80a9-4134-baaa-3e74786be05d",
+      "leg": "body",
+      "language": "en",
+      "length_bucket": "long",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-002-b.md"
+      ],
+      "retrieved_doc_ids": [
+        "c0362ec9-80a9-4134-baaa-3e74786be05d"
+      ]
+    },
+    {
+      "query": "the successor module kexlav extends this protocol with wider handshakes",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-035.md",
+      "target_doc_id": "20565f71-884a-4a68-b21d-534cd5bd556e",
+      "leg": "body",
+      "language": "en",
+      "length_bucket": "long",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-036.md",
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-035.md"
+      ],
+      "retrieved_doc_ids": [
+        "544b6a68-69fa-49ca-bee3-942ea80608b9",
+        "20565f71-884a-4a68-b21d-534cd5bd556e"
+      ]
+    },
+    {
+      "query": "tachyon beacon draft notes an abbreviated draft summarizing the tachyon",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-008-b.md",
+      "target_doc_id": "86836234-b77d-4060-b7ee-50b21d1dab46",
+      "leg": "body",
+      "language": "en",
+      "length_bucket": "long",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-008-b.md"
+      ],
+      "retrieved_doc_ids": [
+        "86836234-b77d-4060-b7ee-50b21d1dab46"
+      ]
+    },
+    {
+      "query": "version control companion a companion brief connecting \u7248\u672c\u63a7",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/multilingual/ml-031.md",
+      "target_doc_id": "12b8517e-1961-444e-9387-d15802a1fe4f",
+      "leg": "body",
+      "language": "en",
+      "length_bucket": "long",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/multilingual/ml-031.md"
+      ],
+      "retrieved_doc_ids": [
+        "12b8517e-1961-444e-9387-d15802a1fe4f"
+      ]
+    },
+    {
+      "query": "distributed systems companion a companion brief connecting \u5206\u5e03\u5f0f",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/multilingual/ml-025.md",
+      "target_doc_id": "7b57698d-0f96-4c23-b28c-89e6dedff3c4",
+      "leg": "body",
+      "language": "en",
+      "length_bucket": "long",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/multilingual/ml-025.md"
+      ],
+      "retrieved_doc_ids": [
+        "7b57698d-0f96-4c23-b28c-89e6dedff3c4"
+      ]
+    },
+    {
+      "query": "glaciology handbook this glaciology handbook covers moraines crevasses and firn",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-032.md",
+      "target_doc_id": "79e9e449-7138-4f19-8d0b-3ca4989d81f3",
+      "leg": "body",
+      "language": "en",
+      "length_bucket": "long",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-032.md"
+      ],
+      "retrieved_doc_ids": [
+        "79e9e449-7138-4f19-8d0b-3ca4989d81f3"
+      ]
+    },
+    {
+      "query": "seismology handbook this seismology handbook covers faults tremors and epicenters",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-026.md",
+      "target_doc_id": "24debee2-d582-48b9-b07a-d01763bf29a9",
+      "leg": "body",
+      "language": "en",
+      "length_bucket": "long",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-026.md"
+      ],
+      "retrieved_doc_ids": [
+        "24debee2-d582-48b9-b07a-d01763bf29a9"
+      ]
+    },
+    {
+      "query": "axion mirror draft notes an abbreviated draft summarizing the axion",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-012-b.md",
+      "target_doc_id": "3ca510e9-1935-45c8-a143-44d16101809c",
+      "leg": "body",
+      "language": "en",
+      "length_bucket": "long",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-012-b.md"
+      ],
+      "retrieved_doc_ids": [
+        "3ca510e9-1935-45c8-a143-44d16101809c"
+      ]
+    },
+    {
+      "query": "plasma conduit draft notes an abbreviated draft summarizing the plasma",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-009-b.md",
+      "target_doc_id": "b801cc90-fde6-467a-b729-a354a9aa06c6",
+      "leg": "body",
+      "language": "en",
+      "length_bucket": "long",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-009-b.md"
+      ],
+      "retrieved_doc_ids": [
+        "b801cc90-fde6-467a-b729-a354a9aa06c6"
+      ]
+    },
+    {
+      "query": "appendix b compares neutrino sink variants under sustained load with",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-010-a.md",
+      "target_doc_id": "bd5693bd-9a8f-4c12-b28e-2bb3df65f5a6",
+      "leg": "body",
+      "language": "en",
+      "length_bucket": "long",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-010-a.md"
+      ],
+      "retrieved_doc_ids": [
+        "bd5693bd-9a8f-4c12-b28e-2bb3df65f5a6"
+      ]
+    },
+    {
+      "query": "database indexing notes \u6570\u636e\u5e93\u7d22\u5f15 this survey",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/multilingual/ml-008.md",
+      "target_doc_id": "8a124762-a2d9-4e91-987f-d9a9dffc91b9",
+      "leg": "body",
+      "language": "mixed",
+      "length_bucket": "long",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/multilingual/ml-008.md"
+      ],
+      "retrieved_doc_ids": [
+        "8a124762-a2d9-4e91-987f-d9a9dffc91b9"
+      ]
+    },
+    {
+      "query": "photography field guide a compact photography reference for exposure and",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-029.md",
+      "target_doc_id": "c322bc5c-f127-41ff-9cea-430dcc94b2dd",
+      "leg": "body",
+      "language": "en",
+      "length_bucket": "long",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-029.md"
+      ],
+      "retrieved_doc_ids": [
+        "c322bc5c-f127-41ff-9cea-430dcc94b2dd"
+      ]
+    },
+    {
+      "query": "the successor module rhusyl extends this protocol with wider handshakes",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-010.md",
+      "target_doc_id": "3d45afde-1188-4192-9fa4-da4240e6ef22",
+      "leg": "body",
+      "language": "en",
+      "length_bucket": "long",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-011.md",
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-010.md"
+      ],
+      "retrieved_doc_ids": [
+        "a3a2429d-90fc-4e87-9474-653053411ec5",
+        "3d45afde-1188-4192-9fa4-da4240e6ef22"
+      ]
+    },
+    {
+      "query": "load balancing notes \u8d1f\u8f7d\u5747\u8861 this survey covers",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/multilingual/ml-016.md",
+      "target_doc_id": "6e9a62f1-a31c-4056-9cc1-ae36b65abf91",
+      "leg": "body",
+      "language": "mixed",
+      "length_bucket": "long",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/multilingual/ml-016.md"
+      ],
+      "retrieved_doc_ids": [
+        "6e9a62f1-a31c-4056-9cc1-ae36b65abf91"
+      ]
+    },
+    {
+      "query": "cryptography field guide a compact cryptography reference for ciphers and",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-017.md",
+      "target_doc_id": "297f11bf-dc9f-4757-9b7a-72e07a8f6d79",
+      "leg": "body",
+      "language": "en",
+      "length_bucket": "long",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-017.md"
+      ],
+      "retrieved_doc_ids": [
+        "297f11bf-dc9f-4757-9b7a-72e07a8f6d79"
+      ]
+    },
+    {
+      "query": "the successor module quamyr extends this protocol with wider handshakes",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-000.md",
+      "target_doc_id": "0ae96b60-123b-4527-aaa3-37cfd5147f85",
+      "leg": "body",
+      "language": "en",
+      "length_bucket": "long",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-001.md",
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-000.md"
+      ],
+      "retrieved_doc_ids": [
+        "9132133a-bad4-4a85-96fa-9dd568ecee07",
+        "0ae96b60-123b-4527-aaa3-37cfd5147f85"
+      ]
+    },
+    {
+      "query": "cartography field guide a compact cartography reference for surveying and",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-007.md",
+      "target_doc_id": "0365d005-9915-470c-b555-1842673b8fee",
+      "leg": "body",
+      "language": "en",
+      "length_bucket": "long",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-007.md"
+      ],
+      "retrieved_doc_ids": [
+        "0365d005-9915-470c-b555-1842673b8fee"
+      ]
+    },
+    {
+      "query": "the successor module novbra extends this protocol with wider handshakes",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-006.md",
+      "target_doc_id": "7643cd2d-256b-40a3-8841-fd3735c1e008",
+      "leg": "body",
+      "language": "en",
+      "length_bucket": "long",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-007.md",
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-006.md"
+      ],
+      "retrieved_doc_ids": [
+        "ce6b735d-2d57-4578-a54c-d8b05af50709",
+        "7643cd2d-256b-40a3-8841-fd3735c1e008"
+      ]
+    },
+    {
+      "query": "database indexing companion a companion brief connecting \u6570\u636e\u5e93",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/multilingual/ml-026.md",
+      "target_doc_id": "176723b4-dcc1-4007-860d-f3d7e1334f38",
+      "leg": "body",
+      "language": "en",
+      "length_bucket": "long",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/multilingual/ml-026.md"
+      ],
+      "retrieved_doc_ids": [
+        "176723b4-dcc1-4007-860d-f3d7e1334f38"
+      ]
+    },
+    {
+      "query": "warp coil draft notes an abbreviated draft summarizing the warp",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-001-b.md",
+      "target_doc_id": "c6b1c888-4c26-4b13-82c0-b7b374f98604",
+      "leg": "body",
+      "language": "en",
+      "length_bucket": "long",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-001-b.md"
+      ],
+      "retrieved_doc_ids": [
+        "c6b1c888-4c26-4b13-82c0-b7b374f98604"
+      ]
+    },
+    {
+      "query": "the successor module ambbri extends this protocol with wider handshakes",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-014.md",
+      "target_doc_id": "22fb4efc-d207-4aa1-b690-679b9d34a683",
+      "leg": "body",
+      "language": "en",
+      "length_bucket": "long",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-015.md",
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-014.md"
+      ],
+      "retrieved_doc_ids": [
+        "1ab3fc91-44a5-4a72-9a75-bf88cf3f01d7",
+        "22fb4efc-d207-4aa1-b690-679b9d34a683"
+      ]
+    },
+    {
+      "query": "appendix b compares boson trap variants under sustained load with",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-011-a.md",
+      "target_doc_id": "6963429e-0c2e-40c1-8345-5ea47c8ffd68",
+      "leg": "body",
+      "language": "en",
+      "length_bucket": "long",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-011-a.md"
+      ],
+      "retrieved_doc_ids": [
+        "6963429e-0c2e-40c1-8345-5ea47c8ffd68"
+      ]
+    },
+    {
+      "query": "hydrology field guide a compact hydrology reference for runoff and",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-019.md",
+      "target_doc_id": "4aaa930b-e2f3-44c9-9bde-917187e921e0",
+      "leg": "body",
+      "language": "en",
+      "length_bucket": "long",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-019.md"
+      ],
+      "retrieved_doc_ids": [
+        "4aaa930b-e2f3-44c9-9bde-917187e921e0"
+      ]
+    },
+    {
+      "query": "appendix b compares quark forge variants under sustained load with",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-015-a.md",
+      "target_doc_id": "74a18d3a-1493-448a-840e-08eee0bf9feb",
+      "leg": "body",
+      "language": "en",
+      "length_bucket": "long",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-015-a.md"
+      ],
+      "retrieved_doc_ids": [
+        "74a18d3a-1493-448a-840e-08eee0bf9feb"
+      ]
+    },
+    {
+      "query": "the successor module coldra extends this protocol with wider handshakes",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-015.md",
+      "target_doc_id": "1ab3fc91-44a5-4a72-9a75-bf88cf3f01d7",
+      "leg": "body",
+      "language": "en",
+      "length_bucket": "long",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-016.md",
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-015.md"
+      ],
+      "retrieved_doc_ids": [
+        "86e17ddd-0927-4ac0-9bb3-a6bd7bee691f",
+        "1ab3fc91-44a5-4a72-9a75-bf88cf3f01d7"
+      ]
+    },
+    {
+      "query": "monitoring alerts companion a companion brief connecting \u76d1\u63a7\u544a",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/multilingual/ml-033.md",
+      "target_doc_id": "576a19bf-d0a1-44fa-b491-9f6e81d6ad87",
+      "leg": "body",
+      "language": "en",
+      "length_bucket": "long",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/multilingual/ml-033.md"
+      ],
+      "retrieved_doc_ids": [
+        "576a19bf-d0a1-44fa-b491-9f6e81d6ad87"
+      ]
+    },
+    {
+      "query": "data mining notes \u6570\u636e\u6316\u6398 this survey covers",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/multilingual/ml-004.md",
+      "target_doc_id": "6625fac4-0048-4fb3-9c9f-f16f5e03cfde",
+      "leg": "body",
+      "language": "mixed",
+      "length_bucket": "long",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/multilingual/ml-004.md"
+      ],
+      "retrieved_doc_ids": [
+        "6625fac4-0048-4fb3-9c9f-f16f5e03cfde"
+      ]
+    },
+    {
+      "query": "the successor module dunsha extends this protocol with wider handshakes",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-003.md",
+      "target_doc_id": "8f77b0da-b0be-48d8-9b68-017b92297783",
+      "leg": "body",
+      "language": "en",
+      "length_bucket": "long",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-004.md",
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-003.md"
+      ],
+      "retrieved_doc_ids": [
+        "1f7881a1-9783-4c8c-959f-e4d68d804312",
+        "8f77b0da-b0be-48d8-9b68-017b92297783"
+      ]
+    },
+    {
+      "query": "appendix b compares hadron lens variants under sustained load with",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-016-a.md",
+      "target_doc_id": "8d7b9192-0a53-40f0-9896-17f402b2e8de",
+      "leg": "body",
+      "language": "en",
+      "length_bucket": "long",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-016-a.md"
+      ],
+      "retrieved_doc_ids": [
+        "8d7b9192-0a53-40f0-9896-17f402b2e8de"
+      ]
+    },
+    {
+      "query": "the successor module batwex extends this protocol with wider handshakes",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-029.md",
+      "target_doc_id": "327bc7cc-abbc-4876-8aa9-71814fce01a7",
+      "leg": "body",
+      "language": "en",
+      "length_bucket": "long",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-030.md",
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-029.md"
+      ],
+      "retrieved_doc_ids": [
+        "a8890292-4362-433c-b9da-73912a657105",
+        "327bc7cc-abbc-4876-8aa9-71814fce01a7"
+      ]
+    },
+    {
+      "query": "neutrino sink draft notes an abbreviated draft summarizing the neutrino",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-010-b.md",
+      "target_doc_id": "da5fd7d3-43a3-45a5-b737-50e2ddf5cd19",
+      "leg": "body",
+      "language": "en",
+      "length_bucket": "long",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-010-b.md"
+      ],
+      "retrieved_doc_ids": [
+        "da5fd7d3-43a3-45a5-b737-50e2ddf5cd19"
+      ]
+    },
+    {
+      "query": "linguistics handbook this linguistics handbook covers morphology syntax and phonemes",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-020.md",
+      "target_doc_id": "945b6689-8019-4b19-8e67-7b63f3aad220",
+      "leg": "body",
+      "language": "en",
+      "length_bucket": "long",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-020.md"
+      ],
+      "retrieved_doc_ids": [
+        "945b6689-8019-4b19-8e67-7b63f3aad220"
+      ]
+    },
+    {
+      "query": "the successor module hedjol extends this protocol with wider handshakes",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-008.md",
+      "target_doc_id": "82dd9465-6d58-4f96-b7d1-c972bdcb2cb6",
+      "leg": "body",
+      "language": "en",
+      "length_bucket": "long",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-009.md",
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-008.md"
+      ],
+      "retrieved_doc_ids": [
+        "8b5cc3da-c612-4e0f-b120-c1ff1bb0ef8e",
+        "82dd9465-6d58-4f96-b7d1-c972bdcb2cb6"
+      ]
+    },
+    {
+      "query": "the successor module dolefl extends this protocol with wider handshakes",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-032.md",
+      "target_doc_id": "c815ced4-af3c-4614-9bdf-bb143de83f67",
+      "leg": "body",
+      "language": "en",
+      "length_bucket": "long",
+      "split": "heldout",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-033.md",
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/keyword/kw-032.md"
+      ],
+      "retrieved_doc_ids": [
+        "8f64ef5e-12a7-466f-9572-8efe8a9742bb",
+        "c815ced4-af3c-4614-9bdf-bb143de83f67"
+      ]
+    },
+    {
+      "query": "acoustics handbook this acoustics handbook covers resonance harmonics and damping",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-008.md",
+      "target_doc_id": "fff1c722-f947-49ff-b5b1-3158adf37939",
+      "leg": "body",
+      "language": "en",
+      "length_bucket": "long",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-008.md"
+      ],
+      "retrieved_doc_ids": [
+        "fff1c722-f947-49ff-b5b1-3158adf37939"
+      ]
+    },
+    {
+      "query": "mycology field guide a compact mycology reference for spores and",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-037.md",
+      "target_doc_id": "9ba31c0a-6aa3-4043-a703-5579b4566744",
+      "leg": "body",
+      "language": "en",
+      "length_bucket": "long",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/synonym/syn-037.md"
+      ],
+      "retrieved_doc_ids": [
+        "9ba31c0a-6aa3-4043-a703-5579b4566744"
+      ]
+    },
+    {
+      "query": "muon detector draft notes an abbreviated draft summarizing the muon",
+      "target_path": "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-007-b.md",
+      "target_doc_id": "7d6f9d88-973b-47cb-a03f-e2938d4e02f9",
+      "leg": "body",
+      "language": "en",
+      "length_bucket": "long",
+      "split": "tuning",
+      "grade": 1,
+      "retrieved": [
+        "/Users/forrest/GitHub/SIF/tests/fixtures/bench/corpus/rival/riv-007-b.md"
+      ],
+      "retrieved_doc_ids": [
+        "7d6f9d88-973b-47cb-a03f-e2938d4e02f9"
+      ]
+    }
+  ],
+  "replay": {
+    "available": false,
+    "queries": []
+  }
+}
