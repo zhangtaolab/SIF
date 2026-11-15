@@ -108,9 +108,10 @@ class CachedEmbedder:
         document and query batch methods are reused with a one-element list so
         the ``(role, text)`` memo still holds one inner call per text.
         """
-        if role == "query" and getattr(type(self._inner), "embed_query", None) is not None:
-            single: Callable[[str], list[float]] = self._inner.embed_query
-            return single(text)
+        if role == "query":
+            single = getattr(self._inner, "embed_query", None)
+            if single is not None:
+                return single(text)
         batch_name = "embed_queries" if role == "query" else "embed_documents"
         if getattr(type(self._inner), batch_name, None) is not None:
             batch: Callable[[list[str]], list[list[float]]] = getattr(self._inner, batch_name)
