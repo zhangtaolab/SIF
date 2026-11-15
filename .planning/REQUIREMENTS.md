@@ -43,7 +43,7 @@ Each maps to exactly one roadmap phase. Checkboxes mark committed scope.
 - [x] **FILT-02**: User can filter by built-in `path`/`mtime` fields (columns already exist; mtime index added) — strictly more expressive than qmd's frontmatter-only AST.
 - [x] **FILT-03**: User's filters apply pre-RRF per leg (BM25 outer WHERE of the materialized CTE — never inside it; vector post-KNN JOIN + adaptive over-fetch with a selectivity bound and honest "too selective" message; parameterized SQL only).
 - [x] **FILT-04**: User's frontmatter is stored typed for pushdown/discovery (typed kv storage + backfill; `qmd.metadata` namespace opt-in for migration parity).
-- [ ] **FILT-05**: Agent can discover available metadata via a `metadata` tool (CLI + MCP; doc counts, numeric min/median/max, exact remainders; one validator shared with FILT-01; invalid filter → ToolError for model self-correction, never a protocol error).
+- [x] **FILT-05**: Agent can discover available metadata via a `metadata` tool (CLI + MCP; doc counts, numeric min/median/max, exact remainders; one validator shared with FILT-01; invalid filter → ToolError for model self-correction, never a protocol error).
 
 ### Scale & Maintenance (SCALE)
 
@@ -148,7 +148,7 @@ Populated during roadmap creation. Each requirement maps to exactly one phase.
 | FILT-02 | Phase 20 | Complete |
 | FILT-03 | Phase 20 | Complete |
 | FILT-04 | Phase 20 | Complete |
-| FILT-05 | Phase 20 | Pending |
+| FILT-05 | Phase 20 | Complete |
 | SCALE-01 | Phase 21 | Pending |
 | SCALE-02 | Phase 21 | Pending |
 | SCALE-03 | Phase 21 | Pending |

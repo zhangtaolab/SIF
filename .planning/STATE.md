@@ -4,17 +4,17 @@ milestone: v1.2
 milestone_name: Search Precision and Agent Experience
 current_phase: 20
 current_phase_name: Metadata Filtering + Discovery
-status: executing
-stopped_at: Completed 20-04-PLAN.md
-last_updated: "2026-11-15T13:02:10.638Z"
+status: verifying
+stopped_at: Completed 20-05-PLAN.md
+last_updated: "2026-11-15T13:27:03.683Z"
 last_activity: 2026-11-15
 last_activity_desc: Phase 20 execution started
-state_head: aad3e9be555c044030b7083bf28f69a286175770
+state_head: 96dbad4a76c233d9eab115a52494899bf5e88ffe
 progress:
   total_phases: 8
   completed_phases: 3
   total_plans: 27
-  completed_plans: 26
+  completed_plans: 27
 ---
 
 # DocSift — Project State
@@ -32,7 +32,7 @@ progress:
 
 Phase: 20 (Metadata Filtering + Discovery) — EXECUTING
 Plan: 5 of 5
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-11-15 — Phase 20 execution started
 
 Progress: [████░░░░░░] 38%
@@ -75,6 +75,7 @@ Progress: [████░░░░░░] 38%
 | Phase 20 P02 | 9 min | 3 tasks | 6 files |
 | Phase 20 P03 | 10min | 3 tasks | 5 files |
 | Phase 20 P04 | 12min | 3 tasks | 8 files |
+| Phase 20 P05 | 14min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -188,6 +189,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - [Phase 20]: CLI AST errors keep 20-01 shipped spelling filter.<operator-path> with the field named inline (e.g. filter.gt: "gt" requires a numeric value; field tags got str); the plan example filter.tags.gt was reconciled in the test, never by rewriting the validator.
 - [Phase 20]: MCP filter is a raw dict validated inside QueryToolHandler.handle via parse_filter; grammar/budget failures return ToolsCallResult(isError=True) with no stack trace, model-shape failures keep the server generic isError catch, and neither is ever INVALID_PARAMS.
 - [Phase 20]: SearchBackend.hybrid_search takes filter_node (ruff A002), sets SearchOptions.filter by identity, and the BM25 degrade path receives the same options; annotated model fields keep the name filter with no noqa (A003 does not fire, RUF100 would).
+- [Phase 20]: Discovery reads the same typed store as the filter compiler: documents is the collection-scope denominator, filteredDocuments appears only with a filter, and the fixed path/mtime builtIns section comes from the documents columns (D-16/D-03/D-20).
+- [Phase 20]: The MCP metadata envelope (MetadataInput/MetadataOutput with builtIns) is frozen as the Phase 22 contract; CLI JSON emits the same envelope, with filteredDocuments absent when no filter was supplied.
 
 ### Pending Todos
 
@@ -217,8 +220,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-15T13:02:10.251Z
-Stopped at: Completed 20-04-PLAN.md
+Last session: 2026-11-15T13:27:03.316Z
+Stopped at: Completed 20-05-PLAN.md
 Resume file: None
 
 - **Next expected action:** run Phase 17 verification (`/gsd-verify-work 17`) to confirm the four ENG success criteria against the shipped state, then mark Phase 17 complete and proceed to Phase 18. Release evidence lives in `17-07-SUMMARY.md`: tag `v1.1.2` on `c819f67`, Publish run `43562577065` attempt 4 (all three jobs success), PyPI JSON `1.1.2` with the `mcp-name` marker, `pypi-attestations` `OK` against `https://github.com/zhangtaolab/SIF`, and both fresh-venv install proofs. Execution order for the rest of v1.2: 17 → 18 → 19 → 20 → 21 → 22 → 23 → 24; hard dependencies and cross-phase contracts in ROADMAP.md.
