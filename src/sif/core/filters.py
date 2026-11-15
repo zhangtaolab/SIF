@@ -448,9 +448,15 @@ _OPERAND_VALIDATORS: dict[str, Callable[[str, Any, str, str], None]] = {
 
 
 def _check_case_insensitive(field: str, raw: dict[str, Any], path: str) -> None:
-    """``caseInsensitive`` is accepted only when the operand is string data."""
+    """``caseInsensitive`` is accepted only when the operand is string data.
+
+    ``false`` is semantically identical to an absent flag (WR-03): a
+    schema-complete agent that always emits the property must still be able to
+    filter numeric and ``mtime`` fields. Only a truthy flag imposes the
+    string-operand requirement.
+    """
     flag = raw.get("caseInsensitive")
-    if flag is None:
+    if not flag:
         return
     value = raw.get("value")
     if isinstance(value, str) or (

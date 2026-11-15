@@ -263,6 +263,32 @@ class TestOperatorSemantics:
             )
         assert "caseInsensitive requires a string" in str(excinfo.value)
 
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {"field": "priority", "operator": "eq", "value": 1, "caseInsensitive": False},
+            {"field": "mtime", "operator": "eq", "value": 1, "caseInsensitive": False},
+            {"field": "mtime", "operator": "gte", "value": "2026-01-01", "caseInsensitive": False},
+            {
+                "field": "path",
+                "operator": "type",
+                "value": "string",
+                "caseInsensitive": False,
+            },
+        ],
+    )
+    def test_explicit_false_is_equivalent_to_absent(self, payload: dict[str, Any]) -> None:
+        """WR-03: ``caseInsensitive: false`` never imposes a string operand."""
+        node = parse_filter(payload)
+
+        assert node.caseInsensitive is False
+        assert (
+            node.value
+            == parse_filter(
+                {key: value for key, value in payload.items() if key != "caseInsensitive"}
+            ).value
+        )
+
     @pytest.mark.parametrize("operator", ["eq", "gt", "in", "nin", "all"])
     def test_unbounded_integer_operand_is_a_validation_error(self, operator: str) -> None:
         """WR-01: an integer outside the double range is invalid, never OverflowError.
