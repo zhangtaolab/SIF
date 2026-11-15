@@ -2,19 +2,20 @@
 gsd_state_version: "1.0"
 milestone: v1.2
 milestone_name: Search Precision and Agent Experience
-current_phase: 21
-current_phase_name: Scale, Maintenance + Embedder Identity
-status: verifying
-stopped_at: Completed 21-07-PLAN.md
-last_updated: "2026-11-15T17:55:53.183Z"
+current_phase: 22
+current_phase_name: MCP SDK v2 Modernization + Agent Packaging
+status: planning
+stopped_at: Phase 21 complete, ready to plan Phase 22
+last_updated: "2026-11-15T18:40:46.041Z"
 last_activity: 2026-11-16
-last_activity_desc: Phase 21 execution started
-state_head: b210adbfdc87719a1dbffc6421c2a57f0f5f1439
+last_activity_desc: Phase 21 complete, transitioned to Phase 22
+state_head: 4e9c424f941eee470458b7dfa804ea0d49e28509
 progress:
   total_phases: 8
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 35
   completed_plans: 35
+  percent: 63
 ---
 
 # DocSift — Project State
@@ -30,12 +31,12 @@ progress:
 
 ## Current Position
 
-Phase: 21 (Scale, Maintenance + Embedder Identity) — EXECUTING
-Plan: 8 of 8
-Status: Phase complete — ready for verification
-Last activity: 2026-11-16 — Phase 21 execution started
+Phase: 22 — MCP SDK v2 Modernization + Agent Packaging
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-11-16 — Phase 21 complete, transitioned to Phase 22
 
-Progress: [█████░░░░░] 50%
+Progress: [██████░░░░] 63%
 
 **v1.2 phase list:** 17 Engineering Foundation (CI + Hygiene + PyPI) · 18 Quality Instrument (Personal Bench + rapidfuzz DYM) · 19 Search Correctness · 20 Metadata Filtering + Discovery · 21 Scale, Maintenance + Embedder Identity · 22 MCP SDK v2 + Agent Packaging · 23 Harrier Gated Evaluation · 24 Tuning + Models UX + Install Docs
 
@@ -263,7 +264,7 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 ## Session Continuity
 
 Last session: 2026-11-15T17:55:52.631Z
-Stopped at: Completed 21-07-PLAN.md
+Stopped at: Phase 21 complete, ready to plan Phase 22
 Resume file: None
 
 - **Next expected action:** plan and execute Phase 21 (Scale, Maintenance + Embedder Identity — SCALE-01..03, EMB-01/02), then 22 → 23 → 24. Phase 20 delivered FILT-01..05: shared 17-operator filter grammar on CLI+MCP, `path`/`mtime` built-ins, pre-RRF per-leg pushdown with the corrected vector escalation, typed kv storage + `index_meta`-gated backfill, and the `metadata` discovery tool whose envelope is the frozen Phase 22 contract. Two audits remain recorded as debt (see Blockers/Concerns): `/gsd-secure-phase 20` and `/gsd:validate-phase 20`.

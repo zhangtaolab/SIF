@@ -60,7 +60,7 @@ Full detail: `.planning/milestones/v1.1-ROADMAP.md`
 - [x] **Phase 18: Quality Instrument (Personal Bench + rapidfuzz DYM)** - `sif eval --personal` known-item measurement with bias controls; measured rapidfuzz did-you-mean swap (completed 2026-11-15)
 - [x] **Phase 19: Search Correctness** - Frontmatter-only edit freshness, per-doc dedup pre-fusion, deterministic pagination, title-FTS ranking, single context/staleness attach (completed 2026-11-15)
 - [x] **Phase 20: Metadata Filtering + Discovery** - qmd-parity recursive filter AST applied pre-RRF, built-in path/mtime fields, typed frontmatter storage, `metadata` discovery tool (completed 2026-11-15)
-- [ ] **Phase 21: Scale, Maintenance + Embedder Identity** - Bounded staleness/context reads, `index vacuum` + backup, streaming embed, `index_meta` embedder identity + role-aware embed
+- [x] **Phase 21: Scale, Maintenance + Embedder Identity** - Bounded staleness/context reads, `index vacuum` + backup, streaming embed, `index_meta` embedder identity + role-aware embed (completed 2026-11-16)
 - [ ] **Phase 22: MCP SDK v2 Modernization + Agent Packaging** - Official SDK shell swap (dual-era), accurate annotations + structuredContent, query pipeline parity, daemon, Claude Code plugin + MCP Registry
 - [ ] **Phase 23: Harrier Gated Evaluation** - EN+ZH held-out A/B of Harrier native vs Qwen3-Embedding-0.6B; default switch ONLY on a proven win
 - [ ] **Phase 24: Tuning + Models UX + Install Docs** - Held-out-gated chunk sweep + title-breadcrumb experiment, `models pull/status`, uv-first install docs
@@ -185,7 +185,7 @@ Full detail: `.planning/milestones/v1.1-ROADMAP.md`
   3. User can embed large corpora without giant transactions — streaming embed batches run outside transactions with short per-batch commits, resumable, CR-02 failure reporting preserved, batch-boundary sanity against garbage vectors
   4. User is protected from silent bad model swaps — persisted `index_meta` embedder identity (model id + revision/hash + pooling + prompt scheme, reusing the cache's `_cache_model_id` format); the 3 dim-guard sites consolidated; legacy DBs get warn-once + backfill; mismatch → fail-fast embed / warn+mark search
   5. User gets correct query-vs-document embeddings — role-aware embed surface with `prompt_name`, prompt dimension in the cache key; the Qwen3 default path stays byte-identical until the Harrier gate passes
-**Plans:** 8/8 plans executed (0/8 complete)
+**Plans:** 8/8 plans complete (0/8 complete)
 
 **Wave 1** *(no dependencies — 21-01 and 21-02 are file-disjoint)*
 - [x] 21-01-PLAN.md — Tracer: identity record round-trip through `index_meta` (build/persist/compare) + prompt scheme + role methods + prompt/revision cache buckets, default Qwen3 byte-identical
@@ -264,7 +264,7 @@ v1.2 contracts — defined ONCE; downstream phases consume, never redefine:
 | 18. Quality Instrument (Personal Bench + rapidfuzz) | v1.2 | 4/4 | Complete    | 2026-11-15 |
 | 19. Search Correctness | v1.2 | 9/9 | Complete    | 2026-11-15 |
 | 20. Metadata Filtering + Discovery | v1.2 | 5/5 | Complete    | 2026-11-15 |
-| 21. Scale, Maintenance + Embedder Identity | v1.2 | 8/8 | In Progress | - |
+| 21. Scale, Maintenance + Embedder Identity | v1.2 | 8/8 | Complete    | 2026-11-16 |
 | 22. MCP SDK v2 + Agent Packaging | v1.2 | 0/TBD | Not started | - |
 | 23. Harrier Gated Evaluation | v1.2 | 0/TBD | Not started | - |
 | 24. Tuning + Models UX + Install Docs | v1.2 | 0/TBD | Not started | - |
