@@ -4,11 +4,17 @@ Covers the corrected D-08 formula — stale = document has no rows in
 ``document_embeddings`` (NOT "chunks without embeddings": BM25-only updates
 purge chunks AND embeddings together, so the real lag state is
 embeddings-free — RESEARCH Pitfall 3), the display gate (markers only once
-the index has >= 1 embedding), vec0-missing degradation, the empty-results
-no-query contract, the single-owner enrichment contract (searchers return raw
-results; each pipeline exit calls ``enrich_results`` exactly once — D-09),
-and the BM25-refreshed-after-embed lag state produced by a REAL
-``update_paths`` purge, never raw-SQL fabrication.
+the index has >= 1 embedding), vec0/shadow-missing degradation, the
+empty-results no-query contract, the single-owner enrichment contract
+(searchers return raw results; each pipeline exit calls ``enrich_results``
+exactly once — D-09), and the BM25-refreshed-after-embed lag state produced
+by a REAL ``update_paths`` purge, never raw-SQL fabrication.
+
+CORR-06 (D-09/D-11): the marker now reads the transactionally maintained
+``embedded_documents`` shadow. This module also pins the writer contract
+(batch/insert/delete shadow maintenance, the join-to-``documents`` orphan
+rule) and asserts the search path issues a display-gate probe plus indexed
+primary-key lookups, never a full ``document_embeddings`` scan.
 """
 
 from __future__ import annotations
@@ -27,8 +33,20 @@ from sif.search.staleness import embedded_document_ids, mark_vector_staleness
 from sif.search.vector import VectorSearcher
 
 
-def _vec0_conn(dim: int = 2) -> sqlite3.Connection:
-    """In-memory connection with a real vec0 ``document_embeddings`` table."""
+def _vec0_conn(
+    dim: int = 2,
+    *,
+    shadow: bool = True,
+    document_ids: tuple[str, ...] = (),
+) -> sqlite3.Connection:
+    """In-memory connection with a real vec0 ``document_embeddings`` table.
+
+    The derived ``embedded_documents`` shadow and a minimal ``documents``
+    table are built here too (the production DDL arrives with the schema
+    task): the writer tests exercise the join-to-``documents`` insert, and
+    the reader tests need the shadow to exist. ``shadow=False`` models a
+    bare vec0 database for the degradation path.
+    """
     import sqlite_vec
 
     conn = sqlite3.connect(":memory:")
@@ -50,7 +68,35 @@ def _vec0_conn(dim: int = 2) -> sqlite3.Connection:
         )
         """
     )
+    conn.execute("CREATE TABLE IF NOT EXISTS documents (id TEXT PRIMARY KEY)")
+    if shadow:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS embedded_documents (
+                document_id TEXT PRIMARY KEY,
+                FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
+            )
+            """
+        )
+    for document_id in document_ids:
+        conn.execute("INSERT OR IGNORE INTO documents (id) VALUES (?)", (document_id,))
+    conn.commit()
     return conn
+
+
+def _insert_vec_row(
+    conn: sqlite3.Connection,
+    doc_id: str,
+    embedding_id: str | None = None,
+    dim: int = 2,
+) -> None:
+    """Insert one embedding row via the raw vec0-native path (no shadow write)."""
+    conn.execute(
+        "INSERT INTO document_embeddings (embedding_id, document_id, chunk_id, embedding) "
+        "VALUES (?, ?, ?, vec_f32(?))",
+        (embedding_id or f"e-{doc_id}", doc_id, f"c-{doc_id}", json.dumps([0.1] * dim)),
+    )
+    conn.commit()
 
 
 def _seed_embedding(
@@ -59,18 +105,30 @@ def _seed_embedding(
     embedding_id: str | None = None,
     dim: int = 2,
 ) -> None:
-    """Insert one embedding row via the vec0-native insert path.
+    """Seed a vec0 row AND its shadow row (a truthful raw writer).
 
     chunk_id is always a real string: sqlite-vec v0.1.9 rejects NULL for a
     TEXT metadata column on INSERT (same note as test_vector.py's real-vec0
     battery).
     """
+    _insert_vec_row(conn, doc_id, embedding_id=embedding_id, dim=dim)
     conn.execute(
-        "INSERT INTO document_embeddings (embedding_id, document_id, chunk_id, embedding) "
-        "VALUES (?, ?, ?, vec_f32(?))",
-        (embedding_id or f"e-{doc_id}", doc_id, f"c-{doc_id}", json.dumps([0.1] * dim)),
+        "INSERT OR IGNORE INTO embedded_documents(document_id) VALUES (?)",
+        (doc_id,),
     )
     conn.commit()
+
+
+class _RecordingConnection:
+    """Connection proxy recording every SQL statement it is asked to run."""
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self._conn = conn
+        self.statements: list[str] = []
+
+    def execute(self, sql: str, params: tuple[object, ...] = ()) -> sqlite3.Cursor:
+        self.statements.append(sql)
+        return self._conn.execute(sql, params)
 
 
 def _result(doc_id: str) -> SearchResult:
@@ -110,6 +168,97 @@ class TestEmbeddedDocumentIds:
         conn = sqlite3.connect(":memory:")
         try:
             assert embedded_document_ids(conn) is None
+        finally:
+            conn.close()
+
+    def test_missing_shadow_table_returns_none(self) -> None:
+        """vec0 present but the derived shadow absent: the same None degradation."""
+        conn = _vec0_conn(shadow=False)
+        try:
+            _insert_vec_row(conn, "d1")
+            assert embedded_document_ids(conn) is None
+        finally:
+            conn.close()
+
+
+class TestShadowWritePath:
+    """CORR-06 D-09: VectorSearcher keeps ``embedded_documents`` transactional.
+
+    Every writer path is exercised against a real vec0 table: the batch
+    insert writes one row per distinct existing document, the document delete
+    removes only that document's row (returning the vec0 rowcount), and a raw
+    orphan vec0 row never creates a shadow row because the insert joins
+    ``documents``.
+    """
+
+    def test_batch_write_creates_one_shadow_row_per_document(self) -> None:
+        conn = _vec0_conn(document_ids=("d1", "d2"))
+        try:
+            searcher = VectorSearcher(conn, embedding_dim=2)
+            searcher.add_embeddings_batch(
+                [
+                    ("e1", "d1", "c1", [0.1, 0.2]),
+                    ("e2", "d1", "c1b", [0.2, 0.1]),
+                    ("e3", "d2", "c2", [0.3, 0.4]),
+                ]
+            )
+
+            rows = conn.execute(
+                "SELECT document_id FROM embedded_documents ORDER BY document_id"
+            ).fetchall()
+            assert [row[0] for row in rows] == ["d1", "d2"]
+        finally:
+            conn.close()
+
+    def test_delete_removes_only_that_documents_shadow_row(self) -> None:
+        conn = _vec0_conn(document_ids=("d1", "d2"))
+        try:
+            searcher = VectorSearcher(conn, embedding_dim=2)
+            searcher.add_embeddings_batch(
+                [
+                    ("e1", "d1", "c1", [0.1, 0.2]),
+                    ("e2", "d1", "c1b", [0.2, 0.1]),
+                    ("e3", "d2", "c2", [0.3, 0.4]),
+                ]
+            )
+
+            # The vec0 rowcount is returned unchanged by the shadow delete.
+            assert searcher.delete_embeddings_by_document("d1") == 2
+            rows = conn.execute("SELECT document_id FROM embedded_documents").fetchall()
+            assert [row[0] for row in rows] == ["d2"]
+        finally:
+            conn.close()
+
+    def test_orphan_vector_insert_never_creates_a_shadow_row(self) -> None:
+        """A vec0 row for a document absent from ``documents`` is not shadowed."""
+        conn = _vec0_conn()
+        try:
+            _insert_vec_row(conn, "d-deleted")
+
+            assert embedded_document_ids(conn) == set()
+            assert (
+                conn.execute(
+                    "SELECT COUNT(*) FROM embedded_documents WHERE document_id = 'd-deleted'"
+                ).fetchone()[0]
+                == 0
+            )
+        finally:
+            conn.close()
+
+    def test_no_shadow_table_is_a_write_no_op(self) -> None:
+        """Pre-Phase-21/bare vec0 databases keep working: no shadow statements."""
+        conn = _vec0_conn(shadow=False, document_ids=("d1",))
+        try:
+            searcher = VectorSearcher(conn, embedding_dim=2)
+            searcher.add_embedding("e1", "d1", "c1", [0.1, 0.2])
+            assert searcher.delete_embeddings_by_document("d1") == 1
+            assert (
+                conn.execute(
+                    "SELECT COUNT(*) FROM sqlite_master"
+                    " WHERE type='table' AND name='embedded_documents'"
+                ).fetchone()[0]
+                == 0
+            )
         finally:
             conn.close()
 
@@ -160,6 +309,43 @@ class TestMarkVectorStaleness:
         finally:
             conn.close()
 
+    def test_missing_shadow_degrades_to_unmarked(self) -> None:
+        """vec0 present but the shadow absent (legacy read path): unmarked, no raise."""
+        conn = _vec0_conn(shadow=False)
+        try:
+            _insert_vec_row(conn, "d1")
+            results = mark_vector_staleness(conn, [_result("d1"), _result("d2")])
+            assert all(r.vectors_stale is False for r in results)
+        finally:
+            conn.close()
+
+    def test_marking_is_bounded_by_the_shadow_not_a_vec0_scan(self) -> None:
+        """One display-gate probe plus indexed PK lookups; no table scan.
+
+        The recording connection pins the CORR-06 read contract: marking must
+        never reintroduce ``SELECT ... FROM document_embeddings`` (the old
+        O(vectors) scan). The shadow read is the derived, rebuildable signal.
+        """
+        conn = _vec0_conn(document_ids=("d1", "d2"))
+        try:
+            _seed_embedding(conn, "d1")
+            recording = _RecordingConnection(conn)
+
+            results = mark_vector_staleness(recording, [_result("d1"), _result("d2")])
+
+            assert [r.vectors_stale for r in results] == [False, True]
+            assert not any("FROM document_embeddings" in sql for sql in recording.statements)
+            assert any(
+                "SELECT 1 FROM embedded_documents LIMIT 1" in sql for sql in recording.statements
+            )
+            pk_lookups = sum(
+                "SELECT 1 FROM embedded_documents WHERE document_id = ?" in sql
+                for sql in recording.statements
+            )
+            assert pk_lookups == 2
+        finally:
+            conn.close()
+
     def test_empty_results_never_queries(self) -> None:
         """An empty results list returns unchanged without touching the DB."""
         mock_db = MagicMock()
@@ -189,7 +375,9 @@ class TestMarkVectorStaleness:
 class TestLagStateEndToEnd:
     """The real tiered-depth lag state: BM25 refresh purges embeddings (D-10)."""
 
-    def test_bm25_refreshed_after_embed_doc_is_marked_stale(self, tmp_path, monkeypatch) -> None:
+    def test_bm25_refreshed_after_embed_doc_is_marked_stale(  # noqa: PLR0915
+        self, tmp_path, monkeypatch
+    ) -> None:
         """Embed → modify → update_paths purge → the enriched BM25 result is marked.
 
         The lag state is produced by the REAL purge (update_paths), not by
@@ -220,6 +408,15 @@ class TestLagStateEndToEnd:
         db = Database(db_path)
         with patch("sif.config.settings.get_settings", return_value=settings):
             db.init_schema()
+            # Task 1: the production DDL lands with schema init in Task 2;
+            # create the shadow here so the real writer/reader path is
+            # exercised on a production-shaped database. Idempotent once the
+            # schema owns it.
+            db.connection.executescript(
+                "CREATE TABLE IF NOT EXISTS embedded_documents ("
+                " document_id TEXT PRIMARY KEY,"
+                " FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE);"
+            )
             with db.connection:
                 coll = Coll(name="notes", path=str(notes))
                 CollectionRepository(db.connection).create(coll)

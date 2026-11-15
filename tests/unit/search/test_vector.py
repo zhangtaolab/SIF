@@ -66,12 +66,16 @@ class TestVectorSearcher:
 
         searcher = VectorSearcher(mock_db)
         searcher._vec_available = True
+        # Isolate the vec insert from the constructor probes and the derived
+        # shadow write (covered by the staleness shadow-writer battery).
+        searcher._shadow_available = False
+        mock_db.execute.reset_mock()
 
         searcher.add_embedding("e1", "d1", "c1", [0.1, 0.2])
 
         calls = mock_db.execute.call_args_list
-        assert len(calls) == 2
-        sql = calls[1][0][0]
+        assert len(calls) == 1
+        sql = calls[0][0][0]
         assert "vec_f32(?)" in sql
 
     def test_add_embeddings_batch_executes_many(self):
@@ -81,6 +85,7 @@ class TestVectorSearcher:
 
         searcher = VectorSearcher(mock_db)
         searcher._vec_available = True
+        searcher._shadow_available = False
 
         items = [
             ("e1", "d1", "c1", [0.1, 0.2]),
@@ -149,17 +154,18 @@ class TestVectorSearcher:
                 "collection_name": "col",
             },
         ]
-        # vec_version() in __init__, then the search query. Rich results
-        # would otherwise have triggered the old searcher-level attach.
-        mock_db.execute.side_effect = [MagicMock(), search_cursor]
+        # vec_version() and the shadow probe in __init__, then the search
+        # query. Rich results would otherwise have triggered the old
+        # searcher-level attach.
+        mock_db.execute.side_effect = [MagicMock(), MagicMock(), search_cursor]
 
         searcher = VectorSearcher(mock_db)
         searcher._vec_available = True
 
         results = searcher.search([0.1, 0.2], SearchOptions(limit=-1))
 
-        # search is the second execute call (after the vec_version probe)
-        search_call = mock_db.execute.call_args_list[1]
+        # search is the third execute call (after the two constructor probes)
+        search_call = mock_db.execute.call_args_list[2]
         params = search_call[0][1]
         assert params[1] == 50  # fetch floor
         assert len(results) == 1  # trim clamped to 1
@@ -207,7 +213,7 @@ class TestVectorSearcher:
                 "collection_name": "col",
             },
         ]
-        mock_db.execute.side_effect = [vec_cursor, doc_cursor]
+        mock_db.execute.side_effect = [MagicMock(), vec_cursor, doc_cursor]
 
         searcher = VectorSearcher(mock_db)
         searcher._vec_available = True
@@ -239,7 +245,7 @@ class TestVectorSearcher:
                 "collection_name": "col",
             },
         ]
-        mock_db.execute.side_effect = [vec_cursor, doc_cursor]
+        mock_db.execute.side_effect = [MagicMock(), vec_cursor, doc_cursor]
 
         searcher = VectorSearcher(mock_db)
         searcher._vec_available = True
@@ -265,8 +271,10 @@ class TestVectorSearcher:
         ]
         content_cursor = MagicMock()
         content_cursor.fetchone.return_value = ("document content",)
-        # vec_version() in __init__, search query, then content lookup.
+        # vec_version() and the shadow probe in __init__, search query, then
+        # content lookup.
         mock_db.execute.side_effect = [
+            MagicMock(),
             MagicMock(),
             mock_cursor,
             content_cursor,
@@ -1037,6 +1045,7 @@ class TestVectorEmbeddingDeletion:
 
         searcher = VectorSearcher(mock_db)
         searcher._vec_available = True
+        searcher._shadow_available = False
 
         removed = searcher.delete_embeddings_by_document("d1")
 
@@ -1211,8 +1220,9 @@ class TestVectorSearcherEnrichmentContract:
         mock_db = MagicMock()
         search_cursor = MagicMock()
         search_cursor.fetchall.return_value = search_rows
-        # vec_version() in __init__, then the search query only.
-        mock_db.execute.side_effect = [MagicMock(), search_cursor]
+        # vec_version() and the shadow probe in __init__, then the search
+        # query only.
+        mock_db.execute.side_effect = [MagicMock(), MagicMock(), search_cursor]
 
         searcher = VectorSearcher(mock_db)
         searcher._vec_available = True
@@ -1223,7 +1233,7 @@ class TestVectorSearcherEnrichmentContract:
         assert results[0].context_description is None
         assert results[0].vectors_stale is False
         assert not hasattr(searcher, "_attach_contexts")
-        assert mock_db.execute.call_count == 2
+        assert mock_db.execute.call_count == 3
 
     def test_enrich_results_attaches_context_description(self) -> None:
         """The shared enrichment helper fills context descriptions once."""
@@ -1233,6 +1243,8 @@ class TestVectorSearcherEnrichmentContract:
             {"target_id": "/1.md", "content": "Important project notes"}
         ]
         staleness_cursor = MagicMock()
+        # Empty shadow: the display gate ends marking after the one probe.
+        staleness_cursor.fetchone.return_value = None
         mock_db.execute.side_effect = [context_cursor, staleness_cursor]
 
         results = enrich_results(mock_db, [self._result()])
@@ -1245,6 +1257,7 @@ class TestVectorSearcherEnrichmentContract:
         context_cursor = MagicMock()
         context_cursor.fetchall.return_value = []
         staleness_cursor = MagicMock()
+        staleness_cursor.fetchone.return_value = None
         mock_db.execute.side_effect = [context_cursor, staleness_cursor]
 
         results = enrich_results(mock_db, [self._result()])

@@ -33,6 +33,15 @@ _TOO_SELECTIVE_MSG = (
     "%d of %d matching documents reached, %d requested; returning best-effort results"
 )
 
+# D-09: the derived ``embedded_documents`` shadow is maintained inside the
+# caller's vector transaction. Every insert joins ``documents`` so an orphan
+# vec0 row (a document deleted before its embeddings were purged) can never
+# resurrect the deleted document in the shadow.
+_SHADOW_INSERT_SQL = (
+    "INSERT OR IGNORE INTO embedded_documents(document_id) SELECT id FROM documents WHERE id = ?"
+)
+_SHADOW_DELETE_SQL = "DELETE FROM embedded_documents WHERE document_id = ?"
+
 
 class VectorSearcher:
     """Vector similarity search using sqlite-vec or fallback."""
@@ -46,6 +55,12 @@ class VectorSearcher:
             raise RuntimeError(
                 "sqlite-vec extension is not available. Install sqlite-vec to use vector search.",
             )
+        # D-09: detect the derived shadow once, alongside the vec0 probe. A
+        # plain Python bool: ``sqlite3.Connection`` has no ``__dict__`` and
+        # cannot carry attributes. Absent (bare vec0 fixtures, pre-Phase-21
+        # databases before create_all) every shadow statement below is a
+        # no-op, exactly like the ``_vec_available`` degradation.
+        self._shadow_available = self._check_shadow_table()
 
     def _check_vec_extension(self) -> bool:
         """Check if sqlite-vec extension is available."""
@@ -54,6 +69,16 @@ class VectorSearcher:
             return True
         except sqlite3.OperationalError:
             return False
+
+    def _check_shadow_table(self) -> bool:
+        """Check if the derived ``embedded_documents`` shadow table exists."""
+        try:
+            row = self.db.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='embedded_documents'",
+            ).fetchone()
+        except sqlite3.OperationalError:
+            return False
+        return row is not None
 
     def search(
         self,
@@ -339,7 +364,12 @@ class VectorSearcher:
         chunk_id: str | None,
         embedding: list[float],
     ) -> None:
-        """Add embedding using sqlite-vec."""
+        """Add embedding using sqlite-vec.
+
+        D-09: the derived shadow row is written in this same transaction; the
+        insert joins ``documents``, so an orphan vector row never creates a
+        shadow row. No commit — the caller owns the transaction.
+        """
         embedding_str = self._embedding_to_vec(embedding)
 
         self.db.execute(
@@ -350,6 +380,8 @@ class VectorSearcher:
             """,
             (embedding_id, document_id, chunk_id, embedding_str),
         )
+        if self._shadow_available:
+            self.db.execute(_SHADOW_INSERT_SQL, (document_id,))
 
     def add_embeddings_batch(
         self,
@@ -358,6 +390,9 @@ class VectorSearcher:
         """Add multiple embeddings in a single batch operation.
 
         Each item is a tuple of (embedding_id, document_id, chunk_id, embedding_vector).
+        D-09: the derived shadow gains one row per distinct **existing**
+        document in the batch (the same join-to-documents insert as the
+        single-row path) in the caller's transaction.
         """
         if not items:
             return
@@ -370,17 +405,24 @@ class VectorSearcher:
             """,
             rows,
         )
+        if self._shadow_available:
+            document_ids = sorted({item[1] for item in items})
+            self.db.executemany(_SHADOW_INSERT_SQL, [(doc_id,) for doc_id in document_ids])
 
     def delete_embeddings_by_document(self, document_id: str) -> int:
         """Delete all stored embeddings for a document.
 
         Returns the number of rows removed. Plain parameterized SQL is correct
         here: sqlite-vec supports DELETE on vec0 tables by non-key columns.
+        D-09: the derived shadow row is removed in the same transaction; the
+        vec0 rowcount is returned unchanged.
         """
         cursor = self.db.execute(
             "DELETE FROM document_embeddings WHERE document_id = ?",
             (document_id,),
         )
+        if self._shadow_available:
+            self.db.execute(_SHADOW_DELETE_SQL, (document_id,))
         return cursor.rowcount
 
     def get_embedded_chunk_ids(self, document_id: str) -> set[str]:

@@ -2379,6 +2379,18 @@ class TestStalenessFormatMarker:
         index.touch()
         return index
 
+    @staticmethod
+    def _empty_shadow_db() -> MagicMock:
+        """Database double with an empty derived shadow.
+
+        The staleness display gate then leaves the crafted ``vectors_stale``
+        flags untouched: this battery exercises formatters, not staleness
+        (a pure-BM25 index carries no markers).
+        """
+        db = MagicMock()
+        db.connection.execute.return_value.fetchone.return_value = None
+        return db
+
     def _invoke_bm25(self, tmp_path: Path, args: list[str]) -> object:
         """Invoke search_cmd over the mock scaffold with the crafted rows."""
         searcher = MagicMock()
@@ -2386,7 +2398,7 @@ class TestStalenessFormatMarker:
         repo = MagicMock()
         repo.list_enabled.return_value = []
         with (
-            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+            patch("sif.cli.commands.search.Database", return_value=self._empty_shadow_db()),
             patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
             patch("sif.cli.commands.search.BM25Searcher", return_value=searcher),
         ):
@@ -2563,7 +2575,7 @@ class TestStalenessFormatMarker:
         repo = MagicMock()
         repo.list_enabled.return_value = []
         with (
-            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+            patch("sif.cli.commands.search.Database", return_value=self._empty_shadow_db()),
             patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
             patch("sif.cli.commands.search.BM25Searcher", return_value=searcher),
         ):
@@ -2613,7 +2625,7 @@ class TestStalenessFormatMarker:
         repo = MagicMock()
         repo.list_enabled.return_value = []
         with (
-            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+            patch("sif.cli.commands.search.Database", return_value=self._empty_shadow_db()),
             patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
             patch("sif.cli.commands.search.BM25Searcher", return_value=searcher),
         ):
@@ -2645,7 +2657,7 @@ class TestStalenessFormatMarker:
         manager.embed_single.return_value = [0.0] * 4
         settings = MagicMock()
         with (
-            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+            patch("sif.cli.commands.search.Database", return_value=self._empty_shadow_db()),
             patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
             patch("sif.search.vector.VectorSearcher", return_value=searcher),
             patch("sif.embedding.manager.EmbeddingManager.from_settings", return_value=manager),

@@ -62,18 +62,33 @@ def _manager(embedder: ConceptEmbedder | None = None) -> MagicMock:
 
 
 def _delete_embeddings(db_path: Path) -> None:
-    """Turn an embedded fixture index into a BM25-only index (WR-07)."""
+    """Turn an embedded fixture index into a BM25-only index (WR-07).
+
+    Routed through ``VectorSearcher.delete_embeddings_by_document`` so the
+    derived ``embedded_documents`` shadow is purged with the vec0 rows
+    (CORR-06 D-09), never left pointing at deleted embeddings.
+    """
     import sqlite3
 
     import sqlite_vec
+
+    from sif.search.vector import VectorSearcher
 
     conn = sqlite3.connect(str(db_path))
     try:
         conn.enable_load_extension(True)
         sqlite_vec.load(conn)
         conn.enable_load_extension(False)
-        conn.execute("DELETE FROM document_embeddings")
-        conn.commit()
+        document_ids = [
+            row[0]
+            for row in conn.execute(
+                "SELECT DISTINCT document_id FROM document_embeddings"
+            ).fetchall()
+        ]
+        searcher = VectorSearcher(conn)
+        with conn:
+            for document_id in document_ids:
+                searcher.delete_embeddings_by_document(document_id)
     finally:
         conn.close()
 

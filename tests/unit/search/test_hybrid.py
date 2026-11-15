@@ -561,8 +561,10 @@ class TestHybridContextAttachment:
                 " created_at, updated_at) VALUES ('ctx-1', '/notes/gardening.md', 'path',"
                 " 'Garden project notes', '2026-01-01T00:00:00', '2026-01-01T00:00:00')"
             )
-            # d4 still matches BM25 but has no embedding row: the real lag state.
-            conn.execute("DELETE FROM document_embeddings WHERE document_id = 'd4'")
+            # d4 still matches BM25 but has no embedding row: the real lag
+            # state. Route the delete through the searcher so the derived
+            # shadow stays truthful (CORR-06 D-09), never raw vec0 SQL.
+            VectorSearcher(conn, embedding_dim=2).delete_embeddings_by_document("d4")
 
             pipeline = SearchPipeline(conn, embedder=_FakeEmbedder(), embedding_dim=2)
             results = pipeline.search("gardening", SearchOptions(limit=5))
@@ -848,6 +850,14 @@ class TestHybridSC1PipelineGolden:
         from sif.database.schema import SchemaManager
 
         SchemaManager(conn, embedding_dim=2).create_all()
+        # Task 1: the production shadow DDL lands with schema init in Task 2;
+        # build it here so the fixture behaves like a production database and
+        # the searcher maintains shadow rows for the batch below.
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS embedded_documents ("
+            " document_id TEXT PRIMARY KEY,"
+            " FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE)"
+        )
         now = "2026-11-08T00:00:00+00:00"
         conn.execute(
             "INSERT INTO collections (id, name, path, created_at, updated_at)"

@@ -782,6 +782,8 @@ class TestBM25SearcherEnrichmentContract:
             {"target_id": "/1.md", "content": "Important project notes"}
         ]
         staleness_cursor = MagicMock()
+        # Empty shadow: the display gate ends marking after the one probe.
+        staleness_cursor.fetchone.return_value = None
         mock_db.execute.side_effect = [context_cursor, staleness_cursor]
 
         results = enrich_results(mock_db, [self._result()])
@@ -794,6 +796,7 @@ class TestBM25SearcherEnrichmentContract:
         context_cursor = MagicMock()
         context_cursor.fetchall.return_value = []
         staleness_cursor = MagicMock()
+        staleness_cursor.fetchone.return_value = None
         mock_db.execute.side_effect = [context_cursor, staleness_cursor]
 
         results = enrich_results(mock_db, [self._result()])
