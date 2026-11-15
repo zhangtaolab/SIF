@@ -72,6 +72,15 @@ class HybridSearcher:
         callers (CORR-03): both legs are called with ``offset=0`` and
         ``limit+offset``, and this method slices one page afterwards. The
         pipeline always calls it with ``offset=0`` and slices itself.
+
+        Metadata filter contract (Phase 20, D-02/D-17): every leg receives the
+        caller's ``SearchOptions.filter`` unchanged through ``fetch_options``
+        (``dataclasses.replace`` already carries the field), so filtering is
+        pre-RRF by construction — fusion never sees an unfiltered row. When one
+        leg returns nothing, the early return below paginates that leg's
+        already-filtered window at ``limit + offset``; it never widens the
+        search or re-queries the other leg with a dropped filter. In per-chunk
+        mode ``chunk_matches`` reflects filtered vector rows only.
         """
         if options is None:
             options = SearchOptions()
@@ -230,6 +239,15 @@ class SearchPipeline:
         7. Extract smart snippets
         8. Apply the single offset slice with global rank numbering
         9. Enrich results exactly once (path contexts + derived staleness)
+
+        Metadata filter contract (Phase 20, D-02/D-17): the caller's
+        ``SearchOptions.filter`` rides ``fetch_options`` into every hybrid
+        search, so every query variant and both legs see the same AST before
+        RRF — a filter is never applied after fusion. The single offset slice
+        and the ONE ``enrich_results`` call at the exit are unchanged, and a
+        filtered page therefore slices and enriches exactly like an unfiltered
+        one. In per-chunk mode ``chunk_matches`` counts filtered vector rows
+        only.
         """
         if options is None:
             options = SearchOptions()

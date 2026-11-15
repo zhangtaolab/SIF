@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, create_autospec
 
 import pytest
 
+from sif.core.filters import parse_filter
 from sif.core.models import SearchOptions, SearchResult, SearchType
 from sif.search.bm25 import BM25Searcher
 from sif.search.hybrid import HybridSearcher, SearchPipeline
@@ -1586,3 +1587,201 @@ class TestPerChunkPipelineMultiVariant:
             assert d1.chunk_matches >= 2
         finally:
             conn.close()
+
+
+class TestFilterPassthrough:
+    """Phase 20 (D-02/D-17): one AST reaches both legs before RRF.
+
+    Filtering is structural in the hybrid path — ``dataclasses.replace``
+    carries ``SearchOptions.filter`` into both leg calls, so no fusion or
+    early-return branch can observe an unfiltered row.
+    """
+
+    @staticmethod
+    def _results(ids: list[str]) -> list[SearchResult]:
+        return [
+            SearchResult(
+                document_id=doc_id,
+                path=f"/{doc_id}.md",
+                title=doc_id,
+                collection_name="default",
+                score=0.9,
+            )
+            for doc_id in ids
+        ]
+
+    @staticmethod
+    def _filter_node():
+        """A representative selective AST (identity is what the tests assert)."""
+        return parse_filter({"field": "tag", "operator": "eq", "value": "rare"})
+
+    def test_both_legs_receive_the_same_ast_object(self, mock_db: MagicMock) -> None:
+        """Each leg sees the caller's FilterNode instance, not a copy or None."""
+        embedder = MagicMock()
+        embedder.embed.return_value = [0.1, 0.2]
+        hybrid = HybridSearcher(mock_db, embedder=embedder, embedding_dim=2)
+        hybrid.bm25 = create_autospec(BM25Searcher, instance=True)
+        hybrid.bm25.search.return_value = self._results(["doc-a"])
+        hybrid.vector = create_autospec(VectorSearcher, instance=True)
+        hybrid.vector.search.return_value = self._results(["doc-a"])
+        hybrid.rrf = MagicMock()
+        hybrid.rrf.fuse.return_value = self._results(["doc-a"])
+        node = self._filter_node()
+
+        hybrid.search("needle", SearchOptions(limit=5, filter=node))
+
+        bm25_options = hybrid.bm25.search.call_args[0][1]
+        vector_options = hybrid.vector.search.call_args[0][1]
+        assert bm25_options.filter is node
+        assert vector_options.filter is node
+
+    def test_vector_empty_early_return_paginates_filtered_bm25_window(
+        self, mock_db: MagicMock
+    ) -> None:
+        """The BM25-only early return slices the already-filtered window."""
+        embedder = MagicMock()
+        embedder.embed.return_value = [0.1, 0.2]
+        hybrid = HybridSearcher(mock_db, embedder=embedder, embedding_dim=2)
+        hybrid.bm25 = create_autospec(BM25Searcher, instance=True)
+        hybrid.bm25.search.return_value = self._results(
+            ["doc-0", "doc-1", "doc-2", "doc-3", "doc-4"]
+        )
+        hybrid.vector = create_autospec(VectorSearcher, instance=True)
+        hybrid.vector.search.return_value = []
+        node = self._filter_node()
+
+        results = hybrid.search("needle", SearchOptions(limit=2, offset=2, filter=node))
+
+        bm25_options = hybrid.bm25.search.call_args[0][1]
+        assert bm25_options.filter is node
+        assert bm25_options.limit == 4  # limit + offset, never widened
+        assert bm25_options.offset == 0
+        assert [r.document_id for r in results] == ["doc-2", "doc-3"]
+        assert [r.rank for r in results] == [3, 4]
+
+    def test_bm25_empty_early_return_paginates_filtered_vector_window(
+        self, mock_db: MagicMock
+    ) -> None:
+        """The vector-only early return slices the already-filtered window."""
+        embedder = MagicMock()
+        embedder.embed.return_value = [0.1, 0.2]
+        hybrid = HybridSearcher(mock_db, embedder=embedder, embedding_dim=2)
+        hybrid.bm25 = create_autospec(BM25Searcher, instance=True)
+        hybrid.bm25.search.return_value = []
+        hybrid.vector = create_autospec(VectorSearcher, instance=True)
+        hybrid.vector.search.return_value = self._results(
+            ["doc-0", "doc-1", "doc-2", "doc-3", "doc-4"]
+        )
+        node = self._filter_node()
+
+        results = hybrid.search("needle", SearchOptions(limit=2, offset=2, filter=node))
+
+        vector_options = hybrid.vector.search.call_args[0][1]
+        assert vector_options.filter is node
+        assert vector_options.limit == 4  # limit + offset, never widened
+        assert vector_options.offset == 0
+        assert [r.document_id for r in results] == ["doc-2", "doc-3"]
+
+    def test_fused_page_contains_only_filter_admitted_rows(self, mock_db: MagicMock) -> None:
+        """Both stubbed legs honor the AST, so every fused row satisfies it."""
+        embedder = MagicMock()
+        embedder.embed.return_value = [0.1, 0.2]
+        hybrid = HybridSearcher(mock_db, embedder=embedder, embedding_dim=2)
+        corpus = self._results(["doc-a", "doc-b", "doc-c", "doc-d"])
+        admitted = {"doc-a", "doc-b", "doc-c"}
+
+        def _leg(_query: str, options: SearchOptions) -> list[SearchResult]:
+            if options.filter is None:
+                return list(corpus)
+            return [result for result in corpus if result.document_id in admitted]
+
+        hybrid.bm25 = create_autospec(BM25Searcher, instance=True)
+        hybrid.bm25.search.side_effect = _leg
+        hybrid.vector = create_autospec(VectorSearcher, instance=True)
+        hybrid.vector.search.side_effect = _leg
+        node = self._filter_node()
+
+        results = hybrid.search("needle", SearchOptions(limit=10, filter=node))
+
+        assert {r.document_id for r in results} <= admitted
+        assert "doc-d" not in {r.document_id for r in results}
+
+    def test_pipeline_propagates_filter_to_every_variant_and_enriches_once(
+        self, mock_db: MagicMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Every query variant carries the AST; the exit still enriches once."""
+        pipeline = SearchPipeline(mock_db)
+        node = self._filter_node()
+        seen: list[tuple[str, object]] = []
+
+        def _hybrid_search(query: str, options: SearchOptions) -> list[SearchResult]:
+            seen.append((query, options.filter))
+            return self._results([f"doc-{query.replace(' ', '-')}"])
+
+        pipeline.hybrid.search = MagicMock(side_effect=_hybrid_search)
+        pipeline.query_expander = MagicMock()
+        pipeline.query_expander.expand.return_value = ["variant one", "variant two"]
+        enrich_calls: list[list[SearchResult]] = []
+
+        def _enrich(_db, results: list[SearchResult]) -> list[SearchResult]:
+            enrich_calls.append(results)
+            return results
+
+        monkeypatch.setattr("sif.search.hybrid.enrich_results", _enrich)
+
+        pipeline.search("needle", SearchOptions(limit=2, filter=node))
+
+        assert [query for query, _ in seen] == ["needle", "variant one", "variant two"]
+        assert all(seen_filter is node for _, seen_filter in seen)
+        assert len(enrich_calls) == 1
+
+    def test_per_chunk_mode_keeps_filtered_chunk_rows(self, mock_db: MagicMock) -> None:
+        """Per-chunk pages keep chunk rows; chunk_matches reflects filtered rows."""
+        embedder = MagicMock()
+        embedder.embed.return_value = [0.1, 0.2]
+        hybrid = HybridSearcher(mock_db, embedder=embedder, embedding_dim=2)
+        hybrid.bm25 = create_autospec(BM25Searcher, instance=True)
+        hybrid.bm25.search.return_value = []
+        chunk_rows = [
+            SearchResult(
+                document_id="doc-a",
+                path="/a.md",
+                title="a",
+                collection_name="default",
+                score=0.9,
+                chunk_id="chunk-a1",
+                sequence=0,
+            ),
+            SearchResult(
+                document_id="doc-a",
+                path="/a.md",
+                title="a",
+                collection_name="default",
+                score=0.8,
+                chunk_id="chunk-a2",
+                sequence=1,
+            ),
+            SearchResult(
+                document_id="doc-b",
+                path="/b.md",
+                title="b",
+                collection_name="default",
+                score=0.7,
+                chunk_id="chunk-b1",
+                sequence=0,
+            ),
+        ]
+        hybrid.vector = create_autospec(VectorSearcher, instance=True)
+        hybrid.vector.search.return_value = chunk_rows
+        node = self._filter_node()
+
+        results = hybrid.search("needle", SearchOptions(limit=10, per_chunk=True, filter=node))
+
+        assert [(r.document_id, r.sequence) for r in results] == [
+            ("doc-a", 0),
+            ("doc-a", 1),
+            ("doc-b", 0),
+        ]
+        # Per-chunk mode keeps rows ungrouped, so no row carries a group count;
+        # the count only ever reflects the filtered vector rows it came from.
+        assert all(result.chunk_matches == 0 for result in results)
