@@ -97,7 +97,7 @@ DocSift 是 [qmd](https://github.com/tobi/qmd) 的 Python 重构版本，一个�
 
 <!-- v1.2 高层目标；细化 REQ-ID 见 REQUIREMENTS.md（定义中） -->
 
-- [ ] 元数据过滤（path/mtime/tag/frontmatter，RRF 前）+ metadata 发现 + 分页修复
+- [x] 元数据过滤（path/mtime/tag/frontmatter，RRF 前）+ metadata 发现 + 分页修复 — Phase 20
 - [ ] 搜索正确性与规模（parser 接线、去重、offset、去全表扫、标题 FTS、vacuum）
 - [ ] MCP SDK v2 现代化 + 注解/structuredContent + query pipeline 对等 + agent 包装
 - [ ] 个人语料评测仪器 + Harrier held-out 评估 + rapidfuzz/chunk 调优
@@ -156,6 +156,14 @@ DocSift 是 [qmd](https://github.com/tobi/qmd) 的 Python 重构版本，一个�
 | Harrier 默认切换门禁：EN+ZH held-out 胜出 + embedder 身份标记（非仅宽度） | 独立证据仅英文（localGPT A/B nDCG 0.915 vs Qwen3-Embedding-4B 0.875；此前转述的 vs-0.6B 0.805 未在该精确值核实）；Harrier 与 Qwen3-0.6B 同 1024 维，宽度守护会静默接受坏切换；query 侧必须 prompt_name | — Pending |
 | Windows smoke 走 hc remote yoga（Win11 26300） | 用户指定；yoga 未装 Python（仅 Store alias），CI phase 需先 uv/Python setup | — Pending |
 | DYM 选型：rapidfuzz 测量替换 > symspellpy 推迟 > spellfix1 跳过 | 个人 KB 规模 difflib 已够用；rapidfuzz 去首字母桶是召回修复；symspellpy 仅 >200k 词表再议 | — Pending |
+| Phase 20 过滤 AST 严格对齐 qmd `[Unreleased]`（`qmd@86d2365`，2026-11-15 核实），condition 字段名用 `field` 而非旧 docs 的 `key` | 17 操作符 + `caseInsensitive` 逐字复刻；qmd 尚未发布，parity 固定到当前 era 并在 SUMMARY 记录 `abfabc5` 差异 | Phase 20 Complete |
+| 内置过滤字段只有 `path` / `mtime`；无 `tags` 别名，`title` 不保留 | FILT-02 只点名两个字段；tags 是普通 frontmatter，数组即集合，`contains`/`all` 已够用（D-03/D-04） | Phase 20 Complete |
+| 类型化 kv：单表 `document_metadata_values`（每标量/数组元素一行 + `ordinal`）+ `document_metadata_skips` 旁表；行从 `json.loads(canonical_metadata_json(...))` 派生 | 与 `documents.metadata` 同一序列化来源，YAML 日期不漂移；不引入 JSON1 依赖（D-05/D-07） | Phase 20 Complete |
+| 回填是一次 Python 遍历已存 canonical metadata，写全局 `index_meta.metadata_values_version` 标记，失败绝不让过滤读到半填充 store | 不再强制 reindex、不改 checksum 约定；per-document 短事务可续跑（D-06） | Phase 20 Complete |
+| 向量 leg 分批升级的停止条件改为键控任意 JOIN 过滤（含 collection）并用 selectivity 预计数作目标；`_MAX_FETCH_K=2048` 仍是硬上限 | 原 `len(rows) < fetch_k` 在 JOIN 之后判定，选择性过滤会在首批就停止升级（实测 2 文档集合 limit=10 只回 1 条）；"过于选择性" 只在元数据过滤且命中数≥目标时以 stderr 单次告警（D-08/D-09） | Phase 20 Complete |
+| 发现工具信封在 D-15 基础上叠加 `builtIns`（`path`、`mtime`，取自 `documents` 列，`match` 不缩小） | D-03 要求内置字段可被发现；独立列表让 frontmatter key 窗口/排序/分页语义保持不变，作为 Phase 22 冻结契约的一部分（D-20） | Phase 20 Complete |
+| 过滤错误面：CLI `ClickException` 命名 operator/field/AST 路径；MCP `ToolsCallResult(isError=True)`，绝不 `INVALID_PARAMS` | SEP-1303 让模型可自我纠正；空匹配返回空页而非 "无过滤"，沿用 exclude-all 哨兵契约（D-17） | Phase 20 Complete |
+| Phase 20 代码评审 2 Critical + 7 Warning 全部修复并附前置失败回归测试 | CR-01 类型化派生对超大整数/非有限数不 total（会中断索引、并让升级后所有命令失败）；CR-02 候选域 `EXISTS` 在本机 SQLite 3.51.0 上会把 `in` 结果行重复（破坏分页、RRF 双计） | Phase 20 Complete |
 
 ## Context（v1.1 shipped 2026-11-12）
 
@@ -190,4 +198,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-11-13 after v1.2 milestone start（范围确认：元数据过滤 + MCP 现代化 + 质量仪器 + 分发；PDF 维持排除，Windows 推迟 + smoke）*
+*Last updated: 2026-11-15 after Phase 20（元数据过滤 + 发现工具落地；qmd 未发布 AST 对齐、类型化 kv + 回填、pre-RRF 双腿下推、CLI/MCP 共享校验器）*
