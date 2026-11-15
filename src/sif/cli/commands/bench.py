@@ -167,8 +167,12 @@ def _load_embedder(
             model_dim if isinstance(model_dim, int) else len(manager.embed_single("probe"))
         )
     except ImportError as e:
+        # Drop the constructed-but-unloaded manager: keeping it would let the
+        # later identity check re-enter load_model() and re-raise uncaught.
+        manager = None
         console_err.print(f"[yellow]Embedding backend not installed: {e}[/yellow]")
     except Exception as e:
+        manager = None
         console_err.print(f"[yellow]Failed to load embedding model: {e}[/yellow]")
     return manager, embedding_dim
 

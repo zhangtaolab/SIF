@@ -807,6 +807,31 @@ class TestLoadEmbedder:
 
         assert (loaded, dim) == (None, 2048)
 
+    @pytest.mark.parametrize(
+        "error",
+        [ImportError("backend not installed"), RuntimeError("bad weights")],
+    )
+    def test_failure_after_construction_returns_no_manager(self, error: Exception) -> None:
+        """CR-01: a manager whose load_model fails must not be returned.
+
+        The real backend failure happens inside ``load_model()``, not in
+        ``from_settings``; keeping the half-built manager made the later
+        identity check re-enter the failing load and crash the soft-fail path.
+        """
+        from sif.cli.commands.bench import _load_embedder, _search_identity_check
+
+        manager = MagicMock()
+        manager.load_model.side_effect = error
+
+        with patch(
+            "sif.cli.commands.bench.EmbeddingManager.from_settings",
+            return_value=manager,
+        ):
+            loaded, dim = _load_embedder(_settings_mock(embedding_dim=2048), None)
+
+        assert (loaded, dim) == (None, 2048)
+        assert _search_identity_check(loaded, MagicMock()) is None
+
 
 class TestCachedEmbedder:
     def test_embed_runs_the_inner_model_once_per_distinct_text(self) -> None:
