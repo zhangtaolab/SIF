@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from typing import Any
 
 import click
 from rich.console import Console
@@ -10,9 +12,12 @@ from rich.table import Table
 from rich.tree import Tree
 
 from sif.cli.error_handling import open_initialized_database
+from sif.cli.filter_options import parse_filter_option, parse_match_option
 from sif.core.models import Collection
 from sif.database.database import Database
+from sif.database.metadata_repository import MetadataValueRepository
 from sif.database.repositories import CollectionRepository
+from sif.search.filters import compile_filter, compile_match
 
 
 console = Console()
@@ -366,3 +371,156 @@ def collection_ls(ctx: click.Context, name: str, subpath: str | None) -> None:
             tree.add(str(rel_path))
 
         console.print(tree)
+
+
+def _format_number(value: float) -> str:
+    """Render a range bound compactly (integers without a trailing ``.0``)."""
+    return str(int(value)) if float(value).is_integer() else f"{value:g}"
+
+
+def _range_text(type_entry: dict[str, Any]) -> str:
+    """Render ``min / median / max`` for a numeric type entry."""
+    range_data = type_entry.get("range")
+    if not range_data:
+        return ""
+    return " / ".join(_format_number(range_data[part]) for part in ("min", "median", "max"))
+
+
+def _value_window_text(type_entry: dict[str, Any]) -> str:
+    """Render ``returned of distinct`` plus the exact remainder."""
+    text = f"{len(type_entry['values'])} of {type_entry['distinctValues']}"
+    if type_entry["remainingValues"]:
+        text += f" +{type_entry['remainingValues']} more"
+    return text
+
+
+def _render_metadata_table(result: dict[str, Any]) -> None:
+    """Render the discovery envelope as a table (built-ins first, D-03/D-20)."""
+    table = Table(title="Metadata")
+    table.add_column("Source", style="magenta")
+    table.add_column("Key", style="cyan")
+    table.add_column("Types", style="green")
+    table.add_column("Documents", style="yellow", justify="right")
+    table.add_column("Values", justify="right")
+    table.add_column("Range", justify="right")
+    for entry in result["builtIns"]:
+        for type_entry in entry["types"]:
+            table.add_row(
+                "built-in",
+                entry["key"],
+                type_entry["type"],
+                str(entry["documents"]),
+                f"0 of {type_entry['distinctValues']}",
+                _range_text(type_entry),
+            )
+    for entry in result["keys"]:
+        for type_entry in entry["types"]:
+            table.add_row(
+                "frontmatter",
+                entry["key"],
+                type_entry["type"],
+                str(type_entry["documents"]),
+                _value_window_text(type_entry),
+                _range_text(type_entry),
+            )
+    console.print(table)
+    if result["remainingKeys"]:
+        console.print(f"... {result['remainingKeys']} more keys")
+
+
+@collection_group.command("metadata")
+@click.argument("name", required=False)
+@click.option(
+    "--filter",
+    "filter_json",
+    default=None,
+    metavar="<json>",
+    help="Metadata filter as a JSON AST; counts become filter-aware.",
+)
+@click.option(
+    "--match",
+    "match_json",
+    default=None,
+    metavar="<json>",
+    help="Narrow reported entries by key or value (JSON AST).",
+)
+@click.option(
+    "--min-count",
+    type=click.IntRange(min=1),
+    default=1,
+    help="Minimum documents per reported value (default: 1)",
+)
+@click.option(
+    "--sort",
+    type=click.Choice(["count", "value"]),
+    default="count",
+    help="Key ordering: document count descending, or key ascending (default: count)",
+)
+@click.option(
+    "--limit",
+    type=click.IntRange(min=1),
+    default=50,
+    help="Key window size (default: 50)",
+)
+@click.option(
+    "--value-limit",
+    type=click.IntRange(min=0),
+    default=10,
+    help="Per-key value window size (default: 10)",
+)
+@click.option("--json", "output_json", is_flag=True, help="Output the JSON envelope")
+@click.pass_context
+def collection_metadata(  # noqa: PLR0913 — one parameter per the D-14 option contract
+    ctx: click.Context,
+    name: str | None,
+    filter_json: str | None,
+    match_json: str | None,
+    min_count: int,
+    sort: str,
+    limit: int,
+    value_limit: int,
+    output_json: bool,
+) -> None:
+    """Report filterable metadata keys, types, counts, ranges, and remainders.
+
+    No NAME means every collection. ``path`` and ``mtime`` are reserved
+    built-in fields (D-03): they appear in the built-in section, never as
+    frontmatter keys, and their counts narrow with ``--filter`` exactly like
+    every other count.
+    """
+    index_path = ctx.obj["index_path"]
+    # Parse/validate before the database opens (D-17): a bad filter or match
+    # never pays schema init. An absent option stays None — never the
+    # compiler's empty ("", []) fragment, which would signal a supplied filter.
+    parsed_filter = parse_filter_option(filter_json)
+    parsed_match = parse_match_option(match_json)
+
+    with open_initialized_database(index_path, Database) as db, db.connection:
+        collection_ids: list[str] | None = None
+        if name is not None:
+            collection = CollectionRepository(db.connection).get_by_name(name)
+            if collection is None:
+                raise click.ClickException(f"Collection '{name}' not found")
+            collection_ids = [collection.id]
+        filter_predicate = (
+            compile_filter(parsed_filter, alias="d", scope="corpus")
+            if parsed_filter is not None
+            else None
+        )
+        match_predicate = (
+            compile_match(parsed_match, alias="mv") if parsed_match is not None else None
+        )
+        result = MetadataValueRepository(db.connection).discover(
+            collection_ids=collection_ids,
+            filter_predicate=filter_predicate,
+            match_predicate=match_predicate,
+            min_count=min_count,
+            sort=sort,
+            limit=limit,
+            value_limit=value_limit,
+        )
+
+    if output_json:
+        click.echo(json.dumps(result))
+        return
+    _render_metadata_table(result)

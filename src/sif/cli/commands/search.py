@@ -17,9 +17,10 @@ from rich.markup import escape
 from rich.table import Table
 
 from sif.cli.error_handling import open_initialized_database, sqlite_vec_remedy
+from sif.cli.filter_options import parse_filter_option
 from sif.cli.formatters import add_line_numbers_to_results, prepend_line_numbers
 from sif.config.settings import get_settings
-from sif.core.filters import FilterNode, FilterValidationError, parse_filter
+from sif.core.filters import FilterNode
 from sif.core.models import Collection, QueryLogEntry, SearchOptions, SearchResult
 from sif.database.database import Database
 from sif.database.repositories import CollectionRepository, QueryLogRepository
@@ -64,21 +65,12 @@ def _resolve_limit(limit: int | None) -> int:
 def _parse_filter_option(raw: str | None) -> FilterNode | None:
     """Parse the ``--filter`` JSON argument into the shared filter AST (D-01).
 
-    Invalid input is a user error, never a traceback (D-17): a JSON syntax
-    error or a grammar/budget violation becomes a ``click.ClickException``
-    naming the operator, field, and dotted AST path. Returning ``None`` is the
-    only unfiltered signal.
+    Delegates to the one CLI adapter in :mod:`sif.cli.filter_options` so the
+    search commands, ``collection metadata``, and any future surface share a
+    single error mapping (D-17). Returning ``None`` is the only unfiltered
+    signal.
     """
-    if raw is None:
-        return None
-    try:
-        payload = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise click.ClickException(f"filter: invalid JSON: {exc.msg}") from exc
-    try:
-        return parse_filter(payload)
-    except FilterValidationError as exc:
-        raise click.ClickException(str(exc)) from exc
+    return parse_filter_option(raw)
 
 
 def _xml_sanitize(text: str) -> str:
