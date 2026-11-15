@@ -91,6 +91,18 @@ def _dimension_refusal(check: IdentityCheck, conn: sqlite3.Connection) -> click.
     return click.ClickException(str(error))
 
 
+def _embedder_error(error: Exception) -> click.ClickException:
+    """Map an embedder load/embed failure to the command's clean error.
+
+    ImportError keeps its install-remedy wording; any other failure names the
+    model configuration. Both are user-facing ClickExceptions, so a backend
+    failure never reaches the terminal as a raw traceback.
+    """
+    if isinstance(error, ImportError):
+        return click.ClickException(f"Embedding backend not installed: {error}")
+    return click.ClickException(f"Failed to load embedding model: {error}")
+
+
 def _parse_filter_option(raw: str | None) -> FilterNode | None:
     """Parse the ``--filter`` JSON argument into the shared filter AST (D-01).
 
@@ -786,13 +798,8 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
 
     try:
         manager = EmbeddingManager.from_settings(settings)
-        # D-06: the vsearch query leg takes the query role; a concrete manager
-        # exposes ``embed_query`` at class level, protocol doubles fall back.
-        query_embedding = manager.embed_query(query)
-    except ImportError as e:
-        raise click.ClickException(f"Embedding backend not installed: {e}") from None
     except Exception as e:
-        raise click.ClickException(f"Failed to load embedding model: {e}") from e
+        raise _embedder_error(e) from e
 
     with open_initialized_database(index_path, Database) as db:
         options = SearchOptions(
@@ -811,10 +818,15 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
         options.collection_ids = None if search_all else [c.id for c in collections]
 
         # EMB-01: the search-mode identity check owns the vsearch policy
-        # before any vector work. A same-dimension swap warns once and marks
-        # every result; a width disagreement makes a vector result impossible,
-        # so it fails with the remedy (D-03/D-05).
-        current_identity = _current_identity(manager)
+        # before any vector work — including the query embedding below. A
+        # same-dimension swap warns once and marks every result; a width
+        # disagreement makes a vector result impossible, so it fails with the
+        # remedy (D-03/D-05) without paying a model load or a remote call for
+        # a query that can never be vector-searched.
+        try:
+            current_identity = _current_identity(manager)
+        except Exception as e:
+            raise _embedder_error(e) from e
         identity_check: IdentityCheck | None = None
         if current_identity is not None:
             identity_check = check_identity(db.connection, current_identity, mode="search")
@@ -824,6 +836,13 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 raise _dimension_refusal(identity_check, db.connection)
             if identity_check.untrusted and identity_check.stored is not None:
                 warn_identity_mismatch_once(identity_check.stored, identity_check.current)
+
+        # D-06: the vsearch query leg takes the query role; a concrete manager
+        # exposes ``embed_query`` at class level, protocol doubles fall back.
+        try:
+            query_embedding = manager.embed_query(query)
+        except Exception as e:
+            raise _embedder_error(e) from e
 
         # Pre-search drift refresh (LIVE-10): always run even when a watch
         # or daemon is live (D-03 — the check doubles as the event-overflow

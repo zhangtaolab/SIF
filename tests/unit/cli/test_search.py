@@ -4611,6 +4611,9 @@ class TestSearchIdentityPolicy:
         assert "FLOAT[3]" in result.output
         assert "sif index embed --force" in result.output
         vector_cls.assert_not_called()
+        # WR-05: the refusal happens before the query embedding, so a remote
+        # backend never receives a query that cannot be vector-searched.
+        manager.embed_query.assert_not_called()
 
     def test_vsearch_matching_identity_is_silent_and_unmarked(self, tmp_path: Path) -> None:
         """ok/absent leave the existing two-argument enrichment untouched."""
