@@ -749,6 +749,9 @@ class TestMetadataFastPath:
         assert _embedding_count(db_path) == 0
         _title, content, _checksum = _doc_row(db_path, str(doc_file))
         assert "Beta paragraph text" in content
+        # The full path refreshes file_size along with the body (the fast path
+        # does the same), so a size filter can never read the old length.
+        assert _doc_fields(db_path, str(doc_file))["file_size"] == len(BODY_BETA.rstrip().encode())
 
     def test_force_with_unchanged_body_takes_the_fast_path(self, tmp_path, monkeypatch) -> None:
         """--force skips the checksum shortcut but still preserves chunk/vector rows."""
