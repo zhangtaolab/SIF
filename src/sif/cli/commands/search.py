@@ -684,6 +684,13 @@ def search_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     default=0,
     help="Result offset for pagination (default: 0)",
 )
+@click.option(
+    "--filter",
+    "filter_json",
+    default=None,
+    metavar="<json>",
+    help="Metadata filter as a JSON AST (qmd-compatible).",
+)
 @click.option("-c", "--collection", multiple=True, help="Collection to search")
 @click.option("--all", "search_all", is_flag=True, help="Search all collections")
 @click.option("--min-score", default=0.0, help="Minimum score threshold")
@@ -718,10 +725,14 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     no_refresh: bool = False,
     quiet: bool = False,
     per_chunk: bool = False,
+    filter_json: str | None = None,
 ) -> None:
     """Search documents using vector similarity."""
     index_path = ctx.obj["index_path"]
     limit = _resolve_limit(limit)
+    # Parse/validate before opening the database so a bad filter never pays a
+    # schema init or drift walk (D-17), matching `sif search search`.
+    filter_node = _parse_filter_option(filter_json)
     quiet = quiet or ctx.obj.get("quiet", False)
     if quiet:
         set_quiet(True)
@@ -766,6 +777,7 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             include_content=full,
             include_highlights=True,
             per_chunk=per_chunk,
+            filter=filter_node,
         )
 
         # Collection scope (D-04): resolve once for both the search filter
@@ -876,6 +888,13 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     default=0,
     help="Result offset for pagination (default: 0)",
 )
+@click.option(
+    "--filter",
+    "filter_json",
+    default=None,
+    metavar="<json>",
+    help="Metadata filter as a JSON AST (qmd-compatible).",
+)
 @click.option("-c", "--collection", multiple=True, help="Collection to search")
 @click.option("--all", "search_all", is_flag=True, help="Search all collections")
 @click.option("--min-score", default=0.0, help="Minimum score threshold")
@@ -963,6 +982,7 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     rerank: bool = False,
     quiet: bool = False,
     per_chunk: bool = False,
+    filter_json: str | None = None,
 ) -> None:
     """Search documents using hybrid approach (BM25 + Vector + RRF).
 
@@ -970,6 +990,9 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     """
     index_path = ctx.obj["index_path"]
     limit = _resolve_limit(limit)
+    # Parse/validate before opening the database so a bad filter never pays a
+    # schema init or drift walk (D-17), matching `sif search search`.
+    filter_node = _parse_filter_option(filter_json)
     quiet = quiet or ctx.obj.get("quiet", False)
     if quiet:
         set_quiet(True)
@@ -1014,6 +1037,7 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             bm25_weight=bm25_weight if bm25_weight is not None else settings.bm25_weight,
             vector_weight=(vector_weight if vector_weight is not None else settings.vector_weight),
             per_chunk=per_chunk,
+            filter=filter_node,
         )
 
         # Collection scope (D-04): resolve once for both the search filter

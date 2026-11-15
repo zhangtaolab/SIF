@@ -4273,3 +4273,89 @@ class TestPerChunkSurfaces:
 
         assert result.exit_code == 0, result.output
         assert "chunk matches" not in result.output
+
+
+class TestNoFilterRegression:
+    """T-20-16: with no ``--filter``, SearchOptions.filter stays None (D-17)."""
+
+    def test_search_options_filter_is_none_without_the_flag(self):
+        """sif search passes filter=None when --filter is absent."""
+        runner = CliRunner()
+        mock_repo = MagicMock()
+        mock_repo.list_enabled.return_value = []
+        mock_searcher = MagicMock()
+        mock_searcher.search.return_value = []
+
+        with (
+            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=mock_repo),
+            patch("sif.cli.commands.search.BM25Searcher", return_value=mock_searcher),
+            patch("sif.cli.commands.search._pre_search_refresh"),
+        ):
+            result = runner.invoke(
+                search_cmd,
+                ["needle"],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code == 0, result.output
+        options = mock_searcher.search.call_args[0][1]
+        assert options.filter is None
+
+    def test_vsearch_options_filter_is_none_without_the_flag(self):
+        """sif vsearch passes filter=None when --filter is absent."""
+        runner = CliRunner()
+        mock_repo = MagicMock()
+        mock_repo.list_enabled.return_value = []
+        mock_searcher = MagicMock()
+        mock_searcher.search.return_value = []
+
+        with (
+            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=mock_repo),
+            patch(
+                "sif.embedding.manager.EmbeddingManager.from_settings",
+                return_value=MagicMock(),
+            ),
+            patch("sif.search.vector.VectorSearcher", return_value=mock_searcher),
+            patch("sif.config.settings.get_settings", return_value=_query_settings_mock()),
+            patch("sif.cli.commands.search._pre_search_refresh"),
+        ):
+            result = runner.invoke(
+                vsearch_cmd,
+                ["needle"],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code == 0, result.output
+        options = mock_searcher.search.call_args[0][1]
+        assert options.filter is None
+
+    def test_query_options_filter_is_none_without_the_flag(self):
+        """sif query passes filter=None when --filter is absent."""
+        runner = CliRunner()
+        mock_repo = MagicMock()
+        mock_repo.list_enabled.return_value = []
+        mock_pipeline = MagicMock()
+        mock_pipeline.search.return_value = []
+
+        with (
+            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=mock_repo),
+            patch("sif.cli.commands.search.SearchPipeline", return_value=mock_pipeline),
+            patch(
+                "sif.embedding.manager.EmbeddingManager.from_settings",
+                return_value=MagicMock(),
+            ),
+            patch("sif.config.settings.get_settings", return_value=_query_settings_mock()),
+            patch("sif.cli.commands.search._pre_search_refresh"),
+        ):
+            result = runner.invoke(
+                query_cmd,
+                ["needle"],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code == 0, result.output
+        options = mock_pipeline.search.call_args[0][1]
+        assert options.filter is None

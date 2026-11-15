@@ -5,6 +5,11 @@ becomes typed kv rows in the same transaction as the document row, the
 compiled predicate lands in the BM25 outer WHERE, and ``sif search --filter``
 returns only matching documents while the unfiltered run returns both
 (Pitfall 5: an empty match must never degrade to "no filter").
+
+Plan 20-04 extends the battery to the full CLI option surface: all three
+result commands expose ``--filter``, validate it before any database open or
+pre-search refresh, compose it by AND with collection/offset/min-score, and
+keep ``--json`` stdout machine-clean.
 """
 
 from __future__ import annotations
@@ -14,16 +19,47 @@ import json
 import sqlite3
 from collections.abc import Generator
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 from click.testing import CliRunner, Result
 
+from sif.cli.commands.search import query_cmd, search_cmd, vsearch_cmd
 from sif.cli.main import cli
 from sif.config.settings import get_settings
+from sif.core.filters import parse_filter
+from sif.core.models import Collection
 
 
 _ACTIVE_FILTER = '{"field": "status", "operator": "eq", "value": "active"}'
 _NO_MATCH_FILTER = '{"field": "status", "operator": "eq", "value": "missing"}'
+_BAD_AST_FILTER = '{"field": "tags", "operator": "gt", "value": "x"}'
+
+# (name, command) for the three result commands; D-01 requires the same flag
+# name, grammar, and semantics on every one of them.
+_RESULT_COMMANDS = (
+    pytest.param(search_cmd, id="search"),
+    pytest.param(vsearch_cmd, id="vsearch"),
+    pytest.param(query_cmd, id="query"),
+)
+
+
+def _settings_mock() -> MagicMock:
+    """Explicit settings mock with the fields query/vsearch read as ints/floats."""
+    return MagicMock(
+        model_name="test",
+        rerank_enabled=False,
+        rerank_candidate_limit=20,
+        rrf_k=60,
+        bm25_weight=1.0,
+        vector_weight=1.0,
+        default_search_type="hybrid",
+    )
+
+
+def _index_path() -> MagicMock:
+    """An existing-index stand-in so commands skip their not-found early return."""
+    return MagicMock(exists=lambda: True)
 
 
 class TestFilterEndToEnd:
@@ -114,3 +150,144 @@ class TestFilterEndToEnd:
             ).fetchall()
         assert len(rows) == 2
         assert {value for _, value in rows} == {"active", "archived"}
+
+
+class TestFilterOptionMatrix:
+    """D-01: the same ``--filter`` flag and error taxonomy on all three commands."""
+
+    @pytest.mark.parametrize("cmd", _RESULT_COMMANDS)
+    def test_all_result_commands_expose_filter(self, cmd: object) -> None:
+        """Click exposes ``--filter`` (``cmd.params`` holds Parameter objects)."""
+        assert "--filter" in {opt for param in cmd.params for opt in param.opts}
+
+    @pytest.mark.parametrize("cmd", _RESULT_COMMANDS)
+    def test_invalid_json_is_a_user_error_before_any_index_work(self, cmd: object) -> None:
+        """Invalid JSON names the filter, and no DB open or drift walk happens."""
+        opened = MagicMock()
+        refresh = MagicMock()
+        with (
+            patch("sif.cli.commands.search.open_initialized_database", opened),
+            patch("sif.cli.commands.search._pre_search_refresh", refresh),
+        ):
+            result = CliRunner().invoke(
+                cmd,
+                ["needle", "--filter", "{not json"],
+                obj={"index_path": _index_path()},
+            )
+
+        assert result.exit_code != 0
+        assert "filter: invalid JSON" in result.output
+        opened.assert_not_called()
+        refresh.assert_not_called()
+
+    @pytest.mark.parametrize("cmd", _RESULT_COMMANDS)
+    def test_invalid_ast_names_operator_field_and_path(self, cmd: object) -> None:
+        """A semantic violation reports its AST path/operator/field (D-17)."""
+        opened = MagicMock()
+        refresh = MagicMock()
+        with (
+            patch("sif.cli.commands.search.open_initialized_database", opened),
+            patch("sif.cli.commands.search._pre_search_refresh", refresh),
+        ):
+            result = CliRunner().invoke(
+                cmd,
+                ["needle", "--filter", _BAD_AST_FILTER],
+                obj={"index_path": _index_path()},
+            )
+
+        assert result.exit_code != 0
+        # The message names the AST path (``filter.<operator path>``), the
+        # operator, and the offending field (D-17).
+        assert "filter.gt" in result.output
+        assert '"gt" requires a numeric value' in result.output
+        assert "tags" in result.output
+        opened.assert_not_called()
+        refresh.assert_not_called()
+
+    @pytest.mark.parametrize("cmd", _RESULT_COMMANDS)
+    def test_filtered_json_output_is_clean_json(self, cmd: object) -> None:
+        """``--json`` stays machine-parseable with no notice text on stdout."""
+        with (
+            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=MagicMock()),
+            patch("sif.cli.commands.search.BM25Searcher", return_value=MagicMock()),
+            patch("sif.cli.commands.search.SearchPipeline", return_value=MagicMock()),
+            patch(
+                "sif.embedding.manager.EmbeddingManager.from_settings",
+                return_value=MagicMock(),
+            ),
+            patch("sif.config.settings.get_settings", return_value=_settings_mock()),
+            patch("sif.cli.commands.search._pre_search_refresh"),
+        ):
+            result = CliRunner().invoke(
+                cmd,
+                ["needle", "--json", "--filter", _ACTIVE_FILTER],
+                obj={"index_path": _index_path()},
+            )
+
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.stdout)
+        rows = payload["results"] if isinstance(payload, dict) else payload
+        assert rows == []
+        assert "refreshed" not in result.stdout
+        assert "selective" not in result.stdout.lower()
+
+
+class TestFilterComposition:
+    """D-17: the filter ANDs with collection/offset/min-score on every command."""
+
+    def _patched_db(self) -> MagicMock:
+        """Repository mock resolving ``-c notes`` to one collection."""
+        repo = MagicMock()
+        repo.get_by_name.return_value = Collection(id="coll1", name="notes", path="/notes")
+        return repo
+
+    @pytest.mark.parametrize("command", ["search", "vsearch", "query"])
+    def test_filter_composes_with_collection_offset_and_min_score(self, command: str) -> None:
+        """The SearchOptions handed to the searcher carries all four values."""
+        runner = CliRunner()
+        args = ["needle", "-c", "notes", "--offset", "2", "--min-score", "0.5"]
+        args += ["--filter", _ACTIVE_FILTER]
+        repo = self._patched_db()
+        mock_db = MagicMock()
+
+        with (
+            patch("sif.cli.commands.search.Database", return_value=mock_db),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
+            patch(
+                "sif.config.settings.get_settings",
+                return_value=_settings_mock(),
+            ),
+            patch("sif.cli.commands.search._pre_search_refresh"),
+        ):
+            if command == "search":
+                searcher = MagicMock()
+                with patch("sif.cli.commands.search.BM25Searcher", return_value=searcher):
+                    result = runner.invoke(search_cmd, args, obj={"index_path": _index_path()})
+            elif command == "vsearch":
+                searcher = MagicMock()
+                with (
+                    patch(
+                        "sif.embedding.manager.EmbeddingManager.from_settings",
+                        return_value=MagicMock(),
+                    ),
+                    patch("sif.search.vector.VectorSearcher", return_value=searcher),
+                ):
+                    result = runner.invoke(vsearch_cmd, args, obj={"index_path": _index_path()})
+            else:
+                searcher = MagicMock()
+                with (
+                    patch(
+                        "sif.embedding.manager.EmbeddingManager.from_settings",
+                        return_value=MagicMock(),
+                    ),
+                    patch("sif.cli.commands.search.SearchPipeline", return_value=searcher),
+                ):
+                    result = runner.invoke(query_cmd, args, obj={"index_path": _index_path()})
+
+        assert result.exit_code == 0, result.output
+        options = searcher.search.call_args[0][1]
+        assert options.collection_ids == ["coll1"]
+        assert options.offset == 2
+        assert options.min_score == 0.5
+        assert options.filter == parse_filter(json.loads(_ACTIVE_FILTER))
