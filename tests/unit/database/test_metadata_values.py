@@ -270,6 +270,13 @@ class TestDerivation:
             ("tags", 1, "string"),
         ]
 
+    def test_empty_array_is_a_skip_not_a_silent_drop(self):
+        """WR-05: ``tags: []`` records an ``empty_array`` skip (D-07 accounting)."""
+        rows, skipped = typed_rows('{"tags":[],"status":"ok"}')
+
+        assert rows == [TypedRow("status", 0, "string", text_value="ok")]
+        assert skipped == [SkippedKey("tags", "empty_array")]
+
     def test_array_element_string_length_boundary(self):
         """WR-04: an element exactly at the 1024-character cap is still stored."""
         rows, skipped = typed_rows(canonical_metadata_json({"tags": ["x" * 1024]}))
@@ -609,6 +616,13 @@ class TestDiscovery:
     def test_nested_key_is_skipped_and_never_reported(self, db: sqlite3.Connection) -> None:
         """A non-indexable key counts in ``skippedKeys`` and is absent from ``keys``."""
         self._seed_docs(db, [("d0", {"nested": {"a": 1}, "good": "yes"}, 100.0, "/notes/a.md")])
+        result = self._discover(db)
+        assert result["skippedKeys"] == 1
+        assert [entry["key"] for entry in result["keys"]] == ["good"]
+
+    def test_empty_array_key_is_counted_in_skipped_keys(self, db: sqlite3.Connection) -> None:
+        """WR-05: ``tags: []`` appears in ``skippedKeys``, never as a filterable key."""
+        self._seed_docs(db, [("d0", {"tags": [], "good": "yes"}, 100.0, "/notes/a.md")])
         result = self._discover(db)
         assert result["skippedKeys"] == 1
         assert [entry["key"] for entry in result["keys"]] == ["good"]

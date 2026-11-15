@@ -20,8 +20,8 @@ in ``parser.py`` and never in the checksum path:
   not a skipped key): the name is reserved, not invalid.
 
 Every unindexable key is skipped **per key** with a bounded reason (D-07):
-nested, null, mixed array, or one of the caps. The document still indexes and
-its other keys remain filterable.
+nested, null, empty array, mixed array, non-representable number, or one of
+the caps. The document still indexes and its other keys remain filterable.
 """
 
 from __future__ import annotations
@@ -55,6 +55,9 @@ SKIP_CAP_STRING = "cap_string"
 SKIP_CAP_ARRAY = "cap_array"
 SKIP_CAP_KEYS = "cap_keys"
 SKIP_CAP_FRONTMATTER = "cap_frontmatter"
+# WR-05: an empty array has no value to store, but it must not vanish silently —
+# it gets a skip row so discovery can report it (D-07/D-16).
+SKIP_EMPTY_ARRAY = "empty_array"
 # CR-01: JSON numbers do not fit SQLite's REAL column. ``json.loads`` accepts
 # bare ``NaN``/``Infinity`` literals and arbitrary-precision integers, but
 # binding a NaN stores NULL (violating the typed-column CHECK) and
@@ -166,7 +169,7 @@ def filterable_metadata(metadata: Mapping[str, Any]) -> dict[str, Any]:
 def _classify_array(key: str, value: list[Any]) -> tuple[list[TypedRow], str | None]:
     """Classify one array value; returns (rows, skip reason or ``None``)."""
     if not value:
-        return [], None
+        return [], SKIP_EMPTY_ARRAY
     value_type = _scalar_type(value[0])
     if value_type is None or any(_scalar_type(item) != value_type for item in value):
         return [], SKIP_MIXED_ARRAY
@@ -200,8 +203,9 @@ def _classify_scalar(key: str, value: Any) -> tuple[list[TypedRow], str | None]:
 def _classify_value(key: str, value: Any) -> tuple[list[TypedRow], str | None]:
     """Classify one resolved value; returns (rows, skip reason or ``None``).
 
-    Rules 4-10 of :func:`typed_rows`, in order. ``None`` as the reason means
-    the value is filterable; the rows may still be empty (an empty array).
+    Rules 5-11 of :func:`typed_rows`, in order. ``None`` as the reason means
+    the value produced filterable rows (at least one by construction; an
+    empty array is the ``empty_array`` skip).
     """
     if isinstance(value, Mapping) or _contains_mapping(value):
         return [], SKIP_NESTED
@@ -229,14 +233,17 @@ def typed_rows(canonical_json: str) -> tuple[list[TypedRow], list[SkippedKey]]:
     6. ``None`` is skipped as ``null``.
     7. Arrays that are not flat homogeneous scalar lists (including arrays of
        arrays, and ``[true, 1]``-style mixes) are skipped as ``mixed_array``.
-    8. Strings over 1024 characters — scalar or array element — are skipped as
+    8. Empty arrays are skipped as ``empty_array`` (WR-05): there is no value
+       to filter, and a silently dropped key would make ``exists`` false and
+       hide the key from discovery's skip accounting.
+    9. Strings over 1024 characters — scalar or array element — are skipped as
        ``cap_string`` (the cap applies to every stored value, not just the
        scalar form; WR-04).
-    9. Arrays over 128 elements are skipped as ``cap_array``.
-    10. Numbers that are non-finite or outside the double range are skipped as
+    10. Arrays over 128 elements are skipped as ``cap_array``.
+    11. Numbers that are non-finite or outside the double range are skipped as
         ``non_finite`` / ``cap_number`` (CR-01) — derivation is total over
         every shape JSON can express.
-    11. Otherwise one row per scalar (``ordinal`` 0), or one row per array
+    12. Otherwise one row per scalar (``ordinal`` 0), or one row per array
         element (``ordinal`` 0..n-1) so arrays behave as sets.
 
     At most 64 skip rows are ever returned per document (the document-level
