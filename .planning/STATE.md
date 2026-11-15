@@ -5,16 +5,16 @@ milestone_name: Search Precision and Agent Experience
 current_phase: 20
 current_phase_name: Metadata Filtering + Discovery
 status: executing
-stopped_at: Completed 20-01-PLAN.md
-last_updated: "2026-11-15T12:18:28.026Z"
+stopped_at: Completed 20-02-PLAN.md
+last_updated: "2026-11-15T12:29:52.496Z"
 last_activity: 2026-11-15
 last_activity_desc: Phase 20 execution started
-state_head: 4662ea12809730bb8c4961993ec5e6fa844357e7
+state_head: 60146bc235a2c27d36906ec8eb6977ae38bff9c1
 progress:
   total_phases: 8
   completed_phases: 3
   total_plans: 27
-  completed_plans: 23
+  completed_plans: 24
 ---
 
 # DocSift — Project State
@@ -31,7 +31,7 @@ progress:
 ## Current Position
 
 Phase: 20 (Metadata Filtering + Discovery) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Status: Ready to execute
 Last activity: 2026-11-15 — Phase 20 execution started
 
@@ -72,6 +72,7 @@ Progress: [████░░░░░░] 38%
 | Phase 19 P08 | 7min | 3 tasks | 10 files |
 | Phase 19 P09 | 9min | 3 tasks | 16 files |
 | Phase 20 P01 | 18min | 3 tasks | 13 files |
+| Phase 20 P02 | 9 min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -172,6 +173,10 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - [Phase 20]: 20-01: compiler emits presence-aware ne/nin (EXISTS + NOT EXISTS), per-element all, instr/BLOB-substr text ops, half-open path prefix (idx_documents_path), and mtime ranges (idx_documents_mtime); values are never interpolated.
 - [Phase 20]: 20-01: typed kv rows derive from canonical JSON in DocumentRepository.create/.update; filterable_metadata shadows path/mtime only, leaving qmd.metadata merge and caps to 20-02.
 - [Phase 20]: 20-01: unfiltered BM25 is byte-identical to the pre-change capture (golden recording-connection test); --filter parses/validates before the database opens.
+- [Phase 20]: 20-02: qmd.metadata resolution drops the qmd key only when qmd.metadata is a mapping; other qmd shapes remain native keys (nested-skipped).
+- [Phase 20]: 20-02: typed_rows classifies sorted resolved keys (deterministic caps); list-of-lists is mixed_array, arrays containing objects nested; skips bounded at 64 rows/document.
+- [Phase 20]: 20-02: backfill reads stored canonical documents.metadata with one short transaction per document; metadata_values_version is written to index_meta only after a complete pass and failures propagate out of create_all.
+- [Phase 20]: 20-02: bench fixture derives synthetic bench_category/bench_doc keys through canonical_metadata_json; the frozen corpus and all ranking goldens are untouched.
 
 ### Pending Todos
 
@@ -201,8 +206,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-15T12:18:27.663Z
-Stopped at: Completed 20-01-PLAN.md
+Last session: 2026-11-15T12:29:51.816Z
+Stopped at: Completed 20-02-PLAN.md
 Resume file: None
 
 - **Next expected action:** run Phase 17 verification (`/gsd-verify-work 17`) to confirm the four ENG success criteria against the shipped state, then mark Phase 17 complete and proceed to Phase 18. Release evidence lives in `17-07-SUMMARY.md`: tag `v1.1.2` on `c819f67`, Publish run `43562577065` attempt 4 (all three jobs success), PyPI JSON `1.1.2` with the `mcp-name` marker, `pypi-attestations` `OK` against `https://github.com/zhangtaolab/SIF`, and both fresh-venv install proofs. Execution order for the rest of v1.2: 17 → 18 → 19 → 20 → 21 → 22 → 23 → 24; hard dependencies and cross-phase contracts in ROADMAP.md.
