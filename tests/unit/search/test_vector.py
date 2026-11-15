@@ -281,6 +281,15 @@ class TestVectorFilteredRecall:
                 content TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
             )
         """)
+        # The KNN SELECT LEFT JOINs document_chunks for chunk identity
+        # (CORR-02); these legacy rows have no chunk rows, so both fields
+        # resolve to None via the LEFT JOIN.
+        conn.execute("""
+            CREATE TABLE document_chunks (
+                id TEXT PRIMARY KEY, document_id TEXT NOT NULL, sequence INTEGER NOT NULL,
+                content TEXT NOT NULL, created_at TEXT NOT NULL
+            )
+        """)
         conn.execute("""
             CREATE VIRTUAL TABLE document_embeddings USING vec0(
                 embedding_id TEXT PRIMARY KEY,
@@ -353,6 +362,15 @@ class TestVectorOffsetPagination:
             " (id TEXT PRIMARY KEY, collection_id TEXT, title TEXT, path TEXT)"
         )
         conn.execute("CREATE TABLE collections (id TEXT PRIMARY KEY, name TEXT)")
+        # Chunk-identity join target for the KNN SELECT (CORR-02). One chunk
+        # row per document (sequence 0), so the dedup path sees single-row
+        # groups and ranks stay exactly as before.
+        conn.execute("""
+            CREATE TABLE document_chunks (
+                id TEXT PRIMARY KEY, document_id TEXT NOT NULL, sequence INTEGER NOT NULL,
+                content TEXT NOT NULL, created_at TEXT NOT NULL
+            )
+        """)
         conn.execute("""
             CREATE VIRTUAL TABLE document_embeddings USING vec0(
                 embedding_id TEXT PRIMARY KEY,
@@ -369,6 +387,10 @@ class TestVectorOffsetPagination:
             conn.execute(
                 "INSERT INTO documents VALUES (?, 'c1', ?, ?)",
                 (f"d{i}", f"Doc {i}", f"/d{i}.md"),
+            )
+            conn.execute(
+                "INSERT INTO document_chunks VALUES (?, ?, 0, 'body', '2026-11-15')",
+                (f"c{i}", f"d{i}"),
             )
         searcher = VectorSearcher(conn, embedding_dim=2)
         searcher.add_embeddings_batch(
@@ -428,6 +450,276 @@ class TestVectorOffsetPagination:
             assert searcher.search([1.0, 0.0], SearchOptions(limit=2, offset=50)) == []
         finally:
             conn.close()
+
+
+class TestVectorDocumentDedup:
+    """CORR-02: default output is one row per document, with chunk identity.
+
+    Vector search operates on chunk embeddings, so one chunky document can
+    consume many result slots; before CORR-02 a ``limit=10`` page could return
+    fewer than ten distinct documents. The best-distance row now represents
+    its document, carries that chunk's ``chunk_id``/``sequence``, and
+    ``chunk_matches`` counts the rows that collapsed.
+    """
+
+    @staticmethod
+    def _build_db(
+        documents: list[tuple[str, list[tuple[str, int, list[float]]]]],
+    ) -> sqlite3.Connection:
+        """Real vec0 DB from (doc_id, [(chunk_id, sequence, vector), ...])."""
+        import sqlite_vec
+
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            conn.enable_load_extension(True)
+            sqlite_vec.load(conn)
+            conn.enable_load_extension(False)
+        except Exception:
+            conn.close()
+            pytest.skip("sqlite-vec not available")
+
+        conn.execute(
+            "CREATE TABLE documents"
+            " (id TEXT PRIMARY KEY, collection_id TEXT, title TEXT, path TEXT)"
+        )
+        conn.execute("CREATE TABLE collections (id TEXT PRIMARY KEY, name TEXT)")
+        conn.execute("""
+            CREATE TABLE document_chunks (
+                id TEXT PRIMARY KEY, document_id TEXT NOT NULL, sequence INTEGER NOT NULL,
+                content TEXT NOT NULL, created_at TEXT NOT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE VIRTUAL TABLE document_embeddings USING vec0(
+                embedding_id TEXT PRIMARY KEY,
+                document_id TEXT NOT NULL,
+                chunk_id TEXT,
+                embedding FLOAT[2]
+            )
+        """)
+        conn.execute("INSERT INTO collections VALUES ('c1', 'notes')")
+        embeddings: list[tuple[str, str, str, list[float]]] = []
+        for doc_id, chunks in documents:
+            conn.execute(
+                "INSERT INTO documents VALUES (?, 'c1', ?, ?)",
+                (doc_id, f"Doc {doc_id}", f"/{doc_id}.md"),
+            )
+            for chunk_id, sequence, vector in chunks:
+                conn.execute(
+                    "INSERT INTO document_chunks VALUES (?, ?, ?, 'body', '2026-11-15')",
+                    (chunk_id, doc_id, sequence),
+                )
+                embeddings.append((f"e-{chunk_id}", doc_id, chunk_id, vector))
+        VectorSearcher(conn, embedding_dim=2).add_embeddings_batch(embeddings)
+        return conn
+
+    def test_duplicate_chunks_collapse_to_one_row_with_match_count(self) -> None:
+        """Three chunks of one document yield one row with chunk_matches=3."""
+        conn = self._build_db(
+            [
+                (
+                    "d1",
+                    [
+                        ("c0", 0, [1.0, 0.0]),
+                        ("c1", 1, [1.0, 0.1]),
+                        ("c2", 2, [1.0, 0.2]),
+                    ],
+                )
+            ]
+        )
+        try:
+            results = VectorSearcher(conn, embedding_dim=2).search(
+                [1.0, 0.0], SearchOptions(limit=10)
+            )
+
+            assert [r.document_id for r in results] == ["d1"]
+            assert results[0].chunk_id == "c0"
+            assert results[0].sequence == 0
+            assert results[0].chunk_matches == 3
+        finally:
+            conn.close()
+
+    def test_best_distance_chunk_wins_identity(self) -> None:
+        """The winning row is the nearest chunk, not the first-inserted one."""
+        conn = self._build_db(
+            [
+                (
+                    "d1",
+                    [
+                        ("c0", 0, [1.0, 0.30]),
+                        ("c1", 1, [1.0, 0.10]),
+                        ("c2", 2, [1.0, 0.00]),
+                    ],
+                )
+            ]
+        )
+        try:
+            results = VectorSearcher(conn, embedding_dim=2).search(
+                [1.0, 0.0], SearchOptions(limit=10)
+            )
+
+            assert results[0].chunk_id == "c2"
+            assert results[0].sequence == 2
+            assert results[0].chunk_matches == 3
+        finally:
+            conn.close()
+
+    @staticmethod
+    def _chunky_corpus() -> list[tuple[str, list[tuple[str, int, list[float]]]]]:
+        """One five-chunk document plus twelve single-chunk documents."""
+        documents: list[tuple[str, list[tuple[str, int, list[float]]]]] = [
+            (
+                "d-chunky",
+                [
+                    (f"chunky-{sequence}", sequence, [1.0, sequence * 0.01])
+                    for sequence in range(5)
+                ],
+            )
+        ]
+        for index in range(12):
+            documents.append(
+                (f"d{index}", [(f"single-{index}", 0, [1.0, 0.5 + index * 0.1])])
+            )
+        return documents
+
+    def test_five_chunk_document_yields_ten_distinct_documents(self) -> None:
+        """A chunky document cannot shrink a limit=10 page below ten documents."""
+        conn = self._build_db(self._chunky_corpus())
+        try:
+            results = VectorSearcher(conn, embedding_dim=2).search(
+                [1.0, 0.0], SearchOptions(limit=10)
+            )
+
+            ids = [r.document_id for r in results]
+            assert len(ids) == 10
+            assert len(set(ids)) == 10
+            assert "d-chunky" in ids
+            chunky = next(r for r in results if r.document_id == "d-chunky")
+            assert chunky.chunk_matches == 5
+            assert chunky.chunk_id == "chunky-0"
+        finally:
+            conn.close()
+
+    def test_per_chunk_mode_returns_ungrouped_chunk_rows(self) -> None:
+        """per_chunk=True keeps the chunk rows and leaves chunk_matches at 0."""
+        conn = self._build_db(self._chunky_corpus())
+        try:
+            results = VectorSearcher(conn, embedding_dim=2).search(
+                [1.0, 0.0], SearchOptions(limit=10, per_chunk=True)
+            )
+
+            assert len(results) == 10
+            assert all(r.chunk_id is not None for r in results)
+            assert all(r.chunk_matches == 0 for r in results)
+            chunky = [r for r in results if r.document_id == "d-chunky"]
+            assert len(chunky) == 5
+            assert {r.chunk_id for r in chunky} == {f"chunky-{i}" for i in range(5)}
+            assert {r.sequence for r in chunky} == set(range(5))
+        finally:
+            conn.close()
+
+    @staticmethod
+    def _escalating_searcher(
+        requested: list[int], distinct_documents: int = 1
+    ) -> tuple[VectorSearcher, MagicMock]:
+        """Mock searcher whose KNN batch is always exactly fetch_k rows."""
+        mock_db = MagicMock()
+        cursor = MagicMock()
+        cursor.fetchall.return_value = []
+        mock_db.execute.return_value = cursor
+        searcher = VectorSearcher(mock_db)
+        searcher._vec_available = True
+
+        def _execute(_sql, params):
+            fetch_k = params[1]
+            requested.append(fetch_k)
+            batch = MagicMock()
+            batch.fetchall.return_value = [
+                {
+                    "document_id": f"d{row % distinct_documents}",
+                    "title": "T",
+                    "path": f"/d{row}.md",
+                    "collection_name": "c",
+                    "score": 0.0,
+                    "chunk_id": f"c{row}",
+                    "sequence": row,
+                }
+                for row in range(fetch_k)
+            ]
+            return batch
+
+        mock_db.execute.side_effect = _execute
+        return searcher, mock_db
+
+    def test_escalation_stops_at_the_ceiling(self) -> None:
+        """A saturated batch below target doubles fetch_k up to, never past, 2048."""
+        requested: list[int] = []
+        searcher, _ = self._escalating_searcher(requested)
+
+        results = searcher.search([0.1, 0.2], SearchOptions(limit=10))
+
+        assert requested == [50, 100, 200, 400, 800, 1600, 2048]
+        assert max(requested) == 2048
+        # All rows belong to one document, so the page still carries its row.
+        assert len(results) == 1
+        assert results[0].chunk_matches == 2048
+
+    def test_no_escalation_when_first_batch_satisfies_target(self) -> None:
+        """The first batch already yielding the target runs exactly one KNN query."""
+        requested: list[int] = []
+        searcher, _ = self._escalating_searcher(requested, distinct_documents=10)
+
+        results = searcher.search([0.1, 0.2], SearchOptions(limit=10))
+
+        assert requested == [50]
+        assert len(results) == 10
+
+    def test_legacy_null_chunk_identity_is_none(self) -> None:
+        """Rows without chunk identity (legacy/dangling) yield None/None."""
+        mock_db = MagicMock()
+        cursor = MagicMock()
+        cursor.fetchall.return_value = []
+        mock_db.execute.return_value = cursor
+        searcher = VectorSearcher(mock_db)
+        searcher._vec_available = True
+
+        batch = MagicMock()
+        batch.fetchall.return_value = [
+            {
+                "document_id": "d1",
+                "title": "T",
+                "path": "/d1.md",
+                "collection_name": "c",
+                "score": 0.0,
+                "chunk_id": None,
+                "sequence": None,
+            }
+        ]
+        mock_db.execute.side_effect = [batch]
+
+        results = searcher.search([0.1, 0.2], SearchOptions(limit=10))
+
+        assert results[0].chunk_id is None
+        assert results[0].sequence is None
+        assert results[0].chunk_matches == 1
+
+    def test_to_dict_includes_chunk_identity(self) -> None:
+        """SearchResult.to_dict() carries all three new fields."""
+        payload = SearchResult(
+            document_id="d1",
+            title="T",
+            path="/d1.md",
+            collection_name="c",
+            score=1.0,
+            chunk_id="c1",
+            sequence=2,
+            chunk_matches=3,
+        ).to_dict()
+
+        assert payload["chunk_id"] == "c1"
+        assert payload["sequence"] == 2
+        assert payload["chunk_matches"] == 3
 
 
 class TestVectorEmbeddingDeletion:

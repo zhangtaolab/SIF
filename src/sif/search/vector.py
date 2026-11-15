@@ -65,7 +65,19 @@ class VectorSearcher:
         query_embedding: list[float],
         options: SearchOptions,
     ) -> list[SearchResult]:
-        """Search using sqlite-vec."""
+        """Search using sqlite-vec.
+
+        By default duplicate chunk hits collapse to one row per document
+        (CORR-02): the best-distance row wins, carries that chunk's
+        ``chunk_id``/``sequence``, and ``chunk_matches`` counts the pre-dedup
+        vector rows. ``options.per_chunk`` keeps the ungrouped chunk rows.
+
+        ``fetch_k`` starts at ``min(max(target * 4, 50), _MAX_FETCH_K)`` and
+        doubles only while the batch saturated the requested k and the
+        distinct target (``limit + offset``) is unmet — the independent
+        ceiling bounds the work a huge offset can request. One page slice
+        follows, and ranks are global across pages (``offset + position``).
+        """
         # Convert embedding to vec format
         embedding_str = self._embedding_to_vec(query_embedding)
 
@@ -77,19 +89,12 @@ class VectorSearcher:
             placeholders = ", ".join(["?"] * len(options.collection_ids))
             collection_filter = f"AND d.collection_id IN ({placeholders})"
 
-        # Over-fetch (WR-04): k bounds the vec0 MATCH itself, which sqlite-vec
-        # resolves before the JOIN applies the collection filter — a tight k
-        # silently under-returns filtered searches. Fetch a bounded surplus,
-        # then trim to the requested window after filtering. Score is monotone
-        # in distance (score = 1 - distance / 2), so trimming after the
-        # min_score filter returns the same rows a tight k would for
-        # unfiltered searches. The window grows with the page offset (CORR-03)
-        # and stays clamped at _MAX_FETCH_K, so a past-the-cap offset degrades
-        # to an empty page instead of unbounded fetch work.
-        window = max(1, options.limit + options.offset)
-        fetch_k = min(max(window * 4, 50), _MAX_FETCH_K)
-        params = [embedding_str, fetch_k, *(options.collection_ids or [])]
-
+        # The KNN MATCH runs before the JOIN applies the collection filter, so
+        # a tight k silently under-returns filtered searches (WR-04); the
+        # window therefore starts at a bounded surplus and only grows while
+        # the batch is demonstrably saturated. The LEFT JOIN supplies chunk
+        # identity; legacy rows with a chunk_id that has no document_chunks
+        # row (or NULL) yield None/None.
         # Audit note (261105-wwz, 2026-11-05): this KNN MATCH is the only
         # vec0 access in the search path and no WHERE filters a vec0 metadata
         # column; EXPLAIN QUERY PLAN shows the single vec0 SCAN outermost with
@@ -103,49 +108,87 @@ class VectorSearcher:
                 d.title,
                 d.path,
                 c.name as collection_name,
-                distance as score
+                distance as score,
+                de.chunk_id as chunk_id,
+                dc.sequence as sequence
             FROM document_embeddings de
             JOIN documents d ON de.document_id = d.id
             JOIN collections c ON d.collection_id = c.id
+            LEFT JOIN document_chunks dc ON dc.id = de.chunk_id
             WHERE embedding MATCH ? AND k = ? {collection_filter}
             ORDER BY distance
         """
 
-        cursor = self.db.execute(sql, params)
-        results = []
+        target = max(1, options.limit + options.offset)
+        fetch_k = min(max(target * 4, 50), _MAX_FETCH_K)
+        while True:
+            params = [embedding_str, fetch_k, *(options.collection_ids or [])]
+            rows = self.db.execute(sql, params).fetchall()
+            candidates = self._candidates(rows, options)
 
-        for row in cursor.fetchall():
-            # Convert distance to score (lower distance = higher score)
-            # Cosine distance is 0-2, convert to 0-1 score
-            score = 1.0 - (row["score"] / 2.0)
+            # Escalate only while the batch may have been truncated (it
+            # returned exactly k rows) and the target is unmet. The module
+            # constant is an independent ceiling (T-19-13): a huge offset
+            # degrades to an empty page instead of unbounded KNN work.
+            if len(candidates) >= target or len(rows) < fetch_k or fetch_k >= _MAX_FETCH_K:
+                break
+            fetch_k = min(fetch_k * 2, _MAX_FETCH_K)
 
-            if score < options.min_score:
-                continue
-
-            result = SearchResult(
-                document_id=row["document_id"],
-                title=row["title"] or "",
-                path=row["path"],
-                collection_name=row["collection_name"],
-                score=score,
-            )
-
-            if options.include_content:
-                result.content = self._get_document_content(row["document_id"])
-
-            results.append(result)
-
-        # Take the requested window, then slice the caller's page out of it.
-        # One slice owner: ranks are global across pages (CORR-03/D-06) —
+        # Take the requested page once, then number ranks globally (D-06):
         # rank = offset + position. The window trim keeps the WR-03 clamp:
         # limit <= 0 still yields one row instead of an empty/raw-KNN result.
         page_limit = max(1, options.limit)
-        results = results[:window]
-        page = results[options.offset : options.offset + page_limit]
+        page = candidates[options.offset : options.offset + page_limit]
         for position, result in enumerate(page, 1):
             result.rank = options.offset + position
+            if options.include_content:
+                result.content = self._get_document_content(result.document_id)
 
         return page
+
+    def _candidates(self, rows: list[sqlite3.Row], options: SearchOptions) -> list[SearchResult]:
+        """Build result rows from KNN output, deduped per document by default.
+
+        ``min_score`` filters on converted scores before grouping. In the
+        default mode a document's rows collapse onto its best-distance
+        (first-seen) row, with ``chunk_matches`` counting the group; per-chunk
+        mode keeps every row and leaves ``chunk_matches`` at 0 (D-01/D-02).
+        """
+        if options.per_chunk:
+            results: list[SearchResult] = []
+            for row in rows:
+                result = self._row_to_result(row)
+                if result.score >= options.min_score:
+                    results.append(result)
+            return results
+
+        grouped: dict[str, SearchResult] = {}
+        for row in rows:
+            result = self._row_to_result(row)
+            if result.score < options.min_score:
+                continue
+            existing = grouped.get(result.document_id)
+            if existing is None:
+                result.chunk_matches = 1
+                grouped[result.document_id] = result
+            else:
+                existing.chunk_matches += 1
+        return list(grouped.values())
+
+    @staticmethod
+    def _row_to_result(row: sqlite3.Row) -> SearchResult:
+        """Convert one KNN row to a SearchResult carrying chunk identity."""
+        keys = row.keys()
+        return SearchResult(
+            document_id=row["document_id"],
+            title=row["title"] or "",
+            path=row["path"],
+            collection_name=row["collection_name"],
+            # Cosine distance is 0-2, convert to 0-1 score
+            score=1.0 - (row["score"] / 2.0),
+            chunk_id=row["chunk_id"] if "chunk_id" in keys else None,
+            sequence=row["sequence"] if "sequence" in keys else None,
+        )
 
     def _embedding_to_vec(self, embedding: list[float]) -> str:
         """Convert embedding to sqlite-vec format."""

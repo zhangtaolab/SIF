@@ -58,6 +58,17 @@ def _build_search_db(with_vec: bool = False) -> sqlite3.Connection:
         )
         """
     )
+    # The vector searcher's KNN SELECT LEFT JOINs document_chunks for chunk
+    # identity (CORR-02); mirror that table so the hand-built fixture keeps
+    # exercising the production SQL shape.
+    conn.execute(
+        """
+        CREATE TABLE document_chunks (
+            id TEXT PRIMARY KEY, document_id TEXT NOT NULL, sequence INTEGER NOT NULL,
+            content TEXT NOT NULL, created_at TEXT NOT NULL
+        )
+        """
+    )
     # External-content FTS5, exactly as src/sif/database/schema.py creates it.
     conn.execute(
         """
@@ -99,6 +110,11 @@ def _build_search_db(with_vec: bool = False) -> sqlite3.Connection:
     if with_vec:
         # sqlite-vec rejects NULL for the vec0 TEXT metadata column chunk_id,
         # so each document carries a per-document chunk id string.
+        for chunk_id, doc_id in (("ch1", "d1"), ("ch2", "d2"), ("ch3", "d3")):
+            conn.execute(
+                "INSERT INTO document_chunks VALUES (?, ?, 0, 'python', '2026-11-15')",
+                (chunk_id, doc_id),
+            )
         VectorSearcher(conn, embedding_dim=2).add_embeddings_batch(
             [
                 ("e1", "d1", "ch1", [1.0, 0.1]),

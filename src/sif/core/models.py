@@ -297,6 +297,13 @@ class SearchResult:
     # rows in document_embeddings — the tiered-depth vector lag. Defaulted so
     # every constructor stays valid; rides to_dict() into --json output.
     vectors_stale: bool = False
+    # Chunk identity (D-02/D-03): the matched chunk's id and sequence number,
+    # plus the count of pre-dedup vector rows collapsed into this row. All
+    # defaulted so document-level rows (BM25) and every existing constructor
+    # stay valid; they ride to_dict() into --json output and the MCP re-map.
+    chunk_id: str | None = None
+    sequence: int | None = None
+    chunk_matches: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
@@ -313,6 +320,9 @@ class SearchResult:
             "snippet": self.snippet,
             "context_description": self.context_description,
             "vectors_stale": self.vectors_stale,
+            "chunk_id": self.chunk_id,
+            "sequence": self.sequence,
+            "chunk_matches": self.chunk_matches,
         }
 
 
@@ -322,6 +332,10 @@ class SearchOptions:
 
     limit: int = 10
     offset: int = 0
+    # CORR-02/D-01 escape hatch: the default False groups vector rows to one
+    # row per document (chunk_matches carries the collapsed count); True
+    # returns the ungrouped chunk rows and fuses them by chunk identity.
+    per_chunk: bool = False
     # Sentinel contract: None = no collection filter (unfiltered, incl. --all);
     # [] = exclude-all — every collection excluded, searchers return zero results.
     collection_ids: list[str] | None = None
