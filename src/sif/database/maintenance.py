@@ -60,7 +60,7 @@ class BackupResult:
     bytes_written: int
 
 
-_SHADOW_EXISTS_SQL = "SELECT 1 FROM sqlite_master WHERE type='table' AND name='embedded_documents'"
+_TABLE_EXISTS_SQL = "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?"
 _SHADOW_DELETE_STALE_SQL = (
     "DELETE FROM embedded_documents "
     "WHERE document_id NOT IN (SELECT id FROM documents) "
@@ -81,14 +81,20 @@ def reconcile_embedded_documents(conn: sqlite3.Connection) -> tuple[int, int]:
     (the join means a deleted document is never resurrected). Returns
     ``(deleted, inserted)``.
 
+    Both source tables must be queryable. Schema creation is conditional on
+    sqlite-vec, but a database built with the extension keeps the shadow
+    table after the extension becomes unavailable — probing only the shadow
+    would then make ``cleanup`` and ``vacuum`` fail with "no such table".
+    A stripped environment is a no-op, never an error.
+
     No commit: the caller owns the transaction, so a cleanup/vacuum failure
     rolls the reconciliation back with the rest of the maintenance work. Both
     statements scan by design — maintenance paths may; the search path must
     not (CORR-06).
     """
-    row = conn.execute(_SHADOW_EXISTS_SQL).fetchone()
-    if row is None:
-        return 0, 0
+    for table in ("embedded_documents", "document_embeddings"):
+        if conn.execute(_TABLE_EXISTS_SQL, (table,)).fetchone() is None:
+            return 0, 0
 
     deleted = conn.execute(_SHADOW_DELETE_STALE_SQL).rowcount
     inserted = conn.execute(_SHADOW_INSERT_MISSING_SQL).rowcount

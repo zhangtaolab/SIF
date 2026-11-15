@@ -23,6 +23,7 @@ from sif.database.maintenance import (
     MaintenanceTargetError,
     backup_index,
     default_backup_path,
+    reconcile_embedded_documents,
     vacuum_index,
 )
 
@@ -206,6 +207,31 @@ class _FailingSource:
 
     def close(self) -> None:
         self.closed = True
+
+
+class TestReconcileEmbeddedDocuments:
+    """WR-01: reconcile tolerates an environment without the vec0 source table."""
+
+    def test_missing_source_table_is_a_no_op_and_vacuum_still_works(self, tmp_path: Path) -> None:
+        """Schema creation is extension-conditional: a DB built with sqlite-vec
+        keeps the shadow after the extension becomes unavailable. Cleanup and
+        vacuum must not fail with "no such table: document_embeddings"."""
+        db_path = tmp_path / "stripped.db"
+        conn = sqlite3.connect(db_path)
+        try:
+            conn.execute("CREATE TABLE embedded_documents (document_id TEXT PRIMARY KEY)")
+            conn.execute("INSERT INTO embedded_documents(document_id) VALUES ('orphan')")
+            conn.commit()
+
+            assert reconcile_embedded_documents(conn) == (0, 0)
+        finally:
+            conn.close()
+
+        result = vacuum_index(db_path, _settings())
+
+        assert result.reclaimed_bytes == result.before_bytes - result.after_bytes
+        with closing(sqlite3.connect(db_path)) as check:
+            assert check.execute("SELECT COUNT(*) FROM embedded_documents").fetchone()[0] == 1
 
 
 class TestDefaultBackupPath:
