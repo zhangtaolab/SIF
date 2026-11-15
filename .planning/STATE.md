@@ -5,11 +5,11 @@ milestone_name: Search Precision and Agent Experience
 current_phase: 21
 current_phase_name: Scale, Maintenance + Embedder Identity
 status: planning
-stopped_at: Phase 20 complete and verified (26/26 must-haves); ready to plan Phase 21
-last_updated: "2026-11-15T14:30:13.178Z"
+stopped_at: Phase 21 context gathered
+last_updated: "2026-11-15T14:38:16.950Z"
 last_activity: 2026-11-15
 last_activity_desc: Phase 20 complete, transitioned to Phase 21
-state_head: 7798316e5901f7ea51b7aa170a99f9756262a08f
+state_head: baf0532e1181d8d89f73d33e2cd51a26bbb4a547
 progress:
   total_phases: 8
   completed_phases: 4
@@ -220,8 +220,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-15T14:30:12.789Z
-Stopped at: Phase 20 complete and verified (26/26 must-haves); ready to plan Phase 21
-Resume file: /Users/forrest/GitHub/SIF/.planning/phases/20-metadata-filtering-discovery/20-VERIFICATION.md
+Last session: 2026-11-15T14:38:16.550Z
+Stopped at: Phase 21 context gathered
+Resume file: /Users/forrest/GitHub/SIF/.planning/phases/21-scale-maintenance-embedder-identity/21-CONTEXT.md
 
 - **Next expected action:** plan and execute Phase 21 (Scale, Maintenance + Embedder Identity — SCALE-01..03, EMB-01/02), then 22 → 23 → 24. Phase 20 delivered FILT-01..05: shared 17-operator filter grammar on CLI+MCP, `path`/`mtime` built-ins, pre-RRF per-leg pushdown with the corrected vector escalation, typed kv storage + `index_meta`-gated backfill, and the `metadata` discovery tool whose envelope is the frozen Phase 22 contract. Two audits remain recorded as debt (see Blockers/Concerns): `/gsd-secure-phase 20` and `/gsd:validate-phase 20`.
