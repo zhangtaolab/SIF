@@ -17,6 +17,11 @@ from sif.cli.error_handling import open_initialized_database
 from sif.core.models import Collection
 from sif.database.database import Database
 from sif.database.locking import index_lock
+from sif.database.maintenance import (
+    MaintenanceBusyError,
+    MaintenanceTargetError,
+    vacuum_index,
+)
 from sif.database.repositories import (
     CollectionRepository,
     DocumentChunkRepository,
@@ -496,6 +501,49 @@ def embed_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
         if force and collection is None and current is not None and not identity_written:
             with db.connection:
                 certify_identity(db.connection, current)
+
+
+def _format_bytes(size: int) -> str:
+    """Render a byte count with its MiB equivalent for maintenance output."""
+    return f"{size} bytes ({size / (1024 * 1024):.2f} MiB)"
+
+
+@index_group.command("vacuum")
+@click.pass_context
+def vacuum_cmd(ctx: click.Context) -> None:
+    """Reclaim unused space in the index database."""
+    index_path = ctx.obj["index_path"]
+
+    # Run schema migrations/backfills first, then close the handle: VACUUM runs
+    # on the maintenance helper's own connection outside every transaction.
+    with open_initialized_database(index_path, Database):
+        pass
+
+    from sif.config.settings import get_settings  # noqa: PLC0415
+
+    settings = get_settings()
+    lock_timeout = settings.lock_wait_timeout
+    with index_lock(
+        Path(index_path),
+        lock_timeout,
+        on_wait=lambda: console.print(
+            f"[dim]Another index writer is running; waiting up to {lock_timeout:.0f}s...[/dim]"
+        ),
+    ):
+        try:
+            result = vacuum_index(Path(index_path), settings)
+        except MaintenanceBusyError as e:
+            # Retryable by design (D-14): never a traceback, never partial success.
+            raise click.ClickException(str(e)) from e
+        except (MaintenanceTargetError, sqlite3.Error, OSError) as e:
+            raise click.ClickException(
+                f"Vacuum failed: {e}. Check free disk space and file permissions, then retry."
+            ) from e
+
+    console.print("[green]Vacuum complete:[/green]")
+    console.print(f"  Before: {_format_bytes(result.before_bytes)}")
+    console.print(f"  After: {_format_bytes(result.after_bytes)}")
+    console.print(f"  Reclaimed: {_format_bytes(result.reclaimed_bytes)}")
 
 
 @index_group.command("status")

@@ -11,10 +11,11 @@ from unittest.mock import MagicMock, patch
 from click.testing import CliRunner
 from rich.console import Console
 
-from sif.cli.commands.index import embed_cmd
+from sif.cli.commands.index import embed_cmd, index_group
 from sif.config.settings import Settings
 from sif.core.models import Collection, Document
 from sif.database.database import Database
+from sif.database.maintenance import MaintenanceBusyError, VacuumResult
 from sif.database.repositories import CollectionRepository, DocumentRepository
 from sif.embedding.identity import build_identity, read_identity, write_identity
 from sif.embedding.prompts import PromptScheme
@@ -888,3 +889,51 @@ class TestStreamingEmbed:
         assert replaced.source == "verified"
         ids = _document_ids(db_path)
         assert _embedded_chunk_count(db_path, ids["/notes/a.md"]) >= 1
+
+
+class TestVacuumCommand:
+    """`sif index vacuum` renders the three sizes and retryable errors cleanly."""
+
+    @staticmethod
+    def _settings() -> Settings:
+        return Settings(embedding_dim=DIM, model_name="test", cache_embeddings=False)
+
+    def test_vacuum_prints_before_after_and_reclaimed_and_exits_zero(self, tmp_path: Path) -> None:
+        db_path = tmp_path / "vacuum.db"
+        settings = self._settings()
+        with (
+            patch("sif.config.settings.get_settings", return_value=settings),
+            patch(
+                "sif.cli.commands.index.vacuum_index",
+                return_value=VacuumResult(
+                    before_bytes=4096, after_bytes=1024, reclaimed_bytes=3072
+                ),
+            ),
+        ):
+            result = CliRunner().invoke(index_group, ["vacuum"], obj={"index_path": db_path})
+
+        assert result.exit_code == 0, result.output
+        assert "Vacuum complete" in result.output
+        assert "4096 bytes" in result.output
+        assert "1024 bytes" in result.output
+        assert "3072 bytes" in result.output
+        assert "Reclaimed" in result.output
+
+    def test_busy_vacuum_exits_non_zero_with_retry_text_and_no_traceback(
+        self, tmp_path: Path
+    ) -> None:
+        db_path = tmp_path / "busy.db"
+        settings = self._settings()
+        busy = MaintenanceBusyError(
+            "The WAL checkpoint could not complete because another connection is "
+            "using the index. Retry once active readers finish."
+        )
+        with (
+            patch("sif.config.settings.get_settings", return_value=settings),
+            patch("sif.cli.commands.index.vacuum_index", side_effect=busy),
+        ):
+            result = CliRunner().invoke(index_group, ["vacuum"], obj={"index_path": db_path})
+
+        assert result.exit_code != 0
+        assert "Retry once active readers finish" in result.output
+        assert "Traceback" not in result.output
