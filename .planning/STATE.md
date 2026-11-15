@@ -5,16 +5,16 @@ milestone_name: Search Precision and Agent Experience
 current_phase: 19
 current_phase_name: Search Correctness
 status: executing
-stopped_at: Completed 19-02-PLAN.md
-last_updated: "2026-11-15T03:08:27.965Z"
+stopped_at: Completed 19-03-PLAN.md
+last_updated: "2026-11-15T03:21:37.719Z"
 last_activity: 2026-11-15
 last_activity_desc: Phase 19 execution started
-state_head: 26aa5ceeab6123322db619ac32d1814a6580ff07
+state_head: 9ea1d4c280035582c670cfe3afd4253fd1e8d8f9
 progress:
   total_phases: 8
   completed_phases: 2
   total_plans: 22
-  completed_plans: 15
+  completed_plans: 16
 ---
 
 # DocSift — Project State
@@ -31,7 +31,7 @@ progress:
 ## Current Position
 
 Phase: 19 (Search Correctness) — EXECUTING
-Plan: 3 of 9
+Plan: 4 of 9
 Status: Ready to execute
 Last activity: 2026-11-15 — Phase 19 execution started
 
@@ -64,6 +64,7 @@ Progress: [███░░░░░░░] 25%
 | Phase 18 P03 | 12min | 3 tasks | 7 files |
 | Phase 19 P01 | 9min | 3 tasks | 9 files |
 | Phase 19 P02 | 8min | 3 tasks | 11 files |
+| Phase 19 P03 | 6min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -127,6 +128,10 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - [Phase 19]: 19-02: --force and migrating stay distinct bypasses of the checksum skip; both take the metadata fast path when the body is unchanged (Pitfall 15).
 - [Phase 19]: 19-02: the watch embed leg is fed by result.reindexed_paths in burst and reconcile, and always runs at embed depth so _pending_retry still heals; the checksum-snapshot helpers are removed.
 - [Phase 19]: 19-02: the full body-change path now refreshes documents.file_size, matching the metadata fast path (Rule 1 deviation).
+- [Phase 19]: 19-03: enrich_results lives in context_attach.py and composes attach_path_contexts then mark_vector_staleness; staleness imports only sif.core.models, so the composition has no import cycle.
+- [Phase 19]: 19-03: searchers are pure producers; every SearchPipeline.search exit (BM25/VECTOR/HYDE/hybrid) calls enrich_results exactly once, with the hybrid exit enriching after fusion, rerank, and snippets.
+- [Phase 19]: 19-03: direct CLI search/vsearch and the MCP BM25 fallback remain unenriched until 19-04 lands their single enrich_results call (planned sequencing, not a regression).
+- [Phase 19]: 19-03: marker parity is pinned on a real-DB hybrid fixture (verbatim context row attaches on read; a purged embedding marks only the BM25-only document).
 
 ### Pending Todos
 
@@ -156,8 +161,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-15T03:08:17.476Z
-Stopped at: Completed 19-02-PLAN.md
+Last session: 2026-11-15T03:21:37.469Z
+Stopped at: Completed 19-03-PLAN.md
 Resume file: None
 
 - **Next expected action:** run Phase 17 verification (`/gsd-verify-work 17`) to confirm the four ENG success criteria against the shipped state, then mark Phase 17 complete and proceed to Phase 18. Release evidence lives in `17-07-SUMMARY.md`: tag `v1.1.2` on `c819f67`, Publish run `43562577065` attempt 4 (all three jobs success), PyPI JSON `1.1.2` with the `mcp-name` marker, `pypi-attestations` `OK` against `https://github.com/zhangtaolab/SIF`, and both fresh-venv install proofs. Execution order for the rest of v1.2: 17 → 18 → 19 → 20 → 21 → 22 → 23 → 24; hard dependencies and cross-phase contracts in ROADMAP.md.
