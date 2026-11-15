@@ -20,6 +20,8 @@ from typing import Any
 
 import pytest
 
+from sif.core.models import canonical_metadata_json
+from sif.database.metadata_repository import MetadataValueRepository
 from sif.database.schema import SchemaManager
 from sif.search.vector import VectorSearcher
 
@@ -142,10 +144,22 @@ def build_bench_db(
         )
         doc_id = f"doc-{index:03d}"
         chunk_id = f"chunk-{index:03d}"
+        # The committed corpus carries no YAML frontmatter, so the fixture
+        # derives two deterministic synthetic keys per document (Phase 20,
+        # FILT-04): the category directory and the document index. The SAME
+        # canonical string feeds the documents row and the typed kv view, so
+        # the bench corpus is filterable without moving a single ranking
+        # golden.
+        metadata_json = canonical_metadata_json(
+            {
+                "bench_category": path.relative_to(root).parts[0],
+                "bench_doc": index,
+            }
+        )
         conn.execute(
             "INSERT INTO documents (id, collection_id, path, filename, title, content,"
-            " checksum, mtime, created_at, updated_at)"
-            " VALUES (?, 'bench', ?, ?, ?, ?, ?, 1.0, ?, ?)",
+            " checksum, mtime, created_at, updated_at, metadata)"
+            " VALUES (?, 'bench', ?, ?, ?, ?, ?, 1.0, ?, ?, ?)",
             (
                 doc_id,
                 str(path),
@@ -155,8 +169,10 @@ def build_bench_db(
                 hashlib.sha256(text.encode("utf-8")).hexdigest(),
                 now,
                 now,
+                metadata_json,
             ),
         )
+        MetadataValueRepository(conn).replace_from_canonical(doc_id, metadata_json)
         conn.execute(
             "INSERT INTO document_chunks (id, document_id, sequence, content, created_at)"
             " VALUES (?, ?, 0, ?, ?)",

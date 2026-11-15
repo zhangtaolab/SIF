@@ -23,6 +23,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from sif.config.settings import Settings
+from sif.core.filters import parse_filter
 from sif.core.models import Collection, Document, DocumentChunk, compute_checksum
 from sif.database.database import Database
 from sif.database.repositories import (
@@ -34,6 +35,7 @@ from sif.database.repositories import (
 from sif.indexing.incremental import IncrementalIndexer, IncrementalResult
 from sif.indexing.parser import CONVENTION_VERSION
 from sif.indexing.scanner import FileScanner
+from sif.search.filters import count_matching_documents
 
 
 BODY_ALPHA = "# Heading One\n\n" + ("Alpha paragraph text. " * 50)
@@ -119,6 +121,38 @@ def _doc_fields(db_path: Path, path: str) -> dict[str, object]:
         return dict(row)
     finally:
         conn.close()
+
+
+def _metadata_values(db_path: Path, path: str) -> dict[str, list[object]]:
+    """Read the typed kv view for one document path via a fresh connection.
+
+    Values are returned per key in ``ordinal`` order. This reads the table the
+    ``MetadataValueRepository`` write path maintains — never the metadata blob —
+    so it proves the filterable view moved with the document row.
+    """
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            "SELECT v.key, v.value_type, v.text_value, v.number_value, v.boolean_value "
+            "FROM document_metadata_values v "
+            "JOIN documents d ON v.document_id = d.id "
+            "WHERE d.path = ? ORDER BY v.key, v.ordinal",
+            (path,),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    values: dict[str, list[object]] = {}
+    for row in rows:
+        if row["value_type"] == "string":
+            value: object = row["text_value"]
+        elif row["value_type"] == "number":
+            value = row["number_value"]
+        else:
+            value = bool(row["boolean_value"])
+        values.setdefault(row["key"], []).append(value)
+    return values
 
 
 def _seed_chunk_and_embedding(db: Database, collection_id: str, doc_path: str) -> None:
@@ -900,6 +934,98 @@ class TestMetadataFastPath:
         assert third.updated == 1
         assert third.metadata_only == 1
         assert third.reindexed_paths == set()
+
+    def test_frontmatter_only_edit_refreshes_typed_rows(self, tmp_path, monkeypatch) -> None:
+        """D-05: a frontmatter-only edit updates the kv view in the same command."""
+        db_path, doc_file = self._seed_frontmatter_doc(tmp_path, monkeypatch)
+        assert _metadata_values(db_path, str(doc_file)) == {"title": ["Original"]}
+
+        os.utime(doc_file, (1_000_000_000, 1_000_000_000))
+        doc_file.write_text(
+            "---\ntitle: Renamed\ntags: [fresh]\n---\n" + FRONT_BODY, encoding="utf-8"
+        )
+        doc_file.touch()
+        os.utime(doc_file, (1_000_000_100, 1_000_000_100))
+
+        indexer, db, coll = _open_indexer(db_path)
+        try:
+            result = indexer.update_collection(coll)
+        finally:
+            db.close()
+
+        assert result.updated == 1
+        assert result.metadata_only == 1
+        assert _metadata_values(db_path, str(doc_file)) == {
+            "tags": ["fresh"],
+            "title": ["Renamed"],
+        }
+
+        # A subsequent filtered search sees the new value, never the old one.
+        conn = sqlite3.connect(str(db_path))
+        try:
+            renamed = count_matching_documents(
+                conn,
+                parse_filter({"field": "title", "operator": "eq", "value": "Renamed"}),
+                None,
+            )
+            original = count_matching_documents(
+                conn,
+                parse_filter({"field": "title", "operator": "eq", "value": "Original"}),
+                None,
+            )
+            tagged = count_matching_documents(
+                conn,
+                parse_filter({"field": "tags", "operator": "contains", "value": "fresh"}),
+                None,
+            )
+        finally:
+            conn.close()
+        assert (renamed, original, tagged) == (1, 0, 1)
+
+    def test_body_edit_removes_typed_rows_for_dropped_keys(self, tmp_path, monkeypatch) -> None:
+        """D-05: a body edit rebuilds the kv view with no row for a removed key."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "incr.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        doc_file = notes / "front.md"
+        doc_file.write_text(
+            "---\ntitle: Original\nstatus: active\n---\n" + FRONT_BODY, encoding="utf-8"
+        )
+        _seed_collection(db_path, notes)
+        indexer, db, coll = _open_indexer(db_path)
+        try:
+            assert indexer.update_collection(coll) == IncrementalResult(1, 0, 0)
+        finally:
+            db.close()
+        assert _metadata_values(db_path, str(doc_file)) == {
+            "status": ["active"],
+            "title": ["Original"],
+        }
+
+        doc_file.write_text("---\ntitle: Renamed\n---\n" + BODY_BETA, encoding="utf-8")
+        indexer, db, coll = _open_indexer(db_path)
+        try:
+            result = indexer.update_collection(coll)
+        finally:
+            db.close()
+
+        assert result.updated == 1
+        assert result.metadata_only == 0
+        values = _metadata_values(db_path, str(doc_file))
+        assert values == {"title": ["Renamed"]}
+        assert "status" not in values
+
+        conn = sqlite3.connect(str(db_path))
+        try:
+            stale = count_matching_documents(
+                conn,
+                parse_filter({"field": "status", "operator": "exists", "value": True}),
+                None,
+            )
+        finally:
+            conn.close()
+        assert stale == 0
 
 
 class TestConventionMigration:

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import sqlite3
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -272,3 +273,68 @@ class TestDerivation:
         assert len(_stored_rows(db, document.id)) == 3
         assert repo.delete_by_document(document.id) == 3
         assert _stored_rows(db, document.id) == []
+
+
+class TestBenchFixtureFilterable:
+    """The frozen 150-document bench corpus is filterable (FILT-04).
+
+    The corpus carries no YAML frontmatter, so ``build_bench_db`` derives two
+    synthetic keys per document. Expected counts are derived from the frozen
+    corpus with the same walk the builder uses — never hardcoded guesses.
+    """
+
+    CORPUS_ROOT = Path(__file__).resolve().parents[2] / "fixtures" / "bench" / "corpus"
+
+    @classmethod
+    def _derived_distribution(cls) -> dict[str, int]:
+        """Category counts from the same sorted ``rglob`` walk as the builder."""
+        counts: dict[str, int] = {}
+        for path in sorted(cls.CORPUS_ROOT.rglob("*.md")):
+            category = path.relative_to(cls.CORPUS_ROOT).parts[0]
+            counts[category] = counts.get(category, 0) + 1
+        return counts
+
+    @pytest.fixture
+    def bench_db(self):
+        """Build the real bench index (skips when sqlite-vec is unavailable)."""
+        from tests.support.bench import EMBEDDING_DIM, ConceptEmbedder, build_bench_db
+
+        conn = build_bench_db(self.CORPUS_ROOT, ConceptEmbedder(), embedding_dim=EMBEDDING_DIM)
+        yield conn
+        conn.close()
+
+    def test_corpus_distribution_is_the_measured_one(self):
+        """The frozen corpus has four categories in the measured distribution."""
+        assert self._derived_distribution() == {
+            "keyword": 40,
+            "multilingual": 36,
+            "rival": 36,
+            "synonym": 38,
+        }
+        assert len(list(self.CORPUS_ROOT.rglob("*.md"))) == 150
+
+    def test_bench_categories_and_docs_are_filterable(self, bench_db):
+        """Four bench_category values, 150 bench_doc rows, and the exact synonym count."""
+        categories = [
+            row[0]
+            for row in bench_db.execute(
+                "SELECT DISTINCT text_value FROM document_metadata_values"
+                " WHERE key = 'bench_category' AND value_type = 'string'"
+                " ORDER BY text_value"
+            )
+        ]
+        assert categories == ["keyword", "multilingual", "rival", "synonym"]
+
+        doc_rows = bench_db.execute(
+            "SELECT COUNT(*) FROM document_metadata_values"
+            " WHERE key = 'bench_doc' AND value_type = 'number'"
+        ).fetchone()[0]
+        assert doc_rows == 150
+
+        synonym_filter = parse_filter(
+            {"field": "bench_category", "operator": "eq", "value": "synonym"}
+        )
+        assert (
+            count_matching_documents(bench_db, synonym_filter, None)
+            == self._derived_distribution()["synonym"]
+        )

@@ -137,12 +137,11 @@ def _classify_array(key: str, value: list[Any]) -> tuple[list[TypedRow], str | N
     """Classify one array value; returns (rows, skip reason or ``None``)."""
     if not value:
         return [], None
-    element_types = {_scalar_type(item) for item in value}
-    if None in element_types or len(element_types) != 1:
+    value_type = _scalar_type(value[0])
+    if value_type is None or any(_scalar_type(item) != value_type for item in value):
         return [], SKIP_MIXED_ARRAY
     if len(value) > MAX_ARRAY_ELEMENTS:
         return [], SKIP_CAP_ARRAY
-    value_type = element_types.pop()
     rows = [_typed_row(key, ordinal, item, value_type) for ordinal, item in enumerate(value)]
     return rows, None
 
