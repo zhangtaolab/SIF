@@ -58,7 +58,7 @@ Full detail: `.planning/milestones/v1.1-ROADMAP.md`
 
 - [x] **Phase 17: Engineering Foundation (CI Matrix + Hygiene + PyPI)** - Green py3.10–3.13 × ubuntu/macos test matrix, Windows degradation smoke (hc yoga), dead-layer/repo cleanup, trusted-publishing release of `docsif` v1.1.x (completed 2026-11-14)
 - [x] **Phase 18: Quality Instrument (Personal Bench + rapidfuzz DYM)** - `sif eval --personal` known-item measurement with bias controls; measured rapidfuzz did-you-mean swap (completed 2026-11-15)
-- [ ] **Phase 19: Search Correctness** - Frontmatter-only edit freshness, per-doc dedup pre-fusion, deterministic pagination, title-FTS ranking, single context/staleness attach
+- [x] **Phase 19: Search Correctness** - Frontmatter-only edit freshness, per-doc dedup pre-fusion, deterministic pagination, title-FTS ranking, single context/staleness attach (completed 2026-11-15)
 - [ ] **Phase 20: Metadata Filtering + Discovery** - qmd-parity recursive filter AST applied pre-RRF, built-in path/mtime fields, typed frontmatter storage, `metadata` discovery tool
 - [ ] **Phase 21: Scale, Maintenance + Embedder Identity** - Bounded staleness/context reads, `index vacuum` + backup, streaming embed, `index_meta` embedder identity + role-aware embed
 - [ ] **Phase 22: MCP SDK v2 Modernization + Agent Packaging** - Official SDK shell swap (dual-era), accurate annotations + structuredContent, query pipeline parity, daemon, Claude Code plugin + MCP Registry
@@ -125,7 +125,7 @@ Full detail: `.planning/milestones/v1.1-ROADMAP.md`
   3. User can paginate results deterministically — CLI `--offset` and MCP offset return the correct next page (hybrid owns ONE offset slice, searchers return from rank 0, BM25 min_score order fixed); offset=0 reproduces the recorded contract
   4. User gets title-aware ranking — title-FTS detect-and-rebuild migration + rewritten triggers + bench-measured bm25() column weights + mtime index; the `documents_fts_v` vocab shadow survives the rebuild on a populated DB
   5. User gets results without redundant attach work — the double-attach is eliminated: exactly ONE context/staleness attach at pipeline exit
-**Plans:** 9/9 plans executed
+**Plans:** 9/9 plans complete
 **Wave 1**
 - [x] 19-01-PLAN.md — Parser dispatch + metadata-aware checksum + canonical metadata storage
 
@@ -232,7 +232,7 @@ v1.2 contracts — defined ONCE; downstream phases consume, never redefine:
 | 16.1. Address tech debt (CLI errors + cache TTL + enqueue API) | v1.1 | 5/5 | Complete    | 2026-11-12 |
 | 17. Engineering Foundation (CI + Hygiene + PyPI) | v1.2 | 9/9 | Complete    | 2026-11-14 |
 | 18. Quality Instrument (Personal Bench + rapidfuzz) | v1.2 | 4/4 | Complete    | 2026-11-15 |
-| 19. Search Correctness | v1.2 | 9/9 | In Progress | - |
+| 19. Search Correctness | v1.2 | 9/9 | Complete    | 2026-11-15 |
 | 20. Metadata Filtering + Discovery | v1.2 | 0/TBD | Not started | - |
 | 21. Scale, Maintenance + Embedder Identity | v1.2 | 0/TBD | Not started | - |
 | 22. MCP SDK v2 + Agent Packaging | v1.2 | 0/TBD | Not started | - |

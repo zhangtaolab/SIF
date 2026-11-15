@@ -2,19 +2,20 @@
 gsd_state_version: "1.0"
 milestone: v1.2
 milestone_name: Search Precision and Agent Experience
-current_phase: 19
-current_phase_name: Search Correctness
-status: verifying
-stopped_at: Completed 19-09-PLAN.md
-last_updated: "2026-11-15T04:43:43.063Z"
+current_phase: 20
+current_phase_name: Metadata Filtering + Discovery
+status: planning
+stopped_at: Phase 19 complete, ready to plan Phase 20
+last_updated: "2026-11-15T05:28:06.952Z"
 last_activity: 2026-11-15
-last_activity_desc: Phase 19 execution started
-state_head: 763753d6af9642a916eed05ba1a3b4ceee26228e
+last_activity_desc: Phase 19 complete, transitioned to Phase 20
+state_head: 95c55a5f4b49ced56d53b81127acba537eb6518c
 progress:
   total_phases: 8
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 22
   completed_plans: 22
+  percent: 38
 ---
 
 # DocSift — Project State
@@ -30,12 +31,12 @@ progress:
 
 ## Current Position
 
-Phase: 19 (Search Correctness) — EXECUTING
-Plan: 9 of 9
-Status: Phase complete — ready for verification
-Last activity: 2026-11-15 — Phase 19 execution started
+Phase: 20 — Metadata Filtering + Discovery
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-11-15 — Phase 19 complete, transitioned to Phase 20
 
-Progress: [███░░░░░░░] 25%
+Progress: [████░░░░░░] 38%
 
 **v1.2 phase list:** 17 Engineering Foundation (CI + Hygiene + PyPI) · 18 Quality Instrument (Personal Bench + rapidfuzz DYM) · 19 Search Correctness · 20 Metadata Filtering + Discovery · 21 Scale, Maintenance + Embedder Identity · 22 MCP SDK v2 + Agent Packaging · 23 Harrier Gated Evaluation · 24 Tuning + Models UX + Install Docs
 
@@ -197,7 +198,7 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 ## Session Continuity
 
 Last session: 2026-11-15T04:43:42.812Z
-Stopped at: Completed 19-09-PLAN.md
+Stopped at: Phase 19 complete, ready to plan Phase 20
 Resume file: None
 
 - **Next expected action:** run Phase 17 verification (`/gsd-verify-work 17`) to confirm the four ENG success criteria against the shipped state, then mark Phase 17 complete and proceed to Phase 18. Release evidence lives in `17-07-SUMMARY.md`: tag `v1.1.2` on `c819f67`, Publish run `43562577065` attempt 4 (all three jobs success), PyPI JSON `1.1.2` with the `mcp-name` marker, `pypi-attestations` `OK` against `https://github.com/zhangtaolab/SIF`, and both fresh-venv install proofs. Execution order for the rest of v1.2: 17 → 18 → 19 → 20 → 21 → 22 → 23 → 24; hard dependencies and cross-phase contracts in ROADMAP.md.
