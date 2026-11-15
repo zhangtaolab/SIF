@@ -13,6 +13,12 @@ import frontmatter
 from sif.core.models import compute_checksum
 
 
+# D-09: parser/checksum convention version persisted per collection in
+# ``index_meta``. Bump this whenever the parser dispatch matrix or the
+# checksum input changes, so every existing index is re-parsed exactly once.
+CONVENTION_VERSION = 2
+
+
 @dataclass
 class ParsedDocument:
     """Result of parsing a document."""

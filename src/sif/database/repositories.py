@@ -643,6 +643,32 @@ class LLMCacheRepository:
         return deleted
 
 
+class IndexMetaRepository:
+    """Repository for the key/value ``index_meta`` table (D-09 convention marker).
+
+    One namespaced key per concern (``convention:<collection_id>`` today,
+    embedder identity in Phase 21). A miss returns ``None`` so "absent" and
+    "old" are distinguished from the current value by the caller.
+    """
+
+    def __init__(self, db: sqlite3.Connection) -> None:
+        """Initialize the index metadata repository."""
+        self.db = db
+
+    def get(self, key: str) -> str | None:
+        """Get a metadata value; a missing key returns None."""
+        cursor = self.db.execute("SELECT value FROM index_meta WHERE key = ?", (key,))
+        row = cursor.fetchone()
+        return row[0] if row else None
+
+    def set(self, key: str, value: str) -> None:
+        """Store (or replace) a metadata value."""
+        self.db.execute(
+            "INSERT OR REPLACE INTO index_meta (key, value) VALUES (?, ?)",
+            (key, value),
+        )
+
+
 class QueryLogRepository:
     """Repository for local query history (Phase 15, D-08/D-09).
 

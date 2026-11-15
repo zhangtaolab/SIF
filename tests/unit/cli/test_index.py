@@ -602,3 +602,20 @@ class TestRenderIndexEvent:
         on_event("error report[/dim].md")
 
         assert "report[/dim].md" in buffer.getvalue()
+
+    def test_migrate_event_renders_one_line_with_count(self) -> None:
+        """D-09: the migrate notice is one styled line naming the document count."""
+        from sif.cli.commands.index import _render_index_event
+
+        console, buffer = self._console()
+        progress = MagicMock()
+        on_event = _render_index_event(console, progress, 0)
+
+        on_event("migrate 3")
+
+        lines = buffer.getvalue().strip().splitlines()
+        assert len(lines) == 1
+        assert "Upgrading index format" in lines[0]
+        assert "3" in lines[0]
+        assert "[yellow]" not in lines[0]
+        progress.advance.assert_called_once()

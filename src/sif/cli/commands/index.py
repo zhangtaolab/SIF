@@ -162,6 +162,12 @@ def _render_index_event(
         if code == "scan":
             progress.update(task, total=int(payload))
             console.print(f"  Found {payload} files")
+        elif code == "migrate":
+            # D-09: one announcement per collection, naming the scanned count.
+            console.print(
+                f"  [yellow]Upgrading index format: reindexing {escape(payload)} "
+                "documents once[/yellow]"
+            )
         elif code == "unchanged":
             console.print(f"  [dim]Unchanged: {escape(payload)}[/dim]")
         elif code == "error":

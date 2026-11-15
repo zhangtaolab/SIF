@@ -514,6 +514,66 @@ class TestVocabShadowTable:
             conn.close()
 
 
+class TestIndexMetaTable:
+    """D-09: the key/value ``index_meta`` convention-marker table.
+
+    It must exist on every fresh schema and be dropped by ``drop_all`` so test
+    isolation holds (a stale marker would silently suppress a migration pass).
+    """
+
+    def test_create_all_creates_index_meta_table(self):
+        """A fresh schema has index_meta with the key/value contract."""
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            SchemaManager(conn, embedding_dim=8).create_all()
+            columns = {
+                row["name"]: row["type"]
+                for row in conn.execute("PRAGMA table_info(index_meta)").fetchall()
+            }
+            assert columns == {"key": "TEXT", "value": "TEXT"}
+            # key is the primary key; value is NOT NULL.
+            pk = [
+                row["name"]
+                for row in conn.execute("PRAGMA table_info(index_meta)").fetchall()
+                if row["pk"]
+            ]
+            assert pk == ["key"]
+            notnull = {
+                row["name"]: row["notnull"]
+                for row in conn.execute("PRAGMA table_info(index_meta)").fetchall()
+            }
+            assert notnull["value"] == 1
+        finally:
+            conn.close()
+
+    def test_drop_all_removes_index_meta_and_create_all_recreates_it(self):
+        """drop_all drops index_meta (and its rows); create_all recreates it empty."""
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            manager = SchemaManager(conn, embedding_dim=8)
+            manager.create_all()
+            conn.execute(
+                "INSERT INTO index_meta (key, value) VALUES (?, ?)",
+                ("convention:coll1", "2"),
+            )
+            conn.commit()
+
+            manager.drop_all()
+            assert (
+                conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'index_meta'").fetchone()
+                is None
+            ), "index_meta survived drop_all"
+
+            manager.create_all()
+            assert conn.execute("SELECT COUNT(*) FROM index_meta").fetchone()[0] == 0, (
+                "recreated index_meta must be empty"
+            )
+        finally:
+            conn.close()
+
+
 class TestFtsUpdateTrigger:
     """FND-06 / CR-01: external-content FTS5 sync triggers must not write directly.
 

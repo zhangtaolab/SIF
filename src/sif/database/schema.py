@@ -24,6 +24,7 @@ class SchemaManager:
         self._create_contexts_table()
         self._create_llm_cache_table()
         self._create_query_log_table()
+        self._create_index_meta_table()
         self._create_fts_tables()
         self._create_vector_tables()
         self._create_indexes()
@@ -167,6 +168,21 @@ class SchemaManager:
         self.db.execute("""
             CREATE INDEX IF NOT EXISTS idx_query_log_created
             ON query_log(created_at DESC)
+        """)
+
+    def _create_index_meta_table(self) -> None:
+        """Create the key/value index metadata table (D-09 convention marker).
+
+        Namespaced keys (``convention:<collection_id>``) let every
+        index-writing host record per-collection state — the parser/checksum
+        convention today, embedder identity in Phase 21 — without a global
+        marker that one migrated collection could strand for the others.
+        """
+        self.db.execute("""
+            CREATE TABLE IF NOT EXISTS index_meta (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
         """)
 
     def _fts_trigger_is_legacy(self, trigger_name: str, fts_table: str) -> bool:
@@ -430,6 +446,7 @@ class SchemaManager:
             "contexts",
             "llm_cache",
             "query_log",
+            "index_meta",
             "collections",
         ]
         for table in tables:

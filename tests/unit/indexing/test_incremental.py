@@ -13,6 +13,7 @@ intentionally retired.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sqlite3
@@ -28,8 +29,10 @@ from sif.database.repositories import (
     CollectionRepository,
     DocumentChunkRepository,
     DocumentRepository,
+    IndexMetaRepository,
 )
 from sif.indexing.incremental import IncrementalIndexer, IncrementalResult
+from sif.indexing.parser import CONVENTION_VERSION
 from sif.indexing.scanner import FileScanner
 
 
@@ -137,6 +140,31 @@ def _seed_chunk_and_embedding(db: Database, collection_id: str, doc_path: str) -
         VectorSearcher(db.connection, embedding_dim=8).add_embedding(
             f"e-{doc.id}", doc.id, f"c-{doc.id}", [0.1] * 8
         )
+
+
+def _marker(db_path: Path, collection_id: str) -> str | None:
+    """Read the persisted convention marker through a fresh connection."""
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    try:
+        return IndexMetaRepository(conn).get(f"convention:{collection_id}")
+    finally:
+        conn.close()
+
+
+def _downgrade_to_legacy(db_path: Path, collection_id: str, doc_path: str) -> None:
+    """Simulate a pre-D-08 index: body-only checksum and no convention marker."""
+    _title, stored_content, _checksum = _doc_row(db_path, doc_path)
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.execute(
+            "UPDATE documents SET checksum = ? WHERE path = ?",
+            (hashlib.sha256(stored_content.encode()).hexdigest(), doc_path),
+        )
+        conn.execute("DELETE FROM index_meta WHERE key = ?", (f"convention:{collection_id}",))
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def _chunk_contents(db_path: Path, doc_path: str) -> list[str]:
@@ -800,3 +828,196 @@ class TestMetadataFastPath:
         assert third.updated == 1
         assert third.metadata_only == 1
         assert third.reindexed_paths == set()
+
+
+class TestConventionMigration:
+    """D-09: one forced re-parse pass per collection, announced exactly once.
+
+    The marker is written only after a zero-failure pass; a parse failure
+    leaves it absent so the next pass retries instead of presenting
+    old-convention data as migrated.
+    """
+
+    def test_fresh_collection_marks_convention_and_second_pass_skips(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """First pass writes the marker silently; the second pass is all-skipped."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "incr.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        (notes / "a.md").write_text(BODY_ALPHA, encoding="utf-8")
+        _seed_collection(db_path, notes)
+
+        indexer, db, coll = _open_indexer(db_path)
+        try:
+            events: list[str] = []
+            first = indexer.update_collection(coll, progress=events.append)
+        finally:
+            db.close()
+
+        assert first.added == 1
+        assert not any(e.startswith("migrate ") for e in events)
+        assert _marker(db_path, coll.id) == str(CONVENTION_VERSION)
+
+        indexer, db, coll = _open_indexer(db_path)
+        try:
+            second_events: list[str] = []
+            second = indexer.update_collection(coll, progress=second_events.append)
+        finally:
+            db.close()
+
+        assert second == IncrementalResult()
+        assert not any(e.startswith("migrate ") for e in second_events)
+        assert any(e.startswith("unchanged a.md") for e in second_events)
+
+    def test_legacy_marker_forces_one_reparse_and_preserves_chunks(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """An absent/old marker re-parses once, moves checksums, keeps vectors.
+
+        The marker must stay absent for the whole pass (observations are
+        recorded synchronously from the progress callback) and is written only
+        after a clean pass.
+        """
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "incr.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        doc_file = notes / "a.md"
+        doc_file.write_text(BODY_ALPHA, encoding="utf-8")
+        _seed_collection(db_path, notes)
+
+        # First pass establishes the document, then simulate the pre-D-08
+        # world: legacy body-only checksum, chunk/vector present, no marker.
+        indexer, db, coll = _open_indexer(db_path)
+        try:
+            assert indexer.update_collection(coll) == IncrementalResult(1, 0, 0)
+            _seed_chunk_and_embedding(db, coll.id, str(doc_file))
+        finally:
+            db.close()
+        _downgrade_to_legacy(db_path, coll.id, str(doc_file))
+
+        observations: list[tuple[str, str | None]] = []
+
+        def progress(event: str) -> None:
+            observations.append((event, _marker(db_path, coll.id)))
+
+        indexer, db, coll = _open_indexer(db_path)
+        try:
+            result = indexer.update_collection(coll, progress=progress)
+        finally:
+            db.close()
+
+        migrate_events = [
+            event for event, _marker_value in observations if event.startswith("migrate")
+        ]
+        assert migrate_events == ["migrate 1"]
+        # No marker existed at any event boundary: the write happens after the
+        # per-file loop, never before or during it.
+        assert all(marker_value is None for _event, marker_value in observations)
+        assert result.updated == 1
+        assert result.metadata_only == 1
+        assert result.reindexed_paths == set()
+        # The failure path would be retried; here the marker cleared cleanly.
+        assert _marker(db_path, coll.id) == str(CONVENTION_VERSION)
+        # Unchanged body: chunk/vector rows survive, checksum moved.
+        assert _chunk_contents(db_path, str(doc_file)) == ["chunk of the stored body"]
+        assert _embedding_count(db_path) == 1
+        _title, content, checksum = _doc_row(db_path, str(doc_file))
+        assert checksum == compute_checksum(content, {})
+        assert checksum != hashlib.sha256(content.encode()).hexdigest()
+
+        # A second pass is all-skipped: the migration ran exactly once.
+        indexer, db, coll = _open_indexer(db_path)
+        try:
+            second_events: list[str] = []
+            second = indexer.update_collection(coll, progress=second_events.append)
+        finally:
+            db.close()
+        assert second == IncrementalResult()
+        assert not any(e.startswith("migrate ") for e in second_events)
+
+    def test_parse_failure_leaves_marker_unwritten_and_failure_counted(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """One failing file blocks the marker; a later clean pass clears it."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "incr.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        (notes / "good.md").write_text(BODY_ALPHA, encoding="utf-8")
+        (notes / "bad.md").write_bytes(b"\xff\xfe\x00not utf-8")
+        _seed_collection(db_path, notes)
+
+        indexer, db, coll = _open_indexer(db_path)
+        try:
+            events: list[str] = []
+            first = indexer.update_collection(coll, progress=events.append)
+        finally:
+            db.close()
+
+        assert first.added == 1
+        assert first.failed == 1
+        assert not any(e.startswith("migrate ") for e in events)  # no prior docs
+        assert _marker(db_path, coll.id) is None
+
+        # Fix the file: the next pass retries the migration and clears it.
+        (notes / "bad.md").write_text(BODY_BETA, encoding="utf-8")
+        indexer, db, coll = _open_indexer(db_path)
+        try:
+            second_events: list[str] = []
+            second = indexer.update_collection(coll, progress=second_events.append)
+        finally:
+            db.close()
+
+        assert second.failed == 0
+        assert second.added == 1
+        assert second.updated == 1  # good.md re-parsed via the fast path
+        assert [e for e in second_events if e.startswith("migrate ")] == ["migrate 2"]
+        assert _marker(db_path, coll.id) == str(CONVENTION_VERSION)
+
+    def test_empty_collection_writes_marker_without_migrate_event(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """An empty collection has nothing to migrate: silent marker write."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "incr.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        _seed_collection(db_path, notes)
+
+        indexer, db, coll = _open_indexer(db_path)
+        try:
+            events: list[str] = []
+            result = indexer.update_collection(coll, progress=events.append)
+        finally:
+            db.close()
+
+        assert result == IncrementalResult()
+        assert events == ["scan 0"]
+        assert _marker(db_path, coll.id) == str(CONVENTION_VERSION)
+
+    def test_update_paths_never_reads_or_writes_the_marker(self, tmp_path, monkeypatch) -> None:
+        """Watch bursts / drift refresh never start a migration (D-09)."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "incr.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        doc_file = notes / "a.md"
+        doc_file.write_text(BODY_ALPHA, encoding="utf-8")
+        _seed_collection(db_path, notes)
+
+        indexer, db, coll = _open_indexer(db_path)
+        try:
+            with patch.object(
+                IndexMetaRepository,
+                "get",
+                side_effect=AssertionError("update_paths must not read the marker"),
+            ):
+                result = indexer.update_paths(coll, [doc_file])
+        finally:
+            db.close()
+
+        assert result.added == 1
+        assert _marker(db_path, coll.id) is None

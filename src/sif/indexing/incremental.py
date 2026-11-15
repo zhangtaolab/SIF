@@ -26,8 +26,9 @@ from sif.database.repositories import (
     CollectionRepository,
     DocumentChunkRepository,
     DocumentRepository,
+    IndexMetaRepository,
 )
-from sif.indexing.parser import TextParser, create_parser
+from sif.indexing.parser import CONVENTION_VERSION, TextParser, create_parser
 from sif.indexing.scanner import FileScanner
 from sif.utils.logging import get_logger
 
@@ -37,6 +38,9 @@ if TYPE_CHECKING:
 
 
 logger = get_logger(__name__)
+
+# D-09: one namespaced key per collection; the value is CONVENTION_VERSION.
+_CONVENTION_KEY_PREFIX = "convention:"
 
 
 @dataclass
@@ -83,6 +87,7 @@ class IncrementalIndexer:
         self._coll_repo = CollectionRepository(conn)
         self._doc_repo = DocumentRepository(conn)
         self._chunk_repo = DocumentChunkRepository(conn)
+        self._meta_repo = IndexMetaRepository(conn)
         from sif.search.vector import create_embedding_purger  # noqa: PLC0415
 
         self._vector_purger: VectorSearcher | None = create_embedding_purger(conn)
@@ -103,10 +108,14 @@ class IncrementalIndexer:
                 ``"code payload"`` events (single-space separator) so hosts
                 render without the core importing any UI library:
                 ``"scan <n>"`` (scan finished with n files),
+                ``"migrate <n>"`` (one forced re-parse pass over n scanned
+                files; emitted once per collection when the stored
+                parser/checksum convention is missing or old),
                 ``"unchanged <name>"`` (checksum-skip fired),
                 ``"error <message>"`` (per-file parse failure; counted as
                 ``failed``),
-                ``"indexed <name>"`` (file added or updated).
+                ``"indexed <name>"`` (file added, updated, or metadata-only
+                refreshed).
 
         Returns:
             Counts of added, updated, removed, and failed documents.
@@ -137,6 +146,16 @@ class IncrementalIndexer:
         existing_docs = {d.path: d for d in self._doc_repo.list_by_collection(collection.id)}
         scanned_paths: set[str] = set()
 
+        # D-09: a missing/old per-collection convention marker forces exactly
+        # one re-parse pass. The marker is read here but written only after a
+        # clean pass, so a parse failure retries the migration next time.
+        convention_key = f"{_CONVENTION_KEY_PREFIX}{collection.id}"
+        migrating = self._meta_repo.get(convention_key) != str(CONVENTION_VERSION)
+        if migrating and existing_docs:
+            # One announcement naming the scanned file count. An empty
+            # collection has nothing to re-parse and is marked silently.
+            self._notify(progress, f"migrate {scan_result.file_count}")
+
         added = 0
         updated = 0
         failed = 0
@@ -151,6 +170,7 @@ class IncrementalIndexer:
                 existing=existing_docs.get(str(file_path)),
                 force=force,
                 progress=progress,
+                migrating=migrating,
             )
             if outcome == "added":
                 added += 1
@@ -167,6 +187,14 @@ class IncrementalIndexer:
                 failed += 1
 
         removed = self._sweep_removed(existing_docs, scanned_paths)
+
+        # Marker write — after the per-file loop and removal sweep, and only
+        # when zero files failed. Never written before the pass completes: a
+        # failure must leave it absent so old-convention data is never
+        # silently presented as migrated (D-09).
+        if migrating and failed == 0:
+            with self._conn:
+                self._meta_repo.set(convention_key, str(CONVENTION_VERSION))
 
         # Update collection stats — its own short transaction.
         with self._conn:
@@ -195,7 +223,10 @@ class IncrementalIndexer:
 
         Cost is proportional to ``len(paths)``; the collection tree is never
         scanned (D-06). A path may arrive from both sides of a folded event
-        burst; it is processed once and disk state decides the outcome.
+        burst; it is processed once and disk state decides the outcome. This
+        method never starts the D-09 convention migration (that belongs to
+        :meth:`update_collection` alone), but it still uses body-vs-metadata
+        discrimination so an unchanged body never purges chunks.
         Unchanged paths (checksum skip) count as ``unchanged``. A path whose
         parse raises counts as ``failed`` and is deliberately left
         mtime-unconverged — the stored content is genuinely stale, so it
@@ -267,6 +298,9 @@ class IncrementalIndexer:
                     existing=existing,
                     force=force,
                     progress=progress,
+                    # D-09: migration never starts from watch bursts or the
+                    # pre-search drift refresh — only update_collection owns it.
+                    migrating=False,
                 )
                 if outcome == "added":
                     added += 1
