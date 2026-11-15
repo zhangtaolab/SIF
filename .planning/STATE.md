@@ -5,16 +5,16 @@ milestone_name: Search Precision and Agent Experience
 current_phase: 19
 current_phase_name: Search Correctness
 status: executing
-stopped_at: Completed 19-07-PLAN.md
-last_updated: "2026-11-15T04:17:14.965Z"
+stopped_at: Completed 19-08-PLAN.md
+last_updated: "2026-11-15T04:29:57.338Z"
 last_activity: 2026-11-15
 last_activity_desc: Phase 19 execution started
-state_head: 3d098df5a162ac66a2e798e24649c0135ff880fc
+state_head: a0695a1a5585914ced9437f7c245b6cd79775eea
 progress:
   total_phases: 8
   completed_phases: 2
   total_plans: 22
-  completed_plans: 20
+  completed_plans: 21
 ---
 
 # DocSift — Project State
@@ -31,7 +31,7 @@ progress:
 ## Current Position
 
 Phase: 19 (Search Correctness) — EXECUTING
-Plan: 8 of 9
+Plan: 9 of 9
 Status: Ready to execute
 Last activity: 2026-11-15 — Phase 19 execution started
 
@@ -69,6 +69,7 @@ Progress: [███░░░░░░░] 25%
 | Phase 19 P05 | 9min | 3 tasks | 15 files |
 | Phase 19 P06 | 13min | 3 tasks | 13 files |
 | Phase 19 P07 | 7min | 3 tasks | 10 files |
+| Phase 19 P08 | 7min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -155,6 +156,12 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - [Phase 19]: MCP chunk identity rides the existing metadata dict (vectors_stale precedent): the explicit boundary re-map copies chunk_id/sequence/chunk_matches and the exact-metadata-set tests were updated.
 - [Phase 19]: B1 is an identical-data baseline (same query set and retrieved ids as B0); the B0->B1 comparison is labeled the BM25 no-drift check because both arms are --bm25-only and never exercise the vector dedup path.
 - [Phase 19]: The dedup evidence is cited from the regenerated held-out snapshot (identical pre/post totals and per_category on the one-chunk-per-document fixture) and the SC1 golden byte-identical scores, never from the BM25 deltas; no defaults claim is made.
+- [Phase 19]: 19-08: FTS5 'rebuild' is the only documents-side population; the same-gated INSERT ... SELECT seed was removed because it indexes every document twice while PRAGMA integrity_check and the FTS integrity-check both still report OK, so the contract is asserted structurally.
+- [Phase 19]: 19-08: documents_fts_v is dropped before documents_fts and recreated after the rebuild; the three document triggers are dropped explicitly because CREATE TRIGGER IF NOT EXISTS cannot replace one-column bodies.
+- [Phase 19]: 19-08: both BM25 branches use a MATERIALIZED weighted-match CTE and apply min_score to m.score before LIMIT/OFFSET, so a raised title weight moves ordering and thresholding together; bm25(documents_fts, ?, ?) names the real table with bound weights.
+- [Phase 19]: 19-08: SearchOptions.title_weight is an internal measurement-only override (None = _TITLE_WEIGHT 1.0); no setting and no CLI flag per D-11, and 19-09 pins the accepted value back into the constant.
+- [Phase 19]: 19-08: at 1.0/1.0 the weighted bm25 expression reproduces rank exactly; the SC1 golden's two BM25-bearing rows moved while ordering/RRF/vector scores did not, and the held-out metrics were unchanged so only its rationale was extended with the title-column and H1-duplication caveat.
+- [Phase 19]: 19-08: the title-FTS claim is scoped to tokenized EN-style titles; no lexical CJK title win is claimed or tested (porter treats contiguous CJK runs as single tokens).
 
 ### Pending Todos
 
@@ -184,8 +191,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-15T04:17:14.749Z
-Stopped at: Completed 19-07-PLAN.md
+Last session: 2026-11-15T04:29:57.111Z
+Stopped at: Completed 19-08-PLAN.md
 Resume file: None
 
 - **Next expected action:** run Phase 17 verification (`/gsd-verify-work 17`) to confirm the four ENG success criteria against the shipped state, then mark Phase 17 complete and proceed to Phase 18. Release evidence lives in `17-07-SUMMARY.md`: tag `v1.1.2` on `c819f67`, Publish run `43562577065` attempt 4 (all three jobs success), PyPI JSON `1.1.2` with the `mcp-name` marker, `pypi-attestations` `OK` against `https://github.com/zhangtaolab/SIF`, and both fresh-venv install proofs. Execution order for the rest of v1.2: 17 → 18 → 19 → 20 → 21 → 22 → 23 → 24; hard dependencies and cross-phase contracts in ROADMAP.md.
