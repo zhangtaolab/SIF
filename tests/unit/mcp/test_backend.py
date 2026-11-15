@@ -1218,6 +1218,132 @@ class TestSchemaInitializationAtStartup:
 
 
 # =============================================================================
+# Embedder identity at startup (Phase 21, D-04/D-05/D-07)
+# =============================================================================
+
+
+class TestEmbedderIdentityAtStartup:
+    """The MCP host records the scheme it applies and adopts legacy indexes.
+
+    T-21-28: the identity's prompt fields must describe the vectors this host
+    actually produces, so one resolved scheme feeds both the settings-only
+    identity (schema open) and ``factory.create_model``.
+    """
+
+    @staticmethod
+    def _settings(**overrides: object) -> Settings:
+        values: dict[str, object] = {
+            "embedding_dim": 8,
+            "model_name": "test",
+            "cache_embeddings": False,
+        }
+        values.update(overrides)
+        return Settings(_env_file=None, **values)
+
+    def test_init_schema_receives_the_settings_only_identity(self, tmp_path: Path) -> None:
+        settings = self._settings(query_prompt_name="qry", document_prompt_name="doc")
+
+        with (
+            patch(
+                "sif.mcp.backend.EmbeddingModelFactory",
+                side_effect=RuntimeError("no embedder"),
+            ),
+            patch.object(Database, "init_schema") as init_schema,
+        ):
+            SearchBackend(str(tmp_path / "identity.db"), settings=settings)
+
+        init_schema.assert_called_once()
+        kwargs = init_schema.call_args.kwargs
+        assert kwargs["embedding_dim"] == 8
+        identity = kwargs["identity"]
+        assert identity.dimension == 8
+        assert identity.model_name == "test"
+        assert identity.query_prompt == "qry"
+        assert identity.document_prompt == "doc"
+        # Settings-only: no model provenance is known yet.
+        assert identity.pooling == "unknown"
+        assert identity.revision is None
+
+    def test_factory_receives_the_resolved_prompt_scheme_and_identity_is_stored(
+        self, tmp_path: Path
+    ) -> None:
+        settings = self._settings(query_prompt_name="qry", document_prompt_name="doc")
+        mock_embedder = MagicMock()
+        mock_embedder.dimension = 8
+
+        with (
+            patch("sif.mcp.backend.get_settings", return_value=settings),
+            patch("sif.mcp.backend.EmbeddingModelFactory") as mock_factory_cls,
+        ):
+            mock_factory_cls.return_value.create_model.return_value = mock_embedder
+            backend = SearchBackend(str(tmp_path / "prompts.db"), settings=settings)
+
+        kwargs = mock_factory_cls.return_value.create_model.call_args.kwargs
+        assert kwargs["query_prompt_name"] == "qry"
+        assert kwargs["document_prompt_name"] == "doc"
+        assert backend._identity is not None
+        assert backend._identity.query_prompt == "qry"
+        assert backend._identity.document_prompt == "doc"
+        assert backend._identity.dimension == 8
+        assert backend._identity.cache_model_id.startswith("modelscope:test")
+
+    def test_failed_embedder_leaves_identity_none(self, tmp_path: Path) -> None:
+        settings = self._settings()
+
+        with patch("sif.mcp.backend.EmbeddingModelFactory", side_effect=RuntimeError("boom")):
+            backend = SearchBackend(str(tmp_path / "failed.db"), settings=settings)
+
+        assert backend._embedder is None
+        assert backend._identity is None
+
+    def test_legacy_db_first_opened_by_the_backend_gets_the_assumed_row(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        db_path, settings = _seed_pre_title_db(tmp_path)
+
+        seed = Database(db_path)
+        try:
+            has_vectors = seed.connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='document_embeddings'"
+            ).fetchone()
+            if has_vectors is None:
+                pytest.skip("sqlite-vec not available")
+            seed.connection.execute(
+                "INSERT INTO document_embeddings (embedding_id, document_id, chunk_id, embedding) "
+                "VALUES ('e1', 'd1', 'c1', vec_f32(?))",
+                (json.dumps([0.1] * 8),),
+            )
+            seed.connection.commit()
+        finally:
+            seed.close()
+
+        with (
+            patch(
+                "sif.mcp.backend.EmbeddingModelFactory",
+                side_effect=RuntimeError("no embedder"),
+            ),
+            caplog.at_level(logging.WARNING),
+        ):
+            SearchBackend(str(db_path), settings=settings)
+
+        conn = sqlite3.connect(db_path)
+        try:
+            raw = conn.execute(
+                "SELECT value FROM index_meta WHERE key = 'embedder.identity'"
+            ).fetchone()
+        finally:
+            conn.close()
+
+        assert raw is not None
+        payload = json.loads(raw[0])
+        assert payload["source"] == "legacy-assumed"
+        assert payload["model_name"] == "test"
+        assert payload["dimension"] == 8
+        warnings = [r for r in caplog.records if "Index predates embedder identity" in r.message]
+        assert len(warnings) == 1
+
+
+# =============================================================================
 # Phase 20 metadata filter surface (D-02/D-17)
 # =============================================================================
 

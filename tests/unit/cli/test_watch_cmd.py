@@ -38,9 +38,12 @@ from sif.core.models import Collection
 from sif.database.database import Database
 from sif.database.factory import create_connection
 from sif.database.repositories import CollectionRepository
+from sif.embedding.identity import build_identity
+from sif.embedding.prompts import PromptScheme
 from sif.indexing import watcher as watcher_module
 from sif.indexing.incremental import IncrementalIndexer
 from sif.indexing.parser import MarkdownParser
+from sif.models.embedding import EmbeddingConfig, ModelType
 from sif.utils import service
 from sif.utils.service import InstallResult
 
@@ -80,14 +83,35 @@ def _seed_collections(db_path: Path, *names: str) -> None:
     db.close()
 
 
+class _IdentityModel:
+    """Loaded-model double exposing only the identity dimension."""
+
+    def __init__(self, dimension: int) -> None:
+        self.dimension = dimension
+
+
+def _manager_identity(dim: int):
+    """The identity a mocked manager reports for a ``dim``-dimensional model."""
+    return build_identity(
+        EmbeddingConfig(
+            model_type=ModelType.MODELSCOPE,
+            model_name="test",
+            embedding_dim=dim,
+        ),
+        _IdentityModel(dim),
+        PromptScheme(None, None, True),
+    )
+
+
 def _embed_manager_mock(dim: int = 8) -> MagicMock:
     """Build a mocked EmbeddingManager producing deterministic dim-length vectors.
 
     The same shape ``tests/unit/indexing/test_watcher.py`` proves the worker's
-    embed leg with: ``get_model_info`` reports the schema dimension and every
-    ``embed()`` call returns a fixed vector per text. The startup-reconcile
-    tests use it to observe whether the pre-observer pass really computed
-    embeddings at embed depth.
+    embed leg with: ``get_model_info`` reports the schema dimension, every
+    ``embed()`` call returns a fixed vector per text, and ``get_identity``
+    reports the matching identity the watcher adopts at first embed use. The
+    startup-reconcile tests use it to observe whether the pre-observer pass
+    really computed embeddings at embed depth.
     """
     manager = MagicMock()
     manager.get_model_info.return_value = {
@@ -95,6 +119,7 @@ def _embed_manager_mock(dim: int = 8) -> MagicMock:
         "model_id": "test-model",
         "embedding_dim": dim,
     }
+    manager.get_identity.return_value = _manager_identity(dim)
 
     def fake_embed(texts: list[str], **_kwargs: object) -> MagicMock:
         vectors = [[0.1] * dim for _ in texts]

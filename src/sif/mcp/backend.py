@@ -15,8 +15,15 @@ from sif.database.database import Database
 from sif.database.metadata_repository import MetadataValueRepository
 from sif.database.repositories import CollectionRepository, DocumentRepository
 from sif.embedding.factory import EmbeddingModelFactory
+from sif.embedding.identity import (
+    EmbedderIdentity,
+    build_identity,
+    build_settings_identity,
+)
 from sif.embedding.model import ModelType
+from sif.embedding.prompts import resolve_prompt_scheme
 from sif.mcp.protocol import CollectionInfo, Document, SearchResult
+from sif.models.embedding import EmbeddingConfig
 from sif.search.bm25 import BM25Searcher
 from sif.search.context_attach import enrich_results
 from sif.search.filters import compile_filter, compile_match
@@ -94,7 +101,21 @@ class SearchBackend:
         self.db_path = db_path
         self.settings = settings or get_settings()
         self._embedder: Any = None
+        self._identity: EmbedderIdentity | None = None
         self._vec_unavailable_warned = False
+
+        # D-07/D-04: resolve the prompt scheme ONCE from the backend's own
+        # settings. The same scheme feeds the settings-only identity (schema
+        # open) and the factory call, so the recorded prompt fields describe
+        # the vectors this host actually produces (T-21-28), and a legacy DB
+        # first opened here gets the assumed row exactly once.
+        scheme = resolve_prompt_scheme(
+            self.settings.model_name,
+            self.settings.model_type,
+            self.settings.query_prompt_name,
+            self.settings.document_prompt_name,
+        )
+        settings_identity = build_settings_identity(self.settings, scheme)
 
         # CORR-04 / RESEARCH Pitfall 13: an MCP-only host never runs a CLI
         # command, so the schema must migrate here or a pre-title database
@@ -112,7 +133,10 @@ class SearchBackend:
             # raised later in ``create_all`` (the embedding-dimension
             # RuntimeError below comes from ``_create_vector_tables``) can
             # therefore no longer roll the migrated index back.
-            db.init_schema(embedding_dim=self.settings.embedding_dim)
+            db.init_schema(
+                embedding_dim=self.settings.embedding_dim,
+                identity=settings_identity,
+            )
         finally:
             db.close()
 
@@ -130,6 +154,22 @@ class SearchBackend:
                 cache_dir=(
                     str(self.settings.get_cache_dir()) if self.settings.cache_embeddings else None
                 ),
+                # A host that records a prompt scheme must embed with it: the
+                # same resolved names reach the backend constructor.
+                query_prompt_name=scheme.query_prompt,
+                document_prompt_name=scheme.document_prompt,
+            )
+            # The full identity (loaded-model pooling/revision included) is
+            # the search-mode check's `current` in 21-04's `hybrid_search`.
+            self._identity = build_identity(
+                EmbeddingConfig(
+                    model_type=model_type,
+                    model_name=self.settings.model_name,
+                    embedding_dim=self.settings.embedding_dim,
+                    api_base=self.settings.api_base,
+                ),
+                self._embedder,
+                scheme,
             )
         except Exception:
             logger.warning("Failed to load embedder; vector search will be unavailable")

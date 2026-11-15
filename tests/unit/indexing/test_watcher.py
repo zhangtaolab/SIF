@@ -33,10 +33,13 @@ from sif.config.settings import Settings
 from sif.core.models import Collection
 from sif.database.database import Database
 from sif.database.repositories import DocumentChunkRepository, DocumentRepository
+from sif.embedding.identity import build_identity
+from sif.embedding.prompts import PromptScheme
 from sif.indexing import watcher as watcher_module
 from sif.indexing.incremental import IncrementalIndexer, IncrementalResult
 from sif.indexing.scanner import FileScanner
 from sif.indexing.watcher import FileWatcher, FoldResult, WatchConfig, fold_events
+from sif.models.embedding import EmbeddingConfig, ModelType
 
 
 BODY_ALPHA = "# Heading One\n\n" + ("Alpha paragraph text. " * 50)
@@ -1386,6 +1389,26 @@ class TestEnqueueReconcile:
 DIM = 8
 
 
+class _IdentityModel:
+    """Loaded-model double exposing only the identity dimension."""
+
+    def __init__(self, dimension: int) -> None:
+        self.dimension = dimension
+
+
+def _manager_identity(dim: int):
+    """The identity a mocked manager reports for a ``dim``-dimensional model."""
+    return build_identity(
+        EmbeddingConfig(
+            model_type=ModelType.MODELSCOPE,
+            model_name="test",
+            embedding_dim=dim,
+        ),
+        _IdentityModel(dim),
+        PromptScheme(None, None, True),
+    )
+
+
 def _embed_manager_mock(
     dim: int = DIM,
     conn: sqlite3.Connection | None = None,
@@ -1404,6 +1427,8 @@ def _embed_manager_mock(
         "model_id": "test-model",
         "embedding_dim": dim,
     }
+    # D-04/D-05: the watcher adopts the manager's full identity at first use.
+    manager.get_identity.return_value = _manager_identity(dim)
 
     def fake_embed(texts: list[str], **_kwargs: object) -> MagicMock:
         if conn is not None and embed_txn_flags is not None:
@@ -1839,6 +1864,101 @@ class TestEmbedDepth:
         assert "768" in errors[0]
         assert "8" in errors[0]
         # BM25 freshness continued through both bursts.
+        assert [r.added + r.updated for r in results] == [1, 1]
+        manager.embed.assert_not_called()
+        check = sqlite3.connect(str(db_path))
+        try:
+            assert check.execute("SELECT COUNT(*) FROM document_chunks").fetchone()[0] == 0
+        finally:
+            check.close()
+
+    def test_schema_read_delegates_to_the_identity_module(self) -> None:
+        """D-05: no inline FLOAT[n] regex remains in the watcher."""
+        conn = MagicMock()
+        session = watcher_module._EmbedSession(conn)
+
+        with patch("sif.embedding.identity.schema_embedding_dim", return_value=DIM) as read:
+            assert session._schema_embedding_dim() == DIM
+
+        read.assert_called_once_with(conn)
+
+    def test_same_dimension_identity_mismatch_disables_embed_with_one_error(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """D-04/D-05: a same-width stored identity from another model fails the
+        first embed use soft — one error event, embedding disabled for the
+        session — while BM25 freshness continues."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "watch.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        doc_file = notes / "a.md"
+        doc_file.write_text(BODY_ALPHA, encoding="utf-8")
+        _seed_collection(db_path, notes)
+
+        from sif.embedding.identity import write_identity
+
+        stored_identity = build_identity(
+            EmbeddingConfig(
+                model_type=ModelType.MODELSCOPE,
+                model_name="old-model",
+                embedding_dim=DIM,
+            ),
+            _IdentityModel(DIM),
+            PromptScheme(None, None, True),
+        )
+        seed = Database(db_path)
+        try:
+            seed.connection.execute(
+                "INSERT INTO document_embeddings (embedding_id, document_id, chunk_id, embedding) "
+                "VALUES ('e-seed', 'd-seed', 'c-seed', vec_f32(?))",
+                (json.dumps([0.1] * DIM),),
+            )
+            write_identity(seed.connection, stored_identity)
+            seed.connection.commit()
+        finally:
+            seed.close()
+
+        manager = _embed_manager_mock()
+        events: list[str] = []
+        results: list[IncrementalResult] = []
+        db = Database(db_path)
+        try:
+            from sif.database.repositories import CollectionRepository
+
+            coll = CollectionRepository(db.connection).get_by_name("notes")
+            assert coll is not None
+            with (
+                patch("sif.config.settings.get_settings", return_value=_test_settings()),
+                patch(
+                    "sif.embedding.manager.EmbeddingManager.from_settings",
+                    return_value=manager,
+                ) as from_settings,
+            ):
+                watcher = FileWatcher(
+                    [coll],
+                    db.connection,
+                    db_path,
+                    WatchConfig(
+                        depth="embed",
+                        on_event=events.append,
+                        on_batch=lambda _c, result: results.append(result),
+                    ),
+                )
+                doc_file.write_text(BODY_BETA, encoding="utf-8")
+                self._run_burst(watcher, coll, doc_file)
+                doc_file.write_text("# Third\n\n" + ("Gamma text. " * 40), encoding="utf-8")
+                self._run_burst(watcher, coll, doc_file)
+                assert from_settings.call_count == 1
+        finally:
+            db.close()
+
+        errors = [e for e in events if e.startswith("error ")]
+        assert len(errors) == 1
+        assert "modelscope:old-model" in errors[0]
+        assert "modelscope:test" in errors[0]
+        assert "sif index embed --force" in errors[0]
+        # BM25 freshness continued through both bursts; embedding never ran.
         assert [r.added + r.updated for r in results] == [1, 1]
         manager.embed.assert_not_called()
         check = sqlite3.connect(str(db_path))

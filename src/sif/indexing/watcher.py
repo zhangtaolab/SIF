@@ -14,7 +14,6 @@ from __future__ import annotations
 import contextlib
 import os
 import queue
-import re
 import sqlite3
 import threading
 import time
@@ -232,13 +231,40 @@ class _EmbedSession:
             model_dim = info.get("embedding_dim")
             if not isinstance(model_dim, int):
                 raise RuntimeError(f"embedding model reported no dimension: {info!r}")
+            from sif.embedding.identity import (  # noqa: PLC0415
+                check_identity,
+                ensure_legacy_identity,
+            )
+
+            # D-04/D-05: adopt the identity at the first embed use. A legacy
+            # populated index (vectors, no identity) is assumed once with one
+            # warning; a same-dimension model swap or a width disagreement
+            # raises inside this short transaction, so the assumed row is
+            # rolled back, the outer handler emits one error event, and
+            # embedding stays disabled for the session while BM25 freshness
+            # continues.
             schema_dim = self._schema_embedding_dim()
-            if schema_dim is not None and schema_dim != model_dim:
-                raise RuntimeError(
-                    f"Model '{info.get('model_id', 'embedding model')}' produces "
-                    f"{model_dim}-dim embeddings but the index stores "
-                    f"{schema_dim}-dim vectors"
-                )
+            current = manager.get_identity()
+            with self._conn:
+                ensure_legacy_identity(self._conn, current)
+                check = check_identity(self._conn, current, mode="embed")
+                if check.untrusted or check.dimension_mismatch:
+                    stored = check.stored
+                    if stored is not None:
+                        stored_desc = (
+                            f"{stored.display_fingerprint()} "
+                            f"({stored.cache_model_id}, dim {stored.dimension})"
+                        )
+                    else:
+                        stored_desc = f"an index with no identity (FLOAT[{schema_dim}])"
+                    raise RuntimeError(
+                        "Embedder identity mismatch: index vectors were produced by "
+                        f"{stored_desc} but the current model is "
+                        f"{current.display_fingerprint()} "
+                        f"({current.cache_model_id}, dim {current.dimension}). "
+                        "Restore the stored model or run `sif index embed --force` "
+                        "with the matching model."
+                    )
             self._manager = manager
             self._searcher = VectorSearcher(self._conn, model_dim)
             self._chunker = create_chunker(
@@ -316,14 +342,14 @@ class _EmbedSession:
             self._pending_retry[collection.id] = failed
 
     def _schema_embedding_dim(self) -> int | None:
-        """Declared FLOAT[n] of the vec0 table, or None when absent/unparsed."""
-        row = self._conn.execute(
-            "SELECT sql FROM sqlite_master WHERE type='table' AND name='document_embeddings'"
-        ).fetchone()
-        if not row or not row[0]:
-            return None
-        match = re.search(r"FLOAT\[(\d+)\]", row[0])
-        return int(match.group(1)) if match else None
+        """Declared FLOAT[n] of the vec0 table, or None when absent/unparsed.
+
+        Delegates to the identity module's single ``FLOAT[n]`` read (D-05);
+        no inline schema regex lives here.
+        """
+        from sif.embedding.identity import schema_embedding_dim  # noqa: PLC0415
+
+        return schema_embedding_dim(self._conn)
 
     @staticmethod
     def _notify(on_event: Callable[[str], None] | None, event: str) -> None:
