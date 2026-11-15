@@ -2,8 +2,10 @@
 
 Reproduces the UAT evidence from 03-UAT.md test 3 inverted: two embed runs on
 one collection must leave document_embeddings with exactly one row per live
-chunk, and vector search must return each chunk exactly once — never once per
-historical run (the observed 21-rows-vs-3-chunks, document-times-7 symptom).
+chunk, and vector search must never surface a chunk once per historical run
+(the observed 21-rows-vs-3-chunks, document-times-7 symptom). Since CORR-02
+the default vector page is one row per document (chunk_matches counts its
+live chunks); per_chunk=True restores one row per live chunk.
 """
 
 from __future__ import annotations
@@ -214,7 +216,8 @@ class TestEmbedIdempotency:
         tmp_path: Path,
         monkeypatch,
     ) -> None:
-        """The document-times-7 UAT symptom inverted: one result row per live chunk."""
+        """No historical duplicates: one default row per document, one row per
+        live chunk in per-chunk mode (CORR-02's contract)."""
         from sif.database.database import Database
         from sif.search.vector import VectorSearcher
 
@@ -235,11 +238,21 @@ class TestEmbedIdempotency:
             searcher = VectorSearcher(db.connection, embedding_dim=DIM)
             run2_vectors = vector_log[-1]
             results = searcher.search(run2_vectors[0], SearchOptions(limit=chunk_count))
+            per_chunk = searcher.search(
+                run2_vectors[0],
+                SearchOptions(limit=chunk_count, per_chunk=True),
+            )
         finally:
             db.close()
 
-        assert len(results) == chunk_count
-        assert {r.document_id for r in results} == {doc_id}
+        # Default contract: the one document owns a single row whose match
+        # count equals its live chunk count — not one row per historical run.
+        assert len(results) == 1
+        assert results[0].document_id == doc_id
+        assert results[0].chunk_matches == chunk_count
+        # Escape hatch: every live chunk is individually addressable, once.
+        assert len(per_chunk) == chunk_count
+        assert {r.document_id for r in per_chunk} == {doc_id}
 
     def test_default_run_skips_complete_then_force_reembeds_all(
         self,
