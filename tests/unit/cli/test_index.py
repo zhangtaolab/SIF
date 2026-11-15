@@ -1153,6 +1153,7 @@ class TestVacuumCommand:
 
     def test_vacuum_prints_before_after_and_reclaimed_and_exits_zero(self, tmp_path: Path) -> None:
         db_path = tmp_path / "vacuum.db"
+        db_path.touch()  # CR-03: a missing index is refused before opening
         settings = self._settings()
         with (
             patch("sif.config.settings.get_settings", return_value=settings),
@@ -1176,6 +1177,7 @@ class TestVacuumCommand:
         self, tmp_path: Path
     ) -> None:
         db_path = tmp_path / "busy.db"
+        db_path.touch()  # CR-03: a missing index is refused before opening
         settings = self._settings()
         busy = MaintenanceBusyError(
             "The WAL checkpoint could not complete because another connection is "
@@ -1191,6 +1193,22 @@ class TestVacuumCommand:
         assert "Retry once active readers finish" in result.output
         assert "Traceback" not in result.output
 
+    def test_missing_index_is_refused_without_creating_one(self, tmp_path: Path) -> None:
+        """CR-03: a typo'd --index must not vacuum a brand-new empty database."""
+        db_path = tmp_path / "typo.db"
+        settings = self._settings()
+        with (
+            patch("sif.config.settings.get_settings", return_value=settings),
+            patch("sif.cli.commands.index.vacuum_index") as vacuum,
+        ):
+            result = CliRunner().invoke(index_group, ["vacuum"], obj={"index_path": db_path})
+
+        assert result.exit_code != 0
+        assert "No index found" in result.output
+        assert "Traceback" not in result.output
+        assert not db_path.exists()
+        vacuum.assert_not_called()
+
 
 class TestBackupCommand:
     """`sif index backup` prints the verified copy or a clean target error."""
@@ -1201,6 +1219,7 @@ class TestBackupCommand:
 
     def test_backup_prints_output_and_size_and_exits_zero(self, tmp_path: Path) -> None:
         db_path = tmp_path / "backup.db"
+        db_path.touch()  # CR-03: a missing index is refused before opening
         target = tmp_path / "snapshot.db"
         settings = self._settings()
         with (
@@ -1224,6 +1243,7 @@ class TestBackupCommand:
 
     def test_existing_target_exits_non_zero_with_reason(self, tmp_path: Path) -> None:
         db_path = tmp_path / "backup.db"
+        db_path.touch()  # CR-03: a missing index is refused before opening
         target = tmp_path / "existing.db"
         target.write_bytes(b"do not overwrite")
         settings = self._settings()
@@ -1239,3 +1259,26 @@ class TestBackupCommand:
         assert "already exists" in result.output
         assert "Traceback" not in result.output
         assert target.read_bytes() == b"do not overwrite"
+
+    def test_missing_index_is_refused_without_creating_one(self, tmp_path: Path) -> None:
+        """CR-03: a typo'd --index must not produce a backup of nothing."""
+        db_path = tmp_path / "typo-index.db"
+        target = tmp_path / "snapshot.db"
+        settings = self._settings()
+        with (
+            patch("sif.config.settings.get_settings", return_value=settings),
+            patch("sif.cli.commands.index.backup_index") as backup,
+        ):
+            result = CliRunner().invoke(
+                index_group,
+                ["backup", "--output", str(target)],
+                obj={"index_path": db_path},
+                env={"COLUMNS": "200"},
+            )
+
+        assert result.exit_code != 0
+        assert "No index found" in result.output
+        assert "Traceback" not in result.output
+        assert not db_path.exists()
+        assert not target.exists()
+        backup.assert_not_called()

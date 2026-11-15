@@ -529,6 +529,12 @@ def vacuum_cmd(ctx: click.Context) -> None:
     """Reclaim unused space in the index database."""
     index_path = ctx.obj["index_path"]
 
+    # Refuse a missing index BEFORE opening it: Database.__init__/create_all
+    # would otherwise create an empty schema and report a clean vacuum of
+    # nothing, defeating the helper's own "database does not exist" contract.
+    if not Path(index_path).exists():
+        raise click.ClickException(f"No index found at {index_path}. Run 'sif index update' first.")
+
     # Run schema migrations/backfills first, then close the handle: VACUUM runs
     # on the maintenance helper's own connection outside every transaction.
     with open_initialized_database(index_path, Database):
@@ -572,6 +578,12 @@ def vacuum_cmd(ctx: click.Context) -> None:
 def backup_cmd(ctx: click.Context, output: Path | None) -> None:
     """Create a verified backup copy of the index database."""
     index_path = ctx.obj["index_path"]
+
+    # Refuse a missing index BEFORE opening it (see vacuum_cmd): creating a
+    # fresh empty database would make a typo'd --index look like a successful
+    # backup of nothing and could be relied on before destructive work.
+    if not Path(index_path).exists():
+        raise click.ClickException(f"No index found at {index_path}. Run 'sif index update' first.")
 
     # Run schema migrations/backfills first; the copy itself is taken by the
     # maintenance helper under the index lock, outside Database.transaction().
