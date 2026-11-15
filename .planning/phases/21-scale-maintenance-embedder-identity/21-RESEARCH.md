@@ -869,21 +869,23 @@ def _embed_role(self, texts, *, role: str) -> EmbeddingResponse:
 | A9 | Backup files should be mode 0600 (personal notes) even though D-13 does not mandate it. | Pattern 6 | A stricter default than the current DB file; reversible. |
 | A10 | A full `--force` with zero failures certifies even if the index has no documents. | Pattern 1 | A vacuous certification on an empty index; harmless because the first later write re-verifies. |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **How does a user intentionally switch embedders?**
+All five recommendations below are adopted by the phase plans: Q1 → 21-07 Task 3 (fresh-index switch documented; `--force` never bypasses a mismatch), Q2 → 21-04 Task 1 (vsearch fails, hybrid degrades), Q3 → 21-01 residual risk and 21-08 assumed identity, Q4 → 21-01 Task 1 / 21-02 Task 2, Q5 → 21-06 Tasks 1 and 3 (plain-text output, no `--json`).
+
+1. **How does a user intentionally switch embedders?** (RESOLVED — 21-07 Task 3)
    - What we know: D-03 fails fast on any mismatch, including with `--force`, and the remedy is "restore the stored model"; D-02 says deleting all vectors resets the contract, but there is no command that deletes all vectors.
    - What's unclear: the intended migration path for an intentional permanent switch (vs the Harrier gate, which uses isolated indexes).
    - Recommendation: document "use a fresh index (`--index`) or delete the DB/vectors" for Phase 21; revisit a `--replace-identity`/switch surface in Phase 24. Do not silently let `--force` bypass the check.
-2. **What should `sif search vsearch` do on a dimension mismatch (model dim ≠ schema dim)?**
+2. **What should `sif search vsearch` do on a dimension mismatch (model dim ≠ schema dim)?** (RESOLVED — 21-04 Task 1)
    - What we know: D-03 says search warns + marks and still returns results; a vector-only command cannot return vector results if the KNN vector length is wrong.
    - Recommendation: warn + fail with a remedy-bearing ClickException for `vsearch`; for hybrid `query`, warn + degrade to BM25 + mark all results stale. Document the asymmetry.
-3. **Should an assumed identity be refreshed with the loaded model's known fields (pooling/revision) on the first embed run?**
+3. **Should an assumed identity be refreshed with the loaded model's known fields (pooling/revision) on the first embed run?** (RESOLVED — 21-01 residual risk; 21-08 task 1)
    - What we know: the assumed record's unknown fields cause a permanent blind spot until `--force`; refreshing would improve later detection but mixes provenance.
    - Recommendation: keep assumed as written; `--force` is the certification path. Record the residual risk in docs.
-4. **Exact identity/backfill key spelling and fingerprint display format.**
+4. **Exact identity/backfill key spelling and fingerprint display format.** (RESOLVED — 21-01 Task 1; 21-02 Task 2)
    - Recommendation: `embedder.identity`, `embedded_documents_version = "1"`, fingerprint `sha256:<16-hex-prefix>` in messages (full hash stored).
-5. **Should `index vacuum`/`index backup` offer `--json`?**
+5. **Should `index vacuum`/`index backup` offer `--json`?** (RESOLVED — 21-06 Tasks 1 and 3; plain text in Phase 21)
    - Recommendation: plain text in Phase 21; add `--json` additively when Phase 22/MCP consumers need it.
 
 ## Environment Availability
