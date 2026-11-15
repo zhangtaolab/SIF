@@ -375,9 +375,7 @@ class TestMarkVectorStaleness:
 class TestLagStateEndToEnd:
     """The real tiered-depth lag state: BM25 refresh purges embeddings (D-10)."""
 
-    def test_bm25_refreshed_after_embed_doc_is_marked_stale(  # noqa: PLR0915
-        self, tmp_path, monkeypatch
-    ) -> None:
+    def test_bm25_refreshed_after_embed_doc_is_marked_stale(self, tmp_path, monkeypatch) -> None:
         """Embed → modify → update_paths purge → the enriched BM25 result is marked.
 
         The lag state is produced by the REAL purge (update_paths), not by
@@ -408,15 +406,6 @@ class TestLagStateEndToEnd:
         db = Database(db_path)
         with patch("sif.config.settings.get_settings", return_value=settings):
             db.init_schema()
-            # Task 1: the production DDL lands with schema init in Task 2;
-            # create the shadow here so the real writer/reader path is
-            # exercised on a production-shaped database. Idempotent once the
-            # schema owns it.
-            db.connection.executescript(
-                "CREATE TABLE IF NOT EXISTS embedded_documents ("
-                " document_id TEXT PRIMARY KEY,"
-                " FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE);"
-            )
             with db.connection:
                 coll = Coll(name="notes", path=str(notes))
                 CollectionRepository(db.connection).create(coll)

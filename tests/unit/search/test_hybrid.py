@@ -850,14 +850,6 @@ class TestHybridSC1PipelineGolden:
         from sif.database.schema import SchemaManager
 
         SchemaManager(conn, embedding_dim=2).create_all()
-        # Task 1: the production shadow DDL lands with schema init in Task 2;
-        # build it here so the fixture behaves like a production database and
-        # the searcher maintains shadow rows for the batch below.
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS embedded_documents ("
-            " document_id TEXT PRIMARY KEY,"
-            " FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE)"
-        )
         now = "2026-11-08T00:00:00+00:00"
         conn.execute(
             "INSERT INTO collections (id, name, path, created_at, updated_at)"

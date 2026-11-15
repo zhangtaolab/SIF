@@ -603,8 +603,8 @@ class TestIndexMetaTable:
 
     def test_drop_all_removes_index_meta_and_create_all_recreates_it(self):
         """drop_all drops index_meta (and its rows); create_all recreates the
-        table holding only the fresh-database ``metadata_values_version``
-        marker (D-06) — the legacy convention row is gone."""
+        table holding only the fresh-database version markers — the legacy
+        convention row and any embedder identity are gone."""
         conn = sqlite3.connect(":memory:")
         conn.row_factory = sqlite3.Row
         try:
@@ -623,10 +623,19 @@ class TestIndexMetaTable:
             ), "index_meta survived drop_all"
 
             manager.create_all()
+            # ``embedded_documents_version`` is allowed here: a vec0-capable
+            # fresh database writes it immediately (D-10). This connection has
+            # no vec0, so it is absent in practice; the allowance keeps the
+            # assertion about "only fresh markers" portable across both shapes.
             legacy = conn.execute(
-                "SELECT COUNT(*) FROM index_meta WHERE key != 'metadata_values_version'"
+                "SELECT COUNT(*) FROM index_meta WHERE key NOT IN"
+                " ('metadata_values_version', 'embedded_documents_version')"
             ).fetchone()[0]
             assert legacy == 0, "the legacy convention row must not survive drop_all"
+            identity = conn.execute(
+                "SELECT COUNT(*) FROM index_meta WHERE key = 'embedder.identity'"
+            ).fetchone()[0]
+            assert identity == 0, "an embeddings-empty fresh DB must not carry an identity row"
             marker = conn.execute(
                 "SELECT value FROM index_meta WHERE key = 'metadata_values_version'"
             ).fetchone()

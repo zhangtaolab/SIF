@@ -17,6 +17,13 @@ logger = get_logger(__name__)
 _METADATA_VALUES_VERSION = "1"
 _METADATA_VALUES_VERSION_KEY = "metadata_values_version"
 
+# D-10: the derived ``embedded_documents`` shadow is rebuildable from
+# ``document_embeddings`` + ``documents``, so its one-time backfill contract
+# is also one global marker. The marker is written only after a complete pass;
+# the table-absent force rule below repairs a dropped table that kept a marker.
+_EMBEDDED_DOCUMENTS_VERSION = "1"
+_EMBEDDED_DOCUMENTS_VERSION_KEY = "embedded_documents_version"
+
 
 class SchemaManager:
     """Manages database schema creation and migrations."""
@@ -51,8 +58,13 @@ class SchemaManager:
         self._create_index_meta_table()
         self._create_fts_tables()
         self._create_vector_tables()
+        # D-10: the shadow exists only beside a vec0 table. ``None`` (vec0
+        # unavailable) makes the backfill a total no-op: no shadow DDL, no
+        # marker, no statement against the absent table.
+        embedded_preexisted = self._create_embedded_documents_table()
         self._create_indexes()
         self._backfill_metadata_values()
+        self._backfill_embedded_documents(embedded_preexisted)
         self.db.commit()
 
     def _add_column_if_missing(self, table: str, column: str, dtype: str) -> None:
@@ -314,6 +326,53 @@ class SchemaManager:
                 repo.replace_from_canonical(document_id, metadata_json or "{}")
         with self.db:
             marker.set(_METADATA_VALUES_VERSION_KEY, _METADATA_VALUES_VERSION)
+
+    def _backfill_embedded_documents(self, table_preexisted: bool | None) -> None:
+        """Derive the ``embedded_documents`` shadow once (D-10, CORR-06).
+
+        ``table_preexisted is None`` means sqlite-vec is unavailable, so the
+        shadow table was never created: the pass issues no SQL against it,
+        writes no marker, and returns (a pure-BM25 install must keep working).
+        A fresh database clears/derives at zero cost and writes the marker
+        immediately.
+
+        The pass is idempotent: the derived table is cleared first, then every
+        distinct document with stored embeddings is re-derived through a join
+        to ``documents``, so persisted orphan vec0 rows (a deleted document
+        whose embeddings were never purged) never enter the shadow. The marker
+        is written **only after** a complete pass; exceptions propagate out of
+        :meth:`create_all`, so a host never serves a half-populated shadow.
+
+        A table that did not exist before this call forces the pass even when
+        the marker survives — a dropped/recreated table must never stay
+        silently empty behind a stale marker.
+        """
+        if table_preexisted is None:
+            return
+
+        from sif.database.repositories import IndexMetaRepository  # noqa: PLC0415
+
+        marker = IndexMetaRepository(self.db)
+        marker_current = marker.get(_EMBEDDED_DOCUMENTS_VERSION_KEY) == _EMBEDDED_DOCUMENTS_VERSION
+        if table_preexisted and marker_current:
+            return
+
+        with self.db:
+            self.db.execute("DELETE FROM embedded_documents")
+            self.db.execute(
+                "INSERT OR IGNORE INTO embedded_documents(document_id) "
+                "SELECT de.document_id FROM document_embeddings de "
+                "JOIN documents d ON d.id = de.document_id"
+            )
+        inserted = self.db.execute("SELECT COUNT(*) FROM embedded_documents").fetchone()[0]
+        if inserted:
+            logger.warning(
+                "Upgrading index: deriving the embedded-document shadow for %d documents "
+                "(one-time pass)",
+                inserted,
+            )
+        with self.db:
+            marker.set(_EMBEDDED_DOCUMENTS_VERSION_KEY, _EMBEDDED_DOCUMENTS_VERSION)
 
     def _fts_trigger_is_legacy(self, trigger_name: str, fts_table: str) -> bool:
         """Check if an existing FTS sync trigger writes directly to the FTS table.
@@ -615,6 +674,38 @@ class SchemaManager:
             )
         """)
 
+    def _create_embedded_documents_table(self) -> bool | None:
+        """Create the derived shadow, reporting whether it already existed.
+
+        Returns ``None`` when sqlite-vec is unavailable: there is no vec0
+        table, hence no stored vectors and no shadow. That is the explicit
+        "do not touch this database" signal the backfill needs to stay total
+        on vec0-free installs. Otherwise creates the table and returns
+        whether it pre-existed — the backfill forces itself when it did not,
+        so a dropped/recreated table cannot hide behind a surviving marker.
+
+        ``PRAGMA foreign_keys = ON`` is enabled by ``create_connection``
+        (factory.py), so a document delete cascades here; raw test
+        connections may leave FK enforcement off, which the explicit
+        delete/reconcile paths cover (D-09).
+        """
+        try:
+            self.db.execute("SELECT vec_version()")
+        except sqlite3.OperationalError:
+            return None
+
+        cursor = self.db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='embedded_documents'",
+        )
+        preexisted = cursor.fetchone() is not None
+        self.db.execute("""
+            CREATE TABLE IF NOT EXISTS embedded_documents (
+                document_id TEXT PRIMARY KEY,
+                FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
+            )
+        """)
+        return preexisted
+
     def _create_indexes(self) -> None:
         """Create database indexes."""
         # Documents indexes
@@ -656,8 +747,14 @@ class SchemaManager:
         """)
 
     def drop_all(self) -> None:
-        """Drop all tables (for testing/reset)."""
+        """Drop all tables (for testing/reset).
+
+        The derived shadow drops before ``documents`` (it is an FK child), so
+        a populated database with FK enforcement on cannot trip a constraint
+        while the parent is removed.
+        """
         tables = [
+            "embedded_documents",
             "document_embeddings",
             "chunks_fts",
             "documents_fts_v",
