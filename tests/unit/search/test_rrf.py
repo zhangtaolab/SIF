@@ -12,7 +12,7 @@ import copy
 import pytest
 
 from sif.core.models import SearchResult
-from sif.search.rrf import RRFFusion
+from sif.search.rrf import RRFFusion, chunk_key, fuse_key_for
 
 
 # =============================================================================
@@ -1046,3 +1046,117 @@ class TestRRFScorePreservation:
         # Assert
         # First list is BM25, so bm25_score should be preserved
         assert fused[0].scores.get("bm25_score") == sample_search_results[0].score
+
+
+# =============================================================================
+# Per-chunk fusion key (CORR-02 — grouping without touching RRF math)
+# =============================================================================
+
+
+def _chunk_result(
+    document_id: str,
+    chunk_id: str | None,
+    sequence: int | None,
+    score: float,
+    chunk_matches: int = 0,
+) -> SearchResult:
+    """One result row with explicit chunk identity (None = document-level row)."""
+    return SearchResult(
+        document_id=document_id,
+        path=f"/{document_id}.md",
+        title="T",
+        collection_name="c",
+        score=score,
+        chunk_id=chunk_id,
+        sequence=sequence,
+        chunk_matches=chunk_matches,
+    )
+
+
+class TestRRFChunkKey:
+    """The optional fusion key groups chunk rows; scores stay byte-identical."""
+
+    def test_fuse_key_for_helpers(self) -> None:
+        """The shared helper selects chunk keying only for per-chunk mode."""
+        assert fuse_key_for(False) is None
+        assert fuse_key_for(True) is chunk_key
+        assert chunk_key(_chunk_result("d1", "c1", 0, 0.9)) == "c1"
+        assert chunk_key(_chunk_result("d1", None, None, 0.9)) == "d1"
+
+    def test_document_key_collapses_chunks_and_keeps_max_matches(self) -> None:
+        """Default keying merges one document's chunk rows and keeps max(count)."""
+        rows = [
+            _chunk_result("d1", "c1", 0, 0.9, chunk_matches=1),
+            _chunk_result("d1", "c2", 1, 0.8, chunk_matches=3),
+        ]
+
+        fused = RRFFusion(k=60).fuse([rows])
+
+        assert len(fused) == 1
+        assert fused[0].chunk_matches == 3
+
+    def test_chunk_key_keeps_chunks_of_one_document_apart(self) -> None:
+        """Per-chunk keying preserves both chunk rows of the same document."""
+        rows = [
+            _chunk_result("d1", "c1", 0, 0.9, chunk_matches=0),
+            _chunk_result("d1", "c2", 1, 0.8, chunk_matches=0),
+        ]
+
+        fused = RRFFusion(k=60).fuse([rows], key=chunk_key)
+
+        assert len(fused) == 2
+        assert {r.chunk_id for r in fused} == {"c1", "c2"}
+
+    def test_merge_adopts_later_chunk_identity_and_max_matches(self) -> None:
+        """A dual-list document keeps the vector leg's chunk and the larger count."""
+        bm25_rows = [_chunk_result("d1", None, None, 0.9, chunk_matches=0)]
+        vector_rows = [_chunk_result("d1", "c1", 2, 0.8, chunk_matches=3)]
+
+        fused = RRFFusion(k=60).fuse([bm25_rows, vector_rows])
+
+        assert len(fused) == 1
+        assert fused[0].chunk_id == "c1"
+        assert fused[0].sequence == 2
+        assert fused[0].chunk_matches == 3
+
+    def test_merge_does_not_clear_existing_chunk_identity(self) -> None:
+        """A later row without chunk identity never erases an earlier one."""
+        first = [_chunk_result("d1", "c1", 0, 0.9, chunk_matches=2)]
+        later = [_chunk_result("d1", None, None, 0.8, chunk_matches=0)]
+
+        fused = RRFFusion(k=60).fuse([first, later])
+
+        assert fused[0].chunk_id == "c1"
+        assert fused[0].sequence == 0
+        assert fused[0].chunk_matches == 2
+
+    def test_new_rows_copy_chunk_identity(self) -> None:
+        """Rows that never merge still carry their chunk identity through."""
+        fused = RRFFusion(k=60).fuse([[_chunk_result("d1", "c1", 4, 0.9, chunk_matches=0)]])
+
+        assert fused[0].chunk_id == "c1"
+        assert fused[0].sequence == 4
+        assert fused[0].chunk_matches == 0
+
+    def test_chunk_key_scores_are_byte_identical_to_document_key(self) -> None:
+        """Same inputs, same groups: the key changes no score or rank arithmetic."""
+        bm25_rows = [
+            _chunk_result("d1", "c1", 0, 0.9, chunk_matches=1),
+            _chunk_result("d2", "c2", 0, 0.7, chunk_matches=1),
+        ]
+        vector_rows = [
+            _chunk_result("d1", "c1", 0, 0.8, chunk_matches=1),
+            _chunk_result("d3", "c3", 0, 0.6, chunk_matches=1),
+        ]
+
+        fusion = RRFFusion(k=60)
+        plain = fusion.fuse([copy.deepcopy(bm25_rows), copy.deepcopy(vector_rows)], 10)
+        chunked = fusion.fuse(
+            [copy.deepcopy(bm25_rows), copy.deepcopy(vector_rows)],
+            10,
+            key=chunk_key,
+        )
+
+        assert [
+            (r.document_id, r.chunk_id, r.rank, repr(r.scores["rrf_score"])) for r in plain
+        ] == [(r.document_id, r.chunk_id, r.rank, repr(r.scores["rrf_score"])) for r in chunked]

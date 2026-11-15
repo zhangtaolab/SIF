@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, cast
 from sif.core.models import Embedder, SearchOptions, SearchResult, SearchType
 from sif.search.bm25 import BM25Searcher
 from sif.search.context_attach import enrich_results
-from sif.search.rrf import RRFFusion
+from sif.search.rrf import RRFFusion, fuse_key_for
 from sif.search.vector import VectorSearcher
 from sif.utils.logging import get_logger
 
@@ -103,12 +103,15 @@ class HybridSearcher:
 
         # Fuse results using RRF (Phase 15: per-query weights/k ride options —
         # the ONLY weights call site; k also flows to the pipeline's
-        # cross-query variant fusion, weights must NOT (Pitfall 9/A7))
+        # cross-query variant fusion, weights must NOT (Pitfall 9/A7)).
+        # The grouping key follows the shared per-chunk helper: default
+        # document-keyed rows, chunk-keyed rows for the per-chunk escape hatch.
         fused_results = self.rrf.fuse(
             [bm25_results, vector_results],
             fetch_options.limit,
             weights=[options.bm25_weight, options.vector_weight],
             k=options.rrf_k,
+            key=fuse_key_for(options.per_chunk),
         )
 
         # Re-fetch content and highlights if needed
@@ -123,8 +126,12 @@ class HybridSearcher:
                         options.max_highlights,
                     )
 
-        # Deduplicate by document_id, keeping highest score, then slice the
-        # caller's page once with global rank numbering.
+        # Default mode keeps the post-fusion safety net (one row per
+        # document, merging chunk metadata); per-chunk mode must keep its
+        # chunk rows, so it skips the document collapse. Either way the page
+        # is sliced once with global rank numbering.
+        if options.per_chunk:
+            return _paginate(fused_results, options)
         return _paginate(self._deduplicate_results(fused_results), options)
 
     @staticmethod
@@ -133,13 +140,27 @@ class HybridSearcher:
 
         Vector search operates at chunk level, so the same document may appear
         multiple times. We keep the best-scoring entry per document and
-        reassign sequential ranks.
+        reassign sequential ranks. When rows collapse, non-null chunk identity
+        is adopted from the loser and ``chunk_matches`` keeps the maximum
+        (metadata merge only — scores are untouched).
         """
         best: dict[str, SearchResult] = {}
         for result in results:
             doc_id = result.document_id
-            if doc_id not in best or result.score > best[doc_id].score:
+            existing = best.get(doc_id)
+            if existing is None:
                 best[doc_id] = result
+                continue
+
+            winner, loser = (
+                (result, existing) if result.score > existing.score else (existing, result)
+            )
+            if winner.chunk_id is None:
+                winner.chunk_id = loser.chunk_id
+            if winner.sequence is None:
+                winner.sequence = loser.sequence
+            winner.chunk_matches = max(existing.chunk_matches, result.chunk_matches)
+            best[doc_id] = winner
 
         deduped = list(best.values())
         deduped.sort(key=lambda r: r.score, reverse=True)
@@ -297,8 +318,15 @@ class SearchPipeline:
         else:
             # Fuse results from multiple queries (cross-query VARIANT fusion —
             # not source fusion: k rides options, weights are meaningless here
-            # and must never be passed (Pitfall 9 / assumption A7))
-            results = self.hybrid.rrf.fuse(all_results, fetch_options.limit, k=options.rrf_k)
+            # and must never be passed (Pitfall 9 / assumption A7)). The
+            # per-chunk key must ride here too: a document-level key would
+            # collapse the escape hatch's chunk rows across variants.
+            results = self.hybrid.rrf.fuse(
+                all_results,
+                fetch_options.limit,
+                k=options.rrf_k,
+                key=fuse_key_for(fetch_options.per_chunk),
+            )
 
         # Apply the pre-rerank candidate window, then rerank to the window
         # depth. offset=0 keeps exactly candidate_limit (Phase 16 cap and the

@@ -62,6 +62,12 @@ def _sort_and_build_results(
                 scores=new_scores,
                 snippet=result.snippet,
                 context_description=result.context_description,
+                # Chunk identity is part of the result contract (CORR-02
+                # D-02/D-03): a rebuild must not drop the matched chunk or
+                # its collapsed match count.
+                chunk_id=result.chunk_id,
+                sequence=result.sequence,
+                chunk_matches=result.chunk_matches,
             ),
         )
     return reranked

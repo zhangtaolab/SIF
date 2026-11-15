@@ -2,7 +2,49 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from sif.core.models import SearchResult
+
+
+def chunk_key(result: SearchResult) -> str:
+    """Fusion key for chunk-level rows: chunk identity, else the document id.
+
+    BM25 runs at document level and carries no chunk id, so its rows stay
+    document-keyed even in per-chunk mode — a hybrid per-chunk page may carry
+    the BM25 document row alongside its vector chunk rows (CORR-02/D-01).
+    """
+    return result.chunk_id or result.document_id
+
+
+def fuse_key_for(per_chunk: bool) -> Callable[[SearchResult], str] | None:
+    """Return the shared fusion grouping key for a search mode.
+
+    Both fuse sites that can receive chunk rows — ``HybridSearcher.search``'s
+    source fusion and ``SearchPipeline.search``'s cross-query variant fusion —
+    select their key through this helper. ``None`` means the default
+    document-keyed behavior, so RRF scoring math never depends on the mode.
+    """
+    return chunk_key if per_chunk else None
+
+
+def _document_key(result: SearchResult) -> str:
+    """Default fusion key: one fused row per document."""
+    return result.document_id
+
+
+def _merge_chunk_metadata(existing: SearchResult, later: SearchResult) -> None:
+    """Adopt non-null chunk identity from a later row; keep the max count.
+
+    Metadata merging only (T-19-14): a document found by both legs keeps the
+    vector leg's chunk_id/sequence even though the stored result object came
+    from the first (BM25) list, and chunk_matches never shrinks.
+    """
+    if later.chunk_id is not None:
+        existing.chunk_id = later.chunk_id
+    if later.sequence is not None:
+        existing.sequence = later.sequence
+    existing.chunk_matches = max(existing.chunk_matches, later.chunk_matches)
 
 
 class RRFFusion:
@@ -23,6 +65,7 @@ class RRFFusion:
         limit: int = 10,
         weights: list[float] | None = None,
         k: int | None = None,
+        key: Callable[[SearchResult], str] | None = None,
     ) -> list[SearchResult]:
         """Fuse multiple ranked lists using RRF.
 
@@ -35,6 +78,10 @@ class RRFFusion:
                 normalizing halves every score at equal weights).
             k: Optional RRF constant for this call; ``None`` falls back to
                 ``self.k``.
+            key: Optional grouping key. ``None`` groups by ``document_id``;
+                per-chunk mode passes ``chunk_key`` so chunk rows survive
+                fusion. The key only decides which rows merge — the scoring
+                arithmetic is identical in both modes.
 
         Returns:
             Fused and re-ranked list of results
@@ -44,8 +91,9 @@ class RRFFusion:
 
         # Effective k for this call (None -> constructor default)
         k_eff = self.k if k is None else k
+        key_fn = _document_key if key is None else key
 
-        # Map document_id to scores
+        # Map grouping key to scores
         scores: dict[str, tuple[float, SearchResult]] = {}
 
         for list_idx, results in enumerate(results_lists):
@@ -54,7 +102,7 @@ class RRFFusion:
             # pre-change plain division (SC1 golden pin).
             weight = 1.0 if weights is None else weights[list_idx]
             for rank, result in enumerate(results, 1):
-                doc_id = result.document_id
+                group_key = key_fn(result)
 
                 # Calculate RRF score: weight / (k + rank) — multiply form only
                 rrf_score = weight * (1.0 / (k_eff + rank))
@@ -69,14 +117,16 @@ class RRFFusion:
                 if score_key not in doc_scores:
                     doc_scores[score_key] = result.score
 
-                if doc_id in scores:
-                    existing_score, existing_result = scores[doc_id]
+                if group_key in scores:
+                    existing_score, existing_result = scores[group_key]
                     # Merge scores from existing result
                     merged_scores: dict[str, float | None] = {}
                     if existing_result.scores:
                         merged_scores.update(existing_result.scores)
                     merged_scores.update(doc_scores)
-                    scores[doc_id] = (existing_score + rrf_score, existing_result)
+                    # Metadata merge only (T-19-14); RRF scores are untouched.
+                    _merge_chunk_metadata(existing_result, result)
+                    scores[group_key] = (existing_score + rrf_score, existing_result)
                     # Update the stored result's scores
                     existing_result.scores = merged_scores
                 else:
@@ -92,8 +142,11 @@ class RRFFusion:
                         scores=doc_scores,
                         snippet=result.snippet,
                         context_description=result.context_description,
+                        chunk_id=result.chunk_id,
+                        sequence=result.sequence,
+                        chunk_matches=result.chunk_matches,
                     )
-                    scores[doc_id] = (rrf_score, new_result)
+                    scores[group_key] = (rrf_score, new_result)
 
         # Sort by RRF score (descending)
         sorted_scores = sorted(scores.items(), key=lambda x: x[1][0], reverse=True)

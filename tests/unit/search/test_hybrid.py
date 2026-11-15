@@ -10,8 +10,10 @@ from sif.core.models import SearchOptions, SearchResult, SearchType
 from sif.search.bm25 import BM25Searcher
 from sif.search.hybrid import HybridSearcher, SearchPipeline
 from sif.search.rerank import _sort_and_build_results
+from sif.search.rrf import chunk_key, fuse_key_for
 from sif.search.snippets import SmartSnippetExtractor
 from sif.search.vector import VectorSearcher
+from tests.support.bench import EMBEDDING_DIM, ConceptEmbedder
 
 
 # =============================================================================
@@ -709,14 +711,18 @@ class _FakeEmbedder:
 
 
 class TestHybridSC1PipelineGolden:
-    """SC1: HybridSearcher defaults stay byte-identical across the weights change.
+    """SC1: the post-dedup default contract, pinned field-for-field.
 
-    The snapshot below was captured from the PRE-change code on this exact
-    fixture (real schema + FTS + vec0, deterministic fake embedder). BM25
-    ranks d3,d1 (both contain "apple"); vector ranks d2,d3,d1,d4 — the two
-    sources disagree, so the snapshot exercises real RRF merging on two
-    both-sources documents. Post-change, both the implicit defaults and the
-    explicit ``SearchOptions(rrf_k=60, bm25_weight=1.0, vector_weight=1.0)``
+    The snapshot below was regenerated from the post-CORR-02 code on this
+    exact fixture (real schema + FTS + vec0, deterministic fake embedder) on
+    2026-11-15. The default contract changed from pre-dedup fusion to one row
+    per document: the vector leg now dedups before fusion, so duplicate chunk
+    hits can no longer consume result slots or inflate RRF scores. On this
+    one-chunk-per-document fixture the scores are unchanged from the previous
+    golden; the chunk_id/sequence/chunk_matches fields record the new
+    per-document contract, and dual-leg rows adopt the vector leg's chunk
+    identity through the RRF metadata merge. Both the implicit defaults and
+    the explicit ``SearchOptions(rrf_k=60, bm25_weight=1.0, vector_weight=1.0)``
     must reproduce it field-for-field.
     """
 
@@ -738,6 +744,9 @@ class TestHybridSC1PipelineGolden:
             "snippet": None,
             "context_description": None,
             "vectors_stale": False,
+            "chunk_id": "chunk-d3",
+            "sequence": 0,
+            "chunk_matches": 1,
         },
         {
             "document_id": "d1",
@@ -756,6 +765,9 @@ class TestHybridSC1PipelineGolden:
             "snippet": None,
             "context_description": None,
             "vectors_stale": False,
+            "chunk_id": "chunk-d1",
+            "sequence": 0,
+            "chunk_matches": 1,
         },
         {
             "document_id": "d2",
@@ -773,6 +785,9 @@ class TestHybridSC1PipelineGolden:
             "snippet": None,
             "context_description": None,
             "vectors_stale": False,
+            "chunk_id": "chunk-d2",
+            "sequence": 0,
+            "chunk_matches": 1,
         },
         {
             "document_id": "d4",
@@ -790,6 +805,9 @@ class TestHybridSC1PipelineGolden:
             "snippet": None,
             "context_description": None,
             "vectors_stale": False,
+            "chunk_id": "chunk-d4",
+            "sequence": 0,
+            "chunk_matches": 1,
         },
     ]
 
@@ -1069,7 +1087,9 @@ class TestCandidateFetch:
         pipeline.search("test", SearchOptions(limit=3, candidate_limit=20))
 
         assert pipeline.hybrid.rrf.fuse.call_args.args[1] == 20
-        assert pipeline.hybrid.rrf.fuse.call_args.kwargs == {"k": 60}
+        # CORR-02: the variant fuse always selects its grouping key through the
+        # shared helper — None means the default document key.
+        assert pipeline.hybrid.rrf.fuse.call_args.kwargs == {"k": 60, "key": None}
 
     def test_candidate_fetch_off_path_matches_sc1_snapshot(self) -> None:
         """reranker=None: no over-fetch, pipeline output equals the SC1 pre-change golden."""
@@ -1281,3 +1301,270 @@ class TestRerankComposition:
         assert passed.offset == 0
         assert options.limit == 3
         assert options.offset == 0
+
+
+# =============================================================================
+# Per-chunk fusion (CORR-02 — chunk identity through both fuse sites)
+# =============================================================================
+
+
+class _VariantExpander:
+    """Stub QueryExpander that returns the original plus one variant."""
+
+    def expand(self, _query: str) -> list[str]:
+        """Return a deterministic two-variant expansion."""
+        return ["alpha", "alpha beta"]
+
+
+class TestHybridChunkFusion:
+    """Chunk identity survives both fuse sites; per-chunk mode restores rows."""
+
+    @staticmethod
+    def _doc_result(document_id: str, score: float) -> SearchResult:
+        return SearchResult(
+            document_id=document_id,
+            title=f"Doc {document_id}",
+            path=f"/{document_id}.md",
+            collection_name="c",
+            score=score,
+        )
+
+    @staticmethod
+    def _chunk_result(
+        document_id: str,
+        chunk_id: str,
+        sequence: int,
+        score: float,
+        chunk_matches: int = 1,
+    ) -> SearchResult:
+        return SearchResult(
+            document_id=document_id,
+            title=f"Doc {document_id}",
+            path=f"/{document_id}.md",
+            collection_name="c",
+            score=score,
+            chunk_id=chunk_id,
+            sequence=sequence,
+            chunk_matches=chunk_matches,
+        )
+
+    @staticmethod
+    def _hybrid_with_stub_legs(
+        bm25_results: list[SearchResult],
+        vector_results: list[SearchResult],
+    ) -> HybridSearcher:
+        embedder = MagicMock()
+        embedder.embed.return_value = [0.1, 0.2]
+        hybrid = HybridSearcher(MagicMock(), embedder=embedder, embedding_dim=2)
+        hybrid.bm25 = create_autospec(BM25Searcher, instance=True)
+        hybrid.bm25.search.return_value = bm25_results
+        hybrid.vector = create_autospec(VectorSearcher, instance=True)
+        hybrid.vector.search.return_value = vector_results
+        return hybrid
+
+    def test_dual_leg_document_keeps_vector_chunk_identity(self) -> None:
+        """A document found by both legs adopts the vector chunk and max count."""
+        hybrid = self._hybrid_with_stub_legs(
+            [self._doc_result("d1", 0.9)],
+            [self._chunk_result("d1", "chunk-2", 2, 0.8, chunk_matches=5)],
+        )
+
+        results = hybrid.search("q", SearchOptions(limit=10, include_highlights=False))
+
+        assert len(results) == 1
+        assert results[0].chunk_id == "chunk-2"
+        assert results[0].sequence == 2
+        assert results[0].chunk_matches == 5
+
+    def test_per_chunk_mode_keeps_chunk_rows_and_document_row(self) -> None:
+        """per_chunk=True fuses by chunk identity; BM25 rows stay document-keyed."""
+        hybrid = self._hybrid_with_stub_legs(
+            [self._doc_result("d1", 0.9)],
+            [
+                self._chunk_result("d1", "c1", 0, 0.8),
+                self._chunk_result("d1", "c2", 1, 0.7),
+            ],
+        )
+
+        results = hybrid.search(
+            "q", SearchOptions(limit=10, per_chunk=True, include_highlights=False)
+        )
+
+        assert {(r.document_id, r.chunk_id) for r in results} == {
+            ("d1", None),
+            ("d1", "c1"),
+            ("d1", "c2"),
+        }
+
+    def test_source_fusion_selects_the_shared_key_helper(self) -> None:
+        """The source fuse gets key=None by default and chunk_key in per-chunk mode."""
+        for per_chunk, expected in ((False, None), (True, chunk_key)):
+            hybrid = self._hybrid_with_stub_legs(
+                [self._doc_result("d1", 0.9)],
+                [self._chunk_result("d1", "c1", 0, 0.8)],
+            )
+            hybrid.rrf = MagicMock()
+            hybrid.rrf.fuse.return_value = []
+
+            hybrid.search("q", SearchOptions(per_chunk=per_chunk, include_highlights=False))
+
+            assert hybrid.rrf.fuse.call_args.kwargs["key"] is expected
+
+    def test_pipeline_variant_fusion_selects_the_shared_key_helper(self) -> None:
+        """The cross-query variant fuse receives the same per-chunk key."""
+        for per_chunk, expected in ((False, None), (True, chunk_key)):
+            pipeline = SearchPipeline(MagicMock(), query_expander=_VariantExpander())
+            pipeline.hybrid.search = MagicMock(return_value=[self._doc_result("d1", 0.9)])
+            pipeline.hybrid.rrf = MagicMock()
+            pipeline.hybrid.rrf.fuse.return_value = []
+
+            pipeline.search("alpha", SearchOptions(per_chunk=per_chunk))
+
+            kwargs = pipeline.hybrid.rrf.fuse.call_args.kwargs
+            assert kwargs["key"] is expected
+            assert "weights" not in kwargs
+
+    def test_fuse_key_for_is_the_shared_selection_point(self) -> None:
+        """The helper is the single selector both fuse sites import."""
+        assert fuse_key_for(False) is None
+        assert fuse_key_for(True) is chunk_key
+
+    def test_safety_net_merges_chunk_metadata(self) -> None:
+        """The post-fusion dedup adopts a loser's chunk identity and max count."""
+        winner = self._doc_result("d1", 0.02)
+        loser = self._chunk_result("d1", "c2", 1, 0.01, chunk_matches=3)
+
+        deduped = HybridSearcher._deduplicate_results([winner, loser])
+
+        assert len(deduped) == 1
+        assert deduped[0].chunk_id == "c2"
+        assert deduped[0].sequence == 1
+        assert deduped[0].chunk_matches == 3
+
+    def test_safety_net_does_not_clear_existing_identity(self) -> None:
+        """A loser without chunk identity never erases the winner's fields."""
+        winner = self._chunk_result("d1", "c1", 0, 0.02, chunk_matches=3)
+        loser = self._doc_result("d1", 0.01)
+
+        deduped = HybridSearcher._deduplicate_results([winner, loser])
+
+        assert deduped[0].chunk_id == "c1"
+        assert deduped[0].sequence == 0
+        assert deduped[0].chunk_matches == 3
+
+
+class TestPerChunkPipelineMultiVariant:
+    """A multi-variant pipeline search keeps chunk rows only in per-chunk mode."""
+
+    @staticmethod
+    def _build_db() -> sqlite3.Connection:
+        """Real DB: one two-chunk document plus two single-chunk documents."""
+        import sqlite_vec
+
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            conn.enable_load_extension(True)
+            sqlite_vec.load(conn)
+            conn.enable_load_extension(False)
+        except Exception:
+            conn.close()
+            pytest.skip("sqlite-vec not available")
+
+        from sif.database.schema import SchemaManager
+
+        SchemaManager(conn, embedding_dim=EMBEDDING_DIM).create_all()
+        now = "2026-11-15T00:00:00+00:00"
+        conn.execute(
+            "INSERT INTO collections (id, name, path, created_at, updated_at)"
+            " VALUES ('c1', 'notes', '/notes', ?, ?)",
+            (now, now),
+        )
+        embedder = ConceptEmbedder()
+        docs = [
+            (
+                "d1",
+                "alpha beta",
+                [("chunk-d1-a", 0, "alpha"), ("chunk-d1-b", 1, "alpha beta")],
+            ),
+            ("d2", "alpha", [("chunk-d2-a", 0, "alpha")]),
+            ("d3", "beta", [("chunk-d3-a", 0, "beta")]),
+        ]
+        embeddings: list[tuple[str, str, str, list[float]]] = []
+        for doc_id, content, chunks in docs:
+            conn.execute(
+                "INSERT INTO documents (id, collection_id, path, filename, title, content,"
+                " checksum, mtime, created_at, updated_at)"
+                " VALUES (?, 'c1', ?, ?, ?, ?, 'x', 1.0, ?, ?)",
+                (
+                    doc_id,
+                    f"/notes/{doc_id}.md",
+                    f"{doc_id}.md",
+                    f"Doc {doc_id}",
+                    content,
+                    now,
+                    now,
+                ),
+            )
+            for chunk_id, sequence, chunk_content in chunks:
+                conn.execute(
+                    "INSERT INTO document_chunks (id, document_id, sequence, content, created_at)"
+                    " VALUES (?, ?, ?, ?, ?)",
+                    (chunk_id, doc_id, sequence, chunk_content, now),
+                )
+                embeddings.append(
+                    (f"e-{chunk_id}", doc_id, chunk_id, embedder.embed(chunk_content))
+                )
+        VectorSearcher(conn, embedding_dim=EMBEDDING_DIM).add_embeddings_batch(embeddings)
+        return conn
+
+    @staticmethod
+    def _options(per_chunk: bool) -> SearchOptions:
+        return SearchOptions(
+            limit=10,
+            include_highlights=False,
+            collection_ids=["c1"],
+            per_chunk=per_chunk,
+        )
+
+    def test_multi_variant_per_chunk_keeps_both_chunk_rows(self) -> None:
+        """Both chunk rows of the two-chunk document survive variant fusion."""
+        conn = self._build_db()
+        try:
+            pipeline = SearchPipeline(
+                conn,
+                embedder=ConceptEmbedder(),
+                query_expander=_VariantExpander(),
+                embedding_dim=EMBEDDING_DIM,
+            )
+
+            per_chunk = pipeline.search("alpha", self._options(per_chunk=True))
+
+            d1_chunk_ids = {
+                r.chunk_id for r in per_chunk if r.document_id == "d1" and r.chunk_id is not None
+            }
+            assert {"chunk-d1-a", "chunk-d1-b"} <= d1_chunk_ids
+            assert all(r.chunk_matches == 0 for r in per_chunk if r.chunk_id is not None)
+        finally:
+            conn.close()
+
+    def test_multi_variant_default_returns_one_row_per_document(self) -> None:
+        """The default multi-variant page is per-document and carries chunk identity."""
+        conn = self._build_db()
+        try:
+            pipeline = SearchPipeline(
+                conn,
+                embedder=ConceptEmbedder(),
+                query_expander=_VariantExpander(),
+                embedding_dim=EMBEDDING_DIM,
+            )
+
+            results = pipeline.search("alpha", self._options(per_chunk=False))
+
+            ids = [r.document_id for r in results]
+            assert len(ids) == len(set(ids))
+            d1 = next(r for r in results if r.document_id == "d1")
+            assert d1.chunk_id is not None
+            assert d1.chunk_matches >= 2
+        finally:
+            conn.close()
