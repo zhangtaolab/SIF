@@ -5,17 +5,16 @@ milestone_name: Search Precision and Agent Experience
 current_phase: 19
 current_phase_name: Search Correctness
 status: planning
-stopped_at: Phase 18 complete, ready to plan Phase 19
-last_updated: "2026-11-14T16:51:55.328Z"
+stopped_at: Phase 19 context gathered
+last_updated: "2026-11-15T01:09:54.746Z"
 last_activity: 2026-11-15
 last_activity_desc: Phase 18 complete, transitioned to Phase 19
-state_head: 1bb8a1390ff06dbba9cf1dc11c2b5d4d256795ec
+state_head: 7d67ecc5c8fe6200f934e02b10440bf4ee0845bc
 progress:
   total_phases: 8
   completed_phases: 2
   total_plans: 13
   completed_plans: 13
-  percent: 25
 ---
 
 # DocSift — Project State
@@ -147,8 +146,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-14T15:33:22.576Z
-Stopped at: Phase 18 complete, ready to plan Phase 19
-Resume file: None
+Last session: 2026-11-15T01:09:54.452Z
+Stopped at: Phase 19 context gathered
+Resume file: .planning/phases/19-search-correctness/19-CONTEXT.md
 
 - **Next expected action:** run Phase 17 verification (`/gsd-verify-work 17`) to confirm the four ENG success criteria against the shipped state, then mark Phase 17 complete and proceed to Phase 18. Release evidence lives in `17-07-SUMMARY.md`: tag `v1.1.2` on `c819f67`, Publish run `43562577065` attempt 4 (all three jobs success), PyPI JSON `1.1.2` with the `mcp-name` marker, `pypi-attestations` `OK` against `https://github.com/zhangtaolab/SIF`, and both fresh-venv install proofs. Execution order for the rest of v1.2: 17 → 18 → 19 → 20 → 21 → 22 → 23 → 24; hard dependencies and cross-phase contracts in ROADMAP.md.
