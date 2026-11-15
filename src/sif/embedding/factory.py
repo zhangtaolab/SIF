@@ -70,6 +70,8 @@ class EmbeddingModelFactory:
             cache_dir=kwargs.get("cache_dir"),
             max_tokens=kwargs.get("max_tokens"),
             batch_size=kwargs.get("batch_size"),
+            query_prompt_name=kwargs.get("query_prompt_name"),
+            document_prompt_name=kwargs.get("document_prompt_name"),
         )
 
     def _create_openai_model(
@@ -107,4 +109,6 @@ class EmbeddingModelFactory:
             cache_dir=kwargs.get("cache_dir"),
             max_tokens=kwargs.get("max_tokens"),
             batch_size=kwargs.get("batch_size"),
+            query_prompt_name=kwargs.get("query_prompt_name"),
+            document_prompt_name=kwargs.get("document_prompt_name"),
         )

@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import math
+import re
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -14,6 +17,7 @@ from sif.embedding.embedder import (
     ModelScopeEmbedder,
     SentenceTransformerEmbedder,
     SimpleEmbedder,
+    _pooling_mode,
     create_embedder,
 )
 
@@ -797,3 +801,239 @@ class TestModelScopeEmbedder:
 
         mock_downloader = mock_downloader_class.return_value
         mock_downloader.download.assert_called_once_with("test-model", force=True)
+
+
+# =============================================================================
+# Role-aware prompt plumbing (EMB-02, D-06/D-07)
+# =============================================================================
+
+
+class _RecordingModel:
+    """Minimal sentence-transformers double that records every encode call."""
+
+    def __init__(self, dimension: int = 4, prompts: dict[str, str] | None = None) -> None:
+        self.prompts = prompts if prompts is not None else {}
+        self._dim = dimension
+        self.encode_calls: list[tuple[object, dict]] = []
+        self.max_seq_length = 32
+
+    def get_sentence_embedding_dimension(self) -> int:
+        return self._dim
+
+    def encode(self, texts: object, **kwargs: object) -> np.ndarray:
+        self.encode_calls.append((texts, kwargs))
+        if isinstance(texts, str):
+            return np.array([0.1] * self._dim)
+        return np.array([[0.1] * self._dim for _ in texts])
+
+
+class _IndexableModel(_RecordingModel):
+    """ST double exposing the ``model[0].auto_model.config`` revision seam."""
+
+    def __init__(self, commit_hash: str | None = None, **kwargs: object) -> None:
+        super().__init__(**kwargs)
+        self._commit_hash = commit_hash
+
+    def __getitem__(self, index: int) -> object:
+        config = SimpleNamespace(_commit_hash=self._commit_hash)
+        return SimpleNamespace(auto_model=SimpleNamespace(config=config))
+
+
+def _st_embedder(model: object, **kwargs: object) -> SentenceTransformerEmbedder:
+    """Construct a real ST embedder over a fake sentence-transformers model."""
+    st_module = MagicMock()
+    st_module.SentenceTransformer.return_value = model
+    torch_module = MagicMock()
+    torch_module.cuda.is_available.return_value = False
+    mps = MagicMock()
+    mps.is_available.return_value = False
+    torch_module.backends.mps = mps
+    modules = {"sentence_transformers": st_module, "torch": torch_module}
+    with (
+        patch.dict("sys.modules", modules),
+        patch("sif.embedding.embedder.is_quiet", return_value=False),
+    ):
+        return SentenceTransformerEmbedder(**kwargs)
+
+
+def _modelscope_embedder(model: object, **kwargs: object) -> ModelScopeEmbedder:
+    """Construct a real ModelScope embedder over a fake ST model + downloader."""
+    st_module = MagicMock()
+    st_module.SentenceTransformer.return_value = model
+    torch_module = MagicMock()
+    torch_module.cuda.is_available.return_value = False
+    mps = MagicMock()
+    mps.is_available.return_value = False
+    torch_module.backends.mps = mps
+    downloader = MagicMock()
+    downloader.return_value.download.return_value = Path("/tmp/model")
+    modules = {"sentence_transformers": st_module, "torch": torch_module}
+    with patch.dict("sys.modules", modules):
+        with patch("sif.embedding.embedder.ModelDownloader", downloader):
+            with patch("sif.embedding.embedder.is_quiet", return_value=False):
+                return ModelScopeEmbedder(model_id="test-model", **kwargs)
+
+
+class TestRoleAwareEmbedding:
+    def test_no_prompt_single_keeps_legacy_encode_kwargs(self) -> None:
+        model = _RecordingModel()
+        embedder = _st_embedder(model)
+
+        embedder.embed("hello")
+        embedder.embed_query("hello")
+
+        assert model.encode_calls[0] == ("hello", {"normalize_embeddings": True})
+        assert model.encode_calls[1] == ("hello", {"normalize_embeddings": True})
+
+    def test_no_prompt_batch_keeps_legacy_encode_kwargs(self) -> None:
+        model = _RecordingModel()
+        embedder = _st_embedder(model)
+        texts = ["alpha", "beta"]
+        expected = (texts, {"normalize_embeddings": True, "show_progress_bar": False})
+
+        embedder.embed_batch(texts)
+        embedder.embed_queries(texts)
+        embedder.embed_documents(texts)
+
+        assert model.encode_calls == [expected, expected, expected]
+
+    def test_query_prompt_never_leaks_onto_documents(self) -> None:
+        model = _RecordingModel(prompts={"web_search_query": "q: ", "document": "d: "})
+        embedder = _st_embedder(model, query_prompt_name="web_search_query")
+
+        embedder.embed_queries(["a", "b"])
+        embedder.embed_documents(["a", "b"])
+
+        assert model.encode_calls[0][1]["prompt_name"] == "web_search_query"
+        assert "prompt_name" not in model.encode_calls[1][1]
+
+    def test_document_prompt_applies_to_document_role(self) -> None:
+        model = _RecordingModel(prompts={"document": "d: "})
+        embedder = _st_embedder(model, document_prompt_name="document")
+
+        embedder.embed_documents(["a"])
+
+        assert model.encode_calls[0][1]["prompt_name"] == "document"
+
+    def test_prompted_single_never_requests_a_progress_bar(self) -> None:
+        model = _RecordingModel(prompts={"q": "q: "})
+        embedder = _st_embedder(model, query_prompt_name="q")
+
+        embedder.embed_query("hello")
+
+        assert model.encode_calls[0][1]["show_progress_bar"] is False
+        assert model.encode_calls[0][1]["prompt_name"] == "q"
+
+    def test_prompted_batch_preserves_progress_bar_rule(self) -> None:
+        model = _RecordingModel(prompts={"q": "q: "})
+        embedder = _st_embedder(model, query_prompt_name="q")
+
+        embedder.embed_queries(["text"] * 101)
+
+        assert model.encode_calls[0][1]["show_progress_bar"] is True
+
+    def test_prompt_name_properties(self) -> None:
+        embedder = _st_embedder(
+            _RecordingModel(prompts={"q": "q: ", "d": "d: "}),
+            query_prompt_name="q",
+            document_prompt_name="d",
+        )
+        assert embedder.query_prompt_name == "q"
+        assert embedder.document_prompt_name == "d"
+
+    def test_unknown_prompt_raises_with_available_keys(self) -> None:
+        model = _RecordingModel(prompts={"passage": "p: ", "query": "q: "})
+        with pytest.raises(ValueError, match="available prompt names") as excinfo:
+            _st_embedder(model, query_prompt_name="missing")
+        message = str(excinfo.value)
+        assert "missing" in message
+        assert "passage" in message
+        assert "query" in message
+
+    def test_model_without_prompts_raises_explicit_message(self) -> None:
+        model = _RecordingModel(prompts={})
+        with pytest.raises(ValueError, match="exposes no prompts"):
+            _st_embedder(model, document_prompt_name="document")
+
+    def test_modelscope_role_methods_use_prompt(self) -> None:
+        model = _RecordingModel(prompts={"q": "q: "})
+        embedder = _modelscope_embedder(model, query_prompt_name="q")
+
+        embedder.embed_query("hello")
+        embedder.embed_documents(["doc"])
+
+        assert model.encode_calls[0][1]["prompt_name"] == "q"
+        assert "prompt_name" not in model.encode_calls[1][1]
+
+    def test_modelscope_unknown_prompt_raises(self) -> None:
+        model = _RecordingModel(prompts={"q": "q: "})
+        with pytest.raises(ValueError, match="missing"):
+            _modelscope_embedder(model, query_prompt_name="missing")
+
+
+class TestPoolingMode:
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ("lasttoken", "last_token"),
+            ("mean", "mean"),
+            ("cls", "cls"),
+            ("weightedmean", "weightedmean"),
+            (("mean", "max"), "mixed:mean+max"),
+        ],
+    )
+    def test_maps_sentence_transformer_pooling_values(self, raw: object, expected: str) -> None:
+        module = SimpleNamespace(pooling_mode=raw)
+        model = SimpleNamespace(_modules={"0": module})
+        assert _pooling_mode(model) == expected
+
+    def test_absent_pooling_module_is_unknown(self) -> None:
+        assert _pooling_mode(SimpleNamespace(_modules={})) == "unknown"
+        assert _pooling_mode(SimpleNamespace()) == "unknown"
+        assert _pooling_mode(MagicMock()) == "unknown"
+
+    def test_embedder_properties_read_the_loaded_model(self) -> None:
+        module = SimpleNamespace(pooling_mode="lasttoken")
+        model = _IndexableModel(commit_hash="abc123")
+        model._modules = {"0": module}  # type: ignore[attr-defined]
+        embedder = _st_embedder(model)
+        assert embedder.pooling_mode == "last_token"
+        assert embedder.revision == "abc123"
+
+    def test_revision_absent_when_model_exposes_none(self) -> None:
+        assert _st_embedder(_RecordingModel()).revision is None
+        assert _st_embedder(_IndexableModel(commit_hash=None)).revision is None
+
+
+class TestGgufRevision:
+    def _llama_embedder(self, model_path: Path) -> LlamaCppEmbedder:
+        mock_llama = MagicMock()
+        mock_llama.return_value.n_embd.return_value = 2
+        module = MagicMock()
+        module.Llama = mock_llama
+        with patch.dict("sys.modules", {"llama_cpp": module}):
+            with patch("os.cpu_count", return_value=4):
+                return LlamaCppEmbedder(model_path=str(model_path))
+
+    def test_revision_hashes_file_once_and_detects_bytes_change(self, tmp_path: Path) -> None:
+        model_file = tmp_path / "model.gguf"
+        model_file.write_bytes(b"gguf-bytes")
+        embedder = self._llama_embedder(model_file)
+
+        first = embedder.revision
+        assert first is not None
+        assert re.fullmatch(r"sha256:[0-9a-f]{64}", first)
+        assert first == f"sha256:{hashlib.sha256(b'gguf-bytes').hexdigest()}"
+
+        model_file.write_bytes(b"swapped-bytes")
+        assert embedder.revision == first
+        assert self._llama_embedder(model_file).revision != first
+
+    def test_pooling_mode_is_unknown(self, tmp_path: Path) -> None:
+        model_file = tmp_path / "model.gguf"
+        model_file.write_bytes(b"bytes")
+        assert self._llama_embedder(model_file).pooling_mode == "unknown"
+
+    def test_missing_file_has_no_revision(self, tmp_path: Path) -> None:
+        embedder = self._llama_embedder(tmp_path / "absent.gguf")
+        assert embedder.revision is None

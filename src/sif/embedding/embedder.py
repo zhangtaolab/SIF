@@ -25,17 +25,94 @@ _PROGRESS_BAR_THRESHOLD = 100
 _NDIM_TOKEN_LEVEL = 2
 _NDIM_FULLY_WRAPPED_TOKEN_LEVEL = 3
 
+# sentence-transformers names its last-token pooler "lasttoken"; the identity
+# payload uses the readable "last_token" spelling.
+_POOLING_MODE_ALIASES = {
+    "lasttoken": "last_token",
+    "mean": "mean",
+    "cls": "cls",
+    "max": "max",
+    "mean_sqrt_len_tokens": "mean_sqrt_len_tokens",
+    "weightedmean": "weightedmean",
+}
+
+
+def _validate_prompt_names(model: object, names: tuple[str | None, ...]) -> None:
+    """Fail loudly at construction when a configured prompt name is unknown."""
+    prompts = getattr(model, "prompts", None)
+    available = sorted(prompts) if isinstance(prompts, dict) else []
+    for name in names:
+        if name is None:
+            continue
+        if not available:
+            raise ValueError(f"Unknown prompt name '{name}': the model exposes no prompts")
+        if name not in available:
+            raise ValueError(
+                f"Unknown prompt name '{name}': available prompt names are {available}"
+            )
+
+
+def _pooling_label(value: object) -> str | None:
+    """Normalize one ST pooling-mode value to a payload label, or ``None``."""
+    if isinstance(value, str) and value:
+        return _POOLING_MODE_ALIASES.get(value, value)
+    if isinstance(value, (tuple, list)) and value:
+        parts = [_POOLING_MODE_ALIASES.get(str(part), str(part)) for part in value]
+        return "mixed:" + "+".join(parts)
+    return None
+
+
+def _pooling_mode(model: object) -> str:
+    """Inspect the ST submodules for a pooling mode; ``unknown`` when absent."""
+    modules = getattr(model, "_modules", None)
+    candidates: list[object] = list(modules.values()) if isinstance(modules, dict) else []
+    candidates.append(model)
+    for candidate in candidates:
+        label = _pooling_label(getattr(candidate, "pooling_mode", None))
+        if label is not None:
+            return label
+    return "unknown"
+
+
+def _model_revision(model: object) -> str | None:
+    """Read the transformers commit hash exposed by a loaded ST model."""
+    getitem = getattr(model, "__getitem__", None)
+    if getitem is None:
+        return None
+    try:
+        first = getitem(0)
+        auto_model = getattr(first, "auto_model", None)
+        commit_hash = getattr(getattr(auto_model, "config", None), "_commit_hash", None)
+    except (AttributeError, IndexError, KeyError, TypeError):
+        return None
+    return commit_hash if isinstance(commit_hash, str) and commit_hash else None
+
+
+def _file_sha256(path: Path) -> str | None:
+    """Return ``sha256:<hex>`` over a model file, read once in 1 MiB chunks."""
+    digest = hashlib.sha256()
+    try:
+        with open(path, "rb") as model_file:
+            for chunk in iter(lambda: model_file.read(1024 * 1024), b""):
+                digest.update(chunk)
+    except OSError:
+        return None
+    return f"sha256:{digest.hexdigest()}"
+
 
 class SentenceTransformerEmbedder(Embedder):
     """Embedder using sentence-transformers."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         model_name: str = "all-MiniLM-L6-v2",
         device: str | None = None,
         cache_dir: str | None = None,
         max_tokens: int | None = None,
         batch_size: int | None = None,
+        *,
+        query_prompt_name: str | None = None,
+        document_prompt_name: str | None = None,
     ) -> None:
         """Initialize sentence transformer embedder.
 
@@ -45,6 +122,8 @@ class SentenceTransformerEmbedder(Embedder):
             cache_dir: Cache directory for models
             max_tokens: Maximum input tokens (sets the model's max_seq_length)
             batch_size: Batch size for encode calls
+            query_prompt_name: Prompt name applied to query-role encodes only
+            document_prompt_name: Prompt name applied to document-role encodes
         """
         try:
             from sentence_transformers import SentenceTransformer  # noqa: PLC0415
@@ -57,6 +136,8 @@ class SentenceTransformerEmbedder(Embedder):
 
         self.model_name = model_name
         self._batch_size = batch_size
+        self._query_prompt_name = query_prompt_name
+        self._document_prompt_name = document_prompt_name
 
         if device is None:
             import torch  # noqa: PLC0415
@@ -87,6 +168,10 @@ class SentenceTransformerEmbedder(Embedder):
         self._dimension: int = self.model.get_sentence_embedding_dimension()
         if max_tokens is not None:
             self.model.max_seq_length = max_tokens
+        _validate_prompt_names(
+            self.model,
+            (self._query_prompt_name, self._document_prompt_name),
+        )
         logger.info(f"Embedding dimension: {self._dimension}")
 
     def _encode_kwargs(self) -> dict[str, Any]:
@@ -95,6 +180,15 @@ class SentenceTransformerEmbedder(Embedder):
         if self._batch_size is not None:
             kwargs["batch_size"] = self._batch_size
         return kwargs
+
+    def _encode_with_prompt(self, texts: str | list[str], prompt_name: str) -> Any:
+        """Encode with an explicit prompt, preserving the batch progress rule."""
+        return self.model.encode(
+            texts,
+            prompt_name=prompt_name,
+            show_progress_bar=isinstance(texts, list) and len(texts) > _PROGRESS_BAR_THRESHOLD,
+            **self._encode_kwargs(),
+        )
 
     def embed(self, text: str) -> list[float]:
         """Embed a single text.
@@ -125,6 +219,51 @@ class SentenceTransformerEmbedder(Embedder):
         )
         result: list[list[float]] = embeddings.tolist()
         return result
+
+    def embed_query(self, text: str) -> list[float]:
+        """Embed a query; no effective prompt keeps the legacy path verbatim."""
+        if self._query_prompt_name is None:
+            return self.embed(text)
+        result: list[float] = self._encode_with_prompt(text, self._query_prompt_name).tolist()
+        return result
+
+    def embed_queries(self, texts: list[str]) -> list[list[float]]:
+        """Embed query-role texts; no effective prompt keeps the legacy path."""
+        if self._query_prompt_name is None:
+            return self.embed_batch(texts)
+        result: list[list[float]] = self._encode_with_prompt(
+            texts, self._query_prompt_name
+        ).tolist()
+        return result
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        """Embed document-role texts; no effective prompt keeps the legacy path."""
+        if self._document_prompt_name is None:
+            return self.embed_batch(texts)
+        result: list[list[float]] = self._encode_with_prompt(
+            texts, self._document_prompt_name
+        ).tolist()
+        return result
+
+    @property
+    def query_prompt_name(self) -> str | None:
+        """Configured query-role prompt name."""
+        return self._query_prompt_name
+
+    @property
+    def document_prompt_name(self) -> str | None:
+        """Configured document-role prompt name."""
+        return self._document_prompt_name
+
+    @property
+    def pooling_mode(self) -> str:
+        """Best-effort pooling-mode label for the identity record."""
+        return _pooling_mode(self.model)
+
+    @property
+    def revision(self) -> str | None:
+        """Transformers commit hash when the loaded model exposes one."""
+        return _model_revision(self.model)
 
     @property
     def dimension(self) -> int:
@@ -165,6 +304,8 @@ class LlamaCppEmbedder(Embedder):
             raise
 
         self.model_path = Path(model_path)
+        self._revision: str | None = None
+        self._revision_computed = False
 
         if n_threads is None:
             import os  # noqa: PLC0415
@@ -300,6 +441,19 @@ class LlamaCppEmbedder(Embedder):
         return result
 
     @property
+    def revision(self) -> str | None:
+        """Content hash of the resolved GGUF file, computed once per instance."""
+        if not self._revision_computed:
+            self._revision = _file_sha256(self.model_path)
+            self._revision_computed = True
+        return self._revision
+
+    @property
+    def pooling_mode(self) -> str:
+        """GGUF pooling is model-defined and not exposed; record unknown."""
+        return "unknown"
+
+    @property
     def dimension(self) -> int:
         """Get embedding dimension."""
         return self._dimension
@@ -316,6 +470,9 @@ class ModelScopeEmbedder(Embedder):
         force_download: bool = False,
         max_tokens: int | None = None,
         batch_size: int | None = None,
+        *,
+        query_prompt_name: str | None = None,
+        document_prompt_name: str | None = None,
     ) -> None:
         """Initialize ModelScope embedder.
 
@@ -326,6 +483,8 @@ class ModelScopeEmbedder(Embedder):
             force_download: Force re-download
             max_tokens: Maximum input tokens (sets the model's max_seq_length)
             batch_size: Batch size for encode calls
+            query_prompt_name: Prompt name applied to query-role encodes only
+            document_prompt_name: Prompt name applied to document-role encodes
         """
         # Download model from ModelScope
         downloader = ModelDownloader(cache_dir)
@@ -373,8 +532,14 @@ class ModelScopeEmbedder(Embedder):
         self._dimension: int = self.model.get_sentence_embedding_dimension()
         self.model_id = model_id
         self._batch_size = batch_size
+        self._query_prompt_name = query_prompt_name
+        self._document_prompt_name = document_prompt_name
         if max_tokens is not None:
             self.model.max_seq_length = max_tokens
+        _validate_prompt_names(
+            self.model,
+            (self._query_prompt_name, self._document_prompt_name),
+        )
         logger.info(f"Embedding dimension: {self._dimension}")
 
     def _encode_kwargs(self) -> dict[str, Any]:
@@ -383,6 +548,15 @@ class ModelScopeEmbedder(Embedder):
         if self._batch_size is not None:
             kwargs["batch_size"] = self._batch_size
         return kwargs
+
+    def _encode_with_prompt(self, texts: str | list[str], prompt_name: str) -> Any:
+        """Encode with an explicit prompt, preserving the batch progress rule."""
+        return self.model.encode(
+            texts,
+            prompt_name=prompt_name,
+            show_progress_bar=isinstance(texts, list) and len(texts) > _PROGRESS_BAR_THRESHOLD,
+            **self._encode_kwargs(),
+        )
 
     def embed(self, text: str) -> list[float]:
         """Embed a single text."""
@@ -399,6 +573,51 @@ class ModelScopeEmbedder(Embedder):
         )
         result: list[list[float]] = embeddings.tolist()
         return result
+
+    def embed_query(self, text: str) -> list[float]:
+        """Embed a query; no effective prompt keeps the legacy path verbatim."""
+        if self._query_prompt_name is None:
+            return self.embed(text)
+        result: list[float] = self._encode_with_prompt(text, self._query_prompt_name).tolist()
+        return result
+
+    def embed_queries(self, texts: list[str]) -> list[list[float]]:
+        """Embed query-role texts; no effective prompt keeps the legacy path."""
+        if self._query_prompt_name is None:
+            return self.embed_batch(texts)
+        result: list[list[float]] = self._encode_with_prompt(
+            texts, self._query_prompt_name
+        ).tolist()
+        return result
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        """Embed document-role texts; no effective prompt keeps the legacy path."""
+        if self._document_prompt_name is None:
+            return self.embed_batch(texts)
+        result: list[list[float]] = self._encode_with_prompt(
+            texts, self._document_prompt_name
+        ).tolist()
+        return result
+
+    @property
+    def query_prompt_name(self) -> str | None:
+        """Configured query-role prompt name."""
+        return self._query_prompt_name
+
+    @property
+    def document_prompt_name(self) -> str | None:
+        """Configured document-role prompt name."""
+        return self._document_prompt_name
+
+    @property
+    def pooling_mode(self) -> str:
+        """Best-effort pooling-mode label for the identity record."""
+        return _pooling_mode(self.model)
+
+    @property
+    def revision(self) -> str | None:
+        """Transformers commit hash when the loaded model exposes one."""
+        return _model_revision(self.model)
 
     @property
     def dimension(self) -> int:
@@ -571,6 +790,11 @@ class OpenAIEmbedder(Embedder):
             arr = arr / norm
         result: list[float] = arr.tolist()
         return result
+
+    @property
+    def pooling_mode(self) -> str:
+        """Remote endpoints do not expose pooling; record unknown."""
+        return "unknown"
 
     @property
     def dimension(self) -> int:
