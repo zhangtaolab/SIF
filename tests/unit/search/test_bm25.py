@@ -611,7 +611,7 @@ class TestWeightedBM25:
             conn.close()
 
     def test_default_title_weight_resolves_to_module_constant(self) -> None:
-        """None, an explicit 1.0, and the module constant all agree."""
+        """The pinned constant, None, and an explicit 1.0 all agree."""
         conn = _build_title_body_db()
         try:
             searcher = BM25Searcher(conn)
@@ -639,6 +639,18 @@ class TestWeightedBM25:
             assert [(r.document_id, r.score) for r in explicit_constant] == key
         finally:
             conn.close()
+
+    def test_pinned_title_weight_is_the_measured_d12_value(self) -> None:
+        """D-12 rejected the 2-4x band against B1, so the shipped value is 1.0.
+
+        The 19-09 sweep graded 2.0/3.0/4.0 through ``compare_saved_run`` on
+        B1's exact saved query set: the held-out title leg was already at its
+        bare ``rank`` ceiling (no rank moved) and the body held-out leg stayed
+        flat, so no candidate met the strict per-leg gate. Changing this
+        constant requires a new recorded verdict, never a source-only edit.
+        """
+        assert _CONTENT_WEIGHT == 1.0
+        assert _TITLE_WEIGHT == 1.0
 
     def test_min_score_thresholds_the_weighted_expression_before_pagination(self) -> None:
         """The same threshold separates the weighted ranks differently per weight."""

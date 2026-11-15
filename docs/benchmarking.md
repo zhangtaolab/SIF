@@ -224,6 +224,38 @@ The committed held-out snapshot (`tests/fixtures/bench/heldout_defaults.json`) w
 
 The regenerated SC1 hybrid golden (`tests/unit/search/test_hybrid.py::TestHybridSC1PipelineGolden`) records the other half of the evidence: its old→new `bm25_score`/`rrf_score` values are byte-identical (d3 `0.9999989753435158` / `0.03252247488101534`; d1 `0.9999990673325406` / `0.031754032258064516`), proving the vector/hybrid scoring math did not move while the result contract gained `chunk_id`/`sequence`/`chunk_matches`. The behavioral dedup evidence is the chunky-document regression in `tests/integration/test_search_correctness.py`: a six-chunk document can no longer starve a `limit=10` default page below ten distinct documents, and its six chunk rows are individually addressable under `--per-chunk`.
 
+## CORR-04 Title-Aware Ranking
+
+CORR-04 made titles a first-class lexical signal. `documents_fts` gained a `title` column, the three document triggers carry `(rowid, content, title)`, and a detect-and-rebuild migration upgrades any pre-title index in place: `SchemaManager._fts_column_names()` parses the stored DDL, the vocab shadow is dropped before the FTS table, the two-column table is recreated, one FTS5 `'rebuild'` populates it, and only then are the vocab and triggers recreated. A fresh database gets the two-column DDL directly. BM25 binds `bm25(documents_fts, content_weight, title_weight)` with both weights as parameters; at 1.0/1.0 the weighted expression reproduces the old `rank` column exactly.
+
+The one-time schema initialization now also runs at `SearchBackend` construction, using the backend's own settings dimension, so an MCP-only host (no CLI command, no watch) migrates the title column and the new `idx_documents_mtime` index on startup. `Database.init_schema(embedding_dim=...)` is the override the backend uses; a dimension mismatch still raises the existing clear `RuntimeError` instead of rebuilding at the wrong width.
+
+The weight itself stays an internal constant (D-11): there is no `SIF_TITLE_WEIGHT` setting and no CLI flag. `SearchOptions.title_weight` exists only as the measurement override.
+
+### D-12 title-weight sweep against B1
+
+The 2–4× band was graded against B1's exact saved query set (100 known-item queries, `top_k=10`, `--bm25-only`, corpus fingerprint `8c006123784348d1`) through the real `compare_saved_run` path. The scratch index was first opened through `Database(...).init_schema()` — the same migration the MCP host now runs — and a pre-sweep guard aborts unless the stored `documents_fts` SQL has a `title` column; a one-column table silently ignores the extra `bm25()` weight and would record a false rejection at 1.0.
+
+The D-12 gate reads each leg's held-out split: the title/known-item leg must be a winner under the Phase 18 noise gate, and the body held-out leg's rounded mean delta must not fall below −0.01.
+
+| Title weight | Title held-out N | Title baseline → current nDCG@10 | Title mean delta | Title winner | Body held-out N | Body baseline → current nDCG@10 | Body mean delta | Body regression |
+|---|---|---|---|---|---|---|---|---|
+| 2.0 | 23 | 1.0 → 1.0 | 0.0 | no | 26 | 0.900634933653854 → 0.900634933653854 | 0.0 | no |
+| 3.0 | 23 | 1.0 → 1.0 | 0.0 | no | 26 | 0.900634933653854 → 0.900634933653854 | 0.0 | no |
+| 4.0 | 23 | 1.0 → 1.0 | 0.0 | no | 26 | 0.900634933653854 → 0.900634933653854 | 0.0 | no |
+
+Every candidate produced 0 helped / 0 hurt and all queries unchanged, with 95% CI `[0.0, 0.0]` on both legs. The weighted scores do shift (for example a title query's top score moves `0.105703 → 0.0957` at weight 4.0), but no held-out rank moved: the title leg's baseline was already the bare `rank` ceiling of 1.0, and weighting titles cannot improve a perfect ranking. D-12 therefore **rejected the band with numbers** rather than claiming a win inside noise, and `_TITLE_WEIGHT` stays pinned at 1.0. `bench/d12-verdict.json` records every candidate's `GateResult` fields plus the accept/reject decision.
+
+`--compare` now reports the per-leg and per-leg×split gates directly (`legs`, `leg_splits` in JSON; per-leg and compact leg × split tables in the text output); `warrants_default_change` remains only the held-out summary gate.
+
+### Goldens at the pinned weight
+
+Because the pinned value is 1.0, the committed held-out snapshot and the SC1 hybrid golden are unchanged from the title-column values recorded for Plan 08; their rationale/docstring now records the D-12 rejection. A future weight change must regenerate them (and record a new verdict), not just edit the constant.
+
+### CJK scope and duplication caveat
+
+The title-FTS claim is scoped to tokenized EN-style titles: FTS5's porter tokenizer treats contiguous CJK runs as single tokens, so no Chinese lexical title win is claimed or tested here; the ZH story remains the vector leg (research Pitfall 17). All 150 documents in the fixture corpus have an H1 identical to their title, so title text is indexed in both the content and title columns; that duplication (research Pitfall 16) is recorded rather than silently stripped, and Phase 24 QUAL-03 owns the title-breadcrumb experiment.
+
 ## Rerank States
 
 Reranking is **explicit opt-in and defaults off**: pass `--rerank` or set `SIF_RERANK_ENABLED=1`. The off path never constructs a reranker model (zero-cost by construction).

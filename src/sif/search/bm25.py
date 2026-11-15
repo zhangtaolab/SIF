@@ -16,7 +16,10 @@ _SNIPPET_MAX_LEN = 200
 # constants are bound as the bm25(documents_fts, ?, ?) parameters. At 1.0/1.0
 # the weighted expression reproduces the unweighted `rank` column exactly.
 # The title weight stays an internal constant — deliberately not a setting or
-# a CLI flag — and Plan 19-09's measured sweep pins the accepted value here.
+# a CLI flag. Plan 19-09's D-12 sweep measured 2.0/3.0/4.0 against B1 and
+# rejected the band: the held-out title leg was already at its 1.0 ceiling and
+# no candidate's ranks moved, so the pinned value stays 1.0. The evidence is
+# .planning/phases/19-search-correctness/bench/d12-verdict.json.
 _CONTENT_WEIGHT = 1.0
 _TITLE_WEIGHT = 1.0
 

@@ -734,6 +734,14 @@ class TestHybridSC1PipelineGolden:
     unchanged (title text repeats the body terms on these documents). The
     post-title-column values below are the new pinned contract; later
     weight changes (19-09) regenerate them again with their own rationale.
+
+    D-12 outcome (19-09, 2026-11-15): the measured 2.0/3.0/4.0 title-weight
+    candidates were rejected against B1 — the held-out title leg was already
+    at its 1.0 ceiling and the body held-out leg did not move — so the pinned
+    ``_TITLE_WEIGHT`` stays 1.0. This snapshot is therefore unchanged from the
+    title-column values above; the verdict and per-candidate GateResult
+    fields live in
+    ``.planning/phases/19-search-correctness/bench/d12-verdict.json``.
     """
 
     SNAPSHOT: ClassVar[list[dict[str, object]]] = [

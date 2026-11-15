@@ -33,6 +33,15 @@ rationale records the identical values); the SC1 golden's two BM25-bearing
 rows moved while their ordering and RRF scores did not. Every document in this
 fixture corpus has an H1 identical to its title, so title text is indexed in
 both columns — the research Pitfall 16 duplication that Phase 24 QUAL-03 owns.
+
+D-12 title-weight outcome (19-09, 2026-11-15): the measured 2.0/3.0/4.0
+candidates were rejected against B1, so ``_TITLE_WEIGHT`` stays 1.0 and these
+metrics are unchanged. The held-out title leg was already at its 1.0 ceiling
+and the body held-out leg did not move; the per-candidate GateResult fields
+and the accept/reject decision are committed in
+``.planning/phases/19-search-correctness/bench/d12-verdict.json``. A future
+weight change must regenerate this snapshot (and record a new verdict) rather
+than editing the constant alone.
 """
 
 from __future__ import annotations
