@@ -314,6 +314,24 @@ class TestSchemaRealSQLiteCoverage:
         finally:
             conn.close()
 
+    def test_fresh_schema_creates_two_column_documents_fts(self):
+        """CORR-04: fresh databases create the title-carrying FTS directly."""
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            SchemaManager(conn, embedding_dim=384).create_all()
+            sql = conn.execute(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='documents_fts'"
+            ).fetchone()[0]
+            column_clause = sql.split("USING fts5(", 1)[1].split("content=", 1)[0]
+            column_names = [
+                part.strip().strip("'\"") for part in column_clause.split(",") if part.strip()
+            ]
+            assert column_names == ["content", "title"]
+            assert "content='documents'" in sql
+        finally:
+            conn.close()
+
     def test_misconfigured_fts_tables_are_rebuilt_and_seeded(self):
         """Legacy FTS definitions are replaced and their existing content is reindexed."""
         conn = sqlite3.connect(":memory:")
