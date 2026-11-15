@@ -185,7 +185,26 @@ Full detail: `.planning/milestones/v1.1-ROADMAP.md`
   3. User can embed large corpora without giant transactions — streaming embed batches run outside transactions with short per-batch commits, resumable, CR-02 failure reporting preserved, batch-boundary sanity against garbage vectors
   4. User is protected from silent bad model swaps — persisted `index_meta` embedder identity (model id + revision/hash + pooling + prompt scheme, reusing the cache's `_cache_model_id` format); the 3 dim-guard sites consolidated; legacy DBs get warn-once + backfill; mismatch → fail-fast embed / warn+mark search
   5. User gets correct query-vs-document embeddings — role-aware embed surface with `prompt_name`, prompt dimension in the cache key; the Qwen3 default path stays byte-identical until the Harrier gate passes
-**Plans**: TBD
+**Plans:** 7 plans (0/7 complete)
+
+**Wave 1** *(no dependencies — 21-01 and 21-02 are file-disjoint)*
+- [ ] 21-01-PLAN.md — Tracer: identity record round-trip through `index_meta` (build/persist/compare) + prompt scheme + role methods + prompt/revision cache buckets, default Qwen3 byte-identical
+- [ ] 21-02-PLAN.md — Tracer: `embedded_documents` shadow write/read end-to-end, then DDL/backfill marker/reconcile helper, staleness and status bounded with byte-identical output
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 21-03-PLAN.md — Contexts normalized-map cache with repository write generation + `PRAGMA data_version` invalidation; `vectors_untrusted` enrichment seam
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 21-04-PLAN.md — Tracer: same-dimension swap warns once + marks results on `sif query`; dimension-guard consolidation, legacy-assumed identity at open, vsearch/bench/eval/MCP policies
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 21-05-PLAN.md — Tracer: per-document streaming embed (embed outside transactions), batch sanity, failure taxonomy/CR-02 report, identity certification, watcher routing
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [ ] 21-06-PLAN.md — Tracer: `sif index vacuum` (flock/checkpoint/2× disk/retryable); `sif index backup` online-API copy + integrity_check; cleanup reconcile; generated docs
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [ ] 21-07-PLAN.md — Phase gate: byte-identical baseline + legacy→assumed→verified lifecycle, failure/concurrency matrix, architecture docs, full quality suite
 
 ### Phase 22: MCP SDK v2 Modernization + Agent Packaging
 **Goal**: SIF's MCP server runs on the official SDK v2 serving every client era, with accurate annotations, citation-grade structured output, full query-pipeline parity, and agent-native distribution (Claude Code plugin + MCP Registry).
