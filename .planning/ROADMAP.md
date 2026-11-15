@@ -226,7 +226,7 @@ Full detail: `.planning/milestones/v1.1-ROADMAP.md`
 v1.2 contracts — defined ONCE; downstream phases consume, never redefine:
 
 - **Embedder identity + role-aware embed** — defined in Phase 21 (EMB-01/02: `index_meta` identity reusing the cache's `_cache_model_id` format; `prompt_name` embed surface with the prompt dimension in the cache key). Consumed by Phase 22 (lazy embedder / MCP query path) and Phase 23 (Harrier arms). The Qwen3 default path is byte-identical until the Phase 23 gate passes.
-- **`metadata` tool schema** — defined in Phase 20 (FILT-05: doc counts, numeric min/median/max, exact remainders; one shared validator; ToolError on invalid input). Surfaced unchanged by Phase 22's SDK v2 tool layer.
+- **`metadata` tool schema** — defined in Phase 20 (FILT-05: doc counts, numeric min/median/max, exact remainders, and the reserved built-in `path`/`mtime` entries in a separate `builtIns` list per D-03/D-20; one shared validator; ToolError on invalid input). Surfaced unchanged by Phase 22's SDK v2 tool layer.
 - **docs-generate gate** — every phase adding CLI commands or Settings fields (18, 19, 20, 21, 22, 24) regenerates the generator-owned docs (`make docs-generate`) and passes the CI diff gate; `docs/cli-reference.md` and `docs/configuration.md` are never hand-edited.
 - **Ranking-contract evidence** — Phase 19 dedup/pagination/title changes and Phase 24 tuning record bench before/after on the Phase 18 instrument; shipped defaults move only through held-out gates (0.01 tie rule), and rejections are recorded with numbers.
 
