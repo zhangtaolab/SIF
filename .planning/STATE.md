@@ -5,16 +5,16 @@ milestone_name: Search Precision and Agent Experience
 current_phase: 19
 current_phase_name: Search Correctness
 status: executing
-stopped_at: Phase 19 context gathered
-last_updated: "2026-11-15T02:38:26.118Z"
+stopped_at: Completed 19-01-PLAN.md
+last_updated: "2026-11-15T02:50:54.519Z"
 last_activity: 2026-11-15
-last_activity_desc: Phase 18 complete, transitioned to Phase 19
-state_head: 053fe6e081cd685b9e273b5d82ecf2282112fbb6
+last_activity_desc: Phase 19 execution started
+state_head: 570a3a7093eb6b8c05d970bf1f5f06a5b6a0b27d
 progress:
   total_phases: 8
   completed_phases: 2
   total_plans: 22
-  completed_plans: 13
+  completed_plans: 14
 ---
 
 # DocSift — Project State
@@ -30,10 +30,10 @@ progress:
 
 ## Current Position
 
-Phase: 19 (Search Correctness) — READY TO EXECUTE
-Plan: Not started
+Phase: 19 (Search Correctness) — EXECUTING
+Plan: 2 of 9
 Status: Ready to execute
-Last activity: 2026-11-15 — Phase 18 complete, transitioned to Phase 19
+Last activity: 2026-11-15 — Phase 19 execution started
 
 Progress: [███░░░░░░░] 25%
 
@@ -62,6 +62,7 @@ Progress: [███░░░░░░░] 25%
 | Phase 18 P02 | 13min | 3 tasks | 6 files |
 | Phase 18 P04 | 8min | 3 tasks | 5 files |
 | Phase 18 P03 | 12min | 3 tasks | 7 files |
+| Phase 19 P01 | 9min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -117,6 +118,9 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - [Phase 18]: 18-03: --compare evaluates exactly the saved query set in saved order at saved.top_k with no synthesis, refuses a corpus-fingerprint mismatch naming both values, resolves targets id-first with a unique-path fallback, and grades both arms through document id (first-occurrence dedupe) so baseline nDCG@10 cannot exceed 1.0.
 - [Phase 18]: 18-03: the noise gate is a seeded 10,000-resample percentile bootstrap; a winner needs a CI excluding zero AND round(mean_delta,6) >= 0.01, the report carries N/1/N/helped-hurt-unchanged, groups <10 are suppressed and named, and only the held-out summary gate sets warrants_default_change.
 - [Phase 18]: 18-03: replay stability is Jaccard@10 + top-1 against the saved snapshot or available:false with a reason; comparison tables label tuning/per-group rows diagnostic and keep suppressed names and replay-unavailable notices on stderr.
+- [Phase 19]: 19-01: D-08 checksum = body bytes + NUL + canonical JSON of ALL frontmatter (sort_keys, default=str, ensure_ascii=False, compact separators); recursive mapping-key coercion makes the serializer total because default=str covers values only
+- [Phase 19]: 19-01: one canonical serializer serves both documents.metadata storage and the checksum input, so YAML dates persist as ISO text (latent TypeError fixed) and hashed/stored forms agree across the JSON round trip
+- [Phase 19]: 19-01: IncrementalIndexer selects create_parser(file_path) or TextParser() per file and stores parsed.checksum on create; create_parser keeps its None-for-unmapped-suffix contract
 
 ### Pending Todos
 
@@ -146,8 +150,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-15T01:09:54.452Z
-Stopped at: Phase 19 context gathered
-Resume file: .planning/phases/19-search-correctness/19-CONTEXT.md
+Last session: 2026-11-15T02:50:46.601Z
+Stopped at: Completed 19-01-PLAN.md
+Resume file: None
 
 - **Next expected action:** run Phase 17 verification (`/gsd-verify-work 17`) to confirm the four ENG success criteria against the shipped state, then mark Phase 17 complete and proceed to Phase 18. Release evidence lives in `17-07-SUMMARY.md`: tag `v1.1.2` on `c819f67`, Publish run `43562577065` attempt 4 (all three jobs success), PyPI JSON `1.1.2` with the `mcp-name` marker, `pypi-attestations` `OK` against `https://github.com/zhangtaolab/SIF`, and both fresh-venv install proofs. Execution order for the rest of v1.2: 17 → 18 → 19 → 20 → 21 → 22 → 23 → 24; hard dependencies and cross-phase contracts in ROADMAP.md.
