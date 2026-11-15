@@ -724,6 +724,16 @@ class TestHybridSC1PipelineGolden:
     identity through the RRF metadata merge. Both the implicit defaults and
     the explicit ``SearchOptions(rrf_k=60, bm25_weight=1.0, vector_weight=1.0)``
     must reproduce it field-for-field.
+
+    CORR-04 title-column baseline (2026-11-15): the documents FTS index gained
+    a ``title`` column and BM25 now binds equal 1.0/1.0 column weights, so
+    title terms participate in lexical matching at the same weight as body
+    terms. On this fixture only the two BM25-bearing rows moved
+    (d3 0.9999989753435158 -> 0.9999986250018905, d1 0.9999990673325406 ->
+    0.9999986865688892); the ranking, RRF scores, and vector scores are
+    unchanged (title text repeats the body terms on these documents). The
+    post-title-column values below are the new pinned contract; later
+    weight changes (19-09) regenerate them again with their own rationale.
     """
 
     SNAPSHOT: ClassVar[list[dict[str, object]]] = [
@@ -737,7 +747,7 @@ class TestHybridSC1PipelineGolden:
             "highlights": ["apple quantum entangled fruit"],
             "rank": 1,
             "scores": {
-                "bm25_score": 0.9999989753435158,
+                "bm25_score": 0.9999986250018905,
                 "vector_score": 0.6464466154575348,
                 "rrf_score": 0.03252247488101534,
             },
@@ -758,7 +768,7 @@ class TestHybridSC1PipelineGolden:
             "highlights": ["apple pie recipe sweet dessert"],
             "rank": 2,
             "scores": {
-                "bm25_score": 0.9999990673325406,
+                "bm25_score": 0.9999986865688892,
                 "vector_score": 0.39792025089263916,
                 "rrf_score": 0.031754032258064516,
             },

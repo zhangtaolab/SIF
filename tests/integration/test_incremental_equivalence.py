@@ -145,6 +145,26 @@ class _Snapshot:
         return all(seqs == list(range(len(seqs))) for seqs in self.chunks_by_path.values())
 
 
+def _title_match_counts(db_path: Path, tokens: list[str]) -> dict[str, int]:
+    """Count title-column-only matches through a fresh connection.
+
+    FTS5 column filters (``title:"token"``) isolate the indexed title column,
+    so an edit can prove the old title left the index while the body still
+    matches the same term in the content column (CORR-04 title-FTS contract).
+    """
+    conn = sqlite3.connect(str(db_path))
+    try:
+        return {
+            token: conn.execute(
+                "SELECT COUNT(*) FROM documents_fts WHERE documents_fts MATCH ?",
+                (f'title:"{token}"',),
+            ).fetchone()[0]
+            for token in tokens
+        }
+    finally:
+        conn.close()
+
+
 class TestIncrementalEquivalence:
     """SC3: identical index state and CLI counts through the extracted core."""
 
@@ -247,10 +267,16 @@ class TestIncrementalEquivalence:
         alpha = root / "alpha.md"
         alpha_path = str(alpha)
         assert snap1.chunks_by_path[alpha_path] == [0, 1]
+        # Title-column state before the edit: the H1-derived title matches,
+        # and the new title does not exist anywhere yet.
+        assert _title_match_counts(db_path, ["alpha", "renamed"]) == {
+            "alpha": 1,
+            "renamed": 0,
+        }
 
         # Frontmatter-only edit: frontmatter changes, parsed body identical.
         alpha.write_text(
-            "---\ntitle: Renamed Alpha\ntags: [fresh]\n---\n" + ALPHA_BODY,
+            "---\ntitle: Renamed Entry\ntags: [fresh]\n---\n" + ALPHA_BODY,
             encoding="utf-8",
         )
 
@@ -261,9 +287,17 @@ class TestIncrementalEquivalence:
         assert "Removed: 0" in result.output
 
         snap2 = _Snapshot(db_path)
-        assert snap2.documents[alpha_path]["title"] == "Renamed Alpha"
+        assert snap2.documents[alpha_path]["title"] == "Renamed Entry"
         assert snap2.documents[alpha_path]["checksum"] != snap1.documents[alpha_path]["checksum"]
         assert snap2.documents[alpha_path]["content"] == snap1.documents[alpha_path]["content"]
+        # CORR-04: the documents_fts UPDATE trigger moved the title column —
+        # the old title is no longer title-matchable and the new one is —
+        # while the unchanged body still matches the old body terms.
+        assert _title_match_counts(db_path, ["alpha", "renamed"]) == {
+            "alpha": 0,
+            "renamed": 1,
+        }
+        assert snap2.fts_match_counts["alpha"] == 1
         # The simulated embed pass's chunk set survived the metadata-only
         # edit; every other document is untouched.
         assert snap2.chunks_by_path[alpha_path] == [0, 1]

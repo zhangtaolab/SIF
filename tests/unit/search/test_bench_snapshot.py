@@ -25,6 +25,14 @@ hybrid golden (byte-identical bm25_score/rrf_score values) plus the
 chunky-document integration regression in
 ``tests/integration/test_search_correctness.py``; the ``--bm25-only`` saved
 runs are the BM25 no-drift check, not dedup evidence.
+
+Title-column provenance (CORR-04, 2026-11-15): ``documents_fts`` gained a
+``title`` column and BM25 binds equal 1.0/1.0 content/title weights. Held-out
+metrics were recomputed through this same harness and did not move (the
+rationale records the identical values); the SC1 golden's two BM25-bearing
+rows moved while their ordering and RRF scores did not. Every document in this
+fixture corpus has an H1 identical to its title, so title text is indexed in
+both columns — the research Pitfall 16 duplication that Phase 24 QUAL-03 owns.
 """
 
 from __future__ import annotations
