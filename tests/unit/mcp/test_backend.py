@@ -1374,3 +1374,260 @@ class TestFilterThroughBackend:
 
         options = mock_pipeline.return_value.search.call_args[0][1]
         assert options.filter is None
+
+
+def _seed_metadata_rows(db_path: Path) -> None:
+    """Seed a collection and three typed-row documents on the backend's schema."""
+    from sif.core.models import Collection, Document as CoreDocument
+    from sif.database.connection import DatabaseConnection
+    from sif.database.repositories import CollectionRepository, DocumentRepository
+
+    with DatabaseConnection(db_path).transaction() as conn:
+        CollectionRepository(conn).create(Collection(id="c1", name="notes", path="/notes"))
+        repo = DocumentRepository(conn)
+        repo.create(
+            CoreDocument(
+                id="d0",
+                collection_id="c1",
+                path="/notes/a.md",
+                content="body",
+                mtime=100.0,
+                metadata={"tag": "rare", "priority": 1},
+            )
+        )
+        repo.create(
+            CoreDocument(
+                id="d1",
+                collection_id="c1",
+                path="/notes/b.md",
+                content="body",
+                mtime=200.0,
+                metadata={"tag": "common", "priority": 2},
+            )
+        )
+        repo.create(
+            CoreDocument(
+                id="d2",
+                collection_id="c1",
+                path="/notes/c.md",
+                content="body",
+                mtime=300.0,
+                metadata={"tag": "common"},
+            )
+        )
+
+
+class TestMetadataInputValidation:
+    """D-15: the discovery input model enforces its documented ranges."""
+
+    def test_defaults_match_the_documented_contract(self) -> None:
+        """Every optional input defaults exactly as the tool schema advertises."""
+        from sif.mcp.protocol import MetadataInput
+
+        data = MetadataInput()
+        assert data.collections is None
+        assert data.filter is None
+        assert data.match is None
+        assert data.min_count == 1
+        assert data.sort == "count"
+        assert data.limit == 50
+        assert data.value_limit == 10
+
+    @pytest.mark.parametrize(
+        ("payload", "field"),
+        [
+            ({"limit": 0}, "limit"),
+            ({"min_count": 0}, "min_count"),
+            ({"value_limit": -1}, "value_limit"),
+            ({"sort": "name"}, "sort"),
+        ],
+    )
+    def test_rejects_out_of_range_inputs(self, payload: dict, field: str) -> None:
+        """Model-layer validation rejects the invalid window and sort values."""
+        from sif.mcp.protocol import MetadataInput
+
+        with pytest.raises(ValidationError, match=field):
+            MetadataInput(**payload)
+
+
+class TestMetadataToolHandlerSchema:
+    """The hand-written input schema stays in sync with MetadataInput (Pitfall 12)."""
+
+    def test_schema_declares_all_seven_properties_in_sync(self) -> None:
+        """Every model field is advertised, with matching defaults."""
+        from sif.mcp.handlers import MetadataToolHandler
+        from sif.mcp.protocol import MetadataInput
+
+        props = MetadataToolHandler.input_schema["properties"]
+        assert set(props) == set(MetadataInput.model_fields)
+        model = MetadataInput()
+        assert props["min_count"]["default"] == model.min_count
+        assert props["sort"]["default"] == model.sort
+        assert props["sort"]["enum"] == ["count", "value"]
+        assert props["limit"]["default"] == model.limit
+        assert props["value_limit"]["default"] == model.value_limit
+
+    def test_create_default_tools_registers_metadata(self) -> None:
+        """create_default_tools advertises the metadata tool alongside the four."""
+        from sif.mcp.handlers import create_default_tools
+
+        names = {handler.name for handler in create_default_tools()}
+        assert names == {"query", "get", "multi_get", "status", "metadata"}
+
+
+class TestMetadataToolHandler:
+    """The metadata handler returns the frozen D-15/D-20 envelope (Phase 22 contract)."""
+
+    @pytest.mark.asyncio
+    async def test_valid_call_returns_envelope_with_exact_remainders(self, backend) -> None:
+        """Windows, remainders, and the built-in section travel in one JSON text item."""
+        from sif.mcp.handlers import MetadataToolHandler
+
+        _seed_metadata_rows(Path(backend.db_path))
+        result = await MetadataToolHandler().handle({"limit": 1, "value_limit": 1}, backend)
+
+        assert result.isError is False
+        payload = json.loads(result.content[0].text)
+        assert payload["documents"] == 3
+        assert "filteredDocuments" not in payload
+        assert payload["totalKeys"] == 2
+        assert payload["remainingKeys"] == 1
+        assert [entry["key"] for entry in payload["builtIns"]] == ["path", "mtime"]
+        assert [entry["documents"] for entry in payload["builtIns"]] == [3, 3]
+        assert payload["builtIns"][1]["types"][0]["range"] == {
+            "min": 100.0,
+            "median": 200.0,
+            "max": 300.0,
+        }
+        assert [entry["key"] for entry in payload["keys"]] == ["tag"]
+        tag_type = payload["keys"][0]["types"][0]
+        assert len(tag_type["values"]) == 1
+        assert tag_type["distinctValues"] == 2
+        assert tag_type["remainingValues"] == 1
+
+    @pytest.mark.asyncio
+    async def test_filtered_call_includes_filtered_documents(self, backend) -> None:
+        """A filter adds ``filteredDocuments`` and narrows the built-in counts."""
+        from sif.mcp.handlers import MetadataToolHandler
+
+        _seed_metadata_rows(Path(backend.db_path))
+        result = await MetadataToolHandler().handle(
+            {"filter": {"field": "tag", "operator": "eq", "value": "common"}}, backend
+        )
+
+        payload = json.loads(result.content[0].text)
+        assert payload["documents"] == 3
+        assert payload["filteredDocuments"] == 2
+        assert [entry["documents"] for entry in payload["builtIns"]] == [2, 2]
+
+    @pytest.mark.asyncio
+    async def test_match_only_call_omits_filtered_documents(self, backend) -> None:
+        """A match-only call must pass ``None`` (never the empty fragment) as the filter."""
+        from sif.mcp.handlers import MetadataToolHandler
+
+        _seed_metadata_rows(Path(backend.db_path))
+        result = await MetadataToolHandler().handle(
+            {"match": {"field": "key", "operator": "prefix", "value": "ta"}}, backend
+        )
+
+        payload = json.loads(result.content[0].text)
+        assert "filteredDocuments" not in payload
+        assert [entry["key"] for entry in payload["keys"]] == ["tag"]
+        assert payload["documents"] == 3
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {"filter": {"field": "tags", "operator": "gt", "value": "x"}},
+            {"match": {"field": "nope", "operator": "eq", "value": "x"}},
+            {"filter": {"field": "tag", "operator": "nope", "value": "x"}},
+        ],
+    )
+    async def test_invalid_filter_or_match_is_a_tool_error(self, backend, payload) -> None:
+        """Grammar violations are controlled isError results, not exceptions."""
+        from sif.mcp.handlers import MetadataToolHandler
+
+        result = await MetadataToolHandler().handle(payload, backend)
+        assert result.isError is True
+        assert result.content[0].text
+        assert result.content[0].text.startswith("filter")
+
+    @pytest.mark.asyncio
+    async def test_invalid_match_is_not_a_protocol_error(self) -> None:
+        """D-17: the JSON-RPC envelope is a success with ``result.isError`` true."""
+        from sif.mcp.handlers import MetadataToolHandler
+        from sif.mcp.protocol import JsonRpcRequest
+        from sif.mcp.server import MCPServer, ServerState
+
+        backend = MagicMock()
+        backend.metadata = AsyncMock()
+        server = MCPServer(backend)
+        server.state = ServerState.INITIALIZED
+        server.register_tools([MetadataToolHandler()])
+
+        response = await server.handle_request(
+            JsonRpcRequest(
+                id=1,
+                method="tools/call",
+                params={
+                    "name": "metadata",
+                    "arguments": {"match": {"field": "nope", "operator": "eq", "value": "x"}},
+                },
+            )
+        )
+
+        assert response.error is None
+        assert response.result["isError"] is True
+        assert backend.metadata.call_count == 0
+
+
+class TestSearchBackendMetadata:
+    """SearchBackend.metadata compiles only supplied predicates and scopes by name."""
+
+    @pytest.mark.asyncio
+    async def test_absent_filter_and_match_compile_to_none(self, backend) -> None:
+        """no filter => no ``filteredDocuments``; no match => every key reported."""
+        _seed_metadata_rows(Path(backend.db_path))
+        discovery = await backend.metadata(
+            collections=None,
+            filter_node=None,
+            match=None,
+            min_count=1,
+            sort="count",
+            limit=50,
+            value_limit=10,
+        )
+        assert "filteredDocuments" not in discovery
+        assert {entry["key"] for entry in discovery["keys"]} == {"tag", "priority"}
+
+    @pytest.mark.asyncio
+    async def test_collection_scope_narrows_the_denominator(self, backend) -> None:
+        """A named collection scopes every count without adding a filter."""
+        _seed_metadata_rows(Path(backend.db_path))
+        discovery = await backend.metadata(
+            collections=["notes"],
+            filter_node=None,
+            match=None,
+            min_count=1,
+            sort="count",
+            limit=50,
+            value_limit=10,
+        )
+        assert discovery["documents"] == 3
+        assert "filteredDocuments" not in discovery
+
+    @pytest.mark.asyncio
+    async def test_unknown_collection_raises_for_the_server_iserror_path(self, backend) -> None:
+        """An unknown name raises so the server converts it to a tool execution error."""
+        _seed_metadata_rows(Path(backend.db_path))
+        with pytest.raises(ValueError, match="not found"):
+            await backend.metadata(
+                collections=["missing"],
+                filter_node=None,
+                match=None,
+                min_count=1,
+                sort="count",
+                limit=50,
+                value_limit=10,
+            )

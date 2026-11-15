@@ -363,6 +363,79 @@ class StatusOutput(BaseModel):
     total_documents: int = 0
 
 
+class MetadataRange(BaseModel):
+    """Numeric min/median/max for a key's ``number`` type (D-15)."""
+
+    min: float
+    median: float
+    max: float
+
+
+class MetadataValueSummary(BaseModel):
+    """One distinct value and the document count that carries it (D-15)."""
+
+    value: str | float | bool
+    documents: int
+
+
+class MetadataTypeSummary(BaseModel):
+    """One value type of a key: counts, a windowed value list, optional range."""
+
+    type: Literal["string", "number", "boolean"]
+    multiValued: bool  # noqa: N815
+    documents: int
+    distinctValues: int  # noqa: N815
+    values: list[MetadataValueSummary] = Field(default_factory=list)
+    remainingValues: int  # noqa: N815
+    range: MetadataRange | None = None
+
+
+class MetadataKeySummary(BaseModel):
+    """One reported metadata key: a frontmatter key or a D-03 built-in."""
+
+    key: str
+    documents: int
+    types: list[MetadataTypeSummary] = Field(default_factory=list)
+
+
+class MetadataInput(BaseModel):
+    """Input for the ``metadata`` discovery tool (D-15, frozen Phase 22 schema).
+
+    Snake_case inputs per D-15; ``limit`` windows the key list (default 50)
+    and ``value_limit`` windows each key's value list (default 10). ``filter``
+    and ``match`` stay raw dicts so the handler can report a controlled tool
+    execution error instead of a protocol error (D-17).
+    """
+
+    collections: list[str] | None = None
+    filter: dict[str, Any] | None = None
+    match: dict[str, Any] | None = None
+    min_count: int = Field(default=1, ge=1)
+    sort: Literal["count", "value"] = "count"
+    limit: int = Field(default=50, ge=1)
+    value_limit: int = Field(default=10, ge=0)
+
+
+class MetadataOutput(BaseModel):
+    """Output for the ``metadata`` discovery tool (D-15 + D-20, Phase 22 schema).
+
+    The camelCase names are written verbatim: the mixed casing against SIF's
+    snake_case outputs is deliberate and part of the frozen Phase 22 contract.
+    Serialize with ``model_dump(exclude_none=True)`` so ``filteredDocuments``
+    is absent without a filter and ``range`` is absent on non-numeric types.
+    ``builtIns`` always carries exactly ``path`` then ``mtime`` (D-03/D-20) and
+    is never counted by ``totalKeys``/``remainingKeys``.
+    """
+
+    documents: int
+    filteredDocuments: int | None = None  # noqa: N815
+    totalKeys: int  # noqa: N815
+    remainingKeys: int  # noqa: N815
+    skippedKeys: int  # noqa: N815
+    builtIns: list[MetadataKeySummary]  # noqa: N815
+    keys: list[MetadataKeySummary] = Field(default_factory=list)
+
+
 # ============================================================================
 # Helper Functions
 # ============================================================================

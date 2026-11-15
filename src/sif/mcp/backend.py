@@ -12,12 +12,14 @@ from sif.core.filters import FilterNode
 from sif.core.models import SearchOptions
 from sif.database.connection import DatabaseConnection
 from sif.database.database import Database
+from sif.database.metadata_repository import MetadataValueRepository
 from sif.database.repositories import CollectionRepository, DocumentRepository
 from sif.embedding.factory import EmbeddingModelFactory
 from sif.embedding.model import ModelType
 from sif.mcp.protocol import CollectionInfo, Document, SearchResult
 from sif.search.bm25 import BM25Searcher
 from sif.search.context_attach import enrich_results
+from sif.search.filters import compile_filter, compile_match
 from sif.search.hybrid import SearchPipeline
 from sif.search.suggest import SuggestionEngine
 from sif.utils.logging import get_logger
@@ -256,6 +258,54 @@ class SearchBackend:
             return _with_suggestions(conn, query, mapped)
 
         return await self._run_in_db(_search)
+
+    async def metadata(  # noqa: PLR0913 — one keyword per the frozen D-15 input model
+        self,
+        *,
+        collections: list[str] | None,
+        filter_node: FilterNode | None,
+        match: FilterNode | None,
+        min_count: int,
+        sort: str,
+        limit: int,
+        value_limit: int,
+    ) -> dict[str, Any]:
+        """Discover filterable metadata over the same store the filters read (D-16).
+
+        ``filter_node``/``match`` are already-validated ASTs (the handler owns
+        the shared grammar). Each predicate is compiled only when its node is
+        present and an absent one is passed to ``discover`` as ``None`` —
+        never ``compile_filter(None)``'s empty ``("", [])`` fragment, which
+        would falsely signal a supplied filter and add ``filteredDocuments``
+        to the no-filter envelope (D-15/D-20). An unknown collection name
+        raises so the server turns the call into a tool execution error.
+        """
+
+        def _discover(conn: Any) -> dict[str, Any]:
+            collection_ids: list[str] | None = None
+            if collections:
+                repo = CollectionRepository(conn)
+                resolved = [repo.get_by_name(name) for name in collections]
+                if any(collection is None for collection in resolved):
+                    raise ValueError("One or more collections were not found")
+                collection_ids = [collection.id for collection in resolved if collection]
+            filter_predicate = (
+                compile_filter(filter_node, alias="d", scope="corpus")
+                if filter_node is not None
+                else None
+            )
+            match_predicate = compile_match(match, alias="mv") if match is not None else None
+            return MetadataValueRepository(conn).discover(
+                collection_ids=collection_ids,
+                filter_predicate=filter_predicate,
+                match_predicate=match_predicate,
+                min_count=min_count,
+                sort=sort,
+                limit=limit,
+                value_limit=value_limit,
+            )
+
+        return await self._run_in_db(_discover)
 
     async def get_document(
         self,

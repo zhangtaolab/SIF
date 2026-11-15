@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from sif.mcp.handlers import (
     GetToolHandler,
+    MetadataToolHandler,
     MultiGetToolHandler,
     QueryToolHandler,
     StatusToolHandler,
@@ -22,6 +23,34 @@ from sif.mcp.transports.http import create_app
 from sif.mcp.transports.stdio import StdioTransport
 
 
+_METADATA_ENVELOPE = {
+    "documents": 2,
+    "totalKeys": 1,
+    "remainingKeys": 0,
+    "skippedKeys": 0,
+    "builtIns": [
+        {"key": "path", "documents": 2, "types": []},
+        {"key": "mtime", "documents": 2, "types": []},
+    ],
+    "keys": [
+        {
+            "key": "tag",
+            "documents": 2,
+            "types": [
+                {
+                    "type": "string",
+                    "multiValued": False,
+                    "documents": 2,
+                    "distinctValues": 1,
+                    "values": [{"value": "x", "documents": 2}],
+                    "remainingValues": 0,
+                }
+            ],
+        }
+    ],
+}
+
+
 def _make_backend():
     """Create a mocked SearchBackend with async methods."""
     backend = MagicMock()
@@ -29,6 +58,7 @@ def _make_backend():
     backend.get_document = AsyncMock(return_value=None)
     backend.get_documents_by_pattern = AsyncMock(return_value=([], []))
     backend.get_status = AsyncMock(return_value=([], 0))
+    backend.metadata = AsyncMock(return_value=dict(_METADATA_ENVELOPE))
     return backend
 
 
@@ -63,6 +93,7 @@ class TestStdioIntegration:
                 GetToolHandler(),
                 MultiGetToolHandler(),
                 StatusToolHandler(),
+                MetadataToolHandler(),
             ],
         )
 
@@ -80,6 +111,12 @@ class TestStdioIntegration:
                 "method": "tools/call",
                 "params": {"name": "status", "arguments": {}},
             },
+            {
+                "jsonrpc": "2.0",
+                "id": 4,
+                "method": "tools/call",
+                "params": {"name": "metadata", "arguments": {}},
+            },
         ]
         stdin = StringIO("\n".join(json.dumps(m) for m in messages) + "\n")
         stdout = StringIO()
@@ -90,7 +127,7 @@ class TestStdioIntegration:
         lines = [line.strip() for line in stdout.readlines() if line.strip()]
         responses = [json.loads(line) for line in lines]
 
-        assert len(responses) == 3
+        assert len(responses) == 4
 
         # initialize response
         assert responses[0]["result"]["protocolVersion"] == "2024-11-05"
@@ -99,15 +136,23 @@ class TestStdioIntegration:
 
         # tools/list response
         assert responses[1]["id"] == 2
-        assert len(responses[1]["result"]["tools"]) == 4
+        assert len(responses[1]["result"]["tools"]) == 5
         tool_names = {t["name"] for t in responses[1]["result"]["tools"]}
-        assert tool_names == {"query", "get", "multi_get", "status"}
+        assert tool_names == {"query", "get", "multi_get", "status", "metadata"}
         assert "error" not in responses[1]
 
         # tools/call response
         assert responses[2]["id"] == 3
         assert "content" in responses[2]["result"]
         assert "error" not in responses[2]
+
+        # metadata tools/call: the frozen envelope travels as JSON text
+        assert responses[3]["id"] == 4
+        assert responses[3]["result"]["isError"] is False
+        payload = json.loads(responses[3]["result"]["content"][0]["text"])
+        assert payload["totalKeys"] == 1
+        assert payload["remainingKeys"] == 0
+        assert {entry["key"] for entry in payload["builtIns"]} == {"path", "mtime"}
 
     @pytest.mark.asyncio
     async def test_stdio_reject_before_initialize(self) -> None:
@@ -247,6 +292,7 @@ class TestHTTPIntegration:
         backend.get_document = AsyncMock(return_value=None)
         backend.get_documents_by_pattern = AsyncMock(return_value=([], []))
         backend.get_status = AsyncMock(return_value=([], 0))
+        backend.metadata = AsyncMock(return_value=dict(_METADATA_ENVELOPE))
         return backend
 
     @pytest.fixture
@@ -259,6 +305,7 @@ class TestHTTPIntegration:
                 GetToolHandler(),
                 MultiGetToolHandler(),
                 StatusToolHandler(),
+                MetadataToolHandler(),
             ],
         )
         return server
@@ -300,9 +347,9 @@ class TestHTTPIntegration:
         )
         assert response.status_code == 200
         data = response.json()
-        assert len(data["result"]["tools"]) == 4
+        assert len(data["result"]["tools"]) == 5
         tool_names = {t["name"] for t in data["result"]["tools"]}
-        assert tool_names == {"query", "get", "multi_get", "status"}
+        assert tool_names == {"query", "get", "multi_get", "status", "metadata"}
 
         # tools/call for status
         response = client.post(

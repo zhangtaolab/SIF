@@ -6,10 +6,12 @@ import json
 from abc import ABC, abstractmethod
 from typing import Any, ClassVar
 
-from sif.core.filters import FilterValidationError, parse_filter
+from sif.core.filters import FilterValidationError, parse_filter, parse_match
 from sif.mcp.protocol import (
     GetInput,
     GetOutput,
+    MetadataInput,
+    MetadataOutput,
     MultiGetInput,
     MultiGetOutput,
     QueryInput,
@@ -238,6 +240,69 @@ class StatusToolHandler(ToolHandler):
         )
 
 
+class MetadataToolHandler(ToolHandler):
+    """Handler for the metadata discovery tool (Phase 20 D-14/D-15, frozen for Phase 22)."""
+
+    name: ClassVar[str] = "metadata"
+    description: ClassVar[str] = (
+        "Report filterable metadata keys, value types, document counts, numeric "
+        "min/median/max ranges, and exact remaining window counts. Accepts the "
+        "same filter grammar as query; path and mtime are reported as built-ins."
+    )
+    input_schema: ClassVar[dict[str, Any]] = {
+        "type": "object",
+        "properties": {
+            "collections": {"type": "array", "items": {"type": "string"}},
+            # The hand-written schema and MetadataInput must stay in sync — an
+            # unlisted property is invisible to MCP tool discovery (Pitfall 12).
+            "filter": {"type": "object"},
+            "match": {"type": "object"},
+            "min_count": {"type": "integer", "minimum": 1, "default": 1},
+            "sort": {"type": "string", "enum": ["count", "value"], "default": "count"},
+            "limit": {"type": "integer", "minimum": 1, "default": 50},
+            "value_limit": {"type": "integer", "minimum": 0, "default": 10},
+        },
+        "required": [],
+    }
+
+    async def handle(
+        self,
+        params: dict[str, Any],
+        backend: SearchBackend,
+    ) -> ToolsCallResult:
+        """Execute the metadata tool."""
+        input_data = MetadataInput(**params)
+        # D-17: invalid filter/match JSON is a tool execution error inside a
+        # successful JSON-RPC response so the model can self-correct — never
+        # an INVALID_PARAMS protocol error.
+        try:
+            filter_node = None if input_data.filter is None else parse_filter(input_data.filter)
+            match_node = None if input_data.match is None else parse_match(input_data.match)
+        except FilterValidationError as exc:
+            return ToolsCallResult(
+                content=[ToolContentItem(type="text", text=str(exc))],
+                isError=True,
+            )
+        discovery = await backend.metadata(
+            collections=input_data.collections,
+            filter_node=filter_node,
+            match=match_node,
+            min_count=input_data.min_count,
+            sort=input_data.sort,
+            limit=input_data.limit,
+            value_limit=input_data.value_limit,
+        )
+        output = MetadataOutput(**discovery)
+        return ToolsCallResult(
+            content=[
+                ToolContentItem(
+                    type="text",
+                    text=json.dumps(output.model_dump(exclude_none=True), ensure_ascii=False),
+                ),
+            ],
+        )
+
+
 def create_default_tools() -> list[ToolHandler]:
     """Create default tool handlers."""
     return [
@@ -245,4 +310,5 @@ def create_default_tools() -> list[ToolHandler]:
         GetToolHandler(),
         MultiGetToolHandler(),
         StatusToolHandler(),
+        MetadataToolHandler(),
     ]

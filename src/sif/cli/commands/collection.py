@@ -483,10 +483,10 @@ def collection_metadata(  # noqa: PLR0913 — one parameter per the D-14 option 
 ) -> None:
     """Report filterable metadata keys, types, counts, ranges, and remainders.
 
-    No NAME means every collection. ``path`` and ``mtime`` are reserved
-    built-in fields (D-03): they appear in the built-in section, never as
-    frontmatter keys, and their counts narrow with ``--filter`` exactly like
-    every other count.
+    No NAME means every collection. `path` and `mtime` are reserved built-in
+    fields (D-03): they appear in the built-in section, never as frontmatter
+    keys, and their counts narrow with `--filter` exactly like every other
+    count.
     """
     index_path = ctx.obj["index_path"]
     # Parse/validate before the database opens (D-17): a bad filter or match

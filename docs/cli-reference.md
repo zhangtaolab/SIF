@@ -28,7 +28,8 @@ sif
 │   ├── update-cmd      Set or clear a pre-index shell command for a collection.
 │   ├── include         Include a collection in default searches.
 │   ├── exclude         Exclude a collection from default searches.
-│   └── ls              List files in a collection.
+│   ├── ls              List files in a collection.
+│   └── metadata        Report filterable metadata keys, types, counts, ranges, and remainders.
 ├── context         Manage contextual descriptions for paths, collections, and global scope.
 │   ├── add             Add context for a path, collection, or global scope.
 │   ├── remove          Remove a context by its ID.
@@ -170,6 +171,37 @@ sif collection ls [OPTIONS]
 |----------|------|----------|-------------|
 | `name` | text | Yes |  |
 | `subpath` | text | No |  |
+
+### `collection metadata`
+
+Report filterable metadata keys, types, counts, ranges, and remainders.
+
+No NAME means every collection. `path` and `mtime` are reserved built-in
+fields (D-03): they appear in the built-in section, never as frontmatter
+keys, and their counts narrow with `--filter` exactly like every other
+count.
+
+```bash
+sif collection metadata [OPTIONS]
+```
+
+**Arguments:**
+
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `name` | text | No |  |
+
+**Options:**
+
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--filter` | `—` | text | — | Metadata filter as a JSON AST; counts become filter-aware. |
+| `--match` | `—` | text | — | Narrow reported entries by key or value (JSON AST). |
+| `--min-count` | `—` | integer range | `1` | Minimum documents per reported value (default: 1) |
+| `--sort` | `—` | choice [count|value] | `count` | Key ordering: document count descending, or key ascending (default: count) |
+| `--limit` | `—` | integer range | `50` | Key window size (default: 50) |
+| `--value-limit` | `—` | integer range | `10` | Per-key value window size (default: 10) |
+| `--json` | `—` | flag | `false` | Output the JSON envelope |
 
 ### `collection remove`
 
