@@ -6,6 +6,17 @@ import contextlib
 import re
 import sqlite3
 
+from sif.utils.logging import get_logger
+
+
+logger = get_logger(__name__)
+
+# D-06: the typed-metadata backfill is document-derived (never per-collection),
+# so its completion contract is one global key in the existing ``index_meta``
+# kv table. The marker is written only after a complete pass.
+_METADATA_VALUES_VERSION = "1"
+_METADATA_VALUES_VERSION_KEY = "metadata_values_version"
+
 
 class SchemaManager:
     """Manages database schema creation and migrations."""
@@ -41,6 +52,7 @@ class SchemaManager:
         self._create_fts_tables()
         self._create_vector_tables()
         self._create_indexes()
+        self._backfill_metadata_values()
         self.db.commit()
 
     def _add_column_if_missing(self, table: str, column: str, dtype: str) -> None:
@@ -261,6 +273,47 @@ class SchemaManager:
                 value TEXT NOT NULL
             )
         """)
+
+    def _backfill_metadata_values(self) -> None:
+        """Derive typed metadata rows for every stored document, once (D-06).
+
+        The pass is a pure Python read over the stored canonical
+        ``documents.metadata`` blobs: no file re-parse, no checksum-convention
+        change, and no second key/value table. One short transaction per
+        document keeps earlier work durable when a later document fails, so an
+        interrupted pass resumes idempotently (delete-then-insert per
+        document). The marker is written **only after** the loop completes, so
+        a failed pass leaves it absent and filtering is never served from a
+        half-populated store. A fresh database writes the marker immediately at
+        zero cost; an already-backfilled one pays one kv read.
+
+        Exceptions are deliberately not caught: a pass failure propagates out
+        of :meth:`create_all`, aborting the host command before it can serve a
+        filtered search against partial rows.
+
+        The repositories are imported lazily to keep the schema module free of
+        a module-level repository cycle (the established pattern).
+        """
+        from sif.database.metadata_repository import MetadataValueRepository  # noqa: PLC0415
+        from sif.database.repositories import IndexMetaRepository  # noqa: PLC0415
+
+        marker = IndexMetaRepository(self.db)
+        if marker.get(_METADATA_VALUES_VERSION_KEY) == _METADATA_VALUES_VERSION:
+            return
+
+        rows = self.db.execute("SELECT id, metadata FROM documents").fetchall()
+        if rows:
+            logger.warning(
+                "Upgrading index metadata: deriving typed metadata for %d documents "
+                "(one-time pass, no file re-parse)",
+                len(rows),
+            )
+        repo = MetadataValueRepository(self.db)
+        for document_id, metadata_json in rows:
+            with self.db:
+                repo.replace_from_canonical(document_id, metadata_json or "{}")
+        with self.db:
+            marker.set(_METADATA_VALUES_VERSION_KEY, _METADATA_VALUES_VERSION)
 
     def _fts_trigger_is_legacy(self, trigger_name: str, fts_table: str) -> bool:
         """Check if an existing FTS sync trigger writes directly to the FTS table.

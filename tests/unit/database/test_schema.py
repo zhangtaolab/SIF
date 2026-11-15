@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from sif.core.models import canonical_metadata_json
 from sif.database.database import Database
 from sif.database.schema import SchemaManager
 
@@ -600,7 +602,9 @@ class TestIndexMetaTable:
             conn.close()
 
     def test_drop_all_removes_index_meta_and_create_all_recreates_it(self):
-        """drop_all drops index_meta (and its rows); create_all recreates it empty."""
+        """drop_all drops index_meta (and its rows); create_all recreates the
+        table holding only the fresh-database ``metadata_values_version``
+        marker (D-06) — the legacy convention row is gone."""
         conn = sqlite3.connect(":memory:")
         conn.row_factory = sqlite3.Row
         try:
@@ -619,9 +623,238 @@ class TestIndexMetaTable:
             ), "index_meta survived drop_all"
 
             manager.create_all()
-            assert conn.execute("SELECT COUNT(*) FROM index_meta").fetchone()[0] == 0, (
-                "recreated index_meta must be empty"
+            legacy = conn.execute(
+                "SELECT COUNT(*) FROM index_meta WHERE key != 'metadata_values_version'"
+            ).fetchone()[0]
+            assert legacy == 0, "the legacy convention row must not survive drop_all"
+            marker = conn.execute(
+                "SELECT value FROM index_meta WHERE key = 'metadata_values_version'"
+            ).fetchone()
+            assert marker is not None, "create_all must write the fresh-DB marker"
+            assert marker[0] == "1"
+        finally:
+            conn.close()
+
+
+class TestMetadataBackfill:
+    """D-06: the one-time typed-metadata pass for pre-Phase-20 indexes.
+
+    The marker lives in ``index_meta`` and is written only after a complete
+    pass, so a half-populated store can never serve filtering. A fresh
+    database pays nothing; an already-backfilled one pays one kv read.
+    """
+
+    _COLLECTION = ("coll-backfill", "backfill", "/backfill")
+
+    @staticmethod
+    def _insert_document(
+        conn: sqlite3.Connection,
+        document_id: str,
+        metadata_json: str,
+    ) -> None:
+        """Insert one document the pre-Phase-20 way (raw SQL, no typed rows)."""
+        conn.execute(
+            "INSERT INTO documents (id, collection_id, path, filename, title, content,"
+            " checksum, file_size, mtime, created_at, updated_at, metadata)"
+            " VALUES (?, 'coll-backfill', ?, ?, ?, 'body', 'checksum', 4, 1.0, ?, ?, ?)",
+            (
+                document_id,
+                f"/backfill/{document_id}.md",
+                f"{document_id}.md",
+                document_id,
+                "2026-11-15T00:00:00+00:00",
+                "2026-11-15T00:00:00+00:00",
+                metadata_json,
+            ),
+        )
+
+    def _seed_populated(self, conn: sqlite3.Connection, count: int = 3) -> SchemaManager:
+        """Build the schema, insert raw documents, and drop the marker."""
+        manager = SchemaManager(conn, embedding_dim=8)
+        manager.create_all()
+        conn.execute(
+            "INSERT INTO collections (id, name, path, created_at, updated_at)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (*self._COLLECTION, "2026-11-15T00:00:00+00:00", "2026-11-15T00:00:00+00:00"),
+        )
+        for index in range(count):
+            self._insert_document(
+                conn,
+                f"doc-{index}",
+                canonical_metadata_json({"status": f"s{index}"}),
             )
+        conn.execute("DELETE FROM index_meta WHERE key = 'metadata_values_version'")
+        conn.commit()
+        return manager
+
+    @staticmethod
+    def _snapshot(conn: sqlite3.Connection) -> list[tuple[object, ...]]:
+        """All typed rows and skips in a deterministic order."""
+        rows = [
+            tuple(row)
+            for row in conn.execute(
+                "SELECT document_id, key, ordinal, value_type, text_value, number_value,"
+                " boolean_value FROM document_metadata_values ORDER BY document_id, key, ordinal"
+            )
+        ]
+        skips = [
+            tuple(row)
+            for row in conn.execute(
+                "SELECT document_id, key, reason FROM document_metadata_skips"
+                " ORDER BY document_id, key"
+            )
+        ]
+        return rows + skips
+
+    @staticmethod
+    def _marker(conn: sqlite3.Connection) -> str | None:
+        row = conn.execute(
+            "SELECT value FROM index_meta WHERE key = 'metadata_values_version'"
+        ).fetchone()
+        return row[0] if row else None
+
+    def test_fresh_database_writes_marker_without_warning(self, caplog, capsys):
+        """A zero-document database writes the marker immediately and announces nothing."""
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            with caplog.at_level(logging.WARNING):
+                SchemaManager(conn, embedding_dim=8).create_all()
+
+            assert self._marker(conn) == "1"
+            assert [record for record in caplog.records if record.levelno >= logging.WARNING] == []
+            assert capsys.readouterr().out == ""
+        finally:
+            conn.close()
+
+    def test_populated_database_without_marker_derives_rows_once(self, caplog, capsys):
+        """The first pass derives every document's rows and announces once on stderr."""
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            manager = self._seed_populated(conn)
+            caplog.clear()
+
+            with caplog.at_level(logging.WARNING):
+                manager.create_all()
+
+            notices = [record for record in caplog.records if record.levelno == logging.WARNING]
+            assert len(notices) == 1
+            assert "3 documents" in notices[0].getMessage()
+            assert self._marker(conn) == "1"
+            for index in range(3):
+                rows = conn.execute(
+                    "SELECT key, value_type, text_value FROM document_metadata_values"
+                    " WHERE document_id = ?",
+                    (f"doc-{index}",),
+                ).fetchall()
+                assert [tuple(row) for row in rows] == [("status", "string", f"s{index}")]
+            # The migration notice goes through the logger, never stdout.
+            assert capsys.readouterr().out == ""
+        finally:
+            conn.close()
+
+    def test_marker_survives_reopen_and_second_create_all_is_a_no_op(
+        self, tmp_path, monkeypatch, caplog
+    ):
+        """A completed pass survives close/reopen; the next create_all does zero work."""
+        db_path = tmp_path / "index.db"
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        try:
+            manager = self._seed_populated(conn)
+            manager.create_all()
+            assert self._marker(conn) == "1"
+        finally:
+            conn.close()
+
+        from sif.database.metadata_repository import MetadataValueRepository
+
+        calls: list[str] = []
+        original = MetadataValueRepository.replace_from_canonical
+
+        def spy(self, document_id: str, canonical_json: str) -> tuple[int, int]:
+            calls.append(document_id)
+            return original(self, document_id, canonical_json)
+
+        monkeypatch.setattr(MetadataValueRepository, "replace_from_canonical", spy)
+
+        reopened = sqlite3.connect(db_path)
+        reopened.row_factory = sqlite3.Row
+        try:
+            caplog.clear()
+            with caplog.at_level(logging.WARNING):
+                SchemaManager(reopened, embedding_dim=8).create_all()
+            assert calls == []
+            assert [record for record in caplog.records if record.levelno >= logging.WARNING] == []
+            assert self._marker(reopened) == "1"
+        finally:
+            reopened.close()
+
+    def test_interrupted_pass_resumes_without_duplicates(self, monkeypatch):
+        """A mid-pass failure leaves the marker absent and committed rows intact."""
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            manager = self._seed_populated(conn, count=3)
+
+            from sif.database.metadata_repository import MetadataValueRepository
+
+            original = MetadataValueRepository.replace_from_canonical
+            calls: list[str] = []
+
+            def flaky(self, document_id: str, canonical_json: str) -> tuple[int, int]:
+                calls.append(document_id)
+                if len(calls) == 3:
+                    raise RuntimeError("simulated interruption")
+                return original(self, document_id, canonical_json)
+
+            monkeypatch.setattr(MetadataValueRepository, "replace_from_canonical", flaky)
+
+            with pytest.raises(RuntimeError):
+                manager.create_all()
+
+            assert self._marker(conn) is None, "a failed pass must not write the marker"
+            committed = {
+                row[0]
+                for row in conn.execute("SELECT DISTINCT document_id FROM document_metadata_values")
+            }
+            assert committed == {"doc-0", "doc-1"}
+
+            monkeypatch.setattr(MetadataValueRepository, "replace_from_canonical", original)
+            manager.create_all()
+
+            assert self._marker(conn) == "1"
+            duplicates = conn.execute(
+                "SELECT document_id, key, ordinal, COUNT(*) FROM document_metadata_values"
+                " GROUP BY document_id, key, ordinal HAVING COUNT(*) > 1"
+            ).fetchall()
+            assert duplicates == []
+
+            reference = sqlite3.connect(":memory:")
+            reference.row_factory = sqlite3.Row
+            try:
+                self._seed_populated(reference, count=3).create_all()
+                assert self._snapshot(conn) == self._snapshot(reference)
+            finally:
+                reference.close()
+        finally:
+            conn.close()
+
+    def test_drop_all_removes_both_metadata_tables(self):
+        """drop_all drops the typed value and skip sidecar tables."""
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            manager = SchemaManager(conn, embedding_dim=8)
+            manager.create_all()
+            manager.drop_all()
+            names = {
+                row[0]
+                for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+            }
+            assert "document_metadata_values" not in names
+            assert "document_metadata_skips" not in names
         finally:
             conn.close()
 
