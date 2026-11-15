@@ -258,3 +258,58 @@ class TestQueryExpansionEdgeCases:
 
         # Assert
         assert isinstance(result, list)
+
+
+class _RoleManager:
+    """Manager double whose class defines the query-role surface (EMB-02).
+
+    Plain ``embed``/``embed_single`` raise so a fallback would fail loudly:
+    a successful expansion proves both role legs were used.
+    """
+
+    def __init__(self) -> None:
+        self.query_calls: list[str] = []
+        self.queries_calls: list[list[str]] = []
+
+    def embed_query(self, text: str) -> list[float]:
+        self.query_calls.append(text)
+        return [1.0, 0.0]
+
+    def embed_queries(self, texts: list[str]) -> list[list[float]]:
+        self.queries_calls.append(list(texts))
+        return [[0.5, 0.5] for _ in texts]
+
+    def embed_single(self, text: str) -> list[float]:
+        raise AssertionError(f"plain embed_single used for {text!r}")
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        raise AssertionError(f"plain embed used for {texts!r}")
+
+
+class TestQueryExpansionRoles:
+    """EMB-02: expansion's query and candidate legs use the query role."""
+
+    def test_expansion_uses_embed_query_and_embed_queries_only(self) -> None:
+        manager = _RoleManager()
+        expander = QueryExpansion(embedding_manager=manager)
+
+        variants = expander.expand("python search")
+
+        assert manager.query_calls == ["python search"]
+        assert len(manager.queries_calls) == 1
+        assert manager.queries_calls[0]
+        assert isinstance(variants, list)
+        assert variants[0] == "python search"
+
+    def test_magicmock_manager_takes_the_fallback_without_raising(
+        self,
+        mock_embedding_manager: MagicMock,
+    ) -> None:
+        """No class-level role methods: the helper falls back to plain embed."""
+        expander = QueryExpansion(embedding_manager=mock_embedding_manager)
+
+        result = expander.expand("python search")
+
+        assert isinstance(result, list)
+        mock_embedding_manager.embed.assert_called_once_with("python search")
+        mock_embedding_manager.embed_single.assert_not_called()

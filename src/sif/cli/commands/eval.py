@@ -16,6 +16,7 @@ import json
 import sqlite3
 from collections.abc import Callable
 from datetime import datetime, timezone
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -30,8 +31,15 @@ from sif.config.settings import Settings, get_settings, resolve_candidate_limit
 from sif.core.models import Embedder, SearchOptions, SearchResult
 from sif.database.database import Database
 from sif.database.repositories import CollectionRepository
+from sif.embedding.identity import (
+    EmbedderIdentity,
+    IdentityCheck,
+    check_identity,
+    schema_embedding_dim,
+    warn_identity_mismatch_once,
+)
 from sif.embedding.manager import EmbeddingManager
-from sif.search.hybrid import SearchPipeline
+from sif.search.hybrid import SearchPipeline, search_dimension_error
 from sif.search.personal_bench import (
     INITIAL_SAMPLE_DOCUMENTS,
     MAX_TOP_K,
@@ -177,16 +185,20 @@ def _require_scoped_embeddings(db: Database, collection_ids: list[str] | None) -
 def _load_embedder(
     settings: Settings,
     bm25_only: bool,
-) -> tuple[EmbeddingManager | None, int, dict[str, Any] | None]:
+) -> tuple[EmbeddingManager | None, int, dict[str, Any] | None, EmbedderIdentity | None]:
     """Load the hybrid-default embedder; fail loudly with the remedy (D-11).
 
     Unlike ``sif bench``'s soft-fail, a measurement command must fail loudly:
     a missing backend raises the exact ``pip install "docsif[embed]"`` remedy
     and names ``--bm25-only`` as the local path. ``--bm25-only`` returns
     before touching ``EmbeddingManager`` at all.
+
+    The loaded model's full identity (fourth element) is the search-mode
+    ``current`` for the hoisted pipeline's identity check (EMB-01). A manager
+    double that cannot return a real identity yields ``None``.
     """
     if bm25_only:
-        return None, settings.embedding_dim, None
+        return None, settings.embedding_dim, None, None
     try:
         manager = EmbeddingManager.from_settings(settings)
         manager.load_model()
@@ -211,7 +223,9 @@ def _load_embedder(
             f"Failed to determine the embedding dimension: {e}. "
             "Fix the model configuration or pass --bm25-only."
         ) from e
-    identity: dict[str, Any] = {
+    candidate_identity = manager.get_identity()
+    identity = candidate_identity if isinstance(candidate_identity, EmbedderIdentity) else None
+    identity_dict: dict[str, Any] = {
         "model_name": settings.model_name,
         "model_type": settings.model_type,
         "dimension": embedding_dim,
@@ -224,7 +238,35 @@ def _load_embedder(
             "provider for embedding. Pass --bm25-only to keep the run "
             "local.[/yellow]"
         )
-    return manager, embedding_dim, identity
+    return manager, embedding_dim, identity_dict, identity
+
+
+def _search_identity_check(
+    db: Database,
+    identity: EmbedderIdentity | None,
+) -> Callable[[sqlite3.Connection], IdentityCheck] | None:
+    """Build the pipeline's search-mode check, refusing a width mismatch.
+
+    A hybrid-labelled evaluation cannot be measured without vector search, so
+    a dimension disagreement fails before the evaluation loop; a same-dimension
+    swap warns once (stderr only) and the pipeline marks every measured result
+    while stdout/JSON stays machine-clean (D-03/D-05).
+    """
+    if identity is None:
+        return None
+    check = check_identity(db.connection, identity, mode="search")
+    if check.dimension_mismatch:
+        if check.stored is not None:
+            warn_identity_mismatch_once(check.stored, check.current)
+        stored_dim = (
+            check.stored.dimension
+            if check.stored is not None
+            else schema_embedding_dim(db.connection)
+        )
+        raise click.ClickException(str(search_dimension_error(check, stored_dim)))
+    if check.untrusted and check.stored is not None:
+        warn_identity_mismatch_once(check.stored, check.current)
+    return partial(check_identity, current=identity, mode="search")
 
 
 def _budget_cell(counts: dict[str, Any]) -> str:
@@ -635,6 +677,7 @@ def _search_fn(
     embedder: Embedder | None,
     embedding_dim: int,
     options: SearchOptions,
+    identity_check: Callable[[sqlite3.Connection], IdentityCheck] | None = None,
 ) -> Callable[[str], list[SearchResult]]:
     """One hoisted literal-mode pipeline per run (never per query, CR-01).
 
@@ -642,7 +685,8 @@ def _search_fn(
     as ``vec: embedding notes`` or a logged ``hyde: ...`` query must never be
     reinterpreted as a search operator (which would abort the run without an
     embedder). ``default_search_type`` follows the measured retrieval mode so
-    the pipeline performs exactly what the report labels.
+    the pipeline performs exactly what the report labels. ``identity_check``
+    is the search-mode check built by ``_search_identity_check`` (EMB-01).
     """
     pipeline = SearchPipeline(
         db.connection,
@@ -650,6 +694,7 @@ def _search_fn(
         embedding_dim=embedding_dim,
         default_search_type="hybrid" if embedder is not None else "bm25",
         parse_prefix=False,
+        identity_check=identity_check,
     )
     return lambda query: pipeline.search(query, options)
 
@@ -699,7 +744,7 @@ def _run_fresh(  # noqa: C901, PLR0913
         raise click.ClickException(str(e)) from e
     except (sqlite3.Error, OSError) as e:
         raise click.ClickException(f"Personal eval failed: {e}") from e
-    manager, embedding_dim, model_identity = _load_embedder(settings, bm25_only)
+    manager, embedding_dim, model_identity, embedder_identity = _load_embedder(settings, bm25_only)
     embedder: Embedder | None = manager.model if manager is not None else None
     retrieval = "bm25" if bm25_only else "hybrid"
     options = _build_options(
@@ -708,9 +753,12 @@ def _run_fresh(  # noqa: C901, PLR0913
         settings,
         collection_ids,
     )
+    # EMB-01: refusal/check happens before the evaluation loop (never per
+    # query); the warning goes to stderr so stdout/JSON stays clean.
+    identity_check = _search_identity_check(db, embedder_identity)
     try:
         with db.connection:
-            search = _search_fn(db, embedder, embedding_dim, options)
+            search = _search_fn(db, embedder, embedding_dim, options, identity_check)
             evaluations = evaluate_known_items(synthesis.queries, search)
             # Replay runs after the known-item evaluation on the same hoisted
             # pipeline and options; it never enters the metrics. The setting
@@ -785,7 +833,7 @@ def _run_compare(  # noqa: PLR0913
         raise click.ClickException(str(e)) from e
     if not bm25_only:
         _require_scoped_embeddings(db, collection_ids)
-    manager, embedding_dim, model_identity = _load_embedder(settings, bm25_only)
+    manager, embedding_dim, model_identity, embedder_identity = _load_embedder(settings, bm25_only)
     embedder: Embedder | None = manager.model if manager is not None else None
     retrieval = "bm25" if bm25_only else "hybrid"
     if limit != saved.top_k:
@@ -808,12 +856,13 @@ def _run_compare(  # noqa: PLR0913
         settings,
         collection_ids,
     )
+    identity_check = _search_identity_check(db, embedder_identity)
     try:
         with db.connection:
             comparison = compare_saved_run(
                 saved,
                 metadata,
-                _search_fn(db, embedder, embedding_dim, options),
+                _search_fn(db, embedder, embedding_dim, options, identity_check),
                 conn=db.connection,
                 retrieval=retrieval,
                 model=model_identity,

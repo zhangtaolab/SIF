@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import fnmatch
 from collections.abc import Callable
+from functools import partial
 from typing import Any, TypeVar
 
 from sif.config.settings import Settings, get_settings
@@ -19,6 +20,7 @@ from sif.embedding.identity import (
     EmbedderIdentity,
     build_identity,
     build_settings_identity,
+    check_identity,
 )
 from sif.embedding.model import ModelType
 from sif.embedding.prompts import resolve_prompt_scheme
@@ -242,11 +244,22 @@ class SearchBackend:
                     return _with_suggestions(conn, query, [])
                 options.collection_ids = matched
             try:
+                # EMB-01: the closure is built only from the full identity a
+                # successful embedder load recorded (21-08). When the load
+                # failed, no check is invented and the existing BM25
+                # degradation below is unchanged.
+                identity = self._identity
+                identity_check = (
+                    partial(check_identity, current=identity, mode="search")
+                    if identity is not None
+                    else None
+                )
                 pipeline = SearchPipeline(
                     conn,
                     embedder=self._embedder,
                     embedding_dim=self.settings.embedding_dim,
                     default_search_type=self.settings.default_search_type,
+                    identity_check=identity_check,
                 )
             except RuntimeError:
                 # WR-08 (user decision): MCP-boundary carve-out — a missing

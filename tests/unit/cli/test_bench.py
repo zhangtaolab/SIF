@@ -1381,3 +1381,171 @@ class TestBenchRerankStates:
 
         assert result.exit_code != 0
         assert "Unknown reranker model type" in result.output
+
+
+class _RoleCountingEmbedder:
+    """Role-capable embedder spy: records which role produced each vector."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str]] = []
+
+    def embed(self, text: str) -> list[float]:
+        self.calls.append(("plain", text))
+        return [0.0] * 8
+
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        return [self.embed(text) for text in texts]
+
+    def embed_query(self, text: str) -> list[float]:
+        self.calls.append(("query", text))
+        return [0.1] * 8
+
+    def embed_queries(self, texts: list[str]) -> list[list[float]]:
+        return [self.embed_query(text) for text in texts]
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        vectors: list[list[float]] = []
+        for text in texts:
+            self.calls.append(("document", text))
+            vectors.append([0.2] * 8)
+        return vectors
+
+    @property
+    def dimension(self) -> int:
+        return 8
+
+
+class TestCachedEmbedderRoles:
+    """EMB-02: bench memoizes by (role, text) and delegates role methods."""
+
+    def test_same_text_as_query_and_document_yields_two_inner_calls(self) -> None:
+        from sif.cli.commands.bench import CachedEmbedder
+
+        inner = _RoleCountingEmbedder()
+        cached = CachedEmbedder(inner)
+        cached.embed_query("same")
+        cached.embed_documents(["same"])
+        cached.embed("same")
+        # Repeating each role hits the memo, never the inner model again.
+        cached.embed_query("same")
+        cached.embed_documents(["same"])
+
+        assert inner.calls.count(("query", "same")) == 1
+        assert inner.calls.count(("document", "same")) == 1
+        assert inner.calls.count(("plain", "same")) == 1
+        assert len(inner.calls) == 3
+
+    def test_role_methods_fall_back_to_plain_embed_for_a_protocol_double(self) -> None:
+        from sif.cli.commands.bench import CachedEmbedder
+
+        inner = _CountingEmbedder()
+        cached = CachedEmbedder(inner)
+        assert cached.embed_query("q") == [0.0] * 8
+        assert cached.embed_documents(["d"]) == [[0.0] * 8]
+        assert inner.calls == ["q", "d"]
+
+
+class TestBenchIdentityPolicy:
+    """EMB-01: bench refuses a width mismatch and marks a same-dimension swap."""
+
+    @staticmethod
+    def _identity(model_name: str, *, dimension: int = 8):
+        from sif.embedding.identity import EmbedderIdentity
+
+        return EmbedderIdentity(
+            schema_version=1,
+            cache_model_id=f"sentence_transformers:{model_name}",
+            model_name=model_name,
+            model_type="sentence_transformers",
+            api_base=None,
+            dimension=dimension,
+            pooling="mean",
+            normalized=True,
+            query_prompt=None,
+            document_prompt=None,
+            prompt_supported=False,
+            revision=None,
+            source="verified",
+        )
+
+    def _invoke(
+        self,
+        tmp_path: Path,
+        *,
+        manager: MagicMock,
+        check,
+        pipeline_cls: object,
+    ) -> tuple[object, MagicMock]:
+        fixture_path, _corpus = _graded_split_fixture(tmp_path)
+        warn = MagicMock()
+        with (
+            patch("sif.cli.commands.bench.Database", return_value=MagicMock()),
+            patch(
+                "sif.cli.commands.bench.EmbeddingManager.from_settings",
+                return_value=manager,
+            ),
+            patch("sif.cli.commands.bench.SearchPipeline", pipeline_cls),
+            patch("sif.cli.commands.bench.get_settings", return_value=_settings_mock()),
+            patch("sif.cli.commands.bench.check_identity", side_effect=check),
+            patch("sif.cli.commands.bench.warn_identity_mismatch_once", warn),
+        ):
+            result = CliRunner().invoke(
+                bench_cmd,
+                [str(fixture_path)],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+        return result, warn
+
+    def test_dimension_mismatch_refuses_before_any_measurement(self, tmp_path: Path) -> None:
+        from sif.embedding.identity import IdentityCheck
+
+        stored = self._identity("stored", dimension=4)
+        current = self._identity("loaded", dimension=8)
+        manager = MagicMock()
+        manager.get_model_info.return_value = {"loaded": True, "embedding_dim": 8}
+        manager.get_identity.return_value = current
+        manager.model = MagicMock()
+        pipeline_cls = MagicMock()
+        check = MagicMock(
+            return_value=IdentityCheck("dimension_mismatch", stored, current),
+        )
+
+        result, warn = self._invoke(
+            tmp_path,
+            manager=manager,
+            check=check,
+            pipeline_cls=pipeline_cls,
+        )
+
+        assert result.exit_code == 1
+        assert "FLOAT[4]" in result.output
+        assert "FLOAT[8]" in result.output
+        assert "sif index embed --force" in result.output
+        pipeline_cls.assert_not_called()
+        warn.assert_called_once()
+
+    def test_same_dimension_mismatch_passes_the_closure_and_warns(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        from sif.embedding.identity import IdentityCheck
+
+        stored = self._identity("stored")
+        current = self._identity("loaded")
+        manager = MagicMock()
+        manager.get_model_info.return_value = {"loaded": True, "embedding_dim": 8}
+        manager.get_identity.return_value = current
+        manager.model = MagicMock()
+        pipeline_cls = MagicMock()
+        check = MagicMock(return_value=IdentityCheck("mismatch", stored, current))
+
+        result, warn = self._invoke(
+            tmp_path,
+            manager=manager,
+            check=check,
+            pipeline_cls=pipeline_cls,
+        )
+
+        assert result.exit_code == 0, result.output
+        assert callable(pipeline_cls.call_args.kwargs["identity_check"])
+        warn.assert_called_once()

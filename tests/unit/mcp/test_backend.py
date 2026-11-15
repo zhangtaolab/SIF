@@ -1793,3 +1793,158 @@ class TestSearchBackendMetadata:
                 limit=50,
                 value_limit=10,
             )
+
+
+def _identity(model_name: str, *, dimension: int = 8):
+    """Deterministic embedder identity for the MCP identity-policy tests."""
+    from sif.embedding.identity import EmbedderIdentity
+
+    return EmbedderIdentity(
+        schema_version=1,
+        cache_model_id=f"sentence_transformers:{model_name}",
+        model_name=model_name,
+        model_type="sentence_transformers",
+        api_base=None,
+        dimension=dimension,
+        pooling="mean",
+        normalized=True,
+        query_prompt=None,
+        document_prompt=None,
+        prompt_supported=False,
+        revision=None,
+        source="verified",
+    )
+
+
+def _store_identity(db_path: Path, identity) -> None:
+    """Write one identity row into a seeded database."""
+    from sif.embedding.identity import write_identity
+
+    conn = sqlite3.connect(db_path)
+    try:
+        with conn:
+            write_identity(conn, identity)
+    finally:
+        conn.close()
+
+
+def _add_embeddings(db_path: Path, document_ids: list[str], *, dimension: int = 8) -> None:
+    """Seed one chunk + vector row per document so search-mode checks see vectors."""
+    import sqlite_vec
+
+    from sif.search.vector import VectorSearcher
+
+    now = datetime.now(timezone.utc).isoformat()
+    bodies = dict(_SUGGEST_DOCS)
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.enable_load_extension(True)
+        sqlite_vec.load(conn)
+        conn.enable_load_extension(False)
+        with conn:
+            conn.executemany(
+                "INSERT OR IGNORE INTO document_chunks"
+                " (id, document_id, sequence, content, created_at)"
+                " VALUES (?, ?, 0, ?, ?)",
+                [(f"chunk-{doc_id}", doc_id, bodies[doc_id], now) for doc_id in document_ids],
+            )
+            VectorSearcher(conn, embedding_dim=dimension).add_embeddings_batch(
+                [
+                    (f"e-{doc_id}", doc_id, f"chunk-{doc_id}", [0.1] * dimension)
+                    for doc_id in document_ids
+                ]
+            )
+    finally:
+        conn.close()
+
+
+class _FixedEmbedder:
+    """Protocol-only embedder with an explicit dimension and fixed vectors."""
+
+    def __init__(self, dimension: int = 8) -> None:
+        self._dimension = dimension
+
+    def embed(self, _text: str) -> list[float]:
+        return [0.1] * self._dimension
+
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        return [self.embed(text) for text in texts]
+
+    @property
+    def dimension(self) -> int:
+        return self._dimension
+
+
+class TestHybridSearchIdentity:
+    """EMB-01: MCP warns/marks a swap and degrades a width mismatch to BM25."""
+
+    @pytest.mark.asyncio
+    async def test_no_identity_passes_no_closure(self, tmp_path: Path) -> None:
+        """A failed embedder load invents no identity and keeps BM25 degradation."""
+        db_path, settings = _seed_suggestion_db(tmp_path)
+        backend = _suggestion_backend(db_path, settings)
+        assert backend._identity is None
+
+        with patch("sif.mcp.backend.SearchPipeline") as mock_pipeline:
+            mock_pipeline.return_value.search.return_value = []
+            await backend.hybrid_search("quantum")
+
+        assert mock_pipeline.call_args.kwargs["identity_check"] is None
+
+    @pytest.mark.asyncio
+    async def test_same_dimension_mismatch_marks_results_and_warns_once(
+        self,
+        tmp_path: Path,
+        caplog,
+    ) -> None:
+        """One warning for the pair; every mapped result carries vectors_stale."""
+        db_path, settings = _seed_suggestion_db(tmp_path)
+        _add_embeddings(db_path, ["d1", "d2", "d3"])
+        _store_identity(db_path, _identity("stored"))
+        backend = _suggestion_backend(db_path, settings)
+        backend._embedder = _FixedEmbedder(8)
+        backend._identity = _identity("loaded")
+
+        with caplog.at_level(logging.WARNING, logger="sif.embedding.identity"):
+            first = await backend.hybrid_search("quantum")
+            second = await backend.hybrid_search("quantum")
+
+        assert first
+        assert second
+        for result in [*first, *second]:
+            assert isinstance(result, SearchResult)
+            assert result.metadata["vectors_stale"] is True
+        warnings = [
+            record
+            for record in caplog.records
+            if "identity mismatch" in record.getMessage().lower()
+        ]
+        assert len(warnings) == 1
+
+    @pytest.mark.asyncio
+    async def test_dimension_mismatch_returns_marked_bm25_without_a_protocol_error(
+        self,
+        tmp_path: Path,
+        caplog,
+    ) -> None:
+        """A width mismatch can never vector-search: BM25 rows, marked, one warning."""
+        db_path, settings = _seed_suggestion_db(tmp_path)
+        _add_embeddings(db_path, ["d1", "d2", "d3"])
+        _store_identity(db_path, _identity("stored", dimension=8))
+        backend = _suggestion_backend(db_path, settings)
+        backend._embedder = _FixedEmbedder(4)
+        backend._identity = _identity("loaded", dimension=4)
+
+        with caplog.at_level(logging.WARNING, logger="sif.embedding.identity"):
+            results = await backend.hybrid_search("quantum")
+
+        assert results
+        assert {result.doc_id for result in results} <= {"d1", "d2", "d3"}
+        for result in results:
+            assert result.metadata["vectors_stale"] is True
+        warnings = [
+            record
+            for record in caplog.records
+            if "identity mismatch" in record.getMessage().lower()
+        ]
+        assert len(warnings) == 1

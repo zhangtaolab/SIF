@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 from unittest.mock import MagicMock, patch
 
+import click
 import pytest
 from click.testing import CliRunner, Result
 
@@ -1908,3 +1909,164 @@ class TestCompareRendering:
         assert comparison["gate"]["warrants_default_change"] is False
         assert isinstance(comparison["replay"]["available"], bool)
         assert isinstance(comparison["top_k"], int)
+
+
+class _KwargRecordingPipeline:
+    """SearchPipeline stand-in recording constructor kwargs and seen queries."""
+
+    kwargs: ClassVar[dict[str, Any]] = {}
+    seen: ClassVar[list[str]] = []
+
+    def __init__(self, _connection: object, **kwargs: Any) -> None:
+        type(self).kwargs = kwargs
+
+    def search(self, query: str, _options: object) -> list:
+        type(self).seen.append(query)
+        return []
+
+
+def _test_identity(model_name: str = "model-a", *, dimension: int = EMBEDDING_DIM):
+    """Deterministic identity for the eval identity-policy tests."""
+    from sif.embedding.identity import EmbedderIdentity
+
+    return EmbedderIdentity(
+        schema_version=1,
+        cache_model_id=f"sentence_transformers:{model_name}",
+        model_name=model_name,
+        model_type="sentence_transformers",
+        api_base=None,
+        dimension=dimension,
+        pooling="mean",
+        normalized=True,
+        query_prompt=None,
+        document_prompt=None,
+        prompt_supported=False,
+        revision=None,
+        source="verified",
+    )
+
+
+class TestEvalIdentityPolicy:
+    """EMB-01: eval refuses a width mismatch and marks a same-dimension swap."""
+
+    def test_bm25_only_has_no_identity_closure(self) -> None:
+        from sif.cli.commands.eval import _search_identity_check
+
+        assert _search_identity_check(MagicMock(), None) is None
+
+    def test_dimension_mismatch_refuses_with_the_remedy(self) -> None:
+        from sif.cli.commands.eval import _search_identity_check
+        from sif.embedding.identity import IdentityCheck
+
+        stored = _test_identity("stored", dimension=4)
+        current = _test_identity("loaded", dimension=EMBEDDING_DIM)
+        check = IdentityCheck("dimension_mismatch", stored, current)
+        with (
+            patch("sif.cli.commands.eval.check_identity", return_value=check),
+            patch("sif.cli.commands.eval.warn_identity_mismatch_once") as warn,
+        ):
+            with pytest.raises(click.ClickException) as exc_info:
+                _search_identity_check(MagicMock(), current)
+
+        message = str(exc_info.value)
+        assert "FLOAT[4]" in message
+        assert f"FLOAT[{EMBEDDING_DIM}]" in message
+        assert "sif index embed --force" in message
+        warn.assert_called_once()
+
+    def test_same_dimension_mismatch_warns_and_returns_the_closure(self) -> None:
+        from sif.cli.commands.eval import _search_identity_check
+        from sif.embedding.identity import IdentityCheck
+
+        stored = _test_identity("stored")
+        current = _test_identity("loaded")
+        check = IdentityCheck("mismatch", stored, current)
+        with (
+            patch("sif.cli.commands.eval.check_identity", return_value=check) as checker,
+            patch("sif.cli.commands.eval.warn_identity_mismatch_once") as warn,
+        ):
+            closure = _search_identity_check(MagicMock(), current)
+
+        assert callable(closure)
+        warn.assert_called_once_with(stored, current)
+        assert closure(MagicMock()) is check
+        checker.assert_called()
+
+    def test_hoisted_pipeline_receives_the_identity_closure(self, tmp_path: Path) -> None:
+        db_path = build_personal_db(tmp_path / "personal.db", documents=60)
+        manager = _manager()
+        manager.get_identity.return_value = _test_identity("loaded")
+        _KwargRecordingPipeline.kwargs = {}
+        _KwargRecordingPipeline.seen = []
+
+        result = _invoke(
+            db_path,
+            ["--personal"],
+            settings=_settings(tmp_path),
+            manager=manager,
+            pipeline=_KwargRecordingPipeline,
+        )
+
+        assert result.exit_code == 0, result.output
+        assert callable(_KwargRecordingPipeline.kwargs["identity_check"])
+
+    def test_same_dimension_mismatch_warns_without_blocking_the_run(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        from sif.embedding.identity import IdentityCheck
+
+        db_path = build_personal_db(tmp_path / "personal.db", documents=60)
+        manager = _manager()
+        manager.get_identity.return_value = _test_identity("loaded")
+        _KwargRecordingPipeline.kwargs = {}
+        _KwargRecordingPipeline.seen = []
+        stored = _test_identity("stored")
+        current = _test_identity("loaded")
+
+        with (
+            patch(
+                "sif.cli.commands.eval.check_identity",
+                return_value=IdentityCheck("mismatch", stored, current),
+            ),
+            patch("sif.cli.commands.eval.warn_identity_mismatch_once") as warn,
+        ):
+            result = _invoke(
+                db_path,
+                ["--personal"],
+                settings=_settings(tmp_path),
+                manager=manager,
+                pipeline=_KwargRecordingPipeline,
+            )
+
+        assert result.exit_code == 0, result.output
+        assert _KwargRecordingPipeline.seen
+        warn.assert_called_once_with(stored, current)
+
+    def test_dimension_mismatch_refuses_before_any_query(self, tmp_path: Path) -> None:
+        from sif.embedding.identity import IdentityCheck
+
+        db_path = build_personal_db(tmp_path / "personal.db", documents=60)
+        manager = _manager()
+        manager.get_identity.return_value = _test_identity("loaded")
+        _KwargRecordingPipeline.kwargs = {}
+        _KwargRecordingPipeline.seen = []
+        stored = _test_identity("stored", dimension=4)
+        current = _test_identity("loaded")
+
+        with patch(
+            "sif.cli.commands.eval.check_identity",
+            return_value=IdentityCheck("dimension_mismatch", stored, current),
+        ):
+            result = _invoke(
+                db_path,
+                ["--personal"],
+                settings=_settings(tmp_path),
+                manager=manager,
+                pipeline=_KwargRecordingPipeline,
+            )
+
+        assert result.exit_code == 1
+        assert "FLOAT[4]" in result.output
+        assert "sif index embed --force" in result.output
+        assert _KwargRecordingPipeline.seen == []

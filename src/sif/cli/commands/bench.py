@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, replace
+from functools import partial
 from pathlib import Path
 
 import click
@@ -17,6 +20,13 @@ from sif.config.settings import Settings, get_settings, resolve_candidate_limit
 from sif.core.models import Embedder, SearchOptions
 from sif.database.database import Database
 from sif.database.repositories import CollectionRepository
+from sif.embedding.identity import (
+    EmbedderIdentity,
+    IdentityCheck,
+    check_identity,
+    schema_embedding_dim,
+    warn_identity_mismatch_once,
+)
 from sif.embedding.manager import EmbeddingManager
 from sif.search.benchmark import (
     CATEGORIES,
@@ -28,7 +38,7 @@ from sif.search.benchmark import (
     iter_grid,
     rank_sweep,
 )
-from sif.search.hybrid import SearchPipeline
+from sif.search.hybrid import SearchPipeline, search_dimension_error
 from sif.search.rerank import (
     CrossEncoderReranker,
     LlamaCppReranker,
@@ -56,38 +66,79 @@ class BenchHarness:
 
     Bundles the trio every measurement path needs (db, embedder, dim) so the
     measurement helpers stay under the argument-count limit without noqa
-    exemptions (house pattern, Phase 12 WatchConfig).
+    exemptions (house pattern, Phase 12 WatchConfig). The optional
+    ``identity_check`` rides into every pipeline the harness builds so the
+    measured states share the search-mode warn/mark policy (EMB-01).
     """
 
     db: Database
     embedder: Embedder | None
     embedding_dim: int
+    identity_check: Callable[[sqlite3.Connection], IdentityCheck] | None = None
 
 
 class CachedEmbedder:
-    """Memoizing Embedder wrapper: one embed per distinct query text (D-07).
+    """Memoizing Embedder wrapper: one embed per distinct (role, text) (D-07).
 
     The sweep re-runs BM25 and fusion for every configuration while query
     embeddings are identical across configs; wrapping the loaded model
-    memoizes ``embed`` per text so each distinct query is embedded once per
-    bench invocation — for the baseline and the sweep alike (research
-    Pattern 4). No search-signature change.
+    memoizes each role's embed per text so each distinct query is embedded
+    once per bench invocation — for the baseline and the sweep alike
+    (research Pattern 4). Role keys keep a prompted query vector and an
+    unprompted document vector of the same text apart (D-08). No
+    search-signature change.
     """
 
     def __init__(self, inner: Embedder) -> None:
         """Wrap ``inner``; the memo lives on the wrapper, never the model."""
         self._inner = inner
-        self._cache: dict[str, list[float]] = {}
+        self._cache: dict[tuple[str, str], list[float]] = {}
+
+    def _memo(self, role: str, text: str, call: Callable[[str], list[float]]) -> list[float]:
+        """Return the cached vector for ``(role, text)``, computing it once."""
+        key = (role, text)
+        if key not in self._cache:
+            self._cache[key] = call(text)
+        return self._cache[key]
+
+    def _inner_role_call(self, role: str, text: str) -> list[float]:
+        """Run one text through the inner model's role API, else plain embed.
+
+        ``embed_query`` is the single-text query method when present; the
+        document and query batch methods are reused with a one-element list so
+        the ``(role, text)`` memo still holds one inner call per text.
+        """
+        if role == "query" and getattr(type(self._inner), "embed_query", None) is not None:
+            single: Callable[[str], list[float]] = self._inner.embed_query
+            return single(text)
+        batch_name = "embed_queries" if role == "query" else "embed_documents"
+        if getattr(type(self._inner), batch_name, None) is not None:
+            batch: Callable[[list[str]], list[list[float]]] = getattr(self._inner, batch_name)
+            return batch([text])[0]
+        return self._inner.embed(text)
 
     def embed(self, text: str) -> list[float]:
-        """Embed one text, memoized (the model runs once per distinct text)."""
-        if text not in self._cache:
-            self._cache[text] = self._inner.embed(text)
-        return self._cache[text]
+        """Embed one text role-less, memoized (one model call per text)."""
+        return self._memo("plain", text, self._inner.embed)
 
     def embed_batch(self, texts: list[str]) -> list[list[float]]:
         """Embed multiple texts through the per-text cache."""
         return [self.embed(text) for text in texts]
+
+    def embed_query(self, text: str) -> list[float]:
+        """Embed one query-role text, memoized on ``("query", text)``."""
+        return self._memo("query", text, lambda value: self._inner_role_call("query", value))
+
+    def embed_queries(self, texts: list[str]) -> list[list[float]]:
+        """Embed query-role texts, memoized per text."""
+        return [self.embed_query(text) for text in texts]
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        """Embed document-role texts, memoized on ``("document", text)``."""
+        return [
+            self._memo("document", text, lambda value: self._inner_role_call("document", value))
+            for text in texts
+        ]
 
     @property
     def dimension(self) -> int:
@@ -119,6 +170,37 @@ def _load_embedder(
     except Exception as e:
         console_err.print(f"[yellow]Failed to load embedding model: {e}[/yellow]")
     return manager, embedding_dim
+
+
+def _search_identity_check(
+    manager: EmbeddingManager | None,
+    db: Database,
+) -> Callable[[sqlite3.Connection], IdentityCheck] | None:
+    """Build the search-mode identity closure, refusing a width mismatch.
+
+    Bench is a measurement command: a hybrid-labelled run cannot be measured
+    when the loaded model's width cannot fit the index, so the refusal happens
+    before any query (D-03/D-05). A same-dimension swap warns once here and
+    the pipeline still marks every measured result.
+    """
+    if manager is None:
+        return None
+    current = manager.get_identity()
+    if not isinstance(current, EmbedderIdentity):
+        return None
+    check = check_identity(db.connection, current, mode="search")
+    if check.dimension_mismatch:
+        if check.stored is not None:
+            warn_identity_mismatch_once(check.stored, check.current)
+        stored_dim = (
+            check.stored.dimension
+            if check.stored is not None
+            else schema_embedding_dim(db.connection)
+        )
+        raise click.ClickException(str(search_dimension_error(check, stored_dim)))
+    if check.untrusted and check.stored is not None:
+        warn_identity_mismatch_once(check.stored, check.current)
+    return partial(check_identity, current=current, mode="search")
 
 
 def _resolve_collection_ids(
@@ -227,6 +309,7 @@ def _measure_state(
             embedder=harness.embedder,
             embedding_dim=harness.embedding_dim,
             reranker=reranker,
+            identity_check=harness.identity_check,
         )
         return evaluator.report(
             lambda query: pipeline.search(query, options),
@@ -325,6 +408,7 @@ def _run_sweep(
             harness.db.connection,
             embedder=harness.embedder,
             embedding_dim=harness.embedding_dim,
+            identity_check=harness.identity_check,
         )
         rerank_pipeline = (
             SearchPipeline(
@@ -332,6 +416,7 @@ def _run_sweep(
                 embedder=harness.embedder,
                 embedding_dim=harness.embedding_dim,
                 reranker=reranker,
+                identity_check=harness.identity_check,
             )
             if reranker is not None
             else None
@@ -646,6 +731,10 @@ def bench_cmd(  # noqa: PLR0913
 
     with open_initialized_database(index_path, Database) as db:
         manager, embedding_dim = _load_embedder(settings, model_type)
+        # EMB-01: one search-mode check before any measurement. A width
+        # mismatch refuses the run (no hybrid measurement is possible); a
+        # same-dimension swap warns once and the harness pipeline marks.
+        identity_check = _search_identity_check(manager, db)
         # One embedding-once wrapper per bench invocation serves the baseline
         # and the sweep alike (D-07): every distinct query text is embedded
         # exactly once, then reused across all measurements.
@@ -654,6 +743,7 @@ def bench_cmd(  # noqa: PLR0913
             db=db,
             embedder=CachedEmbedder(inner_embedder) if inner_embedder is not None else None,
             embedding_dim=embedding_dim,
+            identity_check=identity_check,
         )
         collection_ids = _resolve_collection_ids(db, collection, search_all)
         options = _build_options(
