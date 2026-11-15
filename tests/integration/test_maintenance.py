@@ -9,12 +9,13 @@ before the copy.
 from __future__ import annotations
 
 import sqlite3
+import threading
 from contextlib import closing
 from pathlib import Path
 
 from sif.config.settings import Settings
 from sif.database.locking import index_lock
-from sif.database.maintenance import MaintenanceBusyError, vacuum_index
+from sif.database.maintenance import MaintenanceBusyError, backup_index, vacuum_index
 
 
 def _settings() -> Settings:
@@ -73,3 +74,46 @@ class TestVacuumUnderConcurrentReader:
         with index_lock(db_path, 2.0):
             acquired = True
         assert acquired
+
+
+class TestBackupUnderLiveWrites:
+    """The online backup API takes a consistent snapshot while writes continue."""
+
+    def test_copy_passes_integrity_and_contains_pre_snapshot_rows(self, tmp_path: Path) -> None:
+        db_path = tmp_path / "sif.db"
+        _make_db(db_path, rows=20)
+        output = tmp_path / "snapshot.db"
+
+        stop = threading.Event()
+        failures: list[BaseException] = []
+
+        def writer() -> None:
+            try:
+                with closing(sqlite3.connect(str(db_path), timeout=5.0)) as conn:
+                    counter = 0
+                    while not stop.is_set():
+                        conn.execute("INSERT INTO notes (body) VALUES (?)", ("live",))
+                        conn.commit()
+                        counter += 1
+                        if counter % 50 == 0:
+                            stop.wait(0.001)
+            except BaseException as exc:  # pragma: no cover - surfaced below
+                failures.append(exc)
+
+        thread = threading.Thread(target=writer, daemon=True)
+        thread.start()
+        try:
+            result = backup_index(db_path, output, _settings())
+        finally:
+            stop.set()
+            thread.join(timeout=10)
+        assert not failures
+        assert result.bytes_written == output.stat().st_size
+
+        with closing(sqlite3.connect(str(output))) as copy:
+            assert copy.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+            copied = copy.execute("SELECT COUNT(*) FROM notes").fetchone()[0]
+        with closing(sqlite3.connect(str(db_path))) as source:
+            total = source.execute("SELECT COUNT(*) FROM notes").fetchone()[0]
+        assert copied >= 20
+        assert copied <= total

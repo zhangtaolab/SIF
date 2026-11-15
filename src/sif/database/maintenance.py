@@ -16,9 +16,11 @@ success.
 
 from __future__ import annotations
 
+import os
 import shutil
 import sqlite3
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -48,6 +50,14 @@ class VacuumResult:
     before_bytes: int
     after_bytes: int
     reclaimed_bytes: int
+
+
+@dataclass(frozen=True)
+class BackupResult:
+    """Where a verified backup copy landed and how large it is."""
+
+    output: Path
+    bytes_written: int
 
 
 _SHADOW_EXISTS_SQL = "SELECT 1 FROM sqlite_master WHERE type='table' AND name='embedded_documents'"
@@ -181,3 +191,162 @@ def _is_busy_error(error: Exception) -> bool:
     """Whether a SQLite/OS error is the retryable locked/busy shape."""
     message = str(error).lower()
     return "locked" in message or "busy" in message
+
+
+def default_backup_path(db_path: Path) -> Path:
+    """Return ``<db_dir>/backups/<stem>-<UTC timestamp>.db``."""
+    stem = Path(db_path).stem
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return Path(db_path).parent / "backups" / f"{stem}-{stamp}.db"
+
+
+def _validate_backup_target(db_path: Path, target: Path) -> None:
+    """Refuse unsafe backup targets before any connection is opened.
+
+    A symlink is checked before resolution because resolving would hide it;
+    the reserved set names the database itself and its WAL/SHM/lock sidecars;
+    stale target sidecars would make the copy indistinguishable from a live DB.
+    """
+    if target.is_symlink():
+        raise MaintenanceTargetError(f"Refusing to back up to {target}: the target is a symlink.")
+    if target.exists():
+        raise MaintenanceTargetError(
+            f"Refusing to back up to {target}: the target already exists. "
+            "Choose a new path or remove the existing file."
+        )
+
+    resolved = target.resolve()
+    reserved = {
+        db_path,
+        db_path.with_name(db_path.name + "-wal"),
+        db_path.with_name(db_path.name + "-shm"),
+        db_path.with_name(db_path.name + ".lock"),
+    }
+    if resolved in reserved:
+        raise MaintenanceTargetError(
+            f"Refusing to back up to {target}: the target is the index database, "
+            "a WAL/SHM sidecar, or the lock file."
+        )
+    for suffix in ("-wal", "-shm"):
+        sidecar = target.with_name(target.name + suffix)
+        if sidecar.exists() or sidecar.is_symlink():
+            raise MaintenanceTargetError(
+                f"Refusing to back up to {target}: a stale sidecar {sidecar} exists."
+            )
+
+
+def _verify_backup(target: Path) -> list[tuple[str, ...]]:
+    """Return the copy's ``PRAGMA integrity_check`` rows from a fresh connection.
+
+    This runs on a plain connection (never the source or backup connection) so
+    a copy that a later reader could not open is caught before success is
+    reported.
+    """
+    conn = sqlite3.connect(str(target))
+    try:
+        rows = conn.execute("PRAGMA integrity_check").fetchall()
+    finally:
+        conn.close()
+    return [tuple(str(value) for value in row) for row in rows]
+
+
+def _discard_backup(target: Path) -> None:
+    """Remove a failed, just-created copy; it never existed before this run."""
+    try:
+        target.unlink(missing_ok=True)
+    except OSError:
+        logger.warning("Could not remove failed backup copy %s", target)
+
+
+def _copy_with_online_backup(db_path: Path, target: Path, settings: Settings) -> None:
+    """Copy through ``Connection.backup`` and discard any failed partial file."""
+    source: sqlite3.Connection | None = None
+    try:
+        source = create_connection(db_path)
+        _set_busy_timeout(source, settings)
+        target_conn = sqlite3.connect(str(target))
+        try:
+            # Connection.backup is the only WAL-safe mechanism; a plain file
+            # copy is not consistent under concurrent writers.
+            source.backup(target_conn)
+        finally:
+            target_conn.close()
+    except sqlite3.Error as e:
+        _discard_backup(target)
+        if _is_busy_error(e):
+            raise MaintenanceBusyError(
+                "The database is locked or busy. Retry once the other index "
+                f"writer has finished ({e})."
+            ) from e
+        raise MaintenanceTargetError(f"Backup to {target} failed: {e}") from e
+    except OSError as e:
+        _discard_backup(target)
+        raise MaintenanceTargetError(f"Backup to {target} failed: {e}") from e
+    finally:
+        if source is not None:
+            source.close()
+
+
+def _finalize_backup_copy(target: Path) -> int:
+    """Return the verified copy's size and restrict it to the owner."""
+    try:
+        bytes_written = target.stat().st_size
+    except OSError as e:
+        raise MaintenanceTargetError(
+            f"Backup reported success but {target} is unreadable: {e}."
+        ) from e
+    try:
+        # Backups contain full document text: never group/other readable.
+        os.chmod(target, 0o600)
+    except OSError:
+        logger.warning("Could not restrict permissions on backup copy %s", target)
+    return bytes_written
+
+
+def backup_index(db_path: Path, output: Path | None, settings: Settings) -> BackupResult:
+    """Create a verified snapshot through the SQLite online backup API.
+
+    The target is validated before any connection exists (no symlink, nothing
+    to overwrite, no database/sidecar/lock collision, no stale target
+    sidecars), the copy is taken with ``Connection.backup`` on a fresh target
+    connection under the caller's ``index_lock``, and success is reported only
+    after ``PRAGMA integrity_check`` returns exactly ``ok``.
+
+    A backup/OS failure removes the just-created copy and raises
+    ``MaintenanceTargetError``; an integrity failure keeps it for inspection
+    and raises naming the copy and the integrity output. Busy/locked failures
+    raise the retryable ``MaintenanceBusyError``.
+    """
+    db_path = Path(db_path).expanduser().resolve()
+    if not db_path.exists():
+        raise MaintenanceTargetError(
+            f"Cannot back up {db_path}: the index database does not exist."
+        )
+
+    target = Path(output).expanduser() if output is not None else default_backup_path(db_path)
+    _validate_backup_target(db_path, target)
+    target = target.resolve()
+
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    except OSError as e:
+        raise MaintenanceTargetError(
+            f"Cannot create the backup directory {target.parent}: {e}."
+        ) from e
+
+    _copy_with_online_backup(db_path, target, settings)
+
+    try:
+        integrity = _verify_backup(target)
+    except (sqlite3.Error, OSError) as e:
+        raise MaintenanceTargetError(
+            f"Backup copy at {target} could not be verified: {e}. "
+            "The file was kept for inspection; do not use it as a backup."
+        ) from e
+    if integrity != [("ok",)]:
+        raise MaintenanceTargetError(
+            f"Backup copy at {target} failed PRAGMA integrity_check: {integrity}. "
+            "The file was kept for inspection; do not use it as a backup."
+        )
+
+    return BackupResult(output=target, bytes_written=_finalize_backup_copy(target))

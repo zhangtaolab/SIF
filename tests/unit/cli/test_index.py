@@ -15,7 +15,7 @@ from sif.cli.commands.index import embed_cmd, index_group
 from sif.config.settings import Settings
 from sif.core.models import Collection, Document
 from sif.database.database import Database
-from sif.database.maintenance import MaintenanceBusyError, VacuumResult
+from sif.database.maintenance import BackupResult, MaintenanceBusyError, VacuumResult
 from sif.database.repositories import CollectionRepository, DocumentRepository
 from sif.embedding.identity import build_identity, read_identity, write_identity
 from sif.embedding.prompts import PromptScheme
@@ -937,3 +937,52 @@ class TestVacuumCommand:
         assert result.exit_code != 0
         assert "Retry once active readers finish" in result.output
         assert "Traceback" not in result.output
+
+
+class TestBackupCommand:
+    """`sif index backup` prints the verified copy or a clean target error."""
+
+    @staticmethod
+    def _settings() -> Settings:
+        return Settings(embedding_dim=DIM, model_name="test", cache_embeddings=False)
+
+    def test_backup_prints_output_and_size_and_exits_zero(self, tmp_path: Path) -> None:
+        db_path = tmp_path / "backup.db"
+        target = tmp_path / "snapshot.db"
+        settings = self._settings()
+        with (
+            patch("sif.config.settings.get_settings", return_value=settings),
+            patch(
+                "sif.cli.commands.index.backup_index",
+                return_value=BackupResult(output=target.resolve(), bytes_written=2048),
+            ),
+        ):
+            result = CliRunner().invoke(
+                index_group,
+                ["backup", "--output", str(target)],
+                obj={"index_path": db_path},
+                env={"COLUMNS": "200"},
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "Backup complete" in result.output
+        assert str(target.resolve()) in result.output
+        assert "2048 bytes" in result.output
+
+    def test_existing_target_exits_non_zero_with_reason(self, tmp_path: Path) -> None:
+        db_path = tmp_path / "backup.db"
+        target = tmp_path / "existing.db"
+        target.write_bytes(b"do not overwrite")
+        settings = self._settings()
+        with patch("sif.config.settings.get_settings", return_value=settings):
+            result = CliRunner().invoke(
+                index_group,
+                ["backup", "--output", str(target)],
+                obj={"index_path": db_path},
+                env={"COLUMNS": "200"},
+            )
+
+        assert result.exit_code != 0
+        assert "already exists" in result.output
+        assert "Traceback" not in result.output
+        assert target.read_bytes() == b"do not overwrite"

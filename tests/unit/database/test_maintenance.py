@@ -2,6 +2,8 @@
 
 Vacuum: checkpoint-first, transaction-free VACUUM with a 2x (database + WAL)
 disk precheck, a retryable busy error, and a reclaimed-size result.
+Backup: the SQLite online backup API, hard target refusals, integrity
+verification, 0600 permissions, and no convincing partial file on failure.
 """
 
 from __future__ import annotations
@@ -10,14 +12,19 @@ import sqlite3
 from contextlib import closing
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch  # noqa: F401  (used by later tasks' batteries)
 
 import pytest
 
 from sif.config.settings import Settings
 from sif.database import maintenance
 from sif.database.factory import WAL_CHECKPOINT_TRUNCATE
-from sif.database.maintenance import MaintenanceBusyError, MaintenanceTargetError, vacuum_index
+from sif.database.maintenance import (
+    MaintenanceBusyError,
+    MaintenanceTargetError,
+    backup_index,
+    default_backup_path,
+    vacuum_index,
+)
 
 
 def _settings() -> Settings:
@@ -182,3 +189,169 @@ class TestVacuumIndex:
         vacuum_index(db_path, _settings())
 
         assert observed == [False]
+
+
+class _FailingSource:
+    """Source-connection double whose backup call fails on demand."""
+
+    def __init__(self, message: str = "injected backup failure") -> None:
+        self.message = message
+        self.closed = False
+
+    def execute(self, _sql: str, _parameters: tuple = ()) -> None:
+        return None
+
+    def backup(self, _target: sqlite3.Connection) -> None:
+        raise sqlite3.OperationalError(self.message)
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class TestDefaultBackupPath:
+    """The default target is stem + UTC timestamp under the DB's backups dir."""
+
+    def test_default_path_uses_stem_timestamp_and_backups_directory(self) -> None:
+        db_path = Path("/tmp/sif.db")
+
+        target = default_backup_path(db_path)
+
+        assert target.parent == Path("/tmp/backups")
+        assert target.name.startswith("sif-")
+        assert target.name.endswith("Z.db")
+        assert target.suffix == ".db"
+
+
+class TestBackupTargetRefusals:
+    """Every unsafe target is refused before a copy is made."""
+
+    @pytest.mark.parametrize(
+        ("kind", "expected"),
+        [
+            ("exists", "already exists"),
+            ("symlink", "symlink"),
+            ("db_path", "already exists"),
+            ("wal", "index database"),
+            ("lock", "index database"),
+            ("stale_wal", "stale sidecar"),
+        ],
+    )
+    def test_unsafe_targets_raise_target_error(
+        self, tmp_path: Path, kind: str, expected: str
+    ) -> None:
+        db_path = tmp_path / "sif.db"
+        _make_db(db_path, rows=2)
+        output = tmp_path / "copy.db"
+        if kind == "exists":
+            output.write_bytes(b"do not overwrite")
+        elif kind == "symlink":
+            output.symlink_to(tmp_path / "elsewhere.db")
+        elif kind == "db_path":
+            output = db_path
+        elif kind == "wal":
+            output = db_path.with_name(db_path.name + "-wal")
+        elif kind == "lock":
+            output = db_path.with_name(db_path.name + ".lock")
+        elif kind == "stale_wal":
+            output.with_name(output.name + "-wal").write_bytes(b"stale")
+
+        with pytest.raises(MaintenanceTargetError) as excinfo:
+            backup_index(db_path, output, _settings())
+
+        assert expected in str(excinfo.value)
+
+    def test_existing_target_is_not_modified(self, tmp_path: Path) -> None:
+        db_path = tmp_path / "sif.db"
+        _make_db(db_path, rows=2)
+        output = tmp_path / "copy.db"
+        output.write_bytes(b"do not overwrite")
+
+        with pytest.raises(MaintenanceTargetError):
+            backup_index(db_path, output, _settings())
+
+        assert output.read_bytes() == b"do not overwrite"
+
+    def test_missing_database_is_refused(self, tmp_path: Path) -> None:
+        with pytest.raises(MaintenanceTargetError, match="does not exist"):
+            backup_index(tmp_path / "absent.db", tmp_path / "copy.db", _settings())
+
+
+class TestBackupIndex:
+    """A backup is an integrity-checked snapshot with 0600 permissions."""
+
+    def test_backup_opens_verifies_and_contains_committed_rows(self, tmp_path: Path) -> None:
+        db_path = tmp_path / "sif.db"
+        _make_db(db_path, rows=5, keep=5)
+        output = tmp_path / "copy.db"
+
+        result = backup_index(db_path, output, _settings())
+
+        assert result.output == output.resolve()
+        assert result.bytes_written == output.stat().st_size
+        assert output.stat().st_mode & 0o777 == 0o600
+        assert maintenance._verify_backup(output) == [("ok",)]
+        with closing(sqlite3.connect(output)) as conn:
+            assert conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+            assert conn.execute("SELECT COUNT(*) FROM notes").fetchone()[0] == 5
+
+    def test_default_target_creates_backups_directory(self, tmp_path: Path) -> None:
+        db_path = tmp_path / "sif.db"
+        _make_db(db_path, rows=2)
+
+        result = backup_index(db_path, None, _settings())
+
+        assert result.output.parent == tmp_path / "backups"
+        assert result.output.parent.is_dir()
+        assert result.output.exists()
+
+    def test_backup_failure_removes_the_just_created_target(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        db_path = tmp_path / "sif.db"
+        _make_db(db_path, rows=2)
+        output = tmp_path / "copy.db"
+        fake = _FailingSource()
+        monkeypatch.setattr(maintenance, "create_connection", lambda _path: fake)
+
+        with pytest.raises(MaintenanceTargetError) as excinfo:
+            backup_index(db_path, output, _settings())
+
+        assert "injected backup failure" in str(excinfo.value)
+        assert not output.exists()
+        assert fake.closed
+
+    def test_busy_backup_is_retryable(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        db_path = tmp_path / "sif.db"
+        _make_db(db_path, rows=2)
+        output = tmp_path / "copy.db"
+        fake = _FailingSource("database is locked")
+        monkeypatch.setattr(maintenance, "create_connection", lambda _path: fake)
+
+        with pytest.raises(MaintenanceBusyError, match="Retry once"):
+            backup_index(db_path, output, _settings())
+
+        assert not output.exists()
+
+    def test_integrity_failure_keeps_the_copy_and_names_it(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        db_path = tmp_path / "sif.db"
+        _make_db(db_path, rows=2)
+        output = tmp_path / "copy.db"
+        monkeypatch.setattr(maintenance, "_verify_backup", lambda _target: [("row 3 missing",)])
+
+        with pytest.raises(MaintenanceTargetError) as excinfo:
+            backup_index(db_path, output, _settings())
+
+        message = str(excinfo.value)
+        assert str(output.resolve()) in message
+        assert "row 3 missing" in message
+        assert output.exists()
+
+    def test_never_uses_a_file_copy_or_vacuum_into(self) -> None:
+        source = Path(maintenance.__file__).read_text(encoding="utf-8")
+
+        assert "shutil.copy" not in source
+        assert "VACUUM INTO" not in source

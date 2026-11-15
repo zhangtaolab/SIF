@@ -20,6 +20,7 @@ from sif.database.locking import index_lock
 from sif.database.maintenance import (
     MaintenanceBusyError,
     MaintenanceTargetError,
+    backup_index,
     vacuum_index,
 )
 from sif.database.repositories import (
@@ -544,6 +545,47 @@ def vacuum_cmd(ctx: click.Context) -> None:
     console.print(f"  Before: {_format_bytes(result.before_bytes)}")
     console.print(f"  After: {_format_bytes(result.after_bytes)}")
     console.print(f"  Reclaimed: {_format_bytes(result.reclaimed_bytes)}")
+
+
+@index_group.command("backup")
+@click.option(
+    "--output",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Destination file for the verified backup copy",
+)
+@click.pass_context
+def backup_cmd(ctx: click.Context, output: Path | None) -> None:
+    """Create a verified backup copy of the index database."""
+    index_path = ctx.obj["index_path"]
+
+    # Run schema migrations/backfills first; the copy itself is taken by the
+    # maintenance helper under the index lock, outside Database.transaction().
+    with open_initialized_database(index_path, Database):
+        pass
+
+    from sif.config.settings import get_settings  # noqa: PLC0415
+
+    settings = get_settings()
+    lock_timeout = settings.lock_wait_timeout
+    with index_lock(
+        Path(index_path),
+        lock_timeout,
+        on_wait=lambda: console.print(
+            f"[dim]Another index writer is running; waiting up to {lock_timeout:.0f}s...[/dim]"
+        ),
+    ):
+        try:
+            result = backup_index(Path(index_path), output, settings)
+        except MaintenanceBusyError as e:
+            # Retryable by design (D-14): never a traceback, never partial success.
+            raise click.ClickException(str(e)) from e
+        except (MaintenanceTargetError, sqlite3.Error, OSError) as e:
+            raise click.ClickException(str(e)) from e
+
+    console.print("[green]Backup complete:[/green]")
+    console.print(f"  Output: {result.output}")
+    console.print(f"  Size: {_format_bytes(result.bytes_written)}")
 
 
 @index_group.command("status")
