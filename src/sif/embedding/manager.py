@@ -11,7 +11,7 @@ from sif.embedding.cache import EmbeddingCache
 from sif.embedding.factory import EmbeddingModelFactory
 from sif.embedding.identity import EmbedderIdentity, build_identity, format_cache_model_id
 from sif.embedding.prompts import PromptScheme, resolve_prompt_scheme
-from sif.models.embedding import EmbeddingConfig, EmbeddingResponse, ModelType
+from sif.models.embedding import EmbeddingConfig, EmbeddingOutputError, EmbeddingResponse, ModelType
 from sif.utils.logging import get_logger
 
 
@@ -206,9 +206,10 @@ class EmbeddingManager:
 
         # Guard the 1:1 texts<->embeddings contract: silently dropping
         # unfilled slots would misalign chunk->vector associations upstream.
+        # A systemic model defect, not a document-local failure (D-17).
         result_embeddings = [e for e in embeddings if e is not None]
         if len(result_embeddings) != len(texts):
-            raise RuntimeError(
+            raise EmbeddingOutputError(
                 f"Embedding model returned {len(result_embeddings)} embeddings for "
                 f"{len(texts)} inputs"
             )
@@ -285,7 +286,7 @@ class EmbeddingManager:
         """Reject non-finite or wrong-dimension model output before caching it."""
         expected = self.get_identity().dimension
         if len(vector) != expected:
-            raise RuntimeError(
+            raise EmbeddingOutputError(
                 f"Embedding model '{bucket}' returned a {len(vector)}-dim vector at "
                 f"position {position}; expected {expected} dims"
             )
@@ -294,7 +295,7 @@ class EmbeddingManager:
         except (TypeError, ValueError):
             finite = False
         if not finite:
-            raise RuntimeError(
+            raise EmbeddingOutputError(
                 f"Embedding model '{bucket}' returned a non-finite vector at position {position}"
             )
 
@@ -335,7 +336,7 @@ class EmbeddingManager:
         indices, to_embed = zip(*texts_to_embed, strict=True)
         new_embeddings = model_call(list(to_embed))
         if len(new_embeddings) != len(to_embed):
-            raise RuntimeError(
+            raise EmbeddingOutputError(
                 f"Embedding model returned {len(new_embeddings)} embeddings for "
                 f"{len(to_embed)} inputs"
             )

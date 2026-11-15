@@ -31,6 +31,7 @@ from sif.embedding.identity import (
     read_identity,
     write_identity,
 )
+from sif.models.embedding import EmbeddingOutputError
 
 
 if TYPE_CHECKING:
@@ -180,7 +181,18 @@ class StreamingEmbedWriter:
 
         vectors: list[list[float]] = []
         for batch_index, batch in enumerate(_batches(chunks, self._batch_size)):
-            response = self._manager.embed_documents([chunk.content for chunk in batch])
+            try:
+                response = self._manager.embed_documents([chunk.content for chunk in batch])
+            except EmbeddingOutputError as e:
+                # WR-02: the manager validates model output before
+                # ``validate_batch`` can see it. That class is systemic — the
+                # model, not the document, is broken — so translate it into
+                # the host's abort/disable path instead of a document-local
+                # failure the watcher would retry forever.
+                raise SystemicEmbedError(
+                    f"Embedding batch validation failed for document {doc.path}, "
+                    f"batch {batch_index}: {e}"
+                ) from e
             batch_vectors = list(response.embeddings)
             if self._identity is not None:
                 validate_batch(batch_vectors, batch, self._identity, doc.path, batch_index)

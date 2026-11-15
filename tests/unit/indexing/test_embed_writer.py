@@ -26,7 +26,7 @@ from sif.indexing.embed_writer import (
     StreamingEmbedWriter,
     SystemicEmbedError,
 )
-from sif.models.embedding import EmbeddingConfig, ModelType
+from sif.models.embedding import EmbeddingConfig, EmbeddingOutputError, ModelType
 from sif.search.vector import VectorSearcher
 
 
@@ -111,6 +111,17 @@ class _RecordingManager:
             raise AssertionError("embedding compute ran inside a database transaction")
         self.calls.append(list(texts))
         return SimpleNamespace(embeddings=self._vectors_for(list(texts)))
+
+
+class _OutputErrorManager(_RecordingManager):
+    """Fake manager whose model output is systematically invalid (WR-02)."""
+
+    def embed_documents(self, texts: list[str]) -> SimpleNamespace:
+        """Raise the manager's dedicated model-output error."""
+        raise EmbeddingOutputError(
+            f"Embedding model 'test' returned a 3-dim vector at position 0; "
+            f"expected 8 dims (requested {len(texts)} text(s))"
+        )
 
 
 def _setup(tmp_path: Path) -> tuple[Database, Collection, Document, VectorSearcher]:
@@ -408,6 +419,42 @@ def test_garbage_sanity_after_a_committed_document_leaves_it_intact(tmp_path: Pa
     assert stored is not None
     assert stored.source == "verified"
     assert writer.identity_pending is False
+
+
+def test_manager_output_error_is_translated_to_systemic(tmp_path: Path) -> None:
+    """WR-02: manager-validated model output aborts instead of retrying.
+
+    The manager raises ``EmbeddingOutputError`` before ``validate_batch`` is
+    reached; the writer must surface it as ``SystemicEmbedError`` so the CLI
+    aborts the run and the watcher disables the session rather than recording
+    a per-document failure that is retried on every later burst.
+    """
+    db, _coll, doc, searcher = _setup(tmp_path)
+    writer = StreamingEmbedWriter(
+        db.connection,
+        _OutputErrorManager(db.connection),
+        _OneChunkChunker(),
+        searcher,
+        _identity(),
+        batch_size=32,
+        write_identity=True,
+    )
+
+    try:
+        with pytest.raises(SystemicEmbedError, match="batch validation failed") as excinfo:
+            writer.embed_document(doc)
+        counts = _counts(db.connection, doc.id)
+        stored = read_identity(db.connection)
+    finally:
+        db.close()
+
+    message = str(excinfo.value)
+    assert doc.path in message
+    assert "batch 0" in message
+    assert "3-dim vector" in message
+    assert counts == (0, 0, 0)
+    assert stored is None
+    assert writer.identity_pending is True
 
 
 def test_stale_first_write_claim_is_revalidated_inside_the_transaction(tmp_path: Path) -> None:

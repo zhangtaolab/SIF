@@ -8,7 +8,7 @@ import pytest
 from sif.config.settings import Settings
 from sif.embedding.cache import EmbeddingCache
 from sif.embedding.manager import EmbeddingManager
-from sif.models.embedding import EmbeddingConfig, ModelType
+from sif.models.embedding import EmbeddingConfig, EmbeddingOutputError, ModelType
 
 
 # D-19: the pre-Phase-21 default ``_cache_model_id()`` for the shipped
@@ -459,6 +459,37 @@ class TestCacheSafety:
         assert manager._config.document_prompt_name == "d"
         assert manager._prompt_scheme.query_prompt == "q"
         assert manager._prompt_scheme.document_prompt == "d"
+
+
+class TestSystemicOutputErrors:
+    """WR-02: model-output defects raise the dedicated systemic exception."""
+
+    def test_wrong_dimension_raises_embedding_output_error(self, tmp_path: Path) -> None:
+        class _WrongDimEmbedder(_RecordingEmbedder):
+            def embed_batch(self, _texts: list[str]) -> list[list[float]]:
+                return [[0.1, 0.1, 0.1] for _ in _texts]
+
+        manager = _make_manager(tmp_path, _WrongDimEmbedder())
+        with pytest.raises(EmbeddingOutputError, match="3-dim vector at position 0"):
+            manager.embed_documents(["alpha"])
+
+    def test_count_mismatch_raises_embedding_output_error(self, tmp_path: Path) -> None:
+        class _ShortEmbedder(_RecordingEmbedder):
+            def embed_batch(self, _texts: list[str]) -> list[list[float]]:
+                return [[0.1] * self.dimension]
+
+        manager = _make_manager(tmp_path, _ShortEmbedder())
+        with pytest.raises(EmbeddingOutputError, match="1 embeddings for 2 inputs"):
+            manager.embed_queries(["alpha", "beta"])
+
+    def test_non_finite_output_raises_embedding_output_error(self, tmp_path: Path) -> None:
+        class _NonFiniteEmbedder(_RecordingEmbedder):
+            def embed_batch(self, _texts: list[str]) -> list[list[float]]:
+                return [[float("nan")] * self.dimension for _ in _texts]
+
+        manager = _make_manager(tmp_path, _NonFiniteEmbedder())
+        with pytest.raises(EmbeddingOutputError, match="non-finite vector at position 0"):
+            manager.embed_documents(["alpha"])
 
 
 class TestRoleHelpers:

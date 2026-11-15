@@ -80,3 +80,14 @@ class EmbeddingResponse(BaseModel):
     dimensions: int = Field(..., ge=1)
     total_tokens: int = Field(..., ge=0)
     processing_time_ms: float = Field(..., ge=0)
+
+
+class EmbeddingOutputError(RuntimeError):
+    """The model returned output that cannot be persisted as embeddings.
+
+    A wrong output count, width, or non-finite value is a property of the
+    model, not of the document being embedded (D-17). The manager raises this
+    dedicated type so streaming hosts can abort the run — or disable a watch
+    session — instead of recording a per-document failure and retrying the
+    same systematic defect forever.
+    """

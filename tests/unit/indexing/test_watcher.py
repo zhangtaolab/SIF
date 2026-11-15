@@ -40,7 +40,7 @@ from sif.indexing import watcher as watcher_module
 from sif.indexing.incremental import IncrementalIndexer, IncrementalResult
 from sif.indexing.scanner import FileScanner
 from sif.indexing.watcher import FileWatcher, FoldResult, WatchConfig, fold_events
-from sif.models.embedding import EmbeddingConfig, ModelType
+from sif.models.embedding import EmbeddingConfig, EmbeddingOutputError, ModelType
 
 
 BODY_ALPHA = "# Heading One\n\n" + ("Alpha paragraph text. " * 50)
@@ -2123,6 +2123,73 @@ class TestEmbedDepth:
         assert all(row[1] is not None for row in rows_a)
         assert len(rows_b) >= 1
         assert all(row[1] is not None for row in rows_b)
+
+    def test_systemic_model_output_disables_the_session_without_retry(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """WR-02: a systematically invalid model output disables embedding.
+
+        The manager's count/dimension guard raises the dedicated
+        ``EmbeddingOutputError`` before the writer's own batch validation is
+        reached. The writer translates it to ``SystemicEmbedError`` so the
+        session disables itself instead of re-queuing the path on every later
+        burst for a defect no retry can fix.
+        """
+        db_path, doc_a, doc_b = self._prepare_two_changed_docs(tmp_path, monkeypatch)
+
+        def bad_output(_texts: list[str], **_kwargs: object) -> MagicMock:
+            raise EmbeddingOutputError("returned a 3-dim vector; expected 8 dims")
+
+        manager = _embed_manager_mock()
+        manager.embed_documents.side_effect = bad_output
+
+        events: list[str] = []
+        db = Database(db_path)
+        try:
+            from sif.database.repositories import CollectionRepository
+
+            coll = CollectionRepository(db.connection).get_by_name("notes")
+            assert coll is not None
+            with (
+                patch("sif.config.settings.get_settings", return_value=_test_settings()),
+                patch(
+                    "sif.embedding.manager.EmbeddingManager.from_settings",
+                    return_value=manager,
+                ),
+            ):
+                watcher = FileWatcher(
+                    [coll],
+                    db.connection,
+                    db_path,
+                    WatchConfig(depth="embed", on_event=events.append),
+                )
+                watcher._settled_callback(coll)(
+                    [FileModifiedEvent(str(doc_a)), FileModifiedEvent(str(doc_b))]
+                )
+                watcher._drain_once()
+                assert manager.embed_documents.call_count == 1
+
+                # A real content change on a later burst would normally retry
+                # the failed path; the disabled session refuses it.
+                doc_a.write_text("# A3\n\n" + ("Alpha three text. " * 40), encoding="utf-8")
+                watcher._settled_callback(coll)([FileModifiedEvent(str(doc_a))])
+                watcher._drain_once()
+                assert manager.embed_documents.call_count == 1
+        finally:
+            db.close()
+
+        disabled = [e for e in events if "Embedding disabled for this watch session" in e]
+        assert len(disabled) == 1
+        assert "3-dim vector" in disabled[0]
+
+        check = self._check_conn(db_path)
+        try:
+            # The BM25 leg purged the changed bodies and the systemic embed
+            # abort persisted nothing: no chunk or vector rows remain.
+            assert _chunk_rows(check, doc_a) == []
+            assert _chunk_rows(check, doc_b) == []
+        finally:
+            check.close()
 
     def test_reconcile_at_embed_depth_rewrites_purged_vectors(self, tmp_path, monkeypatch):
         """IN-04: a reconcile job (directory move, returning root) at embed
