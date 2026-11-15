@@ -980,6 +980,30 @@ class TestCollectionMetadata:
         assert result.exit_code != 0
         assert "Collection 'missing' not found" in result.output
 
+    @pytest.mark.parametrize(
+        ("payload", "operator", "field"),
+        [
+            ('{"field":"path","operator":"lt","value":5}', "lt", "path"),
+            ('{"field":"path","operator":"eq","value":5}', "eq", "path"),
+            ('{"field":"path","operator":"all","value":["a"]}', "all", "path"),
+            ('{"field":"mtime","operator":"prefix","value":"x"}', "prefix", "mtime"),
+            ('{"field":"mtime","operator":"all","value":[1]}', "all", "mtime"),
+        ],
+    )
+    def test_reserved_field_mistakes_fail_before_the_database_opens(
+        self, tmp_path: Path, payload: str, operator: str, field: str
+    ) -> None:
+        """WR-02: a rejected built-in form never reaches the DB-open block."""
+        db_path = tmp_path / "never.db"
+
+        result = self._invoke(db_path, "--filter", payload)
+
+        assert result.exit_code != 0
+        assert f"filter.{operator}:" in result.output
+        assert field in result.output
+        assert "Traceback" not in result.output
+        assert not db_path.exists()
+
     def test_unbounded_integer_filter_is_a_user_error(self, tmp_path: Path) -> None:
         """WR-01: a huge integer operand uses the ClickException boundary."""
         db_path = tmp_path / "never.db"

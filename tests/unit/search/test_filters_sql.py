@@ -787,18 +787,23 @@ class TestBuiltInFieldMatrix:
         assert str(excinfo.value).startswith("filter.mtime.gt:")
         assert "requires a numeric value" in str(excinfo.value)
 
-    def test_mtime_case_insensitive_rejected_after_normalization(self) -> None:
-        """An ISO mtime operand with caseInsensitive normalizes, then rejects."""
-        node = parse_filter(
-            {
-                "field": "mtime",
-                "operator": "eq",
-                "value": "2026-01-01",
-                "caseInsensitive": True,
-            }
-        )
+    def test_mtime_case_insensitive_rejected_at_parse_time(self) -> None:
+        """WR-02: an ISO mtime operand with caseInsensitive is a parse-time error.
+
+        The pairing used to parse and normalize, then fail inside the compiler
+        (after the CLI/MCP error boundary); it now reports the D-17 path.
+        """
         with pytest.raises(FilterValidationError) as excinfo:
-            compile_filter(node)
+            parse_filter(
+                {
+                    "field": "mtime",
+                    "operator": "eq",
+                    "value": "2026-01-01",
+                    "caseInsensitive": True,
+                }
+            )
+        assert str(excinfo.value).startswith("filter.eq:")
+        assert "mtime" in str(excinfo.value)
         assert "caseInsensitive" in str(excinfo.value)
 
     def test_path_type_case_insensitive_rejected(self) -> None:

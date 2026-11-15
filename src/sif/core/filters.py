@@ -63,6 +63,12 @@ _TYPE_VALUES = frozenset({"string", "number", "boolean"})
 # Operators whose operand is compared against an ``mtime`` value and may
 # therefore carry an ISO-8601 string normalized to epoch seconds (D-12).
 _MTIME_TEXT_OPERATORS = frozenset({"eq", "ne", "gt", "gte", "lt", "lte", "in", "nin"})
+# D-03 reserved-field compatibility (WR-02): the compiler owns SQL and rejects
+# these pairings defensively, but the shared grammar must reject them first so
+# every surface reports the same ``filter.<field>.<operator>`` user error.
+_RESERVED_FIELDS = frozenset({"path", "mtime"})
+_ORDERING_OPERATORS = frozenset({"gt", "gte", "lt", "lte"})
+_TEXT_OPERATORS = frozenset({"contains", "prefix", "suffix"})
 
 
 class FilterValidationError(Exception):
@@ -457,6 +463,97 @@ def _check_case_insensitive(field: str, raw: dict[str, Any], path: str) -> None:
     )
 
 
+def _is_text_operand(value: Any) -> bool:
+    """True for a non-empty string or a non-empty homogeneous string list."""
+    if isinstance(value, str):
+        return value != ""
+    return (
+        isinstance(value, list)
+        and bool(value)
+        and all(isinstance(item, str) and item != "" for item in value)
+    )
+
+
+def _is_mtime_operand(value: Any) -> bool:
+    """True for a number or ISO text (and their homogeneous lists) on ``mtime``."""
+    scalars = value if isinstance(value, list) else [value]
+    return bool(scalars) and all(
+        (isinstance(item, str) and item != "")
+        or (isinstance(item, (int, float)) and not isinstance(item, bool))
+        for item in scalars
+    )
+
+
+def _check_path_field(raw: dict[str, Any], path: str) -> None:
+    """Validate one condition against the reserved text built-in ``path``."""
+    operator = str(raw.get("operator", ""))
+    field = "path"
+    value = raw.get("value")
+    if operator in _ORDERING_OPERATORS:
+        raise FilterValidationError(
+            path,
+            f'"{operator}" does not support ordering on a text built-in; field {field!r}',
+        )
+    if operator == "all":
+        raise FilterValidationError(
+            path, f'"{operator}" is not available on a scalar built-in; field {field!r}'
+        )
+    if raw.get("caseInsensitive") and operator == "type":
+        raise FilterValidationError(
+            path,
+            f'"{operator}" does not accept caseInsensitive on a text built-in; field {field!r}',
+        )
+    if operator in {"eq", "ne", "in", "nin"} and not _is_text_operand(value):
+        raise FilterValidationError(path, f'"{operator}" requires a string value; field {field!r}')
+
+
+def _check_mtime_field(raw: dict[str, Any], path: str) -> None:
+    """Validate one condition against the reserved numeric built-in ``mtime``."""
+    operator = str(raw.get("operator", ""))
+    field = "mtime"
+    value = raw.get("value")
+    if raw.get("caseInsensitive"):
+        raise FilterValidationError(
+            path,
+            f'"{operator}" does not accept caseInsensitive on a numeric built-in; field {field!r}',
+        )
+    if operator in _TEXT_OPERATORS:
+        raise FilterValidationError(
+            path, f'"{operator}" is not available on a numeric built-in; field {field!r}'
+        )
+    if operator == "all":
+        raise FilterValidationError(
+            path, f'"{operator}" is not available on a scalar built-in; field {field!r}'
+        )
+    if operator in {"eq", "ne", "in", "nin"} and not _is_mtime_operand(value):
+        raise FilterValidationError(
+            path,
+            f'"{operator}" requires a numeric or ISO-8601 value; field {field!r}',
+        )
+
+
+def _check_reserved_field(field: str, raw: dict[str, Any], path: str) -> None:
+    """Reject built-in/operator pairings the SQL compiler cannot render (WR-02).
+
+    ``path`` is text and ``mtime`` is numeric (D-03) and ordering is
+    numeric-only (D-11). This matrix used to live only in
+    ``sif.search.filters``, which runs after the CLI's ClickException boundary
+    and after the MCP handler's ``isError`` mapping — so a well-formed payload
+    such as ``{"field": "path", "operator": "lt"}`` surfaced a traceback
+    instead of the D-17 message. Making it a parse-time rule gives the CLI,
+    MCP, and discovery one taxonomy; the compiler keeps its defensive checks
+    for directly constructed ASTs.
+
+    ``caseInsensitive: false`` is treated exactly like an absent flag (WR-03),
+    and an ``mtime`` string operand is allowed here because
+    :func:`_normalize_mtime` validates it as ISO-8601 immediately after.
+    """
+    if field == "path":
+        _check_path_field(raw, path)
+    elif field == "mtime":
+        _check_mtime_field(raw, path)
+
+
 def _check_field_bytes(field: str, path: str) -> None:
     """Reject a ``field`` longer than 128 UTF-8 bytes (qmd's maxKeyBytes)."""
     if len(field.encode("utf-8")) > MAX_FILTER_FIELD_BYTES:
@@ -488,6 +585,8 @@ def _validate_semantics(raw: Any, path: str = "") -> None:
         raise FilterValidationError(node_path, f'"{operator}" is not a known operator')
     validator(field, raw.get("value"), node_path, operator)
     _check_case_insensitive(field, raw, node_path)
+    if field in _RESERVED_FIELDS:
+        _check_reserved_field(field, raw, node_path)
 
 
 def _parse_iso_epoch(value: str, path: str) -> int:

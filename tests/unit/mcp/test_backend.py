@@ -1556,6 +1556,40 @@ class TestMetadataToolHandler:
         assert result.content[0].text.startswith("filter")
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("payload", "operator", "field"),
+        [
+            ({"field": "path", "operator": "lt", "value": 5}, "lt", "path"),
+            ({"field": "path", "operator": "eq", "value": 5}, "eq", "path"),
+            ({"field": "path", "operator": "all", "value": ["a"]}, "all", "path"),
+            (
+                {"field": "path", "operator": "type", "value": "string", "caseInsensitive": True},
+                "type",
+                "path",
+            ),
+            ({"field": "mtime", "operator": "prefix", "value": "x"}, "prefix", "mtime"),
+            ({"field": "mtime", "operator": "all", "value": [1]}, "all", "mtime"),
+            ({"field": "mtime", "operator": "contains", "value": "x"}, "contains", "mtime"),
+            (
+                {"field": "mtime", "operator": "eq", "value": 1, "caseInsensitive": True},
+                "eq",
+                "mtime",
+            ),
+        ],
+    )
+    async def test_reserved_field_mistakes_are_tool_errors(
+        self, backend, payload: dict, operator: str, field: str
+    ) -> None:
+        """WR-02: the same rejected forms are controlled isError results over MCP."""
+        from sif.mcp.handlers import MetadataToolHandler
+
+        result = await MetadataToolHandler().handle({"filter": payload}, backend)
+
+        assert result.isError is True
+        assert result.content[0].text.startswith(f"filter.{operator}:")
+        assert field in result.content[0].text
+
+    @pytest.mark.asyncio
     async def test_invalid_match_is_not_a_protocol_error(self) -> None:
         """D-17: the JSON-RPC envelope is a success with ``result.isError`` true."""
         from sif.mcp.handlers import MetadataToolHandler

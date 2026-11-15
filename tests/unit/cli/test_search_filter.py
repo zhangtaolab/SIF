@@ -35,6 +35,24 @@ _ACTIVE_FILTER = '{"field": "status", "operator": "eq", "value": "active"}'
 _NO_MATCH_FILTER = '{"field": "status", "operator": "eq", "value": "missing"}'
 _BAD_AST_FILTER = '{"field": "tags", "operator": "gt", "value": "x"}'
 
+# WR-02: built-in/operator pairings the compiler used to reject after the
+# ClickException boundary. Each must now be a parse-time `filter.<operator>`
+# error whose message names the offending field.
+_REJECTED_BUILTIN_FILTERS = (
+    ('{"field":"path","operator":"lt","value":5}', "lt", "path"),
+    ('{"field":"path","operator":"eq","value":5}', "eq", "path"),
+    ('{"field":"path","operator":"all","value":["a"]}', "all", "path"),
+    (
+        '{"field":"path","operator":"type","value":"string","caseInsensitive":true}',
+        "type",
+        "path",
+    ),
+    ('{"field":"mtime","operator":"prefix","value":"x"}', "prefix", "mtime"),
+    ('{"field":"mtime","operator":"all","value":[1]}', "all", "mtime"),
+    ('{"field":"mtime","operator":"contains","value":"x"}', "contains", "mtime"),
+    ('{"field":"mtime","operator":"eq","value":1,"caseInsensitive":true}', "eq", "mtime"),
+)
+
 # (name, command) for the three result commands; D-01 requires the same flag
 # name, grammar, and semantics on every one of them.
 _RESULT_COMMANDS = (
@@ -223,6 +241,31 @@ class TestFilterOptionMatrix:
         assert result.exit_code != 0
         assert "filter.gt" in result.output
         assert "OverflowError" not in result.output
+        opened.assert_not_called()
+        refresh.assert_not_called()
+
+    @pytest.mark.parametrize(("payload", "operator", "field"), _REJECTED_BUILTIN_FILTERS)
+    @pytest.mark.parametrize("cmd", _RESULT_COMMANDS)
+    def test_reserved_field_mistakes_are_user_errors(
+        self, cmd: object, payload: str, operator: str, field: str
+    ) -> None:
+        """WR-02: every rejected built-in form names its D-17 path, no traceback."""
+        opened = MagicMock()
+        refresh = MagicMock()
+        with (
+            patch("sif.cli.commands.search.open_initialized_database", opened),
+            patch("sif.cli.commands.search._pre_search_refresh", refresh),
+        ):
+            result = CliRunner().invoke(
+                cmd,
+                ["needle", "--filter", payload],
+                obj={"index_path": _index_path()},
+            )
+
+        assert result.exit_code != 0
+        assert f"filter.{operator}:" in result.output
+        assert field in result.output
+        assert "Traceback" not in result.output
         opened.assert_not_called()
         refresh.assert_not_called()
 

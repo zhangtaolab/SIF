@@ -7,7 +7,7 @@ dotted AST path — not merely that an exception type was raised (D-17).
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 
@@ -352,6 +352,62 @@ class TestBudgets:
         with pytest.raises(FilterValidationError) as excinfo:
             parse_filter(payload)
         assert "maximum nesting depth" in str(excinfo.value)
+
+
+class TestReservedFieldGrammar:
+    """WR-02: built-in/operator compatibility is a parse-time rule (D-03/D-11)."""
+
+    _REJECTED: ClassVar[list[tuple[dict[str, Any], str, str]]] = [
+        ({"field": "path", "operator": "lt", "value": 5}, "lt", "path"),
+        ({"field": "path", "operator": "gte", "value": 5}, "gte", "path"),
+        ({"field": "path", "operator": "eq", "value": 5}, "eq", "path"),
+        ({"field": "path", "operator": "ne", "value": True}, "ne", "path"),
+        ({"field": "path", "operator": "in", "value": [1]}, "in", "path"),
+        ({"field": "path", "operator": "nin", "value": [True]}, "nin", "path"),
+        ({"field": "path", "operator": "all", "value": ["a"]}, "all", "path"),
+        (
+            {"field": "path", "operator": "type", "value": "string", "caseInsensitive": True},
+            "type",
+            "path",
+        ),
+        ({"field": "mtime", "operator": "prefix", "value": "x"}, "prefix", "mtime"),
+        ({"field": "mtime", "operator": "suffix", "value": "x"}, "suffix", "mtime"),
+        ({"field": "mtime", "operator": "contains", "value": "x"}, "contains", "mtime"),
+        ({"field": "mtime", "operator": "all", "value": [1]}, "all", "mtime"),
+        ({"field": "mtime", "operator": "in", "value": [True]}, "in", "mtime"),
+        (
+            {"field": "mtime", "operator": "eq", "value": 1, "caseInsensitive": True},
+            "eq",
+            "mtime",
+        ),
+    ]
+
+    @pytest.mark.parametrize(("payload", "operator", "field"), _REJECTED)
+    def test_rejected_builtin_forms_are_parse_errors(
+        self, payload: dict[str, Any], operator: str, field: str
+    ) -> None:
+        """Every compiler-only rejection is now addressed by its D-17 parse path."""
+        with pytest.raises(FilterValidationError) as excinfo:
+            parse_filter(payload)
+
+        message = str(excinfo.value)
+        assert message.startswith(f"filter.{operator}:")
+        assert field in message
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {"field": "path", "operator": "prefix", "value": "/notes/"},
+            {"field": "path", "operator": "eq", "value": "/notes/a.md"},
+            {"field": "path", "operator": "in", "value": ["/a.md", "/b.md"]},
+            {"field": "path", "operator": "type", "value": "string"},
+            {"field": "mtime", "operator": "gte", "value": "2026-01-01"},
+            {"field": "mtime", "operator": "in", "value": ["2026-01-01"]},
+        ],
+    )
+    def test_valid_builtin_forms_still_parse(self, payload: dict[str, Any]) -> None:
+        """The new parse-time matrix never rejects a form the compiler supports."""
+        parse_filter(payload)
 
 
 class TestMtimeParsing:
