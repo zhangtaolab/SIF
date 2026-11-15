@@ -4442,6 +4442,62 @@ class TestSearchIdentityPolicy:
 
         return IdentityCheck(status=status, stored=stored, current=current)
 
+    @staticmethod
+    def _seed_identity_index(tmp_path: Path) -> Path:
+        """Real index with stored vectors and a ``model-a`` identity row."""
+        import sqlite_vec
+
+        from sif.database.schema import SchemaManager
+        from sif.embedding.identity import write_identity
+        from sif.search.vector import VectorSearcher
+
+        db_path = tmp_path / "identity.db"
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        try:
+            conn.enable_load_extension(True)
+            sqlite_vec.load(conn)
+            conn.enable_load_extension(False)
+        except Exception:
+            conn.close()
+            pytest.skip("sqlite-vec not available")
+
+        now = "2026-11-16T00:00:00+00:00"
+        try:
+            SchemaManager(conn, embedding_dim=2).create_all()
+            conn.execute(
+                "INSERT INTO collections (id, name, path, created_at, updated_at)"
+                " VALUES ('c1', 'notes', '/notes', ?, ?)",
+                (now, now),
+            )
+            for doc_id, title, path, content in [
+                ("d1", "Apple Pie", "/notes/apple-pie.md", "apple pie recipe sweet dessert"),
+                ("d2", "Quantum Physics", "/notes/quantum.md", "quantum physics computing"),
+            ]:
+                conn.execute(
+                    "INSERT INTO documents (id, collection_id, path, filename, title,"
+                    " content, checksum, mtime, created_at, updated_at)"
+                    " VALUES (?, 'c1', ?, ?, ?, ?, 'x', 1.0, ?, ?)",
+                    (doc_id, path, path.split("/")[-1], title, content, now, now),
+                )
+                conn.execute(
+                    "INSERT INTO document_chunks (id, document_id, sequence, content,"
+                    " created_at) VALUES (?, ?, 0, ?, ?)",
+                    (f"chunk-{doc_id}", doc_id, content, now),
+                )
+            searcher = VectorSearcher(conn, embedding_dim=2)
+            searcher.add_embeddings_batch(
+                [
+                    ("e-d1", "d1", "chunk-d1", [0.2, 0.9]),
+                    ("e-d2", "d2", "chunk-d2", [0.95, 0.1]),
+                ]
+            )
+            with conn:
+                write_identity(conn, TestSearchIdentityPolicy._identity("model-a"))
+        finally:
+            conn.close()
+        return db_path
+
     def _invoke_vsearch(
         self,
         tmp_path: Path,
@@ -4617,57 +4673,7 @@ class TestSearchIdentityPolicy:
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """End-to-end: one warning, all rows stale, no second warning on repeat."""
-        import sqlite_vec
-
-        from sif.database.schema import SchemaManager
-        from sif.embedding.identity import write_identity
-        from sif.search.vector import VectorSearcher
-
-        db_path = tmp_path / "identity.db"
-        conn = sqlite3.connect(db_path)
-        conn.row_factory = sqlite3.Row
-        try:
-            conn.enable_load_extension(True)
-            sqlite_vec.load(conn)
-            conn.enable_load_extension(False)
-        except Exception:
-            conn.close()
-            pytest.skip("sqlite-vec not available")
-
-        now = "2026-11-16T00:00:00+00:00"
-        try:
-            SchemaManager(conn, embedding_dim=2).create_all()
-            conn.execute(
-                "INSERT INTO collections (id, name, path, created_at, updated_at)"
-                " VALUES ('c1', 'notes', '/notes', ?, ?)",
-                (now, now),
-            )
-            for doc_id, title, path, content in [
-                ("d1", "Apple Pie", "/notes/apple-pie.md", "apple pie recipe sweet dessert"),
-                ("d2", "Quantum Physics", "/notes/quantum.md", "quantum physics computing"),
-            ]:
-                conn.execute(
-                    "INSERT INTO documents (id, collection_id, path, filename, title,"
-                    " content, checksum, mtime, created_at, updated_at)"
-                    " VALUES (?, 'c1', ?, ?, ?, ?, 'x', 1.0, ?, ?)",
-                    (doc_id, path, path.split("/")[-1], title, content, now, now),
-                )
-                conn.execute(
-                    "INSERT INTO document_chunks (id, document_id, sequence, content,"
-                    " created_at) VALUES (?, ?, 0, ?, ?)",
-                    (f"chunk-{doc_id}", doc_id, content, now),
-                )
-            searcher = VectorSearcher(conn, embedding_dim=2)
-            searcher.add_embeddings_batch(
-                [
-                    ("e-d1", "d1", "chunk-d1", [0.2, 0.9]),
-                    ("e-d2", "d2", "chunk-d2", [0.95, 0.1]),
-                ]
-            )
-            with conn:
-                write_identity(conn, self._identity("model-a"))
-        finally:
-            conn.close()
+        db_path = self._seed_identity_index(tmp_path)
 
         class _FixedEmbedder:
             def embed(self, _text: str) -> list[float]:
@@ -4723,3 +4729,46 @@ class TestSearchIdentityPolicy:
             if "identity mismatch" in record.getMessage().lower()
         ]
         assert len(warnings) == 1
+
+    def test_search_cmd_stays_identity_silent(
+        self,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """BM25-only ``sif search`` never warns or marks on a same-dimension swap."""
+        db_path = self._seed_identity_index(tmp_path)
+        settings = Settings(
+            _env_file=None,
+            embedding_dim=2,
+            model_name="model-b",
+            model_type="sentence_transformers",
+            cache_embeddings=False,
+            query_history_enabled=False,
+        )
+        manager = MagicMock()
+        manager.get_identity.return_value = self._identity("model-b")
+
+        with (
+            patch(
+                "sif.embedding.manager.EmbeddingManager.from_settings",
+                return_value=manager,
+            ),
+            patch("sif.cli.commands.search.get_settings", return_value=settings),
+            patch("sif.config.settings.get_settings", return_value=settings),
+            caplog.at_level(logging.WARNING),
+        ):
+            result = CliRunner().invoke(
+                search_cmd,
+                ["apple", "--no-refresh", "--json"],
+                obj={"index_path": db_path},
+            )
+
+        assert result.exit_code == 0, result.output
+        rows = json.loads(result.stdout)
+        assert rows
+        assert all(row["vectors_stale"] is False for row in rows)
+        assert [
+            record
+            for record in caplog.records
+            if "identity mismatch" in record.getMessage().lower()
+        ] == []

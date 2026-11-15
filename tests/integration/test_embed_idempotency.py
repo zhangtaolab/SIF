@@ -721,6 +721,20 @@ def _chunk_counts(db_path: Path) -> dict[str, int]:
         conn.close()
 
 
+def _shadow_count(db_path: Path, document_id: str) -> int:
+    """Count the derived shadow's rows for one document."""
+    conn = sqlite3.connect(str(db_path))
+    try:
+        return int(
+            conn.execute(
+                "SELECT COUNT(*) FROM embedded_documents WHERE document_id = ?",
+                (document_id,),
+            ).fetchone()[0]
+        )
+    finally:
+        conn.close()
+
+
 def _stored_identity(db_path: Path):
     """Read the persisted embedder identity from a plain connection."""
     conn = sqlite3.connect(str(db_path))
@@ -785,6 +799,85 @@ class TestStreamingFailureDurability:
         assert stored is not None
         assert stored.source == "verified"
         assert ids["/notes/a.md"]
+
+
+class TestGarbageAndWhitespaceIsolation:
+    """D-17/D-16: a garbage batch aborts without persistence; whitespace is skipped."""
+
+    def test_garbage_batch_aborts_persists_nothing_and_a_rerun_succeeds(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """A NaN batch persists no chunk/vector/shadow/identity row, and a
+        subsequent normal run embeds the document cleanly (no poisoned state)."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "garbage.db"
+        settings = _test_settings()
+        doc_id = _seed_collection(db_path, settings)
+
+        garbage = MagicMock()
+        garbage.get_model_info.return_value = {"loaded": True, "embedding_dim": DIM}
+        garbage.get_identity.return_value = _identity()
+
+        def _nan_vectors(texts: list[str], **_kwargs: object) -> MagicMock:
+            return MagicMock(embeddings=[[float("nan")] + [0.0] * (DIM - 1) for _ in texts])
+
+        garbage.embed_documents.side_effect = _nan_vectors
+
+        result = _invoke_embed(db_path, garbage, settings, [])
+        assert result.exit_code != 0
+        assert "Embedding aborted" in result.output
+        assert "non-finite" in result.output
+
+        emb_count, chunk_count, _emb_ids, _chunk_ids = _store_state(db_path)
+        assert emb_count == 0
+        assert chunk_count == 0
+        assert _shadow_count(db_path, doc_id) == 0
+        assert _stored_identity(db_path) is None
+
+        rerun = _streaming_manager(_identity())
+        second = _invoke_embed(db_path, rerun, settings, [])
+        assert second.exit_code == 0, second.output
+        emb_count, chunk_count, _emb_ids, _chunk_ids = _store_state(db_path)
+        assert emb_count >= 1
+        assert chunk_count >= 1
+        assert _shadow_count(db_path, doc_id) == 1
+
+    def test_whitespace_only_document_is_skipped_without_a_shadow_row(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """A whitespace-only document never reaches the model and never gains a
+        shadow row; the run itself succeeds (D-17/D-16)."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "whitespace.db"
+        settings = _test_settings()
+
+        from sif.core.models import Collection, Document
+        from sif.database.database import Database
+        from sif.database.repositories import CollectionRepository, DocumentRepository
+
+        db = Database(db_path)
+        with patch("sif.config.settings.get_settings", return_value=settings):
+            db.init_schema()
+        with db.connection:
+            coll = Collection(name="notes", path="/notes")
+            CollectionRepository(db.connection).create(coll)
+            doc = Document(
+                path="/notes/blank.md",
+                collection_id=coll.id,
+                content="   \n\t  ",
+                title="Blank",
+            )
+            DocumentRepository(db.connection).create(doc)
+            doc_id = doc.id
+        db.close()
+
+        manager = _streaming_manager(_identity())
+        result = _invoke_embed(db_path, manager, settings, [])
+
+        assert result.exit_code == 0, result.output
+        assert manager.embed_documents.calls == []
+        assert _chunk_counts(db_path)["/notes/blank.md"] == 0
+        assert _shadow_count(db_path, doc_id) == 0
 
 
 class TestIdentityCertification:
