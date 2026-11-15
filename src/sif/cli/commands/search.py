@@ -621,6 +621,12 @@ def search_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     default=None,
     help="Number of results (default: SIF_DEFAULT_LIMIT or 10)",
 )
+@click.option(
+    "--offset",
+    type=click.IntRange(min=0),
+    default=0,
+    help="Result offset for pagination (default: 0)",
+)
 @click.option("-c", "--collection", multiple=True, help="Collection to search")
 @click.option("--all", "search_all", is_flag=True, help="Search all collections")
 @click.option("--min-score", default=0.0, help="Minimum score threshold")
@@ -639,6 +645,7 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     ctx: click.Context,
     query: str,
     limit: int | None,
+    offset: int,
     collection: tuple[str, ...],
     search_all: bool,
     min_score: float,
@@ -691,6 +698,7 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     with open_initialized_database(index_path, Database) as db:
         options = SearchOptions(
             limit=limit,
+            offset=offset,
             min_score=min_score,
             include_content=full,
             include_highlights=True,
@@ -789,6 +797,12 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     default=None,
     help="Number of results (default: SIF_DEFAULT_LIMIT or 10)",
 )
+@click.option(
+    "--offset",
+    type=click.IntRange(min=0),
+    default=0,
+    help="Result offset for pagination (default: 0)",
+)
 @click.option("-c", "--collection", multiple=True, help="Collection to search")
 @click.option("--all", "search_all", is_flag=True, help="Search all collections")
 @click.option("--min-score", default=0.0, help="Minimum score threshold")
@@ -849,6 +863,7 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     ctx: click.Context,
     query: str,
     limit: int | None,
+    offset: int,
     collection: tuple[str, ...],
     search_all: bool,
     min_score: float,
@@ -909,6 +924,7 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
         # can never inject a non-int into the plain SearchOptions dataclass.
         options = SearchOptions(
             limit=limit,
+            offset=offset,
             min_score=min_score,
             include_content=full,
             include_highlights=True,

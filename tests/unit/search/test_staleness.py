@@ -319,10 +319,16 @@ class TestSearcherDelegation:
         pipeline.hybrid.vector.search.return_value = hyde_results
         assert_single_enrichment(pipeline, pipeline.search("hyde: needle"), hyde_results)
 
-        # Hybrid exit (after fusion, rerank, snippets)
+        # Hybrid exit (after fusion, rerank, snippets, and the CORR-03 slice).
+        # CORR-03 makes the pipeline the slice owner, so enrichment sees the
+        # page list built by that slice rather than the raw searcher list.
         calls.clear()
         pipeline = SearchPipeline(MagicMock())
         pipeline.hybrid.search = MagicMock()
         hybrid_results = [_result("d-hy")]
         pipeline.hybrid.search.return_value = hybrid_results
-        assert_single_enrichment(pipeline, pipeline.search("plain query"), hybrid_results)
+        page = pipeline.search("plain query")
+        assert [r.document_id for r in page] == ["d-hy"]
+        assert len(calls) == 1
+        assert calls[0][0] is pipeline.db
+        assert calls[0][1] is page

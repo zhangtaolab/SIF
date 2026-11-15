@@ -22,6 +22,21 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
+def _paginate(results: list[SearchResult], options: SearchOptions) -> list[SearchResult]:
+    """Apply the one offset slice and global rank numbering for a query path.
+
+    CORR-03/D-06: every path has exactly one slice owner, and ranks are global
+    across pages (``options.offset + position``) so page 2 of a 10-row page
+    carries ranks 11-20. ``max(1, limit)`` keeps the historical non-positive
+    limit clamp (one row) instead of producing an empty page.
+    """
+    page_limit = max(1, options.limit)
+    page = results[options.offset : options.offset + page_limit]
+    for position, result in enumerate(page, 1):
+        result.rank = options.offset + position
+    return page
+
+
 class HybridSearcher:
     """Hybrid search combining multiple search strategies."""
 
@@ -52,31 +67,46 @@ class HybridSearcher:
         Returns:
             Ranked list of search results, raw and unenriched (the pipeline
             exit owns the single context/staleness enrichment).
+
+        ``HybridSearcher.search`` is the single offset slice owner for direct
+        callers (CORR-03): both legs are called with ``offset=0`` and
+        ``limit+offset``, and this method slices one page afterwards. The
+        pipeline always calls it with ``offset=0`` and slices itself.
         """
         if options is None:
             options = SearchOptions()
 
+        # Offset-free fetch window shared by both legs (research Pitfall 12):
+        # applying the caller's offset here as well as in the legs would
+        # double-apply it and under-fetch the page.
+        fetch_options = replace(
+            options,
+            limit=max(1, options.limit + options.offset),
+            offset=0,
+        )
+
         # Get BM25 results
-        bm25_results = self.bm25.search(query, options)
+        bm25_results = self.bm25.search(query, fetch_options)
 
         # Get vector results if embedder is available
         vector_results: list[SearchResult] = []
         if self.embedder is not None:
             query_embedding = self.embedder.embed(query)
-            vector_results = self.vector.search(query_embedding, options)
+            vector_results = self.vector.search(query_embedding, fetch_options)
 
-        # If only one method returned results, return those
+        # If only one method returned results, paginate that leg's window too
+        # (its searcher already fetched limit+offset rows at offset 0).
         if not vector_results:
-            return bm25_results
+            return _paginate(bm25_results, options)
         if not bm25_results:
-            return vector_results
+            return _paginate(vector_results, options)
 
         # Fuse results using RRF (Phase 15: per-query weights/k ride options —
         # the ONLY weights call site; k also flows to the pipeline's
         # cross-query variant fusion, weights must NOT (Pitfall 9/A7))
         fused_results = self.rrf.fuse(
             [bm25_results, vector_results],
-            options.limit,
+            fetch_options.limit,
             weights=[options.bm25_weight, options.vector_weight],
             k=options.rrf_k,
         )
@@ -93,8 +123,9 @@ class HybridSearcher:
                         options.max_highlights,
                     )
 
-        # Deduplicate by document_id, keeping highest score
-        return self._deduplicate_results(fused_results)
+        # Deduplicate by document_id, keeping highest score, then slice the
+        # caller's page once with global rank numbering.
+        return _paginate(self._deduplicate_results(fused_results), options)
 
     @staticmethod
     def _deduplicate_results(results: list[SearchResult]) -> list[SearchResult]:
@@ -176,7 +207,8 @@ class SearchPipeline:
         5. Fuse results with RRF
         6. Apply reranking with candidate capping
         7. Extract smart snippets
-        8. Enrich results exactly once (path contexts + derived staleness)
+        8. Apply the single offset slice with global rank numbering
+        9. Enrich results exactly once (path contexts + derived staleness)
         """
         if options is None:
             options = SearchOptions()
@@ -231,22 +263,26 @@ class SearchPipeline:
             except Exception as e:
                 logger.warning(f"Query expansion failed: {e}")
 
-        # Candidate-cap over-fetch (Phase 16, D-10): BM25 SQL-LIMITs to
-        # options.limit, vector trims to it, and RRF truncates at it — so
-        # without over-fetching, a candidate_limit above limit can never bind
-        # and the cap is a no-op (research Pitfall 1). When a reranker is
-        # enabled, fetch to max(limit + offset, candidate_limit) and slice to
-        # the cap before reranking. options.candidate_limit is already
-        # validated (every CLI path resolves it through Plan 02's clamped
-        # resolve_candidate_limit); the off path keeps the original options so
-        # it stays byte-identical.
+        # Offset-0 fetch window (CORR-03 / research Pitfall 12): the pipeline
+        # owns the single offset slice for its own path, so it always calls
+        # the hybrid searcher with offset=0 and a window of at least
+        # limit+offset. With a reranker that window is raised to
+        # candidate_limit as well — and when the page reaches past the cap, to
+        # limit+offset — so the pre-rerank truncation can never starve the
+        # page. Phase 16's cap still binds: at offset=0 the window stays
+        # exactly candidate_limit (the off path stays byte-identical).
         if self.reranker is not None:
             fetch_options = replace(
                 options,
                 limit=max(options.limit + options.offset, options.candidate_limit),
+                offset=0,
             )
         else:
-            fetch_options = options
+            fetch_options = replace(
+                options,
+                limit=max(1, options.limit + options.offset),
+                offset=0,
+            )
 
         # Search with each query
         all_results = []
@@ -264,11 +300,23 @@ class SearchPipeline:
             # and must never be passed (Pitfall 9 / assumption A7))
             results = self.hybrid.rrf.fuse(all_results, fetch_options.limit, k=options.rrf_k)
 
-        # Apply candidate limit before reranking
+        # Apply the pre-rerank candidate window, then rerank to the window
+        # depth. offset=0 keeps exactly candidate_limit (Phase 16 cap and the
+        # byte-identical default path); a paged request widens the window to
+        # max(candidate_limit, limit+offset) so the page slice below cannot
+        # come back short or empty when that many candidates exist.
         if self.reranker is not None and len(results) > 0:
-            candidates = results[: options.candidate_limit]
+            if options.offset > 0:
+                candidate_window = max(options.candidate_limit, options.limit + options.offset)
+            else:
+                candidate_window = options.candidate_limit
+            candidates = results[:candidate_window]
             try:
-                reranked = self.reranker.rerank(parsed_query, candidates, top_k=options.limit)
+                reranked = self.reranker.rerank(
+                    parsed_query,
+                    candidates,
+                    top_k=options.limit + options.offset,
+                )
                 results = reranked
             except Exception as e:
                 raise RuntimeError(f"Reranking failed: {e}") from e
@@ -276,7 +324,9 @@ class SearchPipeline:
         # Extract smart snippets if not already present
         results = self._apply_snippets(results, parsed_query)
 
-        return enrich_results(self.db, results)
+        # One slice with the caller's original offset, then exactly one
+        # enrichment on the page (CORR-03 offset ownership + CORR-05).
+        return enrich_results(self.db, _paginate(results, options))
 
     def _apply_snippets(
         self,

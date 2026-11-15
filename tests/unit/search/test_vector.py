@@ -330,6 +330,106 @@ class TestVectorFilteredRecall:
             conn.close()
 
 
+class TestVectorOffsetPagination:
+    """CORR-03: fetch_k scales with limit+offset, one slice, global ranks."""
+
+    @staticmethod
+    def _build_db() -> sqlite3.Connection:
+        """Real vec0 DB with 6 single-chunk documents at distinct distances."""
+        import sqlite_vec
+
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            conn.enable_load_extension(True)
+            sqlite_vec.load(conn)
+            conn.enable_load_extension(False)
+        except Exception:
+            conn.close()
+            pytest.skip("sqlite-vec not available")
+
+        conn.execute(
+            "CREATE TABLE documents"
+            " (id TEXT PRIMARY KEY, collection_id TEXT, title TEXT, path TEXT)"
+        )
+        conn.execute("CREATE TABLE collections (id TEXT PRIMARY KEY, name TEXT)")
+        conn.execute("""
+            CREATE VIRTUAL TABLE document_embeddings USING vec0(
+                embedding_id TEXT PRIMARY KEY,
+                document_id TEXT NOT NULL,
+                chunk_id TEXT,
+                embedding FLOAT[2]
+            )
+        """)
+        conn.execute("INSERT INTO collections VALUES ('c1', 'notes')")
+        # Query [1, 0]: L2 distance grows with the y component, so the ids
+        # sort d0..d5 by similarity.
+        vectors = [[1.0, 0.0], [1.0, 0.1], [1.0, 0.2], [1.0, 0.3], [1.0, 0.4], [1.0, 0.5]]
+        for i in range(len(vectors)):
+            conn.execute(
+                "INSERT INTO documents VALUES (?, 'c1', ?, ?)",
+                (f"d{i}", f"Doc {i}", f"/d{i}.md"),
+            )
+        searcher = VectorSearcher(conn, embedding_dim=2)
+        searcher.add_embeddings_batch(
+            [(f"e{i}", f"d{i}", f"c{i}", vec) for i, vec in enumerate(vectors)]
+        )
+        return conn
+
+    @staticmethod
+    def _mock_searcher() -> tuple[VectorSearcher, MagicMock]:
+        mock_db = MagicMock()
+        cursor = MagicMock()
+        cursor.fetchall.return_value = []
+        mock_db.execute.return_value = cursor
+        searcher = VectorSearcher(mock_db)
+        searcher._vec_available = True
+        return searcher, mock_db
+
+    def test_fetch_k_scales_with_limit_plus_offset(self) -> None:
+        """fetch_k = max((limit+offset)*4, 50), not limit*4."""
+        searcher, mock_db = self._mock_searcher()
+
+        searcher.search([0.1, 0.2], SearchOptions(limit=10, offset=10))
+
+        params = mock_db.execute.call_args[0][1]
+        assert params[1] == 80
+
+    def test_fetch_k_is_capped_for_huge_offsets(self) -> None:
+        """A huge offset is a bounded fetch: _MAX_FETCH_K, then an empty page."""
+        searcher, mock_db = self._mock_searcher()
+
+        results = searcher.search([0.1, 0.2], SearchOptions(limit=10, offset=1_000_000))
+
+        params = mock_db.execute.call_args[0][1]
+        assert params[1] == 2048
+        assert results == []
+
+    def test_page_continuity_and_global_ranks(self) -> None:
+        """limit=l offset=o equals [o:o+l] of limit=o+l offset=0; ranks are global."""
+        conn = self._build_db()
+        try:
+            searcher = VectorSearcher(conn, embedding_dim=2)
+            page = searcher.search([1.0, 0.0], SearchOptions(limit=2, offset=2))
+            window = searcher.search([1.0, 0.0], SearchOptions(limit=4, offset=0))
+
+            assert [r.document_id for r in page] == [r.document_id for r in window][2:4]
+            assert [r.document_id for r in page] == ["d2", "d3"]
+            assert [r.rank for r in page] == [3, 4]
+        finally:
+            conn.close()
+
+    def test_offset_past_end_returns_empty_page(self) -> None:
+        """A past-the-end offset is an empty page, never an error."""
+        conn = self._build_db()
+        try:
+            searcher = VectorSearcher(conn, embedding_dim=2)
+
+            assert searcher.search([1.0, 0.0], SearchOptions(limit=2, offset=50)) == []
+        finally:
+            conn.close()
+
+
 class TestVectorEmbeddingDeletion:
     """Tests for delete_embeddings_by_document and get_embedded_chunk_ids."""
 

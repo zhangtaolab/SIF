@@ -8,6 +8,13 @@ import sqlite3
 from sif.core.models import SearchOptions, SearchResult
 
 
+# Hard ceiling for the KNN over-fetch depth (CORR-03 / research Open Q8): the
+# fetch window scales with limit+offset, but a huge offset must not turn into
+# unbounded brute-force work. An offset past this practical cap yields an
+# empty page rather than an ever-deeper KNN scan.
+_MAX_FETCH_K = 2048
+
+
 class VectorSearcher:
     """Vector similarity search using sqlite-vec or fallback."""
 
@@ -34,7 +41,12 @@ class VectorSearcher:
         query_embedding: list[float],
         options: SearchOptions | None = None,
     ) -> list[SearchResult]:
-        """Search documents by vector similarity."""
+        """Search documents by vector similarity.
+
+        ``offset`` slices the ranked list exactly once (this searcher is the
+        slice owner for direct callers); returned ranks are global across
+        pages (``offset + position``).
+        """
         if options is None:
             options = SearchOptions()
 
@@ -68,11 +80,14 @@ class VectorSearcher:
         # Over-fetch (WR-04): k bounds the vec0 MATCH itself, which sqlite-vec
         # resolves before the JOIN applies the collection filter — a tight k
         # silently under-returns filtered searches. Fetch a bounded surplus,
-        # then trim to the requested limit after filtering. Score is monotone
+        # then trim to the requested window after filtering. Score is monotone
         # in distance (score = 1 - distance / 2), so trimming after the
         # min_score filter returns the same rows a tight k would for
-        # unfiltered searches.
-        fetch_k = max(options.limit * 4, 50)
+        # unfiltered searches. The window grows with the page offset (CORR-03)
+        # and stays clamped at _MAX_FETCH_K, so a past-the-cap offset degrades
+        # to an empty page instead of unbounded fetch work.
+        window = max(1, options.limit + options.offset)
+        fetch_k = min(max(window * 4, 50), _MAX_FETCH_K)
         params = [embedding_str, fetch_k, *(options.collection_ids or [])]
 
         # Audit note (261105-wwz, 2026-11-05): this KNN MATCH is the only
@@ -120,13 +135,17 @@ class VectorSearcher:
 
             results.append(result)
 
-        # Trim to the requested limit, then rank sequentially so ranks stay
-        # contiguous after min_score filtering.
-        results = results[: max(1, options.limit)]
-        for rank, result in enumerate(results, 1):
-            result.rank = rank
+        # Take the requested window, then slice the caller's page out of it.
+        # One slice owner: ranks are global across pages (CORR-03/D-06) —
+        # rank = offset + position. The window trim keeps the WR-03 clamp:
+        # limit <= 0 still yields one row instead of an empty/raw-KNN result.
+        page_limit = max(1, options.limit)
+        results = results[:window]
+        page = results[options.offset : options.offset + page_limit]
+        for position, result in enumerate(page, 1):
+            result.rank = options.offset + position
 
-        return results
+        return page
 
     def _embedding_to_vec(self, embedding: list[float]) -> str:
         """Convert embedding to sqlite-vec format."""

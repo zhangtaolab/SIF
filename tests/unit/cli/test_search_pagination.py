@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 
-from sif.cli.commands.search import search_cmd
+from sif.cli.commands.search import query_cmd, search_cmd, vsearch_cmd
 from sif.core.models import SearchResult
 
 
@@ -86,3 +86,109 @@ class TestSearchCommandOffset:
 
         assert result.exit_code == 0, result.output
         assert searcher.search.call_args[0][1].offset == 0
+
+
+def _settings_mock() -> MagicMock:
+    """Settings stub enumerating the fields the query path reads."""
+    return MagicMock(
+        model_name="all-MiniLM-L6-v2",
+        model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"},
+        rerank_enabled=False,
+        default_search_type="hybrid",
+        rrf_k=60,
+        bm25_weight=1.0,
+        vector_weight=1.0,
+        query_history_enabled=False,
+    )
+
+
+class TestVsearchCommandOffset:
+    """`sif vsearch --offset` threads into SearchOptions and ranks globally."""
+
+    def test_offset_threads_into_options(self) -> None:
+        searcher = _page_searcher()
+        manager = MagicMock()
+        manager.embed_single.return_value = [0.0] * 8
+        with (
+            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+            patch(
+                "sif.cli.commands.search.CollectionRepository",
+                return_value=MagicMock(),
+            ),
+            patch("sif.search.vector.VectorSearcher", return_value=searcher),
+            patch(
+                "sif.embedding.manager.EmbeddingManager.from_settings",
+                return_value=manager,
+            ),
+            patch("sif.config.settings.get_settings", return_value=_settings_mock()),
+        ):
+            result = CliRunner().invoke(
+                vsearch_cmd,
+                ["apple", "--offset", "5", "-n", "5", "--json", "--no-refresh"],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.output)
+        assert [row["rank"] for row in payload] == [6, 7, 8, 9, 10]
+        options = searcher.search.call_args[0][1]
+        assert options.offset == 5
+        assert options.limit == 5
+
+    def test_negative_offset_rejected_by_click(self) -> None:
+        result = CliRunner().invoke(
+            vsearch_cmd,
+            ["apple", "--offset", "-1"],
+            obj={"index_path": MagicMock(exists=lambda: True)},
+        )
+
+        assert result.exit_code == 2
+        assert "Invalid value" in result.output
+
+
+class TestQueryCommandOffset:
+    """`sif query --offset` threads into SearchOptions and ranks globally."""
+
+    def test_offset_threads_into_options(self) -> None:
+        page = _page_searcher()
+        pipeline = MagicMock()
+        pipeline.search.side_effect = page.search
+        manager = MagicMock()
+        manager.embed_single.return_value = [0.0] * 8
+        manager.get_model_info.return_value = {"embedding_dim": 8}
+
+        with (
+            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+            patch(
+                "sif.cli.commands.search.CollectionRepository",
+                return_value=MagicMock(),
+            ),
+            patch("sif.cli.commands.search.SearchPipeline", return_value=pipeline),
+            patch(
+                "sif.embedding.manager.EmbeddingManager.from_settings",
+                return_value=manager,
+            ),
+            patch("sif.config.settings.get_settings", return_value=_settings_mock()),
+        ):
+            result = CliRunner().invoke(
+                query_cmd,
+                ["apple", "--offset", "5", "-n", "5", "--json", "--no-refresh"],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.output)
+        assert [row["rank"] for row in payload] == [6, 7, 8, 9, 10]
+        options = pipeline.search.call_args[0][1]
+        assert options.offset == 5
+        assert options.limit == 5
+
+    def test_negative_offset_rejected_by_click(self) -> None:
+        result = CliRunner().invoke(
+            query_cmd,
+            ["apple", "--offset", "-1"],
+            obj={"index_path": MagicMock(exists=lambda: True)},
+        )
+
+        assert result.exit_code == 2
+        assert "Invalid value" in result.output

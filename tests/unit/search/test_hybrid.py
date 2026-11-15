@@ -537,8 +537,11 @@ class TestHybridContextAttachment:
         mock_reranker.rerank.assert_called_once()
         assert len(calls) == 1
         assert calls[0][0] is mock_db
-        assert calls[0][1] is reranked
-        assert results is reranked
+        # CORR-03: the pipeline owns the one offset slice, so enrichment sees
+        # the sliced page list (same rows at offset=0) rather than the raw
+        # reranker list object.
+        assert calls[0][1] is results
+        assert [r.document_id for r in calls[0][1]] == [r.document_id for r in reranked]
         assert results[0].context_description == "Reranked context"
 
     def test_pipeline_hybrid_exit_enriches_contexts_and_staleness(self) -> None:
@@ -989,13 +992,23 @@ class TestCandidateFetch:
         finally:
             conn.close()
 
-    def test_candidate_fetch_limit_is_max_of_limit_offset_and_cap(
+    def test_candidate_window_is_max_of_limit_offset_and_cap(
         self,
         mock_db: MagicMock,
     ) -> None:
-        """fetch limit = max(limit + offset, candidate_limit) reaches the searchers."""
-        cases = [((3, 2, 20), 20), ((10, 5, 12), 15)]
-        for (limit, offset, cap), expected_fetch in cases:
+        """Window = max(limit+offset, cap) for offset>0; cap alone at offset=0.
+
+        The fetch limit reaches the searchers at offset=0; the reranker
+        receives exactly the window and top_k = limit + offset.
+        """
+        cases = [
+            # (limit, offset, cap) -> (fetch limit, candidate window, top_k)
+            ((3, 2, 20), 20, 20, 5),
+            ((10, 5, 12), 15, 15, 15),
+            ((10, 20, 20), 30, 30, 30),
+            ((10, 0, 20), 20, 20, 10),
+        ]
+        for (limit, offset, cap), fetch_limit, window, top_k in cases:
             spy = MagicMock()
             spy.rerank.return_value = []
             pipeline = SearchPipeline(mock_db, reranker=spy)
@@ -1008,17 +1021,21 @@ class TestCandidateFetch:
                     collection_name="default",
                     score=0.9 - i * 0.01,
                 )
-                for i in range(25)
+                for i in range(40)
             ]
             options = SearchOptions(limit=limit, offset=offset, candidate_limit=cap)
 
             pipeline.search("test", options)
 
             passed = pipeline.hybrid.bm25.search.call_args[0][1]
-            assert passed.limit == expected_fetch
-            assert spy.rerank.call_args.kwargs["top_k"] == limit
+            assert passed.limit == fetch_limit
+            assert passed.offset == 0
+            handed = spy.rerank.call_args.args[1]
+            assert len(handed) == window
+            assert spy.rerank.call_args.kwargs["top_k"] == top_k
             # dataclasses.replace copies: the caller's options object is untouched.
             assert options.limit == limit
+            assert options.offset == offset
 
     def test_candidate_fetch_cross_query_fuse_uses_fetch_limit(
         self,
@@ -1070,6 +1087,99 @@ class TestCandidateFetch:
 # =============================================================================
 # Composition proofs (Phase 16 — cap -> threshold -> top_k ordering)
 # =============================================================================
+
+
+# =============================================================================
+# Offset pagination (CORR-03 — one slice owner, global ranks)
+# =============================================================================
+
+
+class TestHybridOffsetPagination:
+    """HybridSearcher is the single slice owner for direct callers."""
+
+    @staticmethod
+    def _results(count: int) -> list[SearchResult]:
+        return [
+            SearchResult(
+                document_id=f"doc-{i}",
+                path=f"/{i}.md",
+                title=f"Doc {i}",
+                collection_name="default",
+                score=0.9 - i * 0.01,
+            )
+            for i in range(count)
+        ]
+
+    def test_bm25_only_early_return_is_paginated(self, mock_db: MagicMock) -> None:
+        """The BM25-only early return slices and ranks globally too."""
+        hybrid = HybridSearcher(mock_db, embedder=None, embedding_dim=2)
+        hybrid.bm25 = create_autospec(BM25Searcher, instance=True)
+        hybrid.bm25.search.return_value = self._results(10)
+
+        results = hybrid.search("test", SearchOptions(limit=2, offset=2))
+
+        passed = hybrid.bm25.search.call_args[0][1]
+        assert passed.limit == 4
+        assert passed.offset == 0
+        assert [r.document_id for r in results] == ["doc-2", "doc-3"]
+        assert [r.rank for r in results] == [3, 4]
+
+    def test_vector_only_early_return_is_paginated(self, mock_db: MagicMock) -> None:
+        """The vector-only early return slices and ranks globally too."""
+        embedder = MagicMock()
+        embedder.embed.return_value = [0.1, 0.2]
+        hybrid = HybridSearcher(mock_db, embedder=embedder, embedding_dim=2)
+        hybrid.bm25 = create_autospec(BM25Searcher, instance=True)
+        hybrid.bm25.search.return_value = []
+        hybrid.vector = create_autospec(VectorSearcher, instance=True)
+        hybrid.vector.search.return_value = self._results(10)
+
+        results = hybrid.search("test", SearchOptions(limit=2, offset=2))
+
+        passed = hybrid.vector.search.call_args[0][1]
+        assert passed.limit == 4
+        assert passed.offset == 0
+        assert [r.document_id for r in results] == ["doc-2", "doc-3"]
+        assert [r.rank for r in results] == [3, 4]
+
+    def test_fused_path_slices_once_and_ranks_globally(self, mock_db: MagicMock) -> None:
+        """Both legs fetch the offset-free window; one slice follows fusion."""
+        embedder = MagicMock()
+        embedder.embed.return_value = [0.1, 0.2]
+        hybrid = HybridSearcher(mock_db, embedder=embedder, embedding_dim=2)
+        hybrid.bm25 = create_autospec(BM25Searcher, instance=True)
+        hybrid.bm25.search.return_value = self._results(6)
+        hybrid.vector = create_autospec(VectorSearcher, instance=True)
+        hybrid.vector.search.return_value = self._results(6)
+        hybrid.rrf = MagicMock()
+        hybrid.rrf.fuse.return_value = self._results(6)
+
+        results = hybrid.search("test", SearchOptions(limit=2, offset=2))
+
+        assert hybrid.rrf.fuse.call_args.args[1] == 4
+        assert hybrid.bm25.search.call_args[0][1].offset == 0
+        assert hybrid.vector.search.call_args[0][1].offset == 0
+        assert [r.document_id for r in results] == ["doc-2", "doc-3"]
+        assert [r.rank for r in results] == [3, 4]
+
+
+class TestPipelineOffsetPagination:
+    """The pipeline calls hybrid with offset=0 and owns the caller's slice."""
+
+    def test_pipeline_passes_offset_zero_and_slices_with_original_offset(
+        self,
+        mock_db: MagicMock,
+    ) -> None:
+        pipeline = SearchPipeline(mock_db)
+        pipeline.hybrid.search = MagicMock(return_value=TestHybridOffsetPagination._results(6))
+
+        results = pipeline.search("test", SearchOptions(limit=2, offset=2))
+
+        passed = pipeline.hybrid.search.call_args[0][1]
+        assert passed.limit == 4
+        assert passed.offset == 0
+        assert [r.document_id for r in results] == ["doc-2", "doc-3"]
+        assert [r.rank for r in results] == [3, 4]
 
 
 class _ThresholdRerankSpy:
@@ -1154,19 +1264,20 @@ class TestRerankComposition:
         assert len(results) == 2  # min(top_k=3, survivors=2)
         assert [r.document_id for r in results] == ["doc-0", "doc-1"]
 
-    def test_off_path_passes_original_options_without_overfetch(
+    def test_off_path_passes_offset_zero_window_without_overfetch(
         self,
         mock_db: MagicMock,
     ) -> None:
-        """reranker=None: the searchers receive the caller's options object untouched."""
+        """reranker=None: hybrid is called with a copy at offset=0, caller untouched."""
         pipeline = SearchPipeline(mock_db)
-        pipeline.hybrid.bm25 = create_autospec(BM25Searcher, instance=True)
-        pipeline.hybrid.bm25.search.return_value = self._results([0.9, 0.8])
+        pipeline.hybrid.search = MagicMock(return_value=[])
         options = SearchOptions(limit=3, candidate_limit=20)
 
         pipeline.search("test", options)
 
-        # Identity check: no dataclasses.replace copy, no over-fetch — the
-        # rerank-off path is provably unreachable from the fetch logic.
-        assert pipeline.hybrid.bm25.search.call_args[0][1] is options
+        passed = pipeline.hybrid.search.call_args[0][1]
+        assert passed is not options
+        assert passed.limit == 3
+        assert passed.offset == 0
         assert options.limit == 3
+        assert options.offset == 0
