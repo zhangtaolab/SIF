@@ -347,6 +347,11 @@ class SearchOptions:
     candidate_limit: int = 20
     intent: str | None = None
     snippet_max_length: int = 300
+    # CORR-04/D-11 internal measurement override: None resolves to the BM25
+    # module constant _TITLE_WEIGHT. Deliberately NOT a setting and NOT a CLI
+    # flag — the Plan-09 sweep drives this field directly and the accepted
+    # value is pinned back as the constant.
+    title_weight: float | None = None
     # Fusion tunables (Phase 15, D-03): defaults equal today's hardcoded
     # behavior (k=60, equal weights), so every existing construction site and
     # unconfigured query stays byte-identical (SC1). CLI flags and MCP request

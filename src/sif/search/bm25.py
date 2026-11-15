@@ -11,6 +11,15 @@ from sif.search.term_match import find_first_match
 
 _SNIPPET_MAX_LEN = 200
 
+# CORR-04 / D-11: BM25 column weights for documents_fts(content, title).
+# The weight vector maps left-to-right by declared column order, so these two
+# constants are bound as the bm25(documents_fts, ?, ?) parameters. At 1.0/1.0
+# the weighted expression reproduces the unweighted `rank` column exactly.
+# The title weight stays an internal constant — deliberately not a setting or
+# a CLI flag — and Plan 19-09's measured sweep pins the accepted value here.
+_CONTENT_WEIGHT = 1.0
+_TITLE_WEIGHT = 1.0
+
 # Characters with special meaning in FTS5 MATCH expressions; they cannot be
 # escaped, so they are stripped from user tokens before quoting.
 _FTS_METACHARS = re.compile(r'["*():^]')
@@ -62,65 +71,79 @@ class BM25Searcher:
         fts_query = self._build_fts_query(query)
 
         # min_score thresholding happens BEFORE LIMIT/OFFSET (CORR-03, research
-        # Pitfall 4/P15). FTS5 ``rank`` (bm25) is <= 0 and
-        # ``score = 1/(1 + |rank|) = 1/(1 - rank)``, so ``score >= m`` (m > 0)
-        # is exactly ``rank >= 1 - 1/m``. Filtering inside the FTS scan keeps
-        # LIMIT/OFFSET a slice of the already-filtered ranking, so a page can
-        # never be short or holey because post-pagination filtering removed
-        # rows. The naive inverse ``1/m - 1`` points the wrong way.
-        min_score_filter = ""
-        params = [fts_query]
-        if options.min_score > 0:
-            params.append(1.0 - 1.0 / options.min_score)
-            min_score_filter = "AND rank >= ?"
+        # Pitfall 4/P15). The threshold below is the rank threshold for the
+        # same WEIGHTED bm25 expression that projects `score`, so a raised
+        # title weight moves threshold and ordering together. FTS5 rank is
+        # <= 0 and ``score = 1/(1 + |rank|) = 1/(1 - rank)``, hence
+        # ``score >= m`` (m > 0) is exactly ``rank >= 1 - 1/m``. The naive
+        # inverse ``1/m - 1`` points the wrong way.
+        content_weight = _CONTENT_WEIGHT
+        title_weight = _TITLE_WEIGHT if options.title_weight is None else options.title_weight
 
-        # Build collection filter
+        params = [content_weight, title_weight, fts_query]
         collection_filter = ""
-
         if options.collection_ids:
             placeholders = ", ".join(["?"] * len(options.collection_ids))
             params.extend(options.collection_ids)
-            # Keep the FTS match evaluated once for scoped searches. The
-            # scoped default CLI path always carries a non-empty collection
-            # filter; with a bare join (or a plain, flattened CTE) SQLite
-            # drives from `documents` via idx_documents_collection and
-            # re-runs the match per candidate document
-            # (`SCAN fts VIRTUAL TABLE INDEX 32:=M1`). AS MATERIALIZED
-            # computes the match once before the join; the keyword needs
-            # SQLite >= 3.35.0 (2021-03), newer than supported CPython 3.10+.
+            collection_filter = f"AND d.collection_id IN ({placeholders})"
+
+        min_score_filter = ""
+        if options.min_score > 0:
+            params.append(1.0 - 1.0 / options.min_score)
+            min_score_filter = "AND m.score >= ?"
+
+        # Keep the FTS match evaluated once for scoped searches. The scoped
+        # default CLI path always carries a non-empty collection filter; with
+        # a bare join (or a plain, flattened CTE) SQLite drives from
+        # `documents` via idx_documents_collection and re-runs the match per
+        # candidate document (`SCAN fts VIRTUAL TABLE INDEX 32:=M1`). AS
+        # MATERIALIZED computes the match once before the join; the keyword
+        # needs SQLite >= 3.35.0 (2021-03), newer than supported CPython
+        # 3.10+. The weighted expression names the real table (an FTS5 alias
+        # is rejected — Pitfall 5); weights and the min_score threshold are
+        # bound parameters, never interpolated (T-19-19). Every projection is
+        # the same weighted expression, so a raised title weight moves both
+        # ordering and thresholding together.
+        if options.collection_ids:
             sql = f"""
                 WITH matched AS MATERIALIZED (
-                    SELECT rowid, rank FROM documents_fts
-                    WHERE documents_fts MATCH ? {min_score_filter}
+                    SELECT rowid, bm25(documents_fts, ?, ?) AS score
+                    FROM documents_fts
+                    WHERE documents_fts MATCH ?
                 )
                 SELECT
                     d.id as document_id,
                     d.title,
                     d.path,
                     c.name as collection_name,
-                    m.rank as score
+                    m.score as score
                 FROM matched m
                 JOIN documents d ON m.rowid = d.rowid
                 JOIN collections c ON d.collection_id = c.id
-                WHERE d.collection_id IN ({placeholders})
-                ORDER BY m.rank
+                WHERE 1 = 1 {collection_filter} {min_score_filter}
+                ORDER BY m.score
                 LIMIT ? OFFSET ?
             """
         else:
-            # Unfiltered (--all) SQL keeps its single FTS scan; the min_score
-            # predicate rides the same WHERE as MATCH, before LIMIT/OFFSET.
+            # Unfiltered (--all) SQL uses the same materialized weighted match;
+            # the min_score predicate still applies before LIMIT/OFFSET.
             sql = f"""
+                WITH matched AS MATERIALIZED (
+                    SELECT rowid, bm25(documents_fts, ?, ?) AS score
+                    FROM documents_fts
+                    WHERE documents_fts MATCH ?
+                )
                 SELECT
                     d.id as document_id,
                     d.title,
                     d.path,
                     c.name as collection_name,
-                    rank as score
-                FROM documents_fts fts
-                JOIN documents d ON fts.rowid = d.rowid
+                    m.score as score
+                FROM matched m
+                JOIN documents d ON m.rowid = d.rowid
                 JOIN collections c ON d.collection_id = c.id
-                WHERE documents_fts MATCH ? {collection_filter} {min_score_filter}
-                ORDER BY rank
+                WHERE 1 = 1 {min_score_filter}
+                ORDER BY m.score
                 LIMIT ? OFFSET ?
             """
         params.extend([options.limit, options.offset])

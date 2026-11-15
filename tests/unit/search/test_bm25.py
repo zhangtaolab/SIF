@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from sif.core.models import SearchOptions, SearchResult
-from sif.search.bm25 import BM25Searcher
+from sif.search.bm25 import _CONTENT_WEIGHT, _TITLE_WEIGHT, BM25Searcher
 from sif.search.context_attach import enrich_results
 
 
@@ -111,9 +111,12 @@ class TestBM25Searcher:
         sql = mock_db.execute.call_args[0][0]
         params = mock_db.execute.call_args[0][1]
         # FTS5: score >= m  <=>  rank >= 1 - 1/m (research Pitfall 4). The
-        # naive inverse 1/m - 1 has the wrong direction.
-        assert "rank >= ?" in sql
-        assert params[1] == pytest.approx(1.0 - 1.0 / 0.3)
+        # naive inverse 1/m - 1 has the wrong direction. Position 0/1 are the
+        # bound content/title weights, position 2 the MATCH query, position 3
+        # the weighted-expression threshold.
+        assert "m.score >= ?" in sql
+        assert params[3] == pytest.approx(1.0 - 1.0 / 0.3)
+        assert params[:2] == [_CONTENT_WEIGHT, _TITLE_WEIGHT]
         # Both returned rows survive: the threshold travelled to SQL.
         assert [r.document_id for r in results] == ["doc-1", "doc-2"]
 
@@ -137,8 +140,8 @@ class TestBM25Searcher:
 
         sql = mock_db.execute.call_args[0][0]
         params = mock_db.execute.call_args[0][1]
-        assert "rank >=" not in sql
-        assert params == ['"test"* AND "query"*', 10, 0]
+        assert "m.score >=" not in sql
+        assert params == [_CONTENT_WEIGHT, _TITLE_WEIGHT, '"test"* AND "query"*', 10, 0]
         assert [r.document_id for r in results] == ["doc-1"]
 
     def test_search_ranks_are_global_across_pages(self) -> None:
@@ -378,7 +381,7 @@ def _build_real_fts_db() -> sqlite3.Connection:
     conn.execute(
         "CREATE TABLE documents (id TEXT PRIMARY KEY, collection_id TEXT, title TEXT, path TEXT)"
     )
-    conn.execute("CREATE VIRTUAL TABLE documents_fts USING fts5(content)")
+    conn.execute("CREATE VIRTUAL TABLE documents_fts USING fts5(content, title)")
     conn.execute("INSERT INTO collections VALUES ('c1', 'notes'), ('c2', 'other')")
     for i, repeats in enumerate((1, 2, 4, 8, 16)):
         conn.execute(
@@ -500,6 +503,186 @@ class TestBM25OffsetPagination:
             assert [r.rank for r in page] == [2]
         finally:
             conn.close()
+
+
+def _build_title_body_db() -> sqlite3.Connection:
+    """Two-column FTS corpus where a raised title weight flips the ranking.
+
+    ``d-title`` matches the query only through its title and ``d-body`` only
+    through five body repetitions; 48 unrelated fillers raise the term's IDF
+    so both weighted ranks are O(1). At the default 1.0/1.0 the body match
+    wins (more term occurrences); at a raised title weight the title match
+    moves ahead. ``needle``/``needl`` are the query/title stem pair.
+    """
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.execute("CREATE TABLE collections (id TEXT PRIMARY KEY, name TEXT)")
+    conn.execute(
+        "CREATE TABLE documents (id TEXT PRIMARY KEY, collection_id TEXT, title TEXT, path TEXT)"
+    )
+    conn.execute("CREATE VIRTUAL TABLE documents_fts USING fts5(content, title, tokenize='porter')")
+    conn.execute("INSERT INTO collections VALUES ('c1', 'notes')")
+    documents = [
+        ("d-title", "Needle", "/t.md", "ordinary words here"),
+        ("d-body", "Other Title", "/b.md", " ".join(["needle"] * 5)),
+    ]
+    documents.extend(
+        (f"fill-{i}", f"Filler {i}", f"/f{i}.md", f"unrelated banana filler number {i}")
+        for i in range(48)
+    )
+    # Insert into both tables in the same order so rowids stay aligned.
+    for doc_id, title, path, content in documents:
+        conn.execute("INSERT INTO documents VALUES (?, 'c1', ?, ?)", (doc_id, title, path))
+        conn.execute("INSERT INTO documents_fts(content, title) VALUES (?, ?)", (content, title))
+    return conn
+
+
+class TestWeightedBM25:
+    """CORR-04: bound bm25(documents_fts, content_weight, title_weight)."""
+
+    def test_both_sql_branches_bind_weighted_bm25(self) -> None:
+        """Scoped and unfiltered branches bind weights; nothing is interpolated."""
+        for collection_ids in (["col-1"], None):
+            mock_db = MagicMock()
+            mock_db.execute.return_value.fetchall.return_value = []
+            searcher = BM25Searcher(mock_db)
+            searcher.search(
+                "test",
+                SearchOptions(collection_ids=collection_ids, include_highlights=False),
+            )
+
+            sql = mock_db.execute.call_args[0][0]
+            params = mock_db.execute.call_args[0][1]
+            assert "bm25(documents_fts, ?, ?)" in sql
+            assert "rank" not in sql
+            assert params[:2] == [_CONTENT_WEIGHT, _TITLE_WEIGHT]
+
+    def test_1_0_1_0_reproduces_rank_exactly_on_real_corpus(self) -> None:
+        """bm25(documents_fts, 1.0, 1.0) equals the unweighted rank column."""
+        conn = _build_real_fts_db()
+        try:
+            pairs = conn.execute(
+                "SELECT rank, bm25(documents_fts, 1.0, 1.0) AS weighted "
+                "FROM documents_fts WHERE documents_fts MATCH ? ORDER BY rank",
+                ('"apple"*',),
+            ).fetchall()
+            assert len(pairs) == 5
+            assert all(pair["rank"] == pair["weighted"] for pair in pairs)
+
+            expected_ids = [
+                row[0]
+                for row in conn.execute(
+                    "SELECT d.id FROM documents_fts "
+                    "JOIN documents d ON documents_fts.rowid = d.rowid "
+                    "WHERE documents_fts MATCH ? ORDER BY rank",
+                    ('"apple"*',),
+                ).fetchall()
+            ]
+            expected_scores = [1.0 / (1.0 + abs(pair["rank"])) for pair in pairs]
+
+            searcher = BM25Searcher(conn)
+            scoped = searcher.search(
+                "apple", SearchOptions(collection_ids=["c1"], include_highlights=False)
+            )
+            unfiltered = searcher.search("apple", SearchOptions(include_highlights=False))
+            for results in (scoped, unfiltered):
+                assert [r.document_id for r in results] == expected_ids
+                assert [r.score for r in results] == pytest.approx(expected_scores)
+        finally:
+            conn.close()
+
+    def test_raised_title_weight_reorders_title_only_above_body_only(self) -> None:
+        """A title-only match outranks a stronger body-only match once weighted."""
+        conn = _build_title_body_db()
+        try:
+            searcher = BM25Searcher(conn)
+            baseline = searcher.search(
+                "needle",
+                SearchOptions(collection_ids=["c1"], title_weight=1.0, include_highlights=False),
+            )
+            title_forward = searcher.search(
+                "needle",
+                SearchOptions(collection_ids=["c1"], title_weight=10.0, include_highlights=False),
+            )
+
+            assert [r.document_id for r in baseline] == ["d-body", "d-title"]
+            assert [r.document_id for r in title_forward] == ["d-title", "d-body"]
+        finally:
+            conn.close()
+
+    def test_default_title_weight_resolves_to_module_constant(self) -> None:
+        """None, an explicit 1.0, and the module constant all agree."""
+        conn = _build_title_body_db()
+        try:
+            searcher = BM25Searcher(conn)
+            implicit = searcher.search(
+                "needle",
+                SearchOptions(collection_ids=["c1"], include_highlights=False),
+            )
+            explicit_none = searcher.search(
+                "needle",
+                SearchOptions(collection_ids=["c1"], title_weight=None, include_highlights=False),
+            )
+            explicit_constant = searcher.search(
+                "needle",
+                SearchOptions(
+                    collection_ids=["c1"],
+                    title_weight=_TITLE_WEIGHT,
+                    include_highlights=False,
+                ),
+            )
+
+            assert _CONTENT_WEIGHT == 1.0
+            assert _TITLE_WEIGHT == 1.0
+            key = [(r.document_id, r.score) for r in implicit]
+            assert [(r.document_id, r.score) for r in explicit_none] == key
+            assert [(r.document_id, r.score) for r in explicit_constant] == key
+        finally:
+            conn.close()
+
+    def test_min_score_thresholds_the_weighted_expression_before_pagination(self) -> None:
+        """The same threshold separates the weighted ranks differently per weight."""
+        conn = _build_title_body_db()
+        try:
+            searcher = BM25Searcher(conn)
+            # rank threshold = -5.6: keeps d-body (-5.25) and drops d-title at
+            # title_weight=10 (-6.03), while both survive at weight 1.0
+            # (-5.25 / -3.59).
+            min_score = 1.0 / 6.6
+            weighted = searcher.search(
+                "needle",
+                SearchOptions(
+                    collection_ids=["c1"],
+                    title_weight=10.0,
+                    min_score=min_score,
+                    include_highlights=False,
+                ),
+            )
+            baseline = searcher.search(
+                "needle",
+                SearchOptions(
+                    collection_ids=["c1"],
+                    title_weight=1.0,
+                    min_score=min_score,
+                    include_highlights=False,
+                ),
+            )
+
+            assert [r.document_id for r in weighted] == ["d-body"]
+            assert [r.document_id for r in baseline] == ["d-body", "d-title"]
+        finally:
+            conn.close()
+
+    def test_search_chunks_sql_is_untouched(self) -> None:
+        """Chunk BM25 keeps the plain rank expression and no column weights."""
+        mock_db = MagicMock()
+        mock_db.execute.return_value.fetchall.return_value = []
+        searcher = BM25Searcher(mock_db)
+        searcher.search_chunks("test")
+
+        sql = mock_db.execute.call_args[0][0]
+        assert "bm25(" not in sql
+        assert "rank as score" in sql
 
 
 class TestBM25SharedTermMatcherHighlights:
