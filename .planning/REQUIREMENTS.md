@@ -39,8 +39,8 @@ Each maps to exactly one roadmap phase. Checkboxes mark committed scope.
 
 ### Metadata Filtering & Discovery (FILT)
 
-- [ ] **FILT-01**: User can filter search with a recursive JSON AST (and/or/not + comparison/in/contains/type/exists; qmd semantics verbatim — typed exact match, no coercion, missing keys don't match `ne`/`nin`, budgets) via shared CLI `--filter <json>` and MCP `filter` param.
-- [ ] **FILT-02**: User can filter by built-in `path`/`mtime` fields (columns already exist; mtime index added) — strictly more expressive than qmd's frontmatter-only AST.
+- [x] **FILT-01**: User can filter search with a recursive JSON AST (and/or/not + comparison/in/contains/type/exists; qmd semantics verbatim — typed exact match, no coercion, missing keys don't match `ne`/`nin`, budgets) via shared CLI `--filter <json>` and MCP `filter` param.
+- [x] **FILT-02**: User can filter by built-in `path`/`mtime` fields (columns already exist; mtime index added) — strictly more expressive than qmd's frontmatter-only AST.
 - [x] **FILT-03**: User's filters apply pre-RRF per leg (BM25 outer WHERE of the materialized CTE — never inside it; vector post-KNN JOIN + adaptive over-fetch with a selectivity bound and honest "too selective" message; parameterized SQL only).
 - [x] **FILT-04**: User's frontmatter is stored typed for pushdown/discovery (typed kv storage + backfill; `qmd.metadata` namespace opt-in for migration parity).
 - [ ] **FILT-05**: Agent can discover available metadata via a `metadata` tool (CLI + MCP; doc counts, numeric min/median/max, exact remainders; one validator shared with FILT-01; invalid filter → ToolError for model self-correction, never a protocol error).
@@ -144,8 +144,8 @@ Populated during roadmap creation. Each requirement maps to exactly one phase.
 | CORR-04 | Phase 19 | Complete |
 | CORR-05 | Phase 19 | Complete |
 | CORR-06 | Phase 21 | Pending |
-| FILT-01 | Phase 20 | Pending |
-| FILT-02 | Phase 20 | Pending |
+| FILT-01 | Phase 20 | Complete |
+| FILT-02 | Phase 20 | Complete |
 | FILT-03 | Phase 20 | Complete |
 | FILT-04 | Phase 20 | Complete |
 | FILT-05 | Phase 20 | Pending |
