@@ -80,6 +80,9 @@ async def test_hybrid_search_mocks(backend):
     mock_result.rank = 1
     mock_result.collection_name = "default"
     mock_result.vectors_stale = True
+    mock_result.chunk_id = "chunk-1"
+    mock_result.sequence = 2
+    mock_result.chunk_matches = 3
 
     with patch("sif.mcp.backend.SearchPipeline") as mock_pipeline:
         mock_pipeline.return_value.search.return_value = [mock_result]
@@ -93,6 +96,11 @@ async def test_hybrid_search_mocks(backend):
     # must ride the metadata dict with the core result's value.
     assert results[0].metadata.get("vectors_stale") is True
     assert results[0].metadata["rank"] == 1
+    # CORR-02/D-02/D-03: chunk identity and the collapsed count cross the
+    # boundary through the same explicit map.
+    assert results[0].metadata["chunk_id"] == "chunk-1"
+    assert results[0].metadata["sequence"] == 2
+    assert results[0].metadata["chunk_matches"] == 3
 
 
 @pytest.mark.asyncio
@@ -377,6 +385,10 @@ def _weight_result() -> MagicMock:
     mock_result.rank = 1
     mock_result.collection_name = "default"
     mock_result.vectors_stale = False
+    # CORR-02 boundary fields: the re-map copies all three explicitly.
+    mock_result.chunk_id = None
+    mock_result.sequence = None
+    mock_result.chunk_matches = 0
     return mock_result
 
 
@@ -823,7 +835,14 @@ class TestSingleEnrichmentOwner:
             assert result.metadata["vectors_stale"] is True
             # The boundary forwards exactly its existing fields; context
             # descriptions stay CLI-visible only (not a Phase-19 MCP contract).
-            assert set(result.metadata) == {"rank", "collection_name", "vectors_stale"}
+            assert set(result.metadata) == {
+                "rank",
+                "collection_name",
+                "vectors_stale",
+                "chunk_id",
+                "sequence",
+                "chunk_matches",
+            }
 
     @pytest.mark.asyncio
     async def test_pipeline_path_does_not_enrich_again(self, backend) -> None:
@@ -837,4 +856,113 @@ class TestSingleEnrichmentOwner:
 
         mock_enrich.assert_not_called()
         assert results[0].metadata["vectors_stale"] is False
-        assert set(results[0].metadata) == {"rank", "collection_name", "vectors_stale"}
+        assert set(results[0].metadata) == {
+            "rank",
+            "collection_name",
+            "vectors_stale",
+            "chunk_id",
+            "sequence",
+            "chunk_matches",
+        }
+
+
+# =============================================================================
+# CORR-02 per-chunk escape hatch and chunk-field forwarding (Plan 19-07)
+# =============================================================================
+
+
+class TestPerChunkInputs:
+    """D-01: only the two chunk-capable MCP inputs carry per_chunk."""
+
+    def test_query_input_defaults_false_and_accepts_true(self) -> None:
+        assert QueryInput(query="q").per_chunk is False
+        assert QueryInput(query="q", per_chunk=True).per_chunk is True
+
+    def test_vec_search_input_carries_per_chunk(self) -> None:
+        from sif.mcp.protocol import VecSearchInput
+
+        assert VecSearchInput(query="q").per_chunk is False
+        assert VecSearchInput(query="q", per_chunk=True).per_chunk is True
+
+    def test_lex_search_input_has_no_per_chunk_field(self) -> None:
+        """sif search / MCP lex_search are document-level (D-01 prohibition)."""
+        from sif.mcp.protocol import LexSearchInput
+
+        assert "per_chunk" not in LexSearchInput.model_fields
+
+
+class TestQueryToolHandlerPerChunk:
+    """The hand-written schema stays in sync and the handler forwards the flag."""
+
+    def test_input_schema_declares_per_chunk_matching_the_model_default(self) -> None:
+        from sif.mcp.handlers import QueryToolHandler
+
+        props = QueryToolHandler.input_schema["properties"]
+        assert props["per_chunk"] == {
+            "type": "boolean",
+            "default": QueryInput(query="q").per_chunk,
+        }
+
+    @pytest.mark.asyncio
+    async def test_handle_forwards_per_chunk(self) -> None:
+        from sif.mcp.handlers import QueryToolHandler
+
+        mock_backend = MagicMock()
+        mock_backend.hybrid_search = AsyncMock(return_value=[])
+
+        await QueryToolHandler().handle({"query": "q", "per_chunk": True}, mock_backend)
+
+        assert mock_backend.hybrid_search.call_args.kwargs["per_chunk"] is True
+
+
+class TestHybridSearchPerChunkForwarding:
+    """per_chunk rides SearchOptions into both the pipeline and the fallback."""
+
+    @pytest.mark.asyncio
+    async def test_per_chunk_rides_search_options_into_pipeline(self, backend) -> None:
+        with patch("sif.mcp.backend.SearchPipeline") as mock_pipeline:
+            mock_pipeline.return_value.search.return_value = [_weight_result()]
+            await backend.hybrid_search("test query", per_chunk=True)
+
+        options = mock_pipeline.return_value.search.call_args[0][1]
+        assert options.per_chunk is True
+
+    @pytest.mark.asyncio
+    async def test_per_chunk_defaults_false_on_the_options_object(self, backend) -> None:
+        with patch("sif.mcp.backend.SearchPipeline") as mock_pipeline:
+            mock_pipeline.return_value.search.return_value = [_weight_result()]
+            await backend.hybrid_search("test query")
+
+        options = mock_pipeline.return_value.search.call_args[0][1]
+        assert options.per_chunk is False
+
+    @pytest.mark.asyncio
+    async def test_bm25_fallback_receives_per_chunk_too(self, backend) -> None:
+        with (
+            patch("sif.mcp.backend.SearchPipeline", side_effect=RuntimeError("no vec")),
+            patch("sif.mcp.backend.BM25Searcher") as mock_bm25_cls,
+        ):
+            mock_bm25_cls.return_value.search.return_value = []
+            await backend.hybrid_search("test query", per_chunk=True)
+
+        options = mock_bm25_cls.return_value.search.call_args[0][1]
+        assert options.per_chunk is True
+
+
+class TestChunkFieldRemap:
+    """D-02/D-03: a default MCP result's chunk fields equal the core values."""
+
+    @pytest.mark.asyncio
+    async def test_remap_copies_chunk_identity_and_match_count(self, backend) -> None:
+        core = _weight_result()
+        core.chunk_id = "chunk-9"
+        core.sequence = 4
+        core.chunk_matches = 7
+
+        with patch("sif.mcp.backend.SearchPipeline") as mock_pipeline:
+            mock_pipeline.return_value.search.return_value = [core]
+            results = await backend.hybrid_search("test query")
+
+        assert results[0].metadata["chunk_id"] == core.chunk_id
+        assert results[0].metadata["sequence"] == core.sequence
+        assert results[0].metadata["chunk_matches"] == core.chunk_matches

@@ -126,6 +126,7 @@ class SearchBackend:
         collections: list[str] | None = None,
         limit: int = 10,
         offset: int = 0,
+        per_chunk: bool = False,
         min_score: float = 0.0,
         rrf_k: int | None = None,
         bm25_weight: float | None = None,
@@ -137,7 +138,8 @@ class SearchBackend:
         server process's ``SIF_`` settings (request field ≈ CLI flag); the
         resolved values ride SearchOptions into the pipeline. ``offset``
         (CORR-03/D-05) rides the same SearchOptions object into the
-        pipeline's single offset slice.
+        pipeline's single offset slice. ``per_chunk`` (CORR-02/D-01) rides it
+        into the vector leg's chunk escape hatch.
 
         When sqlite-vec is unavailable (SearchPipeline construction raises
         ``RuntimeError``), the search degrades to BM25-only with a one-time
@@ -149,6 +151,7 @@ class SearchBackend:
             options = SearchOptions(
                 limit=limit,
                 offset=offset,
+                per_chunk=per_chunk,
                 min_score=min_score,
                 include_content=False,
                 include_highlights=True,
@@ -206,6 +209,12 @@ class SearchBackend:
                         "rank": r.rank,
                         "collection_name": r.collection_name,
                         "vectors_stale": r.vectors_stale,
+                        # CORR-02/D-02/D-03: chunk identity and the collapsed
+                        # match count are explicitly copied for the same
+                        # reason — anything unlisted is dropped here.
+                        "chunk_id": r.chunk_id,
+                        "sequence": r.sequence,
+                        "chunk_matches": r.chunk_matches,
                     },
                 )
                 for r in core_results

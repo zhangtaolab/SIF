@@ -59,6 +59,10 @@ class QueryToolHandler(ToolHandler):
             # CORR-03/D-05 pagination: the hand-written schema and the
             # QueryInput.offset field (Field(ge=0)) must stay in sync.
             "offset": {"type": "integer", "minimum": 0, "default": 0},
+            # CORR-02/D-01 chunk escape hatch: mirrors QueryInput.per_chunk.
+            # An unlisted property is invisible to MCP tool discovery even
+            # though the model accepts it, so the two must stay in sync.
+            "per_chunk": {"type": "boolean", "default": False},
             "min_score": {"type": "number", "default": 0.0},
             # Phase 15 fusion overrides (D-04): omitted = server SIF_ settings.
             # The hand-written schema and the pydantic model must stay in
@@ -83,6 +87,7 @@ class QueryToolHandler(ToolHandler):
             collections=input_data.collections,
             limit=input_data.limit,
             offset=input_data.offset,
+            per_chunk=input_data.per_chunk,
             min_score=input_data.min_score,
             rrf_k=input_data.rrf_k,
             bm25_weight=input_data.bm25_weight,
