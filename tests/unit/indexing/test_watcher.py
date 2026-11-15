@@ -9,6 +9,7 @@ end-to-end proof lives in ``tests/integration/test_watch_e2e.py``.
 from __future__ import annotations
 
 import errno
+import json
 import logging
 import os
 import sqlite3
@@ -1556,6 +1557,181 @@ class TestEmbedDepth:
         assert len(rows) >= 1
         assert [row[1] for row in rows] == list(range(len(rows)))
         assert all(row[2] is not None for row in rows)
+
+    def test_metadata_only_edit_keeps_chunk_and_vector_counts(self, tmp_path, monkeypatch) -> None:
+        """D-07/Pitfall 2: a frontmatter-only edit never feeds the embed leg."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "watch.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        doc_file = notes / "a.md"
+        doc_file.write_text("---\ntitle: Original\n---\n" + BODY_ALPHA, encoding="utf-8")
+        _seed_collection(db_path, notes)
+
+        manager = _embed_manager_mock()
+        db = Database(db_path)
+        try:
+            from sif.database.repositories import CollectionRepository
+
+            coll = CollectionRepository(db.connection).get_by_name("notes")
+            assert coll is not None
+            with (
+                patch("sif.config.settings.get_settings", return_value=_test_settings()),
+                patch(
+                    "sif.embedding.manager.EmbeddingManager.from_settings",
+                    return_value=manager,
+                ),
+            ):
+                watcher = FileWatcher([coll], db.connection, db_path, WatchConfig(depth="embed"))
+                self._run_burst(watcher, coll, doc_file)
+
+                check = self._check_conn(db_path)
+                try:
+                    before_rows = _chunk_rows(check, doc_file)
+                finally:
+                    check.close()
+                assert len(before_rows) >= 1
+                assert all(row[1] is not None for row in before_rows)
+                assert manager.embed.call_count == 1
+
+                # Frontmatter-only edit: title/tags move, parsed body identical.
+                doc_file.write_text(
+                    "---\ntitle: Renamed\ntags: [fresh]\n---\n" + BODY_ALPHA,
+                    encoding="utf-8",
+                )
+                self._run_burst(watcher, coll, doc_file)
+                # The embed leg was NOT fed: no second chunk/vector set.
+                assert manager.embed.call_count == 1
+        finally:
+            db.close()
+
+        check = self._check_conn(db_path)
+        try:
+            after_rows = _chunk_rows(check, doc_file)
+            row = check.execute(
+                "SELECT title, metadata FROM documents WHERE path = ?",
+                (str(doc_file.resolve()),),
+            ).fetchone()
+        finally:
+            check.close()
+
+        assert after_rows == before_rows
+        assert len(after_rows) == len(before_rows)
+        assert row is not None
+        assert row[0] == "Renamed"
+        assert json.loads(row[1]) == {"title": "Renamed", "tags": ["fresh"]}
+
+    def test_body_edit_purges_and_rewrites_one_contiguous_chunk_set(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """A body edit purges the old rows and re-embeds one contiguous set."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "watch.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        doc_file = notes / "a.md"
+        doc_file.write_text(BODY_ALPHA, encoding="utf-8")
+        _seed_collection(db_path, notes)
+
+        manager = _embed_manager_mock()
+        db = Database(db_path)
+        try:
+            from sif.database.repositories import CollectionRepository
+
+            coll = CollectionRepository(db.connection).get_by_name("notes")
+            assert coll is not None
+            with (
+                patch("sif.config.settings.get_settings", return_value=_test_settings()),
+                patch(
+                    "sif.embedding.manager.EmbeddingManager.from_settings",
+                    return_value=manager,
+                ),
+            ):
+                watcher = FileWatcher([coll], db.connection, db_path, WatchConfig(depth="embed"))
+                self._run_burst(watcher, coll, doc_file)
+                check = self._check_conn(db_path)
+                try:
+                    before_rows = _chunk_rows(check, doc_file)
+                finally:
+                    check.close()
+                assert len(before_rows) >= 1
+
+                doc_file.write_text(BODY_BETA, encoding="utf-8")
+                self._run_burst(watcher, coll, doc_file)
+                assert manager.embed.call_count == 2
+        finally:
+            db.close()
+
+        check = self._check_conn(db_path)
+        try:
+            after_rows = _chunk_rows(check, doc_file)
+        finally:
+            check.close()
+
+        assert len(after_rows) >= 1
+        assert [row[0] for row in after_rows] == list(range(len(after_rows)))
+        assert all(row[1] is not None for row in after_rows)
+        # Fresh chunk rows: no chunk from the purged body survived.
+        before_ids = {row[1] for row in before_rows}
+        after_ids = {row[1] for row in after_rows}
+        assert before_ids.isdisjoint(after_ids)
+
+    def test_migration_pass_over_unchanged_bodies_does_not_duplicate_chunks(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """D-09+D-07: a migrating reconcile re-parses but never re-embeds."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "watch.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        doc_file = notes / "a.md"
+        doc_file.write_text(BODY_ALPHA, encoding="utf-8")
+        _seed_collection(db_path, notes)
+
+        manager = _embed_manager_mock()
+        events: list[str] = []
+        db = Database(db_path)
+        try:
+            from sif.database.repositories import CollectionRepository
+
+            coll = CollectionRepository(db.connection).get_by_name("notes")
+            assert coll is not None
+            with (
+                patch("sif.config.settings.get_settings", return_value=_test_settings()),
+                patch(
+                    "sif.embedding.manager.EmbeddingManager.from_settings",
+                    return_value=manager,
+                ),
+            ):
+                watcher = FileWatcher(
+                    [coll],
+                    db.connection,
+                    db_path,
+                    WatchConfig(depth="embed", on_event=events.append),
+                )
+                # The burst path never writes the convention marker (D-09)...
+                self._run_burst(watcher, coll, doc_file)
+                assert manager.embed.call_count == 1
+                check = self._check_conn(db_path)
+                try:
+                    before_rows = _chunk_rows(check, doc_file)
+                finally:
+                    check.close()
+
+                # ...so the next reconcile runs the one forced migration pass.
+                watcher._run_job((coll, FoldResult(needs_reconcile=True)))
+                # Unchanged bodies keep chunks/vectors: no reindex signal.
+                assert manager.embed.call_count == 1
+        finally:
+            db.close()
+
+        assert any(event.startswith("migrate ") for event in events)
+        check = self._check_conn(db_path)
+        try:
+            after_rows = _chunk_rows(check, doc_file)
+        finally:
+            check.close()
+        assert after_rows == before_rows
 
     def test_embed_compute_runs_outside_any_write_transaction(self, tmp_path, monkeypatch) -> None:
         """D-09/Pitfall 5: conn.in_transaction is False at every embed() call.

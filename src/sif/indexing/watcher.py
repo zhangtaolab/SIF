@@ -207,8 +207,9 @@ class _EmbedSession:
         self._searcher: VectorSearcher | None = None
         self._chunker: Chunker | None = None
         # Per-collection paths whose embed leg failed (WR-01): the BM25 leg
-        # already committed their fresh checksum, so the checksum diff alone
-        # never re-selects them — the next burst unions them back in.
+        # already committed their fresh checksum, so a later burst's reindex
+        # signal alone never re-selects them — the next burst unions them back
+        # in.
         self._pending_retry: dict[str, set[Path]] = {}
 
     def ensure_ready(self, on_event: Callable[[str], None] | None) -> bool:
@@ -368,7 +369,6 @@ class FileWatcher:
         self._queue: queue.Queue[tuple[Collection, FoldResult] | None] = queue.Queue()
         self._worker: threading.Thread | None = None
         self._stop_event = threading.Event()
-        self._doc_repo = DocumentRepository(conn)
         self._embed = _EmbedSession(conn)
 
     def start(self) -> None:
@@ -539,11 +539,11 @@ class FileWatcher:
         The startup hosts (CLI foreground, daemon, installed service) reuse
         the embed-aware reconcile so an embed-depth startup cannot leave the
         documents its BM25 leg changed vector-less: the update branch purges
-        chunks and embeddings, and the checksum diff feeds them back through
-        the embed leg in the same lock window (the IN-04 shape). Callable
-        pre-start only — once :meth:`start` runs, the worker owns the
-        connection and hosts express reconcile intent through
-        :meth:`enqueue_reconcile`.
+        chunks and embeddings, and the core's explicit ``reindexed_paths``
+        signal feeds them back through the embed leg in the same lock window
+        (the IN-04 shape). Callable pre-start only — once :meth:`start` runs,
+        the worker owns the connection and hosts express reconcile intent
+        through :meth:`enqueue_reconcile`.
         """
         return self._run_reconcile(collection, progress=progress, on_wait=on_wait)
 
@@ -843,12 +843,12 @@ class FileWatcher:
         """One full-collection BM25 pass (directory move, returning root).
 
         The core pass stays BM25-only, but its update branch purges chunks
-        and embeddings for every changed document. At embed depth that
-        purge must not strand those documents vector-less (IN-04): the
-        changed set — computable as a checksum diff around the pass — is
-        fed through the embed leg in the SAME lock window (D-09), because
-        the burst change detector alone would never re-select paths whose
-        fresh checksums the reconcile just committed.
+        and embeddings for every body-changed document. At embed depth that
+        purge must not strand those documents vector-less (IN-04): the core
+        now returns the explicit ``reindexed_paths`` signal — exactly the
+        documents it purged — and that set feeds the embed leg in the SAME
+        lock window (D-09). A metadata-only document is deliberately absent,
+        so the append-only embed leg can never duplicate its chunks.
 
         ``progress``/``on_wait`` default to the configured host callbacks;
         the startup seam (:meth:`reconcile_now`) overrides them with the
@@ -857,57 +857,32 @@ class FileWatcher:
         """
         cb = progress if progress is not None else self._config.on_event
         with index_lock(self._db_path, self._config.lock_timeout, on_wait=on_wait):
-            before = (
-                self._collection_checksums(collection) if self._config.depth == "embed" else None
-            )
             result = IncrementalIndexer(self._conn).update_collection(collection, progress=cb)
-            if before is not None:
-                changed = self._changed_since(collection, before)
-                if changed:
-                    self._embed.embed_documents(collection, changed, cb)
+            if self._config.depth == "embed":
+                self._embed.embed_documents(
+                    collection,
+                    {Path(path) for path in result.reindexed_paths},
+                    cb,
+                )
             return result
 
     def _run_burst(self, collection: Collection, folded: FoldResult) -> IncrementalResult:
-        """BM25 leg first, then the inline embed leg for changed paths (D-09)."""
+        """BM25 leg first, then the inline embed leg for purged paths (D-09)."""
         paths = folded.index_candidates | folded.remove_candidates
         indexer = IncrementalIndexer(self._conn)
         progress = self._config.on_event
-        if self._config.depth != "embed":
-            return indexer.update_paths(collection, paths, progress=progress)
-        before = self._checksums(collection, folded.index_candidates)
         result = indexer.update_paths(collection, paths, progress=progress)
-        changed = {
-            path for path in folded.index_candidates if self._path_changed(collection, path, before)
-        }
-        self._embed.embed_documents(collection, changed, progress)
+        if self._config.depth == "embed":
+            # The indexer's explicit signal — not a checksum diff — selects
+            # embed candidates: a metadata-only edit changed the checksum but
+            # preserved the chunks, and feeding it here would append a second
+            # chunk set (RESEARCH Pitfall 2).
+            self._embed.embed_documents(
+                collection,
+                {Path(path) for path in result.reindexed_paths},
+                progress,
+            )
         return result
-
-    def _checksums(self, collection: Collection, paths: Iterable[Path]) -> dict[str, str | None]:
-        """Snapshot stored checksums for the index candidates (change detection)."""
-        snapshots: dict[str, str | None] = {}
-        for path in paths:
-            doc = self._doc_repo.get_by_path(str(path), collection.id)
-            snapshots[str(path)] = doc.checksum if doc else None
-        return snapshots
-
-    def _collection_checksums(self, collection: Collection) -> dict[str, str | None]:
-        """Snapshot {path: checksum} for every stored document in the collection."""
-        return {doc.path: doc.checksum for doc in self._doc_repo.list_by_collection(collection.id)}
-
-    def _changed_since(self, collection: Collection, before: dict[str, str | None]) -> set[Path]:
-        """Paths whose stored checksum appeared or changed since ``before``."""
-        return {
-            Path(doc.path)
-            for doc in self._doc_repo.list_by_collection(collection.id)
-            if doc.checksum != before.get(doc.path)
-        }
-
-    def _path_changed(
-        self, collection: Collection, path: Path, before: dict[str, str | None]
-    ) -> bool:
-        """True when the BM25 leg added or updated this path's document."""
-        doc = self._doc_repo.get_by_path(str(path), collection.id)
-        return doc is not None and doc.checksum != before.get(str(path))
 
     def _drain_once(self) -> None:
         """Run every job already queued at call time (count-bounded, no waiting).

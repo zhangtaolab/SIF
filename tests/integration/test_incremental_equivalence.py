@@ -238,6 +238,38 @@ class TestIncrementalEquivalence:
             assert snap2_chunked.chunks_by_path[path] == [0, 1]
         assert snap2_chunked.chunk_sequences_are_contiguous()
 
+    def test_frontmatter_only_cycle_preserves_chunks_and_moves_title(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """D-07: a title-only edit updates the row and keeps the chunk set."""
+        _delenv_settings_vars(monkeypatch)
+        db_path, root, settings, snap1 = self._advance_to_after_first_run(tmp_path)
+        alpha = root / "alpha.md"
+        alpha_path = str(alpha)
+        assert snap1.chunks_by_path[alpha_path] == [0, 1]
+
+        # Frontmatter-only edit: frontmatter changes, parsed body identical.
+        alpha.write_text(
+            "---\ntitle: Renamed Alpha\ntags: [fresh]\n---\n" + ALPHA_BODY,
+            encoding="utf-8",
+        )
+
+        result = _invoke_update(db_path, settings)
+        assert result.exit_code == 0
+        assert "Added: 0" in result.output
+        assert "Updated: 1" in result.output
+        assert "Removed: 0" in result.output
+
+        snap2 = _Snapshot(db_path)
+        assert snap2.documents[alpha_path]["title"] == "Renamed Alpha"
+        assert snap2.documents[alpha_path]["checksum"] != snap1.documents[alpha_path]["checksum"]
+        assert snap2.documents[alpha_path]["content"] == snap1.documents[alpha_path]["content"]
+        # The simulated embed pass's chunk set survived the metadata-only
+        # edit; every other document is untouched.
+        assert snap2.chunks_by_path[alpha_path] == [0, 1]
+        assert snap2.chunks_by_path[str(root / "gamma_unicode.md")] == [0, 1]
+        assert snap2.fts_count == 3
+
     def test_third_run_is_idempotent(self, tmp_path: Path, monkeypatch) -> None:
         """Run 3: nothing changed on disk — all zeros, no state disturbed (SC2)."""
         _delenv_settings_vars(monkeypatch)
