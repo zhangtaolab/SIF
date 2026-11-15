@@ -47,9 +47,10 @@ _CONVENTION_KEY_PREFIX = "convention:"
 class IncrementalResult:
     """Counts reported by one incremental update pass over a collection.
 
-    ``failed`` counts paths whose parse raised (unreadable bytes, permission
-    loss): nothing was written for them, so they stay drift-visible — the
-    failure is reported, never silently converged away (14 REVIEW WR-01).
+    ``failed`` counts paths whose parse or document-row write raised
+    (unreadable bytes, permission loss, an un-bindable metadata value): nothing
+    was written for them, so they stay drift-visible — the failure is reported,
+    never silently converged away (14 REVIEW WR-01).
 
     ``reindexed_paths`` is the explicit signal for the embed leg: exactly the
     paths whose chunks/embeddings were purged — newly added documents and
@@ -112,8 +113,8 @@ class IncrementalIndexer:
                 files; emitted once per collection when the stored
                 parser/checksum convention is missing or old),
                 ``"unchanged <name>"`` (checksum-skip fired),
-                ``"error <message>"`` (per-file parse failure; counted as
-                ``failed``),
+                ``"error <message>"`` (per-file parse or write failure;
+                counted as ``failed``),
                 ``"indexed <name>"`` (file added, updated, or metadata-only
                 refreshed).
 
@@ -148,7 +149,9 @@ class IncrementalIndexer:
 
         # D-09: a missing/old per-collection convention marker forces exactly
         # one re-parse pass. The marker is read here but written only after a
-        # clean pass, so a parse failure retries the migration next time.
+        # pass in which no STORED document failed, so an old-convention row
+        # stays retryable; failures on never-stored scanned files cannot block
+        # convergence (WR-01, 19 REVIEW).
         convention_key = f"{_CONVENTION_KEY_PREFIX}{collection.id}"
         migrating = self._meta_repo.get(convention_key) != str(CONVENTION_VERSION)
         if migrating and existing_docs:
@@ -159,6 +162,7 @@ class IncrementalIndexer:
         added = 0
         updated = 0
         failed = 0
+        failed_stored = 0
         metadata_only = 0
         reindexed_paths: set[str] = set()
 
@@ -185,14 +189,25 @@ class IncrementalIndexer:
                 metadata_only += 1
             elif outcome == "error":
                 failed += 1
+                # WR-01 (19 REVIEW): only failures that affect already-stored
+                # data can block the convention migration. A scanned file that
+                # has never been stored (a binary/PDF picked up by a broad
+                # pattern, a legacy Latin-1 note, a permission-lost path) will
+                # fail on every run; counting it would keep the marker absent
+                # forever and make every update re-parse and rewrite every
+                # healthy document.
+                if str(file_path) in existing_docs:
+                    failed_stored += 1
 
         removed = self._sweep_removed(existing_docs, scanned_paths)
 
         # Marker write — after the per-file loop and removal sweep, and only
-        # when zero files failed. Never written before the pass completes: a
-        # failure must leave it absent so old-convention data is never
-        # silently presented as migrated (D-09).
-        if migrating and failed == 0:
+        # when no file with a STORED document failed. Never written before the
+        # pass completes: a failure on stored data must leave it absent so
+        # old-convention data is never silently presented as migrated (D-09).
+        # Failures on never-stored scanned files stay reported in
+        # ``result.failed`` but cannot strand the migration (WR-01).
+        if migrating and failed_stored == 0:
             with self._conn:
                 self._meta_repo.set(convention_key, str(CONVENTION_VERSION))
 

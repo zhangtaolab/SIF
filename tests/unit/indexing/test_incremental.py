@@ -905,9 +905,11 @@ class TestMetadataFastPath:
 class TestConventionMigration:
     """D-09: one forced re-parse pass per collection, announced exactly once.
 
-    The marker is written only after a zero-failure pass; a parse failure
-    leaves it absent so the next pass retries instead of presenting
-    old-convention data as migrated.
+    The marker is written only after a pass in which no STORED document
+    failed; a failure on stored data leaves it absent so the next pass
+    retries instead of presenting old-convention data as migrated. Failures
+    on scanned files that were never stored stay reported but cannot block
+    convergence (WR-01, 19 REVIEW).
     """
 
     def test_fresh_collection_marks_convention_and_second_pass_skips(
@@ -1010,17 +1012,22 @@ class TestConventionMigration:
         assert second == IncrementalResult()
         assert not any(e.startswith("migrate ") for e in second_events)
 
-    def test_parse_failure_leaves_marker_unwritten_and_failure_counted(
+    def test_persistently_unparseable_scanned_file_does_not_strand_the_marker(
         self, tmp_path, monkeypatch
     ) -> None:
-        """One failing file blocks the marker; a later clean pass clears it."""
+        """WR-01: a never-stored failing file cannot block migration convergence.
+
+        A binary/non-UTF-8 file matched by a broad pattern fails on every run.
+        Pre-fix that kept ``failed`` nonzero forever, so the marker was never
+        written and every update re-parsed and rewrote every healthy document.
+        """
         _delenv_settings_vars(monkeypatch)
         db_path = tmp_path / "incr.db"
         notes = tmp_path / "notes"
         notes.mkdir()
         (notes / "good.md").write_text(BODY_ALPHA, encoding="utf-8")
-        (notes / "bad.md").write_bytes(b"\xff\xfe\x00not utf-8")
-        _seed_collection(db_path, notes)
+        (notes / "bad.bin").write_bytes(b"\xff\xfe\x00not utf-8")
+        _seed_collection(db_path, notes, pattern="**/*")
 
         indexer, db, coll = _open_indexer(db_path)
         try:
@@ -1030,12 +1037,13 @@ class TestConventionMigration:
             db.close()
 
         assert first.added == 1
-        assert first.failed == 1
+        assert first.failed == 1  # still reported
         assert not any(e.startswith("migrate ") for e in events)  # no prior docs
-        assert _marker(db_path, coll.id) is None
+        # Converged: the failure was never stored, so it cannot strand the
+        # migration.
+        assert _marker(db_path, coll.id) == str(CONVENTION_VERSION)
+        healthy_before = _doc_fields(db_path, str(notes / "good.md"))
 
-        # Fix the file: the next pass retries the migration and clears it.
-        (notes / "bad.md").write_text(BODY_BETA, encoding="utf-8")
         indexer, db, coll = _open_indexer(db_path)
         try:
             second_events: list[str] = []
@@ -1043,10 +1051,64 @@ class TestConventionMigration:
         finally:
             db.close()
 
-        assert second.failed == 0
-        assert second.added == 1
-        assert second.updated == 1  # good.md re-parsed via the fast path
-        assert [e for e in second_events if e.startswith("migrate ")] == ["migrate 2"]
+        # The permanent failure is still counted, but no migration notice and
+        # no rewrite of the healthy document: run 2 is not a re-parse pass.
+        assert second.failed == 1
+        assert second.updated == 0
+        assert second.added == 0
+        assert second.metadata_only == 0
+        assert not any(e.startswith("migrate ") for e in second_events)
+        assert any(e.startswith("unchanged good.md") for e in second_events)
+        assert _doc_fields(db_path, str(notes / "good.md")) == healthy_before
+
+    def test_stored_document_failure_keeps_marker_unwritten_until_fixed(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """D-09: a failure on already-stored data still blocks the marker."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "incr.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        doc_file = notes / "a.md"
+        doc_file.write_text(BODY_ALPHA, encoding="utf-8")
+        _seed_collection(db_path, notes)
+
+        # First pass stores the document and writes the marker.
+        indexer, db, coll = _open_indexer(db_path)
+        try:
+            assert indexer.update_collection(coll) == IncrementalResult(added=1)
+        finally:
+            db.close()
+        assert _marker(db_path, coll.id) == str(CONVENTION_VERSION)
+
+        # Simulate the pre-D-08 world (body-only checksum, no marker) and a
+        # stored file that has since become unreadable.
+        _downgrade_to_legacy(db_path, coll.id, str(doc_file))
+        doc_file.write_bytes(b"\xff\xfe\x00not utf-8")
+
+        indexer, db, coll = _open_indexer(db_path)
+        try:
+            events: list[str] = []
+            failing = indexer.update_collection(coll, progress=events.append)
+        finally:
+            db.close()
+
+        assert failing.failed == 1
+        assert [e for e in events if e.startswith("migrate ")] == ["migrate 1"]
+        # The stored row would still carry the old convention: retry next time.
+        assert _marker(db_path, coll.id) is None
+
+        # Restore the file: the next pass completes the migration.
+        doc_file.write_text(BODY_ALPHA, encoding="utf-8")
+        indexer, db, coll = _open_indexer(db_path)
+        try:
+            third = indexer.update_collection(coll)
+        finally:
+            db.close()
+
+        assert third.failed == 0
+        assert third.updated == 1
+        assert third.metadata_only == 1
         assert _marker(db_path, coll.id) == str(CONVENTION_VERSION)
 
     def test_empty_collection_writes_marker_without_migrate_event(
