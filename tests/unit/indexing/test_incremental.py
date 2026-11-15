@@ -14,6 +14,7 @@ intentionally retired.
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -99,6 +100,43 @@ def _doc_metadata(db_path: Path, path: str) -> str:
         return conn.execute("SELECT metadata FROM documents WHERE path = ?", (path,)).fetchone()[0]
     finally:
         conn.close()
+
+
+def _doc_fields(db_path: Path, path: str) -> dict[str, object]:
+    """Return the metadata-bearing document columns for one path."""
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    try:
+        row = conn.execute(
+            "SELECT title, content, checksum, file_size, mtime, metadata "
+            "FROM documents WHERE path = ?",
+            (path,),
+        ).fetchone()
+        assert row is not None
+        return dict(row)
+    finally:
+        conn.close()
+
+
+def _seed_chunk_and_embedding(db: Database, collection_id: str, doc_path: str) -> None:
+    """Simulate a prior embed pass: one chunk row plus one vec0 vector."""
+    from sif.search.vector import VectorSearcher
+
+    doc = DocumentRepository(db.connection).get_by_path(doc_path, collection_id)
+    assert doc is not None
+    with db.connection:
+        DocumentChunkRepository(db.connection).create(
+            DocumentChunk(
+                content="chunk of the stored body",
+                sequence=0,
+                start_pos=0,
+                end_pos=10,
+                document_id=doc.id,
+            )
+        )
+        VectorSearcher(db.connection, embedding_dim=8).add_embedding(
+            f"e-{doc.id}", doc.id, f"c-{doc.id}", [0.1] * 8
+        )
 
 
 def _chunk_contents(db_path: Path, doc_path: str) -> list[str]:
@@ -573,3 +611,192 @@ class TestUpdatePathsReplay:
         assert result == IncrementalResult(0, 1, 0)
         assert _chunk_contents(db_path, str(doc_file)) == []
         assert _embedding_count(db_path) == 0
+
+        # A frontmatter-only edit through the per-path API counts as updated
+        # but never purges the preserved chunk/vector rows (D-07).
+        indexer, db, coll = _open_indexer(db_path)
+        try:
+            _seed_chunk_and_embedding(db, coll.id, str(doc_file))
+        finally:
+            db.close()
+        doc_file.write_text("---\ntitle: Beta Renamed\n---\n" + BODY_BETA, encoding="utf-8")
+        indexer, db, coll = _open_indexer(db_path)
+        try:
+            metadata_result = indexer.update_paths(coll, [doc_file])
+        finally:
+            db.close()
+
+        assert metadata_result.updated == 1
+        assert metadata_result.metadata_only == 1
+        assert metadata_result.reindexed_paths == set()
+        assert _chunk_contents(db_path, str(doc_file)) == ["chunk of the stored body"]
+        assert _embedding_count(db_path) == 1
+
+
+FRONT_BODY = "# Front Heading\n\n" + ("Frontmatter body text. " * 40)
+# frontmatter.loads strips the body's trailing whitespace, so the parsed body
+# (what the index stores and hashes) is the rstripped form.
+PARSED_FRONT_BODY = FRONT_BODY.rstrip()
+
+
+class TestMetadataFastPath:
+    """D-07: frontmatter-only edits preserve chunks/embeddings; bodies purge.
+
+    ``reindexed_paths`` is the explicit embed signal (RESEARCH Pattern 4e):
+    added and body-changed paths appear, metadata-only paths never do.
+    """
+
+    def _seed_frontmatter_doc(self, tmp_path, monkeypatch) -> tuple[Path, Path]:
+        """Seed a collection with one indexed frontmatter document."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "incr.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        doc_file = notes / "front.md"
+        doc_file.write_text("---\ntitle: Original\n---\n" + FRONT_BODY, encoding="utf-8")
+        _seed_collection(db_path, notes)
+        indexer, db, coll = _open_indexer(db_path)
+        try:
+            assert indexer.update_collection(coll) == IncrementalResult(1, 0, 0)
+            _seed_chunk_and_embedding(db, coll.id, str(doc_file))
+            before = _doc_fields(db_path, str(doc_file))
+        finally:
+            db.close()
+        assert before["title"] == "Original"
+        return db_path, doc_file
+
+    def test_frontmatter_edit_keeps_chunks_and_embeddings(self, tmp_path, monkeypatch) -> None:
+        """A title+tag edit rewrites the row but keeps chunk and vector rows."""
+        db_path, doc_file = self._seed_frontmatter_doc(tmp_path, monkeypatch)
+        before = _doc_fields(db_path, str(doc_file))
+
+        # Frontmatter-only edit: title and tag move; the parsed body does not.
+        os.utime(doc_file, (1_000_000_000, 1_000_000_000))
+        doc_file.write_text(
+            "---\ntitle: Renamed\ntags: [fresh]\n---\n" + FRONT_BODY, encoding="utf-8"
+        )
+        doc_file.touch()
+        os.utime(doc_file, (1_000_000_100, 1_000_000_100))
+
+        indexer, db, coll = _open_indexer(db_path)
+        try:
+            events: list[str] = []
+            result = indexer.update_collection(coll, progress=events.append)
+        finally:
+            db.close()
+
+        assert result.updated == 1
+        assert result.metadata_only == 1
+        assert result.reindexed_paths == set()
+        assert any(e.startswith("indexed front.md") for e in events)
+
+        after = _doc_fields(db_path, str(doc_file))
+        assert after["title"] == "Renamed"
+        assert json.loads(after["metadata"]) == {"title": "Renamed", "tags": ["fresh"]}
+        assert after["checksum"] == compute_checksum(
+            PARSED_FRONT_BODY, {"title": "Renamed", "tags": ["fresh"]}
+        )
+        assert after["content"] == before["content"] == PARSED_FRONT_BODY
+        assert after["mtime"] != before["mtime"]
+        assert after["file_size"] == len(PARSED_FRONT_BODY.encode("utf-8"))
+        # The whole point of D-07: the chunk/vector rows did not move.
+        assert _chunk_contents(db_path, str(doc_file)) == ["chunk of the stored body"]
+        assert _embedding_count(db_path) == 1
+
+    def test_body_edit_purges_chunks_and_embeddings(self, tmp_path, monkeypatch) -> None:
+        """A body change takes the full path: chunks and vectors are purged."""
+        db_path, doc_file = self._seed_frontmatter_doc(tmp_path, monkeypatch)
+
+        doc_file.write_text("---\ntitle: Original\n---\n" + BODY_BETA, encoding="utf-8")
+        indexer, db, coll = _open_indexer(db_path)
+        try:
+            result = indexer.update_collection(coll)
+        finally:
+            db.close()
+
+        assert result.updated == 1
+        assert result.metadata_only == 0
+        assert result.reindexed_paths == {str(doc_file)}
+        assert _chunk_contents(db_path, str(doc_file)) == []
+        assert _embedding_count(db_path) == 0
+        _title, content, _checksum = _doc_row(db_path, str(doc_file))
+        assert "Beta paragraph text" in content
+
+    def test_force_with_unchanged_body_takes_the_fast_path(self, tmp_path, monkeypatch) -> None:
+        """--force skips the checksum shortcut but still preserves chunk/vector rows."""
+        db_path, doc_file = self._seed_frontmatter_doc(tmp_path, monkeypatch)
+
+        indexer, db, coll = _open_indexer(db_path)
+        try:
+            result = indexer.update_collection(coll, force=True)
+        finally:
+            db.close()
+
+        assert result.updated == 1
+        assert result.metadata_only == 1
+        assert result.reindexed_paths == set()
+        assert _chunk_contents(db_path, str(doc_file)) == ["chunk of the stored body"]
+        assert _embedding_count(db_path) == 1
+
+    def test_checksum_equal_moved_mtime_converges_mtime_only(self, tmp_path, monkeypatch) -> None:
+        """A touched-but-unchanged file persists only its moved mtime."""
+        db_path, doc_file = self._seed_frontmatter_doc(tmp_path, monkeypatch)
+        before = _doc_fields(db_path, str(doc_file))
+
+        os.utime(doc_file, (2_000_000_000, 2_000_000_000))
+
+        indexer, db, coll = _open_indexer(db_path)
+        try:
+            result = indexer.update_collection(coll)
+        finally:
+            db.close()
+
+        assert result == IncrementalResult()
+        after = _doc_fields(db_path, str(doc_file))
+        assert after["mtime"] == 2_000_000_000.0
+        assert after["checksum"] == before["checksum"]
+        assert after["content"] == before["content"]
+        # The skip path touches mtime only, never the chunk/vector rows.
+        assert _chunk_contents(db_path, str(doc_file)) == ["chunk of the stored body"]
+        assert _embedding_count(db_path) == 1
+
+    def test_reindexed_paths_track_added_and_body_changed_only(self, tmp_path, monkeypatch) -> None:
+        """reindexed_paths = added + body-changed; metadata-only is excluded."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "incr.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        doc_a = notes / "a.md"
+        doc_a.write_text(BODY_ALPHA, encoding="utf-8")
+        _seed_collection(db_path, notes)
+
+        indexer, db, coll = _open_indexer(db_path)
+        try:
+            first = indexer.update_collection(coll)
+        finally:
+            db.close()
+        assert first.reindexed_paths == {str(doc_a)}
+
+        # Body edit on a.md plus a brand-new b.md: both purged/created.
+        doc_a.write_text(BODY_BETA, encoding="utf-8")
+        doc_b = notes / "b.md"
+        doc_b.write_text(BODY_ALPHA, encoding="utf-8")
+        indexer, db, coll = _open_indexer(db_path)
+        try:
+            second = indexer.update_collection(coll)
+        finally:
+            db.close()
+        assert second.added == 1
+        assert second.updated == 1
+        assert second.reindexed_paths == {str(doc_a), str(doc_b)}
+
+        # Frontmatter-only edit: updated, but not a reindex candidate.
+        doc_a.write_text("---\ntitle: Beta Renamed\n---\n" + BODY_BETA, encoding="utf-8")
+        indexer, db, coll = _open_indexer(db_path)
+        try:
+            third = indexer.update_collection(coll)
+        finally:
+            db.close()
+        assert third.updated == 1
+        assert third.metadata_only == 1
+        assert third.reindexed_paths == set()

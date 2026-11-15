@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import sqlite3
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -46,6 +46,13 @@ class IncrementalResult:
     ``failed`` counts paths whose parse raised (unreadable bytes, permission
     loss): nothing was written for them, so they stay drift-visible — the
     failure is reported, never silently converged away (14 REVIEW WR-01).
+
+    ``reindexed_paths`` is the explicit signal for the embed leg: exactly the
+    paths whose chunks/embeddings were purged — newly added documents and
+    body-changed updates. Metadata-only paths are deliberately absent, so a
+    frontmatter edit can never make an append-only embed leg duplicate chunks
+    (D-07/D-09, RESEARCH Pitfall 2). Both new fields are ``compare=False`` so
+    the many ``IncrementalResult(...)`` equality assertions stay valid.
     """
 
     added: int = 0
@@ -53,6 +60,8 @@ class IncrementalResult:
     removed: int = 0
     unchanged: int = 0
     failed: int = 0
+    reindexed_paths: set[str] = field(default_factory=set, compare=False)
+    metadata_only: int = field(default=0, compare=False)
 
 
 class IncrementalIndexer:
@@ -131,6 +140,8 @@ class IncrementalIndexer:
         added = 0
         updated = 0
         failed = 0
+        metadata_only = 0
+        reindexed_paths: set[str] = set()
 
         for file_path in scan_result.files:
             scanned_paths.add(str(file_path))
@@ -143,8 +154,15 @@ class IncrementalIndexer:
             )
             if outcome == "added":
                 added += 1
+                reindexed_paths.add(str(file_path))
             elif outcome == "updated":
                 updated += 1
+                reindexed_paths.add(str(file_path))
+            elif outcome == "metadata":
+                # D-07 fast path: a row was rewritten (title/metadata), so it
+                # counts as updated, but no chunk/vector was purged.
+                updated += 1
+                metadata_only += 1
             elif outcome == "error":
                 failed += 1
 
@@ -156,9 +174,16 @@ class IncrementalIndexer:
             collection.last_indexed_at = datetime.now(timezone.utc)
             self._coll_repo.update(collection)
 
-        return IncrementalResult(added=added, updated=updated, removed=removed, failed=failed)
+        return IncrementalResult(
+            added=added,
+            updated=updated,
+            removed=removed,
+            failed=failed,
+            reindexed_paths=reindexed_paths,
+            metadata_only=metadata_only,
+        )
 
-    def update_paths(
+    def update_paths(  # noqa: C901 - one extra outcome branch; the per-path loop stays linear
         self,
         collection: Collection,
         paths: Iterable[Path],
@@ -212,6 +237,8 @@ class IncrementalIndexer:
         removed = 0
         unchanged = 0
         failed = 0
+        metadata_only = 0
+        reindexed_paths: set[str] = set()
 
         for path in sorted(resolved):
             if not scanner.matches(
@@ -243,8 +270,14 @@ class IncrementalIndexer:
                 )
                 if outcome == "added":
                     added += 1
+                    reindexed_paths.add(str(path))
                 elif outcome == "updated":
                     updated += 1
+                    reindexed_paths.add(str(path))
+                elif outcome == "metadata":
+                    # D-07 fast path: row rewritten, chunks/embeddings kept.
+                    updated += 1
+                    metadata_only += 1
                 elif outcome == "error":
                     failed += 1
                 else:
@@ -262,7 +295,13 @@ class IncrementalIndexer:
             self._coll_repo.update(collection)
 
         return IncrementalResult(
-            added=added, updated=updated, removed=removed, unchanged=unchanged, failed=failed
+            added=added,
+            updated=updated,
+            removed=removed,
+            unchanged=unchanged,
+            failed=failed,
+            reindexed_paths=reindexed_paths,
+            metadata_only=metadata_only,
         )
 
     @staticmethod
@@ -271,7 +310,7 @@ class IncrementalIndexer:
         if progress is not None:
             progress(event)
 
-    def _process_file(
+    def _process_file(  # noqa: PLR0913 - force and migrating are distinct behaviors (Pitfall 15)
         self,
         file_path: Path,
         *,
@@ -279,8 +318,21 @@ class IncrementalIndexer:
         existing: Document | None,
         force: bool,
         progress: Callable[[str], None] | None,
+        migrating: bool = False,
     ) -> str:
-        """Process one scanned file; returns "added", "updated", "skipped", or "error"."""
+        """Process one scanned file.
+
+        Returns ``"added"``, ``"updated"``, ``"metadata"``, ``"skipped"``, or
+        ``"error"``. ``"metadata"`` is the D-07 fast path: the stored body is
+        byte-identical, so only the row's title/metadata/checksum/mtime are
+        rewritten and the document's chunks and embeddings are preserved.
+
+        ``force`` and ``migrating`` are deliberately distinct (Pitfall 15):
+        ``force`` skips the checksum-skip shortcut but still takes the
+        metadata fast path when the body is unchanged; ``migrating`` is the
+        D-09 convention re-parse pass and bypasses the shortcut for the same
+        reason, so an upgrade never purges chunks for an unchanged body.
+        """
         # Parse document — per-file dispatch (CORR-01): the extension map
         # decides the parser, and an unknown suffix falls back to TextParser
         # (whole-file content, first-line title) rather than re-introducing
@@ -301,16 +353,18 @@ class IncrementalIndexer:
             return "error"
 
         if existing:
-            # Check if changed
-            if existing.checksum == parsed.checksum and not force:
+            # Check if changed. A migrating pass bypasses this shortcut so
+            # every stored document's checksum is rewritten to the current
+            # convention (D-09).
+            if existing.checksum == parsed.checksum and not force and not migrating:
                 # Drift-compare convergence (14 REVIEW CR-01): detect_drift
                 # is mtime-primary, so the skip must still persist a moved
                 # mtime — a touched-but-unchanged file (git checkout of
                 # identical content, archive extract, no-op save) would
                 # otherwise be re-detected as drift on every subsequent
-                # search forever. Only the mtime column: the checksum covers
-                # the body alone, so a whole-row update could smuggle a new
-                # frontmatter title/metadata through this skip.
+                # search forever. Only the mtime column: the checksum now
+                # covers body plus canonical frontmatter (D-08), so an equal
+                # checksum means the stored whole row is already current.
                 if existing.mtime != parsed.mtime:
                     with self._conn:
                         self._conn.execute(
@@ -320,14 +374,31 @@ class IncrementalIndexer:
                 self._notify(progress, f"unchanged {file_path.name}")
                 return "skipped"
 
+            # D-07 metadata fast path: the stored body is byte-identical, so
+            # the chunk text (body-derived) and its vectors are still valid.
+            # Rewrite only the metadata-bearing columns and KEEP chunks and
+            # embeddings. Covers a frontmatter-only edit, a checksum-
+            # convention migration on an unchanged body, and --force with an
+            # unchanged body.
+            if parsed.content == existing.content:
+                with self._conn:
+                    existing.title = parsed.title
+                    existing.metadata = parsed.metadata
+                    existing.checksum = parsed.checksum
+                    existing.file_size = len(parsed.content.encode("utf-8"))
+                    existing.mtime = parsed.mtime
+                    self._doc_repo.update(existing)
+                self._notify(progress, f"indexed {file_path.name}")
+                return "metadata"
+
             # One short BEGIN IMMEDIATE transaction per file (D-04) so this
             # file's writes commit atomically and earlier files stay durable
             # when a later one fails.
             with self._conn:
-                # Content changed (or --force): drop stale chunks and
-                # embeddings so the next `embed` run re-chunks the new
-                # content instead of trusting the chunk-id-set
-                # completeness check against stale rows (CR-01).
+                # Content changed: drop stale chunks and embeddings so the
+                # next `embed` run re-chunks the new content instead of
+                # trusting the chunk-id-set completeness check against stale
+                # rows (CR-01).
                 self._chunk_repo.delete_by_document(existing.id)
                 if self._vector_purger is not None:
                     self._vector_purger.delete_embeddings_by_document(existing.id)
@@ -337,6 +408,7 @@ class IncrementalIndexer:
                 existing.title = parsed.title
                 existing.metadata = parsed.metadata
                 existing.mtime = parsed.mtime
+                existing.file_size = len(parsed.content.encode("utf-8"))
                 # Persist the fresh checksum, or the next update run compares
                 # the new content against the pre-edit hash and rewrites this
                 # document again every run.
