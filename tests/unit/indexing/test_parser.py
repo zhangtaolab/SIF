@@ -79,6 +79,36 @@ class TestDocumentParsers:
         assert result.metadata == {}
         assert result.title == "Visible title"
 
+    @pytest.mark.parametrize(
+        "frontmatter_title",
+        ["[not, a, string]", "{a: b}", "42"],
+    )
+    def test_non_string_frontmatter_title_falls_back_to_heading(
+        self, tmp_path: Path, frontmatter_title: str
+    ) -> None:
+        """CR-02: only a string frontmatter title is a title; the H1 wins otherwise."""
+        file_path = tmp_path / "typed.md"
+        file_path.write_text(
+            f"---\ntitle: {frontmatter_title}\n---\n# Heading From Body\n\ntext\n",
+            encoding="utf-8",
+        )
+
+        result = MarkdownParser().parse(file_path)
+
+        assert result.title == "Heading From Body"
+        # The raw metadata value stays intact (checksum/storage contract);
+        # only the title projection is coerced.
+        assert not isinstance(result.metadata["title"], str)
+
+    def test_non_string_frontmatter_title_without_heading_uses_stem(self, tmp_path: Path) -> None:
+        """A list/mapping title with no H1 still yields a string title (the stem)."""
+        file_path = tmp_path / "typed-note.md"
+        file_path.write_text("---\ntitle: [a, b]\n---\nbody only\n", encoding="utf-8")
+
+        result = MarkdownParser().parse(file_path)
+
+        assert result.title == "typed-note"
+
     def test_text_uses_first_suitable_nonempty_line(self, tmp_path: Path) -> None:
         """Text parsing skips blank and overlong title candidates."""
         file_path = tmp_path / "notes.txt"

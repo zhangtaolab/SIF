@@ -6,7 +6,7 @@ import re
 import types
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import frontmatter
 
@@ -63,8 +63,12 @@ class MarkdownParser:
             body = content
             metadata = {}
 
-        # Extract title
-        title = cast("str", metadata.get("title", ""))
+        # Extract title. Frontmatter is arbitrary valid YAML, so ``title`` may
+        # be a list/mapping/number; only a string is usable as a title. Any
+        # other type falls through to the H1/stem extraction instead of
+        # reaching SQLite as an un-bindable value (19 REVIEW CR-02).
+        raw_title = metadata.get("title", "")
+        title = raw_title.strip() if isinstance(raw_title, str) else ""
         if not title:
             # Try to extract from first H1
             match = self.title_pattern.search(body)

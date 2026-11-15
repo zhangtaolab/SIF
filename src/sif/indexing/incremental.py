@@ -366,6 +366,10 @@ class IncrementalIndexer:
         metadata fast path when the body is unchanged; ``migrating`` is the
         D-09 convention re-parse pass and bypasses the shortcut for the same
         reason, so an upgrade never purges chunks for an unchanged body.
+
+        A failure while writing the document row (not just while parsing)
+        is counted as ``"error"`` for this file: D-04 requires per-file
+        isolation, so one bad document can never abort the whole pass.
         """
         # Parse document — per-file dispatch (CORR-01): the extension map
         # decides the parser, and an unknown suffix falls back to TextParser
@@ -386,85 +390,96 @@ class IncrementalIndexer:
             self._notify(progress, f"error Error parsing {file_path}: {e}")
             return "error"
 
-        if existing:
-            # Check if changed. A migrating pass bypasses this shortcut so
-            # every stored document's checksum is rewritten to the current
-            # convention (D-09).
-            if existing.checksum == parsed.checksum and not force and not migrating:
-                # Drift-compare convergence (14 REVIEW CR-01): detect_drift
-                # is mtime-primary, so the skip must still persist a moved
-                # mtime — a touched-but-unchanged file (git checkout of
-                # identical content, archive extract, no-op save) would
-                # otherwise be re-detected as drift on every subsequent
-                # search forever. Only the mtime column: the checksum now
-                # covers body plus canonical frontmatter (D-08), so an equal
-                # checksum means the stored whole row is already current.
-                if existing.mtime != parsed.mtime:
-                    with self._conn:
-                        self._conn.execute(
-                            "UPDATE documents SET mtime = ? WHERE id = ?",
-                            (parsed.mtime, existing.id),
-                        )
-                self._notify(progress, f"unchanged {file_path.name}")
-                return "skipped"
+        try:
+            if existing:
+                # Check if changed. A migrating pass bypasses this shortcut so
+                # every stored document's checksum is rewritten to the current
+                # convention (D-09).
+                if existing.checksum == parsed.checksum and not force and not migrating:
+                    # Drift-compare convergence (14 REVIEW CR-01): detect_drift
+                    # is mtime-primary, so the skip must still persist a moved
+                    # mtime — a touched-but-unchanged file (git checkout of
+                    # identical content, archive extract, no-op save) would
+                    # otherwise be re-detected as drift on every subsequent
+                    # search forever. Only the mtime column: the checksum now
+                    # covers body plus canonical frontmatter (D-08), so an equal
+                    # checksum means the stored whole row is already current.
+                    if existing.mtime != parsed.mtime:
+                        with self._conn:
+                            self._conn.execute(
+                                "UPDATE documents SET mtime = ? WHERE id = ?",
+                                (parsed.mtime, existing.id),
+                            )
+                    self._notify(progress, f"unchanged {file_path.name}")
+                    return "skipped"
 
-            # D-07 metadata fast path: the stored body is byte-identical, so
-            # the chunk text (body-derived) and its vectors are still valid.
-            # Rewrite only the metadata-bearing columns and KEEP chunks and
-            # embeddings. Covers a frontmatter-only edit, a checksum-
-            # convention migration on an unchanged body, and --force with an
-            # unchanged body.
-            if parsed.content == existing.content:
+                # D-07 metadata fast path: the stored body is byte-identical, so
+                # the chunk text (body-derived) and its vectors are still valid.
+                # Rewrite only the metadata-bearing columns and KEEP chunks and
+                # embeddings. Covers a frontmatter-only edit, a checksum-
+                # convention migration on an unchanged body, and --force with an
+                # unchanged body.
+                if parsed.content == existing.content:
+                    with self._conn:
+                        existing.title = parsed.title
+                        existing.metadata = parsed.metadata
+                        existing.checksum = parsed.checksum
+                        existing.file_size = len(parsed.content.encode("utf-8"))
+                        existing.mtime = parsed.mtime
+                        self._doc_repo.update(existing)
+                    self._notify(progress, f"indexed {file_path.name}")
+                    return "metadata"
+
+                # One short BEGIN IMMEDIATE transaction per file (D-04) so this
+                # file's writes commit atomically and earlier files stay durable
+                # when a later one fails.
                 with self._conn:
+                    # Content changed: drop stale chunks and embeddings so the
+                    # next `embed` run re-chunks the new content instead of
+                    # trusting the chunk-id-set completeness check against stale
+                    # rows (CR-01).
+                    self._chunk_repo.delete_by_document(existing.id)
+                    if self._vector_purger is not None:
+                        self._vector_purger.delete_embeddings_by_document(existing.id)
+
+                    # Update document
+                    existing.content = parsed.content
                     existing.title = parsed.title
                     existing.metadata = parsed.metadata
-                    existing.checksum = parsed.checksum
-                    existing.file_size = len(parsed.content.encode("utf-8"))
                     existing.mtime = parsed.mtime
+                    existing.file_size = len(parsed.content.encode("utf-8"))
+                    # Persist the fresh checksum, or the next update run compares
+                    # the new content against the pre-edit hash and rewrites this
+                    # document again every run.
+                    existing.checksum = parsed.checksum
                     self._doc_repo.update(existing)
-                self._notify(progress, f"indexed {file_path.name}")
-                return "metadata"
-
-            # One short BEGIN IMMEDIATE transaction per file (D-04) so this
-            # file's writes commit atomically and earlier files stay durable
-            # when a later one fails.
-            with self._conn:
-                # Content changed: drop stale chunks and embeddings so the
-                # next `embed` run re-chunks the new content instead of
-                # trusting the chunk-id-set completeness check against stale
-                # rows (CR-01).
-                self._chunk_repo.delete_by_document(existing.id)
-                if self._vector_purger is not None:
-                    self._vector_purger.delete_embeddings_by_document(existing.id)
-
-                # Update document
-                existing.content = parsed.content
-                existing.title = parsed.title
-                existing.metadata = parsed.metadata
-                existing.mtime = parsed.mtime
-                existing.file_size = len(parsed.content.encode("utf-8"))
-                # Persist the fresh checksum, or the next update run compares
-                # the new content against the pre-edit hash and rewrites this
-                # document again every run.
-                existing.checksum = parsed.checksum
-                self._doc_repo.update(existing)
-            outcome = "updated"
-        else:
-            # Create new document. Pass the parser's checksum so a fresh row
-            # already follows the D-08 convention instead of falling back to
-            # Document.__post_init__'s body-only hash.
-            doc = Document(
-                path=str(file_path),
-                collection_id=collection.id,
-                content=parsed.content,
-                title=parsed.title,
-                metadata=parsed.metadata,
-                checksum=parsed.checksum,
-                mtime=parsed.mtime,
-            )
-            with self._conn:
-                self._doc_repo.create(doc)
-            outcome = "added"
+                outcome = "updated"
+            else:
+                # Create new document. Pass the parser's checksum so a fresh row
+                # already follows the D-08 convention instead of falling back to
+                # Document.__post_init__'s body-only hash.
+                doc = Document(
+                    path=str(file_path),
+                    collection_id=collection.id,
+                    content=parsed.content,
+                    title=parsed.title,
+                    metadata=parsed.metadata,
+                    checksum=parsed.checksum,
+                    mtime=parsed.mtime,
+                )
+                with self._conn:
+                    self._doc_repo.create(doc)
+                outcome = "added"
+        except (sqlite3.Error, TypeError) as e:
+            # D-04 per-file isolation: a write failure for one document must
+            # be counted as that file's failure, never abort the whole
+            # update pass. Frontmatter is arbitrary YAML, so a metadata value
+            # SQLite cannot bind must stay a per-file error even with the
+            # parser-side title coercion (19 REVIEW CR-02). Each write block
+            # above owns its transaction, so nothing is left half-written.
+            logger.warning("Error indexing %s: %s", file_path, e)
+            self._notify(progress, f"error Error indexing {file_path}: {e}")
+            return "error"
 
         self._notify(progress, f"indexed {file_path.name}")
         return outcome

@@ -237,6 +237,75 @@ class TestIncrementalIndexer:
         # The scan event reaches the presentation callback before per-file events.
         assert events[0].startswith("scan ")
 
+    def test_non_string_frontmatter_title_indexes_via_fallback_and_continues(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """CR-02: list/mapping titles never abort the pass or reach SQLite."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "incr.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        # The two bad-title files sort before after.md, so a fatal error on
+        # either would leave the healthy trailing file unprocessed.
+        (notes / "aa-listy.md").write_text(
+            "---\ntitle: [not, a, string]\n---\n# Listy Heading\n\nBody text.\n",
+            encoding="utf-8",
+        )
+        (notes / "ab-mappy.md").write_text(
+            "---\ntitle: {a: b}\n---\n# Mappy Heading\n\nBody text.\n",
+            encoding="utf-8",
+        )
+        (notes / "after.md").write_text(BODY_ALPHA, encoding="utf-8")
+        _seed_collection(db_path, notes)
+
+        indexer, db, coll = _open_indexer(db_path)
+        try:
+            events: list[str] = []
+            result = indexer.update_collection(coll, progress=events.append)
+        finally:
+            db.close()
+
+        # Every file was processed: the non-string titles never raised.
+        assert result == IncrementalResult(added=3, updated=0, removed=0)
+        assert result.failed == 0
+        assert _doc_row(db_path, str(notes / "aa-listy.md"))[0] == "Listy Heading"
+        assert _doc_row(db_path, str(notes / "ab-mappy.md"))[0] == "Mappy Heading"
+        assert _doc_row(db_path, str(notes / "after.md"))[0] == "Heading One"
+        assert not any(event.startswith("error ") for event in events)
+
+    def test_document_write_failure_is_counted_not_fatal(self, tmp_path, monkeypatch) -> None:
+        """D-04: a per-document write error is a counted failure, not a fatal pass."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "incr.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        (notes / "aa-bad.md").write_text(BODY_ALPHA, encoding="utf-8")
+        (notes / "zz-good.md").write_text(BODY_BETA, encoding="utf-8")
+        _seed_collection(db_path, notes)
+
+        real_create = DocumentRepository.create
+
+        def _create(repo, doc):
+            """Fail the first document's insert, delegate otherwise."""
+            if doc.path.endswith("aa-bad.md"):
+                raise TypeError("Error binding parameter: type 'list' is not supported")
+            return real_create(repo, doc)
+
+        indexer, db, coll = _open_indexer(db_path)
+        try:
+            events: list[str] = []
+            with patch.object(DocumentRepository, "create", _create):
+                result = indexer.update_collection(coll, progress=events.append)
+        finally:
+            db.close()
+
+        assert result.failed == 1
+        assert result.added == 1
+        assert any(event.startswith("error Error indexing") for event in events)
+        # The later file was still processed after the failed write.
+        assert str(notes / "zz-good.md") in _doc_paths(db_path)
+        assert str(notes / "aa-bad.md") not in _doc_paths(db_path)
+
     def test_per_file_parser_dispatch_with_text_fallback(self, tmp_path, monkeypatch) -> None:
         """Each extension selects its parser; unknown suffixes fall back to TextParser.
 
