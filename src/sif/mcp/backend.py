@@ -103,12 +103,13 @@ class SearchBackend:
         # width, and the connection is closed on every path.
         db = Database(self.db_path)
         try:
+            # ``create_all`` commits every schema write it makes — including
+            # the FTS 'rebuild' population, which ``_create_fts_tables``
+            # commits through an explicit savepoint (CR-01). An exception
+            # raised later in ``create_all`` (the embedding-dimension
+            # RuntimeError below comes from ``_create_vector_tables``) can
+            # therefore no longer roll the migrated index back.
             db.init_schema(embedding_dim=self.settings.embedding_dim)
-            # ``create_all`` leaves the FTS 'rebuild'/trigger/vocab statements
-            # in the connection's implicit transaction; closing without a
-            # commit would roll them back and leave a detected-as-migrated
-            # but empty index behind.
-            db.connection.commit()
         finally:
             db.close()
 

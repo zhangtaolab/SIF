@@ -16,7 +16,19 @@ class SchemaManager:
         self.embedding_dim = embedding_dim
 
     def create_all(self) -> None:
-        """Create all database tables and indexes."""
+        """Create all database tables and indexes.
+
+        CR-01 (19 REVIEW): schema writes are self-committing. pysqlite
+        auto-commits DDL but leaves DML in the connection's implicit
+        transaction, so a read-only host that opens the index, initializes
+        the schema, and closes without ever starting a command transaction
+        (``sif status``, ``sif index status``) would roll the FTS
+        ``'rebuild'`` population back while keeping the migrated DDL — the
+        detection gate would then never rebuild and BM25 search would stay
+        silently empty. ``_create_fts_tables`` commits its own migration with
+        an explicit savepoint (so a later failure here cannot roll the
+        population back either); this final commit covers every other write.
+        """
         self._create_collections_table()
         self._create_documents_table()
         self._create_document_chunks_table()
@@ -28,6 +40,7 @@ class SchemaManager:
         self._create_fts_tables()
         self._create_vector_tables()
         self._create_indexes()
+        self.db.commit()
 
     def _add_column_if_missing(self, table: str, column: str, dtype: str) -> None:
         """Add a column to a table if it does not already exist."""
@@ -286,142 +299,167 @@ class SchemaManager:
         )
         needs_rebuild_chunks = _fts_is_misconfigured("chunks_fts", "document_chunks")
 
-        legacy_delete_docs, legacy_delete_chunks = self._drop_legacy_fts_triggers()
+        # CR-01 (19 REVIEW): the legacy-trigger repair and the
+        # drop/recreate/rebuild sequence are one atomic unit. pysqlite
+        # auto-commits DDL but leaves the INSERT 'rebuild'/seed DML in the
+        # connection's implicit transaction, so before this savepoint a close,
+        # crash, or later create_all failure (the embedding-dimension
+        # RuntimeError) could persist the two-column DDL and roll back only
+        # the population — the detection gate then reports "already migrated"
+        # forever and BM25 search stays silently empty. Wrapping the whole
+        # sequence (trigger drops included) in a savepoint means a failure
+        # rolls the DDL back too, restoring the legacy shape so the next open
+        # re-detects and retries; a successful migration commits the
+        # population before the rest of create_all runs. SAVEPOINT nests
+        # safely when a caller already holds a transaction.
+        self.db.execute("SAVEPOINT sp_fts_tables")
+        try:
+            legacy_delete_docs, legacy_delete_chunks = self._drop_legacy_fts_triggers()
 
-        if needs_rebuild_docs:
-            # Drop the vocab shadow FIRST (Pitfall 6): dropping the parent
-            # while the vocab exists succeeds but leaves a dangling shadow
-            # that serves stale terms until it is recreated. Then drop the
-            # three document triggers explicitly — CREATE TRIGGER IF NOT
-            # EXISTS cannot replace the one-column bodies — and the table.
-            self.db.execute("DROP TABLE IF EXISTS documents_fts_v")
-            for trigger in (
-                "documents_fts_insert",
-                "documents_fts_update",
-                "documents_fts_delete",
-            ):
-                self.db.execute(f"DROP TRIGGER IF EXISTS {trigger}")
-            self.db.execute("DROP TABLE IF EXISTS documents_fts")
-        if needs_rebuild_chunks:
-            self.db.execute("DROP TABLE IF EXISTS chunks_fts")
+            if needs_rebuild_docs:
+                # Drop the vocab shadow FIRST (Pitfall 6): dropping the parent
+                # while the vocab exists succeeds but leaves a dangling shadow
+                # that serves stale terms until it is recreated. Then drop the
+                # three document triggers explicitly — CREATE TRIGGER IF NOT
+                # EXISTS cannot replace the one-column bodies — and the table.
+                self.db.execute("DROP TABLE IF EXISTS documents_fts_v")
+                for trigger in (
+                    "documents_fts_insert",
+                    "documents_fts_update",
+                    "documents_fts_delete",
+                ):
+                    self.db.execute(f"DROP TRIGGER IF EXISTS {trigger}")
+                self.db.execute("DROP TABLE IF EXISTS documents_fts")
+            if needs_rebuild_chunks:
+                self.db.execute("DROP TABLE IF EXISTS chunks_fts")
 
-        # Documents FTS table with external content. The title column is
-        # declared second; bm25() weights map left-to-right by this order.
-        self.db.execute("""
-            CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(
-                content,
-                title,
-                content='documents',
-                content_rowid='rowid',
-                tokenize='porter'
-            )
-        """)
-
-        # Chunks FTS table with external content (chunks have no title column;
-        # this table and its triggers stay byte-identical to the pre-CORR-04
-        # form).
-        self.db.execute("""
-            CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
-                content,
-                content='document_chunks',
-                content_rowid='rowid',
-                tokenize='porter'
-            )
-        """)
-
-        # The FTS5 'rebuild' bulk command is the WHOLE documents-side
-        # population: it re-derives every row's content and title from the
-        # external-content table. A separate INSERT ... SELECT seed would run
-        # under the same gate and index every document twice — BM25 ranks
-        # shift and a deleted document stays MATCHable through its duplicate
-        # entry — while PRAGMA integrity_check and the FTS integrity-check
-        # command both still report OK. Keep exactly one population
-        # statement, gated on the rebuild or the legacy-delete repair; fresh
-        # and already-migrated databases pay nothing.
-        if needs_rebuild_docs or legacy_delete_docs:
-            self.db.execute("INSERT INTO documents_fts(documents_fts) VALUES('rebuild')")
-        if needs_rebuild_chunks:
+            # Documents FTS table with external content. The title column is
+            # declared second; bm25() weights map left-to-right by this order.
             self.db.execute("""
-                INSERT INTO chunks_fts(rowid, content)
-                SELECT rowid, content FROM document_chunks
+                CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(
+                    content,
+                    title,
+                    content='documents',
+                    content_rowid='rowid',
+                    tokenize='porter'
+                )
             """)
 
-        # CR-01: purge chunks FTS entries orphaned by deletes that ran while a
-        # legacy direct-DELETE trigger was active — replacing the trigger
-        # repairs future deletes, not past ones. 'rebuild' re-derives the
-        # whole index from the content table, so live entries survive.
-        if legacy_delete_chunks:
-            self.db.execute("INSERT INTO chunks_fts(chunks_fts) VALUES('rebuild')")
+            # Chunks FTS table with external content (chunks have no title
+            # column; this table and its triggers stay byte-identical to the
+            # pre-CORR-04 form).
+            self.db.execute("""
+                CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
+                    content,
+                    content='document_chunks',
+                    content_rowid='rowid',
+                    tokenize='porter'
+                )
+            """)
 
-        # FTS5 vocab shadow (Phase 15, D-06): row mode = one row per distinct
-        # porter-stem term with its document frequency — the suggestion
-        # engine's term source, derived from the index (no sync maintenance).
-        # MUST live in the main schema: a temp-schema vocab cannot reference a
-        # main-schema FTS table (RESEARCH Pitfall 8). Recreated AFTER the
-        # documents rebuild so no stale-terms window exists (Pitfall 6).
-        # Idempotent; the suggest engine re-ensures it for connections that
-        # never ran init_schema.
-        self.db.execute("""
-            CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts_v
-            USING fts5vocab(documents_fts, 'row')
-        """)
+            # The FTS5 'rebuild' bulk command is the WHOLE documents-side
+            # population: it re-derives every row's content and title from the
+            # external-content table. A separate INSERT ... SELECT seed would run
+            # under the same gate and index every document twice — BM25 ranks
+            # shift and a deleted document stays MATCHable through its duplicate
+            # entry — while PRAGMA integrity_check and the FTS integrity-check
+            # command both still report OK. Keep exactly one population
+            # statement, gated on the rebuild or the legacy-delete repair; fresh
+            # and already-migrated databases pay nothing.
+            if needs_rebuild_docs or legacy_delete_docs:
+                self.db.execute("INSERT INTO documents_fts(documents_fts) VALUES('rebuild')")
+            if needs_rebuild_chunks:
+                self.db.execute("""
+                    INSERT INTO chunks_fts(rowid, content)
+                    SELECT rowid, content FROM document_chunks
+                """)
 
-        # Triggers for documents_fts. Every indexed column must carry its
-        # value — including old.title on the 'delete' command — or external
-        # content desynchronizes (Pitfall 7); documents.title is nullable and
-        # NULL values index/delete cleanly.
-        self.db.execute("""
-            CREATE TRIGGER IF NOT EXISTS documents_fts_insert
-            AFTER INSERT ON documents
-            BEGIN
-                INSERT INTO documents_fts(rowid, content, title)
-                VALUES (new.rowid, new.content, new.title);
-            END
-        """)
-        self.db.execute("""
-            CREATE TRIGGER IF NOT EXISTS documents_fts_update
-            AFTER UPDATE ON documents
-            BEGIN
-                INSERT INTO documents_fts(documents_fts, rowid, content, title)
-                VALUES('delete', old.rowid, old.content, old.title);
-                INSERT INTO documents_fts(rowid, content, title)
-                VALUES(new.rowid, new.content, new.title);
-            END
-        """)
-        self.db.execute("""
-            CREATE TRIGGER IF NOT EXISTS documents_fts_delete
-            AFTER DELETE ON documents
-            BEGIN
-                INSERT INTO documents_fts(documents_fts, rowid, content, title)
-                VALUES('delete', old.rowid, old.content, old.title);
-            END
-        """)
+            # CR-01: purge chunks FTS entries orphaned by deletes that ran while a
+            # legacy direct-DELETE trigger was active — replacing the trigger
+            # repairs future deletes, not past ones. 'rebuild' re-derives the
+            # whole index from the content table, so live entries survive.
+            if legacy_delete_chunks:
+                self.db.execute("INSERT INTO chunks_fts(chunks_fts) VALUES('rebuild')")
 
-        # Triggers for chunks_fts
-        self.db.execute("""
-            CREATE TRIGGER IF NOT EXISTS chunks_fts_insert
-            AFTER INSERT ON document_chunks
-            BEGIN
-                INSERT INTO chunks_fts(rowid, content) VALUES (new.rowid, new.content);
-            END
-        """)
-        self.db.execute("""
-            CREATE TRIGGER IF NOT EXISTS chunks_fts_update
-            AFTER UPDATE ON document_chunks
-            BEGIN
-                INSERT INTO chunks_fts(chunks_fts, rowid, content)
-                VALUES('delete', old.rowid, old.content);
-                INSERT INTO chunks_fts(rowid, content) VALUES(new.rowid, new.content);
-            END
-        """)
-        self.db.execute("""
-            CREATE TRIGGER IF NOT EXISTS chunks_fts_delete
-            AFTER DELETE ON document_chunks
-            BEGIN
-                INSERT INTO chunks_fts(chunks_fts, rowid, content)
-                VALUES('delete', old.rowid, old.content);
-            END
-        """)
+            # FTS5 vocab shadow (Phase 15, D-06): row mode = one row per distinct
+            # porter-stem term with its document frequency — the suggestion
+            # engine's term source, derived from the index (no sync maintenance).
+            # MUST live in the main schema: a temp-schema vocab cannot reference a
+            # main-schema FTS table (RESEARCH Pitfall 8). Recreated AFTER the
+            # documents rebuild so no stale-terms window exists (Pitfall 6).
+            # Idempotent; the suggest engine re-ensures it for connections that
+            # never ran init_schema.
+            self.db.execute("""
+                CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts_v
+                USING fts5vocab(documents_fts, 'row')
+            """)
+
+            # Triggers for documents_fts. Every indexed column must carry its
+            # value — including old.title on the 'delete' command — or external
+            # content desynchronizes (Pitfall 7); documents.title is nullable and
+            # NULL values index/delete cleanly.
+            self.db.execute("""
+                CREATE TRIGGER IF NOT EXISTS documents_fts_insert
+                AFTER INSERT ON documents
+                BEGIN
+                    INSERT INTO documents_fts(rowid, content, title)
+                    VALUES (new.rowid, new.content, new.title);
+                END
+            """)
+            self.db.execute("""
+                CREATE TRIGGER IF NOT EXISTS documents_fts_update
+                AFTER UPDATE ON documents
+                BEGIN
+                    INSERT INTO documents_fts(documents_fts, rowid, content, title)
+                    VALUES('delete', old.rowid, old.content, old.title);
+                    INSERT INTO documents_fts(rowid, content, title)
+                    VALUES(new.rowid, new.content, new.title);
+                END
+            """)
+            self.db.execute("""
+                CREATE TRIGGER IF NOT EXISTS documents_fts_delete
+                AFTER DELETE ON documents
+                BEGIN
+                    INSERT INTO documents_fts(documents_fts, rowid, content, title)
+                    VALUES('delete', old.rowid, old.content, old.title);
+                END
+            """)
+
+            # Triggers for chunks_fts
+            self.db.execute("""
+                CREATE TRIGGER IF NOT EXISTS chunks_fts_insert
+                AFTER INSERT ON document_chunks
+                BEGIN
+                    INSERT INTO chunks_fts(rowid, content) VALUES (new.rowid, new.content);
+                END
+            """)
+            self.db.execute("""
+                CREATE TRIGGER IF NOT EXISTS chunks_fts_update
+                AFTER UPDATE ON document_chunks
+                BEGIN
+                    INSERT INTO chunks_fts(chunks_fts, rowid, content)
+                    VALUES('delete', old.rowid, old.content);
+                    INSERT INTO chunks_fts(rowid, content) VALUES(new.rowid, new.content);
+                END
+            """)
+            self.db.execute("""
+                CREATE TRIGGER IF NOT EXISTS chunks_fts_delete
+                AFTER DELETE ON document_chunks
+                BEGIN
+                    INSERT INTO chunks_fts(chunks_fts, rowid, content)
+                    VALUES('delete', old.rowid, old.content);
+                END
+            """)
+            self.db.execute("RELEASE SAVEPOINT sp_fts_tables")
+        except BaseException:
+            # Roll the DDL back with the population so the legacy shape (and
+            # its detection gate) survives a failed migration. A rollback can
+            # itself fail on a closing/broken connection; never mask the
+            # original error.
+            with contextlib.suppress(sqlite3.Error):
+                self.db.execute("ROLLBACK TO SAVEPOINT sp_fts_tables")
+                self.db.execute("RELEASE SAVEPOINT sp_fts_tables")
+            raise
 
     def _create_vector_tables(self) -> None:
         """Create vector tables using sqlite-vec."""

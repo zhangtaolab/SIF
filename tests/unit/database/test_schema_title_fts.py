@@ -23,9 +23,13 @@ from __future__ import annotations
 import inspect
 import sqlite3
 from datetime import datetime, timezone
+from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
+from sif.cli.error_handling import open_initialized_database
+from sif.database.database import Database
 from sif.database.schema import SchemaManager
 from sif.search.suggest import SuggestionEngine
 
@@ -42,17 +46,19 @@ def _load_vec(db: sqlite3.Connection) -> bool:
         return False
 
 
-def _build_legacy_db() -> sqlite3.Connection:
-    """A populated database with the pre-CORR-04 single-column FTS shape.
+def _populate_legacy_schema(conn: sqlite3.Connection, *, with_legacy_chunks: bool = False) -> None:
+    """Fill ``conn`` with the pre-CORR-04 single-column FTS shape.
 
     The tables are the production DDL (via the individual ``SchemaManager``
     creators, as the existing misconfiguration test does), and the FTS table,
     vocab shadow, index rows, and three one-column triggers are hand-built
     exactly as the shipped SchemaManager created them before this plan.
     ``titular`` appears only in d1's title, so it is a title-only probe.
+
+    ``with_legacy_chunks`` additionally seeds a misconfigured one-column
+    ``chunks_fts`` (no ``content=`` option) plus a chunk row, so the chunks
+    seed path has DML to lose as well (CR-01: chunks_fts has the same shape).
     """
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
     manager = SchemaManager(conn, embedding_dim=8)
     manager._create_collections_table()
     manager._create_documents_table()
@@ -107,8 +113,40 @@ def _build_legacy_db() -> sqlite3.Connection:
             VALUES('delete', old.rowid, old.content);
         END
     """)
+
+    if with_legacy_chunks:
+        conn.execute(
+            "INSERT INTO document_chunks (id, document_id, sequence, content, created_at) "
+            "VALUES ('ch1', 'd1', 0, 'legacychunkmarker', ?)",
+            (now,),
+        )
+        # A one-column chunks index without content='document_chunks' is the
+        # misconfigured shape: the migration drops/recreates it and re-seeds
+        # from the content table.
+        conn.execute("CREATE VIRTUAL TABLE chunks_fts USING fts5(content)")
+        conn.execute(
+            "INSERT INTO chunks_fts(rowid, content) SELECT rowid, content FROM document_chunks"
+        )
+
     conn.commit()
+
+
+def _build_legacy_db() -> sqlite3.Connection:
+    """A populated in-memory database with the pre-CORR-04 FTS shape."""
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    _populate_legacy_schema(conn)
     return conn
+
+
+def _build_legacy_file_db(db_path: Path) -> None:
+    """A populated on-disk database with the pre-CORR-04 FTS shape."""
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    try:
+        _populate_legacy_schema(conn, with_legacy_chunks=True)
+    finally:
+        conn.close()
 
 
 @pytest.fixture
@@ -127,6 +165,31 @@ def _match_count(db: sqlite3.Connection, query: str) -> int:
     return db.execute(
         "SELECT COUNT(*) FROM documents_fts WHERE documents_fts MATCH ?", (query,)
     ).fetchone()[0]
+
+
+def _chunk_match_count(db: sqlite3.Connection, query: str) -> int:
+    return db.execute(
+        "SELECT COUNT(*) FROM chunks_fts WHERE chunks_fts MATCH ?", (query,)
+    ).fetchone()[0]
+
+
+def _trigger_names(db: sqlite3.Connection) -> set[str]:
+    return {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='trigger'")}
+
+
+def _assert_populated_two_column(conn: sqlite3.Connection) -> None:
+    """CR-01 invariant: a two-column FTS is always populated and trigger-synced."""
+    assert SchemaManager(conn)._fts_column_names("documents_fts") == ["content", "title"]
+    assert _match_count(conn, '"titular"') == 1
+    assert (
+        conn.execute("SELECT COUNT(*) FROM documents_fts").fetchone()[0]
+        == (conn.execute("SELECT COUNT(*) FROM documents").fetchone()[0])
+    )
+    assert {
+        "documents_fts_insert",
+        "documents_fts_update",
+        "documents_fts_delete",
+    } <= _trigger_names(conn)
 
 
 class TestTitleFtsMigration:
@@ -330,3 +393,131 @@ class TestFreshTitleFts:
             assert _match_count(conn, '"fresh"') == 1
         finally:
             conn.close()
+
+
+class TestMigrationDurability:
+    """CR-01: the migration's population is durable across a fresh open.
+
+    The pre-fix tests all asserted on the same open connection, where the
+    uncommitted ``'rebuild'`` DML is still visible, so a rollback on close was
+    invisible. Every test here reopens the database on a new connection.
+    """
+
+    def test_migration_survives_close_without_an_explicit_commit(self, tmp_path: Path) -> None:
+        """``create_all`` alone commits the rebuild; the caller need not commit."""
+        db_path = tmp_path / "legacy.db"
+        _build_legacy_file_db(db_path)
+
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        try:
+            SchemaManager(conn, embedding_dim=8).create_all()
+        finally:
+            # Deliberately no conn.commit(): durability belongs to the schema
+            # initializer, which is what every read-only host relies on.
+            conn.close()
+
+        reopened = sqlite3.connect(str(db_path))
+        reopened.row_factory = sqlite3.Row
+        try:
+            _assert_populated_two_column(reopened)
+            # chunks_fts has the same drop/recreate/seed shape; its seed is
+            # DML in the same implicit transaction and must survive too.
+            assert _chunk_match_count(reopened, "legacychunkmarker") == 1
+            assert (
+                reopened.execute("SELECT COUNT(*) FROM chunks_fts").fetchone()[0]
+                == (reopened.execute("SELECT COUNT(*) FROM document_chunks").fetchone()[0])
+            )
+        finally:
+            reopened.close()
+
+    def test_read_only_command_path_leaves_a_populated_index(self, tmp_path: Path) -> None:
+        """The ``sif status`` path (open + init + close, no transaction) migrates durably."""
+        db_path = tmp_path / "legacy.db"
+        _build_legacy_file_db(db_path)
+
+        # Read-only commands never enter a `with db.connection:` block; the
+        # CLI boundary opens, initializes, and closes.
+        with open_initialized_database(db_path, Database):
+            pass
+
+        reopened = sqlite3.connect(str(db_path))
+        reopened.row_factory = sqlite3.Row
+        try:
+            _assert_populated_two_column(reopened)
+            assert _chunk_match_count(reopened, "legacychunkmarker") == 1
+        finally:
+            reopened.close()
+
+    def test_reopened_init_is_idempotent_and_keeps_the_population(self, tmp_path: Path) -> None:
+        """A second init on a fresh connection pays detection reads and changes nothing."""
+        db_path = tmp_path / "legacy.db"
+        _build_legacy_file_db(db_path)
+
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        try:
+            SchemaManager(conn, embedding_dim=8).create_all()
+        finally:
+            conn.close()
+
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        try:
+            statements: list[str] = []
+            conn.set_trace_callback(statements.append)
+            try:
+                SchemaManager(conn, embedding_dim=8).create_all()
+            finally:
+                conn.set_trace_callback(None)
+
+            assert not any(
+                "INSERT INTO documents_fts(documents_fts)" in statement for statement in statements
+            )
+            assert not any(
+                "DROP TABLE" in statement and "documents_fts" in statement
+                for statement in statements
+            )
+            _assert_populated_two_column(conn)
+            assert _chunk_match_count(conn, "legacychunkmarker") == 1
+        finally:
+            conn.close()
+
+    def test_failure_after_ddl_rolls_back_so_the_next_open_retries(self, tmp_path: Path) -> None:
+        """A failure between the DDL and the population re-triggers the migration."""
+        db_path = tmp_path / "legacy.db"
+        _build_legacy_file_db(db_path)
+        original = SchemaManager._drop_legacy_fts_triggers
+
+        def _fail_after_ddl(manager: SchemaManager) -> tuple[bool, bool]:
+            original(manager)
+            # Simulate a crash/failure after the destructive DDL commits but
+            # before the population runs: the two-column table exists, empty.
+            manager.db.execute("DROP TABLE documents_fts")
+            manager.db.execute(
+                "CREATE VIRTUAL TABLE documents_fts USING fts5("
+                "content, title, content='documents', content_rowid='rowid')"
+            )
+            raise RuntimeError("injected migration failure")
+
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        try:
+            with (
+                patch.object(SchemaManager, "_drop_legacy_fts_triggers", _fail_after_ddl),
+                pytest.raises(RuntimeError, match="injected migration failure"),
+            ):
+                SchemaManager(conn, embedding_dim=8).create_all()
+        finally:
+            conn.close()
+
+        reopened = sqlite3.connect(str(db_path))
+        reopened.row_factory = sqlite3.Row
+        try:
+            # The savepoint rolled the two-column DDL back: the legacy
+            # one-column shape survives, so the next open detects and retries.
+            assert SchemaManager(reopened)._fts_column_names("documents_fts") == ["content"]
+            SchemaManager(reopened, embedding_dim=8).create_all()
+            _assert_populated_two_column(reopened)
+        finally:
+            reopened.close()

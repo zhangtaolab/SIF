@@ -1152,3 +1152,66 @@ class TestSchemaInitializationAtStartup:
         ):
             with pytest.raises(RuntimeError, match="Embedding dimension mismatch"):
                 SearchBackend(str(db_path), settings=wrong)
+
+    def test_dimension_mismatch_leaves_the_migrated_index_populated(self, tmp_path: Path) -> None:
+        """CR-01: the rebuild is durable even when init fails after it.
+
+        The RuntimeError comes from ``_create_vector_tables``, which runs
+        after the FTS migration inside ``create_all``. The pre-fix sequence
+        committed the two-column DDL but rolled the population back on
+        close, leaving a permanently empty index; after the fix the rebuilt
+        index survives and a later correct-width open still matches.
+        """
+        db_path, settings = _seed_pre_title_db(tmp_path)
+        wrong = Settings(
+            _env_file=None,
+            embedding_dim=384,
+            model_name="test",
+            cache_embeddings=False,
+        )
+        with patch(
+            "sif.mcp.backend.EmbeddingModelFactory", side_effect=RuntimeError("no embedder")
+        ):
+            with pytest.raises(RuntimeError, match="Embedding dimension mismatch"):
+                SearchBackend(str(db_path), settings=wrong)
+
+        conn = sqlite3.connect(db_path)
+        try:
+            assert (
+                conn.execute(
+                    "SELECT COUNT(*) FROM documents_fts WHERE documents_fts MATCH '\"titular\"'"
+                ).fetchone()[0]
+                == 1
+            )
+            assert (
+                conn.execute("SELECT COUNT(*) FROM documents_fts").fetchone()[0]
+                == (conn.execute("SELECT COUNT(*) FROM documents").fetchone()[0])
+            )
+            trigger_sql = conn.execute(
+                "SELECT sql FROM sqlite_master WHERE type='trigger' AND name='documents_fts_insert'"
+            ).fetchone()[0]
+            assert "title" in trigger_sql
+        finally:
+            conn.close()
+
+        # A later open at the correct width keeps the pre-existing document
+        # MATCHable through the title column.
+        with patch(
+            "sif.mcp.backend.EmbeddingModelFactory", side_effect=RuntimeError("no embedder")
+        ):
+            SearchBackend(str(db_path), settings=settings)
+
+        conn = sqlite3.connect(db_path)
+        try:
+            assert (
+                conn.execute(
+                    "SELECT COUNT(*) FROM documents_fts WHERE documents_fts MATCH '\"titular\"'"
+                ).fetchone()[0]
+                == 1
+            )
+            assert (
+                conn.execute("SELECT COUNT(*) FROM documents_fts").fetchone()[0]
+                == (conn.execute("SELECT COUNT(*) FROM documents").fetchone()[0])
+            )
+        finally:
+            conn.close()
