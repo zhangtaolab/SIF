@@ -164,7 +164,6 @@ Full detail: `.planning/milestones/v1.1-ROADMAP.md`
   4. User's existing indexes filter correctly after upgrade — typed frontmatter storage + backfill runs, and `qmd.metadata`-namespaced keys (migration parity, opt-in) filter identically to native keys; numeric values compare as numbers, not strings
   5. Agent can discover available metadata via a `metadata` tool on CLI + MCP — doc counts, numeric min/median/max, exact remainders; ONE validator shared with the filter surface; invalid filter → ToolError for model self-correction, never a protocol error
 **Plans:** 5 plans
-
 **Wave 1**
 - [ ] 20-01-PLAN.md — Tracer: one `eq` filter end-to-end (AST → typed kv → BM25 outer WHERE → `sif search --filter`), then the full 17-operator AST/validator and the full per-operator compiler
 
