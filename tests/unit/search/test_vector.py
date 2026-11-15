@@ -5,7 +5,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from sif.core.models import SearchOptions
+from sif.core.models import SearchOptions, SearchResult
+from sif.search.context_attach import enrich_results
 from sif.search.vector import VectorSearcher
 
 
@@ -123,18 +124,16 @@ class TestVectorSearcher:
                 "collection_name": "col",
             },
         ]
-        ctx_cursor = MagicMock()
-        ctx_cursor.fetchall.return_value = []
-        staleness_cursor = MagicMock()
-        # vec_version() in __init__, search query, context query, staleness scan
-        mock_db.execute.side_effect = [MagicMock(), search_cursor, ctx_cursor, staleness_cursor]
+        # vec_version() in __init__, then the search query. Rich results
+        # would otherwise have triggered the old searcher-level attach.
+        mock_db.execute.side_effect = [MagicMock(), search_cursor]
 
         searcher = VectorSearcher(mock_db)
         searcher._vec_available = True
 
         results = searcher.search([0.1, 0.2], SearchOptions(limit=-1))
 
-        # call_args is the staleness scan; the search call is the second one
+        # search is the second execute call (after the vec_version probe)
         search_call = mock_db.execute.call_args_list[1]
         params = search_call[0][1]
         assert params[1] == 50  # fetch floor
@@ -147,9 +146,7 @@ class TestVectorSearcher:
         vec_cursor = MagicMock()
         doc_cursor = MagicMock()
         doc_cursor.fetchall.return_value = []
-        ctx_cursor = MagicMock()
-        ctx_cursor.fetchall.return_value = []
-        mock_db.execute.side_effect = [vec_cursor, doc_cursor, ctx_cursor]
+        mock_db.execute.side_effect = [vec_cursor, doc_cursor]
 
         searcher = VectorSearcher(mock_db)
         searcher._vec_available = True
@@ -178,10 +175,7 @@ class TestVectorSearcher:
                 "collection_name": "col",
             },
         ]
-        ctx_cursor = MagicMock()
-        ctx_cursor.fetchall.return_value = []
-        staleness_cursor = MagicMock()
-        mock_db.execute.side_effect = [vec_cursor, doc_cursor, ctx_cursor, staleness_cursor]
+        mock_db.execute.side_effect = [vec_cursor, doc_cursor]
 
         searcher = VectorSearcher(mock_db)
         searcher._vec_available = True
@@ -213,10 +207,7 @@ class TestVectorSearcher:
                 "collection_name": "col",
             },
         ]
-        ctx_cursor = MagicMock()
-        ctx_cursor.fetchall.return_value = []
-        staleness_cursor = MagicMock()
-        mock_db.execute.side_effect = [vec_cursor, doc_cursor, ctx_cursor, staleness_cursor]
+        mock_db.execute.side_effect = [vec_cursor, doc_cursor]
 
         searcher = VectorSearcher(mock_db)
         searcher._vec_available = True
@@ -242,18 +233,11 @@ class TestVectorSearcher:
         ]
         content_cursor = MagicMock()
         content_cursor.fetchone.return_value = ("document content",)
-        context_cursor = MagicMock()
-        context_cursor.fetchall.return_value = []
-        staleness_cursor = MagicMock()
-        # First execute is vec_version() in __init__, second is search query,
-        # third is content lookup, fourth is context lookup, fifth is the
-        # staleness scan
+        # vec_version() in __init__, search query, then content lookup.
         mock_db.execute.side_effect = [
             MagicMock(),
             mock_cursor,
             content_cursor,
-            context_cursor,
-            staleness_cursor,
         ]
 
         searcher = VectorSearcher(mock_db)
@@ -504,12 +488,22 @@ class TestVectorEmbeddingDeletion:
             conn.close()
 
 
-class TestVectorContextAttachment:
-    """Tests for context_description attachment in vector search results."""
+class TestVectorSearcherEnrichmentContract:
+    """The vector searcher is a pure producer; enrichment happens at the exit."""
 
-    def test_search_attaches_context_description(self) -> None:
-        """Test that vector search attaches path context descriptions."""
-        context_rows = [{"target_id": "/1.md", "content": "Important project notes"}]
+    @staticmethod
+    def _result() -> SearchResult:
+        return SearchResult(
+            document_id="doc-1",
+            title="T1",
+            path="/1.md",
+            collection_name="c",
+            score=1.0,
+            rank=1,
+        )
+
+    def test_search_returns_raw_results_without_enrichment(self) -> None:
+        """search() returns raw results and never runs a contexts/embedding scan."""
         search_rows = [
             {
                 "score": 0.0,
@@ -522,55 +516,42 @@ class TestVectorContextAttachment:
         mock_db = MagicMock()
         search_cursor = MagicMock()
         search_cursor.fetchall.return_value = search_rows
-        context_cursor = MagicMock()
-        context_cursor.fetchall.return_value = context_rows
-        staleness_cursor = MagicMock()
-        # vec_version in __init__, search query, context query, staleness scan
-        mock_db.execute.side_effect = [
-            MagicMock(),
-            search_cursor,
-            context_cursor,
-            staleness_cursor,
-        ]
+        # vec_version() in __init__, then the search query only.
+        mock_db.execute.side_effect = [MagicMock(), search_cursor]
 
         searcher = VectorSearcher(mock_db)
         searcher._vec_available = True
 
-        options = SearchOptions(include_highlights=False)
-        results = searcher.search([0.1, 0.2], options)
+        results = searcher.search([0.1, 0.2], SearchOptions(include_highlights=False))
 
         assert len(results) == 1
+        assert results[0].context_description is None
+        assert results[0].vectors_stale is False
+        assert not hasattr(searcher, "_attach_contexts")
+        assert mock_db.execute.call_count == 2
+
+    def test_enrich_results_attaches_context_description(self) -> None:
+        """The shared enrichment helper fills context descriptions once."""
+        mock_db = MagicMock()
+        context_cursor = MagicMock()
+        context_cursor.fetchall.return_value = [
+            {"target_id": "/1.md", "content": "Important project notes"}
+        ]
+        staleness_cursor = MagicMock()
+        mock_db.execute.side_effect = [context_cursor, staleness_cursor]
+
+        results = enrich_results(mock_db, [self._result()])
+
         assert results[0].context_description == "Important project notes"
 
-    def test_search_no_context_returns_none(self) -> None:
-        """Test that vector search returns None context_description when no context exists."""
-        search_rows = [
-            {
-                "score": 0.0,
-                "document_id": "doc-1",
-                "title": "T1",
-                "path": "/1.md",
-                "collection_name": "c",
-            },
-        ]
+    def test_enrich_results_no_context_returns_none(self) -> None:
+        """No stored context leaves context_description None."""
         mock_db = MagicMock()
-        search_cursor = MagicMock()
-        search_cursor.fetchall.return_value = search_rows
         context_cursor = MagicMock()
         context_cursor.fetchall.return_value = []
         staleness_cursor = MagicMock()
-        # vec_version in __init__, search query, context query, staleness scan
-        mock_db.execute.side_effect = [
-            MagicMock(),
-            search_cursor,
-            context_cursor,
-            staleness_cursor,
-        ]
+        mock_db.execute.side_effect = [context_cursor, staleness_cursor]
 
-        searcher = VectorSearcher(mock_db)
-        searcher._vec_available = True
-
-        options = SearchOptions(include_highlights=False)
-        results = searcher.search([0.1, 0.2], options)
+        results = enrich_results(mock_db, [self._result()])
 
         assert results[0].context_description is None

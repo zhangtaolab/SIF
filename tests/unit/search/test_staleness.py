@@ -299,25 +299,47 @@ class TestSearcherDelegation:
         assert calls[0][0] is pipeline.db
         assert calls[0][1] is returned
 
-    def test_vector_searcher_still_delegates(self, monkeypatch) -> None:
-        """VectorSearcher._attach_contexts delegates (unchanged until Task 2)."""
-        calls: list[tuple[str, object, list[SearchResult]]] = []
+    def test_vector_searcher_does_not_enrich(self) -> None:
+        """VectorSearcher is a pure producer: no attach method, no enrichment."""
+        searcher = VectorSearcher(MagicMock())
+        assert not hasattr(searcher, "_attach_contexts")
 
-        def recording_wrapper(tag: str):
-            def wrapper(db, results):
-                calls.append((tag, db, results))
-                return results
+    def test_pipeline_vector_and_hyde_exits_call_enrich_results_once(self, monkeypatch) -> None:
+        """The pipeline VECTOR and HYDE exits each enrich exactly once."""
+        calls: list[tuple[object, list[SearchResult]]] = []
 
-            return wrapper
+        def recording_enrich(db, results):
+            calls.append((db, results))
+            return results
 
-        monkeypatch.setattr("sif.search.vector.mark_vector_staleness", recording_wrapper("vector"))
-        vector_searcher = VectorSearcher(MagicMock())
+        monkeypatch.setattr("sif.search.hybrid.enrich_results", recording_enrich)
+
+        embedder = MagicMock()
+        embedder.embed.return_value = [0.1, 0.2]
+        embedder.generate.return_value = "hypothetical document"
+        pipeline = SearchPipeline(MagicMock(), embedder=embedder)
+        pipeline.hybrid.vector = MagicMock()
+
         vector_results = [_result("d-v")]
-        vector_searcher._attach_contexts(vector_results)
+        pipeline.hybrid.vector.search.return_value = vector_results
 
-        assert [c[0] for c in calls] == ["vector"]
-        assert calls[0][1] is vector_searcher.db
-        assert calls[0][2] is vector_results
+        vec_output = pipeline.search("vec: needle")
+
+        assert vec_output is vector_results
+        assert len(calls) == 1
+        assert calls[0][0] is pipeline.db
+        assert calls[0][1] is vector_results
+
+        calls.clear()
+        hyde_results = [_result("d-h")]
+        pipeline.hybrid.vector.search.return_value = hyde_results
+
+        hyde_output = pipeline.search("hyde: needle")
+
+        assert hyde_output is hyde_results
+        assert len(calls) == 1
+        assert calls[0][0] is pipeline.db
+        assert calls[0][1] is hyde_results
 
     def test_hybrid_searcher_still_delegates(self, monkeypatch) -> None:
         """HybridSearcher._attach_contexts delegates (unchanged until Task 3)."""

@@ -19,8 +19,6 @@ import pytest
 from sif.core.models import SearchResult
 from sif.database.schema import SchemaManager
 from sif.search.context_attach import attach_path_contexts, enrich_results
-from sif.search.hybrid import HybridSearcher
-from sif.search.vector import VectorSearcher
 from sif.utils.paths import normalize_path
 
 
@@ -150,45 +148,33 @@ class TestAttachPathContextsRealSQL:
         assert results[0].context_description == "Method-level notes"
         assert results[0].vectors_stale is False
 
-    def test_vector_and_hybrid_delegate(self, monkeypatch):
-        """VectorSearcher and HybridSearcher delegate to the shared helper with self.db.
+    def test_enrich_results_composes_both_signals(self, monkeypatch):
+        """enrich_results runs attach first, then staleness, on the same list.
 
-        Their real-DB construction requires the sqlite-vec extension, so the
-        delegation wiring is proven with MagicMock DBs (vec check succeeds on
-        mocks) and recording wrappers around the real function.
+        The composition helper is the enrichment owner now; searchers no longer
+        expose an attach method, so this pins the order and list identity.
         """
+        mock_db = MagicMock()
+        results = [_result("/v.md")]
         calls: list[tuple[str, object, list[SearchResult]]] = []
 
-        def recording_wrapper(tag: str):
-            def wrapper(db, results):
-                calls.append((tag, db, results))
-                return attach_path_contexts(db, results)
+        def recording_attach(db, res):
+            calls.append(("attach", db, res))
+            return res
 
-            return wrapper
+        def recording_staleness(db, res):
+            calls.append(("staleness", db, res))
+            return res
 
-        vector_searcher = VectorSearcher(MagicMock())
-        vector_results = [_result("/v.md")]
-        monkeypatch.setattr(
-            "sif.search.vector.attach_path_contexts",
-            recording_wrapper("vector"),
-        )
-        vector_searcher._attach_contexts(vector_results)
+        monkeypatch.setattr("sif.search.context_attach.attach_path_contexts", recording_attach)
+        monkeypatch.setattr("sif.search.context_attach.mark_vector_staleness", recording_staleness)
 
-        hybrid_searcher = HybridSearcher(MagicMock(), embedder=None)
-        hybrid_results = [_result("/h.md")]
-        monkeypatch.setattr(
-            "sif.search.hybrid.attach_path_contexts",
-            recording_wrapper("hybrid"),
-        )
-        hybrid_searcher._attach_contexts(hybrid_results)
+        enriched = enrich_results(mock_db, results)
 
-        assert len(calls) == 2
-        assert calls[0][0] == "vector"
-        assert calls[0][1] is vector_searcher.db
-        assert calls[0][2] is vector_results
-        assert calls[1][0] == "hybrid"
-        assert calls[1][1] is hybrid_searcher.db
-        assert calls[1][2] is hybrid_results
+        assert enriched is results
+        assert [c[0] for c in calls] == ["attach", "staleness"]
+        assert all(c[1] is mock_db for c in calls)
+        assert all(c[2] is results for c in calls)
 
     def test_normalize_path_edges(self, alias_pair, tmp_path):
         """normalize_path expands ~, collapses real symlinks, and keeps missing tails."""

@@ -6,8 +6,6 @@ import json
 import sqlite3
 
 from sif.core.models import SearchOptions, SearchResult
-from sif.search.context_attach import attach_path_contexts
-from sif.search.staleness import mark_vector_staleness
 
 
 class VectorSearcher:
@@ -128,11 +126,7 @@ class VectorSearcher:
         for rank, result in enumerate(results, 1):
             result.rank = rank
 
-        return self._attach_contexts(results)
-
-    def _attach_contexts(self, results: list[SearchResult]) -> list[SearchResult]:
-        """Attach path contexts, then mark derived vector staleness (one scan each)."""
-        return mark_vector_staleness(self.db, attach_path_contexts(self.db, results))
+        return results
 
     def _embedding_to_vec(self, embedding: list[float]) -> str:
         """Convert embedding to sqlite-vec format."""

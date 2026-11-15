@@ -206,14 +206,14 @@ class SearchPipeline:
                 raise RuntimeError("Vector search requires an embedder")
             query_embedding = self.hybrid.embedder.embed(parsed_query)
             results = self.hybrid.vector.search(query_embedding, options)
-            return self._apply_snippets(results, parsed_query)
+            return enrich_results(self.db, self._apply_snippets(results, parsed_query))
         if search_type == SearchType.HYDE:
             hyde_doc = self._generate_hypothetical_document(parsed_query)
             if self.hybrid.embedder is None:
                 raise RuntimeError("HyDE search requires an embedder")
             hyde_embedding = self.hybrid.embedder.embed(hyde_doc)
             results = self.hybrid.vector.search(hyde_embedding, options)
-            return self._apply_snippets(results, parsed_query)
+            return enrich_results(self.db, self._apply_snippets(results, parsed_query))
 
         # Default: hybrid search with optional expansion
         queries = [parsed_query]
