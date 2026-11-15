@@ -203,6 +203,27 @@ Replay compares each saved replay query's top-k path list with the current top-k
 - Within the same corpus fingerprint, `--compare` is the only honest way to read a delta; the fingerprint refusal is deliberate.
 - Every saved run lives under the local cache directory, never in the repository.
 
+## CORR-02 Per-Document Dedup
+
+CORR-02 changed the default ranking contract of the vector and hybrid paths: `VectorSearcher` now groups duplicate chunk rows by document **before** RRF fusion, keeps the best-distance chunk, and reports how many pre-dedup rows collapsed into the result as `chunk_matches`. `SearchResult` also carries `chunk_id` and `sequence` (the display form is `path#sequence`), and `--per-chunk` on `sif vsearch`/`sif query` (MCP `per_chunk` on `query`/`vec_search`) restores the ungrouped chunk rows. `sif search` and MCP `lex_search` stay document-level and expose no per-chunk flag.
+
+This is a correctness contract change, not a tuning win: no default weight, `rrf_k`, or `top_k` moved. The change is recorded here rather than hidden, with before/after evidence below.
+
+### B0 → B1 is the BM25 no-drift check
+
+Both saved runs use `--bm25-only` on the same 150-document fixture corpus and scratch index (corpus fingerprint `8c006123784348d1`), with the same 100 auto-synthesized known-item queries at `top_k=10`. The dedup change lives in the vector leg, which `--bm25-only` never constructs, so a zero delta here is the **expected** outcome and proves the CLI/MCP surface work introduced no ranking drift; it is not evidence that dedup changed ranking. B1 (`bench/b1.json`) is the post-dedup, pre-title saved run that the title work is measured against.
+
+`--compare bench/b0.json`: overall n=100, nDCG@10 `0.948330165500004 → 0.948330165500004` (delta `0.0`, 95% CI `[0.0, 0.0]`), Hit@10 `1.0 → 1.0`, 100 unchanged, 0 helped, 0 hurt. The tuning split (n=51) and held-out split (n=49) are likewise unchanged at `0.9493432995098079` and `0.9472756790816368`. The two groups that clear the N ≥ 10 floor are unchanged: title/en/medium (n=39) `1.0 → 1.0` and body/en/long (n=46) `0.8876742728260958 → 0.8876742728260958`, both deltas `0.0` with CI `[0.0, 0.0]`. Three groups stay below the floor, so they are suppressed from the table and named on stderr rather than rendered as zero rows: title/en/short, title/mixed/long, body/mixed/long. `--compare bench/b1.json` (self-comparison) reports the same n=100 and mean delta `0.0`, confirming B1 is a stable saved baseline. Raw reports and the scratch database stay untracked.
+
+### Where the dedup effect is recorded
+
+The committed held-out snapshot (`tests/fixtures/bench/heldout_defaults.json`) was regenerated for CORR-02 and records the before and after numbers in its `rationale`. On this deterministic fixture corpus every document has exactly one chunk, so there are no duplicate chunk rows to collapse and the numbers are identical:
+
+- defaults (`rrf_k=60`, `bm25_weight=1.0`, `vector_weight=1.0`), held-out: nDCG@10 `0.8120158986791898 → 0.8120158986791898`, Hit@10 `0.85 → 0.85`; per-category nDCG@10/Hit@10 (the snapshot's actual dimension): keyword `0.9734983536077081/1.0 → same`, synonym `0.2745652411090509/0.4 → same`, multilingual `1.0/1.0 → same`, rival `1.0/1.0 → same`.
+- sweep candidate (`rrf_k=20`, `bm25_weight=1.0`, `vector_weight=0.5`): tuning nDCG@10 `0.8186413102772627 → 0.8186413102772627`, Hit@10 `0.85 → 0.85`; the verdict stays `unchanged` with held-out delta `0.00662541159807295`.
+
+The regenerated SC1 hybrid golden (`tests/unit/search/test_hybrid.py::TestHybridSC1PipelineGolden`) records the other half of the evidence: its old→new `bm25_score`/`rrf_score` values are byte-identical (d3 `0.9999989753435158` / `0.03252247488101534`; d1 `0.9999990673325406` / `0.031754032258064516`), proving the vector/hybrid scoring math did not move while the result contract gained `chunk_id`/`sequence`/`chunk_matches`. The behavioral dedup evidence is the chunky-document regression in `tests/integration/test_search_correctness.py`: a six-chunk document can no longer starve a `limit=10` default page below ten distinct documents, and its six chunk rows are individually addressable under `--per-chunk`.
+
 ## Rerank States
 
 Reranking is **explicit opt-in and defaults off**: pass `--rerank` or set `SIF_RERANK_ENABLED=1`. The off path never constructs a reranker model (zero-cost by construction).
