@@ -200,10 +200,12 @@ This is the audit the planner should use as the change map. Values are quoted ve
 | Mode | Stored vectors? | Identity missing | Match | Same-dim mismatch | Dimension mismatch |
 |---|---|---|---|---|---|
 | `init` | any | write `legacy-assumed` + warn once if vectors exist | width-only | width-only (never fail; search warns later) | fail with the existing `RuntimeError` width message |
-| `embed` | no | allowed; overwrite identity as `verified` on first vector write | allowed; keep identity | **fail fast, write no vectors** | **fail fast** |
+| `embed` | no (D-02: identity checks do not apply) | allowed; overwrite identity as `verified` on first vector write | allowed; keep identity (identical) | allowed; overwrite the stale identity as `verified` on first vector write | **fail fast** with the schema width message (`FLOAT[n]` cannot store the current dimension) |
 | `embed` | yes | write `legacy-assumed` + warn once; then allowed | allowed; keep `assumed` unless a full `--force` certifies | **fail fast** | **fail fast** |
 | `search` | no | no warning, no mark | no warning, no mark | no warning, no mark | no warning, no mark |
 | `search` | yes | `unknown`: debug log only (SchemaManager normally wrote assumed at open) | no warning, no mark | warn once per process + mark all results `vectors_stale=True` | warn + degrade/error (see Open Questions) |
+
+**D-02 no-stored-vectors branch (authoritative):** when `document_embeddings` holds no row (or the table is absent), identity checks do not apply in any mode. A stale identity row — including one written by a vacuous unfiltered `--force` certification — never blocks an `embed`: the index accepts any embedder, and the first successful vector write overwrites the identity as `verified`. The one exception is the schema width guard: vectors of a dimension the stored `FLOAT[n]` cannot hold still fail fast. `search` on such an index neither warns nor marks.
 
 **Comparison is field-wise, not fingerprint equality.** This is the single most important implementation detail beyond the CONTEXT text:
 
@@ -230,7 +232,7 @@ Why: a settings-only assumed identity records `pooling: "unknown"`, `revision: n
 - If `had_vectors` and the stored source is `legacy-assumed`: keep assumed during the run; the command certifies only after a complete, unfiltered, zero-failure `--force` run.
 - If `had_vectors` and identity missing: `ensure_legacy_identity` writes assumed first (inside the flock / schema init), then proceeds.
 
-**Certification (D-04):** `embed_cmd` rewrites the identity as `source: "verified"` with the full current fields only when `force and collection is None and not failed_documents and not failed_collections`. A scoped `--force` or any failure keeps assumed. A fresh/empty index's first write is verified by definition.
+**Certification (D-04):** `embed_cmd` rewrites the identity as `source: "verified"` with the full current fields only when `force and collection is None and not failed_documents and not failed_collections`. A scoped `--force` or any failure keeps assumed. A fresh/empty index's first write is verified by definition. A full unfiltered zero-failure `--force` against an index with no documents certifies vacuously; because the index still has zero stored vectors, D-02 keeps accepting any later embedder and that embedder's first vector write overwrites the vacuous identity.
 
 **Legacy write location:** `SchemaManager.create_all` calls `ensure_legacy_identity(conn, source_identity, dimension=schema_embedding_dim(conn) or embedding_dim)` after vector tables exist. `Database.init_schema(embedding_dim=None)` builds a settings-only identity; when `embedding_dim` is injected (MCP), the backend passes its own settings-only identity so Phase 19's "no `get_settings()` when injected" contract holds. [VERIFIED: database.py:31-44]
 
@@ -867,7 +869,7 @@ def _embed_role(self, texts, *, role: str) -> EmbeddingResponse:
 | A7 | The context-cache sentinel is acceptable (one extra idle connection per process per DB). | Pattern 4 | A long-lived MCP process holds an extra read connection; WAL readers coexist. |
 | A8 | `PRAGMA integrity_check` on a vec0 copy is sufficient without loading the extension. | Pattern 6 | Verified locally; the check reports `ok` and the copy's rows open correctly. |
 | A9 | Backup files should be mode 0600 (personal notes) even though D-13 does not mandate it. | Pattern 6 | A stricter default than the current DB file; reversible. |
-| A10 | A full `--force` with zero failures certifies even if the index has no documents. | Pattern 1 | A vacuous certification on an empty index; harmless because the first later write re-verifies. |
+| A10 | A full `--force` with zero failures certifies even if the index has no documents. | Pattern 1 | A vacuous certification on an empty index; harmless because no stored vectors exist, so D-02 still accepts any later embedder and the first later write overwrites the identity. |
 
 ## Open Questions (RESOLVED)
 
