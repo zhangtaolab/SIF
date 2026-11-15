@@ -10,6 +10,7 @@ mocked cursors returned rows regardless of the WHERE clause. Every test here
 executes the real contexts query against real SQLite.
 """
 
+import inspect
 import logging
 import sqlite3
 from pathlib import Path
@@ -436,3 +437,150 @@ class TestContextMapCache:
     def test_file_inode_missing_path_returns_none(self, tmp_path):
         """An unstattable database file degrades to None (cache bypass)."""
         assert context_attach._file_inode(str(tmp_path / "absent.db")) is None
+
+
+class TestContextCacheLifecycle:
+    """Reset, inode replacement, and sentinel-failure lifecycle hardening."""
+
+    def test_empty_map_is_cached_until_first_repository_write(self, file_db):
+        """An empty contexts table caches ``{}`` and the first write invalidates."""
+        _, conn = file_db
+        statements: list[str] = []
+        conn.set_trace_callback(statements.append)
+        try:
+            assert _attach_description(conn) is None
+            assert len(_context_statements(statements)) == 1
+            assert _attach_description(conn) is None
+            assert len(_context_statements(statements)) == 1
+
+            ContextRepository(conn).create(PathContext(path="/vault/doc.md", context="First"))
+            conn.commit()
+
+            rebuilt = attach_path_contexts(conn, [_result("/vault/doc.md")])
+            assert rebuilt[0].context_description == "First"
+            assert len(_context_statements(statements)) == 2
+        finally:
+            conn.set_trace_callback(None)
+
+    def test_reset_context_cache_forces_rebuild(self, file_db):
+        """reset_context_cache closes sentinels, clears the map, keeps the generation."""
+        _, conn = file_db
+        _insert_path_context(conn, "ctx-1", "/vault/doc.md", "Project notes")
+        statements: list[str] = []
+        conn.set_trace_callback(statements.append)
+        try:
+            assert _attach_description(conn) == "Project notes"
+            assert len(_context_statements(statements)) == 1
+            key = _cache_key(conn)
+            assert key in context_attach._context_cache
+
+            context_attach.reset_context_cache()
+            assert context_attach._context_cache == {}
+
+            rebuilt = attach_path_contexts(conn, [_result("/vault/doc.md")])
+            assert rebuilt[0].context_description == "Project notes"
+            assert len(_context_statements(statements)) == 2
+        finally:
+            conn.set_trace_callback(None)
+
+    def test_inode_change_closes_old_sentinel_and_reopens(self, file_db, monkeypatch):
+        """An inode change closes the old handle and reopens a fresh sentinel."""
+        _, conn = file_db
+        _insert_path_context(conn, "ctx-1", "/vault/doc.md", "Project notes")
+        assert _attach_description(conn) == "Project notes"
+
+        key = _cache_key(conn)
+        old_sentinel = context_attach._context_cache[key].sentinel
+        real_inode = context_attach._file_inode(key)
+        assert real_inode is not None
+        monkeypatch.setattr(
+            context_attach,
+            "_file_inode",
+            lambda _path: (real_inode[0], real_inode[1] + 1),
+        )
+
+        rebuilt = attach_path_contexts(conn, [_result("/vault/doc.md")])
+
+        assert rebuilt[0].context_description == "Project notes"
+        assert context_attach._context_cache[key].sentinel is not old_sentinel
+        with pytest.raises(sqlite3.ProgrammingError):
+            old_sentinel.execute("PRAGMA data_version")
+
+    def test_sentinel_error_during_sampling_bypasses_and_caches_nothing(self, file_db):
+        """A broken sentinel is closed, the entry dropped, and the call uncached."""
+        _, conn = file_db
+        _insert_path_context(conn, "ctx-1", "/vault/doc.md", "Project notes")
+        assert _attach_description(conn) == "Project notes"
+        key = _cache_key(conn)
+
+        statements: list[str] = []
+        conn.set_trace_callback(statements.append)
+        try:
+            # Simulate the documented sqlite3.Error path: the sentinel is dead.
+            context_attach._context_cache[key].sentinel.close()
+            bypassed = attach_path_contexts(conn, [_result("/vault/doc.md")])
+            assert bypassed[0].context_description == "Project notes"
+            assert len(_context_statements(statements)) == 1
+            assert key not in context_attach._context_cache
+
+            # The next attach opens a healthy sentinel and caches again.
+            recovered = attach_path_contexts(conn, [_result("/vault/doc.md")])
+            assert recovered[0].context_description == "Project notes"
+            assert len(_context_statements(statements)) == 2
+            assert key in context_attach._context_cache
+        finally:
+            conn.set_trace_callback(None)
+
+
+class TestVectorsUntrustedSeam:
+    """The identity-warning seam: force-mark every result stale after enrichment."""
+
+    def test_vectors_untrusted_marks_every_result_stale(self, db, alias_pair):
+        """Contexts still attach; every result is stale when the flag is set."""
+        resolved, alias = alias_pair
+        _insert_path_context(db, "ctx-1", alias, "Method-level notes")
+
+        results = enrich_results(
+            db,
+            [_result(resolved), _result("/elsewhere.md")],
+            vectors_untrusted=True,
+        )
+
+        assert results[0].context_description == "Method-level notes"
+        assert all(result.vectors_stale for result in results)
+
+    def test_default_leaves_derived_marking_in_charge(self, db):
+        """The two-argument form keeps the derived staleness pass authoritative."""
+        results = enrich_results(db, [_result("/v.md")])
+
+        assert results[0].vectors_stale is False
+
+    def test_vectors_untrusted_applies_after_the_normal_pass(self, monkeypatch):
+        """The flag overrides the normal pass's derived marks, never before it."""
+        results = [_result("/v.md")]
+        calls: list[str] = []
+
+        def recording_attach(_db, res):
+            calls.append("attach")
+            return res
+
+        def recording_staleness(_db, res):
+            calls.append("staleness")
+            return res
+
+        monkeypatch.setattr(context_attach, "attach_path_contexts", recording_attach)
+        monkeypatch.setattr(context_attach, "mark_vector_staleness", recording_staleness)
+
+        enriched = enrich_results(MagicMock(), results, vectors_untrusted=True)
+
+        assert enriched is results
+        assert calls == ["attach", "staleness"]
+        assert results[0].vectors_stale is True
+
+    def test_two_argument_signature_stays_compatible(self, db):
+        """``vectors_untrusted`` is keyword-only and defaults to False."""
+        parameter = inspect.signature(enrich_results).parameters["vectors_untrusted"]
+
+        assert parameter.kind is inspect.Parameter.KEYWORD_ONLY
+        assert parameter.default is False
+        assert enrich_results(db, [_result("/v.md")])[0].vectors_stale is False

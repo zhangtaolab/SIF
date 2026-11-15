@@ -30,6 +30,7 @@ search fails because of the cache.
 
 from __future__ import annotations
 
+import atexit
 import os
 import sqlite3
 import threading
@@ -150,6 +151,13 @@ def _close_sentinel(sentinel: sqlite3.Connection) -> None:
         logger.debug("Error closing context cache sentinel: %s", exc)
 
 
+def _close_sentinels_locked() -> None:
+    """Close every cached sentinel and clear the cache (lock must be held)."""
+    for entry in _context_cache.values():
+        _close_sentinel(entry.sentinel)
+    _context_cache.clear()
+
+
 def _drop_entry(path: str) -> None:
     """Close and remove the cached entry for ``path`` (lock must be held)."""
     entry = _context_cache.pop(path, None)
@@ -157,26 +165,50 @@ def _drop_entry(path: str) -> None:
         _close_sentinel(entry.sentinel)
 
 
-def _lookup_cached(path: str, inode: tuple[int, int]) -> dict[str, str] | None:
-    """Return the cached map when every invalidation trigger still matches.
+def _close_sentinels() -> None:
+    """Close every cached sentinel (``atexit`` hook)."""
+    with _cache_lock:
+        _close_sentinels_locked()
 
-    Caller must hold :data:`_cache_lock`. A sentinel that cannot be sampled is
-    closed and dropped; an inode change also drops the entry so the caller
-    reopens the sentinel instead of reusing a handle to the replaced file.
+
+def reset_context_cache() -> None:
+    """Close cached sentinels and clear the map; the write generation is kept.
+
+    Public test hook, wired to the autouse ``reset_context_cache`` fixture in
+    ``tests/conftest.py`` so no test inherits a sentinel or map from a
+    previous test.
+    """
+    with _cache_lock:
+        _close_sentinels_locked()
+
+
+atexit.register(_close_sentinels)
+
+
+def _lookup_cached(path: str, inode: tuple[int, int]) -> tuple[dict[str, str] | None, bool]:
+    """Return ``(cached_map, sentinel_healthy)`` for the entry at ``path``.
+
+    Caller must hold :data:`_cache_lock`. ``(None, True)`` is an ordinary miss
+    (no entry, or a stale-but-healthy entry the caller may rebuild with the
+    same sentinel). ``(None, False)`` means a sentinel operation failed: the
+    broken entry is closed and dropped and the caller must bypass to a fresh
+    scan without caching this call's result. An inode change also closes and
+    drops the entry so the caller reopens the sentinel instead of reusing a
+    handle to the replaced file.
     """
     entry = _context_cache.get(path)
     if entry is None:
-        return None
+        return None, True
     data_version = _sample_data_version(entry.sentinel)
     if data_version is None:
         _drop_entry(path)
-        return None
+        return None, False
     if inode != entry.inode:
         _drop_entry(path)
-        return None
+        return None, True
     if data_version != entry.data_version or context_write_generation() != entry.generation:
-        return None
-    return dict(entry.context_map)
+        return None, True
+    return dict(entry.context_map), True
 
 
 def _store_entry(
@@ -241,9 +273,11 @@ def get_context_map(db: sqlite3.Connection) -> dict[str, str]:
         inode = _file_inode(path)
         if inode is None:
             return _build_context_map(db)
-        cached = _lookup_cached(path, inode)
+        cached, sentinel_healthy = _lookup_cached(path, inode)
         if cached is not None:
             return cached
+        if not sentinel_healthy:
+            return _build_context_map(db)
         return _store_entry(db, path, inode)
 
 
@@ -283,6 +317,8 @@ def attach_path_contexts(
 def enrich_results(
     db: sqlite3.Connection,
     results: list[SearchResult],
+    *,
+    vectors_untrusted: bool = False,
 ) -> list[SearchResult]:
     """Apply both search-result trust signals exactly once.
 
@@ -294,9 +330,17 @@ def enrich_results(
     Args:
         db: SQLite connection.
         results: Search results to enrich.
+        vectors_untrusted: When true, every result is additionally marked
+            ``vectors_stale`` after the normal staleness pass (the identity
+            warning path consumes this; existing two-argument callers are
+            untouched).
 
     Returns:
         The same results list, with ``context_description`` filled on matches
         and ``vectors_stale`` marked from the derived embedding scan.
     """
-    return mark_vector_staleness(db, attach_path_contexts(db, results))
+    enriched = mark_vector_staleness(db, attach_path_contexts(db, results))
+    if vectors_untrusted:
+        for result in enriched:
+            result.vectors_stale = True
+    return enriched

@@ -86,6 +86,25 @@ def reset_identity_state() -> None:
         identity_module.reset_identity_state()
 
 
+@pytest.fixture(autouse=True)
+def reset_context_cache() -> Generator[None, None, None]:
+    """Clear the per-process context-map cache around every test.
+
+    Lazy module lookup on purpose: importing ``sif.search.context_attach``
+    from the global conftest would pull the search package (and its sentinel
+    connection lifecycle) into every test process. When a test module already
+    imported it, reset before and after so no test inherits a sentinel or a
+    cached map from a previous test.
+    """
+    context_module = sys.modules.get("sif.search.context_attach")
+    if context_module is not None:
+        context_module.reset_context_cache()
+    yield
+    context_module = sys.modules.get("sif.search.context_attach")
+    if context_module is not None:
+        context_module.reset_context_cache()
+
+
 # =============================================================================
 # Path Fixtures
 # =============================================================================
