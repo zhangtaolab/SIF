@@ -103,7 +103,7 @@ def _make_manager_mock() -> MagicMock:
             vectors.append(vec)
         return MagicMock(embeddings=vectors)
 
-    manager.embed.side_effect = fake_embed
+    manager.embed_documents.side_effect = fake_embed
     return manager
 
 

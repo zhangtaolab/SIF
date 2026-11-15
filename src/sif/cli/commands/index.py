@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-import re
+import sqlite3
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import click
 from rich.console import Console
@@ -21,12 +22,25 @@ from sif.database.repositories import (
     DocumentChunkRepository,
     DocumentRepository,
 )
+from sif.embedding.identity import (
+    EmbedderIdentity,
+    certify_identity,
+    check_identity,
+    ensure_legacy_identity,
+    schema_embedding_dim,
+)
 from sif.indexing.chunker import create_chunker, token_size_to_chars
+from sif.indexing.embed_writer import StreamingEmbedWriter, SystemicEmbedError
 from sif.indexing.incremental import IncrementalIndexer
 from sif.utils.progress import spinner_name
 
 
+if TYPE_CHECKING:
+    from sif.embedding.manager import EmbeddingManager
+
+
 console = Console()
+console_err = Console(stderr=True)
 
 # A hung pre-update command (network stall, prompt on stdin) must not block
 # `sif index update` forever (WR-06). No per-collection timeout setting exists
@@ -187,6 +201,46 @@ def _needs_embedding(live_chunk_ids: set[str], embedded_chunk_ids: set[str], for
     return force or not live_chunk_ids or live_chunk_ids != embedded_chunk_ids
 
 
+class _EmbedAbortError(Exception):
+    """A systemic embed failure: stop after prior commits, then report once."""
+
+
+def _index_has_vectors(conn: sqlite3.Connection) -> bool:
+    """Whether any vector row exists; a missing vec0 table counts as none."""
+    try:
+        return conn.execute("SELECT 1 FROM document_embeddings LIMIT 1").fetchone() is not None
+    except sqlite3.OperationalError:
+        return False
+
+
+def _resolve_identity(
+    conn: sqlite3.Connection, manager: EmbeddingManager
+) -> EmbedderIdentity | None:
+    """Return the current identity when this host has enforceable index state.
+
+    Injected manager doubles return a MagicMock identity and test hosts that
+    patch ``Database`` hand over a MagicMock connection; like every Phase 21
+    host they carry no identity policy, so the streaming writer keeps the
+    pre-Phase-21 path for them. A real ``EmbeddingManager`` always returns a
+    real identity, and every production connection is a real SQLite one.
+    """
+    if not isinstance(conn, sqlite3.Connection):
+        return None
+    current = manager.get_identity()
+    return current if isinstance(current, EmbedderIdentity) else None
+
+
+def _count_collection_chunks(conn: sqlite3.Connection, collection_id: str) -> int:
+    """Count a collection's committed chunk rows with one O(N) SQL query."""
+    row = conn.execute(
+        "SELECT COUNT(*) FROM document_chunks dc "
+        "JOIN documents d ON dc.document_id = d.id "
+        "WHERE d.collection_id = ?",
+        (collection_id,),
+    ).fetchone()
+    return int(row[0]) if row is not None else 0
+
+
 @index_group.command("embed")
 @click.option("--collection", "-c", help="Embed specific collection only")
 @click.option("--force", "-f", is_flag=True, help="Force re-embed all documents")
@@ -244,21 +298,49 @@ def embed_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
         )
 
         # Fail fast when the loaded model's dimension disagrees with the vec0
-        # table's declared dimension (WR-02): local backends validate this nowhere
-        # else, and the mismatch would otherwise surface as a raw sqlite-vec
-        # insert error only after chunks are already written.
-        schema_row = db.connection.execute(
-            "SELECT sql FROM sqlite_master WHERE type='table' AND name='document_embeddings'"
-        ).fetchone()
-        if schema_row:
-            schema_sql = schema_row[0] if isinstance(schema_row[0], str) else ""
-            dim_match = re.search(r"FLOAT\[(\d+)\]", schema_sql)
-            if dim_match and int(dim_match.group(1)) != embedding_dim:
+        # table's declared dimension (WR-02/D-05): the identity module owns the
+        # single FLOAT[n] read, and the pre-change user-facing wording survives.
+        schema_dim = (
+            schema_embedding_dim(db.connection)
+            if isinstance(db.connection, sqlite3.Connection)
+            else None
+        )
+        if schema_dim is not None and schema_dim != embedding_dim:
+            raise click.ClickException(
+                f"Model '{model or settings.model_name}' produces {embedding_dim}-dim "
+                f"embeddings but the index stores {schema_dim}-dim vectors. "
+                "Set SIF_EMBEDDING_DIM to the model's dimension and rebuild."
+            )
+
+        # D-02/D-03/D-04: adopt the identity before any vector write. A legacy
+        # populated index is assumed once; a same-width model swap fails fast
+        # naming both identities and the remedy. An embeddings-empty index
+        # accepts any embedder (D-02) and the first document commit overwrites
+        # a stale identity row as source="verified".
+        current = _resolve_identity(db.connection, manager)
+        write_identity_on_first = False
+        if current is not None:
+            with db.connection:
+                ensure_legacy_identity(db.connection, current)
+                check = check_identity(db.connection, current, mode="embed")
+            if check.untrusted:
+                stored = check.stored
+                if stored is not None:
+                    stored_desc = (
+                        f"{stored.display_fingerprint()} "
+                        f"({stored.cache_model_id}, dim {stored.dimension})"
+                    )
+                else:
+                    stored_desc = f"an index with no identity (FLOAT[{schema_dim}])"
                 raise click.ClickException(
-                    f"Model '{model or settings.model_name}' produces {embedding_dim}-dim "
-                    f"embeddings but the index stores {dim_match.group(1)}-dim vectors. "
-                    "Set SIF_EMBEDDING_DIM to the model's dimension and rebuild."
+                    "Embedder identity mismatch: index vectors were produced by "
+                    f"{stored_desc} but the current model is "
+                    f"{current.display_fingerprint()} "
+                    f"({current.cache_model_id}, dim {current.dimension}). "
+                    "Restore the stored model or run `sif index embed --force` "
+                    "with the matching model."
                 )
+            write_identity_on_first = not _index_has_vectors(db.connection)
 
         coll_repo = CollectionRepository(db.connection)
         doc_repo = DocumentRepository(db.connection)
@@ -272,13 +354,11 @@ def embed_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
         else:
             collections = coll_repo.list_all()
 
-        # D-01: embed_cmd holds the DB write lock for an entire collection, so
-        # it must arbitrate with update_cmd on the same per-DB flock. The lock
-        # sits below the embedder load and the vec0 dimension check on purpose
-        # — it is never held across model loading. The collection loop's
-        # per-collection transactions keep their exact commit points (D-05):
-        # the factory's implicit BEGIN IMMEDIATE flowing through the existing
-        # with-conn blocks is the accepted, strictly-better change (CR-02).
+        # D-01: embed_cmd arbitrates with other index writers on the per-DB
+        # flock. The lock sits below the embedder load and the dimension/
+        # identity checks on purpose — it is never held across model loading.
+        # Every document commits in its own short transaction (D-15), so prior
+        # work stays durable on any later failure (CR-02/D-16).
         lock_timeout = settings.lock_wait_timeout
         with index_lock(
             Path(index_path),
@@ -289,6 +369,9 @@ def embed_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
         ):
             total_chunks = 0
             failed_collections: list[str] = []
+            failed_documents: list[tuple[str, str, str]] = []
+            abort_message: str | None = None
+            identity_written = False
 
             for coll in collections:
                 if not coll:
@@ -318,77 +401,101 @@ def embed_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 except RuntimeError as e:
                     raise click.ClickException(f"Vector store unavailable: {e}") from e
 
-                # One transaction per collection (CR-02): a failed collection rolls
-                # back only its own work, and successful collections keep theirs.
-                # (The previous whole-run transaction discarded every successful
-                # collection when the final failure report was raised inside it.)
-                all_chunks = []  # (chunk, document_id)
-                doc_chunks_map: dict[str, list] = {}
+                writer = StreamingEmbedWriter(
+                    db.connection,
+                    manager,
+                    chunker,
+                    vector_searcher,
+                    current,
+                    batch_size=settings.batch_size,
+                    write_identity=write_identity_on_first,
+                )
                 try:
-                    # One unindexed metadata scan per document made the completeness
-                    # check quadratic; prefetch the whole map once per collection and
-                    # judge each document against it.
+                    # One unindexed metadata scan per collection; judging every
+                    # document against it keeps the completeness check linear.
                     embedded_by_doc = vector_searcher.get_all_embedded_chunk_ids()
+                    for doc in documents:
+                        # Skip documents whose live chunks already have an exact,
+                        # complete set of embeddings; --force bypasses the check.
+                        existing = chunk_repo.get_by_document(doc.id)
+                        embedded = embedded_by_doc.get(doc.id, set())
+                        if not _needs_embedding({c.id for c in existing}, embedded, force):
+                            console.print(f"  [dim]Already embedded: {doc.path}[/dim]")
+                            continue
+                        try:
+                            total_chunks += writer.embed_document(doc)
+                        except SystemicEmbedError as e:
+                            # D-17: a garbage batch is systemic — persist nothing
+                            # for this document and abort after prior commits.
+                            raise _EmbedAbortError(str(e)) from e
+                        except sqlite3.OperationalError as e:
+                            if "locked" in str(e).lower() or "busy" in str(e).lower():
+                                # D-16: a locked/busy database is environmental.
+                                raise _EmbedAbortError(
+                                    "database is locked or busy. Retry once the other "
+                                    f"index writer has finished ({e})."
+                                ) from e
+                            failed_documents.append((coll.name, doc.path, str(e)))
+                        except Exception as e:
+                            # D-16: document-local failures never abort the run.
+                            failed_documents.append((coll.name, doc.path, str(e)))
+
+                    # D-15 refinement: recompute collection stats once per
+                    # collection in a short O(N) SQL count instead of per
+                    # document. A collection that aborts mid-loop keeps its
+                    # previous counts until its next successful run.
                     with db.connection:
-                        for doc in documents:
-                            # Skip documents whose live chunks already have an exact,
-                            # complete set of embeddings; --force bypasses the check.
-                            existing = chunk_repo.get_by_document(doc.id)
-                            embedded = embedded_by_doc.get(doc.id, set())
-                            if not _needs_embedding({c.id for c in existing}, embedded, force):
-                                console.print(f"  [dim]Already embedded: {doc.path}[/dim]")
-                                continue
-                            chunk_repo.delete_by_document(doc.id)
-                            # Delete-before-insert (G-03-3): re-chunked rows get fresh
-                            # uuid4 ids that can never collide with the old embedding
-                            # rows, so the old vectors must be removed explicitly.
-                            vector_searcher.delete_embeddings_by_document(doc.id)
-                            chunks = chunker.chunk(doc.content)
-                            doc_chunks_map[doc.id] = chunks
-                            for i, chunk in enumerate(chunks):
-                                chunk.document_id = doc.id
-                                chunk.sequence = i
-                                all_chunks.append((chunk, doc.id))
-
-                        # Batch embed all chunks
-                        if all_chunks:
-                            chunk_texts = [c.content for c, _ in all_chunks]
-                            embedding_response = manager.embed(chunk_texts)
-                            embeddings = embedding_response.embeddings
-
-                            # Persist chunks and embeddings
-                            batch_items: list[tuple[str, str, str | None, list[float]]] = []
-                            for (chunk, doc_id), embedding in zip(
-                                all_chunks, embeddings, strict=True
-                            ):
-                                chunk_repo.create(chunk)
-                                batch_items.append((chunk.id, doc_id, chunk.id, embedding))
-
-                            vector_searcher.add_embeddings_batch(batch_items)
-
-                        # Update collection stats
-                        documents = doc_repo.list_by_collection(coll.id)
-                        coll.chunk_count = sum(
-                            len(chunk_repo.get_by_document(d.id)) for d in documents
-                        )
+                        coll.chunk_count = _count_collection_chunks(db.connection, coll.id)
                         coll_repo.update(coll)
-                    # Count only after the transaction committed — a rolled-back
-                    # collection must not be reported as embedded.
-                    total_chunks += len(all_chunks)
+                except _EmbedAbortError as e:
+                    abort_message = str(e)
                 except Exception as e:
-                    console.print(f"  [red]Error embedding collection {coll.name}: {e}[/red]")
+                    console.print(
+                        f"  [red]Error embedding collection {escape(coll.name)}: {e}[/red]"
+                    )
                     failed_collections.append(coll.name)
-                    continue
+                finally:
+                    if write_identity_on_first and not writer.identity_pending:
+                        # The first committed document already wrote the
+                        # identity; later collections and the certification
+                        # step must not rewrite it.
+                        write_identity_on_first = False
+                        identity_written = True
+
+                if abort_message is not None:
+                    break
 
         console.print(f"\n[green]Embedding complete: {total_chunks} chunks embedded[/green]")
-
-        # Raised outside any db transaction (CR-02): the successful collections'
-        # commits above must survive this non-zero exit.
-        if failed_collections:
-            raise click.ClickException(
-                f"Embedding failed for {len(failed_collections)} collection(s): "
-                + ", ".join(failed_collections)
+        for coll_name, doc_path, message in failed_documents:
+            console_err.print(
+                f"[red]Embedding failed for {escape(doc_path)} "
+                f"(collection {escape(coll_name)}): {escape(message)}[/red]"
             )
+
+        # D-16/CR-02: ONE final report, raised outside any db transaction, so
+        # every prior per-document/per-collection commit survives the non-zero
+        # exit. Systemic aborts win over per-document/collection summaries.
+        if abort_message is not None:
+            raise click.ClickException(f"Embedding aborted: {abort_message}")
+        if failed_collections or failed_documents:
+            parts: list[str] = []
+            if failed_collections:
+                parts.append(
+                    f"Embedding failed for {len(failed_collections)} collection(s): "
+                    + ", ".join(failed_collections)
+                )
+            if failed_documents:
+                parts.append(f"Embedding failed for {len(failed_documents)} document(s)")
+            raise click.ClickException(". ".join(parts))
+
+        # D-04 certification: only a complete, unfiltered, zero-failure
+        # --force run certifies the stored identity as source="verified". A
+        # fresh index's first vector write already certified through the
+        # writer; a full --force on an empty index certifies vacuously (its
+        # zero vectors keep D-02's accept-any-embedder rule in force).
+        if force and collection is None and current is not None and not identity_written:
+            with db.connection:
+                certify_identity(db.connection, current)
 
 
 @index_group.command("status")

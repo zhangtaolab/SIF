@@ -1,6 +1,8 @@
 """Tests for index CLI commands."""
 
 import io
+import math
+import sqlite3
 import types
 from pathlib import Path
 from types import SimpleNamespace
@@ -11,6 +13,115 @@ from rich.console import Console
 
 from sif.cli.commands.index import embed_cmd
 from sif.config.settings import Settings
+from sif.core.models import Collection, Document
+from sif.database.database import Database
+from sif.database.repositories import CollectionRepository, DocumentRepository
+from sif.embedding.identity import build_identity, read_identity, write_identity
+from sif.embedding.prompts import PromptScheme
+from sif.models.embedding import EmbeddingConfig, ModelType
+
+
+DIM = 8
+
+
+class _IdentityModel:
+    """Loaded-model double exposing only the identity dimension."""
+
+    def __init__(self, dimension: int) -> None:
+        self.dimension = dimension
+
+
+def _identity(model_name: str = "test", dim: int = DIM):
+    """Build a real embedder identity for the fake loaded model."""
+    return build_identity(
+        EmbeddingConfig(
+            model_type=ModelType.MODELSCOPE,
+            model_name=model_name,
+            embedding_dim=dim,
+        ),
+        _IdentityModel(dim),
+        PromptScheme(None, None, True),
+    )
+
+
+def _unit_vector(dim: int = DIM) -> list[float]:
+    """A deterministic unit-L2 vector of ``dim`` dimensions."""
+    component = 1.0 / math.sqrt(dim)
+    return [component] * dim
+
+
+def _streaming_manager(identity, fail_on_call: int | None = None) -> MagicMock:
+    """Mock manager with a real identity and per-call vector batches."""
+    manager = MagicMock()
+    manager.get_model_info.return_value = {"loaded": True, "embedding_dim": identity.dimension}
+    manager.get_identity.return_value = identity
+    calls: list[list[str]] = []
+
+    def fake_embed_documents(texts: list[str]) -> SimpleNamespace:
+        calls.append(list(texts))
+        if fail_on_call is not None and len(calls) == fail_on_call:
+            raise RuntimeError("injected backend failure")
+        return SimpleNamespace(embeddings=[_unit_vector(identity.dimension) for _ in texts])
+
+    manager.embed_documents.side_effect = fake_embed_documents
+    manager.embed_documents.calls = calls
+    return manager
+
+
+def _seed_real_index(
+    db_path: Path,
+    settings: Settings,
+    documents: list[tuple[str, str]],
+) -> None:
+    """Create a real index with one collection and the supplied documents."""
+    db = Database(db_path)
+    with patch("sif.config.settings.get_settings", return_value=settings):
+        db.init_schema()
+    with db.connection:
+        coll_repo = CollectionRepository(db.connection)
+        doc_repo = DocumentRepository(db.connection)
+        coll = Collection(name="notes", path="/notes")
+        coll_repo.create(coll)
+        for path, content in documents:
+            doc_repo.create(Document(path=path, collection_id=coll.id, content=content, title=path))
+    db.close()
+
+
+def _invoke_real_embed(
+    db_path: Path,
+    manager: MagicMock,
+    settings: Settings,
+    args: list[str],
+) -> object:
+    """Invoke embed_cmd against a real database with a mocked manager."""
+    with (
+        patch("sif.config.settings.get_settings", return_value=settings),
+        patch("sif.embedding.manager.EmbeddingManager.from_settings", return_value=manager),
+    ):
+        return CliRunner().invoke(embed_cmd, args, obj={"index_path": db_path})
+
+
+def _document_ids(db_path: Path) -> dict[str, str]:
+    """Map document path to id on a real index."""
+    conn = sqlite3.connect(str(db_path))
+    try:
+        return {row[1]: row[0] for row in conn.execute("SELECT id, path FROM documents")}
+    finally:
+        conn.close()
+
+
+def _embedded_chunk_count(db_path: Path, document_id: str) -> int:
+    """Count a document's committed chunk rows."""
+    conn = sqlite3.connect(str(db_path))
+    try:
+        return int(
+            conn.execute(
+                "SELECT COUNT(*) FROM document_chunks WHERE document_id = ?",
+                (document_id,),
+            ).fetchone()[0]
+        )
+    finally:
+        conn.close()
 
 
 def _fake_openai_module(dim=8):
@@ -76,7 +187,7 @@ class TestEmbedCommand:
         mock_chunk_repo.get_by_document.return_value = []
 
         mock_manager = MagicMock()
-        mock_manager.embed.return_value = MagicMock(embeddings=[[0.1, 0.2]])
+        mock_manager.embed_documents.return_value = MagicMock(embeddings=[[0.1, 0.2]])
         mock_manager.embed_single.return_value = [0.1, 0.2]
 
         mock_db = MagicMock()
@@ -107,6 +218,7 @@ class TestEmbedCommand:
                 "sif.config.settings.get_settings",
                 return_value=MagicMock(
                     model_name="test",
+                    batch_size=32,
                     model_dump=lambda: {"model_name": "test"},
                 ),
             ),
@@ -122,8 +234,8 @@ class TestEmbedCommand:
             )
 
         assert result.exit_code == 0
-        mock_manager.embed.assert_called_once()
-        call_args = mock_manager.embed.call_args[0][0]
+        mock_manager.embed_documents.assert_called_once()
+        call_args = mock_manager.embed_documents.call_args[0][0]
         assert call_args == ["hello world"]
 
     def test_embed_cmd_embedding_failure_exits_nonzero(self, tmp_path: Path):
@@ -140,7 +252,7 @@ class TestEmbedCommand:
         mock_doc_repo.list_by_collection.return_value = [doc]
 
         mock_manager = MagicMock()
-        mock_manager.embed.side_effect = RuntimeError("simulated backend failure")
+        mock_manager.embed_documents.side_effect = RuntimeError("simulated backend failure")
 
         with (
             patch("sif.cli.commands.index.Database", return_value=MagicMock()),
@@ -166,7 +278,7 @@ class TestEmbedCommand:
             ),
             patch(
                 "sif.config.settings.get_settings",
-                return_value=MagicMock(model_name="test"),
+                return_value=MagicMock(model_name="test", batch_size=32),
             ),
         ):
             result = runner.invoke(
@@ -175,9 +287,12 @@ class TestEmbedCommand:
                 obj={"index_path": tmp_path / "sif.db"},
             )
 
+        # D-16: an embed-backend error is document-local; the run reports it and
+        # exits non-zero without a collection-level failure.
         assert result.exit_code != 0
-        assert "Error embedding collection" in result.output
-        assert "Embedding failed for 1 collection(s): notes" in result.output
+        assert "Embedding failed for 1 document(s)" in result.output
+        assert "simulated backend failure" in result.output
+        assert "Error embedding collection" not in result.output
 
     def test_embed_cmd_backend_load_failure_exits_nonzero(self, tmp_path: Path):
         """Backend load errors must reach the dedicated handler and exit non-zero."""
@@ -246,7 +361,9 @@ class TestEmbedCommand:
         mock_chunk_repo.get_by_document.return_value = []
 
         mock_manager = MagicMock()
-        mock_manager.embed.return_value = MagicMock(embeddings=[[0.1], [0.2]])
+        mock_manager.embed_documents.side_effect = lambda texts: MagicMock(
+            embeddings=[[0.1] for _ in texts]
+        )
         mock_manager.embed_single.return_value = [0.1]
 
         mock_vector_searcher = MagicMock()
@@ -281,6 +398,7 @@ class TestEmbedCommand:
                 "sif.config.settings.get_settings",
                 return_value=MagicMock(
                     model_name="test",
+                    batch_size=32,
                     model_dump=lambda: {"model_name": "test"},
                 ),
             ),
@@ -296,9 +414,12 @@ class TestEmbedCommand:
             )
 
         assert result.exit_code == 0
-        mock_vector_searcher.add_embeddings_batch.assert_called_once()
-        batch = mock_vector_searcher.add_embeddings_batch.call_args[0][0]
-        assert len(batch) == 2
+        # D-15: one model call and one vector batch per document, not one
+        # collection-wide batch.
+        assert mock_manager.embed_documents.call_count == 2
+        assert mock_vector_searcher.add_embeddings_batch.call_count == 2
+        batches = [call[0][0] for call in mock_vector_searcher.add_embeddings_batch.call_args_list]
+        assert [len(batch) for batch in batches] == [1, 1]
 
     def test_embed_cmd_respects_model_type_override(self, tmp_path: Path):
         """embed_cmd passes --model-type to settings override."""
@@ -313,7 +434,7 @@ class TestEmbedCommand:
         mock_doc_repo.list_by_collection.return_value = []
 
         mock_manager = MagicMock()
-        mock_manager.embed.return_value = MagicMock(embeddings=[])
+        mock_manager.embed_documents.return_value = MagicMock(embeddings=[])
         mock_manager.embed_single.return_value = [0.1]
 
         captured_updates = {}
@@ -456,7 +577,7 @@ class TestEmbedCommand:
         }
 
         mock_manager = MagicMock()
-        mock_manager.embed.return_value = MagicMock(embeddings=[[0.1, 0.2]])
+        mock_manager.embed_documents.return_value = MagicMock(embeddings=[[0.1, 0.2]])
         mock_manager.get_model_info.return_value = {"loaded": True, "embedding_dim": 8}
 
         return mock_coll_repo, mock_doc_repo, mock_chunk_repo, mock_searcher, mock_manager
@@ -482,13 +603,19 @@ class TestEmbedCommand:
                 "sif.cli.commands.index.create_chunker",
                 return_value=MagicMock(chunk=lambda text: [MagicMock(content=text, id="c1")]),
             ),
+            # The streaming writer owns its chunk repository; point it at the
+            # same mock so the per-document call shape stays observable.
+            patch(
+                "sif.indexing.embed_writer.DocumentChunkRepository",
+                return_value=mock_chunk_repo,
+            ),
             patch(
                 "sif.embedding.manager.EmbeddingManager.from_settings",
                 return_value=mock_manager,
             ),
             patch(
                 "sif.config.settings.get_settings",
-                return_value=MagicMock(model_name="test"),
+                return_value=MagicMock(model_name="test", batch_size=32),
             ),
             patch(
                 "sif.search.vector.VectorSearcher",
@@ -520,7 +647,7 @@ class TestEmbedCommand:
         assert result.exit_code == 0
         mock_chunk_repo.delete_by_document.assert_not_called()
         mock_searcher.delete_embeddings_by_document.assert_not_called()
-        mock_manager.embed.assert_not_called()
+        mock_manager.embed_documents.assert_not_called()
         # O(N^2) guard: the loop must batch-read the completeness map once and
         # never fall back to a per-document completeness lookup.
         mock_searcher.get_all_embedded_chunk_ids.assert_called_once()
@@ -547,7 +674,7 @@ class TestEmbedCommand:
         assert result.exit_code == 0
         mock_chunk_repo.delete_by_document.assert_called_once_with(doc.id)
         mock_searcher.delete_embeddings_by_document.assert_called_once_with(doc.id)
-        mock_manager.embed.assert_called_once()
+        mock_manager.embed_documents.assert_called_once()
         mock_searcher.add_embeddings_batch.assert_called_once()
         # O(N^2) guard: the loop must batch-read the completeness map once and
         # never fall back to a per-document completeness lookup.
@@ -571,8 +698,8 @@ class TestEmbedCommand:
         assert result.exit_code == 0
         mock_chunk_repo.delete_by_document.assert_called_once_with(doc.id)
         mock_searcher.delete_embeddings_by_document.assert_called_once_with(doc.id)
-        mock_manager.embed.assert_called_once()
-        assert mock_manager.embed.call_args[0][0] == ["hello world"]
+        mock_manager.embed_documents.assert_called_once()
+        assert mock_manager.embed_documents.call_args[0][0] == ["hello world"]
         mock_searcher.add_embeddings_batch.assert_called_once()
 
 
@@ -619,3 +746,89 @@ class TestRenderIndexEvent:
         assert "3" in lines[0]
         assert "[yellow]" not in lines[0]
         progress.advance.assert_called_once()
+
+
+class TestStreamingEmbed:
+    """D-15/D-16/D-02: per-document commits, resume, and stale-identity overwrite."""
+
+    @staticmethod
+    def _settings() -> Settings:
+        return Settings(embedding_dim=DIM, model_name="test", cache_embeddings=False)
+
+    @staticmethod
+    def _delenv(monkeypatch) -> None:
+        for var in ("SIF_EMBEDDING_DIM", "SIF_MODEL_TYPE", "SIF_MODEL_NAME"):
+            monkeypatch.delenv(var, raising=False)
+
+    def test_per_document_commit_survives_a_later_failure_and_resumes(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """A mid-run failure leaves prior documents committed; a re-run embeds
+        exactly the remainder (D-15/D-16)."""
+        self._delenv(monkeypatch)
+        db_path = tmp_path / "stream.db"
+        settings = self._settings()
+        _seed_real_index(
+            db_path,
+            settings,
+            [
+                ("/notes/a.md", "# A\n\nfirst document body"),
+                ("/notes/b.md", "# B\n\nsecond document body"),
+            ],
+        )
+        manager = _streaming_manager(_identity("model-a"), fail_on_call=2)
+
+        result = _invoke_real_embed(db_path, manager, settings, [])
+        assert result.exit_code != 0
+        assert "Embedding failed for 1 document(s)" in result.output
+
+        ids = _document_ids(db_path)
+        assert _embedded_chunk_count(db_path, ids["/notes/a.md"]) >= 1
+        assert _embedded_chunk_count(db_path, ids["/notes/b.md"]) == 0
+
+        resume = _streaming_manager(_identity("model-a"))
+        second = _invoke_real_embed(db_path, resume, settings, [])
+        assert second.exit_code == 0
+        assert len(resume.embed_documents.calls) == 1
+        assert _embedded_chunk_count(db_path, ids["/notes/b.md"]) >= 1
+
+        conn = sqlite3.connect(str(db_path))
+        try:
+            stored = read_identity(conn)
+        finally:
+            conn.close()
+        assert stored is not None
+        assert stored.source == "verified"
+        assert stored.model_name == "model-a"
+
+    def test_stale_identity_on_empty_index_is_overwritten_by_first_commit(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """D-02: zero stored vectors accept any embedder, and the first commit
+        overwrites a stale identity row as source=verified."""
+        self._delenv(monkeypatch)
+        db_path = tmp_path / "d02.db"
+        settings = self._settings()
+        _seed_real_index(db_path, settings, [("/notes/a.md", "# A\n\nbody")])
+
+        seed = Database(db_path)
+        try:
+            with seed.connection:
+                write_identity(seed.connection, _identity("model-a"))
+        finally:
+            seed.close()
+
+        manager = _streaming_manager(_identity("model-b"))
+        result = _invoke_real_embed(db_path, manager, settings, [])
+        assert result.exit_code == 0, result.output
+
+        conn = sqlite3.connect(str(db_path))
+        try:
+            stored = read_identity(conn)
+        finally:
+            conn.close()
+        assert stored is not None
+        assert stored.model_name == "model-b"
+        assert stored.source == "verified"
+        ids = _document_ids(db_path)
+        assert _embedded_chunk_count(db_path, ids["/notes/a.md"]) >= 1
