@@ -31,6 +31,7 @@ class SchemaManager:
         """
         self._create_collections_table()
         self._create_documents_table()
+        self._create_metadata_tables()
         self._create_document_chunks_table()
         self._migrate_path_contexts()
         self._create_contexts_table()
@@ -86,6 +87,69 @@ class SchemaManager:
                 updated_at TEXT NOT NULL,
                 metadata TEXT DEFAULT '{}',
                 FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE
+            )
+        """)
+
+    def _create_metadata_tables(self) -> None:
+        """Create the typed frontmatter key-value store (Phase 20, D-05/D-07).
+
+        One row per scalar value; array elements become successive ``ordinal``
+        rows so arrays are sets without JSON1. Typed columns plus the
+        ``value_type`` CHECK give typed exact match, and the partial covering
+        indexes serve the compiler's ``(key, typed column, document_id)``
+        probes. ``document_metadata_skips`` is the D-07 sidecar: a per-key
+        record (nested/null/mixed_array) so discovery can report skipped keys
+        without polluting ``exists``/``type`` with sentinel value rows.
+
+        Both tables cascade from ``documents``; ``create_connection`` enables
+        ``PRAGMA foreign_keys = ON`` (factory.py), so document/collection
+        deletes need no extra kv cleanup. Callers create both in the same
+        transaction as the document row (D-05).
+        """
+        self.db.execute("""
+            CREATE TABLE IF NOT EXISTS document_metadata_values (
+                document_id TEXT NOT NULL,
+                key TEXT NOT NULL,
+                ordinal INTEGER NOT NULL,
+                value_type TEXT NOT NULL,
+                text_value TEXT,
+                number_value REAL,
+                boolean_value INTEGER,
+                PRIMARY KEY (document_id, key, ordinal),
+                FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE,
+                CHECK (value_type IN ('string', 'number', 'boolean')),
+                CHECK (
+                    (value_type = 'string' AND text_value IS NOT NULL
+                        AND number_value IS NULL AND boolean_value IS NULL)
+                    OR (value_type = 'number' AND number_value IS NOT NULL
+                        AND text_value IS NULL AND boolean_value IS NULL)
+                    OR (value_type = 'boolean' AND boolean_value IN (0, 1)
+                        AND text_value IS NULL AND number_value IS NULL)
+                )
+            )
+        """)
+        self.db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_metadata_text_lookup
+            ON document_metadata_values(key, text_value, document_id)
+            WHERE value_type = 'string'
+        """)
+        self.db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_metadata_number_lookup
+            ON document_metadata_values(key, number_value, document_id)
+            WHERE value_type = 'number'
+        """)
+        self.db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_metadata_boolean_lookup
+            ON document_metadata_values(key, boolean_value, document_id)
+            WHERE value_type = 'boolean'
+        """)
+        self.db.execute("""
+            CREATE TABLE IF NOT EXISTS document_metadata_skips (
+                document_id TEXT NOT NULL,
+                key TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                PRIMARY KEY (document_id, key),
+                FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
             )
         """)
 
@@ -546,6 +610,8 @@ class SchemaManager:
             "documents_fts_v",
             "documents_fts",
             "document_chunks",
+            "document_metadata_values",
+            "document_metadata_skips",
             "documents",
             "contexts",
             "llm_cache",

@@ -12,6 +12,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Protocol
 
+from sif.core.filters import FilterNode
+
 
 def _canonicalize_metadata(value: Any) -> Any:
     """Recursively string-coerce mapping keys so canonical JSON is total.
@@ -339,6 +341,11 @@ class SearchOptions:
     # Sentinel contract: None = no collection filter (unfiltered, incl. --all);
     # [] = exclude-all — every collection excluded, searchers return zero results.
     collection_ids: list[str] | None = None
+    # Phase 20 (D-10/D-17): None is the ONLY unfiltered signal for the metadata
+    # filter. A non-None AST is always compiled into the predicate (an empty
+    # match set returns an empty page, never "no filter"). dataclasses.replace
+    # fan-out carries the field unchanged.
+    filter: FilterNode | None = None
     min_score: float = 0.0
     include_content: bool = False
     include_highlights: bool = True

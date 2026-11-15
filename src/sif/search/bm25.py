@@ -6,6 +6,7 @@ import re
 import sqlite3
 
 from sif.core.models import SearchOptions, SearchResult
+from sif.search.filters import compile_filter
 from sif.search.term_match import find_first_match
 
 
@@ -95,6 +96,17 @@ class BM25Searcher:
             params.append(1.0 - 1.0 / options.min_score)
             min_score_filter = "AND m.score >= ?"
 
+        # Metadata filter (Phase 20, D-02/D-17): the compiled predicate is one
+        # more fragment in the OUTER WHERE of the materialized CTE (never
+        # inside it — the CTE exists to evaluate MATCH once). None is the only
+        # unfiltered signal, so the suffix is empty for the byte-identical
+        # default path; a non-None AST always yields a non-empty predicate.
+        # Params land after the min-score parameter and before limit/offset,
+        # matching placeholder order (T-20-01: values are always bound).
+        filter_clause, filter_params = compile_filter(options.filter, alias="d", scope="candidates")
+        params.extend(filter_params)
+        filter_suffix = f" AND {filter_clause}" if filter_clause else ""
+
         # Keep the FTS match evaluated once for scoped searches. The scoped
         # default CLI path always carries a non-empty collection filter; with
         # a bare join (or a plain, flattened CTE) SQLite drives from
@@ -123,7 +135,7 @@ class BM25Searcher:
                 FROM matched m
                 JOIN documents d ON m.rowid = d.rowid
                 JOIN collections c ON d.collection_id = c.id
-                WHERE 1 = 1 {collection_filter} {min_score_filter}
+                WHERE 1 = 1 {collection_filter} {min_score_filter}{filter_suffix}
                 ORDER BY m.score
                 LIMIT ? OFFSET ?
             """
@@ -145,7 +157,7 @@ class BM25Searcher:
                 FROM matched m
                 JOIN documents d ON m.rowid = d.rowid
                 JOIN collections c ON d.collection_id = c.id
-                WHERE 1 = 1 {min_score_filter}
+                WHERE 1 = 1 {min_score_filter}{filter_suffix}
                 ORDER BY m.score
                 LIMIT ? OFFSET ?
             """
@@ -191,6 +203,9 @@ class BM25Searcher:
         """Search document chunks using BM25.
 
         Returns list of (document_id, chunk_content, score) tuples.
+
+        Metadata filters apply to document-level search only; this chunk-level
+        helper stays filter-free and has no production caller.
         """
         if options is None:
             options = SearchOptions()

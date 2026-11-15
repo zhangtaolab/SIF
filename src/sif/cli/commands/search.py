@@ -19,6 +19,7 @@ from rich.table import Table
 from sif.cli.error_handling import open_initialized_database, sqlite_vec_remedy
 from sif.cli.formatters import add_line_numbers_to_results, prepend_line_numbers
 from sif.config.settings import get_settings
+from sif.core.filters import FilterNode, FilterValidationError, parse_filter
 from sif.core.models import Collection, QueryLogEntry, SearchOptions, SearchResult
 from sif.database.database import Database
 from sif.database.repositories import CollectionRepository, QueryLogRepository
@@ -58,6 +59,26 @@ def _default_limit() -> int:
 def _resolve_limit(limit: int | None) -> int:
     """Use the configured default limit when --limit was not supplied."""
     return _default_limit() if limit is None else limit
+
+
+def _parse_filter_option(raw: str | None) -> FilterNode | None:
+    """Parse the ``--filter`` JSON argument into the shared filter AST (D-01).
+
+    Invalid input is a user error, never a traceback (D-17): a JSON syntax
+    error or a grammar/budget violation becomes a ``click.ClickException``
+    naming the operator, field, and dotted AST path. Returning ``None`` is the
+    only unfiltered signal.
+    """
+    if raw is None:
+        return None
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise click.ClickException(f"filter: invalid JSON: {exc.msg}") from exc
+    try:
+        return parse_filter(payload)
+    except FilterValidationError as exc:
+        raise click.ClickException(str(exc)) from exc
 
 
 def _xml_sanitize(text: str) -> str:
@@ -464,6 +485,13 @@ def search_group() -> None:
     default=0,
     help="Result offset for pagination (default: 0)",
 )
+@click.option(
+    "--filter",
+    "filter_json",
+    default=None,
+    metavar="<json>",
+    help="Metadata filter as a JSON AST (qmd-compatible).",
+)
 @click.option("-c", "--collection", multiple=True, help="Collection to search")
 @click.option("--all", "search_all", is_flag=True, help="Search all collections")
 @click.option("--min-score", default=0.0, help="Minimum score threshold")
@@ -483,6 +511,7 @@ def search_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     query: str,
     limit: int | None,
     offset: int,
+    filter_json: str | None,
     collection: tuple[str, ...],
     search_all: bool,
     min_score: float,
@@ -500,6 +529,9 @@ def search_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     """Search documents using BM25."""
     index_path = ctx.obj["index_path"]
     limit = _resolve_limit(limit)
+    # Parse/validate before opening the database so a bad filter never pays a
+    # schema init or drift walk (D-17).
+    filter_node = _parse_filter_option(filter_json)
     quiet = quiet or ctx.obj.get("quiet", False)
     if quiet:
         set_quiet(True)
@@ -517,6 +549,7 @@ def search_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             min_score=min_score,
             include_content=full,
             include_highlights=True,
+            filter=filter_node,
         )
 
         # Collection scope (D-04): resolve once for both the search filter

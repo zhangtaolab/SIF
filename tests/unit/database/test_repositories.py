@@ -44,6 +44,11 @@ def db():
     manager = SchemaManager(conn)
     manager._create_collections_table()
     manager._create_documents_table()
+    # Phase 20 (D-05): the typed kv sync is unconditional in
+    # DocumentRepository.create/.update, so the fixture must mirror production
+    # create_all() order or every document write raises
+    # "no such table: document_metadata_values".
+    manager._create_metadata_tables()
     manager._create_document_chunks_table()
     manager._create_contexts_table()
     manager._create_llm_cache_table()

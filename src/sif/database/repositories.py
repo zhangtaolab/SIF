@@ -14,6 +14,7 @@ from sif.core.models import (
     QueryLogEntry,
     canonical_metadata_json,
 )
+from sif.database.metadata_repository import MetadataValueRepository
 from sif.utils.paths import normalize_path
 
 
@@ -141,7 +142,13 @@ class DocumentRepository:
         self.db = db
 
     def create(self, document: Document) -> Document:
-        """Create a new document."""
+        """Create a new document.
+
+        The typed metadata view (Phase 20, D-05) is rebuilt from the SAME
+        canonical JSON string stored on the row, in the caller's transaction,
+        so the stored, hashed, and filterable views can never disagree.
+        """
+        metadata_json = canonical_metadata_json(document.metadata)
         self.db.execute(
             """
             INSERT INTO documents (
@@ -161,9 +168,12 @@ class DocumentRepository:
                 document.mtime,
                 document.created_at.isoformat(),
                 document.updated_at.isoformat(),
-                canonical_metadata_json(document.metadata),
+                metadata_json,
             ),
         )
+        # The kv target row exists now, so the FK reference resolves. Never
+        # commits: the caller owns the transaction (D-05).
+        MetadataValueRepository(self.db).replace_from_canonical(document.id, metadata_json)
 
         return document
 
@@ -214,8 +224,13 @@ class DocumentRepository:
         return {row[0]: row[1] for row in cursor.fetchall()}
 
     def update(self, document: Document) -> Document:
-        """Update a document."""
+        """Update a document.
+
+        Mirrors :meth:`create`: one canonical metadata string feeds both the
+        row write and the typed kv rebuild (Phase 20, D-05).
+        """
         document.updated_at = datetime.now(timezone.utc)
+        metadata_json = canonical_metadata_json(document.metadata)
         self.db.execute(
             """
             UPDATE documents SET
@@ -230,10 +245,11 @@ class DocumentRepository:
                 document.file_size,
                 document.mtime,
                 document.updated_at.isoformat(),
-                canonical_metadata_json(document.metadata),
+                metadata_json,
                 document.id,
             ),
         )
+        MetadataValueRepository(self.db).replace_from_canonical(document.id, metadata_json)
 
         return document
 
