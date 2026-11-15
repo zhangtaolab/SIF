@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 from datetime import datetime, timezone
 
 from sif.core.models import (
@@ -16,6 +17,46 @@ from sif.core.models import (
 )
 from sif.database.metadata_repository import MetadataValueRepository
 from sif.utils.paths import normalize_path
+
+
+class _ContextWriteGeneration:
+    """Mutable process-level context-write counter (D-12 invalidation trigger).
+
+    A container instead of a module global (ruff PLW0603) mirroring the
+    ``_IdentityState`` precedent in ``sif.embedding.identity``. Every
+    ``ContextRepository`` write bumps the value, which the per-process
+    context-map cache in ``sif.search.context_attach`` compares against its
+    stored sample. The lock keeps concurrent bumps from losing an increment.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._value = 0
+
+    def bump(self) -> None:
+        """Increment the generation."""
+        with self._lock:
+            self._value += 1
+
+    def value(self) -> int:
+        """Return the current generation (0 until the first context write)."""
+        return self._value
+
+
+_context_write_generation = _ContextWriteGeneration()
+
+
+def bump_context_write_generation() -> None:
+    """Mark the process's cached context map stale after a context write.
+
+    Rolled-back writes may cause an unnecessary rebuild, which is safe.
+    """
+    _context_write_generation.bump()
+
+
+def context_write_generation() -> int:
+    """Return the process-wide context-write generation."""
+    return _context_write_generation.value()
 
 
 class CollectionRepository:
@@ -413,6 +454,7 @@ class ContextRepository:
             """,
             (context.id, context.path, context.context_type, context.context, now, now),
         )
+        bump_context_write_generation()
         return context
 
     def get_by_target(self, target_id: str, context_type: str = "path") -> PathContext | None:
@@ -460,6 +502,7 @@ class ContextRepository:
             """,
             (context.context, datetime.now(timezone.utc).isoformat(), context.id),
         )
+        bump_context_write_generation()
         return context
 
     def update_target(self, context_id: str, target_id: str) -> bool:
@@ -485,11 +528,13 @@ class ContextRepository:
             """,
             (target_id, datetime.now(timezone.utc).isoformat(), context_id),
         )
+        bump_context_write_generation()
         return cursor.rowcount > 0
 
     def delete(self, context_id: str) -> bool:
         """Delete a context."""
         cursor = self.db.execute("DELETE FROM contexts WHERE id = ?", (context_id,))
+        bump_context_write_generation()
         return cursor.rowcount > 0
 
     def delete_orphaned_paths(self) -> int:

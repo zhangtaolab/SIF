@@ -10,14 +10,17 @@ mocked cursors returned rows regardless of the WHERE clause. Every test here
 executes the real contexts query against real SQLite.
 """
 
+import logging
 import sqlite3
 from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 
-from sif.core.models import SearchResult
+from sif.core.models import PathContext, SearchResult
+from sif.database.repositories import ContextRepository
 from sif.database.schema import SchemaManager
+from sif.search import context_attach
 from sif.search.context_attach import attach_path_contexts, enrich_results
 from sif.utils.paths import normalize_path
 
@@ -229,3 +232,207 @@ class TestAttachPathContextsRealSQL:
         mock_db = MagicMock()
         assert attach_path_contexts(mock_db, []) == []
         mock_db.execute.assert_not_called()
+
+
+@pytest.fixture
+def file_db(tmp_path):
+    """Real on-disk SQLite with the production contexts table DDL."""
+    path = tmp_path / "index.db"
+    conn = sqlite3.connect(str(path))
+    conn.row_factory = sqlite3.Row
+    SchemaManager(conn)._create_contexts_table()
+    conn.commit()
+    yield path, conn
+    conn.close()
+
+
+def _context_statements(statements: list[str]) -> list[str]:
+    """Return the traced statements that hit the contexts table."""
+    return [statement for statement in statements if "FROM contexts" in statement]
+
+
+def _cache_key(conn: sqlite3.Connection) -> str:
+    """Return the resolved main path the cache keys on (asserting it exists)."""
+    key = context_attach._resolved_main_path(conn)
+    assert key is not None
+    return key
+
+
+def _attach_description(conn: sqlite3.Connection, path: str = "/vault/doc.md") -> str | None:
+    """Attach one result and return its context description."""
+    return attach_path_contexts(conn, [_result(path)])[0].context_description
+
+
+class TestContextMapCache:
+    """D-12: per-process map cache with conservative invalidation triggers."""
+
+    def test_two_attaches_issue_exactly_one_contexts_statement(self, file_db):
+        """Two attaches on the same file DB run one contexts SELECT and agree."""
+        _, conn = file_db
+        _insert_path_context(conn, "ctx-1", "/vault/doc.md", "Project notes")
+
+        statements: list[str] = []
+        conn.set_trace_callback(statements.append)
+        try:
+            first = attach_path_contexts(conn, [_result("/vault/doc.md")])
+            second = attach_path_contexts(conn, [_result("/vault/doc.md")])
+        finally:
+            conn.set_trace_callback(None)
+
+        assert first[0].context_description == "Project notes"
+        assert second[0].context_description == "Project notes"
+        selects = _context_statements(statements)
+        assert len(selects) == 1
+        assert selects[0] == context_attach._CONTEXTS_SQL
+
+    def test_repository_create_invalidates_and_rebuilds_once(self, file_db):
+        """A ContextRepository.create bumps the generation; the next attach rebuilds."""
+        _, conn = file_db
+        statements: list[str] = []
+        conn.set_trace_callback(statements.append)
+        try:
+            assert _attach_description(conn) is None
+            assert len(_context_statements(statements)) == 1
+
+            ContextRepository(conn).create(PathContext(path="/vault/doc.md", context="New notes"))
+            conn.commit()
+
+            rebuilt = attach_path_contexts(conn, [_result("/vault/doc.md")])
+            assert rebuilt[0].context_description == "New notes"
+            assert len(_context_statements(statements)) == 2
+
+            attach_path_contexts(conn, [_result("/vault/doc.md")])
+            assert len(_context_statements(statements)) == 2
+        finally:
+            conn.set_trace_callback(None)
+
+    def test_repository_generation_alone_invalidates(self, file_db, monkeypatch):
+        """The generation trigger alone rebuilds even when data_version is constant."""
+        _, conn = file_db
+        monkeypatch.setattr(context_attach, "_sample_data_version", lambda _sentinel: 7)
+        statements: list[str] = []
+        conn.set_trace_callback(statements.append)
+        try:
+            attach_path_contexts(conn, [_result("/vault/doc.md")])
+            assert len(_context_statements(statements)) == 1
+
+            ContextRepository(conn).create(PathContext(path="/vault/doc.md", context="Bumped"))
+            conn.commit()
+
+            rebuilt = attach_path_contexts(conn, [_result("/vault/doc.md")])
+            assert rebuilt[0].context_description == "Bumped"
+            assert len(_context_statements(statements)) == 2
+        finally:
+            conn.set_trace_callback(None)
+
+    def test_separate_connection_commit_invalidates(self, file_db):
+        """A commit from another connection invalidates via sentinel data_version."""
+        path, conn = file_db
+        statements: list[str] = []
+        conn.set_trace_callback(statements.append)
+        try:
+            assert _attach_description(conn) is None
+            assert len(_context_statements(statements)) == 1
+
+            other = sqlite3.connect(str(path))
+            try:
+                _insert_path_context(other, "ctx-1", "/vault/doc.md", "Other connection")
+            finally:
+                other.close()
+
+            rebuilt = attach_path_contexts(conn, [_result("/vault/doc.md")])
+            assert rebuilt[0].context_description == "Other connection"
+            assert len(_context_statements(statements)) == 2
+        finally:
+            conn.set_trace_callback(None)
+
+    def test_same_connection_unrelated_commit_invalidates(self, file_db):
+        """Any commit, not only a contexts write, conservatively invalidates."""
+        _, conn = file_db
+        statements: list[str] = []
+        conn.set_trace_callback(statements.append)
+        try:
+            attach_path_contexts(conn, [_result("/vault/doc.md")])
+            assert len(_context_statements(statements)) == 1
+
+            conn.execute("CREATE TABLE unrelated (value TEXT)")
+            conn.commit()
+
+            attach_path_contexts(conn, [_result("/vault/doc.md")])
+            assert len(_context_statements(statements)) == 2
+        finally:
+            conn.set_trace_callback(None)
+
+    def test_memory_database_requeries_on_every_attach(self, db):
+        """A :memory: database bypasses the cache (no cross-connection view)."""
+        _insert_path_context(db, "ctx-1", "/vault/doc.md", "Project notes")
+        statements: list[str] = []
+        db.set_trace_callback(statements.append)
+        try:
+            first = attach_path_contexts(db, [_result("/vault/doc.md")])
+            second = attach_path_contexts(db, [_result("/vault/doc.md")])
+        finally:
+            db.set_trace_callback(None)
+
+        assert first[0].context_description == "Project notes"
+        assert second[0].context_description == "Project notes"
+        assert len(_context_statements(statements)) == 2
+
+    def test_file_db_cached_map_preserves_verbatim_alias_match(self, file_db, alias_pair):
+        """The legacy alias fixture still attaches through the cached map."""
+        _, conn = file_db
+        resolved, alias = alias_pair
+        _insert_path_context(conn, "ctx-1", alias, "Project notes")
+
+        first = attach_path_contexts(conn, [_result(resolved)])
+        second = attach_path_contexts(conn, [_result(resolved)])
+
+        assert first[0].context_description == "Project notes"
+        assert second[0].context_description == "Project notes"
+
+    def test_file_db_newest_updated_at_wins(self, file_db, alias_pair):
+        """Newest updated_at still wins when two rows normalize to the same key."""
+        _, conn = file_db
+        resolved, alias = alias_pair
+        _insert_path_context(
+            conn, "ctx-new", resolved, "New notes", updated_at="2026-06-01T00:00:00"
+        )
+        _insert_path_context(conn, "ctx-old", alias, "Old notes", updated_at="2026-01-01T00:00:00")
+
+        results = attach_path_contexts(conn, [_result(resolved)])
+
+        assert results[0].context_description == "New notes"
+
+    def test_sentinel_open_failure_bypasses_with_fresh_scan(self, file_db, monkeypatch, caplog):
+        """A sentinel that cannot open degrades to the verbatim scan, no caching."""
+        _, conn = file_db
+        _insert_path_context(conn, "ctx-1", "/vault/doc.md", "Project notes")
+        monkeypatch.setattr(context_attach, "_open_sentinel", lambda _path: None)
+
+        statements: list[str] = []
+        conn.set_trace_callback(statements.append)
+        with caplog.at_level(logging.DEBUG):
+            try:
+                first = attach_path_contexts(conn, [_result("/vault/doc.md")])
+                second = attach_path_contexts(conn, [_result("/vault/doc.md")])
+            finally:
+                conn.set_trace_callback(None)
+
+        assert first[0].context_description == "Project notes"
+        assert second[0].context_description == "Project notes"
+        assert len(_context_statements(statements)) == 2
+        assert len(caplog.records) <= 1
+        assert _cache_key(conn) not in context_attach._context_cache
+
+    def test_open_sentinel_returns_none_for_missing_directory(self, tmp_path, caplog):
+        """A real sqlite3 open failure returns None and logs one debug record."""
+        with caplog.at_level(logging.DEBUG):
+            sentinel = context_attach._open_sentinel(str(tmp_path / "missing" / "index.db"))
+
+        assert sentinel is None
+        assert len(caplog.records) == 1
+        assert caplog.records[0].levelno == logging.DEBUG
+
+    def test_file_inode_missing_path_returns_none(self, tmp_path):
+        """An unstattable database file degrades to None (cache bypass)."""
+        assert context_attach._file_inode(str(tmp_path / "absent.db")) is None
