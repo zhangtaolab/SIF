@@ -230,11 +230,11 @@ def _build_plan_db(count: int = 400) -> sqlite3.Connection:
 
 
 def _probe(inner: str, *, negative: bool = False) -> str:
-    """Expected candidates-scope EXISTS wrapper."""
+    """Expected candidates-scope EXISTS wrapper (``LIMIT 1`` per CR-02)."""
     prefix = "NOT EXISTS" if negative else "EXISTS"
     return (
         f"{prefix} (SELECT 1 FROM document_metadata_values mv "
-        f"WHERE mv.document_id = d.id AND {inner})"
+        f"WHERE mv.document_id = d.id AND {inner} LIMIT 1)"
     )
 
 
@@ -954,6 +954,49 @@ class TestFilterExecutionSemantics:
             f"SELECT d.id FROM documents d WHERE 1 = 1 AND {sql}", params
         ).fetchall()
         return {row[0] for row in rows}
+
+    def _ordered_ids(self, conn: sqlite3.Connection, payload: dict[str, Any]) -> list[str]:
+        """Run one compiled filter and return the ids as an ORDERED list (CR-02).
+
+        A set hides duplicate outer rows; the correlated EXISTS on SQLite
+        3.51.0 emitted one row per matching kv row, so this is the shape that
+        catches the pagination/RRF corruption.
+        """
+        sql, params = compile_filter(parse_filter(payload))
+        rows = conn.execute(
+            f"SELECT d.id FROM documents d WHERE 1 = 1 AND {sql} ORDER BY d.id", params
+        ).fetchall()
+        return [row[0] for row in rows]
+
+    def test_in_multi_valued_key_emits_each_document_once(self) -> None:
+        """CR-02: ``in`` over a multi-valued key never duplicates a document.
+
+        The old candidates probe returned ``d1`` twice for ``topic: [a, b]`` on
+        SQLite 3.51.0, consuming an extra LIMIT/OFFSET slot and double-counting
+        the RRF leg. The existing battery compared sets and could not see it.
+        """
+        conn = _build_search_db()
+        try:
+            _insert_typed(conn, "d1", "scores", 0, "number", number_value=1.0)
+            _insert_typed(conn, "d1", "scores", 1, "number", number_value=2.0)
+            _insert_typed(conn, "d2", "scores", 0, "number", number_value=2.0)
+
+            topics = {"field": "topic", "operator": "in", "value": ["a", "b"]}
+            scores = {"field": "scores", "operator": "in", "value": [1, 2]}
+
+            assert self._ordered_ids(conn, topics) == ["d1", "d2"]
+            assert self._ordered_ids(conn, scores) == ["d1", "d2"]
+        finally:
+            conn.close()
+
+    def test_candidates_probe_is_bounded_to_one_row(self) -> None:
+        """CR-02: the EXISTS probe is LIMIT-1 bounded; corpus ``IN`` is not."""
+        payload = {"field": "topic", "operator": "in", "value": ["a", "b"]}
+        candidates, _ = compile_filter(parse_filter(payload))
+        corpus, _ = compile_filter(parse_filter(payload), scope="corpus")
+
+        assert candidates.endswith("LIMIT 1)")
+        assert " LIMIT 1" not in corpus
 
     def test_typed_equality_and_negation(self) -> None:
         """eq/ne/nin follow typed exact match and presence semantics."""

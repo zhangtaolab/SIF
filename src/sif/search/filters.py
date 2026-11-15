@@ -184,12 +184,23 @@ def _byte_length(text: str) -> int:
 
 
 def _wrap(inner: str, alias: str, scope: str, *, negative: bool = False) -> str:
-    """Wrap a kv-row predicate in the scope's probe against ``alias``."""
+    """Wrap a kv-row predicate in the scope's probe against ``alias``.
+
+    The candidates-scope probe carries ``LIMIT 1``: an ``EXISTS`` only needs
+    one row, and on SQLite 3.51.0 (the conda build this project's tests run
+    on) the optimizer's semijoin handling can otherwise emit one outer row per
+    matching kv row — duplicate documents that corrupt pagination and
+    double-count RRF scores (20 REVIEW CR-02). The corpus-scope ``IN`` form
+    deduplicates by definition and MUST NOT be limited.
+    """
     if scope == "corpus":
         operator = "NOT IN" if negative else "IN"
         return f"{alias}.id {operator} (SELECT mv.document_id FROM {_KV_TABLE} mv WHERE {inner})"
     prefix = "NOT EXISTS" if negative else "EXISTS"
-    return f"{prefix} (SELECT 1 FROM {_KV_TABLE} mv WHERE mv.document_id = {alias}.id AND {inner})"
+    return (
+        f"{prefix} (SELECT 1 FROM {_KV_TABLE} mv "
+        f"WHERE mv.document_id = {alias}.id AND {inner} LIMIT 1)"
+    )
 
 
 # ---------------------------------------------------------------------------
