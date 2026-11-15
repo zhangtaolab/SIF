@@ -47,8 +47,8 @@ Each maps to exactly one roadmap phase. Checkboxes mark committed scope.
 
 ### Scale & Maintenance (SCALE)
 
-- [ ] **SCALE-01**: User can reclaim space safely via `sif index vacuum` (flock + quiesce + no open txn + checkpoint + 2× disk check; retryable busy errors; target paths restricted).
-- [ ] **SCALE-02**: User can back up the index safely (SQLite online backup API + integrity_check).
+- [x] **SCALE-01**: User can reclaim space safely via `sif index vacuum` (flock + quiesce + no open txn + checkpoint + 2× disk check; retryable busy errors; target paths restricted).
+- [x] **SCALE-02**: User can back up the index safely (SQLite online backup API + integrity_check).
 - [x] **SCALE-03**: User can embed large corpora without giant transactions (streaming embed batches; embed outside txn; short per-batch commits; resumable; CR-02 failure reporting preserved; batch-boundary sanity against garbage vectors).
 
 ### Embedder Identity (EMB)
@@ -149,8 +149,8 @@ Populated during roadmap creation. Each requirement maps to exactly one phase.
 | FILT-03 | Phase 20 | Complete |
 | FILT-04 | Phase 20 | Complete |
 | FILT-05 | Phase 20 | Complete |
-| SCALE-01 | Phase 21 | Pending |
-| SCALE-02 | Phase 21 | Pending |
+| SCALE-01 | Phase 21 | Complete |
+| SCALE-02 | Phase 21 | Complete |
 | SCALE-03 | Phase 21 | Complete |
 | EMB-01 | Phase 21 | Complete |
 | EMB-02 | Phase 21 | Complete |
