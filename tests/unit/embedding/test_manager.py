@@ -194,3 +194,264 @@ class TestEmbeddingManager:
 
         with pytest.raises(AttributeError):
             manager.model = mock_embedder
+
+
+# =============================================================================
+# Role-aware embedding + prompt/revision cache buckets (EMB-02, D-06/D-08)
+# =============================================================================
+
+
+class _RecordingEmbedder:
+    """Fake embedder with class-level role methods recording every call."""
+
+    def __init__(self, dimension: int = 2, revision: str | None = None) -> None:
+        self.dimension = dimension
+        self.revision = revision
+        self.batch_calls: list[list[str]] = []
+        self.query_calls: list[list[str]] = []
+        self.document_calls: list[list[str]] = []
+
+    def embed(self, text: str) -> list[float]:
+        return self.embed_batch([text])[0]
+
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        self.batch_calls.append(list(texts))
+        return [[0.1] * self.dimension for _ in texts]
+
+    def embed_query(self, text: str) -> list[float]:
+        return self.embed_queries([text])[0]
+
+    def embed_queries(self, texts: list[str]) -> list[list[float]]:
+        self.query_calls.append(list(texts))
+        return [[0.2] * self.dimension for _ in texts]
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        self.document_calls.append(list(texts))
+        return [[0.3] * self.dimension for _ in texts]
+
+
+def _make_manager(
+    tmp_path: Path,
+    embedder: object,
+    cache: EmbeddingCache | None = None,
+    **config_kwargs: object,
+) -> EmbeddingManager:
+    factory = MagicMock()
+    factory.create_model.return_value = embedder
+    config = EmbeddingConfig(
+        model_type=ModelType.SENTENCE_TRANSFORMERS,
+        model_name="models/test",
+        embedding_dim=getattr(embedder, "dimension", 2),
+        cache_embeddings=cache is not None,
+        cache_dir=str(tmp_path) if cache is not None else None,
+        **config_kwargs,
+    )
+    return EmbeddingManager(config=config, factory=factory, cache=cache)
+
+
+class TestCacheBuckets:
+    def test_default_bucket_is_the_legacy_cache_model_id(self, tmp_path: Path) -> None:
+        manager = _make_manager(tmp_path, _RecordingEmbedder())
+        expected = "sentence_transformers:models/test"
+        assert manager._cache_bucket("query") == expected
+        assert manager._cache_bucket("document") == expected
+        assert manager._cache_model_id() == expected
+
+    def test_prompts_produce_distinct_role_buckets(self, tmp_path: Path) -> None:
+        manager = _make_manager(
+            tmp_path,
+            _RecordingEmbedder(),
+            query_prompt_name="web_search_query",
+            document_prompt_name="doc-passage",
+        )
+        base = "sentence_transformers:models/test"
+        assert manager._cache_bucket("query") == f"{base}|q@web_search_query"
+        assert manager._cache_bucket("document") == f"{base}|d@doc-passage"
+
+    def test_revision_suffix_precedes_role_suffix(self, tmp_path: Path) -> None:
+        manager = _make_manager(
+            tmp_path,
+            _RecordingEmbedder(revision="sha256:abc"),
+            query_prompt_name="q",
+        )
+        base = "sentence_transformers:models/test"
+        assert manager._cache_bucket("document") == f"{base}|rev@sha256:abc"
+        assert manager._cache_bucket("query") == f"{base}|rev@sha256:abc|q@q"
+
+    def test_unknown_role_raises(self, tmp_path: Path) -> None:
+        manager = _make_manager(tmp_path, _RecordingEmbedder())
+        with pytest.raises(ValueError, match="Unknown embedding role"):
+            manager._cache_bucket("bogus")
+
+
+class TestRoleMethods:
+    def test_default_roles_call_embed_batch_like_embed(self, tmp_path: Path) -> None:
+        embedder = _RecordingEmbedder()
+        manager = _make_manager(tmp_path, embedder)
+
+        manager.embed(["same"])
+        manager.embed_queries(["same"])
+        manager.embed_documents(["same"])
+
+        assert embedder.batch_calls == [["same"], ["same"], ["same"]]
+        assert embedder.query_calls == []
+        assert embedder.document_calls == []
+
+    def test_prompted_roles_use_concrete_role_methods(self, tmp_path: Path) -> None:
+        embedder = _RecordingEmbedder()
+        manager = _make_manager(
+            tmp_path,
+            embedder,
+            query_prompt_name="query-prompt",
+            document_prompt_name="document-prompt",
+        )
+
+        assert manager.embed_query("same text") == [0.2, 0.2]
+        assert manager.embed_documents(["same text"]).embeddings == [[0.3, 0.3]]
+        assert embedder.query_calls == [["same text"]]
+        assert embedder.document_calls == [["same text"]]
+        assert embedder.batch_calls == []
+
+    def test_prompted_roles_never_share_cache_rows(self, tmp_path: Path) -> None:
+        cache = EmbeddingCache(tmp_path)
+        manager = _make_manager(
+            tmp_path,
+            _RecordingEmbedder(),
+            cache=cache,
+            query_prompt_name="q",
+            document_prompt_name="d",
+        )
+
+        query_vector = manager.embed_query("same text")
+        document_vector = manager.embed_documents(["same text"]).embeddings[0]
+
+        assert query_vector != document_vector
+        query_bucket = manager._cache_bucket("query")
+        document_bucket = manager._cache_bucket("document")
+        assert cache.get("same text", model_id=query_bucket) == query_vector
+        assert cache.get("same text", model_id=document_bucket) == document_vector
+
+    def test_role_response_matches_embed_shape(self, tmp_path: Path) -> None:
+        manager = _make_manager(tmp_path, _RecordingEmbedder())
+        response = manager.embed_queries(["alpha", "beta"])
+        assert response.model_id == "models/test"
+        assert response.dimensions == 2
+        assert len(response.embeddings) == 2
+        assert response.total_tokens == sum(len(t) // 4 for t in ["alpha", "beta"])
+
+    def test_role_methods_keep_the_count_guard(self, tmp_path: Path) -> None:
+        class _ShortEmbedder(_RecordingEmbedder):
+            def embed_batch(self, _texts: list[str]) -> list[list[float]]:
+                return [[0.1] * self.dimension]
+
+        manager = _make_manager(tmp_path, _ShortEmbedder())
+        with pytest.raises(RuntimeError, match="1 embeddings for 2 inputs"):
+            manager.embed_queries(["alpha", "beta"])
+
+    def test_get_identity_records_effective_prompts(self, tmp_path: Path) -> None:
+        manager = _make_manager(
+            tmp_path,
+            _RecordingEmbedder(revision="sha256:abc"),
+            query_prompt_name="q",
+        )
+        identity = manager.get_identity()
+        assert identity.query_prompt == "q"
+        assert identity.document_prompt is None
+        assert identity.revision == "sha256:abc"
+
+    def test_get_identity_is_cached_until_unload(self, tmp_path: Path) -> None:
+        manager = _make_manager(tmp_path, _RecordingEmbedder())
+        first = manager.get_identity()
+        assert manager.get_identity() is first
+        manager.unload_model()
+        assert manager._identity is None
+        second = manager.get_identity()
+        assert second is not first
+        assert second == first
+
+
+class TestCacheSafety:
+    def test_non_finite_and_wrong_length_entries_are_recomputed(self, tmp_path: Path) -> None:
+        cache = EmbeddingCache(tmp_path)
+        embedder = _RecordingEmbedder()
+        manager = _make_manager(tmp_path, embedder, cache=cache)
+        bucket = manager._cache_bucket("document")
+        cache.set("nan text", [float("nan"), 0.1], model_id=bucket)
+        cache.set("short text", [0.1], model_id=bucket)
+
+        response = manager.embed_documents(["nan text", "short text"])
+
+        assert embedder.batch_calls == [["nan text", "short text"]]
+        assert response.embeddings == [[0.1, 0.1], [0.1, 0.1]]
+        assert cache.get("nan text", model_id=bucket) == [0.1, 0.1]
+        assert cache.get("short text", model_id=bucket) == [0.1, 0.1]
+
+    def test_non_finite_model_output_raises_naming_bucket_and_position(
+        self, tmp_path: Path
+    ) -> None:
+        class _NonFiniteEmbedder(_RecordingEmbedder):
+            def embed_batch(self, _texts: list[str]) -> list[list[float]]:
+                return [[0.1, 0.1], [float("inf"), 0.1]]
+
+        manager = _make_manager(tmp_path, _NonFiniteEmbedder())
+        with pytest.raises(RuntimeError, match="non-finite vector at position 1") as excinfo:
+            manager.embed_documents(["alpha", "beta"])
+        assert "sentence_transformers:models/test" in str(excinfo.value)
+
+    def test_wrong_dimension_model_output_raises(self, tmp_path: Path) -> None:
+        class _WrongDimEmbedder(_RecordingEmbedder):
+            def embed_batch(self, _texts: list[str]) -> list[list[float]]:
+                return [[0.1, 0.1, 0.1] for _ in _texts]
+
+        manager = _make_manager(tmp_path, _WrongDimEmbedder())
+        with pytest.raises(RuntimeError, match="3-dim vector at position 0; expected 2 dims"):
+            manager.embed_documents(["alpha"])
+
+    def test_from_settings_forwards_prompt_names(self) -> None:
+        settings = Settings(
+            model_type="sentence_transformers",
+            model_name="models/test",
+            embedding_dim=2,
+            cache_embeddings=False,
+            query_prompt_name="q",
+            document_prompt_name="d",
+        )
+        manager = EmbeddingManager.from_settings(settings)
+        assert manager._config.query_prompt_name == "q"
+        assert manager._config.document_prompt_name == "d"
+        assert manager._prompt_scheme.query_prompt == "q"
+        assert manager._prompt_scheme.document_prompt == "d"
+
+
+class TestRoleHelpers:
+    def test_concept_embedder_falls_back_to_embed(self) -> None:
+        from sif.embedding import roles
+        from tests.support.bench import ConceptEmbedder
+
+        embedder = ConceptEmbedder()
+        assert roles.embed_query(embedder, "hello") == embedder.embed("hello")
+        assert roles.embed_queries(embedder, ["hello"]) == [embedder.embed("hello")]
+
+    def test_magicmock_falls_back_to_embed_without_phantom_role_call(self) -> None:
+        from sif.embedding import roles
+
+        embedder = MagicMock()
+        embedder.embed.return_value = [0.5]
+        embedder.embed_batch.return_value = [[0.5]]
+
+        assert roles.embed_query(embedder, "x") == [0.5]
+        embedder.embed.assert_called_once_with("x")
+        embedder.embed_query.assert_not_called()
+
+        assert roles.embed_documents(embedder, ["x"]) == [[0.5]]
+        embedder.embed_batch.assert_called_once_with(["x"])
+        embedder.embed_documents.assert_not_called()
+
+    def test_concrete_role_methods_are_preferred(self) -> None:
+        from sif.embedding import roles
+
+        embedder = _RecordingEmbedder()
+        assert roles.embed_queries(embedder, ["x"]) == [[0.2, 0.2]]
+        assert roles.embed_documents(embedder, ["x"]) == [[0.3, 0.3]]
+        assert embedder.query_calls == [["x"]]
+        assert embedder.document_calls == [["x"]]
