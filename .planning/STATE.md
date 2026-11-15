@@ -5,16 +5,16 @@ milestone_name: Search Precision and Agent Experience
 current_phase: 19
 current_phase_name: Search Correctness
 status: executing
-stopped_at: Completed 19-03-PLAN.md
-last_updated: "2026-11-15T03:21:37.719Z"
+stopped_at: Completed 19-04-PLAN.md
+last_updated: "2026-11-15T03:31:39.972Z"
 last_activity: 2026-11-15
 last_activity_desc: Phase 19 execution started
-state_head: 9ea1d4c280035582c670cfe3afd4253fd1e8d8f9
+state_head: 2dedc37bbc114dc626cc251a66965cf26b12e6be
 progress:
   total_phases: 8
   completed_phases: 2
   total_plans: 22
-  completed_plans: 16
+  completed_plans: 17
 ---
 
 # DocSift — Project State
@@ -31,7 +31,7 @@ progress:
 ## Current Position
 
 Phase: 19 (Search Correctness) — EXECUTING
-Plan: 4 of 9
+Plan: 5 of 9
 Status: Ready to execute
 Last activity: 2026-11-15 — Phase 19 execution started
 
@@ -65,6 +65,7 @@ Progress: [███░░░░░░░] 25%
 | Phase 19 P01 | 9min | 3 tasks | 9 files |
 | Phase 19 P02 | 8min | 3 tasks | 11 files |
 | Phase 19 P03 | 6min | 3 tasks | 10 files |
+| Phase 19 P04 | 6 min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -132,6 +133,9 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - [Phase 19]: 19-03: searchers are pure producers; every SearchPipeline.search exit (BM25/VECTOR/HYDE/hybrid) calls enrich_results exactly once, with the hybrid exit enriching after fusion, rerank, and snippets.
 - [Phase 19]: 19-03: direct CLI search/vsearch and the MCP BM25 fallback remain unenriched until 19-04 lands their single enrich_results call (planned sequencing, not a regression).
 - [Phase 19]: 19-03: marker parity is pinned on a real-DB hybrid fixture (verbatim context row attaches on read; a purged embedding marks only the BM25-only document).
+- [Phase 19]: 19-04: B0 is recorded on a clean scratch index over the committed 150-document fixture corpus (100 queries, top_k 10, fingerprint 8c006123784348d1, mean self-compare delta 0.0); pre-CORR-01 saved runs are refused because corpus_fingerprint hashes stored checksums.
+- [Phase 19]: 19-04: direct CLI search/vsearch enrich exactly once right after their searcher returns; the MCP boundary enriches only the BM25 fallback before the re-map (pipeline path untouched), and context_description stays CLI-visible only.
+- [Phase 19]: 19-04: CORR-05 is closed at every public entry point; bench/b0.json is the committed pre-ranking-change baseline for CORR-02/03/04 comparisons.
 
 ### Pending Todos
 
@@ -161,8 +165,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-15T03:21:37.469Z
-Stopped at: Completed 19-03-PLAN.md
+Last session: 2026-11-15T03:31:39.735Z
+Stopped at: Completed 19-04-PLAN.md
 Resume file: None
 
 - **Next expected action:** run Phase 17 verification (`/gsd-verify-work 17`) to confirm the four ENG success criteria against the shipped state, then mark Phase 17 complete and proceed to Phase 18. Release evidence lives in `17-07-SUMMARY.md`: tag `v1.1.2` on `c819f67`, Publish run `43562577065` attempt 4 (all three jobs success), PyPI JSON `1.1.2` with the `mcp-name` marker, `pypi-attestations` `OK` against `https://github.com/zhangtaolab/SIF`, and both fresh-venv install proofs. Execution order for the rest of v1.2: 17 → 18 → 19 → 20 → 21 → 22 → 23 → 24; hard dependencies and cross-phase contracts in ROADMAP.md.
