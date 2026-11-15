@@ -125,7 +125,34 @@ Full detail: `.planning/milestones/v1.1-ROADMAP.md`
   3. User can paginate results deterministically — CLI `--offset` and MCP offset return the correct next page (hybrid owns ONE offset slice, searchers return from rank 0, BM25 min_score order fixed); offset=0 reproduces the recorded contract
   4. User gets title-aware ranking — title-FTS detect-and-rebuild migration + rewritten triggers + bench-measured bm25() column weights + mtime index; the `documents_fts_v` vocab shadow survives the rebuild on a populated DB
   5. User gets results without redundant attach work — the double-attach is eliminated: exactly ONE context/staleness attach at pipeline exit
-**Plans**: TBD
+**Plans:** 9 plans
+
+**Wave 1**
+- [ ] 19-01-PLAN.md — Parser dispatch + metadata-aware checksum + canonical metadata storage
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 19-02-PLAN.md — Metadata fast path + per-collection convention migration + watcher embed candidates
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 19-03-PLAN.md — Search-core single attach (searcher de-attach, one pipeline enrichment)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 19-04-PLAN.md — Entry-point attach (CLI/MCP) + record B0 baseline
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [ ] 19-05-PLAN.md — Deterministic pagination: `--offset`/MCP offset, min_score ordering, single slice
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [ ] 19-06-PLAN.md — Vector per-document dedup + chunk identity + per-chunk fusion
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [ ] 19-07-PLAN.md — CLI/MCP `--per-chunk` surfaces + record B1
+
+**Wave 8** *(blocked on Wave 7 completion)*
+- [ ] 19-08-PLAN.md — Title-FTS detect-and-rebuild + weighted `bm25()` + title-effect goldens
+
+**Wave 9** *(blocked on Wave 8 completion)*
+- [ ] 19-09-PLAN.md — `mtime` index + MCP schema init + per-leg gates + D-12 title-weight verdict
 
 ### Phase 20: Metadata Filtering + Discovery
 **Goal**: Users and agents can scope searches precisely with metadata filters applied before fusion — qmd-unreleased AST parity plus built-in path/mtime fields, and a discovery tool so agents never guess keys.
@@ -206,7 +233,7 @@ v1.2 contracts — defined ONCE; downstream phases consume, never redefine:
 | 16.1. Address tech debt (CLI errors + cache TTL + enqueue API) | v1.1 | 5/5 | Complete    | 2026-11-12 |
 | 17. Engineering Foundation (CI + Hygiene + PyPI) | v1.2 | 9/9 | Complete    | 2026-11-14 |
 | 18. Quality Instrument (Personal Bench + rapidfuzz) | v1.2 | 4/4 | Complete    | 2026-11-15 |
-| 19. Search Correctness | v1.2 | 0/TBD | Not started | - |
+| 19. Search Correctness | v1.2 | 0/9 | Not started | - |
 | 20. Metadata Filtering + Discovery | v1.2 | 0/TBD | Not started | - |
 | 21. Scale, Maintenance + Embedder Identity | v1.2 | 0/TBD | Not started | - |
 | 22. MCP SDK v2 + Agent Packaging | v1.2 | 0/TBD | Not started | - |
