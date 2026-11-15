@@ -53,8 +53,8 @@ Each maps to exactly one roadmap phase. Checkboxes mark committed scope.
 
 ### Embedder Identity (EMB)
 
-- [ ] **EMB-01**: User is protected from silent bad model swaps (persisted `index_meta` embedder identity — model id + revision/hash + pooling + prompt scheme, reusing the cache's `_cache_model_id` format; 3 dim-guard sites consolidated; legacy-DB warn-once + backfill; mismatch → fail-fast embed / warn+mark search).
-- [ ] **EMB-02**: User gets correct query-vs-document embeddings (role-aware embed surface with `prompt_name`; prompt dimension in the cache key; Qwen3 default path byte-identical until the Harrier gate passes).
+- [x] **EMB-01**: User is protected from silent bad model swaps (persisted `index_meta` embedder identity — model id + revision/hash + pooling + prompt scheme, reusing the cache's `_cache_model_id` format; 3 dim-guard sites consolidated; legacy-DB warn-once + backfill; mismatch → fail-fast embed / warn+mark search).
+- [x] **EMB-02**: User gets correct query-vs-document embeddings (role-aware embed surface with `prompt_name`; prompt dimension in the cache key; Qwen3 default path byte-identical until the Harrier gate passes).
 
 ### MCP SDK v2 & Agent Packaging (MCP)
 
@@ -152,8 +152,8 @@ Populated during roadmap creation. Each requirement maps to exactly one phase.
 | SCALE-01 | Phase 21 | Pending |
 | SCALE-02 | Phase 21 | Pending |
 | SCALE-03 | Phase 21 | Pending |
-| EMB-01 | Phase 21 | Pending |
-| EMB-02 | Phase 21 | Pending |
+| EMB-01 | Phase 21 | Complete |
+| EMB-02 | Phase 21 | Complete |
 | MCP-01 | Phase 22 | Pending |
 | MCP-02 | Phase 22 | Pending |
 | MCP-03 | Phase 22 | Pending |

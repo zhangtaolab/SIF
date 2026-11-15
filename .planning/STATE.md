@@ -5,16 +5,16 @@ milestone_name: Search Precision and Agent Experience
 current_phase: 21
 current_phase_name: Scale, Maintenance + Embedder Identity
 status: executing
-stopped_at: Phase 21 context gathered
-last_updated: "2026-11-15T16:01:08.060Z"
-last_activity: 2026-11-15
-last_activity_desc: Phase 20 complete, transitioned to Phase 21
-state_head: 958b49bd1a18c15d09e28fce725a48d0761404bd
+stopped_at: Completed 21-01-PLAN.md
+last_updated: "2026-11-15T16:18:14.654Z"
+last_activity: 2026-11-16
+last_activity_desc: Phase 21 execution started
+state_head: 64b96043fd3b6ecd2805a48ca027f78ca9eb2c40
 progress:
   total_phases: 8
   completed_phases: 4
   total_plans: 35
-  completed_plans: 27
+  completed_plans: 28
 ---
 
 # DocSift — Project State
@@ -30,10 +30,10 @@ progress:
 
 ## Current Position
 
-Phase: 21 (Scale, Maintenance + Embedder Identity) — READY TO EXECUTE
-Plan: Not started
+Phase: 21 (Scale, Maintenance + Embedder Identity) — EXECUTING
+Plan: 2 of 8
 Status: Ready to execute
-Last activity: 2026-11-15 — Phase 20 complete, transitioned to Phase 21
+Last activity: 2026-11-16 — Phase 21 execution started
 
 Progress: [█████░░░░░] 50%
 
@@ -76,6 +76,7 @@ Progress: [█████░░░░░] 50%
 | Phase 20 P03 | 10min | 3 tasks | 5 files |
 | Phase 20 P04 | 12min | 3 tasks | 8 files |
 | Phase 20 P05 | 14min | 3 tasks | 13 files |
+| Phase 21 P01 | 13min | 3 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -191,6 +192,11 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - [Phase 20]: SearchBackend.hybrid_search takes filter_node (ruff A002), sets SearchOptions.filter by identity, and the BM25 degrade path receives the same options; annotated model fields keep the name filter with no noqa (A003 does not fire, RUF100 would).
 - [Phase 20]: Discovery reads the same typed store as the filter compiler: documents is the collection-scope denominator, filteredDocuments appears only with a filter, and the fixed path/mtime builtIns section comes from the documents columns (D-16/D-03/D-20).
 - [Phase 20]: The MCP metadata envelope (MetadataInput/MetadataOutput with builtIns) is frozen as the Phase 22 contract; CLI JSON emits the same envelope, with filteredDocuments absent when no filter was supplied.
+- [Phase 21]: 21-01: identity JSON excludes source+fingerprint from the hash; comparison is field-wise with one-sided unknown-tolerance for pooling/revision, never fingerprint equality
+- [Phase 21]: 21-01: cache vector validation uses the identity dimension (loaded model truth) for writes and reads; invalid entries become misses and are overwritten (T-21-01)
+- [Phase 21]: 21-01: prompt scheme resolves once at manager construction and effective names reach the factory; no model-wide default_prompt_name, Qwen3 stays prompt-free
+- [Phase 21]: 21-01: role dispatch is class-level (type(embedder)) so MagicMock never takes a phantom role path; protocol-only doubles keep embed/embed_batch
+- [Phase 21]: 21-01: config-doc generator SECTIONS extended with query/document_prompt_name; generator-owned docs regenerated, never hand-edited
 
 ### Pending Todos
 
@@ -220,8 +226,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-15T14:38:16.550Z
-Stopped at: Phase 21 context gathered
-Resume file: /Users/forrest/GitHub/SIF/.planning/phases/21-scale-maintenance-embedder-identity/21-CONTEXT.md
+Last session: 2026-11-15T16:18:14.250Z
+Stopped at: Completed 21-01-PLAN.md
+Resume file: None
 
 - **Next expected action:** plan and execute Phase 21 (Scale, Maintenance + Embedder Identity — SCALE-01..03, EMB-01/02), then 22 → 23 → 24. Phase 20 delivered FILT-01..05: shared 17-operator filter grammar on CLI+MCP, `path`/`mtime` built-ins, pre-RRF per-leg pushdown with the corrected vector escalation, typed kv storage + `index_meta`-gated backfill, and the `metadata` discovery tool whose envelope is the frozen Phase 22 contract. Two audits remain recorded as debt (see Blockers/Concerns): `/gsd-secure-phase 20` and `/gsd:validate-phase 20`.
