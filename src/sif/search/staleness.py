@@ -8,9 +8,12 @@ signal is derived at query time and never persisted (a maintained flag is the
 silent-lie bug class Phase 10.1 hunted — 4+ write paths must keep it
 truthful).
 
-D-09: invoked from every searcher's ``_attach_contexts`` (one code path), so
-BM25/vector/hybrid exits — and therefore the CLI search trio, MCP, and
-(benignly, read-only) bench — mark consistently.
+D-09: invoked through the single ``enrich_results`` composition in
+``sif.search.context_attach`` (the only code path), which every search entry
+point calls exactly once at its exit — the search pipeline's BM25, vector,
+HyDE, and hybrid routes (and therefore CLI ``query`` and MCP ``query``, plus
+the read-only bench), and the direct CLI ``search``/``vsearch`` and MCP BM25
+fallback entry points. Searchers themselves return raw, unenriched results.
 
 Display gate (14-02 objective): markers activate ONLY when the index has at
 least one embedding. Pure-BM25 users who never opted into vectors see no

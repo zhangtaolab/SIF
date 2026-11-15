@@ -8,9 +8,8 @@ from typing import TYPE_CHECKING, cast
 
 from sif.core.models import Embedder, SearchOptions, SearchResult, SearchType
 from sif.search.bm25 import BM25Searcher
-from sif.search.context_attach import attach_path_contexts, enrich_results
+from sif.search.context_attach import enrich_results
 from sif.search.rrf import RRFFusion
-from sif.search.staleness import mark_vector_staleness
 from sif.search.vector import VectorSearcher
 from sif.utils.logging import get_logger
 
@@ -51,7 +50,8 @@ class HybridSearcher:
             options: Search options
 
         Returns:
-            Ranked list of search results
+            Ranked list of search results, raw and unenriched (the pipeline
+            exit owns the single context/staleness enrichment).
         """
         if options is None:
             options = SearchOptions()
@@ -67,9 +67,9 @@ class HybridSearcher:
 
         # If only one method returned results, return those
         if not vector_results:
-            return self._attach_contexts(bm25_results)
+            return bm25_results
         if not bm25_results:
-            return self._attach_contexts(vector_results)
+            return vector_results
 
         # Fuse results using RRF (Phase 15: per-query weights/k ride options —
         # the ONLY weights call site; k also flows to the pipeline's
@@ -94,9 +94,7 @@ class HybridSearcher:
                     )
 
         # Deduplicate by document_id, keeping highest score
-        deduped = self._deduplicate_results(fused_results)
-
-        return self._attach_contexts(deduped)
+        return self._deduplicate_results(fused_results)
 
     @staticmethod
     def _deduplicate_results(results: list[SearchResult]) -> list[SearchResult]:
@@ -117,10 +115,6 @@ class HybridSearcher:
         for rank, result in enumerate(deduped, 1):
             result.rank = rank
         return deduped
-
-    def _attach_contexts(self, results: list[SearchResult]) -> list[SearchResult]:
-        """Attach path contexts, then mark derived vector staleness (one scan each)."""
-        return mark_vector_staleness(self.db, attach_path_contexts(self.db, results))
 
     def _get_document_content(self, document_id: str) -> str | None:
         """Get document content."""
@@ -182,6 +176,7 @@ class SearchPipeline:
         5. Fuse results with RRF
         6. Apply reranking with candidate capping
         7. Extract smart snippets
+        8. Enrich results exactly once (path contexts + derived staleness)
         """
         if options is None:
             options = SearchOptions()
@@ -281,7 +276,7 @@ class SearchPipeline:
         # Extract smart snippets if not already present
         results = self._apply_snippets(results, parsed_query)
 
-        return self.hybrid._attach_contexts(results)  # noqa: SLF001
+        return enrich_results(self.db, results)
 
     def _apply_snippets(
         self,

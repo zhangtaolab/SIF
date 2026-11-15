@@ -5,7 +5,8 @@ Covers the corrected D-08 formula — stale = document has no rows in
 purge chunks AND embeddings together, so the real lag state is
 embeddings-free — RESEARCH Pitfall 3), the display gate (markers only once
 the index has >= 1 embedding), vec0-missing degradation, the empty-results
-no-query contract, the three searcher delegation sites (D-09 one code path),
+no-query contract, the single-owner enrichment contract (searchers return raw
+results; each pipeline exit calls ``enrich_results`` exactly once — D-09),
 and the BM25-refreshed-after-embed lag state produced by a REAL
 ``update_paths`` purge, never raw-SQL fabrication.
 """
@@ -272,13 +273,14 @@ class TestLagStateEndToEnd:
 class TestSearcherDelegation:
     """D-09 single-owner contract: searchers produce, entry points enrich once."""
 
-    def test_bm25_searcher_does_not_enrich(self) -> None:
-        """BM25Searcher is a pure producer: no attach method, no enrichment."""
-        searcher = BM25Searcher(MagicMock())
-        assert not hasattr(searcher, "_attach_contexts")
+    def test_searchers_do_not_expose_attach(self) -> None:
+        """BM25, vector, and hybrid searchers are pure result producers."""
+        assert not hasattr(BM25Searcher(MagicMock()), "_attach_contexts")
+        assert not hasattr(VectorSearcher(MagicMock()), "_attach_contexts")
+        assert not hasattr(HybridSearcher(MagicMock(), embedder=None), "_attach_contexts")
 
-    def test_pipeline_bm25_exit_calls_enrich_results_once(self, monkeypatch) -> None:
-        """The pipeline BM25 exit enriches exactly once with the same list."""
+    def test_each_pipeline_exit_enriches_exactly_once(self, monkeypatch) -> None:
+        """BM25, VECTOR, HYDE, and hybrid exits each enrich once with the list."""
         calls: list[tuple[object, list[SearchResult]]] = []
 
         def recording_enrich(db, results):
@@ -287,76 +289,40 @@ class TestSearcherDelegation:
 
         monkeypatch.setattr("sif.search.hybrid.enrich_results", recording_enrich)
 
+        def assert_single_enrichment(pipeline, results, expected) -> None:
+            assert results is expected
+            assert len(calls) == 1
+            assert calls[0][0] is pipeline.db
+            assert calls[0][1] is expected
+
+        # BM25 exit
         pipeline = SearchPipeline(MagicMock())
         pipeline.hybrid.bm25 = MagicMock()
-        returned = [_result("d-b")]
-        pipeline.hybrid.bm25.search.return_value = returned
+        bm25_results = [_result("d-b")]
+        pipeline.hybrid.bm25.search.return_value = bm25_results
+        assert_single_enrichment(pipeline, pipeline.search("lex: needle"), bm25_results)
 
-        results = pipeline.search("lex: needle")
-
-        assert results is returned
-        assert len(calls) == 1
-        assert calls[0][0] is pipeline.db
-        assert calls[0][1] is returned
-
-    def test_vector_searcher_does_not_enrich(self) -> None:
-        """VectorSearcher is a pure producer: no attach method, no enrichment."""
-        searcher = VectorSearcher(MagicMock())
-        assert not hasattr(searcher, "_attach_contexts")
-
-    def test_pipeline_vector_and_hyde_exits_call_enrich_results_once(self, monkeypatch) -> None:
-        """The pipeline VECTOR and HYDE exits each enrich exactly once."""
-        calls: list[tuple[object, list[SearchResult]]] = []
-
-        def recording_enrich(db, results):
-            calls.append((db, results))
-            return results
-
-        monkeypatch.setattr("sif.search.hybrid.enrich_results", recording_enrich)
-
+        # VECTOR exit
+        calls.clear()
         embedder = MagicMock()
         embedder.embed.return_value = [0.1, 0.2]
-        embedder.generate.return_value = "hypothetical document"
         pipeline = SearchPipeline(MagicMock(), embedder=embedder)
         pipeline.hybrid.vector = MagicMock()
-
         vector_results = [_result("d-v")]
         pipeline.hybrid.vector.search.return_value = vector_results
+        assert_single_enrichment(pipeline, pipeline.search("vec: needle"), vector_results)
 
-        vec_output = pipeline.search("vec: needle")
-
-        assert vec_output is vector_results
-        assert len(calls) == 1
-        assert calls[0][0] is pipeline.db
-        assert calls[0][1] is vector_results
-
+        # HYDE exit
         calls.clear()
+        embedder.generate.return_value = "hypothetical document"
         hyde_results = [_result("d-h")]
         pipeline.hybrid.vector.search.return_value = hyde_results
+        assert_single_enrichment(pipeline, pipeline.search("hyde: needle"), hyde_results)
 
-        hyde_output = pipeline.search("hyde: needle")
-
-        assert hyde_output is hyde_results
-        assert len(calls) == 1
-        assert calls[0][0] is pipeline.db
-        assert calls[0][1] is hyde_results
-
-    def test_hybrid_searcher_still_delegates(self, monkeypatch) -> None:
-        """HybridSearcher._attach_contexts delegates (unchanged until Task 3)."""
-        calls: list[tuple[str, object, list[SearchResult]]] = []
-
-        def recording_wrapper(tag: str):
-            def wrapper(db, results):
-                calls.append((tag, db, results))
-                return results
-
-            return wrapper
-
-        monkeypatch.setattr("sif.search.hybrid.mark_vector_staleness", recording_wrapper("hybrid"))
-        hybrid_searcher = HybridSearcher(MagicMock(), embedder=None)
-        hybrid_results = [_result("d-h")]
-        hybrid_searcher._attach_contexts(hybrid_results)
-
-        assert [c[0] for c in calls] == ["hybrid"]
-        assert calls[0][1] is hybrid_searcher.db
-        assert calls[0][2] is hybrid_results
+        # Hybrid exit (after fusion, rerank, snippets)
+        calls.clear()
+        pipeline = SearchPipeline(MagicMock())
+        pipeline.hybrid.search = MagicMock()
+        hybrid_results = [_result("d-hy")]
+        pipeline.hybrid.search.return_value = hybrid_results
+        assert_single_enrichment(pipeline, pipeline.search("plain query"), hybrid_results)

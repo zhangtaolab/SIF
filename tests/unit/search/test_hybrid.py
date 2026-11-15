@@ -452,11 +452,13 @@ class TestSearchPipelineIntent:
 
 
 class TestHybridContextAttachment:
-    """Tests for context_description attachment in hybrid search results."""
+    """Single-owner enrichment: the searcher is raw, the pipeline attaches once."""
 
-    def test_hybrid_search_attaches_context_after_rrf(self, mock_db: MagicMock) -> None:
-        """Test that hybrid search attaches context descriptions after RRF fusion."""
-        hybrid = HybridSearcher(mock_db, embedder=None, embedding_dim=384)
+    def test_hybrid_search_returns_raw_results(self, mock_db: MagicMock) -> None:
+        """HybridSearcher.search does not attach contexts or staleness itself."""
+        embedder = MagicMock()
+        embedder.embed.return_value = [0.1, 0.2]
+        hybrid = HybridSearcher(mock_db, embedder=embedder, embedding_dim=384)
         hybrid.bm25 = create_autospec(BM25Searcher, instance=True)
         hybrid.bm25.search.return_value = [
             SearchResult(
@@ -479,17 +481,23 @@ class TestHybridContextAttachment:
                 context_description="Vector context",
             ),
         ]
+        mock_db.reset_mock()
 
         results = hybrid.search("test")
 
         assert len(results) == 1
-        # After RRF fusion, context_description should be preserved from one of the sources
-        assert results[0].context_description is not None
+        # Fused source fields survive untouched; no attach scan runs here.
+        assert results[0].context_description in ("BM25 context", "Vector context")
+        assert not hasattr(hybrid, "_attach_contexts")
+        mock_db.execute.assert_not_called()
 
-    def test_pipeline_search_attaches_context_after_reranking(self, mock_db: MagicMock) -> None:
-        """Test that SearchPipeline preserves context_description after reranking."""
-        mock_reranker = MagicMock()
-        mock_reranker.rerank.return_value = [
+    def test_pipeline_search_attaches_context_after_reranking(
+        self,
+        mock_db: MagicMock,
+        monkeypatch,
+    ) -> None:
+        """The pipeline user sees reranked contexts after exactly one enrichment."""
+        reranked = [
             SearchResult(
                 document_id="doc-1",
                 path="/a.md",
@@ -500,6 +508,16 @@ class TestHybridContextAttachment:
                 context_description="Reranked context",
             ),
         ]
+        mock_reranker = MagicMock()
+        mock_reranker.rerank.return_value = reranked
+
+        calls: list[tuple[object, list[SearchResult]]] = []
+
+        def recording_enrich(db, results):
+            calls.append((db, results))
+            return results
+
+        monkeypatch.setattr("sif.search.hybrid.enrich_results", recording_enrich)
 
         pipeline = SearchPipeline(mock_db, reranker=mock_reranker)
         pipeline.hybrid.bm25 = create_autospec(BM25Searcher, instance=True)
@@ -517,8 +535,38 @@ class TestHybridContextAttachment:
         results = pipeline.search("test", SearchOptions(candidate_limit=10))
 
         mock_reranker.rerank.assert_called_once()
-        assert len(results) == 1
+        assert len(calls) == 1
+        assert calls[0][0] is mock_db
+        assert calls[0][1] is reranked
+        assert results is reranked
         assert results[0].context_description == "Reranked context"
+
+    def test_pipeline_hybrid_exit_enriches_contexts_and_staleness(self) -> None:
+        """Hybrid pipeline exit attaches legacy-verbatim contexts and staleness.
+
+        The context row stores the verbatim target (normalized on read, never
+        pre-filtered in SQL); the purged d4 embedding arms the derived marker
+        for a BM25-only hit while the still-embedded docs stay unmarked.
+        """
+        conn = TestHybridSC1PipelineGolden._build_db()
+        try:
+            conn.execute(
+                "INSERT INTO contexts (id, target_id, context_type, content,"
+                " created_at, updated_at) VALUES ('ctx-1', '/notes/gardening.md', 'path',"
+                " 'Garden project notes', '2026-01-01T00:00:00', '2026-01-01T00:00:00')"
+            )
+            # d4 still matches BM25 but has no embedding row: the real lag state.
+            conn.execute("DELETE FROM document_embeddings WHERE document_id = 'd4'")
+
+            pipeline = SearchPipeline(conn, embedder=_FakeEmbedder(), embedding_dim=2)
+            results = pipeline.search("gardening", SearchOptions(limit=5))
+
+            hit = next(r for r in results if r.document_id == "d4")
+            assert hit.context_description == "Garden project notes"
+            assert hit.vectors_stale is True
+            assert all(r.vectors_stale is False for r in results if r.document_id != "d4")
+        finally:
+            conn.close()
 
 
 class TestPipelineSnippetRoutes:
