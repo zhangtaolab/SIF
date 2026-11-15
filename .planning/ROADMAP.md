@@ -185,7 +185,7 @@ Full detail: `.planning/milestones/v1.1-ROADMAP.md`
   3. User can embed large corpora without giant transactions — streaming embed batches run outside transactions with short per-batch commits, resumable, CR-02 failure reporting preserved, batch-boundary sanity against garbage vectors
   4. User is protected from silent bad model swaps — persisted `index_meta` embedder identity (model id + revision/hash + pooling + prompt scheme, reusing the cache's `_cache_model_id` format); the 3 dim-guard sites consolidated; legacy DBs get warn-once + backfill; mismatch → fail-fast embed / warn+mark search
   5. User gets correct query-vs-document embeddings — role-aware embed surface with `prompt_name`, prompt dimension in the cache key; the Qwen3 default path stays byte-identical until the Harrier gate passes
-**Plans:** 7/8 plans executed (0/8 complete)
+**Plans:** 8/8 plans executed (0/8 complete)
 
 **Wave 1** *(no dependencies — 21-01 and 21-02 are file-disjoint)*
 - [x] 21-01-PLAN.md — Tracer: identity record round-trip through `index_meta` (build/persist/compare) + prompt scheme + role methods + prompt/revision cache buckets, default Qwen3 byte-identical
@@ -205,7 +205,7 @@ Full detail: `.planning/milestones/v1.1-ROADMAP.md`
 - [x] 21-06-PLAN.md — Tracer: `sif index vacuum` (flock/checkpoint/2× disk/retryable); `sif index backup` online-API copy + integrity_check; cleanup reconcile; generated docs
 
 **Wave 6** *(blocked on Wave 5 completion)*
-- [ ] 21-07-PLAN.md — Phase gate: byte-identical baseline + legacy→assumed→verified lifecycle, failure/concurrency matrix, architecture docs, full quality suite
+- [x] 21-07-PLAN.md — Phase gate: byte-identical baseline + legacy→assumed→verified lifecycle, failure/concurrency matrix, architecture docs, full quality suite
 
 ### Phase 22: MCP SDK v2 Modernization + Agent Packaging
 **Goal**: SIF's MCP server runs on the official SDK v2 serving every client era, with accurate annotations, citation-grade structured output, full query-pipeline parity, and agent-native distribution (Claude Code plugin + MCP Registry).
@@ -264,7 +264,7 @@ v1.2 contracts — defined ONCE; downstream phases consume, never redefine:
 | 18. Quality Instrument (Personal Bench + rapidfuzz) | v1.2 | 4/4 | Complete    | 2026-11-15 |
 | 19. Search Correctness | v1.2 | 9/9 | Complete    | 2026-11-15 |
 | 20. Metadata Filtering + Discovery | v1.2 | 5/5 | Complete    | 2026-11-15 |
-| 21. Scale, Maintenance + Embedder Identity | v1.2 | 7/8 | In Progress | - |
+| 21. Scale, Maintenance + Embedder Identity | v1.2 | 8/8 | In Progress | - |
 | 22. MCP SDK v2 + Agent Packaging | v1.2 | 0/TBD | Not started | - |
 | 23. Harrier Gated Evaluation | v1.2 | 0/TBD | Not started | - |
 | 24. Tuning + Models UX + Install Docs | v1.2 | 0/TBD | Not started | - |
