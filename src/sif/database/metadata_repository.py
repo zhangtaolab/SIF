@@ -172,6 +172,8 @@ def _classify_array(key: str, value: list[Any]) -> tuple[list[TypedRow], str | N
         return [], SKIP_MIXED_ARRAY
     if len(value) > MAX_ARRAY_ELEMENTS:
         return [], SKIP_CAP_ARRAY
+    if value_type == "string" and any(len(item) > MAX_STRING_CHARS for item in value):
+        return [], SKIP_CAP_STRING
     if value_type == "number":
         for item in value:
             reason = _number_skip_reason(item)
@@ -227,7 +229,9 @@ def typed_rows(canonical_json: str) -> tuple[list[TypedRow], list[SkippedKey]]:
     6. ``None`` is skipped as ``null``.
     7. Arrays that are not flat homogeneous scalar lists (including arrays of
        arrays, and ``[true, 1]``-style mixes) are skipped as ``mixed_array``.
-    8. Strings over 1024 characters are skipped as ``cap_string``.
+    8. Strings over 1024 characters — scalar or array element — are skipped as
+       ``cap_string`` (the cap applies to every stored value, not just the
+       scalar form; WR-04).
     9. Arrays over 128 elements are skipped as ``cap_array``.
     10. Numbers that are non-finite or outside the double range are skipped as
         ``non_finite`` / ``cap_number`` (CR-01) — derivation is total over

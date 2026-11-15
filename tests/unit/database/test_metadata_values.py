@@ -215,6 +215,8 @@ class TestDerivation:
             ({"list_of_lists": [[1], [2]]}, "list_of_lists", "mixed_array"),
             ({"k" * 129: "v"}, "k" * 129, "cap_key"),
             ({"long": "x" * 1025}, "long", "cap_string"),
+            ({"tags": ["x" * 1025]}, "tags", "cap_string"),
+            ({"tags": ["ok", "x" * 1025]}, "tags", "cap_string"),
             ({"many": [1] * 129}, "many", "cap_array"),
         ],
     )
@@ -267,6 +269,13 @@ class TestDerivation:
             ("tags", 0, "string"),
             ("tags", 1, "string"),
         ]
+
+    def test_array_element_string_length_boundary(self):
+        """WR-04: an element exactly at the 1024-character cap is still stored."""
+        rows, skipped = typed_rows(canonical_metadata_json({"tags": ["x" * 1024]}))
+
+        assert skipped == []
+        assert rows == [TypedRow("tags", 0, "string", text_value="x" * 1024)]
 
     def test_non_mapping_canonical_payload_derives_nothing(self):
         """A JSON array (never produced by the serializer) yields no rows or skips."""
