@@ -5,16 +5,16 @@ milestone_name: Search Precision and Agent Experience
 current_phase: 20
 current_phase_name: Metadata Filtering + Discovery
 status: executing
-stopped_at: Completed 20-02-PLAN.md
-last_updated: "2026-11-15T12:29:52.496Z"
+stopped_at: Completed 20-03-PLAN.md
+last_updated: "2026-11-15T12:43:55.638Z"
 last_activity: 2026-11-15
 last_activity_desc: Phase 20 execution started
-state_head: 60146bc235a2c27d36906ec8eb6977ae38bff9c1
+state_head: 8b3ced4f555505aed306bd9141197366b40c220e
 progress:
   total_phases: 8
   completed_phases: 3
   total_plans: 27
-  completed_plans: 24
+  completed_plans: 25
 ---
 
 # DocSift — Project State
@@ -31,7 +31,7 @@ progress:
 ## Current Position
 
 Phase: 20 (Metadata Filtering + Discovery) — EXECUTING
-Plan: 3 of 5
+Plan: 4 of 5
 Status: Ready to execute
 Last activity: 2026-11-15 — Phase 20 execution started
 
@@ -73,6 +73,7 @@ Progress: [████░░░░░░] 38%
 | Phase 19 P09 | 9min | 3 tasks | 16 files |
 | Phase 20 P01 | 18min | 3 tasks | 13 files |
 | Phase 20 P02 | 9 min | 3 tasks | 6 files |
+| Phase 20 P03 | 10min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -177,6 +178,11 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - [Phase 20]: 20-02: typed_rows classifies sorted resolved keys (deterministic caps); list-of-lists is mixed_array, arrays containing objects nested; skips bounded at 64 rows/document.
 - [Phase 20]: 20-02: backfill reads stored canonical documents.metadata with one short transaction per document; metadata_values_version is written to index_meta only after a complete pass and failures propagate out of create_all.
 - [Phase 20]: 20-02: bench fixture derives synthetic bench_category/bench_doc keys through canonical_metadata_json; the frozen corpus and all ranking goldens are untouched.
+- [Phase 20]: 20-03: filtered escalation keys the all-matches stop on distinct documents from RAW KNN rows and compares fetch_k to the GLOBAL vector count (a scoped count ended escalation on batch one).
+- [Phase 20]: 20-03: the D-09 notice is gated on is_metadata_filtered, pre_count >= page_target, the ceiling exhausted, and a short page; collection-only searches never warn and stdout stays clean.
+- [Phase 20]: 20-03: the post-KNN filter suffix is AND-prefixed; the unfiltered/unscoped path keeps the pre-change statement bytes, fetch window, stop condition, and emits no pre-count.
+- [Phase 20]: 20-03: hybrid/pipeline filter passthrough is structural via dataclasses.replace (identity-asserted per leg); the single offset slice and ONE enrich at pipeline exit are unchanged.
+- [Phase 20]: 20-03: the integration sqlite-vec skip lives inside the corpus fixture, never at module scope, so repo-level discovery tests can run on hosts without the extension.
 
 ### Pending Todos
 
@@ -206,8 +212,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-15T12:29:51.816Z
-Stopped at: Completed 20-02-PLAN.md
+Last session: 2026-11-15T12:43:55.270Z
+Stopped at: Completed 20-03-PLAN.md
 Resume file: None
 
 - **Next expected action:** run Phase 17 verification (`/gsd-verify-work 17`) to confirm the four ENG success criteria against the shipped state, then mark Phase 17 complete and proceed to Phase 18. Release evidence lives in `17-07-SUMMARY.md`: tag `v1.1.2` on `c819f67`, Publish run `43562577065` attempt 4 (all three jobs success), PyPI JSON `1.1.2` with the `mcp-name` marker, `pypi-attestations` `OK` against `https://github.com/zhangtaolab/SIF`, and both fresh-venv install proofs. Execution order for the rest of v1.2: 17 → 18 → 19 → 20 → 21 → 22 → 23 → 24; hard dependencies and cross-phase contracts in ROADMAP.md.

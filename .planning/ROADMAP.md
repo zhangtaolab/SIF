@@ -163,13 +163,13 @@ Full detail: `.planning/milestones/v1.1-ROADMAP.md`
   3. User's filters apply pre-RRF per leg — BM25 outer WHERE of the materialized CTE (never inside it), vector post-KNN JOIN with adaptive over-fetch, a selectivity bound, and an honest "too selective" message; parameterized SQL only (no injection surface, no post-fusion filtering)
   4. User's existing indexes filter correctly after upgrade — typed frontmatter storage + backfill runs, and `qmd.metadata`-namespaced keys (migration parity, opt-in) filter identically to native keys; numeric values compare as numbers, not strings
   5. Agent can discover available metadata via a `metadata` tool on CLI + MCP — doc counts, numeric min/median/max, exact remainders; ONE validator shared with the filter surface; invalid filter → ToolError for model self-correction, never a protocol error
-**Plans:** 2/5 plans executed
+**Plans:** 3/5 plans executed
 **Wave 1**
 - [x] 20-01-PLAN.md — Tracer: one `eq` filter end-to-end (AST → typed kv → BM25 outer WHERE → `sif search --filter`), then the full 17-operator AST/validator and the full per-operator compiler
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [x] 20-02-PLAN.md — Typed storage hardening: `qmd.metadata` resolution, caps/skip accounting, resumable `index_meta`-gated backfill, filterable bench fixture
-- [ ] 20-03-PLAN.md — Vector leg: pre-count, selectivity seeding, corrected escalation stop, honest too-selective notice; hybrid passthrough + integration containment battery
+- [x] 20-03-PLAN.md — Vector leg: pre-count, selectivity seeding, corrected escalation stop, honest too-selective notice; hybrid passthrough + integration containment battery
 - [ ] 20-04-PLAN.md — CLI `--filter` on all three commands + MCP `filter` on all three inputs, schema sync, `isError` path, regenerated CLI docs
 
 **Wave 3** *(blocked on Wave 2 completion)*
@@ -243,7 +243,7 @@ v1.2 contracts — defined ONCE; downstream phases consume, never redefine:
 | 17. Engineering Foundation (CI + Hygiene + PyPI) | v1.2 | 9/9 | Complete    | 2026-11-14 |
 | 18. Quality Instrument (Personal Bench + rapidfuzz) | v1.2 | 4/4 | Complete    | 2026-11-15 |
 | 19. Search Correctness | v1.2 | 9/9 | Complete    | 2026-11-15 |
-| 20. Metadata Filtering + Discovery | v1.2 | 2/5 | In Progress | - |
+| 20. Metadata Filtering + Discovery | v1.2 | 3/5 | In Progress | - |
 | 21. Scale, Maintenance + Embedder Identity | v1.2 | 0/TBD | Not started | - |
 | 22. MCP SDK v2 + Agent Packaging | v1.2 | 0/TBD | Not started | - |
 | 23. Harrier Gated Evaluation | v1.2 | 0/TBD | Not started | - |

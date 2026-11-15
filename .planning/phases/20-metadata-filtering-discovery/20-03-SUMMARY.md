@@ -220,3 +220,8 @@ None - no external service configuration required.
 ---
 *Phase: 20-metadata-filtering-discovery*
 *Completed: 2026-11-15*
+
+## Self-Check: PASSED
+
+- All five task-related files and this SUMMARY exist on disk.
+- All three task commits (`bfc1b41`, `b84c67d`, `3858eeb`) are ancestors of HEAD.
