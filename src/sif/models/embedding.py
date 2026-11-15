@@ -37,6 +37,15 @@ class EmbeddingConfig(BaseModel):
     api_key: str | None = Field(default=None, exclude=True, repr=False)
     api_base: str | None = None
 
+    # Role-aware embedding (EMB-02, D-07). None uses the known-model
+    # default; "" explicitly disables the role's prompt.
+    query_prompt_name: str | None = Field(
+        default=None, description="Query-role prompt name for the backend"
+    )
+    document_prompt_name: str | None = Field(
+        default=None, description="Document-role prompt name for the backend"
+    )
+
     # Caching
     cache_embeddings: bool = Field(default=True, description="Cache embeddings")
     cache_dir: str | None = None

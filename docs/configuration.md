@@ -58,6 +58,8 @@ SIF_LOG_LEVEL=INFO
 | `SIF_BATCH_SIZE` | int | `32` | Batch size for inference |
 | `SIF_MODEL_TYPE` | str | `modelscope` | Embedding model type (gguf, sentence_transformers, openai, modelscope) (validated by `validate_model_type`) |
 | `SIF_N_GPU_LAYERS` | int | `0` | Number of GPU layers for GGUF models |
+| `SIF_QUERY_PROMPT_NAME` | str \| None | `None` | Query-role prompt name passed to the embedding backend; unset uses the known-model default, an empty string disables it |
+| `SIF_DOCUMENT_PROMPT_NAME` | str \| None | `None` | Document-role prompt name passed to the embedding backend; unset uses the known-model default, an empty string disables it |
 
 #### Device Selection (CPU / GPU / MPS)
 

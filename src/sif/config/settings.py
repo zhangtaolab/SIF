@@ -150,6 +150,16 @@ class Settings(BaseSettings):
         default=None,
         description="Base URL for remote embedding API",
     )
+    query_prompt_name: str | None = Field(
+        default=None,
+        description="Query-role prompt name passed to the embedding backend; "
+        "unset uses the known-model default, an empty string disables it",
+    )
+    document_prompt_name: str | None = Field(
+        default=None,
+        description="Document-role prompt name passed to the embedding backend; "
+        "unset uses the known-model default, an empty string disables it",
+    )
 
     # Reranker settings
     # D-12 (Phase 16): rerank is opt-in. The False default keeps `sif search

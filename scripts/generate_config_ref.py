@@ -160,6 +160,8 @@ SECTIONS: list[tuple[str, list[str]]] = [
             "batch_size",
             "model_type",
             "n_gpu_layers",
+            "query_prompt_name",
+            "document_prompt_name",
         ],
     ),
     ("API Settings", ["api_key", "api_base"]),

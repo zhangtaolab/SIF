@@ -71,6 +71,21 @@ def _hermetic_sif_logging() -> None:
     logging.Logger.manager.disable = logging.NOTSET
 
 
+@pytest.fixture(autouse=True)
+def reset_identity_state() -> None:
+    """Clear embedder-identity warning latches before every test.
+
+    Lazy module lookup on purpose: importing ``sif.embedding.identity`` from
+    the global conftest would pull the embedding package into every test
+    process. If a test module already imported it (at collection or in an
+    earlier test), its process-level latches are reset here so warn-once
+    behavior never leaks across tests.
+    """
+    identity_module = sys.modules.get("sif.embedding.identity")
+    if identity_module is not None:
+        identity_module.reset_identity_state()
+
+
 # =============================================================================
 # Path Fixtures
 # =============================================================================
