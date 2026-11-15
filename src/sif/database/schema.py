@@ -5,8 +5,13 @@ from __future__ import annotations
 import contextlib
 import re
 import sqlite3
+from typing import TYPE_CHECKING
 
 from sif.utils.logging import get_logger
+
+
+if TYPE_CHECKING:
+    from sif.embedding.identity import EmbedderIdentity
 
 
 logger = get_logger(__name__)
@@ -28,10 +33,24 @@ _EMBEDDED_DOCUMENTS_VERSION_KEY = "embedded_documents_version"
 class SchemaManager:
     """Manages database schema creation and migrations."""
 
-    def __init__(self, db: sqlite3.Connection, embedding_dim: int = 384) -> None:
-        """Initialize the schema manager."""
+    def __init__(
+        self,
+        db: sqlite3.Connection,
+        embedding_dim: int = 384,
+        initial_identity: EmbedderIdentity | None = None,
+    ) -> None:
+        """Initialize the schema manager.
+
+        ``initial_identity`` is the host's settings-only embedder identity
+        (D-04). When supplied, the vector-table width guard runs the
+        mode-aware ``check_identity(mode="init")`` and ``create_all`` writes
+        the legacy-assumed row exactly once for a populated index that
+        predates identity. ``None`` is the injected-dimension path (Phase 19
+        contract: no settings read, width-only guard).
+        """
         self.db = db
         self.embedding_dim = embedding_dim
+        self.initial_identity = initial_identity
 
     def create_all(self) -> None:
         """Create all database tables and indexes.
@@ -65,6 +84,15 @@ class SchemaManager:
         self._create_indexes()
         self._backfill_metadata_values()
         self._backfill_embedded_documents(embedded_preexisted)
+        # D-04: a legacy populated index (vectors, no identity) is assumed
+        # exactly once and warns once. A fresh/embeddings-empty index writes
+        # nothing, so its first real vector write owns the identity (D-02).
+        # The init-mode check above normally performs this write; repeating
+        # it here is an idempotent no-op and keeps the documented ordering.
+        if self.initial_identity is not None:
+            from sif.embedding.identity import ensure_legacy_identity  # noqa: PLC0415
+
+            ensure_legacy_identity(self.db, self.initial_identity)
         self.db.commit()
 
     def _add_column_if_missing(self, table: str, column: str, dtype: str) -> None:
@@ -648,22 +676,36 @@ class SchemaManager:
         if not vec_available:
             return
 
-        cursor = self.db.execute(
-            "SELECT sql FROM sqlite_master WHERE type='table' AND name='document_embeddings'",
+        # D-05: the identity module owns the single ``FLOAT[n]`` read. With an
+        # initial identity the mode-aware init check is the guard (and may
+        # write the legacy-assumed row); the injected-dimension path keeps the
+        # pre-Phase-21 width-only comparison. Both raise the byte-identical
+        # pre-change message through ``IdentityDimensionError`` (a RuntimeError).
+        from sif.embedding.identity import (  # noqa: PLC0415
+            IdentityDimensionError,
+            check_identity,
+            schema_dimension_remedy,
+            schema_embedding_dim,
         )
-        row = cursor.fetchone()
-        if row and row[0]:
-            match = re.search(r"FLOAT\[(\d+)\]", row[0])
-            if match:
-                existing_dim = int(match.group(1))
-                if existing_dim != self.embedding_dim:
-                    raise RuntimeError(
-                        f"Embedding dimension mismatch: database has FLOAT[{existing_dim}], "
-                        f"but settings require FLOAT[{self.embedding_dim}]. "
-                        f"Restore the model and SIF_EMBEDDING_DIM that match "
-                        f"FLOAT[{existing_dim}], or delete the database file "
-                        "and rebuild the index.",
-                    )
+
+        existing_dim = schema_embedding_dim(self.db)
+        if self.initial_identity is not None:
+            check = check_identity(self.db, self.initial_identity, mode="init")
+            if check.dimension_mismatch:
+                stored_dim = (
+                    existing_dim if existing_dim is not None else self.initial_identity.dimension
+                )
+                raise IdentityDimensionError(
+                    stored_dim,
+                    self.initial_identity.dimension,
+                    schema_dimension_remedy(stored_dim),
+                )
+        elif existing_dim is not None and existing_dim != self.embedding_dim:
+            raise IdentityDimensionError(
+                existing_dim,
+                self.embedding_dim,
+                schema_dimension_remedy(existing_dim),
+            )
 
         self.db.execute(f"""
             CREATE VIRTUAL TABLE IF NOT EXISTS document_embeddings USING vec0(

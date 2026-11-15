@@ -11,6 +11,7 @@ from typing import Any
 import numpy as np
 
 from sif.core.models import Embedder
+from sif.embedding.identity import dimension_mismatch_text
 from sif.models.download import ModelDownloader
 from sif.utils.logging import get_logger, is_quiet, suppress_output
 
@@ -675,10 +676,13 @@ class OpenAIEmbedder(Embedder):
         resolved_dim = self._resolve_dimension()
         if embedding_dim is not None and embedding_dim != resolved_dim:
             raise RuntimeError(
-                f"Embedding dimension mismatch: model '{model_name}' produces "
-                f"{resolved_dim}-dimensional embeddings but SIF_EMBEDDING_DIM "
-                f"is set to {embedding_dim}. Set SIF_EMBEDDING_DIM to the "
-                f"endpoint model's dimension."
+                dimension_mismatch_text(
+                    f"model '{model_name}'",
+                    resolved_dim,
+                    "SIF_EMBEDDING_DIM",
+                    embedding_dim,
+                    "Set SIF_EMBEDDING_DIM to the endpoint model's dimension.",
+                ),
             )
         self._dimension = resolved_dim
 

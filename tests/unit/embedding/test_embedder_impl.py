@@ -20,6 +20,25 @@ from sif.embedding.embedder import (
     _pooling_mode,
     create_embedder,
 )
+from sif.embedding.identity import dimension_mismatch_text
+
+
+class TestDimensionMismatchWording:
+    """D-05/T-21-27: one shared sentence for every dimension disagreement."""
+
+    def test_shared_wording_matches_the_pre_change_openai_sentence(self) -> None:
+        assert (
+            dimension_mismatch_text(
+                "model 'text-embedding-3-small'",
+                1536,
+                "SIF_EMBEDDING_DIM",
+                8,
+                "Set SIF_EMBEDDING_DIM to the endpoint model's dimension.",
+            )
+            == "Embedding dimension mismatch: model 'text-embedding-3-small' produces "
+            "1536-dimensional embeddings but SIF_EMBEDDING_DIM is set to 8. "
+            "Set SIF_EMBEDDING_DIM to the endpoint model's dimension."
+        )
 
 
 # =============================================================================

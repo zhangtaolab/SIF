@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import sqlite3
 from datetime import datetime, timezone
@@ -9,9 +10,40 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from sif.config.settings import Settings
 from sif.core.models import canonical_metadata_json
 from sif.database.database import Database
 from sif.database.schema import SchemaManager
+from sif.embedding.identity import (
+    IdentityDimensionError,
+    build_settings_identity,
+    check_identity,
+    read_identity,
+    schema_embedding_dim,
+)
+from sif.embedding.prompts import PromptScheme
+
+
+def _settings_identity(dim: int):
+    """A settings-only identity at ``dim`` with no prompts (the D-04 shape)."""
+    return build_settings_identity(
+        Settings(_env_file=None, embedding_dim=dim, model_name="test", cache_embeddings=False),
+        PromptScheme(None, None, True),
+    )
+
+
+def _seed_vector(conn: sqlite3.Connection, dim: int, doc_id: str = "d1") -> None:
+    """Insert one real vec0 row so the index counts as populated (D-04)."""
+    conn.execute(
+        "INSERT INTO document_embeddings (embedding_id, document_id, chunk_id, embedding) "
+        "VALUES (?, ?, ?, vec_f32(?))",
+        (f"e-{doc_id}", doc_id, f"c-{doc_id}", json.dumps([0.1] * dim)),
+    )
+    conn.commit()
+
+
+def _identity_warning_count(caplog: pytest.LogCaptureFixture, needle: str) -> int:
+    return sum(needle in record.message for record in caplog.records)
 
 
 def _load_vec(db: sqlite3.Connection) -> bool:
@@ -207,7 +239,17 @@ class TestSchemaManagerVectorTables:
         with pytest.raises(RuntimeError, match="Embedding dimension mismatch") as exc_info:
             manager2._create_vector_tables()
 
+        assert isinstance(exc_info.value, IdentityDimensionError)
+        assert exc_info.value.stored_dimension == 384
+        assert exc_info.value.current_dimension == 768
         message = str(exc_info.value)
+        # D-05/T-21-27: the pre-change schema guard text survives byte-identically.
+        assert message == (
+            "Embedding dimension mismatch: database has FLOAT[384], "
+            "but settings require FLOAT[768]. "
+            "Restore the model and SIF_EMBEDDING_DIM that match FLOAT[384], "
+            "or delete the database file and rebuild the index."
+        )
         assert "database has FLOAT[384]" in message
         assert "settings require FLOAT[768]" in message
         assert "Restore the model and SIF_EMBEDDING_DIM that match FLOAT[384]" in message
@@ -229,6 +271,94 @@ class TestSchemaManagerVectorTables:
         tables = {row[0] for row in cursor.fetchall()}
         assert "document_embeddings" not in tables
         conn.close()
+
+
+class TestInitialIdentityAtSchemaOpen:
+    """D-04/D-05: the schema open owns the shared guard and the assumed write.
+
+    With an initial identity the init-mode check is the production caller of
+    ``check_identity(mode="init")``; a legacy populated index is assumed once
+    (one warning), a fresh/empty index writes nothing, and the injected-
+    dimension path never reads settings or writes an identity.
+    """
+
+    def test_shared_read_delegates_to_the_identity_module(self, vec_db):
+        """The width read exists only in ``identity.schema_embedding_dim``."""
+        SchemaManager(vec_db, embedding_dim=384)._create_vector_tables()
+
+        with patch("sif.embedding.identity.schema_embedding_dim", return_value=384) as read:
+            SchemaManager(vec_db, embedding_dim=384)._create_vector_tables()
+
+        read.assert_called_once_with(vec_db)
+
+    def test_init_mode_check_runs_with_an_initial_identity(self, vec_db):
+        """The init-mode check has a production caller at schema open."""
+        identity = _settings_identity(384)
+        # create_all always creates index_meta before the vector tables; the
+        # direct method call needs the same ordering.
+        SchemaManager(vec_db, embedding_dim=384)._create_index_meta_table()
+
+        with patch("sif.embedding.identity.check_identity", wraps=check_identity) as check:
+            SchemaManager(
+                vec_db,
+                embedding_dim=384,
+                initial_identity=identity,
+            )._create_vector_tables()
+
+        check.assert_called_once_with(vec_db, identity, mode="init")
+
+    def test_initial_identity_width_mismatch_raises_the_pre_change_text(self, vec_db):
+        SchemaManager(vec_db, embedding_dim=384)._create_index_meta_table()
+        SchemaManager(vec_db, embedding_dim=384)._create_vector_tables()
+
+        with pytest.raises(IdentityDimensionError) as exc_info:
+            SchemaManager(
+                vec_db,
+                embedding_dim=768,
+                initial_identity=_settings_identity(768),
+            )._create_vector_tables()
+
+        assert exc_info.value.stored_dimension == 384
+        assert exc_info.value.current_dimension == 768
+        assert str(exc_info.value) == (
+            "Embedding dimension mismatch: database has FLOAT[384], "
+            "but settings require FLOAT[768]. "
+            "Restore the model and SIF_EMBEDDING_DIM that match FLOAT[384], "
+            "or delete the database file and rebuild the index."
+        )
+
+    def test_legacy_populated_index_is_assumed_once_and_warns_once(
+        self, vec_db, caplog: pytest.LogCaptureFixture
+    ):
+        SchemaManager(vec_db, embedding_dim=8).create_all()
+        _seed_vector(vec_db, 8)
+        identity = _settings_identity(8)
+
+        with caplog.at_level(logging.WARNING):
+            SchemaManager(vec_db, embedding_dim=8, initial_identity=identity).create_all()
+
+        stored = read_identity(vec_db)
+        assert stored is not None
+        assert stored.source == "legacy-assumed"
+        assert stored.dimension == 8
+        assert _identity_warning_count(caplog, "Index predates embedder identity") == 1
+
+        with caplog.at_level(logging.WARNING):
+            SchemaManager(vec_db, embedding_dim=8, initial_identity=identity).create_all()
+
+        assert _identity_warning_count(caplog, "Index predates embedder identity") == 1
+        assert read_identity(vec_db) == stored
+
+    def test_fresh_index_writes_no_identity(self, vec_db, caplog: pytest.LogCaptureFixture):
+        with caplog.at_level(logging.WARNING):
+            SchemaManager(
+                vec_db,
+                embedding_dim=8,
+                initial_identity=_settings_identity(8),
+            ).create_all()
+
+        assert read_identity(vec_db) is None
+        assert _identity_warning_count(caplog, "Index predates embedder identity") == 0
 
 
 class _VectorDropFailureConnection:
@@ -1269,3 +1399,96 @@ class TestDatabaseInitSchemaDimension:
                 assert "FLOAT[7]" in vector_sql
         finally:
             db.close()
+
+
+class TestDatabaseInitSchemaIdentity:
+    """D-04/D-05: ``Database.init_schema`` is one identity-aware schema host.
+
+    The no-argument form builds the settings-only identity (so a legacy
+    populated index gets the assumed row once); a supplied identity supplies
+    the width; an injected dimension with no identity stays width-only and
+    never reads settings (the Phase 19 contract).
+    """
+
+    _DIM = 8
+
+    def _seed_legacy(self, db_path) -> bool:
+        """Create a populated index at ``_DIM`` with no identity row."""
+        db = Database(db_path)
+        try:
+            db.init_schema(embedding_dim=self._DIM)
+            if schema_embedding_dim(db.connection) is None:
+                return False
+            _seed_vector(db.connection, self._DIM)
+        finally:
+            db.close()
+        return True
+
+    @staticmethod
+    def _settings():
+        return Settings(
+            _env_file=None,
+            embedding_dim=TestDatabaseInitSchemaIdentity._DIM,
+            model_name="test",
+            cache_embeddings=False,
+        )
+
+    def test_no_argument_form_writes_legacy_assumed_once(
+        self, tmp_path, caplog: pytest.LogCaptureFixture
+    ):
+        db_path = tmp_path / "legacy.db"
+        if not self._seed_legacy(db_path):
+            pytest.skip("sqlite-vec not available")
+
+        with (
+            patch("sif.config.settings.get_settings", return_value=self._settings()),
+            caplog.at_level(logging.WARNING),
+        ):
+            db = Database(db_path)
+            try:
+                db.init_schema()
+                stored = read_identity(db.connection)
+            finally:
+                db.close()
+
+        assert stored is not None
+        assert stored.source == "legacy-assumed"
+        assert stored.dimension == self._DIM
+        assert _identity_warning_count(caplog, "Index predates embedder identity") == 1
+
+        with (
+            patch("sif.config.settings.get_settings", return_value=self._settings()),
+            caplog.at_level(logging.WARNING),
+        ):
+            db = Database(db_path)
+            try:
+                db.init_schema()
+            finally:
+                db.close()
+
+        assert _identity_warning_count(caplog, "Index predates embedder identity") == 1
+
+    def test_supplied_identity_supplies_the_width(self, tmp_path):
+        db = Database(tmp_path / "identity.db")
+        try:
+            db.init_schema(identity=_settings_identity(6))
+            assert db._schema is not None
+            assert db._schema.embedding_dim == 6
+        finally:
+            db.close()
+
+    def test_injected_dimension_without_identity_never_reads_settings_or_writes(self, tmp_path):
+        db_path = tmp_path / "injected.db"
+        if not self._seed_legacy(db_path):
+            pytest.skip("sqlite-vec not available")
+
+        with patch(
+            "sif.config.settings.get_settings",
+            side_effect=AssertionError("get_settings must not be called"),
+        ):
+            db = Database(db_path)
+            try:
+                db.init_schema(embedding_dim=self._DIM)
+                assert read_identity(db.connection) is None
+            finally:
+                db.close()

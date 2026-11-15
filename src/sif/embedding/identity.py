@@ -225,6 +225,59 @@ class IdentityCheck:
         return self.status in ("mismatch", "dimension_mismatch")
 
 
+# The schema width guard's pre-change sentence (D-05/T-21-27). It lives here
+# beside the shared wording helpers so every dimension guard renders the same
+# remedy from one place.
+_SCHEMA_GUARD_REMEDY = (
+    "Restore the model and SIF_EMBEDDING_DIM that match FLOAT[{stored_dimension}], "
+    "or delete the database file and rebuild the index."
+)
+
+
+def schema_dimension_remedy(stored_dimension: int) -> str:
+    """Render the schema guard's pre-change remedy sentence for a width."""
+    return _SCHEMA_GUARD_REMEDY.format(stored_dimension=stored_dimension)
+
+
+def dimension_mismatch_text(
+    produced_by: str,
+    produced_dim: int,
+    expected_by: str,
+    expected_dim: int,
+    remedy: str,
+) -> str:
+    """Build the shared ``Embedding dimension mismatch: ...`` wording (D-05).
+
+    Producing hosts and config-layer checks reuse this sentence so a user can
+    always tell which model and width disagree and what to do about it.
+    """
+    return (
+        f"Embedding dimension mismatch: {produced_by} produces "
+        f"{produced_dim}-dimensional embeddings but {expected_by} is set to "
+        f"{expected_dim}. {remedy}"
+    )
+
+
+class IdentityDimensionError(RuntimeError):
+    """The stored ``FLOAT[n]`` width cannot hold the current model's vectors.
+
+    ``str()`` reproduces the pre-Phase-21 schema guard text byte-for-byte:
+    it names both widths and the remedy. ``check_identity`` itself keeps
+    returning statuses; only a host that must fail translates one into this
+    error (the schema open guard does).
+    """
+
+    def __init__(self, stored_dimension: int, current_dimension: int, remedy: str) -> None:
+        """Record both widths and the remedy; the message mirrors the guard."""
+        self.stored_dimension = stored_dimension
+        self.current_dimension = current_dimension
+        self.remedy = remedy
+        super().__init__(
+            f"Embedding dimension mismatch: database has FLOAT[{stored_dimension}], "
+            f"but settings require FLOAT[{current_dimension}]. {remedy}",
+        )
+
+
 def format_cache_model_id(model_type: str, model_name: str, api_base: str | None) -> str:
     """Build the canonical ``model_type:model_name[@api_base]`` bucket base."""
     model_id = f"{model_type}:{model_name}"

@@ -374,9 +374,49 @@ class TestOpenAIEmbedderDimensionCache:
                 manager.embed(["hello world"])
 
         message = str(excinfo.value)
+        # D-05/T-21-27: the pre-change message is byte-identical and rendered
+        # through the shared identity-module wording helper.
+        assert message == (
+            "Embedding dimension mismatch: model 'text-embedding-3-small' produces "
+            f"6-dimensional embeddings but SIF_EMBEDDING_DIM is set to {DIM}. "
+            "Set SIF_EMBEDDING_DIM to the endpoint model's dimension."
+        )
         assert "6" in message
         assert str(DIM) in message
         assert "SIF_EMBEDDING_DIM" in message
+
+    def test_dimension_mismatch_is_produced_through_the_shared_helper(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        for var in (
+            "SIF_MODEL_TYPE",
+            "SIF_API_KEY",
+            "SIF_API_BASE",
+            "SIF_EMBEDDING_DIM",
+            "SIF_CACHE_EMBEDDINGS",
+        ):
+            monkeypatch.delenv(var, raising=False)
+
+        vec6 = _unit_vector([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        fake_module, _ctor, _calls = _make_fake_openai(vec6)
+
+        with (
+            patch.dict("sys.modules", {"openai": fake_module}),
+            patch(
+                "sif.embedding.embedder.dimension_mismatch_text",
+                return_value="SENTINEL-WORDING",
+            ) as shared,
+        ):
+            with pytest.raises(RuntimeError, match=r"^SENTINEL-WORDING$"):
+                OpenAIEmbedder(model_name="text-embedding-3-small", embedding_dim=DIM)
+
+        shared.assert_called_once_with(
+            "model 'text-embedding-3-small'",
+            6,
+            "SIF_EMBEDDING_DIM",
+            DIM,
+            "Set SIF_EMBEDDING_DIM to the endpoint model's dimension.",
+        )
 
     def test_corrupt_cache_treated_as_miss(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
