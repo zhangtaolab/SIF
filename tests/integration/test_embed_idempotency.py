@@ -8,7 +8,7 @@ historical run (the observed 21-rows-vs-3-chunks, document-times-7 symptom).
 
 from __future__ import annotations
 
-import hashlib
+import json
 import sqlite3
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -17,7 +17,7 @@ from click.testing import CliRunner
 
 from sif.cli.commands.index import embed_cmd, update_cmd
 from sif.config.settings import Settings
-from sif.core.models import SearchOptions
+from sif.core.models import SearchOptions, compute_checksum
 
 
 DIM = 8
@@ -525,6 +525,10 @@ class TestUpdateChecksumIdempotency:
     every run (chunks/embeddings dropped + FTS rebuild). Persisting the fresh
     checksum on the update branch is equally load-bearing: without it a
     changed document would oscillate as "updated" on every later run.
+
+    Since CORR-01/D-08 the checksum convention is body + canonical full
+    frontmatter (``sif.core.models.compute_checksum``); the idempotency
+    contract — a zero-change rerun reports 0 updated — is unchanged.
     """
 
     BODY = "# Note\n\n" + ("Stable paragraph text. " * 100)
@@ -593,12 +597,15 @@ class TestUpdateChecksumIdempotency:
         # instead of rewriting the same document again.
         conn = sqlite3.connect(str(db_path))
         try:
-            stored_cs, stored_content = conn.execute(
-                "SELECT checksum, content FROM documents"
+            stored_cs, stored_content, stored_metadata = conn.execute(
+                "SELECT checksum, content, metadata FROM documents"
             ).fetchone()
         finally:
             conn.close()
-        assert stored_cs == hashlib.sha256(stored_content.encode()).hexdigest()
+        # D-08 retired the body-only convention: the row checksum covers the
+        # body plus the canonical full frontmatter (empty for this fixture).
+        # The stored string form must reproduce the same hash.
+        assert stored_cs == compute_checksum(stored_content, json.loads(stored_metadata))
         assert "Edited paragraph text" in stored_content
         result = _invoke_update(db_path, settings, [])
         assert result.exit_code == 0
