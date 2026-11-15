@@ -966,3 +966,189 @@ class TestChunkFieldRemap:
         assert results[0].metadata["chunk_id"] == core.chunk_id
         assert results[0].metadata["sequence"] == core.sequence
         assert results[0].metadata["chunk_matches"] == core.chunk_matches
+
+
+def _downgrade_documents_fts_to_legacy(conn: sqlite3.Connection) -> None:
+    """Replace the two-column FTS with the pre-CORR-04 single-column shape."""
+    for trigger in (
+        "documents_fts_insert",
+        "documents_fts_update",
+        "documents_fts_delete",
+    ):
+        conn.execute(f"DROP TRIGGER IF EXISTS {trigger}")
+    conn.execute("DROP TABLE IF EXISTS documents_fts_v")
+    conn.execute("DROP TABLE IF EXISTS documents_fts")
+    conn.execute(
+        "CREATE VIRTUAL TABLE documents_fts USING fts5("
+        "content, content='documents', content_rowid='rowid', tokenize='porter')"
+    )
+    conn.execute("CREATE VIRTUAL TABLE documents_fts_v USING fts5vocab(documents_fts, 'row')")
+    conn.execute("INSERT INTO documents_fts(rowid, content) SELECT rowid, content FROM documents")
+    conn.execute("""
+        CREATE TRIGGER documents_fts_insert
+        AFTER INSERT ON documents
+        BEGIN
+            INSERT INTO documents_fts(rowid, content) VALUES (new.rowid, new.content);
+        END
+    """)
+    conn.execute("""
+        CREATE TRIGGER documents_fts_update
+        AFTER UPDATE ON documents
+        BEGIN
+            INSERT INTO documents_fts(documents_fts, rowid, content)
+            VALUES('delete', old.rowid, old.content);
+            INSERT INTO documents_fts(rowid, content) VALUES(new.rowid, new.content);
+        END
+    """)
+    conn.execute("""
+        CREATE TRIGGER documents_fts_delete
+        AFTER DELETE ON documents
+        BEGIN
+            INSERT INTO documents_fts(documents_fts, rowid, content)
+            VALUES('delete', old.rowid, old.content);
+        END
+    """)
+    conn.commit()
+
+
+def _seed_pre_title_db(tmp_path: Path, embedding_dim: int = 8) -> tuple[Path, Settings]:
+    """A populated pre-CORR-04 index that only an init_schema call migrates."""
+    settings = Settings(
+        _env_file=None,
+        embedding_dim=embedding_dim,
+        model_name="test",
+        cache_embeddings=False,
+    )
+    db_path = tmp_path / "pre-title.db"
+    db = Database(db_path)
+    try:
+        db.init_schema(embedding_dim=embedding_dim)
+        now = datetime.now(timezone.utc).isoformat()
+        with db.connection:
+            db.connection.execute(
+                "INSERT INTO collections (id, name, path, created_at, updated_at)"
+                " VALUES ('c1', 'notes', '/vault', ?, ?)",
+                (now, now),
+            )
+            db.connection.execute(
+                "INSERT INTO documents (id, collection_id, path, filename, title, content,"
+                " checksum, mtime, created_at, updated_at)"
+                " VALUES ('d1', 'c1', '/vault/a.md', 'a.md', 'Titular Alpha',"
+                " 'body words only', 'ck-1', 1.0, ?, ?)",
+                (now, now),
+            )
+        _downgrade_documents_fts_to_legacy(db.connection)
+    finally:
+        db.close()
+    return db_path, settings
+
+
+def _schema_ddl(db_path: Path) -> dict[str, str]:
+    """Stored DDL for every table, trigger, and index in the database."""
+    conn = sqlite3.connect(db_path)
+    try:
+        return {
+            row[0]: row[1]
+            for row in conn.execute(
+                "SELECT name, sql FROM sqlite_master"
+                " WHERE type IN ('table', 'trigger', 'index')"
+                " AND name NOT LIKE 'sqlite_%'"
+            )
+        }
+    finally:
+        conn.close()
+
+
+class TestSchemaInitializationAtStartup:
+    """CORR-04/T-19-21: an MCP-only process migrates the schema on startup.
+
+    ``SearchBackend`` is the only DB entry point an MCP-only deployment has;
+    without this one-time ``init_schema`` call a pre-title database keeps its
+    single-column FTS forever (RESEARCH Pitfall 13).
+    """
+
+    def test_constructor_migrates_a_pre_title_database(self, tmp_path: Path) -> None:
+        """Construction applies the title column, triggers, and mtime index."""
+        db_path, settings = _seed_pre_title_db(tmp_path)
+        with patch(
+            "sif.mcp.backend.EmbeddingModelFactory", side_effect=RuntimeError("no embedder")
+        ):
+            SearchBackend(str(db_path), settings=settings)
+
+        conn = sqlite3.connect(db_path)
+        try:
+            fts_sql = conn.execute(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='documents_fts'"
+            ).fetchone()[0]
+            assert "title" in fts_sql
+            # The title-only token was unmatchable before the migration.
+            assert (
+                conn.execute(
+                    "SELECT COUNT(*) FROM documents_fts WHERE documents_fts MATCH '\"titular\"'"
+                ).fetchone()[0]
+                == 1
+            )
+            trigger_sql = conn.execute(
+                "SELECT sql FROM sqlite_master WHERE type='trigger' AND name='documents_fts_insert'"
+            ).fetchone()[0]
+            assert "title" in trigger_sql
+            index_names = {
+                row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='index'")
+            }
+            assert "idx_documents_mtime" in index_names
+        finally:
+            conn.close()
+
+    def test_second_construction_is_idempotent_and_leaves_ddl_unchanged(
+        self, tmp_path: Path
+    ) -> None:
+        """A second backend over the migrated DB pays detection reads only."""
+        db_path, settings = _seed_pre_title_db(tmp_path)
+        with patch(
+            "sif.mcp.backend.EmbeddingModelFactory", side_effect=RuntimeError("no embedder")
+        ):
+            SearchBackend(str(db_path), settings=settings)
+            first = _schema_ddl(db_path)
+            SearchBackend(str(db_path), settings=settings)
+            second = _schema_ddl(db_path)
+
+        assert first == second
+
+    def test_constructor_uses_backend_settings_dimension(self, tmp_path: Path) -> None:
+        """The backend's own dimension wins over the process environment.
+
+        The seeded index is FLOAT[8]; a process default of FLOAT[1024] would
+        raise the dimension-mismatch RuntimeError, so success proves the
+        injected settings dimension was used.
+        """
+        db_path, settings = _seed_pre_title_db(tmp_path)
+        process_settings = settings.model_copy(update={"embedding_dim": 1024})
+        with (
+            patch("sif.config.settings.get_settings", return_value=process_settings),
+            patch("sif.mcp.backend.EmbeddingModelFactory", side_effect=RuntimeError("no embedder")),
+        ):
+            SearchBackend(str(db_path), settings=settings)
+
+        conn = sqlite3.connect(db_path)
+        try:
+            sql = conn.execute(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='document_embeddings'"
+            ).fetchone()[0]
+            assert "FLOAT[8]" in sql
+        finally:
+            conn.close()
+
+    def test_dimension_mismatch_raises_the_existing_runtime_error(self, tmp_path: Path) -> None:
+        """A wrong width fails loudly instead of silently rebuilding the index."""
+        db_path, _settings = _seed_pre_title_db(tmp_path)
+        wrong = Settings(
+            _env_file=None,
+            embedding_dim=384,
+            model_name="test",
+            cache_embeddings=False,
+        )
+        with patch(
+            "sif.mcp.backend.EmbeddingModelFactory", side_effect=RuntimeError("no embedder")
+        ):
+            with pytest.raises(RuntimeError, match="Embedding dimension mismatch"):
+                SearchBackend(str(db_path), settings=wrong)

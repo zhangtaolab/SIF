@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import sqlite3
 from datetime import datetime, timezone
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
+from sif.database.database import Database
 from sif.database.schema import SchemaManager
 
 
@@ -262,6 +263,7 @@ class TestSchemaRealSQLiteCoverage:
                 "idx_documents_collection",
                 "idx_documents_path",
                 "idx_documents_checksum",
+                "idx_documents_mtime",
                 "idx_chunks_document",
                 "idx_contexts_target",
                 "idx_llm_cache_lookup",
@@ -311,6 +313,38 @@ class TestSchemaRealSQLiteCoverage:
                 ).fetchone()[0]
                 == 0
             )
+        finally:
+            conn.close()
+
+    def test_mtime_index_is_created_on_fresh_and_migrated_databases(self):
+        """CORR-04: idx_documents_mtime exists on fresh and upgraded databases.
+
+        A database created before this index existed is simulated by dropping
+        it and re-running ``create_all``: the ``IF NOT EXISTS`` create is the
+        whole migration, so the upgrade must restore it without any other
+        schema change.
+        """
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            manager = SchemaManager(conn, embedding_dim=384)
+            manager.create_all()
+
+            def index_names() -> set[str]:
+                return {
+                    row[0]
+                    for row in conn.execute(
+                        "SELECT name FROM sqlite_master WHERE type = 'index'",
+                    ).fetchall()
+                }
+
+            assert "idx_documents_mtime" in index_names()
+            conn.execute("DROP INDEX idx_documents_mtime")
+            conn.commit()
+            assert "idx_documents_mtime" not in index_names()
+
+            manager.create_all()
+            assert "idx_documents_mtime" in index_names()
         finally:
             conn.close()
 
@@ -868,3 +902,49 @@ class TestFtsUpdateTrigger:
             ).fetchone()[0]
             == 1
         )
+
+
+class TestDatabaseInitSchemaDimension:
+    """CORR-04: ``Database.init_schema`` accepts an explicit embedding width.
+
+    An MCP backend with injected settings initializes the schema at its own
+    dimension, so an override must not fall back to the process environment;
+    the no-argument form keeps the existing settings resolution unchanged.
+    """
+
+    def _vector_sql(self, db: Database) -> str:
+        row = db.connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='document_embeddings'"
+        ).fetchone()
+        return "" if row is None else row[0]
+
+    def test_explicit_dimension_overrides_environment(self, tmp_path):
+        """An override never consults ``get_settings`` and sets the vec width."""
+        db = Database(tmp_path / "override.db")
+        try:
+            with patch(
+                "sif.config.settings.get_settings",
+                side_effect=AssertionError("get_settings must not be called with an override"),
+            ):
+                db.init_schema(embedding_dim=8)
+            assert db._schema is not None
+            assert db._schema.embedding_dim == 8
+            vector_sql = self._vector_sql(db)
+            if vector_sql:
+                assert "FLOAT[8]" in vector_sql
+        finally:
+            db.close()
+
+    def test_no_argument_form_still_uses_process_settings(self, tmp_path):
+        """The pre-existing no-argument call keeps resolving settings."""
+        db = Database(tmp_path / "env.db")
+        try:
+            with patch("sif.config.settings.get_settings", return_value=MagicMock(embedding_dim=7)):
+                db.init_schema()
+            assert db._schema is not None
+            assert db._schema.embedding_dim == 7
+            vector_sql = self._vector_sql(db)
+            if vector_sql:
+                assert "FLOAT[7]" in vector_sql
+        finally:
+            db.close()

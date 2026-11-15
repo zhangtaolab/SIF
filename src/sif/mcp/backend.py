@@ -10,6 +10,7 @@ from typing import Any, TypeVar
 from sif.config.settings import Settings, get_settings
 from sif.core.models import SearchOptions
 from sif.database.connection import DatabaseConnection
+from sif.database.database import Database
 from sif.database.repositories import CollectionRepository, DocumentRepository
 from sif.embedding.factory import EmbeddingModelFactory
 from sif.embedding.model import ModelType
@@ -91,6 +92,26 @@ class SearchBackend:
         self.settings = settings or get_settings()
         self._embedder: Any = None
         self._vec_unavailable_warned = False
+
+        # CORR-04 / RESEARCH Pitfall 13: an MCP-only host never runs a CLI
+        # command, so the schema must migrate here or a pre-title database
+        # keeps its single-column FTS forever. The backend's own settings
+        # dimension is used because injected settings and embedder overrides
+        # can legitimately differ from the process environment. Detection is
+        # one sqlite_master read once migrated; a dimension mismatch raises
+        # the existing clear RuntimeError instead of rebuilding at the wrong
+        # width, and the connection is closed on every path.
+        db = Database(self.db_path)
+        try:
+            db.init_schema(embedding_dim=self.settings.embedding_dim)
+            # ``create_all`` leaves the FTS 'rebuild'/trigger/vocab statements
+            # in the connection's implicit transaction; closing without a
+            # commit would roll them back and leave a detected-as-migrated
+            # but empty index behind.
+            db.connection.commit()
+        finally:
+            db.close()
+
         try:
             factory = EmbeddingModelFactory()
             model_type = ModelType(self.settings.model_type)

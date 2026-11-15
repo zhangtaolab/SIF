@@ -475,6 +475,12 @@ class SchemaManager:
             CREATE INDEX IF NOT EXISTS idx_documents_checksum
             ON documents(checksum)
         """)
+        # CORR-04: Phase 20's mtime filter scans this column; IF NOT EXISTS
+        # makes the create a no-op on already-migrated databases.
+        self.db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_documents_mtime
+            ON documents(mtime)
+        """)
 
         # Chunks indexes
         self.db.execute("""

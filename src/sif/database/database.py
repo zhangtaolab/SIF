@@ -28,12 +28,19 @@ class Database:
             self._connection = create_connection(self.db_path)
         return self._connection
 
-    def init_schema(self) -> None:
-        """Initialize database schema."""
-        from sif.config.settings import get_settings  # noqa: PLC0415
+    def init_schema(self, embedding_dim: int | None = None) -> None:
+        """Initialize database schema.
 
-        settings = get_settings()
-        self._schema = SchemaManager(self.connection, embedding_dim=settings.embedding_dim)
+        ``embedding_dim`` overrides the process setting so a host with
+        injected settings (the MCP backend) can initialize the schema at its
+        own dimension. When supplied, ``get_settings()`` is never consulted;
+        the no-argument form keeps resolving the process environment.
+        """
+        if embedding_dim is None:
+            from sif.config.settings import get_settings  # noqa: PLC0415
+
+            embedding_dim = get_settings().embedding_dim
+        self._schema = SchemaManager(self.connection, embedding_dim=embedding_dim)
         self._schema.create_all()
 
     @contextmanager
