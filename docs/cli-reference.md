@@ -431,6 +431,7 @@ sif search query [OPTIONS]
 |--------|-------|------|---------|-------------|
 | `--limit` | `-n` | integer range | — | Number of results (default: SIF_DEFAULT_LIMIT or 10) |
 | `--offset` | `—` | integer range | `0` | Result offset for pagination (default: 0) |
+| `--filter` | `—` | text | — | Metadata filter as a JSON AST (qmd-compatible). |
 | `--collection` | `-c` | text[] | — | Collection to search |
 | `--all` | `—` | flag | `false` | Search all collections |
 | `--min-score` | `—` | float | `0.0` | Minimum score threshold |
@@ -508,6 +509,7 @@ sif search vsearch [OPTIONS]
 |--------|-------|------|---------|-------------|
 | `--limit` | `-n` | integer range | — | Number of results (default: SIF_DEFAULT_LIMIT or 10) |
 | `--offset` | `—` | integer range | `0` | Result offset for pagination (default: 0) |
+| `--filter` | `—` | text | — | Metadata filter as a JSON AST (qmd-compatible). |
 | `--collection` | `-c` | text[] | — | Collection to search |
 | `--all` | `—` | flag | `false` | Search all collections |
 | `--min-score` | `—` | float | `0.0` | Minimum score threshold |

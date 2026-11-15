@@ -291,3 +291,24 @@ class TestFilterComposition:
         assert options.offset == 2
         assert options.min_score == 0.5
         assert options.filter == parse_filter(json.loads(_ACTIVE_FILTER))
+
+
+class TestDocsSurface:
+    """The generator-owned CLI reference documents the flag (never hand-edited)."""
+
+    def test_cli_reference_documents_filter_flag(self) -> None:
+        """``--filter`` appears for search, vsearch, and query sections."""
+        cli_ref = Path("docs/cli-reference.md")
+        if not cli_ref.exists():
+            pytest.skip("cli-reference.md not found")
+        content = cli_ref.read_text(encoding="utf-8")
+
+        # Structural, not phrasing-dependent: one flag token per section.
+        assert content.count("--filter") >= 3
+        for header, next_header in (
+            ("### `search query`", "### `search search`"),
+            ("### `search search`", "### `search vsearch`"),
+            ("### `search vsearch`", "## MCP Commands"),
+        ):
+            section = content.split(header, 1)[1].split(next_header, 1)[0]
+            assert "--filter" in section
