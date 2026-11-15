@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -23,11 +24,18 @@ def _canonicalize_metadata(value: Any) -> Any:
     compares keys before the default hook runs. Coercing keys at every
     nesting depth makes the serializer total over anything frontmatter can
     produce (D-08).
+
+    Non-finite floats are stringified here (``"nan"``/``"inf"``/``"-inf"``):
+    YAML's ``.nan``/``.inf`` parse to floats, and RFC 8259 has no finite
+    spelling for them, so storing them verbatim would put invalid JSON in
+    ``documents.metadata`` and every ``--json``/MCP surface (CR-01/WR-06).
     """
     if isinstance(value, Mapping):
         return {str(key): _canonicalize_metadata(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
         return [_canonicalize_metadata(item) for item in value]
+    if isinstance(value, float) and not math.isfinite(value):
+        return str(value)
     return value
 
 
@@ -39,13 +47,16 @@ def canonical_metadata_json(metadata: Mapping[str, Any]) -> str:
     hashed forms can never diverge after a JSON round trip.
     ``default=str`` keeps typed YAML values (dates, datetimes) storable
     instead of raising ``TypeError``; ``ensure_ascii=False`` keeps Unicode
-    values byte-stable rather than escaped.
+    values byte-stable rather than escaped. ``allow_nan=False`` turns any
+    residual non-finite float into a hard error instead of the invalid
+    ``NaN``/``Infinity`` tokens RFC 8259 forbids (CR-01/WR-06).
     """
     return json.dumps(
         _canonicalize_metadata(metadata),
         sort_keys=True,
         default=str,
         ensure_ascii=False,
+        allow_nan=False,
         separators=(",", ":"),
     )
 

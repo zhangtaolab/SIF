@@ -27,6 +27,7 @@ its other keys remain filterable.
 from __future__ import annotations
 
 import json
+import math
 import sqlite3
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -54,6 +55,17 @@ SKIP_CAP_STRING = "cap_string"
 SKIP_CAP_ARRAY = "cap_array"
 SKIP_CAP_KEYS = "cap_keys"
 SKIP_CAP_FRONTMATTER = "cap_frontmatter"
+# CR-01: JSON numbers do not fit SQLite's REAL column. ``json.loads`` accepts
+# bare ``NaN``/``Infinity`` literals and arbitrary-precision integers, but
+# binding a NaN stores NULL (violating the typed-column CHECK) and
+# ``float(10**400)`` raises OverflowError. Both shapes are bounded per-key
+# skips (D-07) so one value can never abort indexing or brick an upgrade.
+SKIP_NON_FINITE = "non_finite"
+SKIP_CAP_NUMBER = "cap_number"
+# CR-01: a stored blob that is not JSON cannot be decomposed key by key; the
+# backfill records one document-level skip instead of failing every future open.
+SKIP_INVALID_JSON = "invalid_json"
+UNPARSEABLE_METADATA_KEY = "<metadata>"
 
 
 @dataclass(frozen=True)
@@ -88,6 +100,24 @@ def _scalar_type(value: Any) -> str | None:
         return "number"
     if isinstance(value, str):
         return "string"
+    return None
+
+
+def _number_skip_reason(value: int | float) -> str | None:
+    """Return the D-07 reason a JSON number cannot enter the REAL typed store.
+
+    ``json.loads`` preserves arbitrary-precision integers and its default
+    ``parse_constant`` accepts bare ``NaN``/``Infinity``. ``float(10**400)``
+    raises ``OverflowError`` and a NaN bound to SQLite becomes NULL (failing
+    the typed-column CHECK), so both shapes are skipped per key instead of
+    escaping derivation (CR-01).
+    """
+    try:
+        converted = float(value)
+    except (OverflowError, ValueError):
+        return SKIP_CAP_NUMBER
+    if not math.isfinite(converted):
+        return SKIP_NON_FINITE
     return None
 
 
@@ -142,15 +172,34 @@ def _classify_array(key: str, value: list[Any]) -> tuple[list[TypedRow], str | N
         return [], SKIP_MIXED_ARRAY
     if len(value) > MAX_ARRAY_ELEMENTS:
         return [], SKIP_CAP_ARRAY
+    if value_type == "number":
+        for item in value:
+            reason = _number_skip_reason(item)
+            if reason is not None:
+                return [], reason
     rows = [_typed_row(key, ordinal, item, value_type) for ordinal, item in enumerate(value)]
     return rows, None
+
+
+def _classify_scalar(key: str, value: Any) -> tuple[list[TypedRow], str | None]:
+    """Classify one non-mapping, non-array value; returns (rows, skip reason)."""
+    if isinstance(value, str) and len(value) > MAX_STRING_CHARS:
+        return [], SKIP_CAP_STRING
+    value_type = _scalar_type(value)
+    if value_type is None:  # pragma: no cover - JSON scalar types are exhaustive
+        return [], SKIP_MIXED_ARRAY
+    if value_type == "number":
+        reason = _number_skip_reason(value)
+        if reason is not None:
+            return [], reason
+    return [_typed_row(key, 0, value, value_type)], None
 
 
 def _classify_value(key: str, value: Any) -> tuple[list[TypedRow], str | None]:
     """Classify one resolved value; returns (rows, skip reason or ``None``).
 
-    Rules 4-9 of :func:`typed_rows`, in order. ``None`` as the reason means the
-    value is filterable; the rows may still be empty (an empty array).
+    Rules 4-10 of :func:`typed_rows`, in order. ``None`` as the reason means
+    the value is filterable; the rows may still be empty (an empty array).
     """
     if isinstance(value, Mapping) or _contains_mapping(value):
         return [], SKIP_NESTED
@@ -158,12 +207,7 @@ def _classify_value(key: str, value: Any) -> tuple[list[TypedRow], str | None]:
         return [], SKIP_NULL
     if isinstance(value, list):
         return _classify_array(key, value)
-    if isinstance(value, str) and len(value) > MAX_STRING_CHARS:
-        return [], SKIP_CAP_STRING
-    value_type = _scalar_type(value)
-    if value_type is None:  # pragma: no cover - JSON scalar types are exhaustive
-        return [], SKIP_MIXED_ARRAY
-    return [_typed_row(key, 0, value, value_type)], None
+    return _classify_scalar(key, value)
 
 
 def typed_rows(canonical_json: str) -> tuple[list[TypedRow], list[SkippedKey]]:
@@ -172,22 +216,32 @@ def typed_rows(canonical_json: str) -> tuple[list[TypedRow], list[SkippedKey]]:
     The canonical string is the only input (D-05) and its ``sort_keys=True``
     order makes caps deterministic. Classification (D-07), in order:
 
-    1. A >64 KB canonical blob skips every key as ``cap_frontmatter``
+    1. A blob that is not JSON yields one document-level ``invalid_json``
+       skip (CR-01): the backfill must never abort every future open because
+       one stored value is undecomposable.
+    2. A >64 KB canonical blob skips every key as ``cap_frontmatter``
        (at most the first 64 recorded).
-    2. Keys after the first 64 are skipped as ``cap_keys``.
-    3. Keys over 128 bytes are skipped as ``cap_key``.
-    4. Objects, and arrays containing an object, are skipped as ``nested``.
-    5. ``None`` is skipped as ``null``.
-    6. Arrays that are not flat homogeneous scalar lists (including arrays of
+    3. Keys after the first 64 are skipped as ``cap_keys``.
+    4. Keys over 128 bytes are skipped as ``cap_key``.
+    5. Objects, and arrays containing an object, are skipped as ``nested``.
+    6. ``None`` is skipped as ``null``.
+    7. Arrays that are not flat homogeneous scalar lists (including arrays of
        arrays, and ``[true, 1]``-style mixes) are skipped as ``mixed_array``.
-    7. Strings over 1024 characters are skipped as ``cap_string``.
-    8. Arrays over 128 elements are skipped as ``cap_array``.
-    9. Otherwise one row per scalar (``ordinal`` 0), or one row per array
-       element (``ordinal`` 0..n-1) so arrays behave as sets.
+    8. Strings over 1024 characters are skipped as ``cap_string``.
+    9. Arrays over 128 elements are skipped as ``cap_array``.
+    10. Numbers that are non-finite or outside the double range are skipped as
+        ``non_finite`` / ``cap_number`` (CR-01) — derivation is total over
+        every shape JSON can express.
+    11. Otherwise one row per scalar (``ordinal`` 0), or one row per array
+        element (``ordinal`` 0..n-1) so arrays behave as sets.
 
-    At most 64 skip rows are ever returned per document.
+    At most 64 skip rows are ever returned per document (the document-level
+    ``invalid_json`` skip is the only row in that case).
     """
-    raw = json.loads(canonical_json) if canonical_json else {}
+    try:
+        raw = json.loads(canonical_json) if canonical_json else {}
+    except (json.JSONDecodeError, TypeError):
+        return [], [SkippedKey(UNPARSEABLE_METADATA_KEY, SKIP_INVALID_JSON)]
     if not isinstance(raw, Mapping):
         return [], []
 

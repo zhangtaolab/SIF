@@ -155,6 +155,27 @@ def _metadata_values(db_path: Path, path: str) -> dict[str, list[object]]:
     return values
 
 
+def _metadata_skips(db_path: Path, path: str) -> dict[str, str]:
+    """Read the D-07 skip sidecar for one document path via a fresh connection."""
+    conn = sqlite3.connect(str(db_path))
+    try:
+        return {
+            row[0]: row[1]
+            for row in conn.execute(
+                "SELECT s.key, s.reason FROM document_metadata_skips s "
+                "JOIN documents d ON s.document_id = d.id WHERE d.path = ?",
+                (path,),
+            )
+        }
+    finally:
+        conn.close()
+
+
+def _reject_json_constant(token: str) -> None:
+    """``json.loads`` parse_constant hook that refuses NaN/Infinity tokens."""
+    raise AssertionError(f"non-standard JSON token: {token}")
+
+
 def _seed_chunk_and_embedding(db: Database, collection_id: str, doc_path: str) -> None:
     """Simulate a prior embed pass: one chunk row plus one vec0 vector."""
     from sif.search.vector import VectorSearcher
@@ -270,6 +291,59 @@ class TestIncrementalIndexer:
         assert checksum == compute_checksum(content, {})
         # The scan event reaches the presentation callback before per-file events.
         assert events[0].startswith("scan ")
+
+    def test_unrepresentable_frontmatter_numbers_never_abort_the_pass(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """CR-01: a 400-digit integer and ``.nan`` index as per-key skips/strings.
+
+        Before the fix the huge integer raised OverflowError (uncaught, so the
+        whole pass aborted) and ``.nan`` either violated the typed-column
+        CHECK or wrote a bare ``NaN`` token into ``documents.metadata``.
+        """
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "incr.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        # Sorted first, so a fatal error here would hide the healthy trailing file.
+        (notes / "aa-huge.md").write_text(
+            "---\nbig: " + "9" * 400 + "\nstatus: ok\n---\n# Huge\n\nBody text.\n",
+            encoding="utf-8",
+        )
+        (notes / "ab-nan.md").write_text(
+            "---\nbad: .nan\nstatus: ok\n---\n# Nan\n\nBody text.\n",
+            encoding="utf-8",
+        )
+        (notes / "after.md").write_text(BODY_ALPHA, encoding="utf-8")
+        _seed_collection(db_path, notes)
+
+        indexer, db, coll = _open_indexer(db_path)
+        try:
+            events: list[str] = []
+            result = indexer.update_collection(coll, progress=events.append)
+        finally:
+            db.close()
+
+        assert result == IncrementalResult(added=3, updated=0, removed=0)
+        assert not any(event.startswith("error ") for event in events)
+        assert _doc_paths(db_path) == {
+            str(notes / "aa-huge.md"),
+            str(notes / "ab-nan.md"),
+            str(notes / "after.md"),
+        }
+        # The out-of-range integer is a bounded per-key skip; the healthy key
+        # on the same document stays filterable.
+        assert _metadata_values(db_path, str(notes / "aa-huge.md")) == {"status": ["ok"]}
+        assert _metadata_skips(db_path, str(notes / "aa-huge.md")) == {"big": "cap_number"}
+        # The non-finite float is stringified by the canonical serializer, so
+        # the stored blob is strict JSON and the typed row is a string.
+        stored = _doc_metadata(db_path, str(notes / "ab-nan.md"))
+        assert json.loads(stored, parse_constant=_reject_json_constant)["bad"] == "nan"
+        assert _metadata_values(db_path, str(notes / "ab-nan.md")) == {
+            "bad": ["nan"],
+            "status": ["ok"],
+        }
+        assert _metadata_skips(db_path, str(notes / "ab-nan.md")) == {}
 
     def test_non_string_frontmatter_title_indexes_via_fallback_and_continues(
         self, tmp_path, monkeypatch

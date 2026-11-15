@@ -9,6 +9,7 @@ disagree (research Pitfall 3).
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import datetime
 from pathlib import Path
@@ -19,6 +20,10 @@ import pytest
 from sif.core.filters import parse_filter, parse_match
 from sif.core.models import Collection, Document, canonical_metadata_json
 from sif.database.metadata_repository import (
+    SKIP_CAP_NUMBER,
+    SKIP_INVALID_JSON,
+    SKIP_NON_FINITE,
+    UNPARSEABLE_METADATA_KEY,
     MetadataValueRepository,
     SkippedKey,
     TypedRow,
@@ -89,6 +94,11 @@ def _stored_rows(db: sqlite3.Connection, document_id: str) -> list[tuple[Any, ..
             (document_id,),
         )
     ]
+
+
+def _reject_json_constant(token: str) -> None:
+    """``json.loads`` parse_constant hook that refuses NaN/Infinity tokens."""
+    raise AssertionError(f"non-standard JSON token: {token}")
 
 
 class TestDerivation:
@@ -262,6 +272,63 @@ class TestDerivation:
         """A JSON array (never produced by the serializer) yields no rows or skips."""
         assert typed_rows("[]") == ([], [])
         assert typed_rows("") == ([], [])
+
+    @pytest.mark.parametrize(
+        ("canonical", "key", "reason"),
+        [
+            ('{"big":' + "9" * 400 + "}", "big", SKIP_CAP_NUMBER),
+            ('{"big":[' + "9" * 400 + "]}", "big", SKIP_CAP_NUMBER),
+            ('{"bad":NaN}', "bad", SKIP_NON_FINITE),
+            ('{"bad":Infinity}', "bad", SKIP_NON_FINITE),
+            ('{"bad":-Infinity}', "bad", SKIP_NON_FINITE),
+        ],
+    )
+    def test_unrepresentable_numbers_skip_per_key(
+        self, canonical: str, key: str, reason: str
+    ) -> None:
+        """CR-01: huge integers and bare NaN/Infinity skip that key, never raise.
+
+        ``json.loads`` preserves arbitrary-precision integers and accepts the
+        non-standard constants ``json.dumps`` used to emit. ``float(10**400)``
+        raises OverflowError and a NaN bound to SQLite is NULL, so derivation
+        must be total over both shapes (D-07 per-key skip).
+        """
+        rows, skipped = typed_rows(canonical)
+
+        assert rows == []
+        assert skipped == [SkippedKey(key, reason)]
+
+    def test_unrepresentable_number_does_not_hide_other_keys(self) -> None:
+        """CR-01: a skipped huge integer leaves the document's other keys filterable."""
+        rows, skipped = typed_rows('{"big":' + "9" * 400 + ',"status":"ok"}')
+
+        assert rows == [TypedRow("status", 0, "string", text_value="ok")]
+        assert skipped == [SkippedKey("big", SKIP_CAP_NUMBER)]
+
+    def test_unparseable_stored_blob_records_one_document_level_skip(self) -> None:
+        """CR-01: an undecomposable blob is a skip, so the backfill can complete."""
+        rows, skipped = typed_rows('{"broken"')
+
+        assert rows == []
+        assert skipped == [SkippedKey(UNPARSEABLE_METADATA_KEY, SKIP_INVALID_JSON)]
+
+    def test_canonical_serializer_stringifies_non_finite_floats(self) -> None:
+        """CR-01/WR-06: ``.nan``/``.inf`` never enter documents.metadata as tokens."""
+        canonical = canonical_metadata_json(
+            {"inf": float("inf"), "neg": float("-inf"), "nan": float("nan")}
+        )
+
+        parsed = json.loads(canonical, parse_constant=_reject_json_constant)
+
+        assert parsed == {"inf": "inf", "nan": "nan", "neg": "-inf"}
+        # The store derives a filterable string row, matching the stored blob.
+        rows, skipped = typed_rows(canonical)
+        assert skipped == []
+        assert {row.key: row.text_value for row in rows} == {
+            "inf": "inf",
+            "nan": "nan",
+            "neg": "-inf",
+        }
 
     def test_replace_from_canonical_rebuilds_idempotently(self, db):
         """Delete-then-insert is idempotent and returns row/skip counts."""

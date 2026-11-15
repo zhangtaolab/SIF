@@ -858,6 +858,85 @@ class TestMetadataBackfill:
         finally:
             conn.close()
 
+    def test_unrepresentable_number_skip_does_not_brick_every_open(self):
+        """CR-01: stored huge ints / bare NaN skip that key and complete the pass.
+
+        Before the fix the huge integer raised OverflowError out of the
+        backfill and the bare NaN violated the typed-column CHECK (mapped by
+        ``open_initialized_database`` to "database may be corrupted"), so
+        neither marker was written and every subsequent open failed.
+        """
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            manager = SchemaManager(conn, embedding_dim=8)
+            manager.create_all()
+            conn.execute(
+                "INSERT INTO collections (id, name, path, created_at, updated_at)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (*self._COLLECTION, "2026-11-15T00:00:00+00:00", "2026-11-15T00:00:00+00:00"),
+            )
+            self._insert_document(conn, "doc-huge", '{"big":' + "9" * 400 + ',"ok":"yes"}')
+            self._insert_document(conn, "doc-nan", '{"bad":NaN,"ok":"yes"}')
+            conn.execute("DELETE FROM index_meta WHERE key = 'metadata_values_version'")
+            conn.commit()
+
+            manager.create_all()
+
+            assert self._marker(conn) == "1"
+            skips = {
+                (row[0], row[1], row[2])
+                for row in conn.execute(
+                    "SELECT document_id, key, reason FROM document_metadata_skips"
+                )
+            }
+            assert skips == {
+                ("doc-huge", "big", "cap_number"),
+                ("doc-nan", "bad", "non_finite"),
+            }
+            # The healthy key still derives, so the document stays filterable.
+            healthy = {
+                (row[0], row[1])
+                for row in conn.execute(
+                    "SELECT document_id, text_value FROM document_metadata_values WHERE key = 'ok'"
+                )
+            }
+            assert healthy == {("doc-huge", "yes"), ("doc-nan", "yes")}
+
+            # A completed pass means a re-open pays only the marker read.
+            manager.create_all()
+            assert self._marker(conn) == "1"
+        finally:
+            conn.close()
+
+    def test_unparseable_stored_blob_skip_does_not_brick_every_open(self):
+        """CR-01: one undecomposable stored blob records a skip and completes the pass."""
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            manager = SchemaManager(conn, embedding_dim=8)
+            manager.create_all()
+            conn.execute(
+                "INSERT INTO collections (id, name, path, created_at, updated_at)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (*self._COLLECTION, "2026-11-15T00:00:00+00:00", "2026-11-15T00:00:00+00:00"),
+            )
+            self._insert_document(conn, "doc-broken", '{"not json')
+            conn.execute("DELETE FROM index_meta WHERE key = 'metadata_values_version'")
+            conn.commit()
+
+            manager.create_all()
+
+            assert self._marker(conn) == "1"
+            skip = conn.execute(
+                "SELECT key, reason FROM document_metadata_skips WHERE document_id = 'doc-broken'"
+            ).fetchone()
+            assert tuple(skip) == ("<metadata>", "invalid_json")
+            manager.create_all()
+            assert self._marker(conn) == "1"
+        finally:
+            conn.close()
+
 
 class TestFtsUpdateTrigger:
     """FND-06 / CR-01: external-content FTS5 sync triggers must not write directly.

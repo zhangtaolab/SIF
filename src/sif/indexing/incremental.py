@@ -485,13 +485,17 @@ class IncrementalIndexer:
                 with self._conn:
                     self._doc_repo.create(doc)
                 outcome = "added"
-        except (sqlite3.Error, TypeError) as e:
+        except (sqlite3.Error, TypeError, OverflowError) as e:
             # D-04 per-file isolation: a write failure for one document must
             # be counted as that file's failure, never abort the whole
             # update pass. Frontmatter is arbitrary YAML, so a metadata value
             # SQLite cannot bind must stay a per-file error even with the
-            # parser-side title coercion (19 REVIEW CR-02). Each write block
-            # above owns its transaction, so nothing is left half-written.
+            # parser-side title coercion (19 REVIEW CR-02). OverflowError is
+            # the legacy shape of an out-of-double-range JSON number
+            # (20 REVIEW CR-01); derivation now skips those per key, and the
+            # catch is the defense-in-depth bound for any other numeric path.
+            # Each write block above owns its transaction, so nothing is left
+            # half-written.
             logger.warning("Error indexing %s: %s", file_path, e)
             self._notify(progress, f"error Error indexing {file_path}: {e}")
             return "error"
