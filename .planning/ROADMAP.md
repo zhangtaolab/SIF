@@ -126,7 +126,6 @@ Full detail: `.planning/milestones/v1.1-ROADMAP.md`
   4. User gets title-aware ranking — title-FTS detect-and-rebuild migration + rewritten triggers + bench-measured bm25() column weights + mtime index; the `documents_fts_v` vocab shadow survives the rebuild on a populated DB
   5. User gets results without redundant attach work — the double-attach is eliminated: exactly ONE context/staleness attach at pipeline exit
 **Plans:** 9 plans
-
 **Wave 1**
 - [ ] 19-01-PLAN.md — Parser dispatch + metadata-aware checksum + canonical metadata storage
 
