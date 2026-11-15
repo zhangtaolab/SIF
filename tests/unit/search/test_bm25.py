@@ -4,6 +4,8 @@ import contextlib
 import sqlite3
 from unittest.mock import MagicMock
 
+import pytest
+
 from sif.core.models import SearchOptions, SearchResult
 from sif.search.bm25 import BM25Searcher
 from sif.search.context_attach import enrich_results
@@ -80,9 +82,9 @@ class TestBM25Searcher:
         assert all(isinstance(r, SearchResult) for r in results)
 
     def test_search_applies_min_score(self) -> None:
-        """Test that search applies min_score filtering."""
-        # row["score"] is the FTS rank (lower = better), converted to score = 1/(1+|rank|)
-        # rank=-1.0 => score=0.5, rank=-5.0 => score=0.167
+        """min_score is a bound SQL predicate, not a post-pagination Python skip."""
+        # row["score"] is the FTS rank (lower = better), converted to
+        # score = 1/(1+|rank|). The SQL — not this loop — applies min_score.
         mock_db = self._make_mock_db(
             [
                 {
@@ -106,9 +108,65 @@ class TestBM25Searcher:
         options = SearchOptions(min_score=0.3, include_highlights=False)
         results = searcher.search("test query", options)
 
-        # Only doc-1 has score >= 0.3 (0.5 >= 0.3, 0.167 < 0.3)
-        assert len(results) == 1
-        assert results[0].document_id == "doc-1"
+        sql = mock_db.execute.call_args[0][0]
+        params = mock_db.execute.call_args[0][1]
+        # FTS5: score >= m  <=>  rank >= 1 - 1/m (research Pitfall 4). The
+        # naive inverse 1/m - 1 has the wrong direction.
+        assert "rank >= ?" in sql
+        assert params[1] == pytest.approx(1.0 - 1.0 / 0.3)
+        # Both returned rows survive: the threshold travelled to SQL.
+        assert [r.document_id for r in results] == ["doc-1", "doc-2"]
+
+    def test_search_min_score_zero_omits_the_threshold_filter(self) -> None:
+        """min_score=0 binds no threshold and preserves the pre-change row set."""
+        mock_db = self._make_mock_db(
+            [
+                {
+                    "document_id": "doc-1",
+                    "title": "T1",
+                    "path": "/1.md",
+                    "collection_name": "c",
+                    "score": -5.0,
+                },
+            ],
+        )
+
+        searcher = BM25Searcher(mock_db)
+        options = SearchOptions(min_score=0.0, include_highlights=False)
+        results = searcher.search("test query", options)
+
+        sql = mock_db.execute.call_args[0][0]
+        params = mock_db.execute.call_args[0][1]
+        assert "rank >=" not in sql
+        assert params == ['"test"* AND "query"*', 10, 0]
+        assert [r.document_id for r in results] == ["doc-1"]
+
+    def test_search_ranks_are_global_across_pages(self) -> None:
+        """Page ranks are options.offset + position (D-06 global numbering)."""
+        mock_db = self._make_mock_db(
+            [
+                {
+                    "document_id": "doc-6",
+                    "title": "T6",
+                    "path": "/6.md",
+                    "collection_name": "c",
+                    "score": -1.0,
+                },
+                {
+                    "document_id": "doc-7",
+                    "title": "T7",
+                    "path": "/7.md",
+                    "collection_name": "c",
+                    "score": -2.0,
+                },
+            ],
+        )
+
+        searcher = BM25Searcher(mock_db)
+        options = SearchOptions(limit=2, offset=5, include_highlights=False)
+        results = searcher.search("test query", options)
+
+        assert [r.rank for r in results] == [6, 7]
 
     def test_search_with_collection_ids(self) -> None:
         """Test search with specific collection IDs."""
@@ -302,6 +360,146 @@ class TestBM25Searcher:
                     (fts_query,),
                 ).fetchall()
                 assert rows, f"query {raw!r} -> {fts_query!r} matched nothing"
+
+
+def _build_real_fts_db() -> sqlite3.Connection:
+    """Real FTS5 + documents/collections tables with a non-trivial rank spread.
+
+    Five documents contain "apple" with increasing repetition (1, 2, 4, 8, 16
+    occurrences) across a 40-document corpus, so their bm25 ranks span roughly
+    -2.9..-3.6 — *not* near zero, which is what makes a threshold-direction
+    bug visible (research Pitfall 4). Thirty-five filler documents contain
+    unrelated words. Both tables are inserted in the same order so FTS rowids
+    line up with ``documents.rowid``.
+    """
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.execute("CREATE TABLE collections (id TEXT PRIMARY KEY, name TEXT)")
+    conn.execute(
+        "CREATE TABLE documents (id TEXT PRIMARY KEY, collection_id TEXT, title TEXT, path TEXT)"
+    )
+    conn.execute("CREATE VIRTUAL TABLE documents_fts USING fts5(content)")
+    conn.execute("INSERT INTO collections VALUES ('c1', 'notes'), ('c2', 'other')")
+    for i, repeats in enumerate((1, 2, 4, 8, 16)):
+        conn.execute(
+            "INSERT INTO documents VALUES (?, 'c1', ?, ?)",
+            (f"doc-{i}", f"Note {i}", f"/n{i}.md"),
+        )
+        conn.execute(
+            "INSERT INTO documents_fts(content) VALUES (?)",
+            (" ".join(["apple"] * repeats),),
+        )
+    for i in range(35):
+        conn.execute(
+            "INSERT INTO documents VALUES (?, 'c2', ?, ?)",
+            (f"fill-{i}", f"Filler {i}", f"/f{i}.md"),
+        )
+        conn.execute(
+            "INSERT INTO documents_fts(content) VALUES (?)",
+            (f"banana filler document number {i}",),
+        )
+    return conn
+
+
+class TestBM25OffsetPagination:
+    """CORR-03: offset pages are slices of one filtered, globally ranked list."""
+
+    @staticmethod
+    def _options(
+        *,
+        limit: int = 10,
+        offset: int = 0,
+        min_score: float = 0.0,
+        collection_ids: list[str] | None = None,
+    ) -> SearchOptions:
+        return SearchOptions(
+            limit=limit,
+            offset=offset,
+            min_score=min_score,
+            collection_ids=collection_ids,
+            include_highlights=False,
+        )
+
+    def test_scoped_and_unfiltered_branches_page_identically(self) -> None:
+        """Both SQL branches paginate and number ranks globally (D-06)."""
+        conn = _build_real_fts_db()
+        try:
+            searcher = BM25Searcher(conn)
+            scoped = searcher.search(
+                "apple", self._options(limit=2, offset=1, collection_ids=["c1"])
+            )
+            unfiltered = searcher.search("apple", self._options(limit=2, offset=1))
+
+            expected = ["doc-3", "doc-2"]
+            assert [r.document_id for r in scoped] == expected
+            assert [r.document_id for r in unfiltered] == expected
+            assert [r.rank for r in scoped] == [2, 3]
+            assert [r.rank for r in unfiltered] == [2, 3]
+        finally:
+            conn.close()
+
+    def test_page_continuity_against_same_window_request(self) -> None:
+        """limit=l offset=o equals the [o:o+l] slice of limit=o+l offset=0."""
+        conn = _build_real_fts_db()
+        try:
+            searcher = BM25Searcher(conn)
+            page = searcher.search("apple", self._options(limit=2, offset=1, collection_ids=["c1"]))
+            window = searcher.search(
+                "apple", self._options(limit=3, offset=0, collection_ids=["c1"])
+            )
+
+            assert [r.document_id for r in page] == [r.document_id for r in window][1:3]
+            assert [r.rank for r in page] == [2, 3]
+        finally:
+            conn.close()
+
+    def test_offset_past_end_returns_empty_page(self) -> None:
+        """A past-the-end offset is an empty page, never an error."""
+        conn = _build_real_fts_db()
+        try:
+            searcher = BM25Searcher(conn)
+            results = searcher.search(
+                "apple", self._options(limit=10, offset=1000, collection_ids=["c1"])
+            )
+
+            assert results == []
+        finally:
+            conn.close()
+
+    def test_mid_min_score_keeps_expected_documents_and_direction(self) -> None:
+        """A mid min_score filters inside SQL: the highest-score docs survive.
+
+        The code's score convention is 1/(1+|rank|), so rank >= 1 - 1/m is
+        what keeps score >= m (not the naive 1/m - 1). FTS5 orders by rank
+        ascending, so the surviving rows are the least-repeated "apple" docs;
+        the wrong direction keeps all five, so "all" would fail here.
+        """
+        conn = _build_real_fts_db()
+        try:
+            searcher = BM25Searcher(conn)
+            results = searcher.search("apple", self._options(min_score=0.23, collection_ids=["c1"]))
+
+            assert [r.document_id for r in results] == ["doc-2", "doc-1", "doc-0"]
+            assert all(r.score >= 0.23 for r in results)
+            assert [r.rank for r in results] == [1, 2, 3]
+        finally:
+            conn.close()
+
+    def test_min_score_applies_before_offset_with_global_ranks(self) -> None:
+        """The page slices the filtered list, so rank 2 is the filtered second row."""
+        conn = _build_real_fts_db()
+        try:
+            searcher = BM25Searcher(conn)
+            page = searcher.search(
+                "apple",
+                self._options(limit=1, offset=1, min_score=0.23, collection_ids=["c1"]),
+            )
+
+            # Post-pagination filtering would have returned rank 1 here.
+            assert [r.document_id for r in page] == ["doc-1"]
+            assert [r.rank for r in page] == [2]
+        finally:
+            conn.close()
 
 
 class TestBM25SharedTermMatcherHighlights:

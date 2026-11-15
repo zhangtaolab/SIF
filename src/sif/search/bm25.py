@@ -39,7 +39,12 @@ class BM25Searcher:
         self.db = db
 
     def search(self, query: str, options: SearchOptions | None = None) -> list[SearchResult]:
-        """Search documents using BM25."""
+        """Search documents using BM25.
+
+        ``min_score`` is applied inside the FTS scan (before LIMIT/OFFSET), so
+        pagination always slices the filtered ranking, and returned ranks are
+        global across pages (``options.offset + position``).
+        """
         if options is None:
             options = SearchOptions()
 
@@ -56,9 +61,21 @@ class BM25Searcher:
         # Build the FTS query
         fts_query = self._build_fts_query(query)
 
+        # min_score thresholding happens BEFORE LIMIT/OFFSET (CORR-03, research
+        # Pitfall 4/P15). FTS5 ``rank`` (bm25) is <= 0 and
+        # ``score = 1/(1 + |rank|) = 1/(1 - rank)``, so ``score >= m`` (m > 0)
+        # is exactly ``rank >= 1 - 1/m``. Filtering inside the FTS scan keeps
+        # LIMIT/OFFSET a slice of the already-filtered ranking, so a page can
+        # never be short or holey because post-pagination filtering removed
+        # rows. The naive inverse ``1/m - 1`` points the wrong way.
+        min_score_filter = ""
+        params = [fts_query]
+        if options.min_score > 0:
+            params.append(1.0 - 1.0 / options.min_score)
+            min_score_filter = "AND rank >= ?"
+
         # Build collection filter
         collection_filter = ""
-        params = [fts_query]
 
         if options.collection_ids:
             placeholders = ", ".join(["?"] * len(options.collection_ids))
@@ -74,7 +91,7 @@ class BM25Searcher:
             sql = f"""
                 WITH matched AS MATERIALIZED (
                     SELECT rowid, rank FROM documents_fts
-                    WHERE documents_fts MATCH ?
+                    WHERE documents_fts MATCH ? {min_score_filter}
                 )
                 SELECT
                     d.id as document_id,
@@ -90,9 +107,8 @@ class BM25Searcher:
                 LIMIT ? OFFSET ?
             """
         else:
-            # Unfiltered (--all) SQL byte-for-byte as before: its plan is
-            # already a single FTS scan, and a materialized CTE would only
-            # add an unnecessary sort step.
+            # Unfiltered (--all) SQL keeps its single FTS scan; the min_score
+            # predicate rides the same WHERE as MATCH, before LIMIT/OFFSET.
             sql = f"""
                 SELECT
                     d.id as document_id,
@@ -103,7 +119,7 @@ class BM25Searcher:
                 FROM documents_fts fts
                 JOIN documents d ON fts.rowid = d.rowid
                 JOIN collections c ON d.collection_id = c.id
-                WHERE documents_fts MATCH ? {collection_filter}
+                WHERE documents_fts MATCH ? {collection_filter} {min_score_filter}
                 ORDER BY rank
                 LIMIT ? OFFSET ?
             """
@@ -112,12 +128,9 @@ class BM25Searcher:
         cursor = self.db.execute(sql, params)
         results = []
 
-        for rank, row in enumerate(cursor.fetchall(), 1):
+        for position, row in enumerate(cursor.fetchall(), 1):
             # Convert rank to score (lower rank = higher score)
             score = 1.0 / (1.0 + abs(row["score"]))
-
-            if score < options.min_score:
-                continue
 
             result = SearchResult(
                 document_id=row["document_id"],
@@ -125,7 +138,9 @@ class BM25Searcher:
                 path=row["path"],
                 collection_name=row["collection_name"],
                 score=score,
-                rank=rank,
+                # Ranks are global across pages (D-06): page 2 at offset 5
+                # carries ranks 6-10, matching overall ordering.
+                rank=options.offset + position,
             )
 
             if options.include_content:
