@@ -5,17 +5,16 @@ milestone_name: Search Precision and Agent Experience
 current_phase: 20
 current_phase_name: Metadata Filtering + Discovery
 status: planning
-stopped_at: Phase 19 complete, ready to plan Phase 20
-last_updated: "2026-11-15T05:28:06.952Z"
+stopped_at: Phase 20 context gathered
+last_updated: "2026-11-15T08:35:47.110Z"
 last_activity: 2026-11-15
 last_activity_desc: Phase 19 complete, transitioned to Phase 20
-state_head: 95c55a5f4b49ced56d53b81127acba537eb6518c
+state_head: 2e665aa24213b3af75c1a517a1970a56da734765
 progress:
   total_phases: 8
   completed_phases: 3
   total_plans: 22
   completed_plans: 22
-  percent: 38
 ---
 
 # DocSift — Project State
@@ -197,8 +196,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-15T04:43:42.812Z
-Stopped at: Phase 19 complete, ready to plan Phase 20
-Resume file: None
+Last session: 2026-11-15T08:35:46.686Z
+Stopped at: Phase 20 context gathered
+Resume file: /Users/forrest/GitHub/SIF/.planning/phases/20-metadata-filtering-discovery/20-CONTEXT.md
 
 - **Next expected action:** run Phase 17 verification (`/gsd-verify-work 17`) to confirm the four ENG success criteria against the shipped state, then mark Phase 17 complete and proceed to Phase 18. Release evidence lives in `17-07-SUMMARY.md`: tag `v1.1.2` on `c819f67`, Publish run `43562577065` attempt 4 (all three jobs success), PyPI JSON `1.1.2` with the `mcp-name` marker, `pypi-attestations` `OK` against `https://github.com/zhangtaolab/SIF`, and both fresh-venv install proofs. Execution order for the rest of v1.2: 17 → 18 → 19 → 20 → 21 → 22 → 23 → 24; hard dependencies and cross-phase contracts in ROADMAP.md.
