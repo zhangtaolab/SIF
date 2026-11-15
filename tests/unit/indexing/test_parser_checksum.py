@@ -12,6 +12,7 @@ and stored strings agree across a JSON round trip.
 from __future__ import annotations
 
 import hashlib
+from datetime import date
 from pathlib import Path
 
 from sif.core.models import canonical_metadata_json, compute_checksum
@@ -98,3 +99,46 @@ def test_canonical_json_coerces_keys_at_every_nesting_depth() -> None:
     assert canonical_metadata_json({"items": [{1: "a"}, {2: "b"}]}) == (
         '{"items":[{"1":"a"},{"2":"b"}]}'
     )
+
+
+def test_canonical_json_is_deterministic_across_typed_values() -> None:
+    """Typed values, nested mappings, lists, Unicode, and empty metadata are stable.
+
+    ``default=str`` renders a ``datetime.date`` as its ISO string; sequence and
+    mapping traversal is order-preserving while ``sort_keys`` fixes the output
+    order, so repeated serialization of an equal mapping is byte-identical.
+    """
+    metadata = {
+        "date": date(2024, 1, 1),
+        "tags": ["a", "b"],
+        "nested": {"outer": {1: "a", "b": 2}},
+        "unicode": "本地知识库",
+    }
+
+    first = canonical_metadata_json(metadata)
+    second = canonical_metadata_json(dict(reversed(list(metadata.items()))))
+
+    assert first == second
+    assert '"date":"2024-01-01"' in first
+    assert '"tags":["a","b"]' in first
+    assert '"outer":{"1":"a","b":2}' in first
+    assert '"unicode":"本地知识库"' in first
+    assert canonical_metadata_json({}) == "{}"
+
+
+def test_equal_body_and_metadata_reproduce_checksum_across_parses(tmp_path: Path) -> None:
+    """Parsing identical bytes twice yields the identical checksum.
+
+    Change detection rests on this determinism: an untouched file must compare
+    equal to its stored checksum, including typed frontmatter values.
+    """
+    parser = MarkdownParser()
+    doc_file = tmp_path / "stable.md"
+    doc_file.write_text(DOC_WITH_FM, encoding="utf-8")
+
+    first = parser.parse(doc_file)
+    second = parser.parse(doc_file)
+
+    assert first.content == second.content
+    assert first.metadata == second.metadata
+    assert first.checksum == second.checksum

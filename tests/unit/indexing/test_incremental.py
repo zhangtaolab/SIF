@@ -4,6 +4,11 @@ The indexer is the one incremental loop extracted from ``update_cmd``: same
 scan → checksum-diff → parse → write behavior, but each file's writes commit
 as one short BEGIN IMMEDIATE transaction so a mid-run failure keeps completed
 files durable (D-04) instead of rolling back the whole run.
+
+CORR-01/D-08: parser selection is per file (``create_parser(file_path)`` with a
+``TextParser`` fallback) and the create path stores the parser's checksum —
+body plus canonical full frontmatter. The old body-only convention is
+intentionally retired.
 """
 
 from __future__ import annotations

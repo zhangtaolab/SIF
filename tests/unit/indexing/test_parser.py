@@ -1,4 +1,9 @@
-"""Real-file behavior tests for document parsers and their factory."""
+"""Real-file behavior tests for document parsers and their factory.
+
+Checksums follow the D-08 convention (body + canonical full frontmatter, see
+``sif.core.models.compute_checksum``); the old body-only convention is
+intentionally retired. The Markdown body path itself stays byte-identical.
+"""
 
 from __future__ import annotations
 
@@ -32,8 +37,9 @@ class TestDocumentParsers:
         # D-08: change detection hashes the body plus the full canonical
         # frontmatter dict (sif.core.models.compute_checksum), so a
         # frontmatter-only edit is visible to the incremental loop. The
-        # body path itself is unchanged: frontmatter is still stripped.
-        assert not result.content.startswith("---")
+        # body path itself is unchanged: frontmatter is still stripped,
+        # byte for byte, exactly as before the convention change.
+        assert result.content == "# 搜索 🔍\n\n你好世界 Café é"
         assert result.checksum == compute_checksum(result.content, result.metadata)
         assert result.mtime == file_path.stat().st_mtime
 
@@ -132,6 +138,48 @@ class TestDocumentParsers:
 
         assert result.title == "extension"
         assert result.metadata == {"language": "text"}
+
+    def test_factory_dispatches_python_docstring_title_fixture(self, tmp_path: Path) -> None:
+        """`.py` dispatches to CodeParser, which titles from the module docstring."""
+        file_path = tmp_path / "tool.py"
+        content = '"""Command line helpers."""\n\nprint("ok")\n'
+        file_path.write_text(content, encoding="utf-8")
+
+        parser = create_parser(file_path)
+        assert isinstance(parser, CodeParser)
+        result = parser.parse(file_path)
+
+        assert result.title == "Command line helpers."
+        assert result.content == content
+        assert result.metadata == {"language": "python"}
+
+    def test_factory_dispatches_text_first_line_title_fixture(self, tmp_path: Path) -> None:
+        """`.txt` dispatches to TextParser, which titles from the first suitable line."""
+        file_path = tmp_path / "notes.txt"
+        content = "\nMeeting notes\nAgenda item one\n"
+        file_path.write_text(content, encoding="utf-8")
+
+        parser = create_parser(file_path)
+        assert isinstance(parser, TextParser)
+        result = parser.parse(file_path)
+
+        assert result.title == "Meeting notes"
+        assert result.content == content
+        assert result.metadata == {}
+
+    def test_factory_dispatches_markdown_frontmatter_stripped_fixture(self, tmp_path: Path) -> None:
+        """`.md` keeps the pre-D-08 byte-identical body path (frontmatter stripped)."""
+        file_path = tmp_path / "note.md"
+        original = "---\ntitle: Kept\n---\n# Heading\n\nBody text.\n"
+        file_path.write_text(original, encoding="utf-8")
+
+        parser = create_parser(file_path)
+        assert isinstance(parser, MarkdownParser)
+        result = parser.parse(file_path)
+
+        assert result.title == "Kept"
+        assert result.content == "# Heading\n\nBody text."
+        assert result.metadata == {"title": "Kept"}
 
     @pytest.mark.parametrize(
         ("name", "content"),
