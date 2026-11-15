@@ -2091,3 +2091,23 @@ class TestSearchPipelineIdentity:
         assert embedder.embed_calls == [_FakeEmbedder.QUERY]
         assert not hasattr(type(embedder), "embed_query")
         assert [result.to_dict() for result in results] == TestHybridSC1PipelineGolden.SNAPSHOT
+
+    def test_default_no_prompt_query_role_reproduces_the_sc1_golden(self) -> None:
+        """D-19: the query role with no prompt is the pre-phase plain path.
+
+        A role-capable embedder (class-level ``embed_query``) routes the default
+        query through the query role, yet with no prompt effective it returns
+        the same vector as the plain path — so the recorded SC1 page must
+        reproduce byte-for-byte. This pins the D-19 baseline for Phase 23.
+        """
+        conn = TestHybridSC1PipelineGolden._build_db()
+        embedder = _RoleRecordingEmbedder()
+        try:
+            pipeline = SearchPipeline(conn, embedder=embedder, embedding_dim=2)
+            results = pipeline.search(_FakeEmbedder.QUERY, SearchOptions())
+        finally:
+            conn.close()
+
+        assert embedder.query_calls == [_FakeEmbedder.QUERY]
+        assert embedder.embed_calls == []
+        assert [result.to_dict() for result in results] == TestHybridSC1PipelineGolden.SNAPSHOT

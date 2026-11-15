@@ -16,6 +16,7 @@ import subprocess
 import sys
 from dataclasses import replace
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -610,3 +611,48 @@ class TestResolvePromptScheme:
 
 def test_identity_key_spelling() -> None:
     assert IDENTITY_KEY == "embedder.identity"
+
+
+# =============================================================================
+# GGUF same-path / different-bytes detection (D-02)
+# =============================================================================
+
+
+class TestGgufFileRevision:
+    """A GGUF file swapped at the same path must build a non-matching identity."""
+
+    @staticmethod
+    def _llama_embedder(model_path: Path) -> object:
+        """Construct a LlamaCppEmbedder with a stubbed ``llama_cpp`` module."""
+        from sif.embedding.embedder import LlamaCppEmbedder
+
+        mock_llama = MagicMock()
+        mock_llama.return_value.n_embd.return_value = _DIM
+        module = MagicMock()
+        module.Llama = mock_llama
+        with patch.dict("sys.modules", {"llama_cpp": module}):
+            with patch("os.cpu_count", return_value=4):
+                return LlamaCppEmbedder(model_path=str(model_path))
+
+    def test_same_name_different_bytes_does_not_match(self, tmp_path: Path) -> None:
+        """Identity A and B share the model name but differ in file-hash revision."""
+        model_file = tmp_path / "model.gguf"
+        model_file.write_bytes(b"gguf-bytes-a")
+        first = build_identity(
+            _config(model_name="same/model", model_type=ModelType.GGUF),
+            self._llama_embedder(model_file),
+            PromptScheme(None, None, True),
+        )
+
+        model_file.write_bytes(b"gguf-bytes-b")
+        second = build_identity(
+            _config(model_name="same/model", model_type=ModelType.GGUF),
+            self._llama_embedder(model_file),
+            PromptScheme(None, None, True),
+        )
+
+        assert first.cache_model_id == second.cache_model_id == "gguf:same/model"
+        assert first.revision is not None
+        assert second.revision is not None
+        assert first.revision != second.revision
+        assert identity_matches(first, second) is False

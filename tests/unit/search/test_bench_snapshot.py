@@ -55,6 +55,7 @@ import pytest
 
 from sif.config.settings import Settings
 from sif.core.models import SearchOptions
+from sif.embedding.prompts import resolve_prompt_scheme
 from sif.search.benchmark import (
     CATEGORIES,
     ConfigResult,
@@ -79,6 +80,11 @@ SNAPSHOT_PATH = PACK_ROOT / "heldout_defaults.json"
 VERDICT_CHANGE = "change-warranted"
 VERDICT_UNCHANGED = "unchanged"
 VERDICT_NO_EVIDENCE = "unchanged-no-evidence"
+
+# D-19: the shipped default embedder. These literals are the pre-Phase-21
+# baseline the held-out snapshot was recorded against; assert, never regenerate.
+DEFAULT_QWEN3_MODEL_NAME = "Qwen/Qwen3-Embedding-0.6B"
+DEFAULT_MODEL_TYPE = "modelscope"
 
 
 def _load_snapshot() -> dict[str, Any]:
@@ -346,3 +352,46 @@ class TestSweepWinnerEvidence:
         assert len(sweep_ranking.ranked) == 45
         keys = [(r.rrf_k, r.bm25_weight, r.vector_weight) for r in sweep_ranking.ranked]
         assert len(set(keys)) == 45  # every declared configuration exactly once
+
+
+class TestDefaultEmbedderBaseline:
+    """D-19: the committed held-out snapshot was recorded on the pre-phase
+    prompt-free ModelScope Qwen3 default and the plain, role-less embed path."""
+
+    def test_shipped_defaults_are_prompt_free_modelscope_qwen3(self) -> None:
+        """No env override may masquerade as a changed default (D-19 lock)."""
+        with pytest.MonkeyPatch.context() as mp:
+            for var in (
+                "SIF_MODEL_NAME",
+                "SIF_MODEL_TYPE",
+                "SIF_QUERY_PROMPT_NAME",
+                "SIF_DOCUMENT_PROMPT_NAME",
+            ):
+                mp.delenv(var, raising=False)
+            settings = Settings(_env_file=None)
+
+        assert settings.model_type == DEFAULT_MODEL_TYPE
+        assert settings.model_name == DEFAULT_QWEN3_MODEL_NAME
+        assert settings.query_prompt_name is None
+        assert settings.document_prompt_name is None
+
+        scheme = resolve_prompt_scheme(
+            settings.model_name,
+            settings.model_type,
+            settings.query_prompt_name,
+            settings.document_prompt_name,
+        )
+        # Qwen3 has no known-model prompt row, so the default path stays prompt-free.
+        assert scheme.query_prompt is None
+        assert scheme.document_prompt is None
+
+    def test_snapshot_embedder_has_no_role_prompt_path(self) -> None:
+        """The recorded held-out numbers were produced through plain embed_batch.
+
+        ``ConceptEmbedder`` deliberately has no class-level role methods, so the
+        snapshot reproduction exercises the same no-prompt path the shipped
+        default uses; a future role-aware double must not silently replace it.
+        """
+        embedder = ConceptEmbedder()
+        assert not hasattr(type(embedder), "embed_query")
+        assert not hasattr(type(embedder), "embed_documents")

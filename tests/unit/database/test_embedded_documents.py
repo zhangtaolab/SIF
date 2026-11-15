@@ -13,12 +13,23 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import sqlite3
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
+from sif.core.models import Collection, Document, DocumentChunk
+from sif.database.database import Database
 from sif.database.maintenance import reconcile_embedded_documents
+from sif.database.repositories import CollectionRepository, DocumentRepository
 from sif.database.schema import SchemaManager
+from sif.embedding.identity import build_identity, read_identity, schema_embedding_dim
+from sif.embedding.prompts import PromptScheme
+from sif.indexing.embed_writer import StreamingEmbedWriter
+from sif.models.embedding import EmbeddingConfig, ModelType
+from sif.search.vector import VectorSearcher
 
 
 _NOW = "2026-11-16T00:00:00+00:00"
@@ -165,6 +176,52 @@ class _RecordingConnection:
         return getattr(self._conn, name)
 
 
+class _IdentityModel:
+    """Loaded-model double exposing only the identity dimension."""
+
+    def __init__(self, dimension: int) -> None:
+        self.dimension = dimension
+
+
+def _unit_vector(dim: int = _DIM) -> list[float]:
+    """A deterministic unit-L2 vector of ``dim`` dimensions."""
+    component = 1.0 / math.sqrt(dim)
+    return [component] * dim
+
+
+def _identity():
+    """Build a real embedder identity for the fake loaded model."""
+    return build_identity(
+        EmbeddingConfig(
+            model_type=ModelType.MODELSCOPE,
+            model_name="test",
+            embedding_dim=_DIM,
+        ),
+        _IdentityModel(_DIM),
+        PromptScheme(None, None, True),
+    )
+
+
+class _OneChunkChunker:
+    """Return exactly one chunk holding the document body."""
+
+    def chunk(self, text: str) -> list[DocumentChunk]:
+        """Build one chunk from the text."""
+        return [DocumentChunk(content=text, sequence=0, start_pos=0, end_pos=len(text))]
+
+
+class _OneChunkManager:
+    """Fake manager returning one unit vector per input text."""
+
+    def __init__(self) -> None:
+        self.calls: list[list[str]] = []
+
+    def embed_documents(self, texts: list[str]) -> SimpleNamespace:
+        """Record the call and return unit vectors."""
+        self.calls.append(list(texts))
+        return SimpleNamespace(embeddings=[_unit_vector() for _ in texts])
+
+
 class TestFreshDatabase:
     """A fresh vec0 index creates the shadow and writes the marker at zero cost."""
 
@@ -205,6 +262,57 @@ class TestFreshDatabase:
             )
         finally:
             conn.close()
+
+
+class TestFreshIndexOnlyNewWrites:
+    """D-19: the first embed adds only the documented Phase 21 side effects."""
+
+    def test_first_embed_writes_only_identity_shadow_and_markers(self, tmp_path: Path) -> None:
+        """Beyond the pre-phase writes, a fresh first embed adds exactly the
+        identity row, the shadow row, and the two version markers."""
+        db = Database(tmp_path / "fresh.db")
+        db.init_schema(embedding_dim=_DIM)
+        if schema_embedding_dim(db.connection) is None:
+            db.close()
+            pytest.skip("sqlite-vec not available")
+        try:
+            with db.connection:
+                coll = Collection(name="notes", path="/notes")
+                CollectionRepository(db.connection).create(coll)
+                doc = Document(
+                    path="/notes/a.md",
+                    collection_id=coll.id,
+                    content="alpha body",
+                    title="A",
+                )
+                DocumentRepository(db.connection).create(doc)
+
+            searcher = VectorSearcher(db.connection, _DIM)
+            writer = StreamingEmbedWriter(
+                db.connection,
+                _OneChunkManager(),
+                _OneChunkChunker(),
+                searcher,
+                _identity(),
+                batch_size=32,
+                write_identity=True,
+            )
+            assert writer.embed_document(doc) == 1
+
+            keys = {
+                row[0] for row in db.connection.execute("SELECT key FROM index_meta").fetchall()
+            }
+            assert keys == {
+                "embedded_documents_version",
+                "metadata_values_version",
+                "embedder.identity",
+            }
+            assert _shadow_rows(db.connection) == [doc.id]
+            stored = read_identity(db.connection)
+            assert stored is not None
+            assert stored.source == "verified"
+        finally:
+            db.close()
 
 
 class TestLegacyBackfill:

@@ -11,6 +11,14 @@ from sif.embedding.manager import EmbeddingManager
 from sif.models.embedding import EmbeddingConfig, ModelType
 
 
+# D-19: the pre-Phase-21 default ``_cache_model_id()`` for the shipped
+# ModelScope Qwen3 settings. This literal is the byte-identical baseline the
+# Phase 23 Harrier gate compares against; it must never be regenerated from
+# the current code, only asserted.
+DEFAULT_QWEN3_CACHE_MODEL_ID = "modelscope:Qwen/Qwen3-Embedding-0.6B"
+DEFAULT_QWEN3_MODEL_NAME = "Qwen/Qwen3-Embedding-0.6B"
+
+
 class TestEmbeddingManager:
     def test_from_settings_passes_api_key_and_api_base(
         self, monkeypatch: pytest.MonkeyPatch
@@ -256,6 +264,36 @@ class TestCacheBuckets:
         assert manager._cache_bucket("query") == expected
         assert manager._cache_bucket("document") == expected
         assert manager._cache_model_id() == expected
+
+    def test_default_qwen3_buckets_are_the_pre_phase_baseline(self) -> None:
+        """D-19: default ModelScope Qwen3 keeps the exact pre-Phase-21 bucket.
+
+        Both role buckets must equal the recorded pre-phase ``_cache_model_id()``
+        string, no revision suffix may appear, and the role methods must route
+        through the unchanged plain ``embed_batch`` call (Qwen3 has no prompt).
+        """
+        embedder = _RecordingEmbedder(dimension=1024)
+        factory = MagicMock()
+        factory.create_model.return_value = embedder
+        config = EmbeddingConfig(
+            model_type=ModelType.MODELSCOPE,
+            model_name=DEFAULT_QWEN3_MODEL_NAME,
+            embedding_dim=1024,
+            cache_embeddings=False,
+        )
+        manager = EmbeddingManager(config=config, factory=factory)
+
+        assert manager._cache_model_id() == DEFAULT_QWEN3_CACHE_MODEL_ID
+        assert manager._cache_bucket("query") == DEFAULT_QWEN3_CACHE_MODEL_ID
+        assert manager._cache_bucket("document") == DEFAULT_QWEN3_CACHE_MODEL_ID
+        assert "|rev@" not in manager._cache_bucket("query")
+
+        manager.embed_query("same text")
+        manager.embed_documents(["same text"])
+
+        assert embedder.batch_calls == [["same text"], ["same text"]]
+        assert embedder.query_calls == []
+        assert embedder.document_calls == []
 
     def test_prompts_produce_distinct_role_buckets(self, tmp_path: Path) -> None:
         manager = _make_manager(

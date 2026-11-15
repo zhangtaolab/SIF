@@ -1,6 +1,8 @@
 """Tests for index CLI commands."""
 
 import io
+import json
+import logging
 import math
 import sqlite3
 import types
@@ -121,6 +123,96 @@ def _embedded_chunk_count(db_path: Path, document_id: str) -> int:
                 (document_id,),
             ).fetchone()[0]
         )
+    finally:
+        conn.close()
+
+
+def _load_sqlite_vec(conn: sqlite3.Connection) -> None:
+    """Load the sqlite-vec extension so vec0 tables can be read or written."""
+    import sqlite_vec
+
+    conn.enable_load_extension(True)
+    sqlite_vec.load(conn)
+    conn.enable_load_extension(False)
+
+
+def _seed_legacy_embedding(db_path: Path, document_id: str) -> None:
+    """Insert one pre-Phase-21 chunk + vec0 row (no identity or shadow write)."""
+    conn = sqlite3.connect(str(db_path))
+    try:
+        _load_sqlite_vec(conn)
+        chunk_id = f"legacy-chunk-{document_id}"
+        conn.execute(
+            "INSERT INTO document_chunks (id, document_id, sequence, content, created_at)"
+            " VALUES (?, ?, 0, ?, ?)",
+            (chunk_id, document_id, "legacy chunk body", "2026-11-16T00:00:00+00:00"),
+        )
+        conn.execute(
+            "INSERT INTO document_embeddings (embedding_id, document_id, chunk_id, embedding)"
+            " VALUES (?, ?, ?, vec_f32(?))",
+            (f"legacy-vec-{document_id}", document_id, chunk_id, json.dumps(_unit_vector())),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _make_pre_phase_21_index(
+    db_path: Path,
+    settings: Settings,
+    documents: list[tuple[str, str]],
+) -> dict[str, str]:
+    """Build a pre-Phase-21 index shape: vectors, no identity, no shadow, no markers.
+
+    Documents are seeded through the real schema, then given chunk/vec0 rows and
+    stripped of the Phase-21 surfaces — the exact legacy state D-04 upgrades.
+    """
+    _seed_real_index(db_path, settings, documents)
+    ids = _document_ids(db_path)
+    for document_id in ids.values():
+        _seed_legacy_embedding(db_path, document_id)
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.execute(
+            "DELETE FROM index_meta"
+            " WHERE key IN ('embedder.identity', 'embedded_documents_version')"
+        )
+        conn.execute("DROP TABLE embedded_documents")
+        conn.commit()
+    finally:
+        conn.close()
+    return ids
+
+
+def _shadow_ids(db_path: Path) -> list[str]:
+    """Return the persisted shadow's document ids in sorted order."""
+    conn = sqlite3.connect(str(db_path))
+    try:
+        return [
+            row[0]
+            for row in conn.execute(
+                "SELECT document_id FROM embedded_documents ORDER BY document_id"
+            )
+        ]
+    finally:
+        conn.close()
+
+
+def _vector_count(db_path: Path) -> int:
+    """Count stored vec0 rows (the extension is required to read the table)."""
+    conn = sqlite3.connect(str(db_path))
+    try:
+        _load_sqlite_vec(conn)
+        return int(conn.execute("SELECT COUNT(*) FROM document_embeddings").fetchone()[0])
+    finally:
+        conn.close()
+
+
+def _stored_identity(db_path: Path):
+    """Read the persisted embedder identity from a plain connection."""
+    conn = sqlite3.connect(str(db_path))
+    try:
+        return read_identity(conn)
     finally:
         conn.close()
 
@@ -889,6 +981,116 @@ class TestStreamingEmbed:
         assert replaced.source == "verified"
         ids = _document_ids(db_path)
         assert _embedded_chunk_count(db_path, ids["/notes/a.md"]) >= 1
+
+
+class TestLegacyUpgradeEndToEnd:
+    """D-04/EMB-01: a pre-Phase-21 index upgrades, assumes, then certifies."""
+
+    def test_legacy_upgrade_backfills_shadow_assumes_identity_and_certifies(
+        self, tmp_path: Path, monkeypatch, caplog
+    ) -> None:
+        """First open backfills the shadow, warns once, and stores legacy-assumed;
+        a complete unfiltered zero-failure --force rewrites it as verified."""
+        TestStreamingEmbed._delenv(monkeypatch)
+        db_path = tmp_path / "legacy.db"
+        settings = TestStreamingEmbed._settings()
+        ids = _make_pre_phase_21_index(db_path, settings, [("/notes/a.md", "# A\n\nalpha body")])
+        doc_id = ids["/notes/a.md"]
+
+        with caplog.at_level(logging.WARNING):
+            result = _invoke_real_embed(db_path, _streaming_manager(_identity()), settings, [])
+        assert result.exit_code == 0, result.output
+
+        assert _shadow_ids(db_path) == [doc_id]
+        legacy_warnings = [
+            record
+            for record in caplog.records
+            if "Index predates embedder identity" in record.getMessage()
+        ]
+        assert len(legacy_warnings) == 1
+        assumed = _stored_identity(db_path)
+        assert assumed is not None
+        assert assumed.source == "legacy-assumed"
+
+        certified = _invoke_real_embed(
+            db_path, _streaming_manager(_identity()), settings, ["--force"]
+        )
+        assert certified.exit_code == 0, certified.output
+        verified = _stored_identity(db_path)
+        assert verified is not None
+        assert verified.source == "verified"
+
+    def test_legacy_scoped_force_does_not_certify(self, tmp_path: Path, monkeypatch) -> None:
+        """A --force scoped to one collection is not a certification run."""
+        TestStreamingEmbed._delenv(monkeypatch)
+        db_path = tmp_path / "legacy-scoped.db"
+        settings = TestStreamingEmbed._settings()
+        _make_pre_phase_21_index(db_path, settings, [("/notes/a.md", "# A\n\nalpha body")])
+
+        result = _invoke_real_embed(
+            db_path,
+            _streaming_manager(_identity()),
+            settings,
+            ["--force", "--collection", "notes"],
+        )
+        assert result.exit_code == 0, result.output
+        stored = _stored_identity(db_path)
+        assert stored is not None
+        assert stored.source == "legacy-assumed"
+
+    def test_legacy_full_force_with_a_failure_does_not_certify(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Any failed document disqualifies certification for the run."""
+        TestStreamingEmbed._delenv(monkeypatch)
+        db_path = tmp_path / "legacy-failed.db"
+        settings = TestStreamingEmbed._settings()
+        _make_pre_phase_21_index(db_path, settings, [("/notes/a.md", "# A\n\nalpha body")])
+
+        result = _invoke_real_embed(
+            db_path,
+            _streaming_manager(_identity(), fail_on_call=1),
+            settings,
+            ["--force"],
+        )
+        assert result.exit_code != 0
+        stored = _stored_identity(db_path)
+        assert stored is not None
+        assert stored.source == "legacy-assumed"
+
+
+class TestEmbedIdentityEnforcement:
+    """D-03: an embed-path identity mismatch fails fast and writes no vectors."""
+
+    def test_identity_mismatch_writes_no_vectors_and_names_both_identities(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """The error carries both identities and the --force remedy; nothing is written."""
+        TestStreamingEmbed._delenv(monkeypatch)
+        db_path = tmp_path / "mismatch.db"
+        settings = TestStreamingEmbed._settings()
+        _seed_real_index(db_path, settings, [("/notes/a.md", "# A\n\nbody")])
+        doc_id = _document_ids(db_path)["/notes/a.md"]
+        _seed_legacy_embedding(db_path, doc_id)
+
+        seed = Database(db_path)
+        try:
+            with seed.connection:
+                write_identity(seed.connection, _identity("model-a"))
+        finally:
+            seed.close()
+
+        manager = _streaming_manager(_identity("test"))
+        result = _invoke_real_embed(db_path, manager, settings, [])
+
+        assert result.exit_code != 0
+        assert "Embedder identity mismatch" in result.output
+        assert "modelscope:model-a" in result.output
+        assert "modelscope:test" in result.output
+        assert "sif index embed --force" in result.output
+        assert manager.embed_documents.calls == []
+        assert _embedded_chunk_count(db_path, doc_id) == 1
+        assert _vector_count(db_path) == 1
 
 
 class TestVacuumCommand:
