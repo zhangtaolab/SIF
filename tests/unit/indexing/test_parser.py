@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
+from sif.core.models import compute_checksum
 from sif.indexing.parser import CodeParser, MarkdownParser, TextParser, create_parser
 
 
@@ -29,13 +29,12 @@ class TestDocumentParsers:
         assert result.path == str(file_path.resolve())
         assert result.title == "本地知识库"
         assert result.metadata == {"title": "本地知识库", "author": "测试"}
-        # Checksum covers the parsed body (frontmatter stripped, trailing
-        # whitespace rstripped), matching the storage convention in
-        # core.models.Document.__post_init__ — hashing the whole raw file would
-        # make every stored checksum disagree with the create path and force a
-        # full-library rewrite on every `index update`.
+        # D-08: change detection hashes the body plus the full canonical
+        # frontmatter dict (sif.core.models.compute_checksum), so a
+        # frontmatter-only edit is visible to the incremental loop. The
+        # body path itself is unchanged: frontmatter is still stripped.
         assert not result.content.startswith("---")
-        assert result.checksum == hashlib.sha256(result.content.encode("utf-8")).hexdigest()
+        assert result.checksum == compute_checksum(result.content, result.metadata)
         assert result.mtime == file_path.stat().st_mtime
 
     @pytest.mark.parametrize(
@@ -85,7 +84,7 @@ class TestDocumentParsers:
         assert result.content == content
         assert result.title == "Suitable title"
         assert result.metadata == {}
-        assert result.checksum == hashlib.sha256(content.encode()).hexdigest()
+        assert result.checksum == compute_checksum(content, {})
 
     @pytest.mark.parametrize("content", ["", " \n\t\n", "x" * 100])
     def test_text_without_suitable_title_uses_stem(self, tmp_path: Path, content: str) -> None:
@@ -135,12 +134,42 @@ class TestDocumentParsers:
         assert result.metadata == {"language": "text"}
 
     @pytest.mark.parametrize(
+        ("name", "content"),
+        [
+            ("frontmatter_only.yaml", "---\na: 1\n---\n"),
+            ("two_blocks.yaml", "---\nfirst: doc\n---\nsecond: doc\n"),
+            ("no_close.yml", "---\na: 1\nb: 2\n"),
+        ],
+    )
+    def test_yaml_leading_separator_is_parsed_as_whole_file(
+        self, tmp_path: Path, name: str, content: str
+    ) -> None:
+        """A `.yaml` starting with `---` is code, never Markdown frontmatter.
+
+        `frontmatter.loads` would swallow the first block or truncate the file
+        after the closing delimiter (Pitfall 9); `create_parser` routes
+        `.yaml/.yml` to CodeParser, which stores the whole file.
+        """
+        file_path = tmp_path / name
+        file_path.write_text(content, encoding="utf-8")
+
+        parser = create_parser(file_path)
+        assert isinstance(parser, CodeParser)
+        result = parser.parse(file_path)
+
+        assert result.content == content
+        assert result.content.strip()  # non-empty body for every form
+        assert result.metadata == {"language": "yaml"}
+
+    @pytest.mark.parametrize(
         ("suffix", "parser_type"),
         [
             (".md", MarkdownParser),
             (".markdown", MarkdownParser),
             (".mdx", MarkdownParser),
             (".js", CodeParser),
+            (".yaml", CodeParser),
+            (".yml", CodeParser),
             (".txt", TextParser),
             (".rst", TextParser),
             (".adoc", TextParser),

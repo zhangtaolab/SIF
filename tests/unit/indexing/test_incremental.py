@@ -8,7 +8,6 @@ files durable (D-04) instead of rolling back the whole run.
 
 from __future__ import annotations
 
-import hashlib
 import sqlite3
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -16,7 +15,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from sif.config.settings import Settings
-from sif.core.models import Collection, Document, DocumentChunk
+from sif.core.models import Collection, Document, DocumentChunk, compute_checksum
 from sif.database.database import Database
 from sif.database.repositories import (
     CollectionRepository,
@@ -42,7 +41,7 @@ def _test_settings() -> Settings:
     return Settings(embedding_dim=8, model_name="test", cache_embeddings=False)
 
 
-def _seed_collection(db_path: Path, notes: Path) -> str:
+def _seed_collection(db_path: Path, notes: Path, pattern: str = "**/*.md") -> str:
     """Init schema and create one collection pointing at ``notes``; return its id."""
     from sif.core.models import Collection as Coll
 
@@ -51,7 +50,7 @@ def _seed_collection(db_path: Path, notes: Path) -> str:
         db.init_schema()
         with db.connection:
             coll_repo = CollectionRepository(db.connection)
-            coll = Coll(name="notes", path=str(notes))
+            coll = Coll(name="notes", path=str(notes), pattern=pattern)
             coll_repo.create(coll)
             coll_id = coll.id
     db.close()
@@ -151,9 +150,59 @@ class TestIncrementalIndexer:
         # frontmatter.loads normalizes the body's trailing whitespace, matching
         # the pre-extraction loop (the stored content is parsed.content).
         assert content == BODY_ALPHA.rstrip()
-        assert checksum == hashlib.sha256(content.encode()).hexdigest()
+        # D-08: the create path stores the parser's checksum, which covers the
+        # body plus canonical frontmatter (empty for this fixture).
+        assert checksum == compute_checksum(content, {})
         # The scan event reaches the presentation callback before per-file events.
         assert events[0].startswith("scan ")
+
+    def test_per_file_parser_dispatch_with_text_fallback(self, tmp_path, monkeypatch) -> None:
+        """Each extension selects its parser; unknown suffixes fall back to TextParser.
+
+        CORR-01: the single incremental loop no longer hardcodes MarkdownParser.
+        `.yaml` goes through CodeParser (so a leading `---` is content, not
+        frontmatter), `.txt` through TextParser, and an unmapped suffix through
+        the TextParser fallback. `.md` keeps the frontmatter-stripping body.
+        """
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "incr.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        markdown_doc = "---\ntitle: Markdown Title\n---\n# Heading\n\nBody text.\n"
+        yaml_doc = "---\nfirst: doc\n---\nsecond: doc\n"
+        text_doc = "Plain text title\nbody line\n"
+        unknown_doc = "Mystery title\nbody line\n"
+        (notes / "a.md").write_text(markdown_doc, encoding="utf-8")
+        (notes / "config.yaml").write_text(yaml_doc, encoding="utf-8")
+        (notes / "notes.txt").write_text(text_doc, encoding="utf-8")
+        (notes / "mystery.zzz").write_text(unknown_doc, encoding="utf-8")
+        _seed_collection(db_path, notes, pattern="**/*")
+
+        indexer, db, coll = _open_indexer(db_path)
+        try:
+            result = indexer.update_collection(coll)
+        finally:
+            db.close()
+
+        assert result == IncrementalResult(added=4, updated=0, removed=0)
+
+        md_title, md_content, md_checksum = _doc_row(db_path, str(notes / "a.md"))
+        assert md_title == "Markdown Title"
+        assert not md_content.startswith("---")
+        assert md_checksum == compute_checksum(md_content, {"title": "Markdown Title"})
+
+        yaml_title, yaml_content, yaml_checksum = _doc_row(db_path, str(notes / "config.yaml"))
+        assert yaml_title == "config"
+        assert yaml_content == yaml_doc
+        assert yaml_checksum == compute_checksum(yaml_doc, {"language": "yaml"})
+
+        text_title, text_content, _ = _doc_row(db_path, str(notes / "notes.txt"))
+        assert text_title == "Plain text title"
+        assert text_content == text_doc
+
+        unknown_title, unknown_content, _ = _doc_row(db_path, str(notes / "mystery.zzz"))
+        assert unknown_title == "Mystery title"
+        assert unknown_content == unknown_doc
 
     def test_modified_file_purges_stale_chunks_and_persists_fresh_checksum(
         self, tmp_path, monkeypatch
@@ -203,7 +252,7 @@ class TestIncrementalIndexer:
         # The fresh checksum is persisted against the new content...
         _title, content, checksum = _doc_row(db_path, str(doc_file))
         assert "Beta paragraph text" in content
-        assert checksum == hashlib.sha256(content.encode()).hexdigest()
+        assert checksum == compute_checksum(content, {})
         # ...so a second pass converges instead of rewriting again.
         indexer, db, coll = _open_indexer(db_path)
         try:

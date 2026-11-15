@@ -3,12 +3,60 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any, Protocol
+
+
+def _canonicalize_metadata(value: Any) -> Any:
+    """Recursively string-coerce mapping keys so canonical JSON is total.
+
+    ``json.dumps(..., default=str)`` handles non-serializable *values* only;
+    a mixed-key mapping still raises ``TypeError`` because ``sort_keys=True``
+    compares keys before the default hook runs. Coercing keys at every
+    nesting depth makes the serializer total over anything frontmatter can
+    produce (D-08).
+    """
+    if isinstance(value, Mapping):
+        return {str(key): _canonicalize_metadata(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_canonicalize_metadata(item) for item in value]
+    return value
+
+
+def canonical_metadata_json(metadata: Mapping[str, Any]) -> str:
+    """Serialize metadata to the one canonical JSON form (D-08).
+
+    The returned string is both the persisted ``documents.metadata`` value
+    and the frontmatter half of the change-detection checksum, so stored and
+    hashed forms can never diverge after a JSON round trip.
+    ``default=str`` keeps typed YAML values (dates, datetimes) storable
+    instead of raising ``TypeError``; ``ensure_ascii=False`` keeps Unicode
+    values byte-stable rather than escaped.
+    """
+    return json.dumps(
+        _canonicalize_metadata(metadata),
+        sort_keys=True,
+        default=str,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+
+
+def compute_checksum(content: str, metadata: Mapping[str, Any]) -> str:
+    """Hash the body plus the canonical full frontmatter (D-08).
+
+    A frontmatter-only edit changes this checksum, so Phase 20's metadata
+    filters can never serve a stale tag/title value from an unchanged body.
+    """
+    return hashlib.sha256(
+        content.encode() + b"\x00" + canonical_metadata_json(metadata).encode()
+    ).hexdigest()
 
 
 class ChunkStrategy(Enum):

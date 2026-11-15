@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import re
 import types
 from dataclasses import dataclass
@@ -10,6 +9,8 @@ from pathlib import Path
 from typing import Any, cast
 
 import frontmatter
+
+from sif.core.models import compute_checksum
 
 
 @dataclass
@@ -63,12 +64,11 @@ class MarkdownParser:
             match = self.title_pattern.search(body)
             title = match.group(1).strip() if match else file_path.stem
 
-        # Calculate checksum over the body (frontmatter stripped), matching the
-        # storage convention: the create path stores sha256 of Document.content
-        # (the body, see core.models.Document.__post_init__), so comparing
-        # against a whole-file hash never matches and every document is
-        # misreported as changed on `index update`.
-        checksum = hashlib.sha256(body.encode()).hexdigest()
+        # D-08: change detection covers the whole file — the body plus the
+        # full canonical frontmatter dict — so a frontmatter-only edit is
+        # visible to the incremental loop. The stored body stays byte-
+        # identical to the pre-D-08 behavior.
+        checksum = compute_checksum(body, metadata)
 
         return ParsedDocument(
             path=str(file_path.resolve()),
@@ -103,7 +103,8 @@ class TextParser:
         if not title:
             title = file_path.stem
 
-        checksum = hashlib.sha256(content.encode()).hexdigest()
+        # D-08: metadata for text documents is the empty mapping.
+        checksum = compute_checksum(content, {})
 
         return ParsedDocument(
             path=str(file_path.resolve()),
@@ -170,7 +171,7 @@ class CodeParser:
                 if first_line:
                     title = first_line[:100]
 
-        checksum = hashlib.sha256(content.encode()).hexdigest()
+        checksum = compute_checksum(content, {"language": language})
 
         return ParsedDocument(
             path=str(file_path.resolve()),

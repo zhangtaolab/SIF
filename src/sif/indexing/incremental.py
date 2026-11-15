@@ -27,7 +27,7 @@ from sif.database.repositories import (
     DocumentChunkRepository,
     DocumentRepository,
 )
-from sif.indexing.parser import MarkdownParser
+from sif.indexing.parser import TextParser, create_parser
 from sif.indexing.scanner import FileScanner
 from sif.utils.logging import get_logger
 
@@ -74,7 +74,6 @@ class IncrementalIndexer:
         self._coll_repo = CollectionRepository(conn)
         self._doc_repo = DocumentRepository(conn)
         self._chunk_repo = DocumentChunkRepository(conn)
-        self._parser = MarkdownParser()
         from sif.search.vector import create_embedding_purger  # noqa: PLC0415
 
         self._vector_purger: VectorSearcher | None = create_embedding_purger(conn)
@@ -282,9 +281,13 @@ class IncrementalIndexer:
         progress: Callable[[str], None] | None,
     ) -> str:
         """Process one scanned file; returns "added", "updated", "skipped", or "error"."""
-        # Parse document
+        # Parse document — per-file dispatch (CORR-01): the extension map
+        # decides the parser, and an unknown suffix falls back to TextParser
+        # (whole-file content, first-line title) rather than re-introducing
+        # frontmatter parsing on arbitrary extensions.
+        parser = create_parser(file_path) or TextParser()
         try:
-            parsed = self._parser.parse(file_path)
+            parsed = parser.parse(file_path)
         except Exception as e:
             # 14 REVIEW WR-01: report AND count — never fold into "skipped".
             # The logger call matters most on callback-less hosts (the
@@ -341,13 +344,16 @@ class IncrementalIndexer:
                 self._doc_repo.update(existing)
             outcome = "updated"
         else:
-            # Create new document
+            # Create new document. Pass the parser's checksum so a fresh row
+            # already follows the D-08 convention instead of falling back to
+            # Document.__post_init__'s body-only hash.
             doc = Document(
                 path=str(file_path),
                 collection_id=collection.id,
                 content=parsed.content,
                 title=parsed.title,
                 metadata=parsed.metadata,
+                checksum=parsed.checksum,
                 mtime=parsed.mtime,
             )
             with self._conn:
