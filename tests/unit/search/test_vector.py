@@ -571,16 +571,12 @@ class TestVectorDocumentDedup:
         documents: list[tuple[str, list[tuple[str, int, list[float]]]]] = [
             (
                 "d-chunky",
-                [
-                    (f"chunky-{sequence}", sequence, [1.0, sequence * 0.01])
-                    for sequence in range(5)
-                ],
+                [(f"chunky-{sequence}", sequence, [1.0, sequence * 0.01]) for sequence in range(5)],
             )
         ]
-        for index in range(12):
-            documents.append(
-                (f"d{index}", [(f"single-{index}", 0, [1.0, 0.5 + index * 0.1])])
-            )
+        documents.extend(
+            (f"d{index}", [(f"single-{index}", 0, [1.0, 0.5 + index * 0.1])]) for index in range(12)
+        )
         return documents
 
     def test_five_chunk_document_yields_ten_distinct_documents(self) -> None:
