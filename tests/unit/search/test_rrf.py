@@ -474,6 +474,10 @@ class TestRRFSC1Golden:
     pre-change arithmetic. The multiply form ``weight * (1.0 / (k + rank))``
     with weight 1.0 is IEEE-exact (``1.0 * x == x``), so repr(rrf_score)
     equality is the pinned invariant — no normalization, ever.
+
+    CORR-02 (2026-11-15) added an optional grouping key and a chunk-metadata
+    merge to ``fuse``, but neither expression touches the score arithmetic,
+    so these golden values are unchanged and remain the post-dedup baseline.
     """
 
     def test_fuse_default_weights_byte_identical(
