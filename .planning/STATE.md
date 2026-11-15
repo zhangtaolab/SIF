@@ -5,16 +5,16 @@ milestone_name: Search Precision and Agent Experience
 current_phase: 19
 current_phase_name: Search Correctness
 status: executing
-stopped_at: Completed 19-01-PLAN.md
-last_updated: "2026-11-15T02:50:54.519Z"
+stopped_at: Completed 19-02-PLAN.md
+last_updated: "2026-11-15T03:08:27.965Z"
 last_activity: 2026-11-15
 last_activity_desc: Phase 19 execution started
-state_head: 570a3a7093eb6b8c05d970bf1f5f06a5b6a0b27d
+state_head: 26aa5ceeab6123322db619ac32d1814a6580ff07
 progress:
   total_phases: 8
   completed_phases: 2
   total_plans: 22
-  completed_plans: 14
+  completed_plans: 15
 ---
 
 # DocSift — Project State
@@ -31,7 +31,7 @@ progress:
 ## Current Position
 
 Phase: 19 (Search Correctness) — EXECUTING
-Plan: 2 of 9
+Plan: 3 of 9
 Status: Ready to execute
 Last activity: 2026-11-15 — Phase 19 execution started
 
@@ -63,6 +63,7 @@ Progress: [███░░░░░░░] 25%
 | Phase 18 P04 | 8min | 3 tasks | 5 files |
 | Phase 18 P03 | 12min | 3 tasks | 7 files |
 | Phase 19 P01 | 9min | 3 tasks | 9 files |
+| Phase 19 P02 | 8min | 3 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -121,6 +122,11 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - [Phase 19]: 19-01: D-08 checksum = body bytes + NUL + canonical JSON of ALL frontmatter (sort_keys, default=str, ensure_ascii=False, compact separators); recursive mapping-key coercion makes the serializer total because default=str covers values only
 - [Phase 19]: 19-01: one canonical serializer serves both documents.metadata storage and the checksum input, so YAML dates persist as ISO text (latent TypeError fixed) and hashed/stored forms agree across the JSON round trip
 - [Phase 19]: 19-01: IncrementalIndexer selects create_parser(file_path) or TextParser() per file and stores parsed.checksum on create; create_parser keeps its None-for-unmapped-suffix contract
+- [Phase 19]: 19-02: reindexed_paths/metadata_only are compare=False; metadata-only work counts as updated in both update_collection and update_paths.
+- [Phase 19]: 19-02: convention marker is per collection (convention:<id>), written after the loop+sweep in a short transaction only when failed == 0; empty collections are marked silently with no migrate event.
+- [Phase 19]: 19-02: --force and migrating stay distinct bypasses of the checksum skip; both take the metadata fast path when the body is unchanged (Pitfall 15).
+- [Phase 19]: 19-02: the watch embed leg is fed by result.reindexed_paths in burst and reconcile, and always runs at embed depth so _pending_retry still heals; the checksum-snapshot helpers are removed.
+- [Phase 19]: 19-02: the full body-change path now refreshes documents.file_size, matching the metadata fast path (Rule 1 deviation).
 
 ### Pending Todos
 
@@ -150,8 +156,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-15T02:50:46.601Z
-Stopped at: Completed 19-01-PLAN.md
+Last session: 2026-11-15T03:08:17.476Z
+Stopped at: Completed 19-02-PLAN.md
 Resume file: None
 
 - **Next expected action:** run Phase 17 verification (`/gsd-verify-work 17`) to confirm the four ENG success criteria against the shipped state, then mark Phase 17 complete and proceed to Phase 18. Release evidence lives in `17-07-SUMMARY.md`: tag `v1.1.2` on `c819f67`, Publish run `43562577065` attempt 4 (all three jobs success), PyPI JSON `1.1.2` with the `mcp-name` marker, `pypi-attestations` `OK` against `https://github.com/zhangtaolab/SIF`, and both fresh-venv install proofs. Execution order for the rest of v1.2: 17 → 18 → 19 → 20 → 21 → 22 → 23 → 24; hard dependencies and cross-phase contracts in ROADMAP.md.

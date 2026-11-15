@@ -30,7 +30,7 @@ Each maps to exactly one roadmap phase. Checkboxes mark committed scope.
 
 ### Search Correctness (CORR)
 
-- [ ] **CORR-01**: User's frontmatter-only edits become searchable (parser dispatch wired + metadata-aware checksum in ONE plan with ONE shared forced-reindex migration; md path byte-identical; YAML `---` empty-body bug fixed).
+- [x] **CORR-01**: User's frontmatter-only edits become searchable (parser dispatch wired + metadata-aware checksum in ONE plan with ONE shared forced-reindex migration; md path byte-identical; YAML `---` empty-body bug fixed).
 - [ ] **CORR-02**: User gets one result per document by default (per-doc dedup inside VectorSearcher pre-fusion; `--per-chunk` escape hatch; recorded ranking-contract change with bench before/after and goldens updated with rationale).
 - [ ] **CORR-03**: User can paginate results deterministically (CLI `--offset` + MCP offset + hybrid single offset slice + BM25 min_score order; offset=0 reproduces the recorded contract; searchers return from rank 0).
 - [ ] **CORR-04**: User gets title-aware ranking (title-FTS detect-and-rebuild migration + rewritten triggers + bm25() column weights bench-measured + mtime index; `documents_fts_v` vocab shadow survives rebuild).
@@ -138,7 +138,7 @@ Populated during roadmap creation. Each requirement maps to exactly one phase.
 | QUAL-01 | Phase 18 | Complete |
 | QUAL-02 | Phase 24 | Pending |
 | QUAL-03 | Phase 24 | Pending |
-| CORR-01 | Phase 19 | Pending |
+| CORR-01 | Phase 19 | Complete |
 | CORR-02 | Phase 19 | Pending |
 | CORR-03 | Phase 19 | Pending |
 | CORR-04 | Phase 19 | Pending |

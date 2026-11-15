@@ -125,12 +125,12 @@ Full detail: `.planning/milestones/v1.1-ROADMAP.md`
   3. User can paginate results deterministically — CLI `--offset` and MCP offset return the correct next page (hybrid owns ONE offset slice, searchers return from rank 0, BM25 min_score order fixed); offset=0 reproduces the recorded contract
   4. User gets title-aware ranking — title-FTS detect-and-rebuild migration + rewritten triggers + bench-measured bm25() column weights + mtime index; the `documents_fts_v` vocab shadow survives the rebuild on a populated DB
   5. User gets results without redundant attach work — the double-attach is eliminated: exactly ONE context/staleness attach at pipeline exit
-**Plans:** 1/9 plans executed
+**Plans:** 2/9 plans executed
 **Wave 1**
 - [x] 19-01-PLAN.md — Parser dispatch + metadata-aware checksum + canonical metadata storage
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 19-02-PLAN.md — Metadata fast path + per-collection convention migration + watcher embed candidates
+- [x] 19-02-PLAN.md — Metadata fast path + per-collection convention migration + watcher embed candidates
 
 **Wave 3** *(blocked on Wave 2 completion)*
 - [ ] 19-03-PLAN.md — Search-core single attach (searcher de-attach, one pipeline enrichment)
@@ -232,7 +232,7 @@ v1.2 contracts — defined ONCE; downstream phases consume, never redefine:
 | 16.1. Address tech debt (CLI errors + cache TTL + enqueue API) | v1.1 | 5/5 | Complete    | 2026-11-12 |
 | 17. Engineering Foundation (CI + Hygiene + PyPI) | v1.2 | 9/9 | Complete    | 2026-11-14 |
 | 18. Quality Instrument (Personal Bench + rapidfuzz) | v1.2 | 4/4 | Complete    | 2026-11-15 |
-| 19. Search Correctness | v1.2 | 1/9 | In Progress | - |
+| 19. Search Correctness | v1.2 | 2/9 | In Progress | - |
 | 20. Metadata Filtering + Discovery | v1.2 | 0/TBD | Not started | - |
 | 21. Scale, Maintenance + Embedder Identity | v1.2 | 0/TBD | Not started | - |
 | 22. MCP SDK v2 + Agent Packaging | v1.2 | 0/TBD | Not started | - |
