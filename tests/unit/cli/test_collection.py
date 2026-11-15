@@ -906,6 +906,33 @@ class TestCollectionMetadata:
         assert output.count("frontmatter") == 2
         assert output.index("tag") < output.index("priority")
         assert "native" not in output
+        # WR-07: no skipped keys, so the footer stays silent.
+        assert "skipped as non-indexable" not in output
+
+    def test_table_reports_skipped_keys_footer(self, tmp_path: Path) -> None:
+        """WR-07: non-indexable keys are visible on the default human surface."""
+        db_path = tmp_path / "sif.db"
+        db = Database(db_path)
+        db.init_schema()
+        with db.transaction() as conn:
+            CollectionRepository(conn).create(Collection(id="coll-skip", name="skip", path="/skip"))
+            DocumentRepository(conn).create(
+                Document(
+                    id="d-skip",
+                    collection_id="coll-skip",
+                    path="/skip/a.md",
+                    content="body",
+                    mtime=1.0,
+                    metadata={"nested": {"a": 1}, "tag": "x"},
+                )
+            )
+        db.close()
+
+        result = self._invoke(db_path)
+
+        assert result.exit_code == 0, result.output
+        assert "1 key skipped as non-indexable" in result.output
+        assert "nested" not in result.output
 
     def test_json_envelope_carries_built_ins_and_no_shadowed_key(self, tmp_path: Path) -> None:
         """The JSON envelope is the frozen D-15/D-20 shape, builtIns included."""

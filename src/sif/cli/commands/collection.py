@@ -426,6 +426,13 @@ def _render_metadata_table(result: dict[str, Any]) -> None:
     console.print(table)
     if result["remainingKeys"]:
         console.print(f"... {result['remainingKeys']} more keys")
+    skipped = int(result["skippedKeys"])
+    if skipped:
+        # D-07: silence is impossible — the default human surface must report
+        # non-indexable keys too, or a corpus of all-skipped keys would look
+        # identical to one with no frontmatter (WR-07).
+        noun = "key" if skipped == 1 else "keys"
+        console.print(f"... {skipped} {noun} skipped as non-indexable")
 
 
 @collection_group.command("metadata")
