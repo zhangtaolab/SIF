@@ -185,14 +185,14 @@ Full detail: `.planning/milestones/v1.1-ROADMAP.md`
   3. User can embed large corpora without giant transactions — streaming embed batches run outside transactions with short per-batch commits, resumable, CR-02 failure reporting preserved, batch-boundary sanity against garbage vectors
   4. User is protected from silent bad model swaps — persisted `index_meta` embedder identity (model id + revision/hash + pooling + prompt scheme, reusing the cache's `_cache_model_id` format); the 3 dim-guard sites consolidated; legacy DBs get warn-once + backfill; mismatch → fail-fast embed / warn+mark search
   5. User gets correct query-vs-document embeddings — role-aware embed surface with `prompt_name`, prompt dimension in the cache key; the Qwen3 default path stays byte-identical until the Harrier gate passes
-**Plans:** 2/8 plans executed (0/8 complete)
+**Plans:** 3/8 plans executed (0/8 complete)
 
 **Wave 1** *(no dependencies — 21-01 and 21-02 are file-disjoint)*
 - [x] 21-01-PLAN.md — Tracer: identity record round-trip through `index_meta` (build/persist/compare) + prompt scheme + role methods + prompt/revision cache buckets, default Qwen3 byte-identical
 - [x] 21-02-PLAN.md — Tracer: `embedded_documents` shadow write/read end-to-end, then DDL/backfill marker/reconcile helper, staleness and status bounded with byte-identical output
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 21-03-PLAN.md — Contexts normalized-map cache with repository write generation + `PRAGMA data_version` invalidation; `vectors_untrusted` enrichment seam
+- [x] 21-03-PLAN.md — Contexts normalized-map cache with repository write generation + `PRAGMA data_version` invalidation; `vectors_untrusted` enrichment seam
 - [ ] 21-08-PLAN.md — Tracer: legacy index open writes the assumed identity once; shared `FLOAT[n]` guard with init-mode check; watcher/MCP open-time identity and prompt-aware construction
 
 **Wave 3** *(blocked on Wave 2 completion)*
@@ -264,7 +264,7 @@ v1.2 contracts — defined ONCE; downstream phases consume, never redefine:
 | 18. Quality Instrument (Personal Bench + rapidfuzz) | v1.2 | 4/4 | Complete    | 2026-11-15 |
 | 19. Search Correctness | v1.2 | 9/9 | Complete    | 2026-11-15 |
 | 20. Metadata Filtering + Discovery | v1.2 | 5/5 | Complete    | 2026-11-15 |
-| 21. Scale, Maintenance + Embedder Identity | v1.2 | 2/8 | In Progress | - |
+| 21. Scale, Maintenance + Embedder Identity | v1.2 | 3/8 | In Progress | - |
 | 22. MCP SDK v2 + Agent Packaging | v1.2 | 0/TBD | Not started | - |
 | 23. Harrier Gated Evaluation | v1.2 | 0/TBD | Not started | - |
 | 24. Tuning + Models UX + Install Docs | v1.2 | 0/TBD | Not started | - |

@@ -5,16 +5,16 @@ milestone_name: Search Precision and Agent Experience
 current_phase: 21
 current_phase_name: Scale, Maintenance + Embedder Identity
 status: executing
-stopped_at: Completed 21-02-PLAN.md
-last_updated: "2026-11-15T16:39:02.958Z"
+stopped_at: Completed 21-03-PLAN.md
+last_updated: "2026-11-15T16:49:13.267Z"
 last_activity: 2026-11-16
 last_activity_desc: Phase 21 execution started
-state_head: c3b16fd46f8b9f6ee5e07fba6953767b0affbdc2
+state_head: b03574521b68766553615c9a46eec032cb31579e
 progress:
   total_phases: 8
   completed_phases: 4
   total_plans: 35
-  completed_plans: 29
+  completed_plans: 30
 ---
 
 # DocSift — Project State
@@ -31,7 +31,7 @@ progress:
 ## Current Position
 
 Phase: 21 (Scale, Maintenance + Embedder Identity) — EXECUTING
-Plan: 3 of 8
+Plan: 4 of 8
 Status: Ready to execute
 Last activity: 2026-11-16 — Phase 21 execution started
 
@@ -78,6 +78,7 @@ Progress: [█████░░░░░] 50%
 | Phase 20 P05 | 14min | 3 tasks | 13 files |
 | Phase 21 P01 | 13min | 3 tasks | 14 files |
 | Phase 21 P02 | 18 | 3 tasks | 15 files |
+| Phase 21 P03 | 7min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -202,6 +203,9 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - [Phase 21]: 21-02: backfill forces the DELETE+INSERT pass when the table did not pre-exist even if the marker matches; rows come only from JOIN documents and the marker is written after the complete pass
 - [Phase 21]: 21-02: staleness keeps the display gate and None degradation byte-identical while reading one probe plus indexed shadow PK lookups; the vec0 one-scan batching rule now applies only to get_all_embedded_chunk_ids
 - [Phase 21]: 21-02: reconcile_embedded_documents leaves the commit to the caller (cleanup/vacuum wiring is 21-06) and sif status computes vector lag with one NOT EXISTS anti-join over byte-identical strings
+- [Phase 21]: 21-03: the context-map cache is keyed by the resolved main DB path, never a connection object; :memory: databases and connections with an open transaction bypass it so no snapshot or uncommitted read is ever cached
+- [Phase 21]: 21-03: invalidation samples the repository write generation, the sentinel PRAGMA data_version, and the inode before building; any sentinel failure closes it, drops the entry, and bypasses without caching
+- [Phase 21]: 21-03: enrich_results gained keyword-only vectors_untrusted=False applied after the normal staleness pass; no call site changed, so two-argument callers and monkeypatched doubles stay intact
 
 ### Pending Todos
 
@@ -231,8 +235,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-15T16:39:02.403Z
-Stopped at: Completed 21-02-PLAN.md
+Last session: 2026-11-15T16:49:12.738Z
+Stopped at: Completed 21-03-PLAN.md
 Resume file: None
 
 - **Next expected action:** plan and execute Phase 21 (Scale, Maintenance + Embedder Identity — SCALE-01..03, EMB-01/02), then 22 → 23 → 24. Phase 20 delivered FILT-01..05: shared 17-operator filter grammar on CLI+MCP, `path`/`mtime` built-ins, pre-RRF per-leg pushdown with the corrected vector escalation, typed kv storage + `index_meta`-gated backfill, and the `metadata` discovery tool whose envelope is the frozen Phase 22 contract. Two audits remain recorded as debt (see Blockers/Concerns): `/gsd-secure-phase 20` and `/gsd:validate-phase 20`.
