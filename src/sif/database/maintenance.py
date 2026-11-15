@@ -19,6 +19,7 @@ from __future__ import annotations
 import os
 import shutil
 import sqlite3
+import stat
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -212,6 +213,11 @@ def _validate_backup_target(db_path: Path, target: Path) -> None:
     A symlink is checked before resolution because resolving would hide it;
     the reserved set names the database itself and its WAL/SHM/lock sidecars;
     stale target sidecars would make the copy indistinguishable from a live DB.
+
+    These checks produce the friendly, specific messages. They are not the
+    enforcement point — the path can change between this check and the copy,
+    so :func:`_create_backup_target` re-establishes the contract atomically
+    with exclusive, symlink-refusing creation.
     """
     if target.is_symlink():
         raise MaintenanceTargetError(f"Refusing to back up to {target}: the target is a symlink.")
@@ -264,12 +270,47 @@ def _discard_backup(target: Path) -> None:
         logger.warning("Could not remove failed backup copy %s", target)
 
 
+def _create_backup_target(target: Path) -> None:
+    """Create the copy exclusively, owner-only, before SQLite opens it.
+
+    ``O_CREAT | O_EXCL`` closes the check-then-create race in
+    :func:`_validate_backup_target`: this call is the only creator of the
+    target, so a file or symlink planted after validation makes it fail
+    instead of being opened and overwritten. ``O_NOFOLLOW`` (where the
+    platform provides it) refuses a symlink explicitly, and the ``0o600``
+    creation mode makes the restrictive permissions apply from the first
+    byte — backups carry full document text through the entire copy plus the
+    integrity-check window, so a post-copy chmod is too late.
+    """
+    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open(target, flags, 0o600)
+    except FileExistsError as e:
+        raise MaintenanceTargetError(
+            f"Refusing to back up to {target}: the target already exists. "
+            "Choose a new path or remove the existing file."
+        ) from e
+    except OSError as e:
+        raise MaintenanceTargetError(f"Cannot create the backup target {target}: {e}") from e
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise MaintenanceTargetError(
+                f"Refusing to back up to {target}: the target is not a regular file."
+            )
+    finally:
+        os.close(fd)
+
+
 def _copy_with_online_backup(db_path: Path, target: Path, settings: Settings) -> None:
     """Copy through ``Connection.backup`` and discard any failed partial file."""
     source: sqlite3.Connection | None = None
     try:
         source = create_connection(db_path)
         _set_busy_timeout(source, settings)
+        # Create the target ourselves (exclusive, no symlink, 0600) instead of
+        # letting sqlite3.connect create it with the umask's permissions and
+        # follow whatever is at the path at open time.
+        _create_backup_target(target)
         target_conn = sqlite3.connect(str(target))
         try:
             # Connection.backup is the only WAL-safe mechanism; a plain file
