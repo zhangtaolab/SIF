@@ -31,7 +31,8 @@ from watchdog.utils.event_debouncer import EventDebouncer
 from sif.core.models import Collection
 from sif.database.factory import WAL_CHECKPOINT_TRUNCATE
 from sif.database.locking import index_lock
-from sif.database.repositories import DocumentChunkRepository, DocumentRepository
+from sif.database.repositories import DocumentRepository
+from sif.indexing.embed_writer import StreamingEmbedWriter, SystemicEmbedError
 from sif.indexing.incremental import IncrementalIndexer, IncrementalResult
 from sif.indexing.scanner import FileScanner
 from sif.utils.logging import get_logger
@@ -205,6 +206,7 @@ class _EmbedSession:
         self._manager: EmbeddingManager | None = None
         self._searcher: VectorSearcher | None = None
         self._chunker: Chunker | None = None
+        self._writer: StreamingEmbedWriter | None = None
         # Per-collection paths whose embed leg failed (WR-01): the BM25 leg
         # already committed their fresh checksum, so a later burst's reindex
         # signal alone never re-selects them — the next burst unions them back
@@ -272,6 +274,26 @@ class _EmbedSession:
                 max_chunk_size=token_size_to_chars(settings.chunk_size),
                 overlap=token_size_to_chars(settings.chunk_overlap),
             )  # embed_cmd's default strategy
+            # D-18: the session routes every per-path embed through the same
+            # streaming writer embed_cmd uses, so chunk completeness, batch
+            # sanity, shadow maintenance, and the first-write identity cannot
+            # diverge between the two hosts.
+            try:
+                had_vectors = (
+                    self._conn.execute("SELECT 1 FROM document_embeddings LIMIT 1").fetchone()
+                    is not None
+                )
+            except sqlite3.OperationalError:
+                had_vectors = False
+            self._writer = StreamingEmbedWriter(
+                self._conn,
+                manager,
+                self._chunker,
+                self._searcher,
+                current,
+                batch_size=settings.batch_size,
+                write_identity=not had_vectors,
+            )
             self._ready = True
         except Exception as e:
             self._notify(on_event, f"error Embedding disabled for this watch session: {e}")
@@ -284,16 +306,19 @@ class _EmbedSession:
         paths: Iterable[Path],
         on_event: Callable[[str], None] | None,
     ) -> None:
-        """Chunk and embed changed documents (D-09 sequence).
+        """Embed changed documents through the shared streaming writer (D-18).
 
-        Chunking and embedding compute with NO write transaction open —
-        explicitly NOT embed_cmd's inside-txn shape (Pitfall 5) — then one
-        short closing transaction persists chunk rows and batched vectors.
+        The writer computes embeddings with NO write transaction open and
+        persists each document in one short transaction (D-15); this method
+        only selects candidates and owns the watch-session failure policy.
         Candidates also include this collection's pending-retry paths
         (WR-01): a path whose embed failed an earlier burst is retried here
         even though its checksum no longer counts as changed. A per-path
         failure emits one ``error`` event, leaves earlier candidates
-        durable, and re-queues only that path for the next burst.
+        durable, and re-queues only that path for the next burst. A systemic
+        :class:`SystemicEmbedError` instead disables embedding for the
+        session after one error event; earlier paths stay committed and BM25
+        freshness continues.
         """
         candidates = sorted(set(paths) | self._pending_retry.pop(collection.id, set()))
         if not candidates:
@@ -303,37 +328,27 @@ class _EmbedSession:
             # never succeed, so the popped paths are dropped, matching the
             # one-error-event contract.
             return
-        manager = self._manager
-        searcher = self._searcher
-        chunker = self._chunker
-        assert manager is not None
-        assert searcher is not None
-        assert chunker is not None
+        writer = self._writer
+        assert writer is not None
         doc_repo = DocumentRepository(self._conn)
-        chunk_repo = DocumentChunkRepository(self._conn)
         failed: set[Path] = set()
         for path in candidates:
             try:
                 doc = doc_repo.get_by_path(str(path), collection.id)
                 if doc is None:
                     continue
-                chunks = chunker.chunk(doc.content)
-                if not chunks:
-                    continue
-                # Embedding compute never runs inside an open write transaction.
-                vectors = manager.embed([chunk.content for chunk in chunks]).embeddings
-                # One short vector-write txn: chunk rows + batched vec0 inserts.
-                with self._conn:
-                    for sequence, chunk in enumerate(chunks):
-                        chunk.document_id = doc.id
-                        chunk.sequence = sequence
-                        chunk_repo.create(chunk)
-                    searcher.add_embeddings_batch(
-                        [
-                            (chunk.id, doc.id, chunk.id, vector)
-                            for chunk, vector in zip(chunks, vectors, strict=True)
-                        ]
-                    )
+                writer.embed_document(doc)
+            except SystemicEmbedError as e:
+                # D-17/D-18: a garbage batch is systemic. One error event
+                # disables embedding for the session; every earlier path is
+                # already committed and BM25 freshness continues.
+                logger.exception("Systemic embedding failure; disabling embed for this session")
+                self._notify(
+                    on_event,
+                    f"error Embedding disabled for this watch session: {e}",
+                )
+                self._ready = False
+                break
             except Exception as e:
                 failed.add(path)
                 logger.exception("Embedding failed for %s; re-queued for next burst", path)

@@ -11,6 +11,7 @@ from __future__ import annotations
 import errno
 import json
 import logging
+import math
 import os
 import sqlite3
 import time
@@ -1417,9 +1418,9 @@ def _embed_manager_mock(
 ) -> MagicMock:
     """Build a mocked EmbeddingManager producing deterministic dim-length vectors.
 
-    ``conn``/``embed_txn_flags``: when both given, every embed() call records
+    ``conn``/``embed_txn_flags``: when both given, every embed_documents() call records
     ``conn.in_transaction`` at call time (the D-09 boundary proof).
-    ``sequence``: when given, every embed() call appends "embed" (lock-order proof).
+    ``sequence``: when given, every embed_documents() call appends "embed" (lock-order proof).
     """
     manager = MagicMock()
     manager.get_model_info.return_value = {
@@ -1435,10 +1436,10 @@ def _embed_manager_mock(
             embed_txn_flags.append(conn.in_transaction)
         if sequence is not None:
             sequence.append("embed")
-        vectors = [[0.1] * dim for _ in texts]
+        vectors = [[1.0 / math.sqrt(dim)] * dim for _ in texts]
         return MagicMock(embeddings=vectors)
 
-    manager.embed.side_effect = fake_embed
+    manager.embed_documents.side_effect = fake_embed
     return manager
 
 
@@ -1617,7 +1618,7 @@ class TestEmbedDepth:
                     check.close()
                 assert len(before_rows) >= 1
                 assert all(row[1] is not None for row in before_rows)
-                assert manager.embed.call_count == 1
+                assert manager.embed_documents.call_count == 1
 
                 # Frontmatter-only edit: title/tags move, parsed body identical.
                 doc_file.write_text(
@@ -1626,7 +1627,7 @@ class TestEmbedDepth:
                 )
                 self._run_burst(watcher, coll, doc_file)
                 # The embed leg was NOT fed: no second chunk/vector set.
-                assert manager.embed.call_count == 1
+                assert manager.embed_documents.call_count == 1
         finally:
             db.close()
 
@@ -1683,7 +1684,7 @@ class TestEmbedDepth:
 
                 doc_file.write_text(BODY_BETA, encoding="utf-8")
                 self._run_burst(watcher, coll, doc_file)
-                assert manager.embed.call_count == 2
+                assert manager.embed_documents.call_count == 2
         finally:
             db.close()
 
@@ -1736,7 +1737,7 @@ class TestEmbedDepth:
                 )
                 # The burst path never writes the convention marker (D-09)...
                 self._run_burst(watcher, coll, doc_file)
-                assert manager.embed.call_count == 1
+                assert manager.embed_documents.call_count == 1
                 check = self._check_conn(db_path)
                 try:
                     before_rows = _chunk_rows(check, doc_file)
@@ -1746,7 +1747,7 @@ class TestEmbedDepth:
                 # ...so the next reconcile runs the one forced migration pass.
                 watcher._run_job((coll, FoldResult(needs_reconcile=True)))
                 # Unchanged bodies keep chunks/vectors: no reindex signal.
-                assert manager.embed.call_count == 1
+                assert manager.embed_documents.call_count == 1
         finally:
             db.close()
 
@@ -1865,7 +1866,7 @@ class TestEmbedDepth:
         assert "8" in errors[0]
         # BM25 freshness continued through both bursts.
         assert [r.added + r.updated for r in results] == [1, 1]
-        manager.embed.assert_not_called()
+        manager.embed_documents.assert_not_called()
         check = sqlite3.connect(str(db_path))
         try:
             assert check.execute("SELECT COUNT(*) FROM document_chunks").fetchone()[0] == 0
@@ -1960,7 +1961,7 @@ class TestEmbedDepth:
         assert "sif index embed --force" in errors[0]
         # BM25 freshness continued through both bursts; embedding never ran.
         assert [r.added + r.updated for r in results] == [1, 1]
-        manager.embed.assert_not_called()
+        manager.embed_documents.assert_not_called()
         check = sqlite3.connect(str(db_path))
         try:
             assert check.execute("SELECT COUNT(*) FROM document_chunks").fetchone()[0] == 0
@@ -2062,12 +2063,12 @@ class TestEmbedDepth:
         db_path, doc_a, doc_b = self._prepare_two_changed_docs(tmp_path, monkeypatch)
 
         def flaky_embed(texts: list[str], **_kwargs: object) -> MagicMock:
-            if manager.embed.call_count == 1:
+            if manager.embed_documents.call_count == 1:
                 raise RuntimeError("provider 503")
-            return MagicMock(embeddings=[[0.1] * DIM for _ in texts])
+            return MagicMock(embeddings=[[1.0 / math.sqrt(DIM)] * DIM for _ in texts])
 
         manager = _embed_manager_mock()
-        manager.embed.side_effect = flaky_embed
+        manager.embed_documents.side_effect = flaky_embed
 
         events: list[str] = []
         db = Database(db_path)
@@ -2095,13 +2096,13 @@ class TestEmbedDepth:
                     [FileModifiedEvent(str(doc_a)), FileModifiedEvent(str(doc_b))]
                 )
                 watcher._drain_once()
-                assert manager.embed.call_count == 2
+                assert manager.embed_documents.call_count == 2
 
                 # Burst 2: a.md touched WITHOUT a content change — the
                 # checksum diff is empty; only the retry set can heal it.
                 watcher._settled_callback(coll)([FileModifiedEvent(str(doc_a))])
                 watcher._drain_once()
-                assert manager.embed.call_count == 3
+                assert manager.embed_documents.call_count == 3
         finally:
             db.close()
 
@@ -2156,14 +2157,14 @@ class TestEmbedDepth:
                 # Reconcile 1 (startup drift): the new doc's checksum
                 # appears (None -> fresh) and the embed leg writes vectors.
                 watcher._run_job((coll, FoldResult(needs_reconcile=True)))
-                assert manager.embed.call_count == 1
+                assert manager.embed_documents.call_count == 1
 
                 # Drift while unwatched, then reconcile 2: the BM25 update
                 # branch purges chunks and embeddings, and the embed leg
                 # must rewrite them in the same job.
                 doc_file.write_text("# Drifted\n\n" + ("Changed text. " * 60), encoding="utf-8")
                 watcher._run_job((coll, FoldResult(needs_reconcile=True)))
-                assert manager.embed.call_count == 2
+                assert manager.embed_documents.call_count == 2
         finally:
             db.close()
 
@@ -2175,6 +2176,121 @@ class TestEmbedDepth:
 
         assert len(rows) >= 1
         assert all(row[1] is not None for row in rows)
+
+    def test_burst_writes_chunks_vectors_and_shadow_in_one_writer_transaction(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """D-18: the writer maintains the derived shadow alongside chunks/vectors."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "watch.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        doc_file = notes / "a.md"
+        doc_file.write_text(BODY_ALPHA, encoding="utf-8")
+        _seed_collection(db_path, notes)
+
+        manager = _embed_manager_mock()
+        db = Database(db_path)
+        try:
+            from sif.database.repositories import CollectionRepository
+
+            coll = CollectionRepository(db.connection).get_by_name("notes")
+            assert coll is not None
+            with (
+                patch("sif.config.settings.get_settings", return_value=_test_settings()),
+                patch(
+                    "sif.embedding.manager.EmbeddingManager.from_settings",
+                    return_value=manager,
+                ),
+            ):
+                watcher = FileWatcher([coll], db.connection, db_path, WatchConfig(depth="embed"))
+                self._run_burst(watcher, coll, doc_file)
+        finally:
+            db.close()
+
+        check = self._check_conn(db_path)
+        try:
+            doc_id = check.execute(
+                "SELECT id FROM documents WHERE path = ?", (str(doc_file.resolve()),)
+            ).fetchone()[0]
+            chunks = check.execute(
+                "SELECT COUNT(*) FROM document_chunks WHERE document_id = ?", (doc_id,)
+            ).fetchone()[0]
+            vectors = check.execute(
+                "SELECT COUNT(*) FROM document_embeddings WHERE document_id = ?", (doc_id,)
+            ).fetchone()[0]
+            shadow = check.execute(
+                "SELECT COUNT(*) FROM embedded_documents WHERE document_id = ?", (doc_id,)
+            ).fetchone()[0]
+        finally:
+            check.close()
+
+        assert chunks >= 1
+        assert vectors == chunks
+        assert shadow == 1
+
+    def test_systemic_sanity_failure_disables_embed_for_the_session(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """D-17/D-18: a garbage batch emits one error event, disables embedding,
+        and stops the loop; BM25 freshness continues and prior work stays."""
+        _delenv_settings_vars(monkeypatch)
+        db_path = tmp_path / "watch.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        doc_file = notes / "a.md"
+        doc_file.write_text(BODY_ALPHA, encoding="utf-8")
+        _seed_collection(db_path, notes)
+
+        manager = _embed_manager_mock()
+        manager.embed_documents.side_effect = lambda texts, **_: MagicMock(
+            embeddings=[[float("nan")] * DIM for _ in texts]
+        )
+        events: list[str] = []
+        results: list[IncrementalResult] = []
+        db = Database(db_path)
+        try:
+            from sif.database.repositories import CollectionRepository
+
+            coll = CollectionRepository(db.connection).get_by_name("notes")
+            assert coll is not None
+            with (
+                patch("sif.config.settings.get_settings", return_value=_test_settings()),
+                patch(
+                    "sif.embedding.manager.EmbeddingManager.from_settings",
+                    return_value=manager,
+                ),
+            ):
+                watcher = FileWatcher(
+                    [coll],
+                    db.connection,
+                    db_path,
+                    WatchConfig(
+                        depth="embed",
+                        on_event=events.append,
+                        on_batch=lambda _c, result: results.append(result),
+                    ),
+                )
+                self._run_burst(watcher, coll, doc_file)
+                doc_file.write_text(BODY_BETA, encoding="utf-8")
+                self._run_burst(watcher, coll, doc_file)
+                assert watcher._embed._ready is False
+        finally:
+            db.close()
+
+        errors = [event for event in events if event.startswith("error ")]
+        assert len(errors) == 1
+        assert "Embedding disabled for this watch session" in errors[0]
+        assert "batch validation failed" in errors[0]
+        # The systemic abort stops the embed loop after one model call, while
+        # the BM25 leg kept committing both bursts.
+        assert manager.embed_documents.call_count == 1
+        assert [r.added + r.updated for r in results] == [1, 1]
+        check = sqlite3.connect(str(db_path))
+        try:
+            assert check.execute("SELECT COUNT(*) FROM document_chunks").fetchone()[0] == 0
+        finally:
+            check.close()
 
 
 class TestLiveRescope:

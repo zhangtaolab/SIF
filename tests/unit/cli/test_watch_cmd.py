@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 import logging
+import math
 import sys
 from collections.abc import Generator
 from pathlib import Path
@@ -122,10 +123,10 @@ def _embed_manager_mock(dim: int = 8) -> MagicMock:
     manager.get_identity.return_value = _manager_identity(dim)
 
     def fake_embed(texts: list[str], **_kwargs: object) -> MagicMock:
-        vectors = [[0.1] * dim for _ in texts]
+        vectors = [[1.0 / math.sqrt(dim)] * dim for _ in texts]
         return MagicMock(embeddings=vectors)
 
-    manager.embed.side_effect = fake_embed
+    manager.embed_documents.side_effect = fake_embed
     return manager
 
 
@@ -877,7 +878,7 @@ class TestStartupReconcileEmbedDepth:
             conn.close()
 
         assert vectorless == []
-        assert manager.embed.call_count >= 1
+        assert manager.embed_documents.call_count >= 1
 
     def test_bm25_startup_writes_no_vectors_and_never_loads_model(
         self, tmp_path, monkeypatch
