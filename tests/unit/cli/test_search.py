@@ -3,6 +3,7 @@
 import csv
 import io
 import json
+import logging
 import os
 import re
 import sqlite3
@@ -152,6 +153,7 @@ class TestSearchFiltering:
 
         mock_manager = MagicMock()
         mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager.embed_query.return_value = [0.0] * 384
         mock_manager._model = MagicMock()
 
         mock_db = MagicMock()
@@ -205,6 +207,7 @@ class TestSearchFiltering:
 
         mock_manager = MagicMock()
         mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager.embed_query.return_value = [0.0] * 384
         mock_manager._model = MagicMock()
 
         mock_db = MagicMock()
@@ -463,6 +466,7 @@ class TestSearchLineNumbers:
 
         mock_manager = MagicMock()
         mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager.embed_query.return_value = [0.0] * 384
         mock_manager._model = MagicMock()
 
         mock_db = MagicMock()
@@ -508,6 +512,7 @@ class TestSearchLineNumbers:
 
         mock_manager = MagicMock()
         mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager.embed_query.return_value = [0.0] * 384
         mock_manager._model = MagicMock()
 
         mock_db = MagicMock()
@@ -575,6 +580,7 @@ class TestQueryNewFlags:
 
         mock_manager = MagicMock()
         mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager.embed_query.return_value = [0.0] * 384
         mock_manager._model = MagicMock()
 
         mock_db = MagicMock()
@@ -616,6 +622,7 @@ class TestQueryNewFlags:
 
         mock_manager = MagicMock()
         mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager.embed_query.return_value = [0.0] * 384
         mock_manager._model = MagicMock()
 
         mock_db = MagicMock()
@@ -661,6 +668,7 @@ class TestQueryNewFlags:
 
         mock_manager = MagicMock()
         mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager.embed_query.return_value = [0.0] * 384
         mock_manager._model = MagicMock()
 
         mock_db = MagicMock()
@@ -726,6 +734,7 @@ class TestVsearchNewFlags:
 
         mock_manager = MagicMock()
         mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager.embed_query.return_value = [0.0] * 384
         mock_manager._model = MagicMock()
 
         mock_db = MagicMock()
@@ -775,6 +784,7 @@ class TestVsearchNewFlags:
 
         mock_manager = MagicMock()
         mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager.embed_query.return_value = [0.0] * 384
         mock_manager._model = MagicMock()
 
         mock_db = MagicMock()
@@ -842,6 +852,7 @@ class TestSnippetDisplay:
 
         mock_manager = MagicMock()
         mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager.embed_query.return_value = [0.0] * 384
         mock_manager._model = MagicMock()
 
         mock_db = MagicMock()
@@ -958,6 +969,7 @@ class TestQueryPipelineErrorHandling:
 
         mock_manager = MagicMock()
         mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager.embed_query.return_value = [0.0] * 384
         mock_manager._model = MagicMock()
 
         mock_db = MagicMock()
@@ -1028,6 +1040,7 @@ class TestVectorConstructorErrorHandling:
 
         mock_manager = MagicMock()
         mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager.embed_query.return_value = [0.0] * 384
         mock_manager._model = MagicMock()
 
         mock_db = MagicMock()
@@ -1070,6 +1083,7 @@ class TestVectorConstructorErrorHandling:
 
         mock_manager = MagicMock()
         mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager.embed_query.return_value = [0.0] * 384
         mock_manager._model = MagicMock()
 
         mock_db = MagicMock()
@@ -1204,6 +1218,7 @@ class TestQueryEmbeddingDimension:
         manager = MagicMock()
         manager.get_model_info.return_value = {"loaded": True}
         manager.embed_single.return_value = [0.0] * 5
+        manager.embed_query.return_value = [0.0] * 5
         manager.model = MagicMock()
 
         result, pipeline_cls = self._invoke(tmp_path, manager)
@@ -1222,6 +1237,7 @@ class TestQueryRerankerConfigError:
         mock_repo.list_enabled.return_value = []
         mock_manager = MagicMock()
         mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager.embed_query.return_value = [0.0] * 384
         mock_manager._model = MagicMock()
         mock_db = MagicMock()
         return [
@@ -1352,6 +1368,7 @@ class TestRerankOptIn:
         repo.list_enabled.return_value = []
         manager = MagicMock()
         manager.embed_single.return_value = [0.0] * 4
+        manager.embed_query.return_value = [0.0] * 4
         manager._model = MagicMock()
         pipeline = MagicMock()
         pipeline.search.return_value = [self._result()]
@@ -1410,6 +1427,7 @@ class TestRerankOptIn:
         repo.list_enabled.return_value = []
         manager = MagicMock()
         manager.embed_single.return_value = [0.0] * 4
+        manager.embed_query.return_value = [0.0] * 4
         manager._model = MagicMock()
         pipeline = MagicMock()
         pipeline.search.return_value = [self._result()]
@@ -1464,6 +1482,7 @@ class TestCandidateLimitResolution:
         repo.list_enabled.return_value = []
         manager = MagicMock()
         manager.embed_single.return_value = [0.0] * 4
+        manager.embed_query.return_value = [0.0] * 4
         manager._model = MagicMock()
         pipeline = MagicMock()
         pipeline.search.return_value = [self._result()]
@@ -1563,6 +1582,7 @@ class TestMachineOutputNoWrap:
 
         mock_manager = MagicMock()
         mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager.embed_query.return_value = [0.0] * 384
         mock_manager._model = MagicMock()
 
         mock_db = MagicMock()
@@ -1794,6 +1814,7 @@ class TestSearchOutputBranches:
         repo.list_enabled.return_value = []
         manager = manager or MagicMock()
         manager.embed_single.return_value = [0.0] * 4
+        manager.embed_query.return_value = [0.0] * 4
         manager._model = MagicMock()
         pipeline = pipeline or MagicMock()
         if results is not None:
@@ -1841,6 +1862,7 @@ class TestSearchOutputBranches:
         repo.list_enabled.return_value = []
         manager = manager or MagicMock()
         manager.embed_single.return_value = [0.0] * 4
+        manager.embed_query.return_value = [0.0] * 4
         settings = settings or MagicMock()
         with (
             patch("sif.cli.commands.search.Database", return_value=MagicMock()),
@@ -2126,6 +2148,7 @@ class TestSearchOutputBranches:
         pipeline.search.return_value = []
         manager = MagicMock()
         manager.embed_single.return_value = [0.0] * 4
+        manager.embed_query.return_value = [0.0] * 4
         with (
             patch("sif.cli.commands.search.Database", return_value=MagicMock()),
             patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
@@ -2203,7 +2226,7 @@ class TestSearchOutputBranches:
         tmp_path: Path,
     ) -> None:
         manager = MagicMock()
-        manager.embed_single.side_effect = error
+        manager.embed_query.side_effect = error
 
         result, _ = self._invoke_vsearch(tmp_path, ["query"], manager=manager)
 
@@ -2236,6 +2259,7 @@ class TestSearchOutputBranches:
         searcher.search.return_value = [self._result()]
         manager = MagicMock()
         manager.embed_single.return_value = [0.0] * 4
+        manager.embed_query.return_value = [0.0] * 4
         with (
             patch("sif.cli.commands.search.Database", return_value=MagicMock()),
             patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
@@ -2415,6 +2439,7 @@ class TestStalenessFormatMarker:
         repo.list_enabled.return_value = []
         manager = MagicMock()
         manager.embed_single.return_value = [0.0] * 4
+        manager.embed_query.return_value = [0.0] * 4
         manager._model = MagicMock()
         pipeline = MagicMock()
         pipeline.search.return_value = self._rows()
@@ -2655,6 +2680,7 @@ class TestStalenessFormatMarker:
         repo.list_enabled.return_value = []
         manager = MagicMock()
         manager.embed_single.return_value = [0.0] * 4
+        manager.embed_query.return_value = [0.0] * 4
         settings = MagicMock()
         with (
             patch("sif.cli.commands.search.Database", return_value=self._empty_shadow_db()),
@@ -2737,6 +2763,7 @@ class TestDatabaseClosure:
         repo.list_enabled.return_value = []
         manager = MagicMock()
         manager.embed_single.return_value = [0.0] * 4
+        manager.embed_query.return_value = [0.0] * 4
         manager._model = MagicMock()
         # embedding_dim must be a real int: init_schema() resolves get_settings
         # lazily per call, so this mock feeds the real SchemaManager's vec0 DDL.
@@ -2776,6 +2803,7 @@ class TestDatabaseClosure:
         repo.list_enabled.return_value = []
         manager = MagicMock()
         manager.embed_single.return_value = [0.0] * 4
+        manager.embed_query.return_value = [0.0] * 4
         # embedding_dim must be a real int (see query closure test note).
         settings = MagicMock(embedding_dim=4)
         with (
@@ -3269,6 +3297,7 @@ class TestPreSearchRefresh:
         command = {"search": search_cmd, "vsearch": vsearch_cmd, "query": query_cmd}[command_name]
         manager = MagicMock()
         manager.embed_single.return_value = [0.0] * 8
+        manager.embed_query.return_value = [0.0] * 8
         manager._model = MagicMock()
         downstream = {
             "search": [],
@@ -3349,6 +3378,7 @@ class TestPreSearchRefresh:
         )
         manager = MagicMock()
         manager.embed_single.return_value = [0.0] * 8
+        manager.embed_query.return_value = [0.0] * 8
         searcher = MagicMock()
         searcher.search.return_value = []
 
@@ -3373,6 +3403,7 @@ class TestPreSearchRefresh:
         )
         manager = MagicMock()
         manager.embed_single.return_value = [0.0] * 8
+        manager.embed_query.return_value = [0.0] * 8
         manager._model = MagicMock()
         pipeline = MagicMock()
         pipeline.search.return_value = []
@@ -3425,6 +3456,7 @@ class TestQueryFusionWeightFlags:
         repo.list_enabled.return_value = []
         manager = MagicMock()
         manager.embed_single.return_value = [0.0] * 4
+        manager.embed_query.return_value = [0.0] * 4
         manager._model = MagicMock()
         pipeline = MagicMock()
         pipeline.search.return_value = [self._result()]
@@ -3498,6 +3530,7 @@ class TestQueryFusionWeightFlags:
         repo.list_enabled.return_value = []
         manager = MagicMock()
         manager.embed_single.return_value = [0.0] * 4
+        manager.embed_query.return_value = [0.0] * 4
         manager._model = MagicMock()
         pipeline = MagicMock()
         pipeline.search.return_value = [self._result()]
@@ -3541,6 +3574,7 @@ class TestQueryFusionWeightFlags:
         repo.list_enabled.return_value = []
         manager = MagicMock()
         manager.embed_single.return_value = [0.0] * 4
+        manager.embed_query.return_value = [0.0] * 4
         manager._model = MagicMock()
         pipeline = MagicMock()
         pipeline.search.return_value = [self._result()]
@@ -3603,6 +3637,7 @@ class TestQueryFusionWeightFlags:
         repo.list_enabled.return_value = []
         manager = MagicMock()
         manager.embed_single.return_value = [0.0] * 4
+        manager.embed_query.return_value = [0.0] * 4
         manager._model = MagicMock()
         pipeline = MagicMock()
         pipeline.search.return_value = [self._result()]
@@ -3730,6 +3765,7 @@ class TestZeroResultSuggestions:
     def _invoke_vsearch(db_path: Path, settings: Settings, args: list[str]) -> object:
         manager = MagicMock()
         manager.embed_single.return_value = [0.0] * 8
+        manager.embed_query.return_value = [0.0] * 8
         manager._model = MagicMock()
         searcher = MagicMock()
         searcher.search.return_value = []
@@ -3744,6 +3780,7 @@ class TestZeroResultSuggestions:
     def _invoke_query(db_path: Path, settings: Settings, args: list[str]) -> object:
         manager = MagicMock()
         manager.embed_single.return_value = [0.0] * 8
+        manager.embed_query.return_value = [0.0] * 8
         manager._model = MagicMock()
         pipeline = MagicMock()
         pipeline.search.return_value = []
@@ -4026,6 +4063,7 @@ class TestSingleEnrichmentOwner:
         repo.list_enabled.return_value = []
         manager = MagicMock()
         manager.embed_single.return_value = [0.0] * 4
+        manager.embed_query.return_value = [0.0] * 4
         manager._model = MagicMock()
         settings = MagicMock(
             default_limit=10,
@@ -4148,6 +4186,7 @@ class TestPerChunkSurfaces:
         repo.list_enabled.return_value = []
         manager = MagicMock()
         manager.embed_single.return_value = [0.0] * 8
+        manager.embed_query.return_value = [0.0] * 8
         with (
             patch("sif.cli.commands.search.Database", return_value=MagicMock()),
             patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
@@ -4172,6 +4211,7 @@ class TestPerChunkSurfaces:
         repo.list_enabled.return_value = []
         manager = MagicMock()
         manager.embed_single.return_value = [0.0] * 8
+        manager.embed_query.return_value = [0.0] * 8
         manager.get_model_info.return_value = {"embedding_dim": 8}
         settings = MagicMock(
             model_name="all-MiniLM-L6-v2",
@@ -4371,3 +4411,315 @@ class TestNoFilterRegression:
         assert result.exit_code == 0, result.output
         options = mock_pipeline.search.call_args[0][1]
         assert options.filter is None
+
+
+class TestSearchIdentityPolicy:
+    """EMB-01: every vector-touching CLI exit warns, marks, or refuses."""
+
+    @staticmethod
+    def _identity(model_name: str = "model-a", *, dimension: int = 2):
+        from sif.embedding.identity import EmbedderIdentity
+
+        return EmbedderIdentity(
+            schema_version=1,
+            cache_model_id=f"sentence_transformers:{model_name}",
+            model_name=model_name,
+            model_type="sentence_transformers",
+            api_base=None,
+            dimension=dimension,
+            pooling="mean",
+            normalized=True,
+            query_prompt=None,
+            document_prompt=None,
+            prompt_supported=False,
+            revision=None,
+            source="verified",
+        )
+
+    @staticmethod
+    def _check(status: str, stored, current):
+        from sif.embedding.identity import IdentityCheck
+
+        return IdentityCheck(status=status, stored=stored, current=current)
+
+    def _invoke_vsearch(
+        self,
+        tmp_path: Path,
+        *,
+        manager: MagicMock,
+        check=None,
+        results: list[SearchResult] | None = None,
+        args: list[str] | None = None,
+    ) -> tuple[Result, MagicMock, MagicMock]:
+        """vsearch_cmd scaffold with patched identity check and enrichment."""
+        repo = MagicMock()
+        repo.list_enabled.return_value = []
+        searcher = MagicMock()
+        searcher.search.return_value = results if results is not None else []
+
+        def _enrich(
+            _conn: object,
+            rows: list[SearchResult],
+            **_kwargs: object,
+        ) -> list[SearchResult]:
+            return rows
+
+        enrich = MagicMock(side_effect=_enrich)
+        warn = MagicMock()
+        index = tmp_path / "index.db"
+        index.touch()
+        with (
+            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
+            patch(
+                "sif.embedding.manager.EmbeddingManager.from_settings",
+                return_value=manager,
+            ),
+            patch("sif.search.vector.VectorSearcher", return_value=searcher) as vector_cls,
+            patch("sif.config.settings.get_settings", return_value=_query_settings_mock()),
+            patch("sif.cli.commands.search.check_identity", side_effect=check),
+            patch("sif.cli.commands.search.warn_identity_mismatch_once", warn),
+            patch("sif.cli.commands.search.enrich_results", enrich),
+        ):
+            run_result = CliRunner().invoke(
+                vsearch_cmd,
+                args if args is not None else ["query", "--no-refresh", "--json"],
+                obj={"index_path": index},
+            )
+        return run_result, vector_cls, enrich
+
+    def test_vsearch_embeds_the_query_through_the_query_role(self, tmp_path: Path) -> None:
+        """The vsearch query leg calls embed_query, never embed_single."""
+        manager = MagicMock()
+        manager.embed_query.return_value = [0.0] * 4
+        manager.embed_single.return_value = [0.0] * 4
+        manager.get_identity.return_value = MagicMock()
+
+        result, _, _ = self._invoke_vsearch(tmp_path, manager=manager)
+
+        assert result.exit_code == 0, result.output
+        manager.embed_query.assert_called_once_with("query")
+        manager.embed_single.assert_not_called()
+
+    def test_vsearch_same_dimension_mismatch_warns_once_and_marks(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """A same-dimension swap warns once and enriches with vectors_untrusted."""
+        stored = self._identity("model-a")
+        current = self._identity("model-b")
+        manager = MagicMock()
+        manager.get_identity.return_value = current
+        row = SearchResult(
+            document_id="doc-1",
+            rank=1,
+            score=0.9,
+            title="Doc",
+            path="/notes/doc.md",
+            collection_name="notes",
+        )
+        check = MagicMock(return_value=self._check("mismatch", stored, current))
+
+        result, _, enrich = self._invoke_vsearch(
+            tmp_path,
+            manager=manager,
+            check=check,
+            results=[row],
+        )
+
+        assert result.exit_code == 0, result.output
+        check.assert_called_once()
+        assert enrich.call_args.kwargs["vectors_untrusted"] is True
+
+    def test_vsearch_dimension_mismatch_refuses_with_the_remedy(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """A width disagreement names both widths and the force-rebuild remedy."""
+        stored = self._identity("model-a", dimension=2)
+        current = self._identity("model-a", dimension=3)
+        manager = MagicMock()
+        manager.get_identity.return_value = current
+        check = MagicMock(
+            return_value=self._check("dimension_mismatch", stored, current),
+        )
+
+        result, vector_cls, _ = self._invoke_vsearch(
+            tmp_path,
+            manager=manager,
+            check=check,
+        )
+
+        assert result.exit_code == 1
+        assert "FLOAT[2]" in result.output
+        assert "FLOAT[3]" in result.output
+        assert "sif index embed --force" in result.output
+        vector_cls.assert_not_called()
+
+    def test_vsearch_matching_identity_is_silent_and_unmarked(self, tmp_path: Path) -> None:
+        """ok/absent leave the existing two-argument enrichment untouched."""
+        current = self._identity("model-a")
+        manager = MagicMock()
+        manager.get_identity.return_value = current
+        check = MagicMock(return_value=self._check("ok", current, current))
+
+        result, _, enrich = self._invoke_vsearch(
+            tmp_path,
+            manager=manager,
+            check=check,
+            results=[],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "vectors_untrusted" not in enrich.call_args.kwargs
+
+    def test_query_pipeline_receives_the_identity_closure(self, tmp_path: Path) -> None:
+        """query_cmd binds the loaded-model identity into the pipeline lazily."""
+        index_path = tmp_path / "sif.db"
+        index_path.touch()
+        repo = MagicMock()
+        repo.list_enabled.return_value = []
+        manager = MagicMock()
+        manager.get_model_info.return_value = {"loaded": True, "embedding_dim": 2}
+        manager.get_identity.return_value = self._identity("model-a")
+        manager.model = MagicMock()
+        pipeline = MagicMock()
+        pipeline.search.return_value = []
+        pipeline_cls = MagicMock(return_value=pipeline)
+        settings = _query_settings_mock()
+        settings.query_history_enabled = False
+        settings.rerank_enabled = False
+
+        with (
+            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
+            patch("sif.cli.commands.search.SearchPipeline", pipeline_cls),
+            patch(
+                "sif.embedding.manager.EmbeddingManager.from_settings",
+                return_value=manager,
+            ),
+            patch("sif.config.settings.get_settings", return_value=settings),
+            patch("sif.cli.commands.search.get_settings", return_value=settings),
+        ):
+            result = CliRunner().invoke(
+                query_cmd,
+                ["query", "--no-refresh"],
+                obj={"index_path": index_path},
+            )
+
+        assert result.exit_code == 0, result.output
+        identity_check = pipeline_cls.call_args.kwargs["identity_check"]
+        assert callable(identity_check)
+
+    def test_query_hybrid_swap_warns_once_marks_every_row_and_repeats_silently(
+        self,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """End-to-end: one warning, all rows stale, no second warning on repeat."""
+        import sqlite_vec
+
+        from sif.database.schema import SchemaManager
+        from sif.embedding.identity import write_identity
+        from sif.search.vector import VectorSearcher
+
+        db_path = tmp_path / "identity.db"
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        try:
+            conn.enable_load_extension(True)
+            sqlite_vec.load(conn)
+            conn.enable_load_extension(False)
+        except Exception:
+            conn.close()
+            pytest.skip("sqlite-vec not available")
+
+        now = "2026-11-16T00:00:00+00:00"
+        try:
+            SchemaManager(conn, embedding_dim=2).create_all()
+            conn.execute(
+                "INSERT INTO collections (id, name, path, created_at, updated_at)"
+                " VALUES ('c1', 'notes', '/notes', ?, ?)",
+                (now, now),
+            )
+            for doc_id, title, path, content in [
+                ("d1", "Apple Pie", "/notes/apple-pie.md", "apple pie recipe sweet dessert"),
+                ("d2", "Quantum Physics", "/notes/quantum.md", "quantum physics computing"),
+            ]:
+                conn.execute(
+                    "INSERT INTO documents (id, collection_id, path, filename, title,"
+                    " content, checksum, mtime, created_at, updated_at)"
+                    " VALUES (?, 'c1', ?, ?, ?, ?, 'x', 1.0, ?, ?)",
+                    (doc_id, path, path.split("/")[-1], title, content, now, now),
+                )
+                conn.execute(
+                    "INSERT INTO document_chunks (id, document_id, sequence, content,"
+                    " created_at) VALUES (?, ?, 0, ?, ?)",
+                    (f"chunk-{doc_id}", doc_id, content, now),
+                )
+            searcher = VectorSearcher(conn, embedding_dim=2)
+            searcher.add_embeddings_batch(
+                [
+                    ("e-d1", "d1", "chunk-d1", [0.2, 0.9]),
+                    ("e-d2", "d2", "chunk-d2", [0.95, 0.1]),
+                ]
+            )
+            with conn:
+                write_identity(conn, self._identity("model-a"))
+        finally:
+            conn.close()
+
+        class _FixedEmbedder:
+            def embed(self, _text: str) -> list[float]:
+                return [1.0, 0.0]
+
+            def embed_batch(self, texts: list[str]) -> list[list[float]]:
+                return [self.embed(text) for text in texts]
+
+            @property
+            def dimension(self) -> int:
+                return 2
+
+        settings = Settings(
+            _env_file=None,
+            embedding_dim=2,
+            model_name="model-b",
+            model_type="sentence_transformers",
+            cache_embeddings=False,
+            query_history_enabled=False,
+        )
+        manager = MagicMock()
+        manager.model = _FixedEmbedder()
+        manager.get_model_info.return_value = {"loaded": True, "embedding_dim": 2}
+        manager.get_identity.return_value = self._identity("model-b")
+
+        def _invoke() -> Result:
+            with (
+                patch(
+                    "sif.embedding.manager.EmbeddingManager.from_settings",
+                    return_value=manager,
+                ),
+                patch("sif.cli.commands.search.get_settings", return_value=settings),
+                patch("sif.config.settings.get_settings", return_value=settings),
+            ):
+                return CliRunner().invoke(
+                    query_cmd,
+                    ["apple", "--no-refresh", "--json"],
+                    obj={"index_path": db_path},
+                )
+
+        with caplog.at_level(logging.WARNING, logger="sif.embedding.identity"):
+            first = _invoke()
+            second = _invoke()
+
+        assert first.exit_code == 0, first.output
+        assert second.exit_code == 0, second.output
+        rows = json.loads(first.stdout)
+        assert rows
+        assert all(row["vectors_stale"] is True for row in rows)
+        warnings = [
+            record
+            for record in caplog.records
+            if "identity mismatch" in record.getMessage().lower()
+        ]
+        assert len(warnings) == 1

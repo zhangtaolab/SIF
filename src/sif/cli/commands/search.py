@@ -6,6 +6,9 @@ import csv
 import io
 import json
 import re
+import sqlite3
+from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 from typing import Any
 from xml.sax.saxutils import escape as xml_escape, quoteattr
@@ -24,11 +27,19 @@ from sif.core.filters import FilterNode
 from sif.core.models import Collection, QueryLogEntry, SearchOptions, SearchResult
 from sif.database.database import Database
 from sif.database.repositories import CollectionRepository, QueryLogRepository
+from sif.embedding.identity import (
+    EmbedderIdentity,
+    IdentityCheck,
+    IdentityDimensionError,
+    check_identity,
+    schema_embedding_dim,
+    warn_identity_mismatch_once,
+)
 from sif.indexing.drift import detect_drift, refresh_drifted
 from sif.indexing.incremental import IncrementalResult
 from sif.search.bm25 import BM25Searcher
 from sif.search.context_attach import enrich_results
-from sif.search.hybrid import SearchPipeline
+from sif.search.hybrid import SearchPipeline, search_dimension_error
 from sif.search.suggest import SuggestionEngine
 from sif.utils.logging import get_logger, set_quiet
 
@@ -60,6 +71,24 @@ def _default_limit() -> int:
 def _resolve_limit(limit: int | None) -> int:
     """Use the configured default limit when --limit was not supplied."""
     return _default_limit() if limit is None else limit
+
+
+def _current_identity(manager: Any) -> EmbedderIdentity | None:
+    """Read the manager's full identity, tolerating an injected double.
+
+    A real ``EmbeddingManager`` returns the loaded-model identity (D-06);
+    a test/injected double without one yields ``None`` so no identity policy
+    is invented for an embedder that was never described.
+    """
+    identity = manager.get_identity()
+    return identity if isinstance(identity, EmbedderIdentity) else None
+
+
+def _dimension_refusal(check: IdentityCheck, conn: sqlite3.Connection) -> click.ClickException:
+    """Build the user-facing dimension remedy for a search-mode mismatch."""
+    stored_dim = check.stored.dimension if check.stored is not None else schema_embedding_dim(conn)
+    error = search_dimension_error(check, stored_dim)
+    return click.ClickException(str(error))
 
 
 def _parse_filter_option(raw: str | None) -> FilterNode | None:
@@ -567,6 +596,8 @@ def search_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             # CORR-05 (Plan 19-04): searchers return raw results; this direct
             # BM25 exit owns exactly one enrichment so table/JSON/CSV/XML
             # output keeps context descriptions and staleness markers.
+            # EMB-01: BM25-only commands neither warn nor mark — they never
+            # construct or evaluate the embedder identity check.
             results = enrich_results(db.connection, results)
             # D-05/SC2: only the zero-result path pays the DYM cost.
             suggestions = _zero_result_suggestions(db.connection, query, results)
@@ -755,7 +786,9 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
 
     try:
         manager = EmbeddingManager.from_settings(settings)
-        query_embedding = manager.embed_single(query)
+        # D-06: the vsearch query leg takes the query role; a concrete manager
+        # exposes ``embed_query`` at class level, protocol doubles fall back.
+        query_embedding = manager.embed_query(query)
     except ImportError as e:
         raise click.ClickException(f"Embedding backend not installed: {e}") from None
     except Exception as e:
@@ -776,6 +809,21 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
         # and the pre-search drift walk; --all keeps the search unfiltered.
         collections = _resolve_collections(db, collection, search_all)
         options.collection_ids = None if search_all else [c.id for c in collections]
+
+        # EMB-01: the search-mode identity check owns the vsearch policy
+        # before any vector work. A same-dimension swap warns once and marks
+        # every result; a width disagreement makes a vector result impossible,
+        # so it fails with the remedy (D-03/D-05).
+        current_identity = _current_identity(manager)
+        identity_check: IdentityCheck | None = None
+        if current_identity is not None:
+            identity_check = check_identity(db.connection, current_identity, mode="search")
+            if identity_check.dimension_mismatch:
+                if identity_check.stored is not None:
+                    warn_identity_mismatch_once(identity_check.stored, identity_check.current)
+                raise _dimension_refusal(identity_check, db.connection)
+            if identity_check.untrusted and identity_check.stored is not None:
+                warn_identity_mismatch_once(identity_check.stored, identity_check.current)
 
         # Pre-search drift refresh (LIVE-10): always run even when a watch
         # or daemon is live (D-03 — the check doubles as the event-overflow
@@ -801,7 +849,10 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             results = searcher.search(query_embedding, options)
             # CORR-05 (Plan 19-04): the direct vector exit owns exactly one
             # enrichment (the pipeline is not involved on this path).
-            results = enrich_results(db.connection, results)
+            if identity_check is not None and identity_check.untrusted:
+                results = enrich_results(db.connection, results, vectors_untrusted=True)
+            else:
+                results = enrich_results(db.connection, results)
             # D-05/SC2: only the zero-result path pays the DYM cost.
             suggestions = _zero_result_suggestions(db.connection, query, results)
             # D-08: one history row for an executed search (fail-soft).
@@ -1071,6 +1122,16 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             raise click.ClickException(f"Embedding backend not installed: {e}") from None
         except Exception as e:
             raise click.ClickException(f"Failed to load embedding model: {e}") from e
+
+        # EMB-01: the pipeline evaluates this closure lazily, only on a
+        # vector-touching route, so a BM25-only query never runs the check.
+        # The full loaded-model identity is the search-mode `current`.
+        current_identity = _current_identity(manager)
+        identity_check: Callable[[sqlite3.Connection], IdentityCheck] | None = (
+            partial(check_identity, current=current_identity, mode="search")
+            if current_identity is not None
+            else None
+        )
         # Create optional components
         query_expander = QueryExpansion(embedding_manager=manager)
 
@@ -1110,11 +1171,16 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                     snippet_extractor=snippet_extractor,
                     embedding_dim=embedding_dim,
                     default_search_type=settings.default_search_type,
+                    identity_check=identity_check,
                 )
             except RuntimeError as e:
                 raise click.ClickException(sqlite_vec_remedy(e)) from e
             try:
                 results = pipeline.search(query, options)
+            except IdentityDimensionError as e:
+                # EMB-01: the identity remedy is not an install problem — it
+                # must never be routed through sqlite_vec_remedy.
+                raise click.ClickException(str(e)) from e
             except RuntimeError as e:
                 raise click.ClickException(str(e)) from e
             # D-05/SC2: only the zero-result path pays the DYM cost; the hook

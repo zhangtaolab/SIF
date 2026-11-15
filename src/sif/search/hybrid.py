@@ -3,10 +3,18 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Callable
 from dataclasses import replace
 from typing import TYPE_CHECKING, cast
 
 from sif.core.models import Embedder, SearchOptions, SearchResult, SearchType
+from sif.embedding.identity import (
+    IdentityCheck,
+    IdentityDimensionError,
+    schema_embedding_dim,
+    warn_identity_mismatch_once,
+)
+from sif.embedding.roles import embed_query
 from sif.search.bm25 import BM25Searcher
 from sif.search.context_attach import enrich_results
 from sif.search.rrf import RRFFusion, fuse_key_for
@@ -20,6 +28,28 @@ if TYPE_CHECKING:
     from sif.search.snippets import SmartSnippetExtractor
 
 logger = get_logger(__name__)
+
+# D-05: a search-mode width mismatch reuses the shared dimension sentence and
+# names the explicit certification path instead of the schema-open remedy.
+SEARCH_DIMENSION_REMEDY = (
+    "Restore the stored model or run `sif index embed --force` with the matching model."
+)
+
+
+def search_dimension_error(
+    check: IdentityCheck,
+    stored_dimension: int | None = None,
+) -> IdentityDimensionError:
+    """Translate a search-mode dimension mismatch into the remedy-bearing error.
+
+    ``stored_dimension`` is the schema width when no identity row exists (a
+    width-only mismatch); otherwise the stored identity's own dimension is
+    authoritative. Hosts with only the check in hand may omit it.
+    """
+    stored_dim = check.stored.dimension if check.stored is not None else stored_dimension
+    if stored_dim is None:
+        stored_dim = check.current.dimension
+    return IdentityDimensionError(stored_dim, check.current.dimension, SEARCH_DIMENSION_REMEDY)
 
 
 def _paginate(results: list[SearchResult], options: SearchOptions) -> list[SearchResult]:
@@ -100,7 +130,9 @@ class HybridSearcher:
         # Get vector results if embedder is available
         vector_results: list[SearchResult] = []
         if self.embedder is not None:
-            query_embedding = self.embedder.embed(query)
+            # D-06: the query leg goes through the type-aware role helper; a
+            # protocol-only double keeps the plain ``embed`` path.
+            query_embedding = embed_query(self.embedder, query)
             vector_results = self.vector.search(query_embedding, fetch_options)
 
         # If only one method returned results, paginate that leg's window too
@@ -206,6 +238,7 @@ class SearchPipeline:
         embedding_dim: int = 768,
         default_search_type: str = "hybrid",
         parse_prefix: bool = True,
+        identity_check: Callable[[sqlite3.Connection], IdentityCheck] | None = None,
     ) -> None:
         """Initialize search pipeline with optional components.
 
@@ -214,6 +247,11 @@ class SearchPipeline:
         personal eval uses this so a document title (or logged replay query)
         that happens to start with ``vec:``/``hyde:``/``lex:``/``expand:`` is
         measured as text instead of being reinterpreted as an operator.
+
+        ``identity_check`` is the host's injected search-mode identity check
+        (EMB-01). It is evaluated lazily, at most once per pipeline, and only
+        on a vector-touching route — the BM25 exit returns before any call, so
+        a BM25-only command never constructs or evaluates one.
         """
         self.db = db
         self.hybrid = HybridSearcher(db, embedder, embedding_dim)
@@ -222,6 +260,53 @@ class SearchPipeline:
         self.snippet_extractor = snippet_extractor
         self._default_search_type = default_search_type
         self._parse_prefix = parse_prefix
+        self.identity_check = identity_check
+        self._identity_evaluated = False
+        self._identity_result: IdentityCheck | None = None
+
+    def _identity_state(self) -> IdentityCheck | None:
+        """Evaluate the injected identity check once; ``None`` means unchecked.
+
+        Caching the result keeps a pipeline to one identity read per search
+        command, while the warn-once latch in ``identity.py`` guarantees a
+        single warning per process per identity pair even across pipelines.
+        """
+        if self.identity_check is None:
+            return None
+        if not self._identity_evaluated:
+            self._identity_result = self.identity_check(self.db)
+            self._identity_evaluated = True
+        return self._identity_result
+
+    @staticmethod
+    def _mark_untrusted(check: IdentityCheck | None) -> bool:
+        """Warn once for a mismatched pair and report whether to mark results.
+
+        A dimension mismatch is translated by the caller (raise or degrade),
+        but it still warns here whenever a stored identity exists to name.
+        """
+        if check is None or not check.untrusted:
+            return False
+        if check.stored is not None:
+            warn_identity_mismatch_once(check.stored, check.current)
+        return True
+
+    def _dimension_error(self, check: IdentityCheck) -> IdentityDimensionError:
+        """Build the search-mode dimension error, reading the width if needed."""
+        stored_dim = check.stored.dimension if check.stored is not None else None
+        if stored_dim is None:
+            stored_dim = schema_embedding_dim(self.db)
+        return search_dimension_error(check, stored_dim)
+
+    def _enrich(
+        self,
+        results: list[SearchResult],
+        untrusted: bool,
+    ) -> list[SearchResult]:
+        """Apply the single enrichment, marking only when identity distrusts."""
+        if untrusted:
+            return enrich_results(self.db, results, vectors_untrusted=True)
+        return enrich_results(self.db, results)
 
     def search(  # noqa: C901, PLR0912, PLR0915
         self,
@@ -265,24 +350,43 @@ class SearchPipeline:
 
         # Route to appropriate search mode
         if search_type == SearchType.BM25:
+            # BM25-only: the identity check is never evaluated (no vectors are
+            # touched, so there is nothing to distrust) and nothing is marked.
             results = self.hybrid.bm25.search(parsed_query, options)
             return enrich_results(self.db, self._apply_snippets(results, parsed_query))
         if search_type == SearchType.VECTOR:
-            if self.hybrid.embedder is None:
+            embedder = self.hybrid.embedder
+            if embedder is None:
                 raise RuntimeError("Vector search requires an embedder")
-            query_embedding = self.hybrid.embedder.embed(parsed_query)
+            check = self._identity_state()
+            if check is not None and check.dimension_mismatch:
+                raise self._dimension_error(check)
+            untrusted = self._mark_untrusted(check)
+            query_embedding = embed_query(embedder, parsed_query)
             results = self.hybrid.vector.search(query_embedding, options)
-            return enrich_results(self.db, self._apply_snippets(results, parsed_query))
+            return self._enrich(self._apply_snippets(results, parsed_query), untrusted)
         if search_type == SearchType.HYDE:
-            hyde_doc = self._generate_hypothetical_document(parsed_query)
-            if self.hybrid.embedder is None:
+            embedder = self.hybrid.embedder
+            if embedder is None:
                 raise RuntimeError("HyDE search requires an embedder")
-            hyde_embedding = self.hybrid.embedder.embed(hyde_doc)
+            check = self._identity_state()
+            if check is not None and check.dimension_mismatch:
+                raise self._dimension_error(check)
+            untrusted = self._mark_untrusted(check)
+            hyde_doc = self._generate_hypothetical_document(parsed_query)
+            hyde_embedding = embed_query(embedder, hyde_doc)
             results = self.hybrid.vector.search(hyde_embedding, options)
-            return enrich_results(self.db, self._apply_snippets(results, parsed_query))
+            return self._enrich(self._apply_snippets(results, parsed_query), untrusted)
 
         # Default: hybrid search with optional expansion
         queries = [parsed_query]
+
+        # Hybrid route: identity applies only when a vector leg exists. A
+        # same-dimension mismatch warns once and marks the page; a dimension
+        # mismatch skips the vector leg entirely and returns marked BM25 rows.
+        check = self._identity_state() if self.hybrid.embedder is not None else None
+        untrusted = self._mark_untrusted(check)
+        vector_blocked = check is not None and check.dimension_mismatch
 
         # Expand query if expander is available and prefix is expand: or default
         if self.query_expander is not None and search_type in (
@@ -323,10 +427,15 @@ class SearchPipeline:
                 offset=0,
             )
 
-        # Search with each query
+        # Search with each query. A dimension mismatch cannot use the vector
+        # leg: the same BM25 variant search runs instead, so page shape,
+        # fusion, reranking, and enrichment stay identical on the degraded path.
         all_results = []
         for q in queries:
-            results = self.hybrid.search(q, fetch_options)
+            if vector_blocked:
+                results = self.hybrid.bm25.search(q, fetch_options)
+            else:
+                results = self.hybrid.search(q, fetch_options)
             if results:
                 all_results.append(results)
 
@@ -372,7 +481,7 @@ class SearchPipeline:
 
         # One slice with the caller's original offset, then exactly one
         # enrichment on the page (CORR-03 offset ownership + CORR-05).
-        return enrich_results(self.db, _paginate(results, options))
+        return self._enrich(_paginate(results, options), untrusted)
 
     def _apply_snippets(
         self,

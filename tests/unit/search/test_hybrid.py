@@ -1,5 +1,6 @@
 """Unit tests for hybrid search and search pipeline."""
 
+import logging
 import sqlite3
 from typing import ClassVar
 from unittest.mock import MagicMock, create_autospec
@@ -8,6 +9,7 @@ import pytest
 
 from sif.core.filters import parse_filter
 from sif.core.models import SearchOptions, SearchResult, SearchType
+from sif.embedding.identity import EmbedderIdentity
 from sif.search.bm25 import BM25Searcher
 from sif.search.hybrid import HybridSearcher, SearchPipeline
 from sif.search.rerank import _sort_and_build_results
@@ -1787,3 +1789,305 @@ class TestFilterPassthrough:
         # Per-chunk mode keeps rows ungrouped, so no row carries a group count;
         # the count only ever reflects the filtered vector rows it came from.
         assert all(result.chunk_matches == 0 for result in results)
+
+
+# =============================================================================
+# Embedder-identity enforcement (EMB-01/EMB-02, D-03/D-06)
+# =============================================================================
+
+
+def _identity(
+    model_name: str = "model-a",
+    *,
+    dimension: int = 2,
+    pooling: str = "mean",
+    source: str = "verified",
+) -> EmbedderIdentity:
+    """Build a deterministic identity for the identity-policy tests."""
+    from sif.embedding.identity import EmbedderIdentity
+
+    return EmbedderIdentity(
+        schema_version=1,
+        cache_model_id=f"sentence_transformers:{model_name}",
+        model_name=model_name,
+        model_type="sentence_transformers",
+        api_base=None,
+        dimension=dimension,
+        pooling=pooling,
+        normalized=True,
+        query_prompt=None,
+        document_prompt=None,
+        prompt_supported=False,
+        revision=None,
+        source=source,
+    )
+
+
+def _index_with_identity(identity: EmbedderIdentity) -> sqlite3.Connection:
+    """Real schema + vectors + one stored identity (the swap fixture)."""
+    from sif.embedding.identity import write_identity
+
+    conn = TestHybridSC1PipelineGolden._build_db()
+    with conn:
+        write_identity(conn, identity)
+    return conn
+
+
+def _identity_warnings(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:
+    """Identity-mismatch warnings captured from the identity logger."""
+    return [
+        record for record in caplog.records if "identity mismatch" in record.getMessage().lower()
+    ]
+
+
+class _RoleRecordingEmbedder:
+    """Role-capable embedder: records query-role and plain embeds separately."""
+
+    def __init__(self) -> None:
+        self.query_calls: list[str] = []
+        self.embed_calls: list[str] = []
+        self.generated: list[str] = []
+
+    def embed(self, text: str) -> list[float]:
+        self.embed_calls.append(text)
+        return [1.0, 0.0]
+
+    def embed_query(self, text: str) -> list[float]:
+        self.query_calls.append(text)
+        return [1.0, 0.0]
+
+    def generate(self, prompt: str) -> str:
+        self.generated.append(prompt)
+        return "apple answer"
+
+
+class _PlainRecordingEmbedder(_FakeEmbedder):
+    """Protocol-only double (no role method): records through plain ``embed``."""
+
+    def __init__(self) -> None:
+        self.embed_calls: list[str] = []
+
+    def embed(self, text: str) -> list[float]:
+        self.embed_calls.append(text)
+        return super().embed(text)
+
+
+class TestSearchPipelineIdentity:
+    """EMB-01: one warning + all-stale marks on vector-touching exits, BM25 silent."""
+
+    @staticmethod
+    def _pipeline(
+        conn: sqlite3.Connection,
+        current: EmbedderIdentity,
+        embedder: object | None = None,
+    ) -> SearchPipeline:
+        from sif.embedding.identity import check_identity
+
+        return SearchPipeline(
+            conn,
+            embedder=embedder if embedder is not None else _FakeEmbedder(),
+            embedding_dim=2,
+            identity_check=lambda db: check_identity(db, current, mode="search"),
+        )
+
+    def test_same_dimension_mismatch_warns_once_and_marks_every_row(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """One warning for the identity pair, every returned row vectors_stale."""
+        conn = _index_with_identity(_identity("model-a"))
+        try:
+            pipeline = self._pipeline(conn, _identity("model-b"))
+            with caplog.at_level(logging.WARNING, logger="sif.embedding.identity"):
+                first = pipeline.search(_FakeEmbedder.QUERY, SearchOptions())
+                second = pipeline.search(_FakeEmbedder.QUERY, SearchOptions())
+        finally:
+            conn.close()
+
+        assert first
+        assert second
+        assert all(result.vectors_stale for result in first)
+        assert all(result.vectors_stale for result in second)
+        warnings = _identity_warnings(caplog)
+        assert len(warnings) == 1
+        message = warnings[0].getMessage()
+        assert "model-a" in message
+        assert "model-b" in message
+        assert "sif index embed --force" in message
+
+    def test_a_new_identity_pair_produces_a_new_warning(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Warn-once is per pair, not per process: a third model warns again."""
+        conn = _index_with_identity(_identity("model-a"))
+        try:
+            with caplog.at_level(logging.WARNING, logger="sif.embedding.identity"):
+                self._pipeline(conn, _identity("model-b")).search(
+                    _FakeEmbedder.QUERY, SearchOptions()
+                )
+                self._pipeline(conn, _identity("model-c")).search(
+                    _FakeEmbedder.QUERY, SearchOptions()
+                )
+        finally:
+            conn.close()
+
+        assert len(_identity_warnings(caplog)) == 2
+
+    def test_assumed_identity_matching_the_model_stays_silent(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """D-04: an unknown-vs-known assumed identity is not a swap."""
+        conn = _index_with_identity(
+            _identity("model-a", pooling="unknown", source="legacy-assumed")
+        )
+        try:
+            pipeline = self._pipeline(conn, _identity("model-a", pooling="mean"))
+            with caplog.at_level(logging.WARNING, logger="sif.embedding.identity"):
+                results = pipeline.search(_FakeEmbedder.QUERY, SearchOptions())
+        finally:
+            conn.close()
+
+        assert results
+        assert not any(result.vectors_stale for result in results)
+        assert _identity_warnings(caplog) == []
+
+    def test_bm25_exit_never_evaluates_identity_and_marks_nothing(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """BM25 stays check-free; the first vector route evaluates once, cached."""
+        from sif.embedding.identity import check_identity
+
+        conn = _index_with_identity(_identity("model-a"))
+        calls: list[object] = []
+        current = _identity("model-b")
+
+        def _closure(db: sqlite3.Connection) -> object:
+            calls.append(db)
+            return check_identity(db, current, mode="search")
+
+        try:
+            pipeline = SearchPipeline(
+                conn,
+                embedder=_FakeEmbedder(),
+                embedding_dim=2,
+                identity_check=_closure,
+            )
+            with caplog.at_level(logging.WARNING, logger="sif.embedding.identity"):
+                bm25_results = pipeline.search("lex: apple", SearchOptions())
+                assert calls == []
+                assert bm25_results
+                assert not any(result.vectors_stale for result in bm25_results)
+
+                hybrid_results = pipeline.search(_FakeEmbedder.QUERY, SearchOptions())
+                assert len(calls) == 1
+                assert all(result.vectors_stale for result in hybrid_results)
+
+                pipeline.search(_FakeEmbedder.QUERY, SearchOptions())
+                assert len(calls) == 1
+        finally:
+            conn.close()
+
+        assert len(_identity_warnings(caplog)) == 1
+
+    def test_hybrid_dimension_mismatch_degrades_to_marked_bm25(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """A width disagreement skips the vector leg but still returns marked rows."""
+        conn = _index_with_identity(_identity("model-a", dimension=2))
+
+        class _ExplodingEmbedder(_FakeEmbedder):
+            def embed(self, _text: str) -> list[float]:
+                raise AssertionError("the vector leg must not run on a width mismatch")
+
+        try:
+            pipeline = self._pipeline(
+                conn,
+                _identity("model-a", dimension=3),
+                embedder=_ExplodingEmbedder(),
+            )
+            with caplog.at_level(logging.WARNING, logger="sif.embedding.identity"):
+                results = pipeline.search(_FakeEmbedder.QUERY, SearchOptions())
+        finally:
+            conn.close()
+
+        assert {result.document_id for result in results} == {"d1", "d3"}
+        assert all(result.vectors_stale for result in results)
+        assert len(_identity_warnings(caplog)) == 1
+
+    @pytest.mark.parametrize("prefix", ["vec:", "hyde:"])
+    def test_prefix_routes_raise_identity_dimension_error(self, prefix: str) -> None:
+        """vec:/hyde: cannot produce a vector result, so they fail with the remedy."""
+        from sif.embedding.identity import IdentityDimensionError
+
+        conn = _index_with_identity(_identity("model-a", dimension=2))
+        try:
+            pipeline = self._pipeline(conn, _identity("model-a", dimension=3))
+            with pytest.raises(IdentityDimensionError) as exc_info:
+                pipeline.search(f"{prefix} apple", SearchOptions())
+        finally:
+            conn.close()
+
+        message = str(exc_info.value)
+        assert "FLOAT[2]" in message
+        assert "FLOAT[3]" in message
+        assert "sif index embed --force" in message
+
+    def test_hybrid_query_uses_the_query_role_for_every_variant(self) -> None:
+        """A role-capable embedder records embed_query, never plain embed."""
+        conn = TestHybridSC1PipelineGolden._build_db()
+        embedder = _RoleRecordingEmbedder()
+        try:
+            pipeline = SearchPipeline(conn, embedder=embedder, embedding_dim=2)
+            results = pipeline.search(_FakeEmbedder.QUERY, SearchOptions())
+        finally:
+            conn.close()
+
+        assert results
+        assert embedder.query_calls == [_FakeEmbedder.QUERY]
+        assert embedder.embed_calls == []
+
+    def test_vec_prefix_uses_the_query_role(self) -> None:
+        """The vec: leg embeds through embed_query exactly once."""
+        conn = TestHybridSC1PipelineGolden._build_db()
+        embedder = _RoleRecordingEmbedder()
+        try:
+            pipeline = SearchPipeline(conn, embedder=embedder, embedding_dim=2)
+            results = pipeline.search(f"vec: {_FakeEmbedder.QUERY}", SearchOptions())
+        finally:
+            conn.close()
+
+        assert results
+        assert embedder.query_calls == [_FakeEmbedder.QUERY]
+        assert embedder.embed_calls == []
+
+    def test_hyde_prefix_uses_the_query_role_on_the_generated_document(self) -> None:
+        """The hyde: leg embeds the generated document through embed_query."""
+        conn = TestHybridSC1PipelineGolden._build_db()
+        embedder = _RoleRecordingEmbedder()
+        try:
+            pipeline = SearchPipeline(conn, embedder=embedder, embedding_dim=2)
+            pipeline.search(f"hyde: {_FakeEmbedder.QUERY}", SearchOptions())
+        finally:
+            conn.close()
+
+        assert embedder.generated
+        assert embedder.query_calls == ["apple answer"]
+        assert embedder.embed_calls == []
+
+    def test_protocol_only_embedder_keeps_the_plain_embed_path(self) -> None:
+        """No class-level role method: plain embed and the unchanged SC1 golden."""
+        conn = TestHybridSC1PipelineGolden._build_db()
+        embedder = _PlainRecordingEmbedder()
+        try:
+            pipeline = SearchPipeline(conn, embedder=embedder, embedding_dim=2)
+            results = pipeline.search(_FakeEmbedder.QUERY, SearchOptions())
+        finally:
+            conn.close()
+
+        assert embedder.embed_calls == [_FakeEmbedder.QUERY]
+        assert not hasattr(type(embedder), "embed_query")
+        assert [result.to_dict() for result in results] == TestHybridSC1PipelineGolden.SNAPSHOT
