@@ -20,7 +20,8 @@ import pytest
 
 from sif.core.models import SearchOptions, SearchResult
 from sif.search.bm25 import BM25Searcher
-from sif.search.hybrid import HybridSearcher
+from sif.search.context_attach import enrich_results
+from sif.search.hybrid import HybridSearcher, SearchPipeline
 from sif.search.staleness import embedded_document_ids, mark_vector_staleness
 from sif.search.vector import VectorSearcher
 
@@ -188,11 +189,12 @@ class TestLagStateEndToEnd:
     """The real tiered-depth lag state: BM25 refresh purges embeddings (D-10)."""
 
     def test_bm25_refreshed_after_embed_doc_is_marked_stale(self, tmp_path, monkeypatch) -> None:
-        """Embed → modify → update_paths purge → the doc's BM25 results are marked.
+        """Embed → modify → update_paths purge → the enriched BM25 result is marked.
 
         The lag state is produced by the REAL purge (update_paths), not by
         raw-SQL "chunks without embeddings" fabrication (RESEARCH Pitfall 3
-        warning sign).
+        warning sign). Enrichment is applied at the entry point (enrich_results),
+        matching the single-owner contract: BM25Searcher itself returns raw rows.
         """
         for var in ("SIF_EMBEDDING_DIM", "SIF_MODEL_TYPE", "SIF_MODEL_NAME"):
             monkeypatch.delenv(var, raising=False)
@@ -236,7 +238,10 @@ class TestLagStateEndToEnd:
             assert embedded_document_ids(db.connection) == {doc.id, keeper.id}
 
             # Before drift: embedded documents → unmarked results.
-            clean = BM25Searcher(db.connection).search("alpha", SearchOptions(limit=5))
+            clean = enrich_results(
+                db.connection,
+                BM25Searcher(db.connection).search("alpha", SearchOptions(limit=5)),
+            )
             assert clean
             assert clean[0].vectors_stale is False
 
@@ -248,10 +253,16 @@ class TestLagStateEndToEnd:
             assert counts.updated == 1
             assert embedded_document_ids(db.connection) == {keeper.id}
 
-            lagging = BM25Searcher(db.connection).search("alpha", SearchOptions(limit=5))
+            lagging = enrich_results(
+                db.connection,
+                BM25Searcher(db.connection).search("alpha", SearchOptions(limit=5)),
+            )
             assert lagging
             assert lagging[0].vectors_stale is True
-            keeper_hits = BM25Searcher(db.connection).search("beta", SearchOptions(limit=5))
+            keeper_hits = enrich_results(
+                db.connection,
+                BM25Searcher(db.connection).search("beta", SearchOptions(limit=5)),
+            )
             assert keeper_hits
             assert keeper_hits[0].vectors_stale is False
         finally:
@@ -259,9 +270,37 @@ class TestLagStateEndToEnd:
 
 
 class TestSearcherDelegation:
-    """D-09: every searcher exit invokes mark_vector_staleness via _attach_contexts."""
+    """D-09 single-owner contract: searchers produce, entry points enrich once."""
 
-    def test_all_three_searchers_delegate(self, monkeypatch) -> None:
+    def test_bm25_searcher_does_not_enrich(self) -> None:
+        """BM25Searcher is a pure producer: no attach method, no enrichment."""
+        searcher = BM25Searcher(MagicMock())
+        assert not hasattr(searcher, "_attach_contexts")
+
+    def test_pipeline_bm25_exit_calls_enrich_results_once(self, monkeypatch) -> None:
+        """The pipeline BM25 exit enriches exactly once with the same list."""
+        calls: list[tuple[object, list[SearchResult]]] = []
+
+        def recording_enrich(db, results):
+            calls.append((db, results))
+            return results
+
+        monkeypatch.setattr("sif.search.hybrid.enrich_results", recording_enrich)
+
+        pipeline = SearchPipeline(MagicMock())
+        pipeline.hybrid.bm25 = MagicMock()
+        returned = [_result("d-b")]
+        pipeline.hybrid.bm25.search.return_value = returned
+
+        results = pipeline.search("lex: needle")
+
+        assert results is returned
+        assert len(calls) == 1
+        assert calls[0][0] is pipeline.db
+        assert calls[0][1] is returned
+
+    def test_vector_searcher_still_delegates(self, monkeypatch) -> None:
+        """VectorSearcher._attach_contexts delegates (unchanged until Task 2)."""
         calls: list[tuple[str, object, list[SearchResult]]] = []
 
         def recording_wrapper(tag: str):
@@ -271,25 +310,31 @@ class TestSearcherDelegation:
 
             return wrapper
 
-        monkeypatch.setattr("sif.search.bm25.mark_vector_staleness", recording_wrapper("bm25"))
-        bm25_searcher = BM25Searcher(MagicMock())
-        bm25_results = [_result("d-b")]
-        bm25_searcher._attach_contexts(bm25_results)
-
         monkeypatch.setattr("sif.search.vector.mark_vector_staleness", recording_wrapper("vector"))
         vector_searcher = VectorSearcher(MagicMock())
         vector_results = [_result("d-v")]
         vector_searcher._attach_contexts(vector_results)
+
+        assert [c[0] for c in calls] == ["vector"]
+        assert calls[0][1] is vector_searcher.db
+        assert calls[0][2] is vector_results
+
+    def test_hybrid_searcher_still_delegates(self, monkeypatch) -> None:
+        """HybridSearcher._attach_contexts delegates (unchanged until Task 3)."""
+        calls: list[tuple[str, object, list[SearchResult]]] = []
+
+        def recording_wrapper(tag: str):
+            def wrapper(db, results):
+                calls.append((tag, db, results))
+                return results
+
+            return wrapper
 
         monkeypatch.setattr("sif.search.hybrid.mark_vector_staleness", recording_wrapper("hybrid"))
         hybrid_searcher = HybridSearcher(MagicMock(), embedder=None)
         hybrid_results = [_result("d-h")]
         hybrid_searcher._attach_contexts(hybrid_results)
 
-        assert [c[0] for c in calls] == ["bm25", "vector", "hybrid"]
-        assert calls[0][1] is bm25_searcher.db
-        assert calls[0][2] is bm25_results
-        assert calls[1][1] is vector_searcher.db
-        assert calls[1][2] is vector_results
-        assert calls[2][1] is hybrid_searcher.db
-        assert calls[2][2] is hybrid_results
+        assert [c[0] for c in calls] == ["hybrid"]
+        assert calls[0][1] is hybrid_searcher.db
+        assert calls[0][2] is hybrid_results

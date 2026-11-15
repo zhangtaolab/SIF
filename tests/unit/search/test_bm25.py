@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 
 from sif.core.models import SearchOptions, SearchResult
 from sif.search.bm25 import BM25Searcher
+from sif.search.context_attach import enrich_results
 
 
 class TestBM25Searcher:
@@ -37,26 +38,16 @@ class TestBM25Searcher:
                 },
             ],
         )
-        # Add a context cursor for the _attach_contexts call, and a staleness
-        # scan cursor (empty iteration → display gate → results unmarked)
-        context_cursor = MagicMock()
-        context_cursor.fetchall.return_value = []
-        staleness_cursor = MagicMock()
-        mock_db.execute.side_effect = [
-            mock_db.execute.return_value,
-            context_cursor,
-            staleness_cursor,
-        ]
-
         searcher = BM25Searcher(mock_db)
         options = SearchOptions(include_highlights=False)
         results = searcher.search("test query", options)
 
         assert len(results) == 1
         assert results[0].document_id == "doc-1"
-        # The last call is the context query; verify the FTS query was also made
+        # Searchers no longer enrich: the FTS query is the only DB access.
         calls = mock_db.execute.call_args_list
         sqls = [call[0][0] for call in calls]
+        assert len(sqls) == 1
         assert any("MATCH" in sql for sql in sqls)
 
     def test_search_returns_search_results(self) -> None:
@@ -79,16 +70,6 @@ class TestBM25Searcher:
                 },
             ],
         )
-        # Add a context cursor for the _attach_contexts call, and a staleness
-        # scan cursor (empty iteration → display gate → results unmarked)
-        context_cursor = MagicMock()
-        context_cursor.fetchall.return_value = []
-        staleness_cursor = MagicMock()
-        mock_db.execute.side_effect = [
-            mock_db.execute.return_value,
-            context_cursor,
-            staleness_cursor,
-        ]
 
         searcher = BM25Searcher(mock_db)
         options = SearchOptions(include_highlights=False)
@@ -120,16 +101,6 @@ class TestBM25Searcher:
                 },
             ],
         )
-        # Add a context cursor for the _attach_contexts call, and a staleness
-        # scan cursor (empty iteration → display gate → results unmarked)
-        context_cursor = MagicMock()
-        context_cursor.fetchall.return_value = []
-        staleness_cursor = MagicMock()
-        mock_db.execute.side_effect = [
-            mock_db.execute.return_value,
-            context_cursor,
-            staleness_cursor,
-        ]
 
         searcher = BM25Searcher(mock_db)
         options = SearchOptions(min_score=0.3, include_highlights=False)
@@ -190,14 +161,9 @@ class TestBM25Searcher:
         )
         content_cursor = MagicMock()
         content_cursor.fetchone.return_value = ["document content"]
-        context_cursor = MagicMock()
-        context_cursor.fetchall.return_value = []
-        staleness_cursor = MagicMock()
         mock_db.execute.side_effect = [
             mock_db.execute.return_value,
             content_cursor,
-            context_cursor,
-            staleness_cursor,
         ]
 
         searcher = BM25Searcher(mock_db)
@@ -224,15 +190,10 @@ class TestBM25Searcher:
         chunk_cursor.fetchall.return_value = []
         content_cursor = MagicMock()
         content_cursor.fetchone.return_value = ["test query content"]
-        context_cursor = MagicMock()
-        context_cursor.fetchall.return_value = []
-        staleness_cursor = MagicMock()
         mock_db.execute.side_effect = [
             mock_db.execute.return_value,
             chunk_cursor,
             content_cursor,
-            context_cursor,
-            staleness_cursor,
         ]
 
         searcher = BM25Searcher(mock_db)
@@ -378,13 +339,12 @@ class TestBM25SharedTermMatcherHighlights:
         assert "向量" in highlights[0]
 
 
-class TestBM25ContextAttachment:
-    """Tests for context_description attachment in BM25 search results."""
+class TestBM25SearcherEnrichmentContract:
+    """The searcher is a pure result producer; enrichment is owned at the exit."""
 
-    def test_search_attaches_context_description(self) -> None:
-        """Test that BM25 search attaches path context descriptions."""
-        context_rows = [{"target_id": "/1.md", "content": "Important project notes"}]
-        search_rows = [
+    @staticmethod
+    def _search_rows() -> list[dict[str, object]]:
+        return [
             {
                 "document_id": "doc-1",
                 "title": "T1",
@@ -393,42 +353,56 @@ class TestBM25ContextAttachment:
                 "score": -1.0,
             },
         ]
+
+    @staticmethod
+    def _result() -> SearchResult:
+        return SearchResult(
+            document_id="doc-1",
+            title="T1",
+            path="/1.md",
+            collection_name="c",
+            score=1.0,
+            rank=1,
+        )
+
+    def test_search_returns_raw_results_without_enrichment(self) -> None:
+        """search() returns raw results and never touches contexts/embeddings."""
         mock_db = MagicMock()
         search_cursor = MagicMock()
-        search_cursor.fetchall.return_value = search_rows
-        context_cursor = MagicMock()
-        context_cursor.fetchall.return_value = context_rows
-        staleness_cursor = MagicMock()
-        mock_db.execute.side_effect = [search_cursor, context_cursor, staleness_cursor]
+        search_cursor.fetchall.return_value = self._search_rows()
+        mock_db.execute.return_value = search_cursor
 
         searcher = BM25Searcher(mock_db)
-        options = SearchOptions(include_highlights=False)
-        results = searcher.search("test", options)
+        results = searcher.search("test", SearchOptions(include_highlights=False))
 
-        assert len(results) == 1
+        assert results[0].context_description is None
+        assert results[0].vectors_stale is False
+        assert not hasattr(searcher, "_attach_contexts")
+        # Only the FTS query ran: no contexts scan and no embedding scan.
+        assert mock_db.execute.call_count == 1
+
+    def test_enrich_results_attaches_context_description(self) -> None:
+        """The shared enrichment helper fills context descriptions once."""
+        mock_db = MagicMock()
+        context_cursor = MagicMock()
+        context_cursor.fetchall.return_value = [
+            {"target_id": "/1.md", "content": "Important project notes"}
+        ]
+        staleness_cursor = MagicMock()
+        mock_db.execute.side_effect = [context_cursor, staleness_cursor]
+
+        results = enrich_results(mock_db, [self._result()])
+
         assert results[0].context_description == "Important project notes"
 
-    def test_search_no_context_returns_none(self) -> None:
-        """Test that search returns None context_description when no context exists."""
-        search_rows = [
-            {
-                "document_id": "doc-1",
-                "title": "T1",
-                "path": "/1.md",
-                "collection_name": "c",
-                "score": -1.0,
-            },
-        ]
+    def test_enrich_results_no_context_returns_none(self) -> None:
+        """No stored context leaves context_description None."""
         mock_db = MagicMock()
-        search_cursor = MagicMock()
-        search_cursor.fetchall.return_value = search_rows
         context_cursor = MagicMock()
         context_cursor.fetchall.return_value = []
         staleness_cursor = MagicMock()
-        mock_db.execute.side_effect = [search_cursor, context_cursor, staleness_cursor]
+        mock_db.execute.side_effect = [context_cursor, staleness_cursor]
 
-        searcher = BM25Searcher(mock_db)
-        options = SearchOptions(include_highlights=False)
-        results = searcher.search("test", options)
+        results = enrich_results(mock_db, [self._result()])
 
         assert results[0].context_description is None

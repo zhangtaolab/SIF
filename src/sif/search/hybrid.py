@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, cast
 
 from sif.core.models import Embedder, SearchOptions, SearchResult, SearchType
 from sif.search.bm25 import BM25Searcher
-from sif.search.context_attach import attach_path_contexts
+from sif.search.context_attach import attach_path_contexts, enrich_results
 from sif.search.rrf import RRFFusion
 from sif.search.staleness import mark_vector_staleness
 from sif.search.vector import VectorSearcher
@@ -200,7 +200,7 @@ class SearchPipeline:
         # Route to appropriate search mode
         if search_type == SearchType.BM25:
             results = self.hybrid.bm25.search(parsed_query, options)
-            return self._apply_snippets(results, parsed_query)
+            return enrich_results(self.db, self._apply_snippets(results, parsed_query))
         if search_type == SearchType.VECTOR:
             if self.hybrid.embedder is None:
                 raise RuntimeError("Vector search requires an embedder")

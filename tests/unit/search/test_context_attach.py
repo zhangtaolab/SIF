@@ -18,8 +18,7 @@ import pytest
 
 from sif.core.models import SearchResult
 from sif.database.schema import SchemaManager
-from sif.search.bm25 import BM25Searcher
-from sif.search.context_attach import attach_path_contexts
+from sif.search.context_attach import attach_path_contexts, enrich_results
 from sif.search.hybrid import HybridSearcher
 from sif.search.vector import VectorSearcher
 from sif.utils.paths import normalize_path
@@ -136,14 +135,20 @@ class TestAttachPathContextsRealSQL:
 
         assert results[0].context_description == "New notes"
 
-    def test_bm25_searcher_method_on_real_db(self, db, alias_pair):
-        """BM25Searcher._attach_contexts behaves identically on a real connection."""
+    def test_enrich_results_on_real_db(self, db, alias_pair):
+        """enrich_results composes context attachment on a real connection.
+
+        The composition helper is the enrichment owner now that searchers are
+        pure producers; staleness degrades to unmarked here because this
+        fixture DB has no vec0 table.
+        """
         resolved, alias = alias_pair
         _insert_path_context(db, "ctx-1", alias, "Method-level notes")
 
-        results = BM25Searcher(db)._attach_contexts([_result(resolved)])
+        results = enrich_results(db, [_result(resolved)])
 
         assert results[0].context_description == "Method-level notes"
+        assert results[0].vectors_stale is False
 
     def test_vector_and_hybrid_delegate(self, monkeypatch):
         """VectorSearcher and HybridSearcher delegate to the shared helper with self.db.

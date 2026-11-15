@@ -18,6 +18,7 @@ from __future__ import annotations
 import sqlite3
 
 from sif.core.models import SearchResult
+from sif.search.staleness import mark_vector_staleness
 from sif.utils.paths import normalize_path
 
 
@@ -60,3 +61,25 @@ def attach_path_contexts(
         if key in context_map:
             result.context_description = context_map[key]
     return results
+
+
+def enrich_results(
+    db: sqlite3.Connection,
+    results: list[SearchResult],
+) -> list[SearchResult]:
+    """Apply both search-result trust signals exactly once.
+
+    The single enrichment owner for every public search exit: path-context
+    attachment followed by derived vector-staleness marking. Searchers return
+    raw results; this composition runs once at the search pipeline's exit and
+    once at each direct CLI/MCP entry point.
+
+    Args:
+        db: SQLite connection.
+        results: Search results to enrich.
+
+    Returns:
+        The same results list, with ``context_description`` filled on matches
+        and ``vectors_stale`` marked from the derived embedding scan.
+    """
+    return mark_vector_staleness(db, attach_path_contexts(db, results))
