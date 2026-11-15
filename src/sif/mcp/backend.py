@@ -15,6 +15,7 @@ from sif.embedding.factory import EmbeddingModelFactory
 from sif.embedding.model import ModelType
 from sif.mcp.protocol import CollectionInfo, Document, SearchResult
 from sif.search.bm25 import BM25Searcher
+from sif.search.context_attach import enrich_results
 from sif.search.hybrid import SearchPipeline
 from sif.search.suggest import SuggestionEngine
 from sif.utils.logging import get_logger
@@ -177,6 +178,11 @@ class SearchBackend:
                         "sqlite-vec unavailable; MCP hybrid search degrades to BM25-only"
                     )
                 core_results = BM25Searcher(conn).search(query, options)
+                # CORR-05 (Plan 19-04): the fallback bypasses SearchPipeline,
+                # so this boundary owns its one enrichment. The pipeline path
+                # below is already enriched by SearchPipeline — enriching it
+                # again here would double-attach.
+                core_results = enrich_results(conn, core_results)
             else:
                 core_results = pipeline.search(query, options)
             mapped = [

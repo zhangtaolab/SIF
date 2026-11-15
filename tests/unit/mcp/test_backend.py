@@ -710,3 +710,61 @@ class TestHybridSearchVecDegradation:
             mock_pipeline.return_value.search.side_effect = RuntimeError("vector search failed")
             with pytest.raises(RuntimeError, match="vector search failed"):
                 await backend.hybrid_search("quantum")
+
+
+class TestSingleEnrichmentOwner:
+    """CORR-05 (Plan 19-04): the MCP boundary enriches exactly once.
+
+    The BM25 fallback bypasses ``SearchPipeline``, so the boundary owns that
+    path's single enrichment. The pipeline path is already enriched by
+    ``SearchPipeline`` (Plan 19-03) and must not be enriched again here.
+    """
+
+    @pytest.mark.asyncio
+    async def test_bm25_fallback_enriches_once_and_forwards_vectors_stale(
+        self, tmp_path: Path
+    ) -> None:
+        """Fallback path: one enrich_results call; enriched fields ride the re-map."""
+        db_path, settings = _seed_suggestion_db(tmp_path)
+        backend = _suggestion_backend(db_path, settings)
+
+        calls: list[list[SearchResult]] = []
+
+        def _enrich(_conn: object, results: list[SearchResult]) -> list[SearchResult]:
+            calls.append(results)
+            for result in results:
+                result.context_description = "chosen context"
+                result.vectors_stale = True
+            return results
+
+        with (
+            patch(
+                "sif.mcp.backend.SearchPipeline",
+                side_effect=RuntimeError(_VEC_MISSING_MSG),
+            ),
+            patch("sif.mcp.backend.enrich_results", side_effect=_enrich),
+        ):
+            results = await backend.hybrid_search("quantum")
+
+        assert calls, "the BM25 fallback must enrich its core results"
+        assert len(calls) == 1
+        assert len(results) == 2
+        for result in results:
+            assert result.metadata["vectors_stale"] is True
+            # The boundary forwards exactly its existing fields; context
+            # descriptions stay CLI-visible only (not a Phase-19 MCP contract).
+            assert set(result.metadata) == {"rank", "collection_name", "vectors_stale"}
+
+    @pytest.mark.asyncio
+    async def test_pipeline_path_does_not_enrich_again(self, backend) -> None:
+        """Pipeline path: SearchPipeline owns enrichment; the boundary adds none."""
+        with (
+            patch("sif.mcp.backend.SearchPipeline") as mock_pipeline,
+            patch("sif.mcp.backend.enrich_results") as mock_enrich,
+        ):
+            mock_pipeline.return_value.search.return_value = [_weight_result()]
+            results = await backend.hybrid_search("test query")
+
+        mock_enrich.assert_not_called()
+        assert results[0].metadata["vectors_stale"] is False
+        assert set(results[0].metadata) == {"rank", "collection_name", "vectors_stale"}

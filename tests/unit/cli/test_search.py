@@ -3940,3 +3940,155 @@ def test_default_limit_falls_back_on_invalid_settings(monkeypatch) -> None:
     monkeypatch.setattr(search_mod, "get_settings", broken_settings)
 
     assert search_mod._default_limit() == 10
+
+
+class TestSingleEnrichmentOwner:
+    """CORR-05 (Plan 19-04): each direct CLI exit enriches exactly once.
+
+    Searchers return raw results (Plan 19-03); ``search_cmd`` and
+    ``vsearch_cmd`` add the single ``enrich_results`` composition call after
+    their direct searcher returns, so every renderer (table/JSON/CSV/XML)
+    sees context descriptions and derived staleness markers.
+    """
+
+    @staticmethod
+    def _result() -> SearchResult:
+        return SearchResult(
+            document_id="doc-1",
+            rank=1,
+            score=0.9,
+            title="Doc",
+            path="/notes/doc.md",
+            collection_name="notes",
+            content="body",
+            highlights=["body"],
+        )
+
+    @classmethod
+    def _spy(cls, calls: list[list[SearchResult]]):
+        """Record each enrichment call and set both enriched fields."""
+
+        def _enrich(_conn: object, results: list[SearchResult]) -> list[SearchResult]:
+            calls.append(results)
+            for result in results:
+                result.context_description = "chosen context"
+                result.vectors_stale = True
+            return results
+
+        return _enrich
+
+    def _invoke_search(
+        self,
+        tmp_path: Path,
+        calls: list[list[SearchResult]],
+        args: list[str],
+    ) -> Result:
+        searcher = MagicMock()
+        searcher.search.return_value = [self._result()]
+        repo = MagicMock()
+        repo.list_enabled.return_value = []
+        index = tmp_path / "index.db"
+        index.touch()
+        with (
+            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
+            patch("sif.cli.commands.search.BM25Searcher", return_value=searcher),
+            patch("sif.cli.commands.search.enrich_results", side_effect=self._spy(calls)),
+        ):
+            return CliRunner().invoke(
+                search_cmd,
+                args,
+                env={"COLUMNS": "80"},
+                obj={"index_path": index},
+            )
+
+    def _invoke_vsearch(
+        self,
+        tmp_path: Path,
+        calls: list[list[SearchResult]],
+        args: list[str],
+    ) -> Result:
+        searcher = MagicMock()
+        searcher.search.return_value = [self._result()]
+        repo = MagicMock()
+        repo.list_enabled.return_value = []
+        manager = MagicMock()
+        manager.embed_single.return_value = [0.0] * 4
+        manager._model = MagicMock()
+        settings = MagicMock(
+            default_limit=10,
+            search_refresh_enabled=False,
+            query_history_enabled=False,
+            model_name="all-MiniLM-L6-v2",
+            model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"},
+        )
+        index = tmp_path / "index.db"
+        index.touch()
+        with (
+            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
+            patch(
+                "sif.embedding.manager.EmbeddingManager.from_settings",
+                return_value=manager,
+            ),
+            patch("sif.search.vector.VectorSearcher", return_value=searcher),
+            patch("sif.config.settings.get_settings", return_value=settings),
+            patch("sif.cli.commands.search.enrich_results", side_effect=self._spy(calls)),
+        ):
+            return CliRunner().invoke(
+                vsearch_cmd,
+                args,
+                env={"COLUMNS": "80"},
+                obj={"index_path": index},
+            )
+
+    def test_bm25_search_enriches_exactly_once(self, tmp_path: Path) -> None:
+        """search_cmd calls enrich_results once and JSON carries both fields."""
+        calls: list[list[SearchResult]] = []
+
+        result = self._invoke_search(tmp_path, calls, ["query", "--no-refresh", "--json"])
+
+        assert result.exit_code == 0, result.output
+        assert len(calls) == 1
+        payload = json.loads(result.stdout)
+        assert payload[0]["vectors_stale"] is True
+        assert payload[0]["context_description"] == "chosen context"
+
+    def test_vsearch_enriches_exactly_once(self, tmp_path: Path) -> None:
+        """vsearch_cmd calls enrich_results once and JSON carries both fields."""
+        calls: list[list[SearchResult]] = []
+
+        result = self._invoke_vsearch(tmp_path, calls, ["query", "--no-refresh", "--json"])
+
+        assert result.exit_code == 0, result.output
+        assert len(calls) == 1
+        payload = json.loads(result.stdout)
+        assert payload[0]["vectors_stale"] is True
+        assert payload[0]["context_description"] == "chosen context"
+
+    def test_empty_results_are_handed_to_the_single_owner(self, tmp_path: Path) -> None:
+        """An empty result set is enriched once and never becomes an error."""
+        calls: list[list[SearchResult]] = []
+        searcher = MagicMock()
+        searcher.search.return_value = []
+        repo = MagicMock()
+        repo.list_enabled.return_value = []
+        index = tmp_path / "index.db"
+        index.touch()
+
+        with (
+            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
+            patch("sif.cli.commands.search.BM25Searcher", return_value=searcher),
+            patch("sif.cli.commands.search.enrich_results", side_effect=self._spy(calls)),
+        ):
+            result = CliRunner().invoke(
+                search_cmd,
+                ["query", "--no-refresh", "--json"],
+                obj={"index_path": index},
+            )
+
+        assert result.exit_code == 0, result.output
+        assert len(calls) == 1
+        assert calls[0] == []
+        assert json.loads(result.stdout) == []

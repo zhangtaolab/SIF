@@ -25,6 +25,7 @@ from sif.database.repositories import CollectionRepository, QueryLogRepository
 from sif.indexing.drift import detect_drift, refresh_drifted
 from sif.indexing.incremental import IncrementalResult
 from sif.search.bm25 import BM25Searcher
+from sif.search.context_attach import enrich_results
 from sif.search.hybrid import SearchPipeline
 from sif.search.suggest import SuggestionEngine
 from sif.utils.logging import get_logger, set_quiet
@@ -508,6 +509,10 @@ def search_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
         with db.connection:
             searcher = BM25Searcher(db.connection)
             results = searcher.search(query, options)
+            # CORR-05 (Plan 19-04): searchers return raw results; this direct
+            # BM25 exit owns exactly one enrichment so table/JSON/CSV/XML
+            # output keeps context descriptions and staleness markers.
+            results = enrich_results(db.connection, results)
             # D-05/SC2: only the zero-result path pays the DYM cost.
             suggestions = _zero_result_suggestions(db.connection, query, results)
             # D-08: one history row for an executed search (fail-soft).
@@ -710,6 +715,9 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             except RuntimeError as e:
                 raise click.ClickException(sqlite_vec_remedy(e)) from e
             results = searcher.search(query_embedding, options)
+            # CORR-05 (Plan 19-04): the direct vector exit owns exactly one
+            # enrichment (the pipeline is not involved on this path).
+            results = enrich_results(db.connection, results)
             # D-05/SC2: only the zero-result path pays the DYM cost.
             suggestions = _zero_result_suggestions(db.connection, query, results)
             # D-08: one history row for an executed search (fail-soft).
