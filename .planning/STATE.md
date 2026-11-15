@@ -5,16 +5,16 @@ milestone_name: Search Precision and Agent Experience
 current_phase: 19
 current_phase_name: Search Correctness
 status: executing
-stopped_at: Completed 19-05-PLAN.md
-last_updated: "2026-11-15T03:47:48.633Z"
+stopped_at: Completed 19-06-PLAN.md
+last_updated: "2026-11-15T04:05:30.476Z"
 last_activity: 2026-11-15
 last_activity_desc: Phase 19 execution started
-state_head: 294713e3e3ac8671dce65ea72941284b92f578b7
+state_head: 657ff29c1f83cd023b2d5704b474672c06d810a1
 progress:
   total_phases: 8
   completed_phases: 2
   total_plans: 22
-  completed_plans: 18
+  completed_plans: 19
 ---
 
 # DocSift — Project State
@@ -31,7 +31,7 @@ progress:
 ## Current Position
 
 Phase: 19 (Search Correctness) — EXECUTING
-Plan: 6 of 9
+Plan: 7 of 9
 Status: Ready to execute
 Last activity: 2026-11-15 — Phase 19 execution started
 
@@ -67,6 +67,7 @@ Progress: [███░░░░░░░] 25%
 | Phase 19 P03 | 6min | 3 tasks | 10 files |
 | Phase 19 P04 | 6 min | 2 tasks | 5 files |
 | Phase 19 P05 | 9min | 3 tasks | 15 files |
+| Phase 19 P06 | 13min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -143,6 +144,11 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - [Phase 19]: 19-05: the rerank pre-window is max(candidate_limit, limit+offset) when offset>0 and exactly candidate_limit at offset=0; top_k = limit+offset.
 - [Phase 19]: 19-05: MCP offset is validated on QueryInput/LexSearchInput/VecSearchInput and forwarded through SearchBackend; lex/vec registration stays Phase 22.
 - [Phase 19]: 19-05: B0 comparison at offset=0/min_score=0 reports n=100, mean delta 0.0, so the default path is drift-free.
+- [Phase 19]: 19-06: vector dedup runs after min_score; rows group by document in distance order, the best row wins and carries chunk_id/sequence, chunk_matches counts the group, and per_chunk mode keeps rows ungrouped with chunk_matches 0.
+- [Phase 19]: 19-06: fetch_k starts at min(max((limit+offset)*4, 50), 2048) and doubles only while the batch returned exactly k rows and the target is unmet; the cap is independent of offset, so a past-cap page is empty.
+- [Phase 19]: 19-06: RRFFusion.fuse gained an optional key callable; chunk_key/fuse_key_for are the shared selectors at both fuse sites, and the merge adopts non-null chunk fields plus max(chunk_matches) without touching scores.
+- [Phase 19]: 19-06: the default hybrid path keeps the post-fusion safety-net dedup (now metadata-merging) and per-chunk mode skips it; the rerank rebuild preserves chunk identity (Rule 2).
+- [Phase 19]: 19-06: the SC1 hybrid golden was regenerated as the post-dedup baseline (scores unchanged on the one-chunk fixture); the held-out snapshot records identical pre/post numbers because the corpus has one chunk per document, with the rationale and the chunky-document regression carrying the contract evidence.
 
 ### Pending Todos
 
@@ -172,8 +178,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-15T03:47:48.428Z
-Stopped at: Completed 19-05-PLAN.md
+Last session: 2026-11-15T04:05:30.258Z
+Stopped at: Completed 19-06-PLAN.md
 Resume file: None
 
 - **Next expected action:** run Phase 17 verification (`/gsd-verify-work 17`) to confirm the four ENG success criteria against the shipped state, then mark Phase 17 complete and proceed to Phase 18. Release evidence lives in `17-07-SUMMARY.md`: tag `v1.1.2` on `c819f67`, Publish run `43562577065` attempt 4 (all three jobs success), PyPI JSON `1.1.2` with the `mcp-name` marker, `pypi-attestations` `OK` against `https://github.com/zhangtaolab/SIF`, and both fresh-venv install proofs. Execution order for the rest of v1.2: 17 → 18 → 19 → 20 → 21 → 22 → 23 → 24; hard dependencies and cross-phase contracts in ROADMAP.md.
