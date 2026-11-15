@@ -318,36 +318,6 @@ def embed_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 "Set SIF_EMBEDDING_DIM to the model's dimension and rebuild."
             )
 
-        # D-02/D-03/D-04: adopt the identity before any vector write. A legacy
-        # populated index is assumed once; a same-width model swap fails fast
-        # naming both identities and the remedy. An embeddings-empty index
-        # accepts any embedder (D-02) and the first document commit overwrites
-        # a stale identity row as source="verified".
-        current = _resolve_identity(db.connection, manager)
-        write_identity_on_first = False
-        if current is not None:
-            with db.connection:
-                ensure_legacy_identity(db.connection, current)
-                check = check_identity(db.connection, current, mode="embed")
-            if check.untrusted:
-                stored = check.stored
-                if stored is not None:
-                    stored_desc = (
-                        f"{stored.display_fingerprint()} "
-                        f"({stored.cache_model_id}, dim {stored.dimension})"
-                    )
-                else:
-                    stored_desc = f"an index with no identity (FLOAT[{schema_dim}])"
-                raise click.ClickException(
-                    "Embedder identity mismatch: index vectors were produced by "
-                    f"{stored_desc} but the current model is "
-                    f"{current.display_fingerprint()} "
-                    f"({current.cache_model_id}, dim {current.dimension}). "
-                    "Restore the stored model or run `sif index embed --force` "
-                    "with the matching model."
-                )
-            write_identity_on_first = not _index_has_vectors(db.connection)
-
         coll_repo = CollectionRepository(db.connection)
         doc_repo = DocumentRepository(db.connection)
         chunk_repo = DocumentChunkRepository(db.connection)
@@ -361,10 +331,12 @@ def embed_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             collections = coll_repo.list_all()
 
         # D-01: embed_cmd arbitrates with other index writers on the per-DB
-        # flock. The lock sits below the embedder load and the dimension/
-        # identity checks on purpose — it is never held across model loading.
-        # Every document commits in its own short transaction (D-15), so prior
-        # work stays durable on any later failure (CR-02/D-16).
+        # flock. The lock sits below the embedder load on purpose — it is
+        # never held across model loading — but the identity decision below
+        # belongs inside it: a decision taken while waiting for the lock can
+        # be stale by the time it is acted on. Every document commits in its
+        # own short transaction (D-15), so prior work stays durable on any
+        # later failure (CR-02/D-16).
         lock_timeout = settings.lock_wait_timeout
         with index_lock(
             Path(index_path),
@@ -373,6 +345,38 @@ def embed_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 f"[dim]Another index writer is running; waiting up to {lock_timeout:.0f}s...[/dim]"
             ),
         ):
+            # D-02/D-03/D-04: adopt the identity before any vector write, while
+            # holding the lock that serializes every embed writer. A legacy
+            # populated index is assumed once; a same-width model swap fails
+            # fast naming both identities and the remedy. An embeddings-empty
+            # index accepts any embedder (D-02) and the first document commit
+            # overwrites a stale identity row as source="verified" — the writer
+            # re-validates that claim inside its own transaction.
+            current = _resolve_identity(db.connection, manager)
+            write_identity_on_first = False
+            if current is not None:
+                with db.connection:
+                    ensure_legacy_identity(db.connection, current)
+                    check = check_identity(db.connection, current, mode="embed")
+                if check.untrusted:
+                    stored = check.stored
+                    if stored is not None:
+                        stored_desc = (
+                            f"{stored.display_fingerprint()} "
+                            f"({stored.cache_model_id}, dim {stored.dimension})"
+                        )
+                    else:
+                        stored_desc = f"an index with no identity (FLOAT[{schema_dim}])"
+                    raise click.ClickException(
+                        "Embedder identity mismatch: index vectors were produced by "
+                        f"{stored_desc} but the current model is "
+                        f"{current.display_fingerprint()} "
+                        f"({current.cache_model_id}, dim {current.dimension}). "
+                        "Restore the stored model or run `sif index embed --force` "
+                        "with the matching model."
+                    )
+                write_identity_on_first = not _index_has_vectors(db.connection)
+
             total_chunks = 0
             failed_collections: list[str] = []
             failed_documents: list[tuple[str, str, str]] = []
@@ -471,6 +475,25 @@ def embed_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 if abort_message is not None:
                     break
 
+            # D-04 certification: only a complete, unfiltered, zero-failure
+            # --force run certifies the stored identity as source="verified". A
+            # fresh index's first vector write already certified through the
+            # writer; a full --force on an empty index certifies vacuously (its
+            # zero vectors keep D-02's accept-any-embedder rule in force). Kept
+            # inside the lock window so a concurrent writer cannot claim or
+            # replace the identity between the run and its certification.
+            if (
+                abort_message is None
+                and not failed_collections
+                and not failed_documents
+                and force
+                and collection is None
+                and current is not None
+                and not identity_written
+            ):
+                with db.connection:
+                    certify_identity(db.connection, current)
+
         console.print(f"\n[green]Embedding complete: {total_chunks} chunks embedded[/green]")
         for coll_name, doc_path, message in failed_documents:
             console_err.print(
@@ -493,15 +516,6 @@ def embed_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             if failed_documents:
                 parts.append(f"Embedding failed for {len(failed_documents)} document(s)")
             raise click.ClickException(". ".join(parts))
-
-        # D-04 certification: only a complete, unfiltered, zero-failure
-        # --force run certifies the stored identity as source="verified". A
-        # fresh index's first vector write already certified through the
-        # writer; a full --force on an empty index certifies vacuously (its
-        # zero vectors keep D-02's accept-any-embedder rule in force).
-        if force and collection is None and current is not None and not identity_written:
-            with db.connection:
-                certify_identity(db.connection, current)
 
 
 def _format_bytes(size: int) -> str:

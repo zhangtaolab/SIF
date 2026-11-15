@@ -369,8 +369,13 @@ def schema_embedding_dim(conn: sqlite3.Connection) -> int | None:
     return int(match.group(1)) if match else None
 
 
-def _has_stored_vectors(conn: sqlite3.Connection) -> bool:
-    """Whether any vector row exists; an absent table counts as none."""
+def has_stored_vectors(conn: sqlite3.Connection) -> bool:
+    """Whether any vector row exists; an absent table counts as none.
+
+    Public because the streaming writer re-validates D-02's first-write
+    identity claim inside the committing transaction: the claim is only safe
+    while no vectors exist, and a stale identity row alone never blocks it.
+    """
     try:
         return conn.execute("SELECT 1 FROM document_embeddings LIMIT 1").fetchone() is not None
     except sqlite3.Error:
@@ -407,7 +412,7 @@ def ensure_legacy_identity(
     stored = read_identity(conn)
     if stored is not None:
         return stored
-    if not _has_stored_vectors(conn):
+    if not has_stored_vectors(conn):
         return identity
     assumed = replace(identity, source="legacy-assumed")
     write_identity(conn, assumed)
@@ -465,12 +470,12 @@ def check_identity(
     width_mismatch = schema_dim is not None and schema_dim != current.dimension
 
     if mode == _INIT_MODE:
-        if stored is None and not width_mismatch and _has_stored_vectors(conn):
+        if stored is None and not width_mismatch and has_stored_vectors(conn):
             stored = ensure_legacy_identity(conn, current)
         status = "dimension_mismatch" if width_mismatch else "ok"
         return IdentityCheck(status=status, stored=stored, current=current)
 
-    if not _has_stored_vectors(conn):
+    if not has_stored_vectors(conn):
         # D-02: a stale identity row never blocks an index with no vectors.
         status = "dimension_mismatch" if width_mismatch else "ok"
         return IdentityCheck(status=status, stored=stored, current=current)

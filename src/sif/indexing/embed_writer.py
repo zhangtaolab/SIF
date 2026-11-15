@@ -24,7 +24,13 @@ from typing import TYPE_CHECKING
 
 from sif.core.models import Document, DocumentChunk
 from sif.database.repositories import DocumentChunkRepository
-from sif.embedding.identity import EmbedderIdentity, write_identity
+from sif.embedding.identity import (
+    EmbedderIdentity,
+    has_stored_vectors,
+    identity_matches,
+    read_identity,
+    write_identity,
+)
 
 
 if TYPE_CHECKING:
@@ -122,7 +128,9 @@ class StreamingEmbedWriter:
     single ``with conn:`` block per document deletes the document's previous
     chunks/vectors (delete-before-insert, self-healing re-chunk), inserts the
     fresh rows, maintains the derived shadow through ``VectorSearcher``, and
-    writes the identity on the index's first successful vector write.
+    writes the identity on the index's first successful vector write — after
+    re-validating the stored provenance inside that same transaction, so a
+    stale first-write decision cannot mix two models' vectors.
 
     ``identity`` is optional only to keep injected manager doubles inert:
     every production host hands over a real ``EmbedderIdentity``, while test
@@ -180,7 +188,18 @@ class StreamingEmbedWriter:
 
         # ONE short write transaction per document: every derived row
         # (chunks, vectors, shadow, identity) commits or rolls back together.
+        claim_identity = self._write_identity
         with self._conn:
+            if claim_identity:
+                # D-02/CR-02: the host checked the embeddings-empty state
+                # under the index flock, but the decision can be stale (a
+                # writer that ignored the flock, or one that outlived its
+                # wait deadline, may have committed since). BEGIN IMMEDIATE
+                # holds SQLite's write lock across the provenance re-read and
+                # the identity write, so the claim is atomic against every
+                # other writer.
+                self._conn.execute("BEGIN IMMEDIATE")
+                self._claim_identity_in_transaction()
             self._chunk_repo.delete_by_document(doc.id)
             self._searcher.delete_embeddings_by_document(doc.id)
             for chunk in chunks:
@@ -192,12 +211,49 @@ class StreamingEmbedWriter:
                     for chunk, vector in zip(chunks, vectors, strict=True)
                 ]
             )
-            if self._write_identity:
-                assert self._identity is not None  # guarded by the constructor
-                write_identity(self._conn, replace(self._identity, source="verified"))
-                self._write_identity = False
+        if claim_identity:
+            # WR-06: clear the flag only after __exit__ committed. A failed
+            # commit rolls the identity row back with the vectors, and the
+            # still-pending claim makes the next document retry it instead of
+            # silently committing vectors with no provenance.
+            self._write_identity = False
 
         return len(chunks)
+
+    def _claim_identity_in_transaction(self) -> None:
+        """Claim the first vector write's identity, re-validating provenance.
+
+        Must run after an explicit ``BEGIN IMMEDIATE`` so the read of the
+        stored vectors/identity and the identity write are atomic against
+        every other writer. A populated index is adopted only when its
+        stored identity matches this writer's; claiming it for a different
+        model would put two vector spaces in one vec0 table (the EMB-01
+        trap). Anything else aborts systemically so the host reports one
+        actionable failure instead of retrying.
+
+        A still-empty index keeps D-02's rule: a stale identity row never
+        blocks the first vector write, which overwrites it as
+        ``source="verified"``.
+        """
+        assert self._identity is not None  # guarded by the constructor
+        if not has_stored_vectors(self._conn):
+            write_identity(self._conn, replace(self._identity, source="verified"))
+            return
+
+        stored = read_identity(self._conn)
+        if stored is None:
+            raise SystemicEmbedError(
+                "Refusing to claim the embedder identity: vectors with no identity "
+                "appeared concurrently; rerun `sif index embed`."
+            )
+        if not identity_matches(stored, self._identity):
+            raise SystemicEmbedError(
+                "Embedder identity mismatch while claiming the first vector write: "
+                f"stored {stored.display_fingerprint()} ({stored.cache_model_id}) vs "
+                f"current {self._identity.display_fingerprint()} "
+                f"({self._identity.cache_model_id}). This index now holds another "
+                "model's vectors; restore that model or run `sif index embed --force`."
+            )
 
     def _chunk_document(self, doc: Document) -> list[DocumentChunk]:
         """Chunk a document, dropping empty text and renumbering contiguously."""

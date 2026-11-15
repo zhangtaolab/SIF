@@ -983,6 +983,57 @@ class TestStreamingEmbed:
         assert _embedded_chunk_count(db_path, ids["/notes/a.md"]) >= 1
 
 
+class TestEmbedIdentityLocking:
+    """CR-02: the identity decision is taken under the same flock as the writes."""
+
+    def test_identity_resolution_runs_inside_the_index_lock(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """A decision taken before the lock can go stale while waiting."""
+        import contextlib
+
+        from sif.cli.commands import index as index_module
+
+        events: list[str] = []
+
+        @contextlib.contextmanager
+        def recording_lock(*_args, **_kwargs):
+            events.append("lock-enter")
+            yield
+            events.append("lock-exit")
+
+        real_resolve = index_module._resolve_identity
+
+        def recording_resolve(conn, manager):
+            events.append("identity")
+            return real_resolve(conn, manager)
+
+        monkeypatch.setattr(index_module, "index_lock", recording_lock)
+        monkeypatch.setattr(index_module, "_resolve_identity", recording_resolve)
+
+        coll_repo = MagicMock()
+        coll_repo.list_all.return_value = []
+        with (
+            patch("sif.cli.commands.index.Database", return_value=MagicMock()),
+            patch("sif.cli.commands.index.CollectionRepository", return_value=coll_repo),
+            patch("sif.cli.commands.index.DocumentRepository", return_value=MagicMock()),
+            patch("sif.cli.commands.index.DocumentChunkRepository", return_value=MagicMock()),
+            patch(
+                "sif.embedding.manager.EmbeddingManager.from_settings",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "sif.config.settings.get_settings",
+                return_value=MagicMock(model_name="test", lock_wait_timeout=1.0),
+            ),
+        ):
+            result = CliRunner().invoke(embed_cmd, [], obj={"index_path": tmp_path / "index.db"})
+
+        assert result.exit_code == 0, result.output
+        assert events[:2] == ["lock-enter", "identity"]
+        assert events[-1] == "lock-exit"
+
+
 class TestLegacyUpgradeEndToEnd:
     """D-04/EMB-01: a pre-Phase-21 index upgrades, assumes, then certifies."""
 

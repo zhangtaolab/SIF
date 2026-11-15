@@ -408,3 +408,149 @@ def test_garbage_sanity_after_a_committed_document_leaves_it_intact(tmp_path: Pa
     assert stored is not None
     assert stored.source == "verified"
     assert writer.identity_pending is False
+
+
+def test_stale_first_write_claim_is_revalidated_inside_the_transaction(tmp_path: Path) -> None:
+    """CR-02: a write_identity decision taken on an empty index cannot add a
+    second model's vectors after another writer committed.
+
+    The host passes write_identity=True based on a pre-lock observation; by
+    commit time the index holds another model's vectors and identity, so the
+    in-transaction revalidation must refuse the claim instead of mixing
+    vector spaces.
+    """
+    db, _coll, doc, searcher = _setup(tmp_path)
+    stored_identity = _identity(model_name="model-a")
+    with db.connection:
+        searcher.add_embeddings_batch([("c-seed", doc.id, "c-seed", _unit_vector())])
+        write_identity(db.connection, stored_identity)
+
+    writer = StreamingEmbedWriter(
+        db.connection,
+        _RecordingManager(db.connection),
+        _FixedChunker(["fresh"]),
+        searcher,
+        _identity(model_name="model-b"),
+        batch_size=32,
+        write_identity=True,
+    )
+
+    try:
+        with pytest.raises(SystemicEmbedError, match="identity mismatch"):
+            writer.embed_document(doc)
+        stored = read_identity(db.connection)
+        counts = _counts(db.connection, doc.id)
+    finally:
+        db.close()
+
+    # Only the seeded vector/shadow remain; the fresh chunks/vectors rolled
+    # back and the stored identity is untouched.
+    assert counts == (0, 1, 1)
+    assert stored is not None
+    assert stored.cache_model_id == stored_identity.cache_model_id
+    assert writer.identity_pending is True
+
+
+def test_stale_claim_adopts_a_matching_concurrent_identity(tmp_path: Path) -> None:
+    """CR-02: a populated index holding the same identity is still writable."""
+    db, _coll, doc, searcher = _setup(tmp_path)
+    identity = _identity(model_name="model-a")
+    with db.connection:
+        searcher.add_embeddings_batch([("c-seed", doc.id, "c-seed", _unit_vector())])
+        write_identity(db.connection, identity)
+
+    writer = StreamingEmbedWriter(
+        db.connection,
+        _RecordingManager(db.connection),
+        _FixedChunker(["fresh"]),
+        searcher,
+        identity,
+        batch_size=32,
+        write_identity=True,
+    )
+
+    try:
+        assert writer.embed_document(doc) == 1
+        stored = read_identity(db.connection)
+    finally:
+        db.close()
+
+    assert stored is not None
+    assert stored.cache_model_id == identity.cache_model_id
+    assert writer.identity_pending is False
+
+
+class _CommitFailingProxy:
+    """Connection proxy whose first ``with`` block fails to commit (WR-06)."""
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self._conn = conn
+        self.fail_next_commit = True
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(self._conn, name)
+
+    def __enter__(self) -> _CommitFailingProxy:
+        return self
+
+    def __exit__(self, exc_type: object, exc: object, traceback: object) -> bool:
+        if exc_type is not None:
+            self._conn.rollback()
+            return False
+        if self.fail_next_commit:
+            self.fail_next_commit = False
+            self._conn.rollback()
+            raise sqlite3.OperationalError("injected commit failure")
+        self._conn.commit()
+        return False
+
+
+def test_identity_claim_stays_pending_when_the_commit_fails(tmp_path: Path) -> None:
+    """WR-06: the identity-write flag clears only after a successful commit.
+
+    A failed commit rolls the identity row back with the vectors; the writer
+    must still owe the identity so the retry (or the next document) writes it
+    instead of committing vectors with no provenance.
+    """
+    try:
+        import sqlite_vec
+    except ImportError:  # pragma: no cover - host without the extension
+        pytest.skip("sqlite-vec unavailable")
+
+    db, _coll, doc, _searcher = _setup(tmp_path)
+    conn = sqlite3.connect(str(db.db_path), isolation_level="IMMEDIATE")
+    try:
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.enable_load_extension(True)
+        sqlite_vec.load(conn)
+        conn.enable_load_extension(False)
+        proxy = _CommitFailingProxy(conn)
+        searcher = VectorSearcher(conn, DIM)
+        writer = StreamingEmbedWriter(
+            proxy,  # type: ignore[arg-type] - transparent connection proxy
+            _RecordingManager(conn),
+            _FixedChunker(["one"]),
+            searcher,
+            _identity(),
+            batch_size=32,
+            write_identity=True,
+        )
+
+        with pytest.raises(sqlite3.OperationalError, match="injected commit failure"):
+            writer.embed_document(doc)
+        assert not conn.in_transaction
+
+        assert writer.identity_pending is True
+        assert read_identity(conn) is None
+        assert _counts(conn, doc.id) == (0, 0, 0)
+
+        # The retry commits the identity together with the vectors.
+        assert writer.embed_document(doc) == 1
+        stored = read_identity(conn)
+        assert stored is not None
+        assert stored.source == "verified"
+        assert writer.identity_pending is False
+    finally:
+        conn.close()
+        db.close()
