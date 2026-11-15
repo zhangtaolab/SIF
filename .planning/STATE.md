@@ -5,16 +5,16 @@ milestone_name: Search Precision and Agent Experience
 current_phase: 20
 current_phase_name: Metadata Filtering + Discovery
 status: executing
-stopped_at: Phase 20 context gathered
-last_updated: "2026-11-15T11:56:04.372Z"
+stopped_at: Completed 20-01-PLAN.md
+last_updated: "2026-11-15T12:18:28.026Z"
 last_activity: 2026-11-15
-last_activity_desc: Phase 19 complete, transitioned to Phase 20
-state_head: ac07be73c6002736919779211d9834eb2c0cf4f7
+last_activity_desc: Phase 20 execution started
+state_head: 4662ea12809730bb8c4961993ec5e6fa844357e7
 progress:
   total_phases: 8
   completed_phases: 3
   total_plans: 27
-  completed_plans: 22
+  completed_plans: 23
 ---
 
 # DocSift — Project State
@@ -30,10 +30,10 @@ progress:
 
 ## Current Position
 
-Phase: 20 (Metadata Filtering + Discovery) — READY TO EXECUTE
-Plan: Not started
+Phase: 20 (Metadata Filtering + Discovery) — EXECUTING
+Plan: 2 of 5
 Status: Ready to execute
-Last activity: 2026-11-15 — Phase 19 complete, transitioned to Phase 20
+Last activity: 2026-11-15 — Phase 20 execution started
 
 Progress: [████░░░░░░] 38%
 
@@ -71,6 +71,7 @@ Progress: [████░░░░░░] 38%
 | Phase 19 P07 | 7min | 3 tasks | 10 files |
 | Phase 19 P08 | 7min | 3 tasks | 10 files |
 | Phase 19 P09 | 9min | 3 tasks | 16 files |
+| Phase 20 P01 | 18min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -167,6 +168,10 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - [Phase 19]: 19-09: Database.init_schema(embedding_dim=N) skips get_settings when N is supplied, so an MCP-only host migrates the title FTS, triggers, and idx_documents_mtime at startup; the no-argument form and the dimension-mismatch RuntimeError are unchanged.
 - [Phase 19]: 19-09: --compare reports per-leg and per-leg x split gates as additive legs/leg_splits keys and tables; absent combinations are sufficient=false with no winner, and warrants_default_change remains only the held-out summary gate.
 - [Phase 19]: 19-09: D-12 rejected the 2.0/3.0/4.0 title-weight band with numbers — the held-out title leg was already at its 1.0 ceiling and the body held-out leg stayed flat at 0.900634933653854 — so _TITLE_WEIGHT stays 1.0; the sweep migrates the scratch index through init_schema first and aborts without a title column; verdict in bench/d12-verdict.json.
+- [Phase 20]: 20-01: FilterNode parse_filter/parse_match implement qmd's 17 operators with field (D-18); parity pin qmd [Unreleased] @86d2365 verified 2026-11-15, superseding abfabc5's key naming.
+- [Phase 20]: 20-01: compiler emits presence-aware ne/nin (EXISTS + NOT EXISTS), per-element all, instr/BLOB-substr text ops, half-open path prefix (idx_documents_path), and mtime ranges (idx_documents_mtime); values are never interpolated.
+- [Phase 20]: 20-01: typed kv rows derive from canonical JSON in DocumentRepository.create/.update; filterable_metadata shadows path/mtime only, leaving qmd.metadata merge and caps to 20-02.
+- [Phase 20]: 20-01: unfiltered BM25 is byte-identical to the pre-change capture (golden recording-connection test); --filter parses/validates before the database opens.
 
 ### Pending Todos
 
@@ -196,8 +201,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-15T08:35:46.686Z
-Stopped at: Phase 20 context gathered
-Resume file: /Users/forrest/GitHub/SIF/.planning/phases/20-metadata-filtering-discovery/20-CONTEXT.md
+Last session: 2026-11-15T12:18:27.663Z
+Stopped at: Completed 20-01-PLAN.md
+Resume file: None
 
 - **Next expected action:** run Phase 17 verification (`/gsd-verify-work 17`) to confirm the four ENG success criteria against the shipped state, then mark Phase 17 complete and proceed to Phase 18. Release evidence lives in `17-07-SUMMARY.md`: tag `v1.1.2` on `c819f67`, Publish run `43562577065` attempt 4 (all three jobs success), PyPI JSON `1.1.2` with the `mcp-name` marker, `pypi-attestations` `OK` against `https://github.com/zhangtaolab/SIF`, and both fresh-venv install proofs. Execution order for the rest of v1.2: 17 → 18 → 19 → 20 → 21 → 22 → 23 → 24; hard dependencies and cross-phase contracts in ROADMAP.md.
