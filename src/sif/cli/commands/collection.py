@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +17,7 @@ from sif.database.database import Database
 from sif.database.metadata_repository import MetadataValueRepository
 from sif.database.repositories import CollectionRepository
 from sif.search.filters import compile_filter, compile_match
+from sif.utils.json_output import json_dumps_strict
 
 
 console = Console()
@@ -521,6 +521,6 @@ def collection_metadata(  # noqa: PLR0913 — one parameter per the D-14 option 
         )
 
     if output_json:
-        click.echo(json.dumps(result))
+        click.echo(json_dumps_strict(result))
         return
     _render_metadata_table(result)

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from abc import ABC, abstractmethod
 from typing import Any, ClassVar
 
@@ -20,6 +19,7 @@ from sif.mcp.protocol import (
     ToolContentItem,
     ToolsCallResult,
 )
+from sif.utils.json_output import json_dumps_strict
 from sif.utils.logging import get_logger
 
 from .backend import SearchBackend
@@ -124,7 +124,7 @@ class QueryToolHandler(ToolHandler):
             content=[
                 ToolContentItem(
                     type="text",
-                    text=json.dumps(output.model_dump(), ensure_ascii=False),
+                    text=json_dumps_strict(output.model_dump(), ensure_ascii=False),
                 ),
             ],
         )
@@ -169,7 +169,7 @@ class GetToolHandler(ToolHandler):
             content=[
                 ToolContentItem(
                     type="text",
-                    text=json.dumps(output.model_dump(), ensure_ascii=False),
+                    text=json_dumps_strict(output.model_dump(), ensure_ascii=False),
                 ),
             ],
         )
@@ -205,7 +205,7 @@ class MultiGetToolHandler(ToolHandler):
             content=[
                 ToolContentItem(
                     type="text",
-                    text=json.dumps(output.model_dump(), ensure_ascii=False),
+                    text=json_dumps_strict(output.model_dump(), ensure_ascii=False),
                 ),
             ],
         )
@@ -234,7 +234,7 @@ class StatusToolHandler(ToolHandler):
             content=[
                 ToolContentItem(
                     type="text",
-                    text=json.dumps(output.model_dump(), ensure_ascii=False),
+                    text=json_dumps_strict(output.model_dump(), ensure_ascii=False),
                 ),
             ],
         )
@@ -297,7 +297,9 @@ class MetadataToolHandler(ToolHandler):
             content=[
                 ToolContentItem(
                     type="text",
-                    text=json.dumps(output.model_dump(exclude_none=True), ensure_ascii=False),
+                    text=json_dumps_strict(
+                        output.model_dump(exclude_none=True), ensure_ascii=False
+                    ),
                 ),
             ],
         )

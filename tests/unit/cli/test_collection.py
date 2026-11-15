@@ -28,6 +28,11 @@ from sif.database.repositories import (
 )
 
 
+def _reject_json_constant(token: str) -> None:
+    """``json.loads`` parse_constant hook that refuses NaN/Infinity tokens."""
+    raise AssertionError(f"non-standard JSON token: {token}")
+
+
 def _stored_embedding_doc_ids(db_path: Path) -> set[str]:
     """Read stored vec0 document_ids on a fresh sqlite-vec-loaded connection.
 
@@ -915,6 +920,45 @@ class TestCollectionMetadata:
         assert payload["totalKeys"] == 2
         assert payload["remainingKeys"] == 0
         assert payload["skippedKeys"] == 0
+
+    def test_json_output_is_strict_with_non_finite_metadata(self, tmp_path: Path) -> None:
+        """WR-06: a non-finite number never emits bare ``Infinity``/``NaN``.
+
+        The infinite ``mtime`` models the one value CR-01's derivation cannot
+        exclude (the reserved built-in reads the ``documents`` column), so it
+        asserts the serializer guard itself; the metadata value asserts the
+        canonical write-time stringification end to end.
+        """
+        db_path = tmp_path / "sif.db"
+        db = Database(db_path)
+        db.init_schema()
+        with db.transaction() as conn:
+            CollectionRepository(conn).create(Collection(id="coll-inf", name="inf", path="/inf"))
+            DocumentRepository(conn).create(
+                Document(
+                    id="d-inf",
+                    collection_id="coll-inf",
+                    path="/inf/a.md",
+                    content="body",
+                    mtime=float("inf"),
+                    metadata={"v": float("inf")},
+                )
+            )
+        db.close()
+
+        result = self._invoke(db_path, "--json")
+
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.output, parse_constant=_reject_json_constant)
+        entry = next(entry for entry in payload["keys"] if entry["key"] == "v")
+        assert entry["types"][0]["type"] == "string"
+        assert entry["types"][0]["values"][0]["value"] == "inf"
+        mtime_entry = next(entry for entry in payload["builtIns"] if entry["key"] == "mtime")
+        assert mtime_entry["types"][0]["range"] == {
+            "min": "inf",
+            "median": "inf",
+            "max": "inf",
+        }
 
     def test_filter_narrows_counts_and_keeps_the_scope_denominator(self, tmp_path: Path) -> None:
         """``--filter`` adds ``filteredDocuments`` and narrows every count but ``documents``."""

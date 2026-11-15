@@ -23,6 +23,11 @@ from sif.mcp.transports.http import create_app
 from sif.mcp.transports.stdio import StdioTransport
 
 
+def _reject_json_constant(token: str) -> None:
+    """``json.loads`` parse_constant hook that refuses NaN/Infinity tokens."""
+    raise AssertionError(f"non-standard JSON token: {token}")
+
+
 _METADATA_ENVELOPE = {
     "documents": 2,
     "totalKeys": 1,
@@ -431,6 +436,22 @@ class TestToolHandlerPayloads:
         assert payload["document"]["path"] == "notes/知识.md"
         assert payload["document"]["content"] == "你好\nsecond line"
         backend.get_document.assert_awaited_once_with("doc-1", 2, 4)
+
+    @pytest.mark.asyncio
+    async def test_get_handler_output_is_strict_json_for_non_finite_metadata(self) -> None:
+        """WR-06: a stored NaN/Infinity metadata value never emits invalid JSON."""
+        backend = _make_backend()
+        backend.get_document.return_value = Document(
+            doc_id="doc-1",
+            path="notes/a.md",
+            content="body",
+            metadata={"inf": float("inf"), "nan": float("nan")},
+        )
+
+        result = await GetToolHandler().handle({"path_or_docid": "doc-1"}, backend)
+
+        payload = json.loads(result.content[0].text, parse_constant=_reject_json_constant)
+        assert payload["document"]["metadata"] == {"inf": "inf", "nan": "nan"}
 
     @pytest.mark.asyncio
     async def test_get_handler_missing_document_is_an_error_payload(self) -> None:
