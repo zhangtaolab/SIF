@@ -59,7 +59,7 @@ Full detail: `.planning/milestones/v1.1-ROADMAP.md`
 - [x] **Phase 17: Engineering Foundation (CI Matrix + Hygiene + PyPI)** - Green py3.10–3.13 × ubuntu/macos test matrix, Windows degradation smoke (hc yoga), dead-layer/repo cleanup, trusted-publishing release of `docsif` v1.1.x (completed 2026-11-14)
 - [x] **Phase 18: Quality Instrument (Personal Bench + rapidfuzz DYM)** - `sif eval --personal` known-item measurement with bias controls; measured rapidfuzz did-you-mean swap (completed 2026-11-15)
 - [x] **Phase 19: Search Correctness** - Frontmatter-only edit freshness, per-doc dedup pre-fusion, deterministic pagination, title-FTS ranking, single context/staleness attach (completed 2026-11-15)
-- [ ] **Phase 20: Metadata Filtering + Discovery** - qmd-parity recursive filter AST applied pre-RRF, built-in path/mtime fields, typed frontmatter storage, `metadata` discovery tool
+- [x] **Phase 20: Metadata Filtering + Discovery** - qmd-parity recursive filter AST applied pre-RRF, built-in path/mtime fields, typed frontmatter storage, `metadata` discovery tool (completed 2026-11-15)
 - [ ] **Phase 21: Scale, Maintenance + Embedder Identity** - Bounded staleness/context reads, `index vacuum` + backup, streaming embed, `index_meta` embedder identity + role-aware embed
 - [ ] **Phase 22: MCP SDK v2 Modernization + Agent Packaging** - Official SDK shell swap (dual-era), accurate annotations + structuredContent, query pipeline parity, daemon, Claude Code plugin + MCP Registry
 - [ ] **Phase 23: Harrier Gated Evaluation** - EN+ZH held-out A/B of Harrier native vs Qwen3-Embedding-0.6B; default switch ONLY on a proven win
@@ -163,7 +163,7 @@ Full detail: `.planning/milestones/v1.1-ROADMAP.md`
   3. User's filters apply pre-RRF per leg — BM25 outer WHERE of the materialized CTE (never inside it), vector post-KNN JOIN with adaptive over-fetch, a selectivity bound, and an honest "too selective" message; parameterized SQL only (no injection surface, no post-fusion filtering)
   4. User's existing indexes filter correctly after upgrade — typed frontmatter storage + backfill runs, and `qmd.metadata`-namespaced keys (migration parity, opt-in) filter identically to native keys; numeric values compare as numbers, not strings
   5. Agent can discover available metadata via a `metadata` tool on CLI + MCP — doc counts, numeric min/median/max, exact remainders; ONE validator shared with the filter surface; invalid filter → ToolError for model self-correction, never a protocol error
-**Plans:** 5/5 plans executed
+**Plans:** 5/5 plans complete
 **Wave 1**
 - [x] 20-01-PLAN.md — Tracer: one `eq` filter end-to-end (AST → typed kv → BM25 outer WHERE → `sif search --filter`), then the full 17-operator AST/validator and the full per-operator compiler
 
@@ -243,7 +243,7 @@ v1.2 contracts — defined ONCE; downstream phases consume, never redefine:
 | 17. Engineering Foundation (CI + Hygiene + PyPI) | v1.2 | 9/9 | Complete    | 2026-11-14 |
 | 18. Quality Instrument (Personal Bench + rapidfuzz) | v1.2 | 4/4 | Complete    | 2026-11-15 |
 | 19. Search Correctness | v1.2 | 9/9 | Complete    | 2026-11-15 |
-| 20. Metadata Filtering + Discovery | v1.2 | 5/5 | In Progress | - |
+| 20. Metadata Filtering + Discovery | v1.2 | 5/5 | Complete    | 2026-11-15 |
 | 21. Scale, Maintenance + Embedder Identity | v1.2 | 0/TBD | Not started | - |
 | 22. MCP SDK v2 + Agent Packaging | v1.2 | 0/TBD | Not started | - |
 | 23. Harrier Gated Evaluation | v1.2 | 0/TBD | Not started | - |
