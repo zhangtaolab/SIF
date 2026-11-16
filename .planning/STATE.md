@@ -4,17 +4,17 @@ milestone: v1.2
 milestone_name: Search Precision and Agent Experience
 current_phase: 22
 current_phase_name: MCP SDK v2 Modernization + Agent Packaging
-status: executing
-stopped_at: "Session resumed, proceeding to 22-07 Task 3 (continuation executor: Registry docs, phase gate, real claude mcp smoke, SUMMARY)"
-last_updated: "2026-11-16T09:26:20.309Z"
+status: verifying
+stopped_at: Completed 22-07-PLAN.md
+last_updated: "2026-11-16T09:34:45.288Z"
 last_activity: 2026-11-16
 last_activity_desc: Phase 22 execution started
-state_head: 00814e3c1b05692ca889439bf08941c6a03406d8
+state_head: ef9730665bc7517b0f0031cd5d46a4b4e07c3af0
 progress:
   total_phases: 8
   completed_phases: 5
   total_plans: 42
-  completed_plans: 41
+  completed_plans: 42
 ---
 
 # DocSift — Project State
@@ -32,7 +32,7 @@ progress:
 
 Phase: 22 (MCP SDK v2 Modernization + Agent Packaging) — EXECUTING
 Plan: 7 of 7
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-11-16 — Phase 22 execution started
 
 Progress: [██████░░░░] 63%
@@ -90,6 +90,7 @@ Progress: [██████░░░░] 63%
 | Phase 22 P04 | 12min | 3 tasks | 12 files |
 | Phase 22 P05 | 17min | 3 tasks | 17 files |
 | Phase 22 P06 | 10min | 3 tasks | 12 files |
+| Phase 22 P07 | 7 | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -264,6 +265,9 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - [Phase 22]: 22-06: the gate is plain claude plugin validate --json . (success, zero errors, no description warning); the repo-root CLAUDE.md warning is tolerated and --strict stays banned.
 - [Phase 22]: 22-06: docs/mcp-server.md and src/sif/mcp/README.md describe the SDK composition root and seven-tool surface; README makes uv tool install docsif[embed] primary with a BM25-only base and uvx fallback.
 - [Phase 22]: 22-07 Task 2 recorded `blocked no-github-login` (user decision 2026-11-16): the optional public MCP Registry listing is deferred; no GitHub auth was performed and no publish attempted. The local MCP server/plugin/skills/transports need no GitHub login. 22-07 Task 3 proceeds with the blocked outcome recorded in 22-07-SUMMARY; re-run `python scripts/publish_registry.py --publish` after a future `mcp-publisher login github`. — Plan D-24 explicitly allows a blocked run as a non-code outcome, and --publish is idempotent (already listed), so deferring loses nothing.
+- [Phase 22]: 22-07 Task 2 (live MCP Registry publish) recorded as blocked: user chose 'blocked no-github-login' on 2026-11-16; no mcp-publisher login, publish, or credential storage was attempted, and D-24 explicitly permits the blocked non-code outcome.
+- [Phase 22]: 22-07 real-client evidence uses the stream-json system/init event of a headless Claude Code session (2.1.325) because 'claude mcp get' reports connection status but not the seven-tool list; the temporary local-scope sif-smoke entry was removed after the run.
+- [Phase 22]: 22-07 phase gate green: 2866 passed / 1 skipped at 95.11% coverage, ruff/format/ty clean, make docs-generate no-diff, claude plugin validate success with zero errors, registry --check green; _version.py stays 1.1.2 and no v1.2 tag exists.
 
 ### Pending Todos
 
@@ -293,8 +297,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-16T09:26:18.856Z
-Stopped at: Session resumed, proceeding to 22-07 Task 3 (continuation executor: Registry docs, phase gate, real claude mcp smoke, SUMMARY)
+Last session: 2026-11-16T09:34:44.512Z
+Stopped at: Completed 22-07-PLAN.md
 Resume file: None
 
 - **Next expected action:** finish 22-07 Task 3 (Registry docs, phase gate, real `claude mcp` stdio smoke, `22-07-SUMMARY.md`), then Phase 22 verification (gsd-verifier, code review, regression gate) and ROADMAP/STATE completion; then Phase 23 → 24. 22-07 Task 2 was recorded `blocked no-github-login` (optional public Registry listing deferred). Two audits remain recorded as debt (see Blockers/Concerns): `/gsd-secure-phase 20` and `/gsd:validate-phase 20`.
