@@ -5,16 +5,16 @@ milestone_name: Search Precision and Agent Experience
 current_phase: 22
 current_phase_name: MCP SDK v2 Modernization + Agent Packaging
 status: executing
-stopped_at: Completed 22-01-PLAN.md
-last_updated: "2026-11-16T07:12:06.456Z"
+stopped_at: Completed 22-02-PLAN.md
+last_updated: "2026-11-16T07:38:01.375Z"
 last_activity: 2026-11-16
 last_activity_desc: Phase 22 execution started
-state_head: 771fb99d285a3441da34dd4c2f291973ccf2403d
+state_head: 48d5a98145cabd9b616903858f2959f6758df3f4
 progress:
   total_phases: 8
   completed_phases: 5
   total_plans: 42
-  completed_plans: 36
+  completed_plans: 37
 ---
 
 # DocSift — Project State
@@ -31,7 +31,7 @@ progress:
 ## Current Position
 
 Phase: 22 (MCP SDK v2 Modernization + Agent Packaging) — EXECUTING
-Plan: 2 of 7
+Plan: 3 of 7
 Status: Ready to execute
 Last activity: 2026-11-16 — Phase 22 execution started
 
@@ -85,6 +85,7 @@ Progress: [██████░░░░] 63%
 | Phase 21 P06 | 8min | 3 tasks | 8 files |
 | Phase 21 P07 | 7min | 3 tasks | 9 files |
 | Phase 22 P01 | 24min | 3 tasks | 23 files |
+| Phase 22 P02 | 15min | 3 tasks | 24 files |
 
 ## Accumulated Context
 
@@ -240,6 +241,11 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - [Phase 22]: 22-01: the status-only e2e bridge skips three query-dependent watch tests and the drift test's query tail with a reason naming 22-02's seven-tool battery; the intermediate SDK surface is a dev-branch state with no release.
 - [Phase 22]: 22-01: SearchBackend construction is model-free (no factory/load/identity) with _load_lock/_load_attempted/_load_failed for 22-04; the docsift migration notice moved to console_err on stderr.
 - [Phase 22]: 22-01: package legitimacy for mcp==2.3.0 approved by the maintainer 2026-11-16 (official modelcontextprotocol/python-sdk, MIT); uv.lock regenerated add-only with no existing package version change.
+- [Phase 22]: 22-02: per-tool registration helpers keep register_tools under mccabe 10; every tool keeps the Annotated[CallToolResult, Model] return annotation so outputSchema derives with no type ignore.
+- [Phase 22]: 22-02: vec_search maps RuntimeError (no embedder/dimension mismatch/sqlite-vec) to ToolError with the install/model remedy; _ensure_embedder is one locked attempt and stores the identity only when it is a real EmbedderIdentity.
+- [Phase 22]: 22-02: lex/vec direct paths share _resolve_collection_ids/_map_core_results with hybrid and each owns exactly one enrich_results; min_score is additive on both inputs.
+- [Phase 22]: 22-02: the seven-tool battery proved dual-channel parity, idempotency (unchanged data_version/row counts), wire isError, and the real Phase 20 envelope before the shell, wire types, and replaced tests were deleted.
+- [Phase 22]: 22-02: all four watch e2e proofs run live again; the five goldens were regenerated for seven tools with only tools/list changed and initialize/status byte-identical.
 
 ### Pending Todos
 
@@ -269,8 +275,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-16T07:12:05.565Z
-Stopped at: Completed 22-01-PLAN.md
+Last session: 2026-11-16T07:38:00.662Z
+Stopped at: Completed 22-02-PLAN.md
 Resume file: None
 
 - **Next expected action:** plan and execute Phase 21 (Scale, Maintenance + Embedder Identity — SCALE-01..03, EMB-01/02), then 22 → 23 → 24. Phase 20 delivered FILT-01..05: shared 17-operator filter grammar on CLI+MCP, `path`/`mtime` built-ins, pre-RRF per-leg pushdown with the corrected vector escalation, typed kv storage + `index_meta`-gated backfill, and the `metadata` discovery tool whose envelope is the frozen Phase 22 contract. Two audits remain recorded as debt (see Blockers/Concerns): `/gsd-secure-phase 20` and `/gsd:validate-phase 20`.
