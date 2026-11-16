@@ -369,3 +369,37 @@ async def test_lifespan_factory_stops_even_when_body_raises() -> None:
                 raise RuntimeError("app died")
 
     stop.assert_called_once_with(None)
+
+
+@pytest.mark.asyncio
+async def test_session_lifespan_orders_session_manager_around_the_watcher() -> None:
+    """D-18: session enter -> watcher start -> yield -> watcher stop -> session exit."""
+    from contextlib import asynccontextmanager
+
+    from sif.mcp.watch_host import mcp_session_lifespan
+
+    calls: list[str] = []
+
+    @asynccontextmanager
+    async def fake_run():
+        calls.append("session-enter")
+        yield
+        calls.append("session-exit")
+
+    manager = SimpleNamespace(run=fake_run)
+    with (
+        patch.object(
+            watch_host,
+            "start_embedded_watch",
+            side_effect=lambda _path: calls.append("watch-start") or MagicMock(),
+        ),
+        patch.object(
+            watch_host,
+            "stop_embedded_watch",
+            side_effect=lambda _watch: calls.append("watch-stop"),
+        ),
+    ):
+        async with mcp_session_lifespan("/tmp/x.db", manager)(None):
+            calls.append("yield")
+
+    assert calls == ["session-enter", "watch-start", "yield", "watch-stop", "session-exit"]

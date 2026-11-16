@@ -1,0 +1,195 @@
+{
+  "exchanges": [
+    {
+      "request": {
+        "body": {
+          "id": 1,
+          "jsonrpc": "2.0",
+          "method": "initialize",
+          "params": {
+            "capabilities": {},
+            "clientInfo": {
+              "name": "sif-golden",
+              "version": "1"
+            },
+            "protocolVersion": "2025-11-25"
+          }
+        },
+        "headers": {}
+      },
+      "response": {
+        "body": {
+          "id": 1,
+          "jsonrpc": "2.0",
+          "result": {
+            "capabilities": {
+              "prompts": {
+                "listChanged": false
+              },
+              "resources": {
+                "listChanged": false,
+                "subscribe": false
+              },
+              "tools": {
+                "listChanged": false
+              }
+            },
+            "protocolVersion": "2025-11-25",
+            "serverInfo": {
+              "name": "sif-mcp-server",
+              "version": "<version>"
+            }
+          }
+        },
+        "headers": {
+          "mcp-session-id": "<session>"
+        },
+        "status": 200
+      }
+    },
+    {
+      "request": {
+        "body": {
+          "id": 2,
+          "jsonrpc": "2.0",
+          "method": "tools/list",
+          "params": {}
+        },
+        "headers": {
+          "mcp-session-id": "<session>"
+        }
+      },
+      "response": {
+        "body": {
+          "id": 2,
+          "jsonrpc": "2.0",
+          "result": {
+            "tools": [
+              {
+                "annotations": {
+                  "openWorldHint": false,
+                  "readOnlyHint": true
+                },
+                "description": "Get the current status of all document collections.",
+                "inputSchema": {
+                  "properties": {},
+                  "title": "statusArguments",
+                  "type": "object"
+                },
+                "name": "status",
+                "outputSchema": {
+                  "$defs": {
+                    "CollectionInfo": {
+                      "description": "Collection information.",
+                      "properties": {
+                        "document_count": {
+                          "title": "Document Count",
+                          "type": "integer"
+                        },
+                        "last_updated": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null,
+                          "title": "Last Updated"
+                        },
+                        "name": {
+                          "title": "Name",
+                          "type": "string"
+                        },
+                        "size_bytes": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null,
+                          "title": "Size Bytes"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "document_count"
+                      ],
+                      "title": "CollectionInfo",
+                      "type": "object"
+                    }
+                  },
+                  "description": "Output for status tool.",
+                  "properties": {
+                    "collections": {
+                      "items": {
+                        "$ref": "#/$defs/CollectionInfo"
+                      },
+                      "title": "Collections",
+                      "type": "array"
+                    },
+                    "total_documents": {
+                      "default": 0,
+                      "title": "Total Documents",
+                      "type": "integer"
+                    }
+                  },
+                  "title": "StatusOutput",
+                  "type": "object"
+                }
+              }
+            ]
+          }
+        },
+        "headers": {
+          "mcp-session-id": "<session>"
+        },
+        "status": 200
+      }
+    },
+    {
+      "request": {
+        "body": {
+          "id": 3,
+          "jsonrpc": "2.0",
+          "method": "tools/call",
+          "params": {
+            "arguments": {},
+            "name": "status"
+          }
+        },
+        "headers": {
+          "mcp-session-id": "<session>"
+        }
+      },
+      "response": {
+        "body": {
+          "id": 3,
+          "jsonrpc": "2.0",
+          "result": {
+            "content": [
+              {
+                "text": "{\"collections\": [], \"total_documents\": 0}",
+                "type": "text"
+              }
+            ],
+            "isError": false,
+            "structuredContent": {
+              "collections": [],
+              "total_documents": 0
+            }
+          }
+        },
+        "headers": {
+          "mcp-session-id": "<session>"
+        },
+        "status": 200
+      }
+    }
+  ],
+  "protocolVersion": "2025-11-25"
+}

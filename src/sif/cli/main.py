@@ -24,6 +24,9 @@ from sif.utils.logging import get_logger, setup_logging
 
 logger = get_logger(__name__)
 console = Console()
+# stderr console: startup notices that must never reach the stdio JSON-RPC
+# protocol channel (D-16, 22-RESEARCH.md Pitfall 8).
+console_err = Console(stderr=True)
 
 # Default paths
 DEFAULT_INDEX_PATH = Path.home() / ".local" / "share" / "sif" / "sif.db"
@@ -289,7 +292,9 @@ def main() -> None:
     if old_model_dir.exists() and not new_model_dir.exists():
         new_model_dir.parent.mkdir(parents=True, exist_ok=True)
         old_model_dir.rename(new_model_dir)
-        console.print("[green]Migrated: ~/.local/share/docsift -> ~/.local/share/sif[/green]")
+        # stderr: this runs before ``sif mcp stdio`` diverts fd 1, so a stdout
+        # print here would be parsed as a JSON-RPC frame by the client.
+        console_err.print("[green]Migrated: ~/.local/share/docsift -> ~/.local/share/sif[/green]")
 
     cli()
 

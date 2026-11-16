@@ -1,0 +1,180 @@
+{
+  "exchanges": [
+    {
+      "request": {
+        "body": {
+          "id": 10,
+          "jsonrpc": "2.0",
+          "method": "tools/list",
+          "params": {
+            "_meta": {
+              "io.modelcontextprotocol/clientCapabilities": {},
+              "io.modelcontextprotocol/clientInfo": {
+                "name": "sif-golden",
+                "version": "1"
+              },
+              "io.modelcontextprotocol/protocolVersion": "2026-07-28"
+            }
+          }
+        },
+        "headers": {
+          "MCP-Protocol-Version": "2026-07-28",
+          "Mcp-Method": "tools/list"
+        }
+      },
+      "response": {
+        "body": {
+          "id": 10,
+          "jsonrpc": "2.0",
+          "result": {
+            "_meta": {
+              "io.modelcontextprotocol/serverInfo": {
+                "name": "sif-mcp-server",
+                "version": "<version>"
+              }
+            },
+            "cacheScope": "private",
+            "resultType": "complete",
+            "tools": [
+              {
+                "annotations": {
+                  "openWorldHint": false,
+                  "readOnlyHint": true
+                },
+                "description": "Get the current status of all document collections.",
+                "inputSchema": {
+                  "properties": {},
+                  "title": "statusArguments",
+                  "type": "object"
+                },
+                "name": "status",
+                "outputSchema": {
+                  "$defs": {
+                    "CollectionInfo": {
+                      "description": "Collection information.",
+                      "properties": {
+                        "document_count": {
+                          "title": "Document Count",
+                          "type": "integer"
+                        },
+                        "last_updated": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null,
+                          "title": "Last Updated"
+                        },
+                        "name": {
+                          "title": "Name",
+                          "type": "string"
+                        },
+                        "size_bytes": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null,
+                          "title": "Size Bytes"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "document_count"
+                      ],
+                      "title": "CollectionInfo",
+                      "type": "object"
+                    }
+                  },
+                  "description": "Output for status tool.",
+                  "properties": {
+                    "collections": {
+                      "items": {
+                        "$ref": "#/$defs/CollectionInfo"
+                      },
+                      "title": "Collections",
+                      "type": "array"
+                    },
+                    "total_documents": {
+                      "default": 0,
+                      "title": "Total Documents",
+                      "type": "integer"
+                    }
+                  },
+                  "title": "StatusOutput",
+                  "type": "object"
+                }
+              }
+            ],
+            "ttlMs": 0
+          }
+        },
+        "headers": {},
+        "status": 200
+      }
+    },
+    {
+      "request": {
+        "body": {
+          "id": 11,
+          "jsonrpc": "2.0",
+          "method": "tools/call",
+          "params": {
+            "_meta": {
+              "io.modelcontextprotocol/clientCapabilities": {},
+              "io.modelcontextprotocol/clientInfo": {
+                "name": "sif-golden",
+                "version": "1"
+              },
+              "io.modelcontextprotocol/protocolVersion": "2026-07-28"
+            },
+            "arguments": {},
+            "name": "status"
+          }
+        },
+        "headers": {
+          "MCP-Protocol-Version": "2026-07-28",
+          "Mcp-Method": "tools/call",
+          "Mcp-Name": "status"
+        }
+      },
+      "response": {
+        "body": {
+          "id": 11,
+          "jsonrpc": "2.0",
+          "result": {
+            "_meta": {
+              "io.modelcontextprotocol/serverInfo": {
+                "name": "sif-mcp-server",
+                "version": "<version>"
+              }
+            },
+            "content": [
+              {
+                "text": "{\"collections\": [], \"total_documents\": 0}",
+                "type": "text"
+              }
+            ],
+            "isError": false,
+            "resultType": "complete",
+            "structuredContent": {
+              "collections": [],
+              "total_documents": 0
+            }
+          }
+        },
+        "headers": {},
+        "status": 200
+      }
+    }
+  ],
+  "protocolVersion": "2026-07-28"
+}

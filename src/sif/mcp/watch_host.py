@@ -211,3 +211,27 @@ def mcp_watch_lifespan(db_path: str) -> Callable[[Any], Any]:
             stop_embedded_watch(watch)
 
     return _lifespan
+
+
+def mcp_session_lifespan(db_path: str, session_manager: Any) -> Callable[[Any], Any]:
+    """FastAPI lifespan FACTORY composing the SDK session manager and the watch.
+
+    D-18 ordering: enter ``session_manager.run()`` (which enters the SDK's own
+    lifespan), start the embedded watcher, yield, stop the watcher, then exit
+    the session manager. ``session_manager`` is duck-typed (the SDK's
+    ``StreamableHTTPSessionManager``) so this module keeps no SDK import; the
+    caller resolves it after ``streamable_http_app()`` created it. The flag
+    check stays inside :func:`start_embedded_watch`, so ``SIF_MCP_WATCH`` off
+    leaves serving unchanged.
+    """
+
+    @asynccontextmanager
+    async def _lifespan(_app: Any) -> AsyncGenerator[None, None]:
+        async with session_manager.run():
+            watch = start_embedded_watch(db_path)
+            try:
+                yield
+            finally:
+                stop_embedded_watch(watch)
+
+    return _lifespan

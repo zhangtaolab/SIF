@@ -34,7 +34,11 @@ from sif._version import __version__
 from sif.config.settings import Settings
 from sif.mcp.backend import SearchBackend
 from sif.mcp.tools import register_resource, register_tools
-from sif.mcp.watch_host import start_embedded_watch, stop_embedded_watch
+from sif.mcp.watch_host import (
+    mcp_session_lifespan,
+    start_embedded_watch,
+    stop_embedded_watch,
+)
 from sif.utils.logging import get_logger, set_quiet
 
 
@@ -155,9 +159,8 @@ def create_http_app(
 
     ``/health`` is registered before the root mount so it stays a parent
     route; the SDK app is mounted at ``/`` with inner path ``/mcp`` so no
-    redirect is introduced (22-RESEARCH.md Pattern 1). The lifespan enters
-    ``session_manager.run()`` exactly once (D-18); the watch composition is
-    layered on in Task 3 via ``mcp_session_lifespan``.
+    redirect is introduced (22-RESEARCH.md Pattern 1). The lifespan composes
+    the SDK session manager with the watch host in the D-18 order.
     """
     mcp = (
         server
@@ -179,12 +182,7 @@ def create_http_app(
         transport_security=security,
     )
 
-    @asynccontextmanager
-    async def _app_lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
-        async with mcp.session_manager.run():
-            yield
-
-    app = FastAPI(lifespan=_app_lifespan)
+    app = FastAPI(lifespan=mcp_session_lifespan(db_path, mcp.session_manager))
     app.add_middleware(
         CORSMiddleware,
         allow_origins=origins,
