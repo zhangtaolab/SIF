@@ -82,7 +82,10 @@
   "default_flip": {
     "artifact": ".planning/phases/23-harrier-gated-evaluation/bench/harrier-verdict.json",
     "decision": "not-applicable",
-    "reason": "verdict did not authorize a change"
+    "reason": "verdict did not authorize a change",
+    "zero_delta_proof": {
+      "status": "not-applicable"
+    }
   },
   "environment": {
     "device": "mps:0",
