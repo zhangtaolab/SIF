@@ -1231,12 +1231,17 @@ class TestArtifact:
             environment={"python": "3.13.9", "device": "mps"},
             replay_available=False,
             notes=["aggregate only"],
+            default_flip={
+                "decision": "not-applicable",
+                "zero_delta_proof": {"status": "not-applicable"},
+            },
         )
 
         assert list(artifact) == [
             "version",
             "decision",
             "rule",
+            "default_flip",
             "arms",
             "corpus",
             "query_set_fingerprint",
@@ -1247,6 +1252,9 @@ class TestArtifact:
             "notes",
         ]
         assert artifact["decision"] == "adopt-harrier"
+        assert artifact["default_flip"]["zero_delta_proof"] == {
+            "status": "not-applicable"
+        }
         assert artifact["gates"]["overall"] == overall
         assert artifact["gates"]["splits"]["heldout"]["n"] == 52
         assert artifact["min_heldout_for_epsilon_win"] == 101
@@ -1308,6 +1316,71 @@ class TestArtifact:
             "counts": {"en": 58, "zh": 0},
         }
         assert "missing overall held-out gate" in artifact["rule"]["reasons"]
+
+    def test_same_run_rewrite_preserves_default_flip(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        artifact_path = tmp_path / "artifact.json"
+        monkeypatch.setattr(harrier_eval, "ARTIFACT_PATH", artifact_path)
+        default_flip = {
+            "decision": "not-applicable",
+            "artifact": "bench/harrier-verdict.json",
+            "reason": "verdict did not authorize a change",
+            "zero_delta_proof": {"status": "not-applicable"},
+        }
+        artifact_path.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "decision": "keep-qwen3",
+                    "corpus": {"fingerprint": "abc"},
+                    "default_flip": default_flip,
+                }
+            )
+        )
+        fresh = {
+            "version": 1,
+            "decision": "keep-qwen3",
+            "corpus": {"fingerprint": "abc"},
+            "query_set_fingerprint": "freshfingerprint",
+        }
+
+        harrier_eval.write_committed_artifact(fresh)
+
+        written = json.loads(artifact_path.read_text())
+        assert written["default_flip"] == default_flip
+        assert written["query_set_fingerprint"] == "freshfingerprint"
+
+    def test_different_run_is_refused_without_force(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        artifact_path = tmp_path / "artifact.json"
+        monkeypatch.setattr(harrier_eval, "ARTIFACT_PATH", artifact_path)
+        artifact_path.write_text(
+            json.dumps(
+                {
+                    "decision": "keep-qwen3",
+                    "corpus": {"fingerprint": "committed"},
+                    "default_flip": {"decision": "not-applicable"},
+                }
+            )
+        )
+        fresh = {"decision": "insufficient-evidence", "corpus": {"fingerprint": "other"}}
+
+        with pytest.raises(RuntimeError, match="refusing to overwrite"):
+            harrier_eval.write_committed_artifact(fresh)
+
+        assert json.loads(artifact_path.read_text())["decision"] == "keep-qwen3"
+
+        harrier_eval.write_committed_artifact(fresh, force=True)
+
+        written = json.loads(artifact_path.read_text())
+        assert written["decision"] == "insufficient-evidence"
+        assert "default_flip" not in written
 
 
 class TestCleanupGuard:

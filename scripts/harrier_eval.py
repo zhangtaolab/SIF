@@ -897,52 +897,110 @@ def build_artifact(
     environment: Mapping[str, Any],
     replay_available: bool,
     notes: Sequence[str],
+    default_flip: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the committed aggregate envelope in its documented key order.
 
     Gate leaves are copied verbatim, corpus scope labels are reduced to
     basenames, and only aggregate counts/hashes survive: never query text,
-    saved-run records, or absolute personal paths.
+    saved-run records, or absolute personal paths. ``default_flip`` is the
+    post-verdict decision block recorded by plans 23-05/23-06; a rewrite of
+    the same run preserves it through ``write_committed_artifact``.
     """
     adequacy = corpus.get("adequacy") or {}
     if not isinstance(adequacy, Mapping):
         raise ValueError("corpus adequacy must be a mapping")
     labels = corpus.get("scope_labels") or []
-    return {
+    artifact: dict[str, Any] = {
         "version": 1,
         "decision": decision.decision,
         "rule": decision.to_dict(),
-        "arms": dict(arms),
-        "corpus": {
-            "fingerprint": corpus.get("fingerprint"),
-            "documents": corpus.get("documents"),
-            "sampled": corpus.get("sampled"),
-            "adequacy": {
-                "adequate": bool(adequacy.get("adequate", False)),
-                "sampled": adequacy.get("sampled"),
-                "counts": dict(adequacy.get("counts") or {}),
-            },
-            "scope_labels": [Path(str(label)).name for label in labels],
-        },
-        "query_set_fingerprint": query_set_fingerprint,
-        "gates": dict(gates),
-        "replay": {
-            "available": bool(replay_available),
-            "note": (
-                "Replay stability was reported by the comparison."
-                if replay_available
-                else _REPLAY_NOTE
-            ),
-        },
-        "environment": dict(environment),
-        "min_heldout_for_epsilon_win": decision.min_heldout_for_epsilon_win,
-        "notes": list(notes),
     }
+    if default_flip is not None:
+        artifact["default_flip"] = dict(default_flip)
+    artifact.update(
+        {
+            "arms": dict(arms),
+            "corpus": {
+                "fingerprint": corpus.get("fingerprint"),
+                "documents": corpus.get("documents"),
+                "sampled": corpus.get("sampled"),
+                "adequacy": {
+                    "adequate": bool(adequacy.get("adequate", False)),
+                    "sampled": adequacy.get("sampled"),
+                    "counts": dict(adequacy.get("counts") or {}),
+                },
+                "scope_labels": [Path(str(label)).name for label in labels],
+            },
+            "query_set_fingerprint": query_set_fingerprint,
+            "gates": dict(gates),
+            "replay": {
+                "available": bool(replay_available),
+                "note": (
+                    "Replay stability was reported by the comparison."
+                    if replay_available
+                    else _REPLAY_NOTE
+                ),
+            },
+            "environment": dict(environment),
+            "min_heldout_for_epsilon_win": decision.min_heldout_for_epsilon_win,
+            "notes": list(notes),
+        }
+    )
+    return artifact
 
 
 def write_artifact(path: Path, artifact: Mapping[str, Any]) -> Path:
     """Write the committed artifact atomically, sorted, with a trailing newline."""
     return write_json(path, artifact)
+
+
+def _envelope_identity(payload: Mapping[str, Any]) -> tuple[Any, Any]:
+    """The decision and corpus fingerprint that identify one recorded run."""
+    corpus = payload.get("corpus")
+    fingerprint = corpus.get("fingerprint") if isinstance(corpus, Mapping) else None
+    return payload.get("decision"), fingerprint
+
+
+def write_committed_artifact(
+    artifact: Mapping[str, Any],
+    *,
+    force: bool = False,
+) -> Path:
+    """Write the committed evidence, never silently replacing another run.
+
+    A fresh-clone rerun must not drop the hand-recorded ``default_flip``
+    block, and a default-corpus run must not overwrite the committed
+    personal-corpus verdict with a different corpus or decision (WR-04). A
+    same-decision, same-fingerprint rewrite preserves the existing block; a
+    different run requires an explicit ``--force``.
+    """
+    target = Path(ARTIFACT_PATH)
+    existing: Mapping[str, Any] | None = None
+    if target.is_file():
+        try:
+            loaded = json.loads(target.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            loaded = None
+        if isinstance(loaded, Mapping):
+            existing = loaded
+    if existing is not None:
+        old_identity = _envelope_identity(existing)
+        new_identity = _envelope_identity(artifact)
+        same_run = old_identity == new_identity
+        if not force and not same_run:
+            old_decision, old_fingerprint = old_identity
+            new_decision, new_fingerprint = new_identity
+            raise RuntimeError(
+                f"refusing to overwrite {target}: recorded decision/corpus "
+                f"{old_decision!r}/{old_fingerprint!r} differs from this run's "
+                f"{new_decision!r}/{new_fingerprint!r}; pass --force to replace it"
+            )
+        # Only a rewrite of the same run keeps the hand-recorded flip block;
+        # a forced replacement is new evidence and starts without it.
+        if same_run and "default_flip" not in artifact and "default_flip" in existing:
+            artifact = {**artifact, "default_flip": existing["default_flip"]}
+    return write_artifact(target, artifact)
 
 
 def assert_within_scratch(path: Path, scratch_root: Path) -> Path:
@@ -1481,6 +1539,7 @@ def _run_verdict_stage(
     arms_payload: Mapping[str, Any],
     corpus_payload: Mapping[str, Any],
     device: str,
+    force: bool = False,
 ) -> dict[str, Any]:
     """Compute the pure two-sided verdict and write the aggregate artifact."""
     recorded = _recorded_artifact_if_current(
@@ -1517,7 +1576,7 @@ def _run_verdict_stage(
             f"N={MIN_HELDOUT_FOR_EPSILON_WIN} held-out queries.",
         ],
     )
-    write_artifact(ARTIFACT_PATH, artifact)
+    write_committed_artifact(artifact, force=force)
     _complete_stage(
         state,
         state_path,
@@ -1559,6 +1618,7 @@ def run_stage_machine(
     keep_arms: bool,
     output_json: bool,
     preflight_only: bool = False,
+    force: bool = False,
 ) -> int:
     """Run (or resume) the scope-keyed two-arm stage machine."""
     # The guard runs before any mkdir/write/delete: a home-directory or
@@ -1598,7 +1658,7 @@ def run_stage_machine(
         return 0 if adequacy.get("adequate") else 3
     if not adequacy.get("adequate"):
         artifact = _build_insufficient_artifact(adequacy, corpus_roots, qwen3.db_path)
-        write_artifact(ARTIFACT_PATH, artifact)
+        write_committed_artifact(artifact, force=force)
         # Deliberately no verdict/artifact marker: an inadequate preflight is
         # recorded in ``state["adequacy"]`` but never marked complete, so a
         # resumed full run re-checks adequacy and recomputes instead of
@@ -1647,6 +1707,7 @@ def run_stage_machine(
             "scope_labels": [Path(root).name for root in corpus_roots],
         },
         device=str(probe_b.get("device", "unknown")),
+        force=force,
     )
     if not keep_arms:
         cleanup_arms(scratch_root, keep_arms=False)
@@ -1691,6 +1752,14 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Build the baseline arm and run the EN+ZH adequacy preflight only",
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help=(
+            "Overwrite the committed artifact even when this run's decision or "
+            "corpus fingerprint differs from the recorded evidence"
+        ),
+    )
     parser.add_argument("--json", action="store_true", help="Emit machine-readable output")
     parser.add_argument("--probe", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument(
@@ -1729,6 +1798,7 @@ def main(argv: list[str] | None = None) -> int:
             keep_arms=args.keep_arms,
             output_json=args.json,
             preflight_only=args.preflight_only,
+            force=args.force,
         )
     except IdentityGateError as exc:
         _emit_err(f"FAIL {exc}")
