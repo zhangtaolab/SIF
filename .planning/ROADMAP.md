@@ -273,15 +273,16 @@ Full detail: `.planning/milestones/v1.1-ROADMAP.md`
   3. User can pull models reliably — `sif models pull` with DEFAULT_MODELS corrected from 7B gte_Qwen2 to the Qwen3-0.6B family, md5 cache-check bug fixed, deterministic ModelScope path, canonical cache dir
   4. User can inspect model status — `sif models status` shows identity/backend/dims with a backend probe, and stays silent in non-TTY contexts
   5. User can install SIF correctly on every platform — uv-first docs with the Linux CPU torch index recipe, llama-cpp backend indexes, degradation matrix, and client config snippets; every new command/Settings field across the milestone passes the `make docs-generate` CI diff gate
-**Plans**: 6 plans
+**Plans**: 7 plans
 **Wave 1**
-- [ ] 24-01-PLAN.md — Chunk-sweep instrument: pure tuning verdict + isolated-arm runbook + tests
+- [ ] 24-01-PLAN.md — Chunk-sweep instrument: pure tuning verdict + isolated-arm runbook with per-arm identity gate + tests
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 24-02-PLAN.md — Title-breadcrumb builder, default-off Settings switch, verdict policy, and one-arm runbook
+- [ ] 24-02-PLAN.md — Breadcrumb embed contract: builder, default-off Settings switch, writer/watcher/index wiring, generated config reference
 
 **Wave 3** *(blocked on Wave 2 completion)*
 - [ ] 24-03-PLAN.md — Model cache rewrite: canonical dir, SHA-256 manifest, atomic download, legacy migration, Qwen3 DEFAULT_MODELS
+- [ ] 24-07-PLAN.md — Breadcrumb evaluation layer: duplicate metrics, body-leg verdict policy, one-arm identity-gated runbook + tests
 
 **Wave 4** *(blocked on Wave 3 completion)*
 - [ ] 24-04-PLAN.md — `sif models pull/status`, hidden deprecated `sif pull`, skip-hidden docs generator
