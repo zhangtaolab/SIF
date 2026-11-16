@@ -6,16 +6,15 @@ current_phase: 23
 current_phase_name: Harrier Gated Evaluation
 status: planning
 stopped_at: Phase 22 complete, ready to plan Phase 23
-last_updated: "2026-11-16T10:29:45.692Z"
+last_updated: "2026-11-16T10:31:29.588Z"
 last_activity: 2026-11-16
 last_activity_desc: Phase 22 complete, transitioned to Phase 23
-state_head: 3a338d635b5f8e614ecf14c92fba3864ab3c3159
+state_head: 10e2f6d5fc6910476868e063ae0404b10a81d764
 progress:
   total_phases: 8
   completed_phases: 6
   total_plans: 42
   completed_plans: 42
-  percent: 75
 ---
 
 # DocSift — Project State
@@ -24,9 +23,9 @@ progress:
 
 - **Name:** DocSift (package `sif`, PyPI `docsif`)
 - **Core Value:** 用户可以在自己的笔记和文档库中，用自然语言快速、准确地找到需要的信息——无论关键词是否匹配。
-- **Current Focus:** v1.2 Search Precision and Agent Experience — Phases 17-20 complete; Phase 20 (Metadata Filtering + Discovery) shipped and verified 26/26 must-haves at 2482 tests / 95.35% coverage. Next: plan Phase 21 (Scale, Maintenance + Embedder Identity)
+- **Current Focus:** v1.2 Search Precision and Agent Experience — Phases 17-22 complete; Phase 22 (MCP SDK v2 + Agent Packaging) shipped and verified 77/77 must-haves at 2889 tests / 95.13% coverage. Next: plan Phase 23 (Harrier Gated Evaluation)
 - **Tech Stack:** Python 3.10+, SQLite (FTS5 + sqlite-vec), Click, Pydantic, sentence-transformers 5.4.1 (locked), llama-cpp-python; v1.2 adds ONLY `mcp>=2.3.0,<3` + `rapidfuzz>=3.14.5,<4`
-- See: .planning/PROJECT.md (updated 2026-11-13)
+- See: .planning/PROJECT.md (updated 2026-11-16)
 - Archives: v1.0/v1.1 phase artifacts, full decision logs, per-plan metrics under .planning/milestones/
 
 ## Current Position
@@ -44,7 +43,7 @@ Progress: [████████░░] 75%
 
 - **Velocity:** v1.0 shipped 68 plans / 11 phases (2026-04-14 → 2026-11-07); v1.1 shipped 27 plans / 7 phases (2026-11-07 → 2026-11-12); recent plans averaged ~13-20 min
 - **Suite at v1.1 close:** 1591 passed, 1 skipped @ 95.18% coverage (fail_under=90 active); ruff/format/ty green
-- **v1.2:** 0/8 phases, 0 plans — per-plan metrics start at Phase 17
+- **v1.2:** 6/8 phases, 42/42 plans — suite 2889 passed / 1 skipped @ 95.13% coverage; ruff/format/ty green
 
 **Per-Plan Metrics:**
 
@@ -269,6 +268,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - [Phase 22]: 22-07 Task 2 (live MCP Registry publish) recorded as blocked: user chose 'blocked no-github-login' on 2026-11-16; no mcp-publisher login, publish, or credential storage was attempted, and D-24 explicitly permits the blocked non-code outcome.
 - [Phase 22]: 22-07 real-client evidence uses the stream-json system/init event of a headless Claude Code session (2.1.325) because 'claude mcp get' reports connection status but not the seven-tool list; the temporary local-scope sif-smoke entry was removed after the run.
 - [Phase 22]: 22-07 phase gate green: 2866 passed / 1 skipped at 95.11% coverage, ruff/format/ty clean, make docs-generate no-diff, claude plugin validate success with zero errors, registry --check green; _version.py stays 1.1.2 and no v1.2 tag exists.
+- [Phase 22]: 22 code review: 2 Critical + 10 Warning fixed with pre-fix failing regression tests (CR-01 lazy-load lock, CR-02 vec_search off the event loop, WR-01/02/03/05/06/07/08/09/10/11); 1 necessity (WR-04) + 8 Info remain open per project convention; verifier found non-blocking W-01 (multi_get explicit max_bytes line range) as a follow-up.
+- [Phase 22]: 22 verified 77/77 must-haves and marked complete 2026-11-16; suite 2889 passed / 1 skipped @ 95.13% coverage, ruff/format/ty/docs-generate/plugin-validate/registry --check green; no v1.2 tag; public Registry listing remains blocked no-github-login (deferred maintainer action).
 
 ### Pending Todos
 
@@ -278,7 +279,10 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 ### Blockers/Concerns
 
 - ⚠️ [Phase 11 re-review, advisory] WR-03 init_schema raw tracebacks, WR-04 impossible-state guards, IN-05 model-type set duplication — carried in 11-REVIEW-DISPOSITION.md (WR-01/WR-02 fixed)
-- [Research gaps — resolve at plan time] qmd filter AST is UNRELEASED (re-verify CHANGELOG at Phase 20); MCP py3.10 install/import smoke at Phase 22 start; transport_security spoofed-header proof before deleting custom middleware (22); documents_fts_v vocab shadow survival on populated DB (19); contexts normalization decision touches a locked Key Decision (21 discussion)
+- [Research gaps — resolved] qmd AST parity pinned in Phase 20; MCP py3.10 install/import smoke and transport_security spoofed-header proof completed in Phase 22; documents_fts_v shadow survival covered in Phase 19. Remaining: contexts normalization decision touches a locked Key Decision (21 discussion)
+- ⚠️ [Phase 22, debt] `22-VALIDATION.md` is still `status: draft` (nyquist validate-phase not run) and no `22-SECURITY.md` exists (secure-phase not run); recorded by `phase.complete` warnings — same audit-debt pattern as Phases 20/21
+- ⚠️ [Phase 22, follow-up] W-01: `multi_get` computes `_full_line_range` before `_truncate_content` when an explicit `max_bytes` exceeds the 100 KiB default; the default budget and the `get` citation path are unaffected
+- ⚠️ [Phase 22, deferred] Public MCP Registry listing for `io.github.zhangtaolab/sif` remains unlisted (`blocked no-github-login`); re-run `mcp-publisher login github` + `python scripts/publish_registry.py --publish` when wanted
 - ✅ [17-07 resolved 2026-11-14] The TestPyPI `invalid-publisher` blocker was the missing/mismatched pending publisher. The maintainer created and verified it (project `docsif`, publisher GitHub, repository `zhangtaolab/SIF`, workflow `publish.yml`, environment `testpypi`); the next OIDC attempt minted successfully on Publish run `43562577065` attempt 4. No trusted-publishing fallback was needed. Nothing had been uploaded on attempts 1-3, so version 1.1.2 was published cleanly rather than consumed by a partial upload.
 
 ### Roadmap Evolution
@@ -298,7 +302,7 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-16T09:34:44.512Z
+Last session: 2026-11-16T10:31:28.761Z
 Stopped at: Phase 22 complete, ready to plan Phase 23
 Resume file: None
 

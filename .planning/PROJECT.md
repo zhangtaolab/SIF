@@ -93,15 +93,25 @@ DocSift 是 [qmd](https://github.com/tobi/qmd) 的 Python 重构版本，一个�
 - ✓ 搜索质量：混合权重（BM25/向量/RRF k）可配置（QUAL-01，SC1 逐字节一致 + CLI/MCP/设置全链路） — Validated in Phase 15
 - ✓ 搜索质量：Query suggestions（did-you-mean，QUAL-02/03/04，`sif suggest` 三段式 + query_log + 100ms 预算实测 ≤10ms） — Validated in Phase 15（2026-11-08 重验 30/30，UAT 5/5）
 
+### Validated（v1.2 — Phases 17–22 shipped）
+
+- ✓ 工程基础：py3.10–3.13 × ubuntu/macos CI 矩阵、Windows 降级 smoke（hc yoga）、`docsif` 1.1.2 trusted publishing 发布 — Validated in Phase 17
+- ✓ 质量仪器：`sif eval --personal` known-item 评测（bias controls + 保存/对比）、rapidfuzz did-you-mean 测量替换 — Validated in Phase 18
+- ✓ 搜索正确性：frontmatter-only 编辑刷新、向量 pre-fusion 按文档去重、确定性分页、标题 FTS 排名、单一 context/staleness attach — Validated in Phase 19
+- ✓ 元数据过滤 + 发现：qmd 17 操作符过滤 AST（pre-RRF 双腿下推）、path/mtime 内置字段、类型化 kv 存储 + 回填、MCP `metadata` 工具（冻结契约） — Validated in Phase 20
+- ✓ 规模与维护：bounded staleness/contexts 读取、`index vacuum`/backup、流式 embed、`index_meta` embedder identity + role-aware embed — Validated in Phase 21
+- ✓ MCP SDK v2 + agent 包装：官方 `mcp` SDK 组合根、双 era 客户端、七只读工具 + annotations/structuredContent、query pipeline 对等（懒加载 embedder、rerank opt-in）、transport security + 真实 daemon、引用级输出、Claude Code plugin/skills、MCP Registry manifest + 幂等预检脚本（公开 listing 记录 `blocked no-github-login`） — Validated in Phase 22
+
 ### Active
 
 <!-- v1.2 高层目标；细化 REQ-ID 见 REQUIREMENTS.md（定义中） -->
 
 - [x] 元数据过滤（path/mtime/tag/frontmatter，RRF 前）+ metadata 发现 + 分页修复 — Phase 20
-- [ ] 搜索正确性与规模（parser 接线、去重、offset、去全表扫、标题 FTS、vacuum）
-- [ ] MCP SDK v2 现代化 + 注解/structuredContent + query pipeline 对等 + agent 包装
-- [ ] 个人语料评测仪器 + Harrier held-out 评估 + rapidfuzz/chunk 调优
-- [ ] 测试 CI + Windows smoke + PyPI 发布 + models UX + 安装文档
+- [x] 搜索正确性与规模（parser 接线、去重、offset、去全表扫、标题 FTS、vacuum） — Phases 19/21
+- [x] MCP SDK v2 现代化 + 注解/structuredContent + query pipeline 对等 + agent 包装 — Phase 22
+- [x] 测试 CI + Windows smoke + PyPI 发布 — Phase 17
+- [x] 个人语料评测仪器 + rapidfuzz 调优 — Phase 18
+- [ ] Harrier held-out 评估（Phase 23）+ chunk/title 调优 + models UX + 安装文档（Phase 24）
 
 ### Out of Scope
 
@@ -164,6 +174,12 @@ DocSift 是 [qmd](https://github.com/tobi/qmd) 的 Python 重构版本，一个�
 | 发现工具信封在 D-15 基础上叠加 `builtIns`（`path`、`mtime`，取自 `documents` 列，`match` 不缩小） | D-03 要求内置字段可被发现；独立列表让 frontmatter key 窗口/排序/分页语义保持不变，作为 Phase 22 冻结契约的一部分（D-20） | Phase 20 Complete |
 | 过滤错误面：CLI `ClickException` 命名 operator/field/AST 路径；MCP `ToolsCallResult(isError=True)`，绝不 `INVALID_PARAMS` | SEP-1303 让模型可自我纠正；空匹配返回空页而非 "无过滤"，沿用 exclude-all 哨兵契约（D-17） | Phase 20 Complete |
 | Phase 20 代码评审 2 Critical + 7 Warning 全部修复并附前置失败回归测试 | CR-01 类型化派生对超大整数/非有限数不 total（会中断索引、并让升级后所有命令失败）；CR-02 候选域 `EXISTS` 在本机 SQLite 3.51.0 上会把 `in` 结果行重复（破坏分页、RRF 双计） | Phase 20 Complete |
+| Phase 22：官方 `mcp==2.3.0` 组合根承载七个只读工具，旧协议壳整体删除；双 era golden transcripts 锁定 2024-11-05 → 2026-07-28 | 单一 SDK surface 才能在双 era 客户端下保持 annotations/structuredContent 一致；七工具全部 `read_only_hint`，无 mutation surface（D-06/D-07） | Phase 22 Complete |
+| Phase 22：transport security 用 SDK `TransportSecuritySettings`，loopback 默认 + `--allowed-hosts` 只增不减；`/health` 同源 Host 门；daemon 用 `.mcp.pid` 与 watch 共存 | 手写 Origin 中间件删除前先以 spoofed header 证明 SDK 行为；wildcard 不能削弱 loopback（D-13/C2/C5） | Phase 22 Complete |
+| Phase 22：懒加载 embedder 用锁 + 失败锁存，query 复用 CLI SearchPipeline（前缀 `lex:` 先于加载决策）；rerank 保持 opt-in | 冷启动不得泄露 stdout、不得阻塞事件循环；加载失败降级 BM25 一次告警（D-15/D-17；CR-01/CR-02 评审修复） | Phase 22 Complete |
+| Phase 22：引用级输出 = snippet 行窗 + 批量 `content_hash` + `get` 范围；Phase 20 metadata 信封冻结 | 代理引用必须先 `get` 后引用；text/structured 双通道一致，CLI JSON 不受影响（D-04/22-05） | Phase 22 Complete |
+| Phase 22：仓库根即 Claude Code plugin/marketplace + 三个 MCP-first skill；`server.json` + 幂等 `publish_registry.py`；公开 Registry listing 记录 `blocked no-github-login` | 本地 MCP/plugin/skills 不需要 GitHub；公开 listing 是可选维护者动作，D-24 允许 blocked；脚本先查 name+version，已存在打印 `already listed` | Phase 22 Complete（listing deferred） |
+| Phase 22 代码评审 2 Critical + 10 Warning 修复并附前置失败回归测试；1 necessity + 8 Info 保持 open；verifier 另发现 W-01（`multi_get` 显式 `max_bytes` 行号越界）作 follow-up | CR-01 并发首次向量查询把“加载中”当失败→静默降级 BM25；CR-02 `vec_search` 在事件循环上同步加载模型（首次下载会冻结所有会话/health）；W-01 默认预算跳过超大文档且 `get` 路径正确，非阻塞 | Phase 22 Complete |
 
 ## Context（v1.1 shipped 2026-11-12）
 
@@ -198,4 +214,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-11-15 after Phase 20（元数据过滤 + 发现工具落地；qmd 未发布 AST 对齐、类型化 kv + 回填、pre-RRF 双腿下推、CLI/MCP 共享校验器）*
+*Last updated: 2026-11-16 after Phase 22（MCP SDK v2 + 七只读工具 + 引用级输出 + plugin/Registry；评审 2C+10W 修复；公开 Registry listing 记录 blocked no-github-login）*
