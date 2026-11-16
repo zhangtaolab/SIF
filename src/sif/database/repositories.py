@@ -330,6 +330,26 @@ class DocumentRepository:
         row = cursor.fetchone()
         return row[0] if row else None
 
+    def get_checksums(self, document_ids: list[str]) -> dict[str, str | None]:
+        """Get stored checksums for a page of documents in batched queries.
+
+        Phase 22 D-11: one ``WHERE id IN (...)`` query per chunk of at most
+        :data:`_CHECKSUM_QUERY_CHUNK_SIZE` placeholders (well under SQLite's
+        variable limit), never a per-document N+1 loop. Repeated ids collapse
+        and unknown ids are absent from the map.
+        """
+        checksums: dict[str, str | None] = {}
+        unique_ids = list(dict.fromkeys(document_ids))
+        for start in range(0, len(unique_ids), _CHECKSUM_QUERY_CHUNK_SIZE):
+            chunk = unique_ids[start : start + _CHECKSUM_QUERY_CHUNK_SIZE]
+            placeholders = ",".join("?" for _ in chunk)
+            cursor = self.db.execute(
+                f"SELECT id, checksum FROM documents WHERE id IN ({placeholders})",
+                chunk,
+            )
+            checksums.update(dict(cursor.fetchall()))
+        return checksums
+
     def exists(self, path: str, collection_id: str) -> bool:
         """Check if document exists."""
         cursor = self.db.execute(
@@ -593,6 +613,10 @@ def _expiry_instant(value: str) -> datetime:
 # Bound variables per expiry DELETE well under SQLite's historical
 # SQLITE_LIMIT_VARIABLE_NUMBER floor of 999 (WR-01).
 _EXPIRY_DELETE_BATCH_SIZE = 500
+
+# Phase 22 D-11: batched ``IN (...)`` page size for citation checksums, well
+# under SQLite's default variable limit.
+_CHECKSUM_QUERY_CHUNK_SIZE = 900
 
 
 class LLMCacheRepository:

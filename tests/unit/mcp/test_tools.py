@@ -315,6 +315,31 @@ class TestQueryTool:
         assert payload["suggestions"] == ["quantum machin"]
         assert payload == result.structured_content
 
+    @pytest.mark.asyncio
+    async def test_citation_fields_ride_both_channels(self) -> None:
+        """D-11: snippet, stored hash, and line window serialize additively."""
+        backend = _mock_backend()
+        backend.hybrid_search.return_value = [
+            SearchResult(
+                doc_id="d1",
+                path="/a.md",
+                score=0.9,
+                snippet="line two",
+                content_hash="stored-checksum",
+                line_start=2,
+                line_end=2,
+            ),
+        ]
+
+        result = await _make_server(backend).call_tool("query", {"query": "hello"})
+
+        payload = json.loads(result.content[0].text)
+        assert payload == result.structured_content
+        item = payload["results"][0]
+        assert item["snippet"] == "line two"
+        assert item["content_hash"] == "stored-checksum"
+        assert (item["line_start"], item["line_end"]) == (2, 2)
+
 
 class TestGetAndMultiGetTools:
     """get/multi_get forward their preserved inputs and map not-found to ToolError."""
@@ -326,6 +351,7 @@ class TestGetAndMultiGetTools:
             doc_id="doc-1",
             path="notes/知识.md",
             content="你好\nsecond line",
+            content_hash="stored-checksum",
             line_start=2,
             line_end=3,
         )
@@ -338,6 +364,7 @@ class TestGetAndMultiGetTools:
         assert payload == result.structured_content
         assert payload["document"]["path"] == "notes/知识.md"
         assert payload["document"]["line_start"] == 2
+        assert payload["document"]["content_hash"] == "stored-checksum"
         backend.get_document.assert_awaited_once_with("doc-1", 2, 4)
 
     @pytest.mark.asyncio

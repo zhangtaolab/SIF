@@ -20,24 +20,42 @@ from pydantic import BaseModel, Field
 
 
 class SearchResult(BaseModel):
-    """Search result item."""
+    """Search result item.
+
+    Citation fields (Phase 22 D-11) are additive: ``snippet`` is the smart
+    snippet bytes, ``content_hash`` is the stored ``documents.checksum``, and
+    ``line_start``/``line_end`` are the inclusive 1-based window the snippet
+    rendered. They stay ``None`` where the producing route has no snippet
+    window (the direct ``lex:``/BM25 route and ``lex_search``).
+    """
 
     doc_id: str
     path: str
     title: str | None = None
     content: str | None = None
+    snippet: str | None = None
+    content_hash: str | None = None
+    line_start: int | None = None
+    line_end: int | None = None
     score: float
     highlights: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class Document(BaseModel):
-    """Document model."""
+    """Document model.
+
+    ``content_hash`` (Phase 22 D-11) is the stored ``documents.checksum`` so a
+    citation can detect drift; ``line_start``/``line_end`` are always
+    populated by ``get``/``multi_get`` (full document = 1..N, ranged request =
+    the requested inclusive range).
+    """
 
     doc_id: str
     path: str
     title: str | None = None
     content: str
+    content_hash: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     line_start: int | None = None
     line_end: int | None = None

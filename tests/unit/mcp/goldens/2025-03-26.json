@@ -190,7 +190,7 @@
                 "outputSchema": {
                   "$defs": {
                     "SearchResult": {
-                      "description": "Search result item.",
+                      "description": "Search result item.\n\nCitation fields (Phase 22 D-11) are additive: ``snippet`` is the smart\nsnippet bytes, ``content_hash`` is the stored ``documents.checksum``, and\n``line_start``/``line_end`` are the inclusive 1-based window the snippet\nrendered. They stay ``None`` where the producing route has no snippet\nwindow (the direct ``lex:``/BM25 route and ``lex_search``).",
                       "properties": {
                         "content": {
                           "anyOf": [
@@ -204,6 +204,18 @@
                           "default": null,
                           "title": "Content"
                         },
+                        "content_hash": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null,
+                          "title": "Content Hash"
+                        },
                         "doc_id": {
                           "title": "Doc Id",
                           "type": "string"
@@ -214,6 +226,30 @@
                           },
                           "title": "Highlights",
                           "type": "array"
+                        },
+                        "line_end": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null,
+                          "title": "Line End"
+                        },
+                        "line_start": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null,
+                          "title": "Line Start"
                         },
                         "metadata": {
                           "additionalProperties": true,
@@ -227,6 +263,18 @@
                         "score": {
                           "title": "Score",
                           "type": "number"
+                        },
+                        "snippet": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null,
+                          "title": "Snippet"
                         },
                         "title": {
                           "anyOf": [
@@ -320,7 +368,7 @@
                 "outputSchema": {
                   "$defs": {
                     "Document": {
-                      "description": "Document model.",
+                      "description": "Document model.\n\n``content_hash`` (Phase 22 D-11) is the stored ``documents.checksum`` so a\ncitation can detect drift; ``line_start``/``line_end`` are always\npopulated by ``get``/``multi_get`` (full document = 1..N, ranged request =\nthe requested inclusive range).",
                       "properties": {
                         "collection_id": {
                           "anyOf": [
@@ -337,6 +385,18 @@
                         "content": {
                           "title": "Content",
                           "type": "string"
+                        },
+                        "content_hash": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null,
+                          "title": "Content Hash"
                         },
                         "doc_id": {
                           "title": "Doc Id",
@@ -451,7 +511,7 @@
                 "outputSchema": {
                   "$defs": {
                     "Document": {
-                      "description": "Document model.",
+                      "description": "Document model.\n\n``content_hash`` (Phase 22 D-11) is the stored ``documents.checksum`` so a\ncitation can detect drift; ``line_start``/``line_end`` are always\npopulated by ``get``/``multi_get`` (full document = 1..N, ranged request =\nthe requested inclusive range).",
                       "properties": {
                         "collection_id": {
                           "anyOf": [
@@ -468,6 +528,18 @@
                         "content": {
                           "title": "Content",
                           "type": "string"
+                        },
+                        "content_hash": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null,
+                          "title": "Content Hash"
                         },
                         "doc_id": {
                           "title": "Doc Id",
@@ -971,7 +1043,7 @@
                 "outputSchema": {
                   "$defs": {
                     "SearchResult": {
-                      "description": "Search result item.",
+                      "description": "Search result item.\n\nCitation fields (Phase 22 D-11) are additive: ``snippet`` is the smart\nsnippet bytes, ``content_hash`` is the stored ``documents.checksum``, and\n``line_start``/``line_end`` are the inclusive 1-based window the snippet\nrendered. They stay ``None`` where the producing route has no snippet\nwindow (the direct ``lex:``/BM25 route and ``lex_search``).",
                       "properties": {
                         "content": {
                           "anyOf": [
@@ -985,6 +1057,18 @@
                           "default": null,
                           "title": "Content"
                         },
+                        "content_hash": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null,
+                          "title": "Content Hash"
+                        },
                         "doc_id": {
                           "title": "Doc Id",
                           "type": "string"
@@ -995,6 +1079,30 @@
                           },
                           "title": "Highlights",
                           "type": "array"
+                        },
+                        "line_end": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null,
+                          "title": "Line End"
+                        },
+                        "line_start": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null,
+                          "title": "Line Start"
                         },
                         "metadata": {
                           "additionalProperties": true,
@@ -1008,6 +1116,18 @@
                         "score": {
                           "title": "Score",
                           "type": "number"
+                        },
+                        "snippet": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null,
+                          "title": "Snippet"
                         },
                         "title": {
                           "anyOf": [
@@ -1119,7 +1239,7 @@
                 "outputSchema": {
                   "$defs": {
                     "SearchResult": {
-                      "description": "Search result item.",
+                      "description": "Search result item.\n\nCitation fields (Phase 22 D-11) are additive: ``snippet`` is the smart\nsnippet bytes, ``content_hash`` is the stored ``documents.checksum``, and\n``line_start``/``line_end`` are the inclusive 1-based window the snippet\nrendered. They stay ``None`` where the producing route has no snippet\nwindow (the direct ``lex:``/BM25 route and ``lex_search``).",
                       "properties": {
                         "content": {
                           "anyOf": [
@@ -1133,6 +1253,18 @@
                           "default": null,
                           "title": "Content"
                         },
+                        "content_hash": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null,
+                          "title": "Content Hash"
+                        },
                         "doc_id": {
                           "title": "Doc Id",
                           "type": "string"
@@ -1143,6 +1275,30 @@
                           },
                           "title": "Highlights",
                           "type": "array"
+                        },
+                        "line_end": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null,
+                          "title": "Line End"
+                        },
+                        "line_start": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null,
+                          "title": "Line Start"
                         },
                         "metadata": {
                           "additionalProperties": true,
@@ -1156,6 +1312,18 @@
                         "score": {
                           "title": "Score",
                           "type": "number"
+                        },
+                        "snippet": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null,
+                          "title": "Snippet"
                         },
                         "title": {
                           "anyOf": [

@@ -148,19 +148,31 @@ def _resolve_collection_ids(conn: Any, names: list[str] | None) -> list[str] | N
     return [c.id for c in (repo.get_by_name(name) for name in names) if c]
 
 
-def _map_core_results(core_results: list[Any]) -> list[SearchResult]:
+def _map_core_results(
+    core_results: list[Any],
+    checksums: dict[str, str | None] | None = None,
+) -> list[SearchResult]:
     """Re-map core search rows onto the MCP result model, field by field.
 
     ``vectors_stale`` rides the metadata dict (D-11 / RESEARCH B5) and the
     chunk identity fields are explicitly copied (CORR-02/D-02/D-03): this
     boundary re-maps one by one, so an unlisted field is silently dropped.
+    Phase 22 D-11 citation fields come from the same mapping pass: the
+    snippet and its inclusive line window ride the core result, while
+    ``content_hash`` comes from the page's one batched checksum lookup
+    (``checksums``). Absent fields stay ``None``.
     """
+    page_checksums = checksums or {}
     return [
         SearchResult(
             doc_id=r.document_id,
             path=r.path,
             title=r.title,
             content=r.content,
+            snippet=r.snippet,
+            content_hash=page_checksums.get(r.document_id),
+            line_start=r.line_start,
+            line_end=r.line_end,
             score=r.score,
             highlights=r.highlights,
             metadata={
@@ -174,6 +186,25 @@ def _map_core_results(core_results: list[Any]) -> list[SearchResult]:
         )
         for r in core_results
     ]
+
+
+def _page_checksums(conn: Any, core_results: list[Any]) -> dict[str, str | None]:
+    """Fetch a result page's stored checksums in one batched repository call."""
+    if not core_results:
+        return {}
+    return DocumentRepository(conn).get_checksums([r.document_id for r in core_results])
+
+
+def _full_line_range(content: str) -> tuple[int, int]:
+    r"""Return the inclusive 1-based range of a full document (1..N).
+
+    Lines are ``\\n`` splits (D-11); a trailing newline does not create an
+    extra document line, and empty content still reports the single line 1.
+    """
+    line_count = len(content.split("\n"))
+    if content.endswith("\n"):
+        line_count -= 1
+    return 1, max(1, line_count)
 
 
 class SearchBackend:
@@ -431,14 +462,22 @@ class SearchBackend:
                 # prefix is stripped so FTS sees the intended terms.
                 core_results = BM25Searcher(conn).search(parsed_query, options)
                 core_results = enrich_results(conn, core_results)
-                return _with_suggestions(conn, parsed_query, _map_core_results(core_results))
+                return _with_suggestions(
+                    conn,
+                    parsed_query,
+                    _map_core_results(core_results, _page_checksums(conn, core_results)),
+                )
 
             if self._ensure_embedder() is None:
                 # D-15: latched load failure -> BM25 degrade over the
                 # prefix-free text, with the loader's single warning.
                 core_results = BM25Searcher(conn).search(parsed_query, options)
                 core_results = enrich_results(conn, core_results)
-                return _with_suggestions(conn, parsed_query, _map_core_results(core_results))
+                return _with_suggestions(
+                    conn,
+                    parsed_query,
+                    _map_core_results(core_results, _page_checksums(conn, core_results)),
+                )
 
             try:
                 # EMB-01: the closure is built only from the full identity a
@@ -479,7 +518,7 @@ class SearchBackend:
                     core_results = self._build_pipeline(conn, identity_check, None).search(
                         query, options
                     )
-            mapped = _map_core_results(core_results)
+            mapped = _map_core_results(core_results, _page_checksums(conn, core_results))
             # Same boundary rule for D-05: suggestions are attached explicitly
             # on the zero-result path; MCP queries never write query_log (D-08).
             return _with_suggestions(conn, query, mapped)
@@ -542,7 +581,11 @@ class SearchBackend:
             # CORR-05: the direct exit owns exactly one enrichment; no
             # pipeline is involved on this path.
             results = enrich_results(conn, results)
-            return _with_suggestions(conn, query, _map_core_results(results))
+            return _with_suggestions(
+                conn,
+                query,
+                _map_core_results(results, _page_checksums(conn, results)),
+            )
 
         return await self._run_in_db(_search)
 
@@ -603,7 +646,11 @@ class SearchBackend:
                 results = enrich_results(conn, results, vectors_untrusted=True)
             else:
                 results = enrich_results(conn, results)
-            return _with_suggestions(conn, query, _map_core_results(results))
+            return _with_suggestions(
+                conn,
+                query,
+                _map_core_results(results, _page_checksums(conn, results)),
+            )
 
         return await self._run_in_db(_search)
 
@@ -676,8 +723,10 @@ class SearchBackend:
             if not doc:
                 return None
             content = doc.content  # Do NOT truncate yet
-            line_start: int | None = None
-            line_end: int | None = None
+            # D-11: line ranges are always populated. A full read is 1..N
+            # (\n-split lines; a trailing newline is not an extra line); a
+            # ranged read reports the requested inclusive range.
+            line_start, line_end = _full_line_range(content)
             if from_line is not None or max_lines is not None:
                 lines = content.split("\n")
                 start = max(0, (from_line or 1) - 1)
@@ -693,6 +742,7 @@ class SearchBackend:
                 path=doc.path,
                 title=doc.title,
                 content=content,
+                content_hash=repo.get_checksum(doc.id),
                 metadata=doc.metadata,
                 line_start=line_start,
                 line_end=line_end,
@@ -718,6 +768,7 @@ class SearchBackend:
             # Canonicalized pattern: symlinked directory prefixes match the
             # resolved stored paths (non-existent wildcard tails are preserved).
             normalized_pattern = normalize_path(pattern)
+            matched: list[tuple[Any, str]] = []
             for coll in coll_repo.list_all():
                 for doc in doc_repo.list_by_collection(coll.id):
                     if (
@@ -731,16 +782,25 @@ class SearchBackend:
                             errors.append(f"Max bytes limit reached, skipping {doc.path}")
                             continue
                         total_bytes += content_bytes
-                        documents.append(
-                            Document(
-                                doc_id=doc.id,
-                                path=doc.path,
-                                title=doc.title,
-                                content=_truncate_content(content),
-                                metadata=doc.metadata,
-                                collection_id=doc.collection_id,
-                            ),
-                        )
+                        matched.append((doc, content))
+            # D-11: one batched checksum lookup for the returned page, and a
+            # full 1..N line range per document.
+            checksums = doc_repo.get_checksums([doc.id for doc, _ in matched])
+            for doc, content in matched:
+                line_start, line_end = _full_line_range(content)
+                documents.append(
+                    Document(
+                        doc_id=doc.id,
+                        path=doc.path,
+                        title=doc.title,
+                        content=_truncate_content(content),
+                        content_hash=checksums.get(doc.id),
+                        metadata=doc.metadata,
+                        line_start=line_start,
+                        line_end=line_end,
+                        collection_id=doc.collection_id,
+                    ),
+                )
             return documents, errors
 
         return await self._run_in_db(_get_pattern)

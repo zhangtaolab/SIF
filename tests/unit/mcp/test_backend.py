@@ -100,6 +100,9 @@ async def test_hybrid_search_mocks(backend):
     mock_result.chunk_id = "chunk-1"
     mock_result.sequence = 2
     mock_result.chunk_matches = 3
+    mock_result.snippet = "snippet text"
+    mock_result.line_start = 3
+    mock_result.line_end = 4
 
     with patch("sif.mcp.backend.SearchPipeline") as mock_pipeline:
         mock_pipeline.return_value.search.return_value = [mock_result]
@@ -108,6 +111,10 @@ async def test_hybrid_search_mocks(backend):
     assert len(results) == 1
     assert isinstance(results[0], SearchResult)
     assert results[0].doc_id == "doc1"
+    # D-11: the citation fields cross the explicit boundary map too.
+    assert results[0].snippet == "snippet text"
+    assert results[0].line_start == 3
+    assert results[0].line_end == 4
     # D-11 / RESEARCH B5: the backend re-maps core fields explicitly, so an
     # unknown field is DROPPED at this boundary unless forwarded — the flag
     # must ride the metadata dict with the core result's value.
@@ -133,11 +140,15 @@ async def test_get_document_found(backend):
 
     with patch("sif.mcp.backend.DocumentRepository") as mock_repo:
         mock_repo.return_value.get_by_id.return_value = mock_doc
+        mock_repo.return_value.get_checksum.return_value = "stored-hash-doc1"
         result = await backend.get_document("doc1")
 
     assert isinstance(result, Document)
     assert result.doc_id == "doc1"
     assert result.content == "Hello\nWorld"
+    assert result.content_hash == "stored-hash-doc1"
+    # D-11: a full read is always 1..N.
+    assert (result.line_start, result.line_end) == (1, 2)
 
 
 @pytest.mark.asyncio
@@ -153,10 +164,12 @@ async def test_get_document_with_line_slicing(backend):
 
     with patch("sif.mcp.backend.DocumentRepository") as mock_repo:
         mock_repo.return_value.get_by_id.return_value = mock_doc
+        mock_repo.return_value.get_checksum.return_value = "stored-hash-doc1"
         result = await backend.get_document("doc1", from_line=2, max_lines=2)
 
-    assert result.line_start == 2
+    assert (result.line_start, result.line_end) == (2, 3)
     assert result.content == "line2\nline3"
+    assert result.content_hash == "stored-hash-doc1"
 
 
 @pytest.mark.asyncio
@@ -172,6 +185,7 @@ async def test_get_document_max_lines_only(backend):
 
     with patch("sif.mcp.backend.DocumentRepository") as mock_repo:
         mock_repo.return_value.get_by_id.return_value = mock_doc
+        mock_repo.return_value.get_checksum.return_value = "stored-hash-doc1"
         result = await backend.get_document("doc1", max_lines=2)
 
     assert result.content == "line1\nline2"
@@ -192,6 +206,7 @@ async def test_get_document_from_line_only(backend):
 
     with patch("sif.mcp.backend.DocumentRepository") as mock_repo:
         mock_repo.return_value.get_by_id.return_value = mock_doc
+        mock_repo.return_value.get_checksum.return_value = "stored-hash-doc1"
         result = await backend.get_document("doc1", from_line=3)
 
     assert result.content == "line3\nline4"
@@ -212,11 +227,13 @@ async def test_get_document_no_line_params(backend):
 
     with patch("sif.mcp.backend.DocumentRepository") as mock_repo:
         mock_repo.return_value.get_by_id.return_value = mock_doc
+        mock_repo.return_value.get_checksum.return_value = "stored-hash-doc1"
         result = await backend.get_document("doc1")
 
     assert result.content == "line1\nline2\nline3\nline4"
-    assert result.line_start is None
-    assert result.line_end is None
+    # D-11: a full read always reports 1..N.
+    assert (result.line_start, result.line_end) == (1, 4)
+    assert result.content_hash == "stored-hash-doc1"
 
 
 @pytest.mark.asyncio
@@ -252,10 +269,13 @@ async def test_get_documents_by_pattern(backend):
     ):
         mock_coll_repo.return_value.list_all.return_value = [MagicMock(id="coll1")]
         mock_doc_repo.return_value.list_by_collection.return_value = [mock_doc]
+        mock_doc_repo.return_value.get_checksums.return_value = {"doc1": "stored-hash-doc1"}
         docs, errors = await backend.get_documents_by_pattern("*.md")
 
     assert len(docs) == 1
     assert docs[0].path == "/notes/test.md"
+    assert docs[0].content_hash == "stored-hash-doc1"
+    assert (docs[0].line_start, docs[0].line_end) == (1, 1)
     assert errors == []
 
 
@@ -277,6 +297,7 @@ async def test_get_documents_by_pattern_max_bytes(backend):
     ):
         mock_coll_repo.return_value.list_all.return_value = [MagicMock(id="coll1")]
         mock_doc_repo.return_value.list_by_collection.return_value = [mock_doc]
+        mock_doc_repo.return_value.get_checksums.return_value = {}
         docs, errors = await backend.get_documents_by_pattern("*.md", max_bytes=100)
 
     assert len(docs) == 0
@@ -308,6 +329,7 @@ async def test_get_document_alias_path_normalized(backend, tmp_path: Path):
     ):
         mock_repo.return_value.get_by_id.return_value = None
         mock_repo.return_value.get_by_path.return_value = mock_doc
+        mock_repo.return_value.get_checksum.return_value = "stored-hash-doc1"
         mock_coll_repo.return_value.list_all.return_value = [MagicMock(id="coll1")]
         result = await backend.get_document(alias_arg)
 
@@ -342,6 +364,7 @@ async def test_get_documents_by_pattern_alias_prefix(backend, tmp_path: Path):
     ):
         mock_coll_repo.return_value.list_all.return_value = [MagicMock(id="coll1")]
         mock_doc_repo.return_value.list_by_collection.return_value = [mock_doc]
+        mock_doc_repo.return_value.get_checksums.return_value = {"doc1": "stored-hash-doc1"}
         docs, errors = await backend.get_documents_by_pattern(str(alias_dir / "*.md"))
 
     assert len(docs) == 1
@@ -406,6 +429,11 @@ def _weight_result() -> MagicMock:
     mock_result.chunk_id = None
     mock_result.sequence = None
     mock_result.chunk_matches = 0
+    # D-11 citation fields: explicit values keep the boundary deterministic
+    # instead of letting MagicMock auto-create attributes.
+    mock_result.snippet = "a snippet"
+    mock_result.line_start = 1
+    mock_result.line_end = 1
     return mock_result
 
 
@@ -1949,23 +1977,24 @@ class TestQueryPipelineParity:
 
     @pytest.mark.asyncio
     async def test_query_path_invokes_the_smart_snippet_extractor(self, tmp_path: Path) -> None:
-        """D-17: the CLI snippet extractor runs on query results.
+        """D-17/D-11: the CLI snippet extractor runs and its range crosses the map.
 
-        The MCP ``SearchResult`` model gains the citation ``snippet`` field in
-        22-05; this plan proves the pipeline-stage extractor is wired and
-        invoked (the boundary drops unlisted fields by design).
+        The pipeline stage now calls ``extract_with_range``; the explicit MCP
+        boundary re-map carries the snippet and its inclusive line window.
         """
         pytest.importorskip("sqlite_vec")
         db_path, settings = _seed_suggestion_db(tmp_path)
         backend = _suggestion_backend(db_path, settings)
         extractor = MagicMock()
-        extractor.extract.return_value = "snip"
+        extractor.extract_with_range.return_value = ("snip", 2, 3)
         backend._snippet_extractor = extractor
 
         results = await backend.hybrid_search("quantum")
 
         assert results
-        assert extractor.extract.called
+        assert extractor.extract_with_range.called
+        assert results[0].snippet == "snip"
+        assert (results[0].line_start, results[0].line_end) == (2, 3)
 
 
 class TestRerankOption:
