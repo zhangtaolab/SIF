@@ -906,7 +906,5 @@ class TestQueryRerankOption:
         schema = tools["query"].input_schema
         rerank = schema["properties"]["rerank"]
 
-        assert any(
-            option.get("type") == "boolean" for option in rerank.get("anyOf", [rerank])
-        )
+        assert any(option.get("type") == "boolean" for option in rerank.get("anyOf", [rerank]))
         assert "rerank" not in schema.get("required", [])

@@ -44,7 +44,7 @@ def _seed_loaded_embedder(backend: SearchBackend, dimension: int = 8) -> None:
     backend._identity = _identity("loaded", dimension=dimension)
     backend._dimension = dimension
     backend._load_attempted = True
-    from sif.search.expansion import QueryExpansion  # noqa: PLC0415
+    from sif.search.expansion import QueryExpansion
 
     backend._query_expander = QueryExpansion(embedding_manager=manager)
 
@@ -1914,9 +1914,7 @@ class TestVecSearchDirectPath:
 # =============================================================================
 
 
-def _rerank_backend(
-    tmp_path: Path, *, enabled: bool
-) -> SearchBackend:
+def _rerank_backend(tmp_path: Path, *, enabled: bool) -> SearchBackend:
     """Seeded backend whose settings carry the requested rerank default."""
     db_path, settings = _seed_suggestion_db(tmp_path)
     settings = settings.model_copy(update={"rerank_enabled": enabled})
@@ -2042,9 +2040,7 @@ class TestRerankOption:
         assert pipeline_cls.call_count == 2
         assert pipeline_cls.call_args.kwargs["reranker"] is None
         warnings = [
-            record
-            for record in caplog.records
-            if "Reranking failed" in record.getMessage()
+            record for record in caplog.records if "Reranking failed" in record.getMessage()
         ]
         assert len(warnings) == 1
 
@@ -2075,16 +2071,14 @@ class TestRerankOption:
         assert [result.doc_id for result in second] == ["doc1"]
         assert pipeline_cls.call_args.kwargs["reranker"] is None
         assert create.call_count == 1
-        warnings = [
-            record
-            for record in caplog.records
-            if expected_text in record.getMessage()
-        ]
+        warnings = [record for record in caplog.records if expected_text in record.getMessage()]
         assert len(warnings) == 1
         # The remedy names the install/model correction for the operator.
         message = warnings[0].getMessage()
-        assert "docsif[embed]" in message if expected_text.startswith("Reranker") else (
-            "SIF_RERANKER_MODEL_TYPE" in message
+        assert (
+            "docsif[embed]" in message
+            if expected_text.startswith("Reranker")
+            else ("SIF_RERANKER_MODEL_TYPE" in message)
         )
 
     @pytest.mark.asyncio

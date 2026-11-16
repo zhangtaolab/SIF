@@ -182,9 +182,7 @@ class TestOneAttempt:
     """D-15: one load, reused; concurrency shares the single attempt."""
 
     @pytest.mark.asyncio
-    async def test_first_query_and_vec_search_load_once_and_reuse(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_first_query_and_vec_search_load_once_and_reuse(self, tmp_path: Path) -> None:
         db_path, settings = _seed_db(tmp_path)
         backend = SearchBackend(str(db_path), settings=settings)
         manager = _StubManager()
@@ -209,9 +207,7 @@ class TestOneAttempt:
         assert backend._identity == manager.get_identity()
         assert backend._dimension == 8
 
-    def test_concurrent_first_requests_perform_exactly_one_load(
-        self, tmp_path: Path
-    ) -> None:
+    def test_concurrent_first_requests_perform_exactly_one_load(self, tmp_path: Path) -> None:
         db_path, settings = _seed_db(tmp_path)
         backend = SearchBackend(str(db_path), settings=settings)
         manager = _StubManager(load_hook=lambda: time.sleep(0.05))
@@ -299,9 +295,7 @@ class TestLoadedDimension:
         manager = _StubManager(identity=_identity(32), dimension=32)
 
         with (
-            patch(
-                "sif.mcp.backend.EmbeddingManager.from_settings", return_value=manager
-            ),
+            patch("sif.mcp.backend.EmbeddingManager.from_settings", return_value=manager),
             patch("sif.mcp.backend.SearchPipeline") as pipeline_cls,
         ):
             pipeline_cls.return_value.search.return_value = []

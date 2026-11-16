@@ -431,18 +431,14 @@ class SearchBackend:
                 # prefix is stripped so FTS sees the intended terms.
                 core_results = BM25Searcher(conn).search(parsed_query, options)
                 core_results = enrich_results(conn, core_results)
-                return _with_suggestions(
-                    conn, parsed_query, _map_core_results(core_results)
-                )
+                return _with_suggestions(conn, parsed_query, _map_core_results(core_results))
 
             if self._ensure_embedder() is None:
                 # D-15: latched load failure -> BM25 degrade over the
                 # prefix-free text, with the loader's single warning.
                 core_results = BM25Searcher(conn).search(parsed_query, options)
                 core_results = enrich_results(conn, core_results)
-                return _with_suggestions(
-                    conn, parsed_query, _map_core_results(core_results)
-                )
+                return _with_suggestions(conn, parsed_query, _map_core_results(core_results))
 
             try:
                 # EMB-01: the closure is built only from the full identity a

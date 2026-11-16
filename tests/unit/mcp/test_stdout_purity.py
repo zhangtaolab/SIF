@@ -37,22 +37,34 @@ _SHUTDOWN_DEADLINE_S = 60.0
 _POLL_S = 0.1
 
 
-def _child_env(home: Path, db_path: Path) -> dict[str, str]:
+def _child_env(
+    home: Path, db_path: Path, overrides: dict[str, str] | None = None
+) -> dict[str, str]:
     """Child environment: stripped SIF_, temp HOME, color disabled."""
     env = {key: value for key, value in os.environ.items() if not key.startswith("SIF_")}
     env.pop("FORCE_COLOR", None)
     env["NO_COLOR"] = "1"
     env["HOME"] = str(home)
     env["SIF_DB_PATH"] = str(db_path)
+    env.update(overrides or {})
     return env
 
 
 class _StdioProcess:
     """Interactive line-protocol client over a real stdio subprocess."""
 
-    def __init__(self, home: Path, db_path: Path) -> None:
-        self._proc = subprocess.Popen(
-            [
+    def __init__(
+        self,
+        home: Path,
+        db_path: Path,
+        *,
+        command: list[str] | None = None,
+        env_overrides: dict[str, str] | None = None,
+    ) -> None:
+        argv = (
+            command
+            if command is not None
+            else [
                 sys.executable,
                 "-u",
                 "-m",
@@ -61,9 +73,12 @@ class _StdioProcess:
                 str(db_path),
                 "mcp",
                 "stdio",
-            ],
+            ]
+        )
+        self._proc = subprocess.Popen(
+            argv,
             cwd=_REPO_ROOT,
-            env=_child_env(home, db_path),
+            env=_child_env(home, db_path, env_overrides),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -193,3 +208,87 @@ def test_cold_stdio_stdout_emits_only_json_rpc_frames(tmp_path: Path) -> None:
     result_payload = status["result"]
     assert result_payload["isError"] is False
     assert json.loads(result_payload["content"][0]["text"]) == result_payload["structuredContent"]
+
+
+def _assert_only_json_rpc(server: _StdioProcess) -> list[dict[str, Any]]:
+    """Every stdout line must be one JSON-RPC object (no ANSI/noise)."""
+    assert server.stdout_lines, "the server must answer the handshake"
+    frames: list[dict[str, Any]] = []
+    for line in server.stdout_lines:
+        assert _ANSI_ESCAPE.search(line) is None, f"ANSI escape on stdout: {line!r}"
+        try:
+            frame = json.loads(line)
+        except json.JSONDecodeError:
+            pytest.fail(f"non-JSON stdout line corrupts the protocol channel: {line!r}")
+        assert isinstance(frame, dict), f"non-object JSON-RPC frame: {frame!r}"
+        assert frame.get("jsonrpc") == "2.0", f"non JSON-RPC frame: {frame!r}"
+        frames.append(frame)
+    return frames
+
+
+def test_cold_first_query_lazy_load_keeps_stdout_protocol_only(tmp_path: Path) -> None:
+    """D-16/T-22-20: a noisy first-query model load never reaches stdout.
+
+    The fixture server's stub loader deliberately prints a progress-bar line
+    to stdout during the lazy load. The SDK stdio transport must divert it to
+    stderr, and the first query must still return a real (non-error) page so
+    the test cannot pass by skipping the load.
+    """
+    home = tmp_path / "home"
+    legacy_models = home / ".local" / "share" / "docsift" / "models"
+    legacy_models.mkdir(parents=True)
+    (legacy_models / "fixture.txt").write_text("legacy model cache fixture", encoding="utf-8")
+    db_path = tmp_path / "cold-first-query.db"
+    command = [
+        sys.executable,
+        "-u",
+        "-m",
+        "tests.unit.mcp._stdio_fixture_server",
+        str(db_path),
+    ]
+    env_overrides = {
+        "SIF_EMBEDDING_DIM": "32",
+        "SIF_MODEL_NAME": "test",
+        "SIF_CACHE_EMBEDDINGS": "false",
+    }
+
+    with _StdioProcess(home, db_path, command=command, env_overrides=env_overrides) as server:
+        server.send(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": {"name": "sif-purity", "version": "1"},
+                },
+            }
+        )
+        initialize = server.wait_response(1, "initialize response")
+        assert initialize["result"]["protocolVersion"] == "2024-11-05"
+        server.send({"jsonrpc": "2.0", "method": "notifications/initialized"})
+        server.send(
+            {
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": {"name": "query", "arguments": {"query": "seed paragraph"}},
+            }
+        )
+        query = server.wait_response(3, "first query response")
+        returncode = server.finish()
+
+    assert returncode == 0, f"stdio server failed:\n{server.stderr_text[-4000:]}"
+    # The legacy-cache migration notice stays on stderr.
+    assert "Migrated" in server.stderr_text
+    # The noisy load actually ran and was diverted to stderr.
+    assert "Loading model" in server.stderr_text
+    assert not any("Loading model" in line for line in server.stdout_lines)
+
+    _assert_only_json_rpc(server)
+    payload = query["result"]
+    assert payload["isError"] is False
+    structured = payload["structuredContent"]
+    assert structured["results"], "the first query must return a real page"
+    assert json.loads(payload["content"][0]["text"]) == structured
