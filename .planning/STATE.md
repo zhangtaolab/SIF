@@ -4,18 +4,18 @@ milestone: v1.2
 milestone_name: Search Precision and Agent Experience
 current_phase: 23
 current_phase_name: Harrier Gated Evaluation
-current_plan: 4
+current_plan: 5
 status: executing
-stopped_at: Completed 23-03-PLAN.md
-last_updated: "2026-11-16T12:30:11.772Z"
+stopped_at: Completed 23-04-PLAN.md
+last_updated: "2026-11-16T14:20:15.342Z"
 last_activity: 2026-11-16
 last_activity_desc: Phase 22 complete, transitioned to Phase 23
-state_head: c1b78929c058580493bdc93b4ac4576599e9df03
+state_head: "0b9c143e414892e6537d1896b0cecc412c8a0349"
 progress:
   total_phases: 8
   completed_phases: 6
   total_plans: 48
-  completed_plans: 45
+  completed_plans: 46
 ---
 
 # DocSift — Project State
@@ -32,7 +32,7 @@ progress:
 ## Current Position
 
 Phase: 23 (Harrier Gated Evaluation) — IN PROGRESS
-Current Plan: 4
+Current Plan: 5
 Total Plans in Phase: 6
 Status: Ready to execute
 Last activity: 2026-11-16 — 23-01 complete (2 tasks, 2 commits); next: 23-02
@@ -96,6 +96,7 @@ Progress: [████████░░] 75%
 | Phase 23 P01 | 8min | 2 tasks | 6 files |
 | Phase 23 P2 | 6min | 2 tasks | 2 files |
 | Phase 23 P03 | 13min | 3 tasks | 4 files |
+| Phase 23 P04 | 5min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -284,6 +285,11 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - [Phase 23]: 23-03: Per-arm env removes API base/key and prompt keys entirely so Qwen3 keeps the exact modelscope cache id and Harrier gets web_search_query from the known-model table
 - [Phase 23]: 23-03: Run state is keyed to the resolved corpus roots plus label; a changed --corpus set discards every marker, and an inadequate adequacy verdict is recorded but never marked complete
 - [Phase 23]: 23-03: The pairwise identity gate runs after arm B's probe (both stored identities exist); the artifact maps the comparison payload's gate leaf to the documented overall leaf
+- [Phase 23]: 23-04: Real two-arm EN+ZH run recorded keep-qwen3 — overall held-out mean delta +0.009430 at N=56 (CI includes zero, below the 0.01 epsilon and 0.017857 1/N floor); the Qwen3-Embedding-0.6B default did not move
+- [Phase 23]: 23-04: Corpus adequacy was gated before the embed — adequate=true with held-out en=42, zh=11, mixed=3; both required languages cleared N>=10
+- [Phase 23]: 23-04: Both arm identities are source: verified at 1024 dimensions with distinct fingerprints, so the arms could not share an embedding cache bucket
+- [Phase 23]: 23-04: The docs section records the full held-out/per-language/per-leg/per-leg-language gates, suppressed group names, per-arm costs, and replay unavailability; the committed artifact remains aggregate-only
+- [Phase 23]: 23-04: The conditional default flip and explicit-Qwen3 zero-delta proof were not exercised by keep-qwen3 and remain pending for plans 23-05/23-06
 
 ### Pending Todos
 
@@ -316,8 +322,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-16T12:30:10.747Z
-Stopped at: Completed 23-03-PLAN.md
+Last session: 2026-11-16T14:20:14.390Z
+Stopped at: Completed 23-04-PLAN.md
 Resume file: None
 
 - **Next expected action:** finish 22-07 Task 3 (Registry docs, phase gate, real `claude mcp` stdio smoke, `22-07-SUMMARY.md`), then Phase 22 verification (gsd-verifier, code review, regression gate) and ROADMAP/STATE completion; then Phase 23 → 24. 22-07 Task 2 was recorded `blocked no-github-login` (optional public Registry listing deferred). Two audits remain recorded as debt (see Blockers/Concerns): `/gsd-secure-phase 20` and `/gsd:validate-phase 20`.
