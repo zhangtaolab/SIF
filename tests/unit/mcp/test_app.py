@@ -102,16 +102,24 @@ def test_build_transport_security_is_explicit_and_loopback_only() -> None:
     assert "*" not in security.allowed_origins
 
 
-def test_build_transport_security_honors_explicit_allowlists() -> None:
-    """Explicit host/origin sequences replace the defaults (empty included)."""
+def test_build_transport_security_unions_explicit_hosts_with_loopback_defaults() -> None:
+    """D-13: explicit hosts EXTEND the loopback defaults, never replace them."""
     security = build_transport_security(
         allowed_hosts=["sif.local"],
         allowed_origins=["https://sif.local"],
     )
 
-    assert security.allowed_hosts == ["sif.local"]
+    assert security.allowed_hosts == [*DEFAULT_ALLOWED_HOSTS, "sif.local"]
     assert security.allowed_origins == ["https://sif.local"]
     assert build_transport_security(allowed_origins=[]).allowed_origins == []
+
+
+def test_build_transport_security_never_honors_a_wildcard_host() -> None:
+    """A literal ``*`` is dropped, not widened into an open allowlist."""
+    security = build_transport_security(allowed_hosts=["*", "sif.local"])
+
+    assert security.allowed_hosts == [*DEFAULT_ALLOWED_HOSTS, "sif.local"]
+    assert "*" not in security.allowed_hosts
 
 
 def test_http_health_and_mcp_mount_serve_without_a_redirect(tmp_path: Path) -> None:

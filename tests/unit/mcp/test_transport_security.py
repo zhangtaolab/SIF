@@ -12,12 +12,14 @@ production allowlist.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
-from sif.mcp.app import create_http_app
+from sif.mcp.app import build_transport_security, create_http_app
 
 
 _INITIALIZE = {
@@ -109,3 +111,53 @@ def test_non_json_content_type_is_rejected_with_400(client: TestClient) -> None:
 
     assert response.status_code == 400
     assert response.text == "Invalid Content-Type header"
+
+
+def test_explicitly_allowed_host_is_accepted(tmp_path: Path) -> None:
+    """D-13: ``allowed_hosts`` extends the SDK allowlist for a named bind."""
+    app = create_http_app(str(tmp_path / "explicit.db"), allowed_hosts=["sif.local"])
+
+    with TestClient(app, base_url="http://sif.local") as client:
+        response = client.post("/mcp", json=_INITIALIZE)
+
+    assert response.status_code == 200
+
+
+def test_health_rejects_a_spoofed_host_with_421(client: TestClient) -> None:
+    """C2: ``/health`` is outside the SDK mount, so it carries its own guard."""
+    response = client.get("/health", headers={"host": "evil.example"})
+
+    assert response.status_code == 421
+
+
+def test_health_allows_an_allowed_loopback_host(client: TestClient) -> None:
+    """The guard shares the allowlist: loopback Hosts still get 200."""
+    response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
+def test_non_loopback_bind_warns_and_keeps_loopback_only_defaults(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """D-13: a non-loopback bind never widens silently — warn, keep defaults."""
+    from sif.mcp import app as app_module
+
+    captured: dict[str, Any] = {}
+
+    def fake_create_http_app(*_args: Any, **kwargs: Any) -> object:
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(app_module, "create_http_app", fake_create_http_app)
+    monkeypatch.setattr(app_module, "run_http_app", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(app_module, "set_quiet", lambda _quiet: None)
+
+    with caplog.at_level(logging.WARNING, logger="sif.mcp.app"):
+        app_module.run_http(str(tmp_path / "warn.db"), host="0.0.0.0", port=9000)
+
+    assert captured["allowed_hosts"] is None
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("not loopback" in message and "--allowed-hosts" in message for message in messages)
+    assert "*" not in build_transport_security().allowed_hosts

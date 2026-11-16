@@ -22,10 +22,10 @@ Ordering rules that are load-bearing (22-RESEARCH.md Pattern 1/Pattern 4):
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator, Callable, Sequence
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from mcp.server import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
@@ -77,23 +77,68 @@ _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 _TRANSPORT_SECURITY_ATTR = "sif_transport_security"
 
 
+def _merge_allowlist(defaults: Sequence[str], extra: Sequence[str] | None) -> list[str]:
+    """Loopback defaults first, then explicit values; a literal ``*`` never widens.
+
+    D-13: the loopback defaults are always present, so passing
+    ``--allowed-hosts`` can only add names — it can never replace the
+    loopback allowlist or turn the check off. A wildcard entry is dropped
+    rather than honored; there is no code path that produces ``["*"]``.
+    """
+    entries = [*defaults, *(extra or ())]
+    allowed: list[str] = []
+    for entry in entries:
+        if not entry or entry == "*":
+            continue
+        if entry not in allowed:
+            allowed.append(entry)
+    return allowed
+
+
 def build_transport_security(
     allowed_hosts: Sequence[str] | None = None,
     allowed_origins: Sequence[str] | None = None,
 ) -> TransportSecuritySettings:
     """Build explicit DNS-rebinding settings — never ``None``, never ``*``.
 
-    ``allowed_hosts=None`` falls back to the loopback defaults and
-    ``allowed_origins=None`` to the existing CORS origins. An explicit empty
-    sequence is honored (a fail-closed allowlist), not replaced by a default.
+    ``allowed_hosts`` values are UNIONED with the loopback defaults (D-13):
+    a caller can add a bind name but can never remove loopback or disable
+    the check. ``allowed_origins=None`` falls back to the existing CORS
+    origins; an explicit sequence replaces them (an empty sequence stays
+    fail-closed). A literal ``*`` in either list is dropped, never honored.
     """
-    hosts = list(allowed_hosts) if allowed_hosts is not None else list(DEFAULT_ALLOWED_HOSTS)
-    origins = list(allowed_origins) if allowed_origins is not None else list(DEFAULT_CORS_ORIGINS)
+    hosts = _merge_allowlist(DEFAULT_ALLOWED_HOSTS, allowed_hosts)
+    if allowed_origins is None:
+        origins = _merge_allowlist((), DEFAULT_CORS_ORIGINS)
+    else:
+        origins = _merge_allowlist((), allowed_origins)
     return TransportSecuritySettings(
         enable_dns_rebinding_protection=True,
         allowed_hosts=hosts,
         allowed_origins=origins,
     )
+
+
+def _host_is_allowed(host: str, allowed: Sequence[str]) -> bool:
+    """Exact host match, or a ``:*`` entry matching any port on that host."""
+    return any(
+        host == entry or (entry.endswith(":*") and host.startswith(entry[:-1])) for entry in allowed
+    )
+
+
+def _make_health_host_guard(allowed: Sequence[str]) -> Callable[[str | None], None]:
+    """Build the narrow parent-level ``/health`` Host dependency (C2).
+
+    ``/health`` sits outside the SDK mount, so the SDK's transport security
+    never sees it; this guard shares the same allowlist and answers a bad
+    ``Host`` with 421, matching the SDK's status. A missing Host fails closed.
+    """
+
+    def guard(host: str | None = Header(default=None)) -> None:
+        if host is None or not _host_is_allowed(host, allowed):
+            raise HTTPException(status_code=421, detail="Invalid Host header")
+
+    return guard
 
 
 def _resolve_transport_security(
@@ -191,7 +236,11 @@ def create_http_app(
         allow_headers=["*"],
     )
 
-    @app.get("/health")
+    # C2: /health is a parent route outside the SDK mount; it gets a narrow
+    # Host guard over the same allowlist (bad Host -> 421, like the SDK).
+    health_host_guard = _make_health_host_guard(security.allowed_hosts)
+
+    @app.get("/health", dependencies=[Depends(health_host_guard)])
     async def health() -> dict[str, str]:
         return {"status": "ok"}
 

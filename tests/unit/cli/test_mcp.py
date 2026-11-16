@@ -5,6 +5,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import click
+from click.testing import CliRunner
 
 from sif.cli.commands import mcp as mcp_mod
 from sif.config.settings import Settings
@@ -72,3 +73,65 @@ def test_mcp_group_leaves_explicit_subcommands_alone(monkeypatch) -> None:
         mcp_mod.mcp_group.callback()  # type: ignore[misc]
 
     assert invoked == []
+
+
+def test_http_allowed_hosts_are_repeatable_and_forwarded(monkeypatch, tmp_path) -> None:
+    """D-13: every ``--allowed-hosts`` value reaches ``run_http_server``."""
+    captured: dict[str, object] = {}
+
+    def fake_run_http_server(db_path: str, **kwargs: object) -> None:
+        captured["db_path"] = db_path
+        captured.update(kwargs)
+
+    monkeypatch.setattr("sif.mcp.cli.run_http_server", fake_run_http_server)
+
+    result = CliRunner().invoke(
+        mcp_mod.mcp_http_cmd,
+        [
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "8123",
+            "--allowed-hosts",
+            "sif.local",
+            "--allowed-hosts",
+            "sif.example",
+            "--cors-origins",
+            "https://sif.local",
+        ],
+        obj={"index_path": tmp_path / "index.db"},
+    )
+
+    assert result.exit_code == 0, result.output
+    assert captured["allowed_hosts"] == ["sif.local", "sif.example"]
+    assert captured["cors_origins"] == ["https://sif.local"]
+
+
+def test_http_without_allowed_hosts_forwards_none(monkeypatch, tmp_path) -> None:
+    """No flag keeps the loopback defaults (None, never an empty wildcard)."""
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(
+        "sif.mcp.cli.run_http_server",
+        lambda _db_path, **kwargs: captured.update(kwargs),
+    )
+
+    result = CliRunner().invoke(
+        mcp_mod.mcp_http_cmd,
+        ["--host", "127.0.0.1", "--port", "8123"],
+        obj={"index_path": tmp_path / "index.db"},
+    )
+
+    assert result.exit_code == 0, result.output
+    assert captured["allowed_hosts"] is None
+
+
+def test_daemon_help_lists_lifecycle_and_security_flags() -> None:
+    """The daemon surface exposes its real options from the start (D-13/D-19)."""
+    result = CliRunner().invoke(mcp_mod.mcp_daemon_cmd, ["--help"])
+
+    assert result.exit_code == 0
+    assert "--allowed-hosts" in result.output
+    assert "--cors-origins" in result.output
+    assert "--pid-file" in result.output
+    assert "--log-file" in result.output
+    assert "--stop" in result.output

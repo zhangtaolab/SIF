@@ -81,13 +81,20 @@ def mcp_stdio_cmd(ctx: click.Context) -> None:
     default=None,
     help="CORS allowed origins",
 )
+@click.option(
+    "--allowed-hosts",
+    multiple=True,
+    default=None,
+    help=("Additional allowed Host header values (repeatable); loopback hosts are always allowed"),
+)
 @click.pass_context
-def mcp_http_cmd(
+def mcp_http_cmd(  # noqa: PLR0913 — one parameter per `mcp http` CLI flag
     ctx: click.Context,
     host: str | None,
     port: int | None,
     reload: bool,  # noqa: ARG001
     cors_origins: tuple[str, ...] | None,
+    allowed_hosts: tuple[str, ...] | None,
 ) -> None:
     """Run MCP server in HTTP mode."""
     index_path = ctx.obj["index_path"]
@@ -100,7 +107,14 @@ def mcp_http_cmd(
         from sif.mcp.cli import run_http_server  # noqa: PLC0415
 
         origins = list(cors_origins) if cors_origins else None
-        run_http_server(str(index_path), host=host, port=port, cors_origins=origins)
+        hosts = list(allowed_hosts) if allowed_hosts else None
+        run_http_server(
+            str(index_path),
+            host=host,
+            port=port,
+            cors_origins=origins,
+            allowed_hosts=hosts,
+        )
     except ImportError as e:
         console.print(f"[red]HTTP server not available: {e}[/red]")
         raise click.ClickException("Install with: pip install docsif[http]") from None
@@ -116,6 +130,18 @@ def mcp_http_cmd(
 @click.option("--pid-file", help="PID file path")
 @click.option("--log-file", help="Log file path")
 @click.option("--stop", is_flag=True, help="Stop the daemon")
+@click.option(
+    "--allowed-hosts",
+    multiple=True,
+    default=None,
+    help=("Additional allowed Host header values (repeatable); loopback hosts are always allowed"),
+)
+@click.option(
+    "--cors-origins",
+    multiple=True,
+    default=None,
+    help="CORS allowed origins",
+)
 @click.pass_context
 def mcp_daemon_cmd(  # noqa: PLR0913
     ctx: click.Context,  # noqa: ARG001
@@ -124,6 +150,8 @@ def mcp_daemon_cmd(  # noqa: PLR0913
     pid_file: str | None,  # noqa: ARG001
     log_file: str | None,  # noqa: ARG001
     stop: bool,  # noqa: ARG001
+    allowed_hosts: tuple[str, ...] | None,  # noqa: ARG001
+    cors_origins: tuple[str, ...] | None,  # noqa: ARG001
 ) -> None:
     """Daemon mode is not implemented; use 'mcp http' instead."""
     raise click.ClickException("Daemon mode is not yet implemented. Use 'mcp http' instead.")
