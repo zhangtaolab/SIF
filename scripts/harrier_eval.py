@@ -1035,6 +1035,82 @@ def _arm_cache_model_id(arm: ArmSpec) -> str:
     return f"{arm.model_type}:{arm.model_name}"
 
 
+def _collection_paths(db_path: Path) -> dict[str, str]:
+    """Read ``name -> resolved path`` for the collections in one arm DB."""
+    path = Path(db_path)
+    if not path.is_file():
+        return {}
+    try:
+        conn = _connect_read_only(path)
+    except sqlite3.Error:
+        return {}
+    try:
+        try:
+            rows = conn.execute("SELECT name, path FROM collections").fetchall()
+        except sqlite3.Error:
+            return {}
+    finally:
+        conn.close()
+    return {str(row[0]): str(row[1]) for row in rows}
+
+
+def _command_collection_name(command: ArmCommand) -> str | None:
+    """The ``--name`` value of a collection-add command, if present."""
+    try:
+        return command.argv[command.argv.index("--name") + 1]
+    except (IndexError, ValueError):
+        return None
+
+
+def _command_collection_root(command: ArmCommand) -> str | None:
+    """The resolved positional root of a collection-add command, if present."""
+    try:
+        return str(Path(command.argv[command.argv.index("add") + 1]).resolve())
+    except (IndexError, ValueError):
+        return None
+
+
+def _collection_remove_command(command: ArmCommand, name: str) -> ArmCommand:
+    """Derive ``collection remove <name> --yes`` from an add command."""
+    base = command.argv[: command.argv.index("add")]
+    return ArmCommand(
+        stage=f"collection_remove_{name}",
+        argv=[*base, "remove", name, "--yes"],
+        env=command.env,
+    )
+
+
+def _run_index_commands(commands: Sequence[ArmCommand], db_path: Path) -> None:
+    """Run collection-add/index-update commands idempotently on one arm DB.
+
+    ``collection add`` fails when the name already exists, while the stage
+    marker is written only after every command succeeds. A retry after a
+    later command failed would otherwise fail forever on the first duplicate
+    collection (WR-01). An existing run-owned collection with the same root is
+    skipped; one pointing at a different root (a stale scope) is removed and
+    re-added so the arm measures the requested corpus.
+    """
+    existing = _collection_paths(db_path)
+    for command in commands:
+        if command.stage.startswith("collection_add_"):
+            name = _command_collection_name(command)
+            root = _command_collection_root(command)
+            if name is not None and name in existing:
+                if root is not None and existing[name] == root:
+                    continue
+                removal = _collection_remove_command(command, name)
+                proc = run_command(removal, timeout=STAGE_TIMEOUT_SECONDS)
+                _require_success(proc, removal.stage)
+        if command.stage.startswith("collection_add_") or command.stage == "index_update":
+            proc = run_command(command, timeout=STAGE_TIMEOUT_SECONDS)
+            _require_success(proc, command.stage)
+            if command.stage.startswith("collection_add_"):
+                name = _command_collection_name(command)
+                root = _command_collection_root(command)
+                if name is not None and root is not None:
+                    existing[name] = root
+
+
 def _cache_db_path() -> Path:
     """Resolve the shared embedding-cache DB before any arm env is chosen.
 
@@ -1065,14 +1141,12 @@ def _run_index_stage(
     state_path: Path,
     commands: Sequence[ArmCommand],
     stage: str,
+    db_path: Path,
 ) -> None:
     """Run collection-add and index-update commands, then mark the stage."""
     if stage_done(state, stage):
         return
-    for command in commands:
-        if command.stage.startswith("collection_add_") or command.stage == "index_update":
-            proc = run_command(command, timeout=STAGE_TIMEOUT_SECONDS)
-            _require_success(proc, command.stage)
+    _run_index_commands(commands, db_path)
     _complete_stage(state, state_path, stage)
 
 
@@ -1201,10 +1275,7 @@ def _run_arm_b_index_stage(
     """Build arm B, then refuse a corpus drift between the two arms."""
     if stage_done(state, "arm_b_index"):
         return
-    for command in commands:
-        if command.stage.startswith("collection_add_") or command.stage == "index_update":
-            proc = run_command(command, timeout=STAGE_TIMEOUT_SECONDS)
-            _require_success(proc, command.stage)
+    _run_index_commands(commands, harrier_db)
     qwen3_fingerprint, qwen3_documents = _corpus_summary(qwen3_db)
     harrier_fingerprint, harrier_documents = _corpus_summary(harrier_db)
     if (qwen3_fingerprint, qwen3_documents) != (harrier_fingerprint, harrier_documents):
@@ -1414,6 +1485,18 @@ def _run_verdict_stage(
     return artifact
 
 
+def _previous_scope_key(state_path: Path) -> str | None:
+    """Read the scope key recorded by a prior run, if any."""
+    try:
+        payload = json.loads(Path(state_path).read_text(encoding="utf-8"))
+    except (OSError, TypeError, ValueError):
+        return None
+    if not isinstance(payload, Mapping):
+        return None
+    value = payload.get("scope_key")
+    return value if isinstance(value, str) else None
+
+
 def run_stage_machine(
     arms: Mapping[str, ArmSpec],
     corpus_roots: Sequence[Path],
@@ -1435,7 +1518,14 @@ def run_stage_machine(
     harrier = arms["harrier"]
     scope = scope_state(corpus_roots, scratch_root, corpus_label)
     state_path = scratch_root / "run-state.json"
-    state = load_run_state(state_path, scope_key=scope_key(scope), scope=scope)
+    current_key = scope_key(scope)
+    previous_key = _previous_scope_key(state_path)
+    state = load_run_state(state_path, scope_key=current_key, scope=scope)
+    if previous_key is not None and previous_key != current_key:
+        # A changed --corpus set gets a fresh scope key, but the old arm DBs
+        # still hold collections pointing at the old roots; clear every
+        # run-owned file before indexing (WR-01).
+        cleanup_arms(scratch_root, keep_arms=False)
     # Resolve the shared cache before any per-arm env is chosen (Pitfall 8).
     cache_db_path = _cache_db_path()
     commands_a = build_arm_commands(sys.executable, qwen3, corpus_roots)
@@ -1447,7 +1537,7 @@ def run_stage_machine(
         saved_run_path=qwen3_saved_run,
     )
     _run_env_preflight(state, state_path, scratch_root)
-    _run_index_stage(state, state_path, commands_a, "arm_a_index")
+    _run_index_stage(state, state_path, commands_a, "arm_a_index", qwen3.db_path)
     adequacy = _run_adequacy_stage(state, state_path, qwen3.db_path)
     if preflight_only:
         print(json.dumps(adequacy, indent=2, sort_keys=True))

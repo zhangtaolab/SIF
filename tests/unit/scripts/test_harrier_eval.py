@@ -525,38 +525,47 @@ _OPENING_EN = (
 _OPENING_ZH = "填充内容用于把后面的句子推到开头窗口之外这样正文查询不会被重叠预算拒绝。" * 6
 
 
+def _create_documents_table(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS documents (id TEXT PRIMARY KEY, path TEXT, title TEXT, "
+        "checksum TEXT, file_size INTEGER, content TEXT)"
+    )
+
+
+def _insert_documents(conn: sqlite3.Connection, *, english: int, chinese: int) -> None:
+    """Insert deterministic bilingual document rows."""
+    rows: list[tuple[str, str, str, str, int, str]] = [
+        (
+            f"en-{index}",
+            f"/notes/en-{index}.md",
+            f"English note number {index}",
+            f"sum-en-{index}",
+            10,
+            _OPENING_EN + f"Gardening weather patterns describe evening observations {index}.",
+        )
+        for index in range(english)
+    ]
+    rows.extend(
+        (
+            f"zh-{index}",
+            f"/notes/zh-{index}.md",
+            f"中文笔记第{index}号",
+            f"sum-zh-{index}",
+            10,
+            _OPENING_ZH + f"{index} 号园艺天气模式描述无关观。",
+        )
+        for index in range(chinese)
+    )
+    conn.executemany("INSERT INTO documents VALUES (?, ?, ?, ?, ?, ?)", rows)
+
+
 def _write_documents_db(db_path: Path, *, english: int, chinese: int) -> None:
     """Write (or rewrite) a minimal documents table with deterministic bodies."""
     conn = sqlite3.connect(db_path)
     try:
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS documents (id TEXT PRIMARY KEY, path TEXT, title TEXT, "
-            "checksum TEXT, file_size INTEGER, content TEXT)"
-        )
+        _create_documents_table(conn)
         conn.execute("DELETE FROM documents")
-        rows: list[tuple[str, str, str, str, int, str]] = [
-            (
-                f"en-{index}",
-                f"/notes/en-{index}.md",
-                f"English note number {index}",
-                f"sum-en-{index}",
-                10,
-                _OPENING_EN + f"Gardening weather patterns describe evening observations {index}.",
-            )
-            for index in range(english)
-        ]
-        rows.extend(
-            (
-                f"zh-{index}",
-                f"/notes/zh-{index}.md",
-                f"中文笔记第{index}号",
-                f"sum-zh-{index}",
-                10,
-                _OPENING_ZH + f"{index} 号园艺天气模式描述无关观。",
-            )
-            for index in range(chinese)
-        )
-        conn.executemany("INSERT INTO documents VALUES (?, ?, ?, ?, ?, ?)", rows)
+        _insert_documents(conn, english=english, chinese=chinese)
         conn.commit()
     finally:
         conn.close()
@@ -576,6 +585,84 @@ def _install_noop_run(
         return subprocess.CompletedProcess(command.argv, 0, "", "")
 
     monkeypatch.setattr(harrier_eval, "run_command", _run)
+
+
+def _install_db_backed_run(
+    monkeypatch: pytest.MonkeyPatch,
+    documents_by_root: dict[Path, tuple[int, int]],
+    *,
+    fail_on: str | None = None,
+    stages: list[str] | None = None,
+) -> list[str]:
+    """Replace ``run_command`` with a real collection/index simulation.
+
+    ``collection add`` writes a real ``collections`` row (and fails on a
+    duplicate, like the CLI), while ``index update`` materializes the
+    configured document counts for every collected root. This is what lets a
+    resume/re-scope test observe the actual duplicate-collection failure
+    instead of a no-op runner hiding it (WR-01).
+    """
+    recorded = stages if stages is not None else []
+
+    def _run(
+        command: ArmCommand,
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        recorded.append(command.stage)
+        if command.stage == fail_on:
+            return subprocess.CompletedProcess(command.argv, 1, "", "injected failure")
+        argv = command.argv
+        db_path = Path(argv[argv.index("--index") + 1])
+        if command.stage.startswith("collection_remove_"):
+            name = argv[argv.index("remove") + 1]
+            conn = sqlite3.connect(db_path)
+            try:
+                conn.execute("DELETE FROM collections WHERE name = ?", (name,))
+                conn.commit()
+            finally:
+                conn.close()
+            return subprocess.CompletedProcess(argv, 0, "", "")
+        if command.stage.startswith("collection_add_"):
+            name = argv[argv.index("--name") + 1]
+            root = Path(argv[argv.index("add") + 1]).resolve()
+            conn = sqlite3.connect(db_path)
+            try:
+                conn.execute(
+                    "CREATE TABLE IF NOT EXISTS collections "
+                    "(id TEXT PRIMARY KEY, name TEXT UNIQUE, path TEXT)"
+                )
+                if conn.execute(
+                    "SELECT 1 FROM collections WHERE name = ?", (name,)
+                ).fetchone():
+                    return subprocess.CompletedProcess(
+                        argv, 1, "", f"Collection '{name}' already exists"
+                    )
+                conn.execute(
+                    "INSERT INTO collections (id, name, path) VALUES (?, ?, ?)",
+                    (f"id-{name}", name, str(root)),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+        elif command.stage == "index_update":
+            conn = sqlite3.connect(db_path)
+            try:
+                roots = [
+                    Path(str(row[0]))
+                    for row in conn.execute("SELECT path FROM collections").fetchall()
+                ]
+                english = sum(documents_by_root.get(root, (0, 0))[0] for root in roots)
+                chinese = sum(documents_by_root.get(root, (0, 0))[1] for root in roots)
+                _create_documents_table(conn)
+                conn.execute("DELETE FROM documents")
+                _insert_documents(conn, english=english, chinese=chinese)
+                conn.commit()
+            finally:
+                conn.close()
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    monkeypatch.setattr(harrier_eval, "run_command", _run)
+    return recorded
 
 
 def _adopt_decision() -> Any:
@@ -791,11 +878,14 @@ class TestPreflight:
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        stages: list[str] = []
-        _install_noop_run(monkeypatch, stages)
         scratch = tmp_path / "scratch"
         scratch.mkdir()
-        _write_documents_db(scratch / "qwen3.db", english=25, chinese=25)
+        first_root = (tmp_path / "first").resolve()
+        second_root = (tmp_path / "second").resolve()
+        stages = _install_db_backed_run(
+            monkeypatch,
+            {first_root: (25, 25), second_root: (25, 25)},
+        )
         monkeypatch.setattr(harrier_eval, "_cache_db_path", lambda: tmp_path / "cache.db")
         monkeypatch.setattr(harrier_eval, "ARTIFACT_PATH", tmp_path / "artifact.json")
 
@@ -803,7 +893,7 @@ class TestPreflight:
             [
                 "--preflight-only",
                 "--corpus",
-                str(tmp_path / "first"),
+                str(first_root),
                 "--scratch-root",
                 str(scratch),
             ]
@@ -812,7 +902,7 @@ class TestPreflight:
             [
                 "--preflight-only",
                 "--corpus",
-                str(tmp_path / "second"),
+                str(second_root),
                 "--scratch-root",
                 str(scratch),
             ]
@@ -823,6 +913,80 @@ class TestPreflight:
         assert second == 0
         assert stages.count("index_update") == 2
         assert stages.count("collection_add_1") == 2
+        conn = sqlite3.connect(scratch / "qwen3.db")
+        try:
+            stored = conn.execute(
+                "SELECT path FROM collections WHERE name = 'phase23-1'"
+            ).fetchone()
+        finally:
+            conn.close()
+        assert stored is not None
+        assert Path(stored[0]) == second_root
+
+    def test_partial_index_stage_resumes_without_a_duplicate_collection(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        scratch = tmp_path / "scratch"
+        scratch.mkdir()
+        root = (tmp_path / "corpus").resolve()
+        documents = {root: (25, 25)}
+        monkeypatch.setattr(harrier_eval, "_cache_db_path", lambda: tmp_path / "cache.db")
+        monkeypatch.setattr(harrier_eval, "ARTIFACT_PATH", tmp_path / "artifact.json")
+        argv = ["--preflight-only", "--corpus", str(root), "--scratch-root", str(scratch)]
+
+        _install_db_backed_run(monkeypatch, documents, fail_on="index_update")
+        assert main(argv) == 1
+        assert "Collection 'phase23-1' already exists" not in capsys.readouterr().err
+
+        resumed_stages = _install_db_backed_run(monkeypatch, documents)
+        assert main(argv) == 0
+        capsys.readouterr()
+
+        assert "collection_add_1" not in resumed_stages
+        assert resumed_stages == ["index_update"]
+
+    def test_stale_collection_path_is_removed_and_re_added(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        scratch = tmp_path / "scratch"
+        scratch.mkdir()
+        root = (tmp_path / "corpus").resolve()
+        db_path = scratch / "qwen3.db"
+        conn = sqlite3.connect(db_path)
+        try:
+            conn.execute(
+                "CREATE TABLE collections (id TEXT PRIMARY KEY, name TEXT UNIQUE, path TEXT)"
+            )
+            conn.execute(
+                "INSERT INTO collections (id, name, path) VALUES (?, ?, ?)",
+                ("old", "phase23-1", str((tmp_path / "old-root").resolve())),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        stages = _install_db_backed_run(monkeypatch, {root: (25, 25)})
+        commands = harrier_eval.build_arm_commands(
+            "python", harrier_eval.build_arm("qwen3", scratch), [root]
+        )
+
+        harrier_eval._run_index_commands(commands, db_path)
+
+        assert "collection_remove_phase23-1" in stages
+        assert "collection_add_1" in stages
+        conn = sqlite3.connect(db_path)
+        try:
+            stored = conn.execute(
+                "SELECT path FROM collections WHERE name = 'phase23-1'"
+            ).fetchone()
+        finally:
+            conn.close()
+        assert stored is not None
+        assert Path(stored[0]) == root
 
 
 class TestVerdictStage:
