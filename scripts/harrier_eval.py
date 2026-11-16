@@ -1143,11 +1143,64 @@ def _run_index_stage(
     stage: str,
     db_path: Path,
 ) -> None:
-    """Run collection-add and index-update commands, then mark the stage."""
+    """Run collection-add and index-update commands, then mark the stage.
+
+    The completion detail carries the corpus fingerprint so a later resume can
+    tell whether the indexed content under the same roots has moved (WR-02).
+    """
     if stage_done(state, stage):
         return
     _run_index_commands(commands, db_path)
-    _complete_stage(state, state_path, stage)
+    fingerprint, documents = _corpus_summary(db_path)
+    _complete_stage(
+        state,
+        state_path,
+        stage,
+        {"corpus_fingerprint": fingerprint, "documents": documents},
+    )
+
+
+_DOWNSTREAM_AFTER_ARM_A_INDEX = (
+    "arm_a_index",
+    "adequacy",
+    "arm_a_embed",
+    "arm_a_probe",
+    "arm_a_eval",
+    "arm_b_index",
+    "arm_b_identity",
+    "arm_b_embed",
+    "arm_b_probe",
+    "arm_b_eval",
+    "verdict",
+    "artifact",
+)
+
+
+def _sync_arm_a_fingerprint(
+    state: dict[str, Any],
+    state_path: Path,
+    commands: Sequence[ArmCommand],
+    db_path: Path,
+) -> None:
+    """Refresh arm A on resume and invalidate the run when its content moved.
+
+    ``index update`` is the cheap rescan; the corpus fingerprint persisted at
+    arm-A index completion then decides whether the recorded stages still
+    describe the corpus on disk (WR-02). A content change under the same
+    roots invalidates the arm-A index marker and every downstream stage, so
+    the run re-indexes and re-measures instead of reusing the old indexes.
+    """
+    if not stage_done(state, "arm_a_index"):
+        return
+    _run_index_commands(commands, db_path)
+    recorded = state["stages"]["arm_a_index"].get("detail")
+    detail = recorded if isinstance(recorded, Mapping) else {}
+    fingerprint, documents = _corpus_summary(db_path)
+    if detail.get("corpus_fingerprint") == fingerprint and detail.get("documents") == documents:
+        return
+    state.pop("adequacy", None)
+    _drop_stages(state, state_path, _DOWNSTREAM_AFTER_ARM_A_INDEX)
+    save_run_state(state_path, state)
 
 
 def _run_adequacy_stage(
@@ -1537,6 +1590,7 @@ def run_stage_machine(
         saved_run_path=qwen3_saved_run,
     )
     _run_env_preflight(state, state_path, scratch_root)
+    _sync_arm_a_fingerprint(state, state_path, commands_a, qwen3.db_path)
     _run_index_stage(state, state_path, commands_a, "arm_a_index", qwen3.db_path)
     adequacy = _run_adequacy_stage(state, state_path, qwen3.db_path)
     if preflight_only:

@@ -474,6 +474,60 @@ class TestStageMachine:
         assert fresh["scope_key"] == scope_key(changed)
         assert fresh["scope"] == changed
 
+    def test_content_change_under_the_same_root_invalidates_downstream(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        scratch = tmp_path / "scratch"
+        scratch.mkdir()
+        db_path = scratch / "qwen3.db"
+        _write_documents_db(db_path, english=25, chinese=25)
+        fingerprint, documents = harrier_eval._corpus_summary(db_path)
+        scope = self._scope(tmp_path)
+        state_path = tmp_path / "run-state.json"
+        state = load_run_state(state_path, scope_key=scope_key(scope), scope=scope)
+        mark_stage(
+            state,
+            "arm_a_index",
+            {"corpus_fingerprint": fingerprint, "documents": documents},
+        )
+        mark_stage(state, "adequacy", {"sampled": 50})
+        mark_stage(state, "arm_a_embed")
+        mark_stage(
+            state,
+            "artifact",
+            {"query_set_fingerprint": "abc", "corpus_fingerprint": fingerprint},
+        )
+        save_run_state(state_path, state)
+
+        def _rescan(command: ArmCommand, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+            conn = sqlite3.connect(db_path)
+            try:
+                conn.execute(
+                    "UPDATE documents SET checksum = checksum || '-edited' WHERE id = 'en-0'"
+                )
+                conn.commit()
+            finally:
+                conn.close()
+            return subprocess.CompletedProcess(command.argv, 0, "", "")
+
+        monkeypatch.setattr(harrier_eval, "run_command", _rescan)
+        commands = harrier_eval.build_arm_commands(
+            "python",
+            build_arm("qwen3", scratch),
+            [tmp_path / "corpus"],
+        )
+
+        harrier_eval._sync_arm_a_fingerprint(state, state_path, commands, db_path)
+
+        resumed = load_run_state(state_path, scope_key=scope_key(scope), scope=scope)
+        assert not stage_done(resumed, "arm_a_index")
+        assert not stage_done(resumed, "adequacy")
+        assert not stage_done(resumed, "arm_a_embed")
+        assert not stage_done(resumed, "artifact")
+        assert "adequacy" not in resumed
+
     def test_timeout_is_a_named_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
         def _timeout(*_args: object, **_kwargs: object) -> None:
             raise subprocess.TimeoutExpired("cmd", 5)
