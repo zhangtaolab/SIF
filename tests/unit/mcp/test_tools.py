@@ -184,7 +184,10 @@ class TestReviewedDescriptions:
         assert "SIF_RERANK_ENABLED" in text
         assert "and reranking" not in text
 
-    @pytest.mark.parametrize("tool_name", ["query", "get", "multi_get", "status", "metadata"])
+    @pytest.mark.parametrize(
+        "tool_name",
+        ["query", "get", "multi_get", "status", "metadata", "lex_search", "vec_search"],
+    )
     def test_descriptions_never_overclaim(self, tool_name: str) -> None:
         text = TOOL_DESCRIPTIONS[tool_name].lower()
         for banned in ("auto-approve", "auto approve", "prompt-free", "no permission"):
@@ -522,3 +525,103 @@ class TestMetadataTool:
             "builtIns",
             "keys",
         }
+
+
+# =============================================================================
+# Task 2: direct lex/vec search paths (D-17)
+# =============================================================================
+
+
+class TestLexAndVecSearchTools:
+    """Both one-shot search modes mirror the CLI and publish their schema."""
+
+    @pytest.mark.asyncio
+    async def test_min_score_is_published_for_both_inputs(self) -> None:
+        tools = {tool.name: tool for tool in await _make_server(_mock_backend()).list_tools()}
+
+        for name in ("lex_search", "vec_search"):
+            props = tools[name].input_schema["properties"]
+            assert props["min_score"]["minimum"] == 0.0
+            assert props["min_score"]["default"] == 0.0
+            assert tools[name].output_schema["type"] == "object"
+            assert "results" in tools[name].output_schema["properties"]
+
+    @pytest.mark.asyncio
+    async def test_lex_search_keeps_dual_channel_parity(self) -> None:
+        backend = _mock_backend()
+        backend.lex_search.return_value = [
+            SearchResult(doc_id="d1", path="/a.md", score=0.7),
+        ]
+
+        result = await _make_server(backend).call_tool("lex_search", {"query": "q"})
+
+        assert result.is_error is False
+        payload = json.loads(result.content[0].text)
+        assert payload == result.structured_content
+        assert payload["results"][0]["doc_id"] == "d1"
+
+    @pytest.mark.asyncio
+    async def test_vec_search_keeps_dual_channel_parity(self) -> None:
+        backend = _mock_backend()
+        backend.vec_search.return_value = [
+            SearchResult(doc_id="d2", path="/b.md", score=0.5),
+        ]
+
+        result = await _make_server(backend).call_tool("vec_search", {"query": "q"})
+
+        assert result.is_error is False
+        payload = json.loads(result.content[0].text)
+        assert payload == result.structured_content
+        assert payload["results"][0]["doc_id"] == "d2"
+
+    @pytest.mark.asyncio
+    async def test_lex_and_vec_forward_min_score_and_filter(self) -> None:
+        from sif.core.filters import parse_filter
+
+        backend = _mock_backend()
+
+        await _make_server(backend).call_tool(
+            "lex_search", {"query": "q", "min_score": 0.4, "filter": _FILTER_PAYLOAD}
+        )
+        await _make_server(backend).call_tool(
+            "vec_search",
+            {"query": "q", "min_score": 0.6, "per_chunk": True, "filter": _FILTER_PAYLOAD},
+        )
+
+        lex_kwargs = backend.lex_search.call_args.kwargs
+        assert lex_kwargs["min_score"] == 0.4
+        assert lex_kwargs["filter_node"] == parse_filter(_FILTER_PAYLOAD)
+        vec_kwargs = backend.vec_search.call_args.kwargs
+        assert vec_kwargs["min_score"] == 0.6
+        assert vec_kwargs["per_chunk"] is True
+        assert vec_kwargs["filter_node"] == parse_filter(_FILTER_PAYLOAD)
+
+    @pytest.mark.asyncio
+    async def test_vec_unavailable_is_a_tool_error_with_the_remedy(self) -> None:
+        backend = _mock_backend()
+        remedy = (
+            "Vector search requires an embedding model. Install the embedding "
+            'backend with `pip install "docsif[embed]"`, check the SIF_MODEL_* '
+            "settings, and retry."
+        )
+        backend.vec_search.side_effect = RuntimeError(remedy)
+
+        with pytest.raises(ToolError) as excinfo:
+            await _make_server(backend).call_tool("vec_search", {"query": "q"})
+
+        assert "docsif[embed]" in str(excinfo.value)
+        assert "SIF_MODEL_" in str(excinfo.value)
+
+    @pytest.mark.asyncio
+    async def test_invalid_filter_is_a_tool_error_on_both_direct_paths(self) -> None:
+        backend = _mock_backend()
+
+        for name in ("lex_search", "vec_search"):
+            with pytest.raises(ToolError) as excinfo:
+                await _make_server(backend).call_tool(
+                    name, {"query": "q", "filter": _BAD_FILTER_PAYLOAD}
+                )
+            assert "filter.gt:" in str(excinfo.value)
+
+        backend.lex_search.assert_not_called()
+        backend.vec_search.assert_not_called()

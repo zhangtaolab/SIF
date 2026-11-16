@@ -32,6 +32,8 @@ from sif.mcp.backend import SearchBackend
 from sif.mcp.protocol import (
     GetInput,
     GetOutput,
+    LexSearchInput,
+    LexSearchOutput,
     MetadataInput,
     MetadataOutput,
     MultiGetInput,
@@ -39,6 +41,8 @@ from sif.mcp.protocol import (
     QueryInput,
     QueryOutput,
     StatusOutput,
+    VecSearchInput,
+    VecSearchOutput,
 )
 from sif.utils.json_output import json_dumps_strict
 
@@ -70,6 +74,15 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
         "Report filterable metadata keys, value types, document counts, numeric "
         "min/median/max ranges, and exact remaining window counts. Accepts the "
         "same filter grammar as query; path and mtime are reported as built-ins."
+    ),
+    "lex_search": (
+        "Lexical BM25 search only, matching `sif search search` (filter, offset, "
+        "min_score). No expansion or reranking."
+    ),
+    "vec_search": (
+        "Vector semantic search only, matching `sif search vsearch` (filter, "
+        "offset, per_chunk, min_score). Requires an embedding model; no expansion "
+        "or reranking."
     ),
 }
 
@@ -282,20 +295,109 @@ def _register_metadata_tool(mcp: MCPServer, backend: SearchBackend) -> None:
         return _result(output, exclude_none=True)
 
 
+def _register_lex_search_tool(mcp: MCPServer, backend: SearchBackend) -> None:
+    """Register ``lex_search``: the CLI ``search search`` one-shot path (D-17)."""
+
+    @mcp.tool(
+        name="lex_search",
+        description=TOOL_DESCRIPTIONS["lex_search"],
+        annotations=TOOL_ANNOTATIONS,
+    )
+    async def lex_search(  # noqa: PLR0913 — one parameter per frozen LexSearchInput field
+        query: str,
+        collections: list[str] | None = None,
+        limit: Annotated[int, Field(ge=1)] = 10,
+        offset: Annotated[int, Field(ge=0)] = 0,
+        min_score: Annotated[float, Field(ge=0.0)] = 0.0,
+        filter: dict[str, Any] | None = None,  # noqa: A002 — frozen wire argument name
+    ) -> Annotated[CallToolResult, LexSearchOutput]:
+        try:
+            input_data = LexSearchInput(
+                query=query,
+                collections=collections,
+                limit=limit,
+                offset=offset,
+                min_score=min_score,
+                filter=filter,
+            )
+        except ValidationError as exc:
+            raise ToolError(str(exc)) from exc
+        filter_node = _parse_filter_node(input_data.filter)
+        results = await backend.lex_search(
+            query=input_data.query,
+            collections=input_data.collections,
+            limit=input_data.limit,
+            offset=input_data.offset,
+            min_score=input_data.min_score,
+            filter_node=filter_node,
+        )
+        return _result(LexSearchOutput(results=results))
+
+
+def _register_vec_search_tool(mcp: MCPServer, backend: SearchBackend) -> None:
+    """Register ``vec_search``: the CLI ``search vsearch`` one-shot path (D-17)."""
+
+    @mcp.tool(
+        name="vec_search",
+        description=TOOL_DESCRIPTIONS["vec_search"],
+        annotations=TOOL_ANNOTATIONS,
+    )
+    async def vec_search(  # noqa: PLR0913 — one parameter per frozen VecSearchInput field
+        query: str,
+        collections: list[str] | None = None,
+        limit: Annotated[int, Field(ge=1)] = 10,
+        offset: Annotated[int, Field(ge=0)] = 0,
+        per_chunk: bool = False,
+        min_score: Annotated[float, Field(ge=0.0)] = 0.0,
+        filter: dict[str, Any] | None = None,  # noqa: A002 — frozen wire argument name
+    ) -> Annotated[CallToolResult, VecSearchOutput]:
+        try:
+            input_data = VecSearchInput(
+                query=query,
+                collections=collections,
+                limit=limit,
+                offset=offset,
+                per_chunk=per_chunk,
+                min_score=min_score,
+                filter=filter,
+            )
+        except ValidationError as exc:
+            raise ToolError(str(exc)) from exc
+        filter_node = _parse_filter_node(input_data.filter)
+        try:
+            results = await backend.vec_search(
+                query=input_data.query,
+                collections=input_data.collections,
+                limit=input_data.limit,
+                offset=input_data.offset,
+                per_chunk=input_data.per_chunk,
+                min_score=input_data.min_score,
+                filter_node=filter_node,
+            )
+        except RuntimeError as exc:
+            # D-15: a missing embedder, a dimension mismatch, or a missing
+            # sqlite-vec extension is a model-correctable tool error carrying
+            # the install/model remedy, never a protocol error.
+            raise ToolError(str(exc)) from exc
+        return _result(VecSearchOutput(results=results))
+
+
 def register_tools(mcp: MCPServer, backend: SearchBackend) -> None:
     """Register the deterministic read-only SIF tool set (D-06).
 
     Order is part of the contract: ``query, get, multi_get, status, metadata,
-    lex_search, vec_search``. ``lex_search``/``vec_search`` land in Task 2.
-    Every function's signature IS the published input schema; the preserved
-    input models are still constructed inside the body so SIF's validators run
-    on the same data the hand-written handlers validated (D-08).
+    lex_search, vec_search``. Every function's signature IS the published input
+    schema; the preserved input models are still constructed inside the body so
+    SIF's validators run on the same data the hand-written handlers validated
+    (D-08).
     """
     _register_query_tool(mcp, backend)
     _register_get_tool(mcp, backend)
     _register_multi_get_tool(mcp, backend)
     _register_status_tool(mcp, backend)
     _register_metadata_tool(mcp, backend)
+    _register_lex_search_tool(mcp, backend)
+    _register_vec_search_tool(mcp, backend)
 
 
 def register_resource(mcp: MCPServer, backend: SearchBackend) -> None:

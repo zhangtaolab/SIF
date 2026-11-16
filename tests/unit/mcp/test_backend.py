@@ -8,7 +8,7 @@ import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest
 from pydantic import ValidationError
@@ -1892,3 +1892,321 @@ class TestHybridSearchIdentity:
             if "identity mismatch" in record.getMessage().lower()
         ]
         assert len(warnings) == 1
+
+
+# =============================================================================
+# Direct lex/vec paths and the lazy embedder (Phase 22 D-15/D-17)
+# =============================================================================
+
+
+class _FakeManager:
+    """Minimal manager double: records embed calls and returns fixed vectors."""
+
+    def __init__(self, dimension: int = 8, calls: list[str] | None = None) -> None:
+        self._dimension = dimension
+        self.calls = calls if calls is not None else []
+
+    @property
+    def model(self) -> _FixedEmbedder:
+        return _FixedEmbedder(self._dimension)
+
+    def embed_query(self, _text: str) -> list[float]:
+        self.calls.append("embed")
+        return [0.1] * self._dimension
+
+
+class TestEnsureEmbedder:
+    """D-15: one thread-safe lazy load that forwards the backend settings."""
+
+    @staticmethod
+    def _settings(**overrides: object) -> Settings:
+        values: dict[str, object] = {
+            "embedding_dim": 8,
+            "model_name": "test",
+            "cache_embeddings": False,
+        }
+        values.update(overrides)
+        return Settings(_env_file=None, **values)
+
+    def test_from_settings_receives_the_backend_settings_and_identity_is_stored(
+        self, tmp_path: Path
+    ) -> None:
+        """API key/base/dimension/cache settings flow through the manager."""
+        from sif.embedding.manager import EmbeddingManager
+
+        settings = self._settings(
+            query_prompt_name="qry",
+            document_prompt_name="doc",
+            api_key="sk-test",
+            api_base="https://api.example.com/v1",
+        )
+        backend = SearchBackend(str(tmp_path / "lazy.db"), settings=settings)
+        fake_embedder = MagicMock()
+        fake_embedder.dimension = 8
+        real_manager = EmbeddingManager.from_settings(settings)
+        assert real_manager._cache is None  # cache_embeddings=False -> no cache dir
+
+        with (
+            patch(
+                "sif.mcp.backend.EmbeddingManager.from_settings",
+                return_value=real_manager,
+            ) as from_settings,
+            patch.object(real_manager._factory, "create_model", return_value=fake_embedder),
+        ):
+            manager = backend._ensure_embedder()
+
+        assert manager is real_manager
+        assert backend._manager is real_manager
+        assert backend._embedder is fake_embedder
+        received = from_settings.call_args.args[0]
+        assert received is settings
+        assert received.api_key == "sk-test"
+        assert received.api_base == "https://api.example.com/v1"
+        assert received.embedding_dim == 8
+        assert received.cache_embeddings is False
+        identity = backend._identity
+        assert identity is not None
+        assert identity.query_prompt == "qry"
+        assert identity.document_prompt == "doc"
+        assert identity.dimension == 8
+        assert identity.cache_model_id == "modelscope:test@https://api.example.com/v1"
+        assert backend._load_attempted is True
+        assert backend._load_failed is False
+
+    def test_load_is_attempted_once_and_reused(self, tmp_path: Path) -> None:
+        settings = self._settings()
+        backend = SearchBackend(str(tmp_path / "once.db"), settings=settings)
+        manager = _FakeManager()
+        with patch(
+            "sif.mcp.backend.EmbeddingManager.from_settings", return_value=manager
+        ) as from_settings:
+            manager.get_identity = MagicMock(return_value=_identity("loaded"))  # type: ignore[method-assign]
+            manager.load_model = MagicMock()  # type: ignore[method-assign]
+            first = backend._ensure_embedder()
+            second = backend._ensure_embedder()
+
+        assert first is manager
+        assert second is manager
+        assert from_settings.call_count == 1
+        assert manager.load_model.call_count == 1
+        assert backend._identity == _identity("loaded")
+
+    def test_failed_load_latches_the_no_identity_state(self, tmp_path: Path) -> None:
+        settings = self._settings()
+        backend = SearchBackend(str(tmp_path / "failed.db"), settings=settings)
+        with patch(
+            "sif.mcp.backend.EmbeddingManager.from_settings", side_effect=RuntimeError("boom")
+        ) as from_settings:
+            assert backend._ensure_embedder() is None
+            assert backend._ensure_embedder() is None
+
+        assert from_settings.call_count == 1
+        assert backend._load_attempted is True
+        assert backend._load_failed is True
+        assert backend._embedder is None
+        assert backend._identity is None
+
+    @pytest.mark.asyncio
+    async def test_vec_search_without_an_embedder_names_the_remedy(self, tmp_path: Path) -> None:
+        db_path, settings = _seed_suggestion_db(tmp_path)
+        backend = _suggestion_backend(db_path, settings)
+        backend._load_attempted = True
+        backend._load_failed = True
+
+        with pytest.raises(RuntimeError, match='pip install "docsif\\[embed\\]"'):
+            await backend.vec_search("quantum")
+
+
+class TestLexSearchDirectPath:
+    """D-17: lex_search mirrors the CLI BM25 one-shot with one enrichment."""
+
+    @pytest.mark.asyncio
+    async def test_bm25_options_and_one_enrichment(self, tmp_path: Path) -> None:
+        from sif.core.filters import parse_filter
+
+        db_path, settings = _seed_suggestion_db(tmp_path)
+        backend = _suggestion_backend(db_path, settings)
+        node = parse_filter(_FILTER_PAYLOAD)
+
+        with (
+            patch("sif.mcp.backend.BM25Searcher") as mock_bm25_cls,
+            patch(
+                "sif.mcp.backend.enrich_results",
+                side_effect=lambda conn, results: results,  # noqa: ARG005
+            ) as enrich,
+        ):
+            mock_bm25_cls.return_value.search.return_value = [_weight_result()]
+            results = await backend.lex_search(
+                "quantum",
+                collections=["notes"],
+                limit=3,
+                offset=2,
+                min_score=0.25,
+                filter_node=node,
+            )
+
+        options = mock_bm25_cls.return_value.search.call_args[0][1]
+        assert options.limit == 3
+        assert options.offset == 2
+        assert options.min_score == 0.25
+        assert options.filter is node
+        assert options.collection_ids == ["c1"]
+        assert options.include_content is False
+        assert options.include_highlights is True
+        assert enrich.call_count == 1
+        assert len(results) == 1
+        assert results[0].doc_id == "doc1"
+
+    @pytest.mark.asyncio
+    async def test_unknown_collection_returns_an_empty_page_without_searching(
+        self, tmp_path: Path
+    ) -> None:
+        db_path, settings = _seed_suggestion_db(tmp_path)
+        backend = _suggestion_backend(db_path, settings)
+
+        with patch("sif.mcp.backend.BM25Searcher") as mock_bm25_cls:
+            results = await backend.lex_search("quantum", collections=["missing"])
+
+        assert list(results) == []
+        assert results.suggestions == []
+        mock_bm25_cls.assert_not_called()
+
+
+class TestVecSearchDirectPath:
+    """D-17: vec_search mirrors the CLI vector one-shot with identity first."""
+
+    @staticmethod
+    def _backend_with_manager(tmp_path: Path) -> tuple[SearchBackend, _FakeManager, list[str]]:
+        db_path, settings = _seed_suggestion_db(tmp_path)
+        backend = _suggestion_backend(db_path, settings)
+        calls: list[str] = []
+        manager = _FakeManager(calls=calls)
+        backend._manager = manager
+        backend._identity = _identity("loaded")
+        backend._load_attempted = True
+        return backend, manager, calls
+
+    @pytest.mark.asyncio
+    async def test_identity_is_checked_before_embedding_and_enriches_once(
+        self, tmp_path: Path
+    ) -> None:
+        from sif.core.filters import parse_filter
+        from sif.embedding.identity import IdentityCheck
+
+        backend, _manager, calls = self._backend_with_manager(tmp_path)
+        node = parse_filter(_FILTER_PAYLOAD)
+        trusted = IdentityCheck(
+            status="ok",
+            stored=_identity("loaded"),
+            current=_identity("loaded"),
+        )
+
+        def _check(_conn: object, _current: object, mode: str = "search") -> IdentityCheck:
+            assert mode == "search"
+            calls.append("identity")
+            return trusted
+
+        with (
+            patch("sif.mcp.backend.check_identity", side_effect=_check),
+            patch("sif.mcp.backend.VectorSearcher") as mock_vec_cls,
+            patch(
+                "sif.mcp.backend.enrich_results",
+                side_effect=lambda conn, results, **_kwargs: results,  # noqa: ARG005
+            ) as enrich,
+        ):
+            mock_vec_cls.return_value.search.return_value = [_weight_result()]
+            results = await backend.vec_search(
+                "quantum",
+                collections=["notes"],
+                limit=2,
+                offset=1,
+                per_chunk=True,
+                min_score=0.3,
+                filter_node=node,
+            )
+
+        assert calls == ["identity", "embed"]
+        options = mock_vec_cls.return_value.search.call_args[0][1]
+        assert options.limit == 2
+        assert options.offset == 1
+        assert options.per_chunk is True
+        assert options.min_score == 0.3
+        assert options.filter is node
+        assert options.collection_ids == ["c1"]
+        mock_vec_cls.assert_called_once_with(ANY, 8)
+        assert enrich.call_count == 1
+        assert len(results) == 1
+
+    @pytest.mark.asyncio
+    async def test_untrusted_identity_marks_the_single_enrichment(
+        self, tmp_path: Path, caplog
+    ) -> None:
+        import logging
+
+        from sif.embedding.identity import IdentityCheck
+
+        backend, _manager, _calls = self._backend_with_manager(tmp_path)
+        mismatch = IdentityCheck(
+            status="mismatch",
+            stored=_identity("stored-vec"),
+            current=_identity("loaded-vec"),
+        )
+
+        with (
+            patch("sif.mcp.backend.check_identity", return_value=mismatch),
+            patch("sif.mcp.backend.VectorSearcher") as mock_vec_cls,
+            patch(
+                "sif.mcp.backend.enrich_results",
+                side_effect=lambda conn, results, **_kwargs: results,  # noqa: ARG005
+            ) as enrich,
+            caplog.at_level(logging.WARNING, logger="sif.embedding.identity"),
+        ):
+            mock_vec_cls.return_value.search.return_value = [_weight_result()]
+            await backend.vec_search("quantum")
+
+        assert enrich.call_count == 1
+        assert enrich.call_args.kwargs["vectors_untrusted"] is True
+        warnings = [
+            record
+            for record in caplog.records
+            if "identity mismatch" in record.getMessage().lower()
+        ]
+        assert len(warnings) == 1
+
+    @pytest.mark.asyncio
+    async def test_dimension_mismatch_refuses_before_embedding(self, tmp_path: Path) -> None:
+        from sif.embedding.identity import IdentityCheck, IdentityDimensionError
+
+        backend, _manager, calls = self._backend_with_manager(tmp_path)
+        mismatch = IdentityCheck(
+            status="dimension_mismatch",
+            stored=_identity("stored", dimension=8),
+            current=_identity("loaded", dimension=4),
+        )
+
+        with (
+            patch("sif.mcp.backend.check_identity", return_value=mismatch),
+            patch("sif.mcp.backend.VectorSearcher") as mock_vec_cls,
+            pytest.raises(IdentityDimensionError, match="Embedding dimension mismatch"),
+        ):
+            await backend.vec_search("quantum")
+
+        assert calls == []
+        mock_vec_cls.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_unknown_collection_returns_an_empty_page_before_identity(
+        self, tmp_path: Path
+    ) -> None:
+        backend, _manager, calls = self._backend_with_manager(tmp_path)
+
+        with (
+            patch("sif.mcp.backend.check_identity") as check,
+            patch("sif.mcp.backend.VectorSearcher") as mock_vec_cls,
+        ):
+            results = await backend.vec_search("quantum", collections=["missing"])
+
+        assert list(results) == []
+        assert calls == []
+        check.assert_not_called()
+        mock_vec_cls.assert_not_called()

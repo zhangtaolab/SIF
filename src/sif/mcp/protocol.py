@@ -286,6 +286,9 @@ class LexSearchInput(BaseModel):
     collections: list[str] | None = None
     limit: int = Field(default=10, ge=1)
     offset: int = Field(default=0, ge=0)
+    # Phase 22 D-17/Open Q3: additive CLI parity with `sif search search
+    # --min-score`; a zero default preserves every existing caller.
+    min_score: float = Field(default=0.0, ge=0.0)
     # Metadata filter (Phase 20 D-02): mirrors QueryInput.filter under the
     # same Phase 19 offset precedent. Lex/vec tool registration stays Phase
     # 22; the field is declared now so that registration has no filter gap.
@@ -311,6 +314,9 @@ class VecSearchInput(BaseModel):
     limit: int = Field(default=10, ge=1)
     offset: int = Field(default=0, ge=0)
     per_chunk: bool = False
+    # Phase 22 D-17/Open Q3: additive CLI parity with `sif search vsearch
+    # --min-score`; a zero default preserves every existing caller.
+    min_score: float = Field(default=0.0, ge=0.0)
     # Metadata filter (Phase 20 D-02): mirrors QueryInput.filter for the same
     # Phase 22 schema parity; registration stays Phase 22 (research Open Q1).
     filter: dict[str, Any] | None = None

@@ -20,14 +20,18 @@ from sif.embedding.identity import (
     EmbedderIdentity,
     build_settings_identity,
     check_identity,
+    schema_embedding_dim,
+    warn_identity_mismatch_once,
 )
+from sif.embedding.manager import EmbeddingManager
 from sif.embedding.prompts import resolve_prompt_scheme
 from sif.mcp.protocol import CollectionInfo, Document, SearchResult
 from sif.search.bm25 import BM25Searcher
 from sif.search.context_attach import enrich_results
 from sif.search.filters import compile_filter, compile_match
-from sif.search.hybrid import SearchPipeline
+from sif.search.hybrid import SearchPipeline, search_dimension_error
 from sif.search.suggest import SuggestionEngine
+from sif.search.vector import VectorSearcher
 from sif.utils.logging import get_logger
 from sif.utils.paths import normalize_path
 
@@ -92,6 +96,54 @@ def _truncate_content(content: str, max_size: int = 100 * 1024) -> str:
     return truncated + suffix
 
 
+# D-15: the remedy a vec_search tool error must carry when no embedder loaded.
+VECTOR_SEARCH_REMEDY = (
+    "Vector search requires an embedding model. Install the embedding backend "
+    'with `pip install "docsif[embed]"`, check the SIF_MODEL_* settings, and retry.'
+)
+
+
+def _resolve_collection_ids(conn: Any, names: list[str] | None) -> list[str] | None:
+    """Resolve request collection names the way every search path does.
+
+    ``None`` means "no scope requested"; an empty list means names were given
+    but none matched (the caller returns an empty page). Resolution is shared
+    so hybrid, lex, and vec cannot drift on unknown-name behavior.
+    """
+    if not names:
+        return None
+    repo = CollectionRepository(conn)
+    return [c.id for c in (repo.get_by_name(name) for name in names) if c]
+
+
+def _map_core_results(core_results: list[Any]) -> list[SearchResult]:
+    """Re-map core search rows onto the MCP result model, field by field.
+
+    ``vectors_stale`` rides the metadata dict (D-11 / RESEARCH B5) and the
+    chunk identity fields are explicitly copied (CORR-02/D-02/D-03): this
+    boundary re-maps one by one, so an unlisted field is silently dropped.
+    """
+    return [
+        SearchResult(
+            doc_id=r.document_id,
+            path=r.path,
+            title=r.title,
+            content=r.content,
+            score=r.score,
+            highlights=r.highlights,
+            metadata={
+                "rank": r.rank,
+                "collection_name": r.collection_name,
+                "vectors_stale": r.vectors_stale,
+                "chunk_id": r.chunk_id,
+                "sequence": r.sequence,
+                "chunk_matches": r.chunk_matches,
+            },
+        )
+        for r in core_results
+    ]
+
+
 class SearchBackend:
     """Backend for MCP search and retrieval operations."""
 
@@ -114,6 +166,7 @@ class SearchBackend:
         self._load_lock = threading.Lock()
         self._load_attempted = False
         self._load_failed = False
+        self._manager: EmbeddingManager | None = None
 
         # D-07/D-04: resolve the prompt scheme ONCE from the backend's own
         # settings. The same scheme feeds the settings-only identity (schema
@@ -159,6 +212,42 @@ class SearchBackend:
                 return callback(conn)
 
         return await asyncio.to_thread(_run)
+
+    def _ensure_embedder(self) -> EmbeddingManager | None:
+        """Load the embedding manager once per process, latching failure (D-15).
+
+        One thread-safe attempt: ``EmbeddingManager.from_settings`` (which
+        creates the cache directory/database) and ``load_model`` run under
+        ``_load_lock``, and a failure latches ``_load_failed`` so later
+        requests never retry. 22-04 hardens the warning, BM25-degrade, and
+        loaded-dimension policy; this plan only guarantees vec_search has a
+        manager and the hybrid path keeps its existing BM25 degradation.
+        """
+        if self._load_attempted and (self._manager is not None or self._load_failed):
+            return None if self._load_failed else self._manager
+        with self._load_lock:
+            # Another thread completed the attempt while we waited.
+            if self._load_attempted:
+                return None if self._load_failed else self._manager
+            self._load_attempted = True
+            try:
+                manager = EmbeddingManager.from_settings(self.settings)
+                manager.load_model()
+                # ``get_identity`` itself calls ``load_model``; calling it only
+                # after a successful load keeps construction lazy (Pitfall 9).
+                identity = manager.get_identity()
+            except Exception:
+                self._manager = None
+                self._embedder = None
+                self._identity = None
+                self._load_failed = True
+                return None
+            self._manager = manager
+            self._embedder = manager.model
+            # A protocol-only double yields no described identity; inventing
+            # one would apply a policy the injector never stated (21-04).
+            self._identity = identity if isinstance(identity, EmbedderIdentity) else None
+            return self._manager
 
     async def hybrid_search(  # noqa: PLR0913 — weight overrides are per-request
         # params by design (D-04: request field ≈ CLI flag); a params object
@@ -212,12 +301,10 @@ class SearchBackend:
                     vector_weight if vector_weight is not None else self.settings.vector_weight
                 ),
             )
-            if collections:
-                repo = CollectionRepository(conn)
-                matched = [c.id for c in (repo.get_by_name(n) for n in collections) if c]
-                if not matched:
-                    return _with_suggestions(conn, query, [])
-                options.collection_ids = matched
+            collection_ids = _resolve_collection_ids(conn, collections)
+            if collections and not collection_ids:
+                return _with_suggestions(conn, query, [])
+            options.collection_ids = collection_ids
             try:
                 # EMB-01: the closure is built only from the full identity a
                 # successful embedder load recorded (21-08). When the load
@@ -254,36 +341,108 @@ class SearchBackend:
                 core_results = enrich_results(conn, core_results)
             else:
                 core_results = pipeline.search(query, options)
-            mapped = [
-                SearchResult(
-                    doc_id=r.document_id,
-                    path=r.path,
-                    title=r.title,
-                    content=r.content,
-                    score=r.score,
-                    highlights=r.highlights,
-                    # vectors_stale forwarded explicitly (D-11 / RESEARCH B5):
-                    # this boundary re-maps core fields one by one, so an
-                    # unlisted field is silently dropped — the derived
-                    # staleness flag must ride the metadata dict to reach MCP
-                    # clients (zero protocol change; model_dump() serializes).
-                    metadata={
-                        "rank": r.rank,
-                        "collection_name": r.collection_name,
-                        "vectors_stale": r.vectors_stale,
-                        # CORR-02/D-02/D-03: chunk identity and the collapsed
-                        # match count are explicitly copied for the same
-                        # reason — anything unlisted is dropped here.
-                        "chunk_id": r.chunk_id,
-                        "sequence": r.sequence,
-                        "chunk_matches": r.chunk_matches,
-                    },
-                )
-                for r in core_results
-            ]
+            mapped = _map_core_results(core_results)
             # Same boundary rule for D-05: suggestions are attached explicitly
             # on the zero-result path; MCP queries never write query_log (D-08).
             return _with_suggestions(conn, query, mapped)
+
+        return await self._run_in_db(_search)
+
+    async def lex_search(  # noqa: PLR0913 — one parameter per frozen LexSearchInput field
+        self,
+        query: str,
+        collections: list[str] | None = None,
+        limit: int = 10,
+        offset: int = 0,
+        min_score: float = 0.0,
+        filter_node: FilterNode | None = None,
+    ) -> list[SearchResult]:
+        """Run the CLI ``sif search search`` direct BM25 path (D-17).
+
+        CLI parity by construction: the same ``BM25Searcher`` call with the
+        same options (filter, offset, min_score), followed by exactly one
+        ``enrich_results``. No expansion, no prefix routing, no reranking.
+        """
+
+        def _search(conn: Any) -> list[SearchResult]:
+            collection_ids = _resolve_collection_ids(conn, collections)
+            if collections and not collection_ids:
+                return _with_suggestions(conn, query, [])
+            options = SearchOptions(
+                limit=limit,
+                offset=offset,
+                min_score=min_score,
+                include_content=False,
+                include_highlights=True,
+                filter=filter_node,
+                collection_ids=collection_ids,
+            )
+            results = BM25Searcher(conn).search(query, options)
+            # CORR-05: the direct exit owns exactly one enrichment; no
+            # pipeline is involved on this path.
+            results = enrich_results(conn, results)
+            return _with_suggestions(conn, query, _map_core_results(results))
+
+        return await self._run_in_db(_search)
+
+    async def vec_search(  # noqa: PLR0913 — one parameter per frozen VecSearchInput field
+        self,
+        query: str,
+        collections: list[str] | None = None,
+        limit: int = 10,
+        offset: int = 0,
+        per_chunk: bool = False,
+        min_score: float = 0.0,
+        filter_node: FilterNode | None = None,
+    ) -> list[SearchResult]:
+        """Run the CLI ``sif search vsearch`` direct vector path (D-17).
+
+        Identity is evaluated BEFORE ``embed_query`` (Phase 21 order): a
+        dimension mismatch refuses with the shared remedy, a same-width
+        untrusted swap warns once and marks the page. The searcher gets the
+        query embedding's own length, and exactly one ``enrich_results`` runs
+        with the correct untrusted flag. No expansion, no prefix routing, no
+        reranking.
+
+        A missing embedder raises ``RuntimeError`` naming the install/model
+        remedy; the tool boundary maps it to a ``ToolError`` (D-15).
+        """
+        manager = self._ensure_embedder()
+        if manager is None:
+            raise RuntimeError(VECTOR_SEARCH_REMEDY)
+
+        def _search(conn: Any) -> list[SearchResult]:
+            collection_ids = _resolve_collection_ids(conn, collections)
+            if collections and not collection_ids:
+                return _with_suggestions(conn, query, [])
+            identity = self._identity
+            identity_check = (
+                check_identity(conn, identity, mode="search") if identity is not None else None
+            )
+            if identity_check is not None:
+                if identity_check.dimension_mismatch:
+                    raise search_dimension_error(identity_check, schema_embedding_dim(conn))
+                if identity_check.untrusted and identity_check.stored is not None:
+                    warn_identity_mismatch_once(identity_check.stored, identity_check.current)
+            options = SearchOptions(
+                limit=limit,
+                offset=offset,
+                per_chunk=per_chunk,
+                min_score=min_score,
+                include_content=False,
+                include_highlights=True,
+                filter=filter_node,
+                collection_ids=collection_ids,
+            )
+            query_embedding = manager.embed_query(query)
+            searcher = VectorSearcher(conn, len(query_embedding))
+            results = searcher.search(query_embedding, options)
+            # CORR-05: the direct exit owns exactly one enrichment.
+            if identity_check is not None and identity_check.untrusted:
+                results = enrich_results(conn, results, vectors_untrusted=True)
+            else:
+                results = enrich_results(conn, results)
+            return _with_suggestions(conn, query, _map_core_results(results))
 
         return await self._run_in_db(_search)
 

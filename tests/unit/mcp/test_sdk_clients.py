@@ -61,6 +61,8 @@ async def _assert_client_matrix(client: Client) -> None:
         "multi_get",
         "status",
         "metadata",
+        "lex_search",
+        "vec_search",
     ]
 
     result = await client.call_tool("status", {})

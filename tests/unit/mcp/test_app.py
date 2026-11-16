@@ -136,6 +136,8 @@ def test_http_health_and_mcp_mount_serve_without_a_redirect(tmp_path: Path) -> N
             "multi_get",
             "status",
             "metadata",
+            "lex_search",
+            "vec_search",
         ]
 
         called = client.post(
