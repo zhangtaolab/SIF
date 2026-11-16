@@ -48,9 +48,9 @@ created: "2026-11-16"
 | 23-03-01 | 03 | 3 | MODEL-01/02 | T-23-07 | Runbook dry-run builds the exact per-arm env and argv (Harrier prompts from the table, explicit Qwen3, `-q`, `--index`) without a subprocess | unit | `env -u FORCE_COLOR NO_COLOR=1 pytest tests/unit/scripts/test_harrier_eval.py::TestDryRun -x --no-cov` | **Wave 0: new file** | ⬜ pending |
 | 23-03-02 | 03 | 3 | MODEL-01/02 | T-23-07 | Identity gate rejects swapped/prompt-free/wrong-dimension/unverified identities; probe requires `check_identity` ok; stage machine resumes | unit | `env -u FORCE_COLOR NO_COLOR=1 pytest tests/unit/scripts/test_harrier_eval.py -x --no-cov` | **Wave 0: new file** | ⬜ pending |
 | 23-03-03 | 03 | 3 | MODEL-01/02 | T-23-08 | Adequacy preflight exits 3 on insufficient evidence; artifact builder emits the documented schema; cleanup refuses paths outside the scratch root | unit | same | **Wave 0: new file** | ⬜ pending |
-| 23-04-01 | 04 | 4 | MODEL-01/02 | T-23-12 | Corpus scope + EN+ZH adequacy checkpoint; no embed unless both languages reach N ≥ 10 | manual | blocking-human checkpoint; preflight JSON | n/a | ⬜ pending |
-| 23-04-02 | 04 | 4 | MODEL-01 | T-23-13 | Real two-arm evidence run produces the committed artifact with both identities, fingerprints, costs, and gates | manual | `python scripts/harrier_eval.py --corpus <roots> --keep-arms --json` | local | ⬜ pending |
-| 23-04-03 | 04 | 4 | MODEL-01/02 | T-23-13 | Artifact + `docs/benchmarking.md` Phase 23 section record the evidence with no personal data | docs/json | `python -c "import json; ..."`; grep gates | artifact new | ⬜ pending |
+| 23-04-01 | 04 | 4 | MODEL-01/02 | T-23-12 | Corpus scope + EN+ZH adequacy checkpoint; no embed unless both languages reach N ≥ 10 | manual | blocking-human checkpoint; preflight JSON | n/a | ✅ green |
+| 23-04-02 | 04 | 4 | MODEL-01 | T-23-13 | Real two-arm evidence run produces the committed artifact with both identities, fingerprints, costs, and gates | manual | `python scripts/harrier_eval.py --corpus <roots> --keep-arms --json` | local | ✅ green |
+| 23-04-03 | 04 | 4 | MODEL-01/02 | T-23-13 | Artifact + `docs/benchmarking.md` Phase 23 section record the evidence with no personal data | docs/json | `python -c "import json; ..."`; grep gates | artifact new | ✅ green |
 | 23-05-01 | 05 | 5 | MODEL-02 | T-23-16 | Verdict review checkpoint: flip only on `adopt-harrier`; otherwise record not-applicable | manual | blocking-human checkpoint | n/a | ⬜ pending |
 | 23-05-02 | 05 | 5 | MODEL-02 | T-23-17 | On a pass, Settings/EmbeddingConfig default to Harrier; explicit Qwen3 stays prompt-free and selectable | unit | `env -u FORCE_COLOR NO_COLOR=1 pytest tests/unit/config/test_settings.py tests/unit/search/test_bench_snapshot.py -x --no-cov` | Existing | ⬜ pending |
 | 23-05-03 | 05 | 5 | MODEL-02 | T-23-18 | Every default-claim doc names Harrier; generated docs regenerate; artifact gains the flip block | docs | docs loop grep; `make docs-generate && git diff --exit-code ...`; artifact JSON check | Existing | ⬜ pending |
@@ -77,11 +77,26 @@ created: "2026-11-16"
 
 ## Manual-Only Verifications
 
-| Behavior | Requirement | Why Manual | Test Instructions |
-|----------|-------------|------------|-------------------|
-| Real two-arm evidence run on the personal EN+ZH corpus | MODEL-01 | Requires a real 1.19 GB model download, a real corpus, and hours of local embedding; results are hardware/version-dependent and cannot gate CI | Run `python scripts/harrier_eval.py --corpus <roots> --keep-arms --json` (retain the Qwen3 arm DB and pre-flip saved run for plan 23-06's zero-delta proof); record the artifact path, environment, per-arm counts/wall time/cache deltas, N, deltas, CIs, and the decision; commit the aggregate artifact + the `docs/benchmarking.md` section only |
-| Default flip and explicit-Qwen3 byte-identical proof | MODEL-02 | Only runs after a real pass; the Qwen3 arm DB and saved run live locally | After the flip, rerun the Qwen3 arm's `sif eval --personal --compare <pre-flip Qwen3 saved run>` on the same arm DB with explicit Qwen3 env; require every overall/language/leg delta to be exactly 0.0 and the identity unchanged |
-| Corpus adequacy preflight | MODEL-01/02 | Depends on the operator's corpus choice | Run the preflight on the baseline arm DB; report per-language held-out counts; if zh < 10 at the cap, record `insufficient-evidence` and escalate before embedding |
+| Behavior | Requirement | Why Manual | Test Instructions | Recorded outcome |
+|----------|-------------|------------|-------------------|------------------|
+| Real two-arm evidence run on the personal EN+ZH corpus | MODEL-01 | Requires a real 1.19 GB model download, a real corpus, and hours of local embedding; results are hardware/version-dependent and cannot gate CI | Run `python scripts/harrier_eval.py --corpus <roots> --keep-arms --json` (retain the Qwen3 arm DB and pre-flip saved run for plan 23-06's zero-delta proof); record the artifact path, environment, per-arm counts/wall time/cache deltas, N, deltas, CIs, and the decision; commit the aggregate artifact + the `docs/benchmarking.md` section only | ✅ Recorded 2026-11-16 — `harrier-verdict.json`; decision `keep-qwen3`; macOS-26.6.2-arm64 / Python 3.13.9 / torch 2.7.1 / `mps:0`; held-out n=56, delta +0.009430, 95% CI [-0.029587, +0.048389], floor 0.017857, winner false |
+| Default flip and explicit-Qwen3 byte-identical proof | MODEL-02 | Only runs after a real pass; the Qwen3 arm DB and saved run live locally | After the flip, rerun the Qwen3 arm's `sif eval --personal --compare <pre-flip Qwen3 saved run>` on the same arm DB with explicit Qwen3 env; require every overall/language/leg delta to be exactly 0.0 and the identity unchanged | ⬜ Pending — plan 23-05/23-06. Conditional on `adopt-harrier`; this run recorded `keep-qwen3`, so no flip or zero-delta proof was exercised here |
+| Corpus adequacy preflight | MODEL-01/02 | Depends on the operator's corpus choice | Run the preflight on the baseline arm DB; report per-language held-out counts; if zh < 10 at the cap, record `insufficient-evidence` and escalate before embedding | ✅ Recorded 2026-11-16 — `adequate: true`; held-out en=42, zh=11, mixed=3 (sampled 50); both required languages >= 10 |
+
+### Recorded Run (2026-11-16)
+
+| Field | Value |
+|-------|-------|
+| Artifact | `.planning/phases/23-harrier-gated-evaluation/bench/harrier-verdict.json` |
+| Decision | `keep-qwen3` |
+| Run date | 2026-11-16 |
+| Environment label | macOS-26.6.2-arm64, Python 3.13.9, torch 2.7.1, transformers 4.57.6, sentence-transformers 5.4.1, modelscope 1.36.0, device `mps:0` |
+| Corpus | fingerprint `b5d50ce0c696ab3d`; 498 documents; 50 sampled; basename-only scope labels |
+| Adequacy | `adequate: true`; held-out `en = 42`, `zh = 11`, `mixed = 3` |
+| Query set | fingerprint `b71a4be84d2a8724`; held-out overall N=56, mean delta +0.009430, 95% CI [-0.029587, +0.048389], noise floor 0.017857, winner false |
+| Per-arm cost | Qwen3: 498 docs / 21,798 chunks / 498 embedded / 1328.186 s; Harrier: 498 / 21,798 / 498 / 1369.016 s |
+| Replay | unavailable (`replay.available: false`); never enters the verdict |
+| Conditional flip / zero-delta proof | Pending — plan 23-05/23-06; not exercised by a `keep-qwen3` decision |
 
 ---
 

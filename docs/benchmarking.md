@@ -256,6 +256,65 @@ Because the pinned value is 1.0, the committed held-out snapshot and the SC1 hyb
 
 The title-FTS claim is scoped to tokenized EN-style titles: FTS5's porter tokenizer treats contiguous CJK runs as single tokens, so no Chinese lexical title win is claimed or tested here; the ZH story remains the vector leg (research Pitfall 17). All 150 documents in the fixture corpus have an H1 identical to their title, so title text is indexed in both the content and title columns; that duplication (research Pitfall 16) is recorded rather than silently stripped, and Phase 24 QUAL-03 owns the title-breadcrumb experiment.
 
+## Embedder Substitution Evidence
+
+The shipped default embedder is held to the same evidence bar as the ranking defaults: a candidate model ships only when a two-arm comparison on the operator's own EN+ZH corpus clears the Phase 18 paired-bootstrap gate. The instrument is `scripts/harrier_eval.py`, which builds each arm in its own file-backed scratch database from an identical corpus snapshot, verifies each arm's stored embedder identity, and gates corpus adequacy before spending the embed budget. Only aggregate evidence is committed; arm databases and saved runs stay local.
+
+### Harrier gated evaluation (Phase 23)
+
+**Decision: `keep-qwen3` — the shipped default did not move.** The candidate `microsoft/harrier-oss-v1-0.6b` was compared against the `Qwen/Qwen3-Embedding-0.6B` baseline on a curated bilingual (EN+ZH) personal corpus. The committed aggregate artifact is `.planning/phases/23-harrier-gated-evaluation/bench/harrier-verdict.json`; it contains no query text, saved-run records, or absolute paths, and the corpus is recorded as basename-only scope labels.
+
+**Corpus and adequacy.** Corpus fingerprint `b5d50ce0c696ab3d`; 498 in-scope documents, 50 sampled for query synthesis. The seven scope roots (basenames) are 项目申请, 实验室项目, 课程教学, 评审, 学生论文, PPT, and Book. Adequacy was checked before any embedding: `adequate: true` with held-out counts `en = 42`, `zh = 11`, and `mixed = 3`. Both required languages cleared the per-language N >= 10 floor; an inadequate result would have written `insufficient-evidence` and exited 3 without spending the embed budget.
+
+**The 101-query implication.** `min_heldout_for_epsilon_win = 101`: under the strict `1/N` noise floor, a held-out mean delta of exactly 0.01 is strictly above the floor only once at least 101 queries are paired. This run paired 56 held-out queries, so even a nominal +0.01 could not clear the floor at this sample size; the artifact pins the value so any rerun is read against the same bar.
+
+**Arm identities.** Both identities are `source: verified`, normalized, last-token pooling, 1024-dimensional, and have different fingerprints, so the arms cannot share an embedding cache bucket.
+
+| Arm | Model | Type | Query prompt | Document prompt | Revision / HF sha | Identity fingerprint |
+|-----|-------|------|--------------|-----------------|-------------------|----------------------|
+| Qwen3 baseline | `Qwen/Qwen3-Embedding-0.6B` | `modelscope` | none | none | not recorded | `d72e733a8fdee36b090fe88582cc836dffadccb13bfd40d0d9351637c92eb9c8` |
+| Harrier candidate | `microsoft/harrier-oss-v1-0.6b` | `sentence_transformers` | `web_search_query` | none | `f9b9dc8d367d443f2479d27aa5d8d2850c0774ee` | `dbfc87b7dbee517b9702f3465fee13af348d76ce88d7d3fecb378b9616d47613` |
+
+The comparison is paired by the query-set fingerprint `b71a4be84d2a8724` over the identical corpus fingerprint; the Qwen3 arm's pre-flip saved run is retained locally in the scratch cache (uncommitted) for plan 23-06's explicit-Qwen3 zero-delta proof.
+
+**Gates.** All gates use the house paired bootstrap (`random.Random(0)`, 10,000 resamples) on mean nDCG@10 deltas at `top_k = 10`. Only the held-out summary gate can warrant a default change; tuning and group gates are diagnostic. The all-query `overall` leaf (n=99, delta +0.012168, 95% CI [-0.017173, +0.041248], 1/N floor 0.010101, `winner: false`) is diagnostic for the same reason.
+
+| Held-out gate | N | nDCG@10 baseline → current | Mean delta | 95% CI | 1/N floor | Winner |
+|---------------|---|----------------------------|------------|--------|-----------|--------|
+| overall | 56 | 0.802843 → 0.812274 | +0.009430 | [-0.029587, +0.048389] | 0.017857 | no |
+| `en` | 42 | 0.769298 → 0.783146 | +0.013848 | [-0.037717, +0.066995] | 0.023810 | no |
+| `zh` | 11 | 0.877156 → 0.872290 | -0.004865 | [-0.014596, 0.000000] | 0.090909 | no |
+| `mixed` (diagnostic) | 3 | 1.000000 → 1.000000 | 0.000000 | [0.000000, 0.000000] | 0.333333 | no (below N >= 10) |
+
+The overall held-out split helped 8, hurt 6, and left 42 unchanged; `en` helped 8 / hurt 5 / unchanged 29, and `zh` helped 0 / hurt 1 / unchanged 10.
+
+| Held-out leg | N | nDCG@10 baseline → current | Mean delta | 95% CI | 1/N floor | Winner |
+|--------------|---|----------------------------|------------|--------|-----------|--------|
+| `title` | 49 | 0.844285 → 0.866380 | +0.016584 | [-0.010426, +0.049977] | 0.020408 | no |
+| `body` | 50 | 0.748055 → 0.755896 | +0.007841 | [-0.042136, +0.057365] | 0.020000 | no |
+
+| Held-out leg × language | N | nDCG@10 baseline → current | Mean delta | 95% CI | 1/N floor | Winner |
+|-------------------------|---|----------------------------|------------|--------|-----------|--------|
+| `title` / `en` | 20 | 0.816024 → 0.844747 | +0.028724 | [-0.013093, +0.085527] | 0.050000 | no |
+| `title` / `zh` | 5 | 0.926186 → 0.926186 | 0.000000 | [0.000000, 0.000000] | 0.200000 | no (below floor) |
+| `title` / `mixed` | 1 | 1.000000 → 1.000000 | 0.000000 | [0.000000, 0.000000] | 1.000000 | no (below floor) |
+| `body` / `en` | 22 | 0.726820 → 0.727146 | +0.000325 | [-0.088015, +0.085840] | 0.045455 | no |
+| `body` / `zh` | 6 | 0.836297 → 0.827377 | -0.008920 | [-0.026760, 0.000000] | 0.166667 | no (below floor) |
+| `body` / `mixed` | 2 | 1.000000 → 1.000000 | 0.000000 | [0.000000, 0.000000] | 0.500000 | no (below floor) |
+
+Nine leg × language × length groups fell below the 10-pair reporting floor and are named here rather than rendered as zero rows: `title/en/short`, `title/en/medium`, `title/zh/medium`, `title/zh/long`, `title/mixed/medium`, `body/en/medium`, `body/zh/medium`, `body/zh/long`, and `body/mixed/long`. The `mixed` language itself (3 held-out queries) is likewise diagnostic only.
+
+**Costs and provenance.** Both arms indexed the same 498 documents and 21,798 chunks from the frozen snapshot, and each embedded all 498 documents in its own scratch database.
+
+| Arm | Documents | Chunks | Documents embedded | Embed wall | Cache hits | Cache rows before → after |
+|-----|-----------|--------|--------------------|------------|------------|----------------------------|
+| `qwen3` | 498 | 21,798 | 498 | 1328.186 s | 1453 | 997 → 21,342 |
+| `harrier` | 498 | 21,798 | 498 | 1369.016 s | 1452 | 0 → 20,346 |
+
+Environment: macOS-26.6.2-arm64, Python 3.13.9, torch 2.7.1, transformers 4.57.6, sentence-transformers 5.4.1, modelscope 1.36.0, device `mps:0`; git head `b7ddc02` with a dirty working tree at run time. Wall times are local wall-clock observations, not a performance benchmark. `replay.available: false` because the scratch arms have no `query_log` history; replay never enters the verdict, and the comparison is paired by the saved query set and corpus fingerprint alone.
+
+**Why the default stays.** The overall held-out gate was `sufficient: true` but `winner: false`: its mean delta +0.009430 is below the 0.01 epsilon and below the 1/N noise floor 0.017857, and its 95% CI includes zero. The per-language deltas were `en` +0.013848 and `zh` -0.004865. Both clear the inclusive -0.01 language floor, so neither is a language veto, but neither funds a switch: `en`'s interval includes zero and sits below its own 0.023810 floor, while `zh` is negative (0 helped / 1 hurt / 10 unchanged). Because `adopt-harrier` requires an overall held-out winner plus every language floor, the decision is `keep-qwen3`. The artifact records the literal rejection reasons: overall held-out winner is false, the 95% CI includes zero, the mean delta is below 0.01, and the mean delta is not strictly above the 1/N noise floor. No default embedder setting changed; the shipped default remains Qwen3-Embedding-0.6B.
+
 ## Rerank States
 
 Reranking is **explicit opt-in and defaults off**: pass `--rerank` or set `SIF_RERANK_ENABLED=1`. The off path never constructs a reranker model (zero-cost by construction).
