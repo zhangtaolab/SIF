@@ -5,16 +5,16 @@ milestone_name: Search Precision and Agent Experience
 current_phase: 22
 current_phase_name: MCP SDK v2 Modernization + Agent Packaging
 status: executing
-stopped_at: Completed 22-03-PLAN.md
-last_updated: "2026-11-16T07:52:03.049Z"
+stopped_at: Completed 22-04-PLAN.md
+last_updated: "2026-11-16T08:10:52.112Z"
 last_activity: 2026-11-16
 last_activity_desc: Phase 22 execution started
-state_head: 6a1f06c4636aaa3880995ae08b8ab42dd7e7a1b1
+state_head: "0bd57b7a56e2ef561e7793b55739321d3955118e"
 progress:
   total_phases: 8
   completed_phases: 5
   total_plans: 42
-  completed_plans: 38
+  completed_plans: 39
 ---
 
 # DocSift — Project State
@@ -31,7 +31,7 @@ progress:
 ## Current Position
 
 Phase: 22 (MCP SDK v2 Modernization + Agent Packaging) — EXECUTING
-Plan: 4 of 7
+Plan: 5 of 7
 Status: Ready to execute
 Last activity: 2026-11-16 — Phase 22 execution started
 
@@ -87,6 +87,7 @@ Progress: [██████░░░░] 63%
 | Phase 22 P01 | 24min | 3 tasks | 23 files |
 | Phase 22 P02 | 15min | 3 tasks | 24 files |
 | Phase 22 P03 | 11min | 3 tasks | 10 files |
+| Phase 22 P04 | 12min | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -251,6 +252,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - [Phase 22]: 22-03: /health carries a narrow FastAPI Header dependency over the same resolved allowlist and answers a bad Host with 421, matching the SDK /mcp status (C2).
 - [Phase 22]: 22-03: the MCP daemon owns <db>.mcp.pid (mode mcp, depth bm25); corroborate_pid/stop_daemon take a keyword-only marker defaulting to watch, so watch and MCP daemons coexist and each --stop signals only its own process (D-20/C5).
 - [Phase 22]: 22-03: mcp daemon arms quietly on a schema-ready, model-free backend before bind, removes the PID in finally on every exit path, and the POSIX e2e uses real sif.cli.main subprocesses to prove initialize, stop, bind-failure cleanup, and watch coexistence.
+- [Phase 22]: Prefix-first routing resolves lex:/BM25 before any load decision; a latched load failure degrades query directly to BM25 over prefix-free text with the loader's one warning (D-15).
+- [Phase 22]: Query now reuses CLI SearchPipeline components per request; rerank is gate-before-construct, latches ImportError/ValueError with one warning, and retries execution failures with reranker=None (D-17).
 
 ### Pending Todos
 
@@ -280,8 +283,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-16T07:52:02.345Z
-Stopped at: Completed 22-03-PLAN.md
+Last session: 2026-11-16T08:10:51.387Z
+Stopped at: Completed 22-04-PLAN.md
 Resume file: None
 
 - **Next expected action:** plan and execute Phase 21 (Scale, Maintenance + Embedder Identity — SCALE-01..03, EMB-01/02), then 22 → 23 → 24. Phase 20 delivered FILT-01..05: shared 17-operator filter grammar on CLI+MCP, `path`/`mtime` built-ins, pre-RRF per-leg pushdown with the corrected vector escalation, typed kv storage + `index_meta`-gated backfill, and the `metadata` discovery tool whose envelope is the frozen Phase 22 contract. Two audits remain recorded as debt (see Blockers/Concerns): `/gsd-secure-phase 20` and `/gsd:validate-phase 20`.

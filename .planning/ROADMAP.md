@@ -217,7 +217,7 @@ Full detail: `.planning/milestones/v1.1-ROADMAP.md`
   3. User's loopback MCP server is protected from DNS rebinding — Host/Origin validation via SDK `transport_security`, verified with spoofed headers BEFORE the hand-rolled middleware is deleted
   4. Agent gets full query pipeline parity with a clean server — expander/reranker opt-in/snippet wired (pipeline hoisted, overclaiming rerank description fixed, rerank stays opt-in and documented); lazy embedder with forced quiet before any model import and a stdout-purity regression on cold first query; lex/vec tools wired; `mcp daemon` runs as a real daemon via existing `utils/daemon.py`
   5. User can install SIF as a Claude Code plugin and discover it in the MCP Registry — plugin + marketplace.json + citation-discipline skill encoding search→get two-stage citation (`claude plugin validate` passes); Registry listing via mcp-publisher is scripted and re-runnable, after the Phase 17 PyPI prerequisite
-**Plans:** 3/7 plans executed
+**Plans:** 4/7 plans executed
 **Wave 1**
 - [x] 22-01-PLAN.md — Tracer: SDK composition root, Python 3.10 gate, dual-era transcripts, watch lifespan, transport-security and stdout proof (old shell kept dormant)
 
@@ -226,7 +226,7 @@ Full detail: `.planning/milestones/v1.1-ROADMAP.md`
 - [x] 22-03-PLAN.md — Transport security flags + `/health` guard + real `mcp daemon`
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 22-04-PLAN.md — Lazy embedder, full query pipeline parity, cold-first-query stdout purity
+- [x] 22-04-PLAN.md — Lazy embedder, full query pipeline parity, cold-first-query stdout purity
 
 **Wave 4** *(blocked on Wave 3 completion)*
 - [ ] 22-05-PLAN.md — Citation-grade structured output: snippet line ranges, batched content hashes, get ranges
@@ -283,7 +283,7 @@ v1.2 contracts — defined ONCE; downstream phases consume, never redefine:
 | 19. Search Correctness | v1.2 | 9/9 | Complete    | 2026-11-15 |
 | 20. Metadata Filtering + Discovery | v1.2 | 5/5 | Complete    | 2026-11-15 |
 | 21. Scale, Maintenance + Embedder Identity | v1.2 | 8/8 | Complete    | 2026-11-16 |
-| 22. MCP SDK v2 + Agent Packaging | v1.2 | 3/7 | In Progress | - |
+| 22. MCP SDK v2 + Agent Packaging | v1.2 | 4/7 | In Progress | - |
 | 23. Harrier Gated Evaluation | v1.2 | 0/TBD | Not started | - |
 | 24. Tuning + Models UX + Install Docs | v1.2 | 0/TBD | Not started | - |
 

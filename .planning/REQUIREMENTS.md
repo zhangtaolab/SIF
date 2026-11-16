@@ -62,7 +62,7 @@ Each maps to exactly one roadmap phase. Checkboxes mark committed scope.
 - [ ] **MCP-02**: Agent gets accurate tool annotations on all tools (read-only tools annotated for parallel calls + one retry; write tools never readOnly; no auto-approval claims — annotations are metadata, not enforcement).
 - [ ] **MCP-03**: Agent gets citation-grade structured output (structuredContent/outputSchema automatic from return annotations with docid, path, line range, hash, staleness; text content kept alongside for legacy clients).
 - [x] **MCP-04**: User's loopback MCP server is protected from DNS rebinding (Host/Origin validation via SDK `transport_security`, verified with spoofed headers before deleting the hand-rolled middleware).
-- [ ] **MCP-05**: Agent gets full query pipeline parity (expander/reranker opt-in/snippet wired; pipeline hoisted; overclaiming rerank description fixed; rerank stays opt-in and documented).
+- [x] **MCP-05**: Agent gets full query pipeline parity (expander/reranker opt-in/snippet wired; pipeline hoisted; overclaiming rerank description fixed; rerank stays opt-in and documented).
 - [x] **MCP-06**: User gets a clean-stdout MCP server (lazy embedder; forced quiet before any model import; stdout-purity regression on cold first query; lex/vec wiring).
 - [ ] **MCP-07**: User can run MCP as a daemon (`mcp daemon` un-stubbed via existing `utils/daemon.py`).
 - [ ] **MCP-08**: User can install SIF as a Claude Code plugin (plugin + marketplace.json + citation-discipline skill encoding search→get two-stage citation; `claude plugin validate` passes).
@@ -158,7 +158,7 @@ Populated during roadmap creation. Each requirement maps to exactly one phase.
 | MCP-02 | Phase 22 | Pending |
 | MCP-03 | Phase 22 | Pending |
 | MCP-04 | Phase 22 | Complete |
-| MCP-05 | Phase 22 | Pending |
+| MCP-05 | Phase 22 | Complete |
 | MCP-06 | Phase 22 | Complete |
 | MCP-07 | Phase 22 | Pending |
 | MCP-08 | Phase 22 | Pending |
