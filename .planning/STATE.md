@@ -5,11 +5,11 @@ milestone_name: Search Precision and Agent Experience
 current_phase: 23
 current_phase_name: Harrier Gated Evaluation
 status: planning
-stopped_at: Phase 22 complete, ready to plan Phase 23
-last_updated: "2026-11-16T10:31:29.588Z"
+stopped_at: Phase 23 context gathered
+last_updated: "2026-11-16T10:33:52.966Z"
 last_activity: 2026-11-16
 last_activity_desc: Phase 22 complete, transitioned to Phase 23
-state_head: 10e2f6d5fc6910476868e063ae0404b10a81d764
+state_head: 7e0e7cf860e53d8ec48193089f7c2b0f7c995c0d
 progress:
   total_phases: 8
   completed_phases: 6
@@ -302,8 +302,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-16T10:31:28.761Z
-Stopped at: Phase 22 complete, ready to plan Phase 23
-Resume file: None
+Last session: 2026-11-16T10:33:52.133Z
+Stopped at: Phase 23 context gathered
+Resume file: .planning/phases/23-harrier-gated-evaluation/23-CONTEXT.md
 
 - **Next expected action:** finish 22-07 Task 3 (Registry docs, phase gate, real `claude mcp` stdio smoke, `22-07-SUMMARY.md`), then Phase 22 verification (gsd-verifier, code review, regression gate) and ROADMAP/STATE completion; then Phase 23 → 24. 22-07 Task 2 was recorded `blocked no-github-login` (optional public Registry listing deferred). Two audits remain recorded as debt (see Blockers/Concerns): `/gsd-secure-phase 20` and `/gsd:validate-phase 20`.
