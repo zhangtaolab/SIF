@@ -43,12 +43,13 @@ created: "2026-11-16"
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
 | 22-01-T1 | 01 | 1 | MCP-01 | T-22-01 | Package legitimacy checkpoint before install; pinned `mcp>=2.3.0,<3`; no extra runtime deps | manual + unit | `uv lock --check` / `uv tree` | ❌ W0 | ⬜ pending |
-| 22-01-T2 | 01 | 1 | MCP-01 | T-22-02 | SDK shell replaced; old JSON-RPC/wire/transports deleted; backend/watch/I-O preserved | integration | `pytest tests/unit/mcp/test_app.py tests/unit/mcp/test_wire_transcripts.py -q` | ❌ W0 | ⬜ pending |
+| 22-01-T2 | 01 | 1 | MCP-01 | T-22-02 | SDK shell serves status over stdio + HTTP; backend/watch/I-O preserved; old shell left dormant for 22-02 | integration | `pytest tests/unit/mcp/test_app.py -q` | ❌ W0 | ⬜ pending |
 | 22-01-T3 | 01 | 1 | MCP-01 | T-22-03 | 2024-11-05 / 2025-03-26 / 2025-06-18 / 2025-11-25 handshakes + 2026-07-28 stateless; session/headers exact | integration | `pytest tests/unit/mcp/test_wire_transcripts.py tests/unit/mcp/test_sdk_clients.py -q` | ❌ W0 | ⬜ pending |
 | 22-01-T4 | 01 | 1 | MCP-06 | T-22-04 | Cold-first-query stdout is pure JSON-RPC; pre-run stdout hazard closed | integration | `pytest tests/unit/mcp/test_stdout_purity.py -q` | ❌ W0 | ⬜ pending |
-| 22-02-T1 | 02 | 2 | MCP-02 | T-22-05 | Seven read-only tools; annotations truthful; descriptions match backend; no mutation tools | unit | `pytest tests/unit/mcp/test_tools.py -q` | ❌ W0 | ⬜ pending |
-| 22-02-T2 | 02 | 2 | MCP-05 | T-22-06 | lex/vec direct paths, filters/offset/per_chunk/min_score, one enrich | unit | `pytest tests/unit/mcp/test_tools.py tests/unit/mcp/test_backend.py -q` | ✅ partial | ⬜ pending |
-| 22-03-T1 | 03 | 2 | MCP-04 | T-22-07 | Explicit `TransportSecuritySettings`; Host 421 / Origin 403 / allowed 200; `/health` Host guard; middleware deleted | unit | `pytest tests/unit/mcp/test_transport_security.py -q` | ❌ W0 | ⬜ pending |
+| 22-02-T1 | 02 | 2 | MCP-02 | T-22-05 | Five read-capable tools; annotations truthful; descriptions match backend; no mutation tools; outputSchema present | unit | `pytest tests/unit/mcp/test_tools.py -q` | ❌ W0 | ⬜ pending |
+| 22-02-T2 | 02 | 2 | MCP-05 | T-22-06 | lex/vec direct paths, filters/offset/per_chunk/min_score, one enrich, outputSchema | unit | `pytest tests/unit/mcp/test_tools.py tests/unit/mcp/test_backend.py -q` | ✅ partial | ⬜ pending |
+| 22-02-T3 | 02 | 2 | MCP-02 | T-22-24 | Seven-tool battery green first; `_METADATA_ENVELOPE` ported into test_tools.py; old shell/wire types/replaced tests deleted; no Python import survives | unit + absence gate | `pytest tests/unit/mcp/test_tools.py tests/unit/mcp/test_backend.py -q`; `test ! -e src/sif/mcp/server.py`; `grep -rn --include='*.py' "from sif.mcp.server\|from sif.mcp.handlers\|from sif.mcp.transports" src tests` (no match) | ❌ W0 | ⬜ pending |
+| 22-03-T1 | 03 | 2 | MCP-04 | T-22-07 | Explicit `TransportSecuritySettings`; Host 421 / Origin 403 / allowed 200; `/health` Host guard; no wildcard; hand-rolled middleware removed with the shell in 22-02 | unit | `pytest tests/unit/mcp/test_transport_security.py -q` | ❌ W0 | ⬜ pending |
 | 22-03-T2 | 03 | 2 | MCP-07 | T-22-08 | Real detached daemon; `<db>.mcp.pid`; mode-aware stop; bind-failure cleanup; Windows refusal | unit + e2e | `pytest tests/unit/mcp/test_daemon.py -q` | ❌ W0 | ⬜ pending |
 | 22-04-T1 | 04 | 3 | MCP-05 | T-22-09 | Lazy manager one load; query BM25 degrade; vec ToolError; lex/status/metadata/get/multi_get no load; identity dimension | unit | `pytest tests/unit/mcp/test_lazy_embedder.py tests/unit/mcp/test_backend.py -q` | ❌ W0 | ⬜ pending |
 | 22-04-T2 | 04 | 3 | MCP-05 | T-22-10 | Expansion/snippets/rerank parity; rerank None/True/False; soft-degrade failures | unit | `pytest tests/unit/mcp/test_backend.py tests/unit/mcp/test_tools.py -q` | ❌ W0 | ⬜ pending |
@@ -76,7 +77,7 @@ created: "2026-11-16"
 - [ ] `tests/unit/mcp/test_daemon.py` — PID path/payload, arm, stop marker, Windows, bind failure
 - [ ] `tests/unit/mcp/test_plugin.py` — manifests, skills, optional CLI validate
 - [ ] `tests/unit/mcp/test_registry_script.py` — preflight branches
-- [ ] Rewrite `tests/unit/mcp/test_integration.py`; delete `test_server.py`, `test_transports_http.py`, `test_transports_stdio.py`
+- [ ] 22-01 keeps the old MCP test modules; 22-02 ports `_METADATA_ENVELOPE` into `test_tools.py`, then rewrites/deletes `test_integration.py`, `test_server.py`, `test_transports_http.py`, `test_transports_stdio.py`
 - [ ] Adapt `test_backend.py`; keep `test_mcp_watch_host.py` intact
 
 ---

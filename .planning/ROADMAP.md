@@ -220,10 +220,10 @@ Full detail: `.planning/milestones/v1.1-ROADMAP.md`
 **Plans:** 7 plans
 
 **Wave 1**
-- [ ] 22-01-PLAN.md — Tracer: SDK composition root, Python 3.10 gate, dual-era transcripts, watch lifespan, shell deletion
+- [ ] 22-01-PLAN.md — Tracer: SDK composition root, Python 3.10 gate, dual-era transcripts, watch lifespan, transport-security and stdout proof (old shell kept dormant)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 22-02-PLAN.md — Seven-tool surface: annotations, descriptions, ToolError, lex/vec direct paths
+- [ ] 22-02-PLAN.md — Seven-tool surface: annotations, descriptions, outputSchema, ToolError, lex/vec direct paths, then old-shell deletion after the seven-tool proof
 - [ ] 22-03-PLAN.md — Transport security flags + `/health` guard + real `mcp daemon`
 
 **Wave 3** *(blocked on Wave 2 completion)*
