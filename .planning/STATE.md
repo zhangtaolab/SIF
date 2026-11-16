@@ -4,16 +4,16 @@ milestone: v1.2
 milestone_name: Search Precision and Agent Experience
 current_phase: 22
 current_phase_name: MCP SDK v2 Modernization + Agent Packaging
-status: planning
+status: executing
 stopped_at: Phase 22 context gathered
-last_updated: "2026-11-16T00:38:29.556Z"
+last_updated: "2026-11-16T06:38:29.077Z"
 last_activity: 2026-11-16
 last_activity_desc: Phase 21 complete, transitioned to Phase 22
-state_head: a970f9c87e7d1d0be611cf75a321409bd3102c19
+state_head: 736339fa06a726c7edca8de12ef460f7b7db9115
 progress:
   total_phases: 8
   completed_phases: 5
-  total_plans: 35
+  total_plans: 42
   completed_plans: 35
 ---
 
@@ -30,9 +30,9 @@ progress:
 
 ## Current Position
 
-Phase: 22 — MCP SDK v2 Modernization + Agent Packaging
+Phase: 22 (MCP SDK v2 Modernization + Agent Packaging) — READY TO EXECUTE
 Plan: Not started
-Status: Ready to plan
+Status: Ready to execute
 Last activity: 2026-11-16 — Phase 21 complete, transitioned to Phase 22
 
 Progress: [██████░░░░] 63%
@@ -262,8 +262,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-16T00:38:28.782Z
-Stopped at: Phase 22 context gathered
-Resume file: .planning/phases/22-mcp-sdk-v2-modernization-agent-packaging/22-CONTEXT.md
+Last session: 2026-11-16 (resume)
+Stopped at: Session resumed; Phase 22 revision iteration 2 pending (4 blockers + 7 warnings, fix decisions locked)
+Resume file: .planning/phases/22-mcp-sdk-v2-modernization-agent-packaging/.continue-here.md
 
 - **Next expected action:** plan and execute Phase 21 (Scale, Maintenance + Embedder Identity — SCALE-01..03, EMB-01/02), then 22 → 23 → 24. Phase 20 delivered FILT-01..05: shared 17-operator filter grammar on CLI+MCP, `path`/`mtime` built-ins, pre-RRF per-leg pushdown with the corrected vector escalation, typed kv storage + `index_meta`-gated backfill, and the `metadata` discovery tool whose envelope is the frozen Phase 22 contract. Two audits remain recorded as debt (see Blockers/Concerns): `/gsd-secure-phase 20` and `/gsd:validate-phase 20`.

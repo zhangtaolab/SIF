@@ -218,7 +218,6 @@ Full detail: `.planning/milestones/v1.1-ROADMAP.md`
   4. Agent gets full query pipeline parity with a clean server — expander/reranker opt-in/snippet wired (pipeline hoisted, overclaiming rerank description fixed, rerank stays opt-in and documented); lazy embedder with forced quiet before any model import and a stdout-purity regression on cold first query; lex/vec tools wired; `mcp daemon` runs as a real daemon via existing `utils/daemon.py`
   5. User can install SIF as a Claude Code plugin and discover it in the MCP Registry — plugin + marketplace.json + citation-discipline skill encoding search→get two-stage citation (`claude plugin validate` passes); Registry listing via mcp-publisher is scripted and re-runnable, after the Phase 17 PyPI prerequisite
 **Plans:** 7 plans
-
 **Wave 1**
 - [ ] 22-01-PLAN.md — Tracer: SDK composition root, Python 3.10 gate, dual-era transcripts, watch lifespan, transport-security and stdout proof (old shell kept dormant)
 
