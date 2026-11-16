@@ -5,16 +5,16 @@ milestone_name: Search Precision and Agent Experience
 current_phase: 22
 current_phase_name: MCP SDK v2 Modernization + Agent Packaging
 status: executing
-stopped_at: Phase 22 context gathered
-last_updated: "2026-11-16T06:38:29.077Z"
+stopped_at: Completed 22-01-PLAN.md
+last_updated: "2026-11-16T07:12:06.456Z"
 last_activity: 2026-11-16
-last_activity_desc: Phase 21 complete, transitioned to Phase 22
-state_head: 736339fa06a726c7edca8de12ef460f7b7db9115
+last_activity_desc: Phase 22 execution started
+state_head: 771fb99d285a3441da34dd4c2f291973ccf2403d
 progress:
   total_phases: 8
   completed_phases: 5
   total_plans: 42
-  completed_plans: 35
+  completed_plans: 36
 ---
 
 # DocSift — Project State
@@ -30,10 +30,10 @@ progress:
 
 ## Current Position
 
-Phase: 22 (MCP SDK v2 Modernization + Agent Packaging) — READY TO EXECUTE
-Plan: Not started
+Phase: 22 (MCP SDK v2 Modernization + Agent Packaging) — EXECUTING
+Plan: 2 of 7
 Status: Ready to execute
-Last activity: 2026-11-16 — Phase 21 complete, transitioned to Phase 22
+Last activity: 2026-11-16 — Phase 22 execution started
 
 Progress: [██████░░░░] 63%
 
@@ -84,6 +84,7 @@ Progress: [██████░░░░] 63%
 | Phase 21 P05 | 10min | 3 tasks | 9 files |
 | Phase 21 P06 | 8min | 3 tasks | 8 files |
 | Phase 21 P07 | 7min | 3 tasks | 9 files |
+| Phase 22 P01 | 24min | 3 tasks | 23 files |
 
 ## Accumulated Context
 
@@ -233,6 +234,12 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - [Phase 21]: 21-07: legacy upgrade tests build a real index then strip the shadow, its marker, and the identity row so production create_all performs the upgrade
 - [Phase 21]: 21-07: a fresh first embed writes exactly embedded_documents_version, metadata_values_version, embedder.identity plus one shadow row and a verified identity
 - [Phase 21]: 21-07: the phase gate is green at 2734 passed / 1 skipped / 95.22% coverage with ruff, format, ty, generator-clean docs, and no dependency change; maintenance concurrency and MCP policy needed no new tests
+- [Phase 22]: 22-01: tools and the docs:// resource are registered inside the SDK lifespan (where SearchBackend is constructed) behind a one-registration guard; Annotated[CallToolResult, Model] return annotations publish outputSchema while the explicit builder keeps compact text + structuredContent.
+- [Phase 22]: 22-01: build_server records its resolved TransportSecuritySettings on the server and create_http_app reuses it; verified SDK codes are bad Host 421, bad Origin 403, non-JSON Content-Type 400.
+- [Phase 22]: 22-01: outputSchema/structuredContent appear on 2024-era responses (C9) and the five goldens record it; the writer is re-runnable via SIF_UPDATE_WIRE_GOLDENS=1 for 22-02/22-04/22-05.
+- [Phase 22]: 22-01: the status-only e2e bridge skips three query-dependent watch tests and the drift test's query tail with a reason naming 22-02's seven-tool battery; the intermediate SDK surface is a dev-branch state with no release.
+- [Phase 22]: 22-01: SearchBackend construction is model-free (no factory/load/identity) with _load_lock/_load_attempted/_load_failed for 22-04; the docsift migration notice moved to console_err on stderr.
+- [Phase 22]: 22-01: package legitimacy for mcp==2.3.0 approved by the maintainer 2026-11-16 (official modelcontextprotocol/python-sdk, MIT); uv.lock regenerated add-only with no existing package version change.
 
 ### Pending Todos
 
@@ -262,8 +269,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-16 (resume)
-Stopped at: Session resumed; Phase 22 revision iteration 2 pending (4 blockers + 7 warnings, fix decisions locked)
-Resume file: .planning/phases/22-mcp-sdk-v2-modernization-agent-packaging/.continue-here.md
+Last session: 2026-11-16T07:12:05.565Z
+Stopped at: Completed 22-01-PLAN.md
+Resume file: None
 
 - **Next expected action:** plan and execute Phase 21 (Scale, Maintenance + Embedder Identity — SCALE-01..03, EMB-01/02), then 22 → 23 → 24. Phase 20 delivered FILT-01..05: shared 17-operator filter grammar on CLI+MCP, `path`/`mtime` built-ins, pre-RRF per-leg pushdown with the corrected vector escalation, typed kv storage + `index_meta`-gated backfill, and the `metadata` discovery tool whose envelope is the frozen Phase 22 contract. Two audits remain recorded as debt (see Blockers/Concerns): `/gsd-secure-phase 20` and `/gsd:validate-phase 20`.
