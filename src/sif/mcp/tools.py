@@ -433,8 +433,8 @@ def register_resource(mcp: MCPServer, backend: SearchBackend) -> None:
     )
     async def read_document(
         doc_id: str,
-        from_line: int | None = None,
-        max_lines: int | None = None,
+        from_line: Annotated[int | None, Field(ge=1)] = None,
+        max_lines: Annotated[int | None, Field(ge=1)] = None,
     ) -> str:
         document = await backend.get_document(doc_id, from_line, max_lines)
         if document is None:

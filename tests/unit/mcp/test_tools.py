@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 from mcp.server import MCPServer
-from mcp.server.mcpserver.exceptions import ToolError
+from mcp.server.mcpserver.exceptions import ToolError, UnexpectedResourceError
 from mcp.types import ToolAnnotations
 
 from sif.config.settings import Settings
@@ -416,7 +416,7 @@ class TestGetAndMultiGetTools:
 
 
 class TestDocsResource:
-    """WR-09: the ``docs://`` resource's advertised surface."""
+    """WR-09/WR-10: the ``docs://`` resource's advertised and validated surface."""
 
     @pytest.mark.asyncio
     async def test_description_names_doc_ids_and_truncation(self) -> None:
@@ -430,6 +430,19 @@ class TestDocsResource:
         assert "document ID" in description
         assert "path" not in description.lower()
         assert "100 KiB" in description
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("query", ["max_lines=-2", "from_line=0", "max_lines=0"])
+    async def test_non_positive_line_parameters_are_rejected(self, query: str) -> None:
+        """WR-10: 0/negative windows fail validation instead of slicing."""
+        backend = _mock_backend()
+        mcp = MCPServer("test-resource")
+        register_resource(mcp, backend)
+
+        with pytest.raises(UnexpectedResourceError):
+            await mcp.read_resource(f"docs://doc-1?{query}")
+
+        backend.get_document.assert_not_called()
 
 
 class TestStatusTool:
