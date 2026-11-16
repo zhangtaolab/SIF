@@ -2,20 +2,21 @@
 gsd_state_version: "1.0"
 milestone: v1.2
 milestone_name: Search Precision and Agent Experience
-current_phase: 23
-current_phase_name: Harrier Gated Evaluation
-current_plan: 6
-status: verifying
-stopped_at: Completed 23-06-PLAN.md
-last_updated: "2026-11-16T14:47:21.522Z"
+current_phase: 24
+current_phase_name: Tuning + Models UX + Install Docs
+current_plan: Not started
+status: planning
+stopped_at: Phase 23 complete, ready to plan Phase 24
+last_updated: "2026-11-16T15:30:22.543Z"
 last_activity: 2026-11-16
-last_activity_desc: Phase 22 complete, transitioned to Phase 23
-state_head: 7fb9b6e0a79c463818406504025f790bf0c820e6
+last_activity_desc: Phase 23 complete, transitioned to Phase 24
+state_head: 2fc6be66a63930f7cba07f851dc5ec1f627a3423
 progress:
   total_phases: 8
-  completed_phases: 6
+  completed_phases: 7
   total_plans: 48
   completed_plans: 48
+  percent: 88
 ---
 
 # DocSift — Project State
@@ -31,13 +32,13 @@ progress:
 
 ## Current Position
 
-Phase: 23 (Harrier Gated Evaluation) — IN PROGRESS
-Current Plan: 6
+Phase: 24 — Tuning + Models UX + Install Docs
+Current Plan: Not started
 Total Plans in Phase: 6
-Status: Phase complete — ready for verification
-Last activity: 2026-11-16 — 23-01 complete (2 tasks, 2 commits); next: 23-02
+Status: Ready to plan
+Last activity: 2026-11-16 — Phase 23 complete, transitioned to Phase 24
 
-Progress: [████████░░] 75%
+Progress: [█████████░] 88%
 
 **v1.2 phase list:** 17 Engineering Foundation (CI + Hygiene + PyPI) · 18 Quality Instrument (Personal Bench + rapidfuzz DYM) · 19 Search Correctness · 20 Metadata Filtering + Discovery · 21 Scale, Maintenance + Embedder Identity · 22 MCP SDK v2 + Agent Packaging · 23 Harrier Gated Evaluation · 24 Tuning + Models UX + Install Docs
 
@@ -330,7 +331,7 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 ## Session Continuity
 
 Last session: 2026-11-16T14:47:20.561Z
-Stopped at: Completed 23-06-PLAN.md
+Stopped at: Phase 23 complete, ready to plan Phase 24
 Resume file: None
 
 - **Next expected action:** finish 22-07 Task 3 (Registry docs, phase gate, real `claude mcp` stdio smoke, `22-07-SUMMARY.md`), then Phase 22 verification (gsd-verifier, code review, regression gate) and ROADMAP/STATE completion; then Phase 23 → 24. 22-07 Task 2 was recorded `blocked no-github-login` (optional public Registry listing deferred). Two audits remain recorded as debt (see Blockers/Concerns): `/gsd-secure-phase 20` and `/gsd:validate-phase 20`.
