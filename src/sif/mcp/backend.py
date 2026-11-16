@@ -295,18 +295,21 @@ class SearchBackend:
 
         One thread-safe attempt: ``EmbeddingManager.from_settings`` (which
         creates the cache directory/database), ``load_model``, and
-        ``get_identity`` run under ``_load_lock``. A successful load caches
-        the manager, the loaded embedder, the identity, and the identity's
-        dimension (which then governs the pipeline instead of the settings
-        value). A failure latches ``_load_failed`` and logs exactly one
-        warning naming the install/model remedy, so later requests never
-        retry the load or repeat the warning; ``query`` degrades to BM25 and
-        ``vec_search`` raises the remedy-bearing error.
+        ``get_identity`` run under ``_load_lock``. Waiters block on the lock
+        until the attempt settles, so a concurrent caller can never observe
+        the in-progress state as "no embedder" and degrade to BM25 while the
+        model is still loading (CR-01). A successful load caches the manager,
+        the loaded embedder, the identity, and the identity's dimension
+        (which then governs the pipeline instead of the settings value). A
+        failure latches ``_load_failed`` and logs exactly one warning naming
+        the install/model remedy, so later requests never retry the load or
+        repeat the warning; ``query`` degrades to BM25 and ``vec_search``
+        raises the remedy-bearing error.
         """
-        if self._load_attempted:
-            return None if self._load_failed else self._manager
         with self._load_lock:
-            # Another thread completed the attempt while we waited.
+            # The attempt flag is set, but not the outcome, before the load
+            # starts; holding the lock across the whole load is what keeps
+            # waiters from mistaking "loading" for "failed".
             if self._load_attempted:
                 return None if self._load_failed else self._manager
             self._load_attempted = True

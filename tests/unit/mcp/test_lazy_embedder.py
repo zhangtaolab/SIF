@@ -228,7 +228,47 @@ class TestOneAttempt:
             ThreadPoolExecutor(max_workers=2) as pool,
         ):
             results = [pool.submit(_attempt) for _ in range(2)]
-            [result.result() for result in results]
+            returned = [result.result() for result in results]
+
+        assert from_settings.call_count == 1
+        assert manager.load_calls == 1
+        # CR-01: the waiting caller must receive the manager, never ``None``
+        # (which ``hybrid_search`` would treat as a latched failure).
+        assert returned == [manager, manager]
+        assert backend._manager is manager
+
+    def test_a_waiter_arriving_mid_load_receives_the_manager(self, tmp_path: Path) -> None:
+        """CR-01 regression: "load in progress" is not "load failed".
+
+        Thread A is parked inside ``load_model`` when thread B calls
+        ``_ensure_embedder``. Before the fix, B's unlocked fast path saw
+        ``_load_attempted=True`` with ``_manager=None`` and answered ``None``
+        (BM25 degrade); it must instead block on the lock and receive the
+        same manager A is about to publish.
+        """
+        db_path, settings = _seed_db(tmp_path)
+        backend = SearchBackend(str(db_path), settings=settings)
+        load_started = threading.Event()
+        release_load = threading.Event()
+
+        def _slow_load() -> None:
+            load_started.set()
+            assert release_load.wait(timeout=5.0)
+
+        manager = _StubManager(load_hook=_slow_load)
+
+        with (
+            patch(
+                "sif.mcp.backend.EmbeddingManager.from_settings", return_value=manager
+            ) as from_settings,
+            ThreadPoolExecutor(max_workers=2) as pool,
+        ):
+            first = pool.submit(backend._ensure_embedder)
+            assert load_started.wait(timeout=5.0)
+            second = pool.submit(backend._ensure_embedder)
+            release_load.set()
+            assert first.result(timeout=5.0) is manager
+            assert second.result(timeout=5.0) is manager
 
         assert from_settings.call_count == 1
         assert manager.load_calls == 1
