@@ -253,6 +253,10 @@ class SearchBackend:
         self._query_expander: QueryExpansion | None = None
         self._reranker: Any = None
         self._reranker_failed = False
+        # WR-11: construction is a check-then-act on ``_reranker``; the lock
+        # makes every concurrent first caller share one instance (and one
+        # eventual model load) instead of building duplicates.
+        self._reranker_lock = threading.Lock()
 
         # D-07/D-04: resolve the prompt scheme ONCE from the backend's own
         # settings. The same scheme feeds the settings-only identity (schema
@@ -359,7 +363,9 @@ class SearchBackend:
 
         D-17: ``None`` follows ``SIF_RERANK_ENABLED``; ``True``/``False``
         override it. The gate is checked BEFORE construction, so the off path
-        is zero-cost (no optional-backend import, no model load). A requested
+        is zero-cost (no optional-backend import, no model load). Construction
+        runs under ``_reranker_lock`` so concurrent first requests share one
+        instance (WR-11); the reranker's own model load stays lazy. A requested
         construction that fails for a missing optional backend (``ImportError``)
         or an unknown model type (``ValueError``) soft-degrades: one warning
         naming the cause and remedy, no reranker, and the failure is latched so
@@ -370,24 +376,29 @@ class SearchBackend:
         if not requested or self._reranker_failed:
             return None
         if self._reranker is None:
-            try:
-                self._reranker = create_reranker(self.settings)
-            except ImportError as exc:
-                self._reranker_failed = True
-                logger.warning(
-                    "Reranker backend unavailable; install the optional reranker backend "
-                    '(for example `pip install "docsif[embed]"`) to enable reranking: %s',
-                    exc,
-                )
-                return None
-            except ValueError as exc:
-                self._reranker_failed = True
-                logger.warning(
-                    "Unknown reranker model type; correct SIF_RERANKER_MODEL_TYPE to enable "
-                    "reranking: %s",
-                    exc,
-                )
-                return None
+            with self._reranker_lock:
+                # Another thread may have built the instance (or latched the
+                # failure) while this one waited.
+                if self._reranker is not None or self._reranker_failed:
+                    return self._reranker
+                try:
+                    self._reranker = create_reranker(self.settings)
+                except ImportError as exc:
+                    self._reranker_failed = True
+                    logger.warning(
+                        "Reranker backend unavailable; install the optional reranker backend "
+                        '(for example `pip install "docsif[embed]"`) to enable reranking: %s',
+                        exc,
+                    )
+                    return None
+                except ValueError as exc:
+                    self._reranker_failed = True
+                    logger.warning(
+                        "Unknown reranker model type; correct SIF_RERANKER_MODEL_TYPE to enable "
+                        "reranking: %s",
+                        exc,
+                    )
+                    return None
         return self._reranker
 
     async def hybrid_search(  # noqa: PLR0913 — weight overrides are per-request

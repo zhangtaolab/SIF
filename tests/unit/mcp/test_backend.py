@@ -6,6 +6,9 @@ import json
 import logging
 import os
 import sqlite3
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import ANY, MagicMock, patch
@@ -2189,6 +2192,35 @@ class TestRerankOption:
 
         options = pipeline_cls.return_value.search.call_args[0][1]
         assert options.candidate_limit == 5
+
+    def test_concurrent_first_rerank_requests_share_one_instance(self, tmp_path: Path) -> None:
+        """WR-11: construction is locked; both callers get the same reranker.
+
+        Each reranker instance lazily loads its own (large) model, so two
+        instances from one concurrent burst would double peak memory.
+        """
+        backend = _rerank_backend(tmp_path, enabled=True)
+        reranker = MagicMock()
+        barrier = threading.Barrier(2)
+
+        def _slow_create(_settings: object) -> MagicMock:
+            time.sleep(0.05)
+            return reranker
+
+        def _attempt() -> object:
+            barrier.wait()
+            return backend._reranker_for(True)
+
+        with (
+            patch("sif.mcp.backend.create_reranker", side_effect=_slow_create) as create,
+            ThreadPoolExecutor(max_workers=2) as pool,
+        ):
+            results = [pool.submit(_attempt) for _ in range(2)]
+            returned = [result.result() for result in results]
+
+        assert create.call_count == 1
+        assert returned == [reranker, reranker]
+        assert backend._reranker is reranker
 
     @pytest.mark.asyncio
     async def test_lex_and_vec_never_rerank(self, tmp_path: Path) -> None:
