@@ -52,7 +52,7 @@ sif
 ├── mcp             MCP server commands.
 │   ├── stdio           Run MCP server in stdio mode.
 │   ├── http            Run MCP server in HTTP mode.
-│   └── daemon          Daemon mode is not implemented; use 'mcp http' instead.
+│   └── daemon          Run the MCP Streamable HTTP server as a detached daemon.
 ├── ls              List indexed documents as a virtual file tree.
 ├── pull            Download a GGUF model file.
 ├── bench           Run benchmark evaluation against a fixture file.
@@ -581,7 +581,14 @@ sif search vsearch [OPTIONS]
 
 ### `mcp daemon`
 
-Daemon mode is not implemented; use 'mcp http' instead.
+Run the MCP Streamable HTTP server as a detached daemon.
+
+The daemon arms on readiness — schema initialized and the model-free
+backend constructed — then binds the HTTP host; a bind failure removes
+the PID file and exits non-zero. Daemon mode serves HTTP only; stdio is
+not a daemon mode (run `sif mcp stdio` from a client instead). Logs
+default to the platform log directory (mcp.log); --log-file overrides.
+--stop targets only the MCP daemon's own <db>.mcp.pid artifact.
 
 ```bash
 sif mcp daemon [OPTIONS]
@@ -596,6 +603,8 @@ sif mcp daemon [OPTIONS]
 | `--pid-file` | `—` | text | — | PID file path |
 | `--log-file` | `—` | text | — | Log file path |
 | `--stop` | `—` | flag | `false` | Stop the daemon |
+| `--allowed-hosts` | `—` | text[] | — | Additional allowed Host header values (repeatable); loopback hosts are always allowed |
+| `--cors-origins` | `—` | text[] | — | CORS allowed origins |
 
 ### `mcp http`
 
@@ -613,6 +622,7 @@ sif mcp http [OPTIONS]
 | `--port` | `-p` | integer | — | Port to listen on (default: SIF_MCP_PORT or 8080) |
 | `--reload` | `—` | flag | `false` | Accepted for compatibility; currently has no effect |
 | `--cors-origins` | `—` | text[] | — | CORS allowed origins |
+| `--allowed-hosts` | `—` | text[] | — | Additional allowed Host header values (repeatable); loopback hosts are always allowed |
 
 ### `mcp stdio`
 
