@@ -226,10 +226,13 @@ class SmartSnippetExtractor:
 
         Skips leading blank lines and code-fence delimiters before
         truncating; headings are legitimate lead content and stay. The end
-        line is the last line rendered: either the final source line when the
-        whole remainder fits, or the line containing the truncation point
-        (a single truncated first line when ``max_length`` cuts inside it).
-        An all-skippable text renders nothing and reports ``(1, 1)``.
+        line is the last line actually rendered: either the final source line
+        when the whole remainder fits, or the line containing the truncation
+        point (a single truncated first line when ``max_length`` cuts inside
+        it). The count comes from the rendered snippet, not the raw split, so
+        a trailing newline (or trailing blank lines removed by ``strip``) is
+        not counted as a phantom line. An all-skippable text renders nothing
+        and reports ``(1, 1)``.
         """
         lines = self._split_lines(text)
         idx = 0
@@ -239,10 +242,10 @@ class SmartSnippetExtractor:
         snippet = self._truncate(joined)
         if not snippet:
             return snippet, 1, 1
-        if len(joined) <= self.max_length:
-            return snippet, idx + 1, len(lines)
-        rendered_lines = joined[: self.max_length].count("\n")
-        return snippet, idx + 1, idx + rendered_lines + 1
+        # ``_truncate`` only ever appends its own ellipsis; removing it (the
+        # three dots contain no newline) leaves exactly the rendered lines.
+        rendered_lines = snippet.removesuffix("...").count("\n") + 1
+        return snippet, idx + 1, idx + rendered_lines
 
     def _fallback_snippet(self, text: str) -> str:
         """Return lead text when no query terms match (snippet bytes only)."""

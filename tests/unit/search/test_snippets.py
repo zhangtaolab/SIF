@@ -219,6 +219,47 @@ class TestExtractWithRange:
         assert snippet == "0123456789..."
         assert (line_start, line_end) == (1, 1)
 
+    def test_fallback_range_ignores_the_trailing_newline(self):
+        """WR-01: a trailing newline is not an extra document line."""
+        extractor = SmartSnippetExtractor()
+
+        snippet, line_start, line_end = extractor.extract_with_range("alpha\nbeta\n", ["zzzz"])
+
+        assert snippet == "alpha\nbeta"
+        assert (line_start, line_end) == (1, 2)
+
+    def test_fallback_range_ignores_trailing_blank_lines(self):
+        """WR-01: trailing blank lines stripped from the snippet not counted."""
+        extractor = SmartSnippetExtractor()
+
+        snippet, line_start, line_end = extractor.extract_with_range(
+            "# Note\n\ncontent\n", ["zzzz"]
+        )
+
+        assert snippet == "# Note\n\ncontent"
+        assert (line_start, line_end) == (1, 3)
+
+    def test_fallback_range_skips_leading_lines_and_trailing_newline(self):
+        """WR-01: the window starts at the first renderable line and ends at
+        the last rendered line, even when the source ends with a newline."""
+        extractor = SmartSnippetExtractor()
+        text = "\n```\nx = 1\n```\n\nReal content.\n"
+
+        snippet, line_start, line_end = extractor.extract_with_range(text, ["zzzz"])
+
+        assert snippet.startswith("x = 1")
+        assert (line_start, line_end) == (3, 6)
+
+    def test_fallback_truncation_cut_on_a_newline_reports_the_rendered_line(self):
+        """WR-01: a cut landing exactly on a newline renders only line 1."""
+        extractor = SmartSnippetExtractor(max_length=11)
+        text = "0123456789\nsecond line\nthird line"
+
+        snippet, line_start, line_end = extractor.extract_with_range(text, ["zzzz"])
+
+        assert snippet == "0123456789..."
+        assert (line_start, line_end) == (1, 1)
+
     def test_empty_text_reports_a_degenerate_range(self):
         """Empty text yields an empty snippet and the (1, 1) sentinel."""
         extractor = SmartSnippetExtractor()
