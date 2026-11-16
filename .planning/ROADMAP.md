@@ -244,7 +244,7 @@ Full detail: `.planning/milestones/v1.1-ROADMAP.md`
 **Success Criteria** (what must be TRUE):
   1. User gets an evidence-based embedder comparison — EN+ZH held-out A/B of Harrier native vs Qwen3-Embedding-0.6B with per-arm full re-embed on isolated indexes, per-language × per-leg verdicts, paired deltas + intervals; Harrier queries use `prompt_name="web_search_query"`, never `default_prompt_name`
   2. User's default embedder changes ONLY on a proven win — EN+ZH held-out win beyond the 0.01 tie rule; a no-win outcome is recorded as a rejection with numbers; the Qwen3 path stays byte-identical until the gate passes
-**Plans:** 5/6 plans executed
+**Plans:** 6/6 plans executed
 **Wave 1**
 - [x] 23-01-PLAN.md — Instrument additions: per-language/leg-language held-out gates, language-aware widening, `--require-language`
 
@@ -261,7 +261,7 @@ Full detail: `.planning/milestones/v1.1-ROADMAP.md`
 - [x] 23-05-PLAN.md — Conditional default flip: Settings/EmbeddingConfig defaults, tests, docs sweep, generated docs (conditional on `adopt-harrier`)
 
 **Wave 6** *(blocked on Wave 5 completion)*
-- [ ] 23-06-PLAN.md — Explicit-Qwen3 zero-delta proof recorded in the artifact (conditional on flip)
+- [x] 23-06-PLAN.md — Explicit-Qwen3 zero-delta proof recorded in the artifact (conditional on flip)
 
 ### Phase 24: Tuning + Models UX + Install Docs
 **Goal**: Chunking defaults are evidence-gated, model management is reliable, and every platform has a correct install path — the milestone closes on measured defaults and generator-verified docs.
@@ -301,7 +301,7 @@ v1.2 contracts — defined ONCE; downstream phases consume, never redefine:
 | 20. Metadata Filtering + Discovery | v1.2 | 5/5 | Complete    | 2026-11-15 |
 | 21. Scale, Maintenance + Embedder Identity | v1.2 | 8/8 | Complete    | 2026-11-16 |
 | 22. MCP SDK v2 + Agent Packaging | v1.2 | 7/7 | Complete    | 2026-11-16 |
-| 23. Harrier Gated Evaluation | v1.2 | 5/6 | In Progress | - |
+| 23. Harrier Gated Evaluation | v1.2 | 6/6 | In Progress | - |
 | 24. Tuning + Models UX + Install Docs | v1.2 | 0/TBD | Not started | - |
 
 ---
