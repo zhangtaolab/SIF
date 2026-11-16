@@ -273,6 +273,32 @@ Configure in Claude Desktop or another host without plugin support:
 }
 ```
 
+### MCP Registry
+
+SIF is listed in the official MCP Registry as `io.github.zhangtaolab/sif`. The
+listing resolves to the [PyPI package `docsif`](https://pypi.org/project/docsif/)
+over **stdio** transport (`sif mcp stdio`), so a Registry-aware host installs
+the published package and starts the same server the plugin uses.
+
+The listing is scripted and re-runnable. `scripts/publish_registry.py --check`
+is the read-only preflight: it verifies the README `mcp-name` marker, that PyPI
+serves the version declared in `src/sif/_version.py`, that `server.json` agrees
+on name, package, and version, and that the Registry is reachable. The
+maintainer publishes with:
+
+```bash
+# One-time device-flow authorization; credentials never touch the repo
+mcp-publisher login github
+python scripts/publish_registry.py --publish
+```
+
+`--publish` runs the same preflight first. If the Registry already lists this
+name+version it prints `already listed` and exits 0 without invoking
+`mcp-publisher` — the Registry rejects duplicate name+version, so the script
+owns idempotency. After a future release bumps `src/sif/_version.py`, update
+`server.json` and re-run `--check` then `--publish` to advance the listed
+version.
+
 ## Configuration
 
 SIF can be configured via environment variables or a `.env` file. All variables use the `SIF_` prefix:

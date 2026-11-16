@@ -320,6 +320,66 @@ Claude Desktop reads this from
 `%APPDATA%\Claude\claude_desktop_config.json` on Windows, or
 `~/.config/Claude/claude_desktop_config.json` on Linux.
 
+## MCP Registry
+
+The public listing is `io.github.zhangtaolab/sif` in the official MCP Registry.
+It resolves to the PyPI package `docsif` over **stdio** transport
+(`sif mcp stdio`), so a Registry-aware host installs the published package and
+starts the same server the Claude Code plugin uses.
+
+### Preflight
+
+```bash
+python scripts/publish_registry.py --check
+```
+
+`--check` is read-only and runs four checks in order:
+
+1. **README marker** — the README contains the exact ownership line
+   `<!-- mcp-name: io.github.zhangtaolab/sif -->` (line 2; never edited).
+2. **PyPI version** — `https://pypi.org/pypi/docsif/json` serves the version
+   declared in `src/sif/_version.py`.
+3. **`server.json`** — name, `docsif` package, version, and stdio transport
+   agree with each other and with `_version.py`.
+4. **Registry reachability** — the version lookup for the declared name+version
+   is reachable. A well-formed 404 is the normal pre-publish state (`not listed
+   (reachable)`) and passes; a 200 means `already listed` and also passes. Only
+   a mismatch, a 5xx, or a network failure exits non-zero, printing the specific
+   `FAIL` line.
+
+### Publishing
+
+Authentication is delegated entirely to the publisher's GitHub device flow; the
+script never reads, writes, or prints credentials:
+
+```bash
+# One-time maintainer authorization
+mcp-publisher login github
+
+# Preflight, then publish when the version is not yet listed
+python scripts/publish_registry.py --publish
+```
+
+`--publish` runs the same preflight first. When the Registry already lists the
+name+version it prints `already listed` and exits 0 **without** invoking
+`mcp-publisher` — the Registry rejects duplicate name+version, so the script
+owns idempotency and a re-run is always safe. Otherwise it runs
+`mcp-publisher publish` from the repository root and propagates the publisher's
+exit status.
+
+### Re-running after a release
+
+The listing is version-pinned. After a future release (for example v1.2) bumps
+`src/sif/_version.py`:
+
+1. Update `server.json` so its top-level `version` and the PyPI package
+   `version` match the new `_version.py` value.
+2. Publish the new release to PyPI, then run
+   `python scripts/publish_registry.py --check`.
+3. Run `python scripts/publish_registry.py --publish` to advance the listed
+   version. If that name+version is already listed, the script exits 0 with
+   `already listed` instead of failing.
+
 ## Transport security
 
 The HTTP transport always builds an explicit SDK `TransportSecuritySettings`
