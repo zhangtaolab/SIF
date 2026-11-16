@@ -14,9 +14,13 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
+
+from sif.search import personal_bench
+from sif.search.tuning_verdict import SWEEP_GRID
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -264,6 +268,39 @@ class TestDryRunInvocation:
         assert code == 2
         assert "REFUSED" in capsys.readouterr().err
 
+    def test_nested_roots_are_refused_before_any_command_is_built(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        built: list[int] = []
+        monkeypatch.setattr(
+            chunk_sweep,
+            "build_arm_commands",
+            lambda *_args, **_kwargs: built.append(1) or [],
+        )
+
+        code = chunk_sweep.main(
+            [
+                "--dry-run",
+                "--scratch-root",
+                str(tmp_path),
+                "--corpus",
+                str(tmp_path / "corpus-a"),
+                "--corpus",
+                str(tmp_path / "corpus-a" / "nested"),
+            ]
+        )
+
+        assert code == 2
+        assert built == []
+
+    def test_every_arm_stage_carries_the_arm_chunk_env(self, tmp_path: Path) -> None:
+        payload = _payload(tmp_path)
+        for entry in payload["commands"]:
+            arm = next(item for item in payload["arms"] if item["name"] == entry["arm"])
+            for stage in entry["stages"]:
+                assert stage["env"]["SIF_CHUNK_SIZE"] == str(arm["chunk_size"])
+                assert stage["env"]["SIF_CHUNK_OVERLAP"] == str(arm["chunk_overlap"])
+
     def test_home_scratch_root_is_refused(self, tmp_path: Path) -> None:
         code = chunk_sweep.main(
             [
@@ -276,3 +313,382 @@ class TestDryRunInvocation:
         )
 
         assert code == 2
+
+
+class TestScopeResume:
+    """Resume is keyed on the corpus roots, label, and scratch root."""
+
+    def test_changed_scope_discards_prior_markers(self, tmp_path: Path) -> None:
+        state_path = tmp_path / "run-state.json"
+        scope_a = chunk_sweep.scope_state([tmp_path / "a"], tmp_path, "label")
+        key_a = chunk_sweep.scope_key(scope_a)
+        state = chunk_sweep.load_run_state(state_path, scope_key=key_a, scope=scope_a)
+        chunk_sweep.mark_stage(state, "arm:baseline-512-128:index", {"documents": 498})
+        chunk_sweep.save_run_state(state_path, state)
+
+        resumed = chunk_sweep.load_run_state(state_path, scope_key=key_a, scope=scope_a)
+        assert harrier_eval.stage_done(resumed, "arm:baseline-512-128:index")
+
+        scope_b = chunk_sweep.scope_state([tmp_path / "b"], tmp_path, "label")
+        fresh = chunk_sweep.load_run_state(
+            state_path, scope_key=chunk_sweep.scope_key(scope_b), scope=scope_b
+        )
+        assert not harrier_eval.stage_done(fresh, "arm:baseline-512-128:index")
+
+    def test_unknown_stage_is_refused(self) -> None:
+        state = {"stages": {}}
+        with pytest.raises(ValueError, match="unknown stage"):
+            chunk_sweep.mark_stage(state, "arm:not-an-arm:rollup")
+
+    def test_state_writes_are_atomic_and_sorted(self, tmp_path: Path) -> None:
+        state_path = tmp_path / "run-state.json"
+        chunk_sweep.save_run_state(state_path, {"b": 2, "a": 1, "stages": {}})
+
+        text = state_path.read_text()
+        assert text.endswith("\n")
+        assert text.index('"a"') < text.index('"b"')
+        assert not list(tmp_path.glob("*.tmp"))
+
+
+class TestStageFailure:
+    """A failing stage is recorded and stops before every later stage."""
+
+    def test_nonzero_exit_records_the_failing_stage(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        arm_spec = chunk_sweep.build_sweep_arms(tmp_path)[0]
+        stages = chunk_sweep.build_arm_commands(arm_spec, [tmp_path / "corpus"], None)
+        state_path = tmp_path / "run-state.json"
+        state = chunk_sweep.load_run_state(state_path, scope_key="k", scope={})
+        proc = subprocess.CompletedProcess(args=[], returncode=7, stdout="", stderr="boom")
+        monkeypatch.setattr(chunk_sweep.subprocess, "run", lambda *_a, **_k: proc)
+
+        status = chunk_sweep._execute_arm_arm_stage(
+            state,
+            state_path,
+            stages[0],
+            arm_spec,
+            {},
+            cache_db_path=tmp_path / "cache.db",
+        )
+
+        assert status == 1
+        assert state["failed_stage"] == stages[0]["stage"]
+        assert json.loads(state_path.read_text())["failed_stage"] == stages[0]["stage"]
+        assert not harrier_eval.stage_done(state, stages[0]["stage"])
+
+
+class TestIdentityGate:
+    """Every arm must persist the fixed modelscope Qwen3 identity."""
+
+    def _stored(self, **overrides: Any) -> SimpleNamespace:
+        fields: dict[str, Any] = {
+            "cache_model_id": chunk_sweep.QWEN3_CACHE_MODEL_ID,
+            "dimension": 1024,
+            "source": "verified",
+            "query_prompt": None,
+            "document_prompt": None,
+        }
+        fields.update(overrides)
+        return SimpleNamespace(**fields)
+
+    def test_valid_identity_passes(self) -> None:
+        assert chunk_sweep.identity_failures(self._stored()) == []
+
+    def test_wrong_backend_cache_id_fails(self) -> None:
+        stored = self._stored(cache_model_id="sentence_transformers:microsoft/harrier-oss-v1-0.6b")
+
+        failures = chunk_sweep.identity_failures(stored)
+
+        assert len(failures) == 1
+        assert "cache_model_id" in failures[0]
+
+    @pytest.mark.parametrize(
+        ("overrides", "field"),
+        [
+            ({"dimension": 768}, "dimension"),
+            ({"source": "declared"}, "source"),
+            ({"query_prompt": "web_search_query"}, "query_prompt"),
+            ({"document_prompt": "passage"}, "document_prompt"),
+        ],
+    )
+    def test_other_mismatches_name_the_field(self, overrides: dict[str, Any], field: str) -> None:
+        failures = chunk_sweep.identity_failures(self._stored(**overrides))
+
+        assert any(field in failure for failure in failures)
+
+    def test_probe_payload_with_harrier_identity_is_refused(self) -> None:
+        payload = {
+            "cache_model_id": "sentence_transformers:microsoft/harrier-oss-v1-0.6b",
+            "dimension": 1024,
+            "source": "verified",
+            "query_prompt": "web_search_query",
+            "document_prompt": None,
+        }
+
+        with pytest.raises(ValueError, match="cache_model_id"):
+            chunk_sweep.require_probe_identity(payload)
+
+
+class TestBaselineRule:
+    """A saved run from another corpus or backend is never the baseline."""
+
+    def _patch_saved_run(
+        self, monkeypatch: pytest.MonkeyPatch, *, fingerprint: str, model: dict[str, Any]
+    ) -> None:
+        saved = SimpleNamespace(corpus={"fingerprint": fingerprint}, model=model)
+        monkeypatch.setattr(personal_bench, "load_saved_run", lambda _path: saved)
+
+    def test_usable_saved_run_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self._patch_saved_run(
+            monkeypatch,
+            fingerprint="live123",
+            model={"model_type": "modelscope", "model_name": chunk_sweep.MODEL_NAME},
+        )
+
+        assert chunk_sweep.baseline_rejection_reason(Path("saved.json"), "live123") is None
+
+    def test_sentence_transformers_backend_is_rejected(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._patch_saved_run(
+            monkeypatch,
+            fingerprint="live123",
+            model={
+                "model_type": "sentence_transformers",
+                "model_name": chunk_sweep.MODEL_NAME,
+            },
+        )
+
+        assert (
+            chunk_sweep.baseline_rejection_reason(Path("saved.json"), "live123")
+            == "model-type-mismatch"
+        )
+
+    def test_different_model_name_is_rejected(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self._patch_saved_run(
+            monkeypatch,
+            fingerprint="live123",
+            model={"model_type": "modelscope", "model_name": "Qwen/Qwen2.5-0.5B-Instruct"},
+        )
+
+        assert (
+            chunk_sweep.baseline_rejection_reason(Path("saved.json"), "live123")
+            == "model-name-mismatch"
+        )
+
+    def test_fingerprint_mismatch_is_rejected(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self._patch_saved_run(
+            monkeypatch,
+            fingerprint="recorded999",
+            model={"model_type": "modelscope", "model_name": chunk_sweep.MODEL_NAME},
+        )
+
+        assert (
+            chunk_sweep.baseline_rejection_reason(Path("saved.json"), "live123")
+            == "corpus-fingerprint-mismatch"
+        )
+
+    def test_missing_saved_run_is_rejected(self) -> None:
+        assert chunk_sweep.baseline_rejection_reason(None, "live123") == "no-saved-run"
+
+    def test_unreadable_saved_run_is_rejected(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        def _raise(_path: Path) -> None:
+            raise ValueError("bad payload")
+
+        monkeypatch.setattr(personal_bench, "load_saved_run", _raise)
+
+        assert (
+            chunk_sweep.baseline_rejection_reason(Path("saved.json"), "live123")
+            == "invalid-saved-run"
+        )
+
+
+def _artifact_results(
+    *, candidate: str | None = None, heldout_winner: bool = False
+) -> dict[str, Any]:
+    """Six-arm results with one optional tuning candidate and held-out gate."""
+    results: dict[str, Any] = {}
+    for arm in SWEEP_GRID:
+        is_candidate = arm.name == candidate
+        results[arm.name] = {
+            "costs": {
+                "documents": 498,
+                "chunks": 100,
+                "embedded_documents": 498,
+                "embed_wall_seconds": 10.0 if is_candidate else 20.0,
+                "cache_rows_before": 5,
+                "cache_rows_after": 6,
+                "cache_hits": 94,
+            },
+            "identity": {
+                "cache_model_id": chunk_sweep.QWEN3_CACHE_MODEL_ID,
+                "dimension": 1024,
+                "source": "verified",
+                "query_prompt": None,
+                "document_prompt": None,
+                "check_identity_status": "ok",
+            },
+            "tuning": {
+                "n": 42,
+                "mean_delta": 0.02 if is_candidate else 0.0,
+                "winner": False,
+                "sufficient": True,
+            },
+            "heldout": {
+                "n": 56,
+                "mean_delta": 0.02 if is_candidate else 0.0,
+                "winner": heldout_winner and is_candidate,
+                "sufficient": True,
+            },
+        }
+    return results
+
+
+class TestArtifact:
+    """The committed artifact is aggregate-only and in grid order."""
+
+    def test_declared_keys_and_grid_order(self) -> None:
+        artifact = chunk_sweep.build_sweep_artifact(
+            grid=SWEEP_GRID,
+            results=_artifact_results(candidate="smaller-384-96"),
+            corpus_label="phase23-zh-heavy",
+            corpus_fingerprint="b5d50ce0c696ab3d",
+            baseline_source="saved-run",
+        )
+
+        assert set(artifact) == {
+            "schema_version",
+            "decision",
+            "selected_arm",
+            "tuning_mean_delta",
+            "confirmation",
+            "arms",
+            "grid",
+            "model_name",
+            "model_type",
+            "embedding_dim",
+            "max_tokens",
+            "corpus_label",
+            "corpus_fingerprint",
+            "baseline_source",
+            "selection_rule",
+            "min_heldout_for_epsilon_win",
+            "limitation",
+        }
+        assert [arm["name"] for arm in artifact["arms"]] == [arm.name for arm in SWEEP_GRID]
+        assert artifact["model_type"] == "modelscope"
+        assert artifact["max_tokens"] == 512
+        assert artifact["min_heldout_for_epsilon_win"] == 101
+        assert artifact["selection_rule"] == "tuning-select-then-heldout-confirm"
+        assert "56" in artifact["limitation"]
+        assert "101" in artifact["limitation"]
+        for arm in artifact["arms"]:
+            assert set(arm["identity"]) == set(chunk_sweep.IDENTITY_KEYS)
+            for cost_key in (
+                "documents",
+                "chunks",
+                "embedded_documents",
+                "embed_wall_seconds",
+                "cache_rows_before",
+                "cache_rows_after",
+                "cache_hits",
+            ):
+                assert isinstance(arm[cost_key], int | float)
+
+    def test_no_absolute_paths_or_query_text(self, tmp_path: Path) -> None:
+        artifact = chunk_sweep.build_sweep_artifact(
+            grid=SWEEP_GRID,
+            results=_artifact_results(candidate="smaller-384-96"),
+            corpus_label="phase23-zh-heavy",
+            corpus_fingerprint="b5d50ce0c696ab3d",
+            baseline_source="fresh-baseline (no-saved-run)",
+        )
+
+        serialized = json.dumps(artifact)
+        assert str(tmp_path) not in serialized
+        assert str(Path.home()) not in serialized
+        assert "query_text" not in serialized
+        assert '"query":' not in serialized
+
+    def test_tuning_candidate_is_selected_then_heldout_confirmed(self) -> None:
+        keep = chunk_sweep.build_sweep_artifact(
+            grid=SWEEP_GRID,
+            results=_artifact_results(candidate="smaller-384-96"),
+            corpus_label="phase23-zh-heavy",
+            corpus_fingerprint="b5d50ce0c696ab3d",
+            baseline_source="saved-run",
+        )
+        assert keep["selected_arm"] == "smaller-384-96"
+        assert keep["decision"] == "keep-default"
+
+        adopt = chunk_sweep.build_sweep_artifact(
+            grid=SWEEP_GRID,
+            results=_artifact_results(candidate="smaller-384-96", heldout_winner=True),
+            corpus_label="phase23-zh-heavy",
+            corpus_fingerprint="b5d50ce0c696ab3d",
+            baseline_source="saved-run",
+        )
+        assert adopt["decision"] == "adopt-chunking"
+
+    def test_empty_results_are_insufficient_and_countable(self, tmp_path: Path) -> None:
+        artifact_path = tmp_path / "chunk-sweep.json"
+
+        code, artifact = chunk_sweep.finalize_sweep(
+            grid=SWEEP_GRID,
+            results={},
+            corpus_label="phase23-zh-heavy",
+            corpus_fingerprint="b5d50ce0c696ab3d",
+            baseline_source="fresh-baseline (no-saved-run)",
+            artifact_path=artifact_path,
+        )
+
+        assert code == 3
+        assert artifact["decision"] == "insufficient-evidence"
+        written = json.loads(artifact_path.read_text())
+        assert len(written["arms"]) == 6
+        assert written["decision"] == "insufficient-evidence"
+
+
+class TestArtifactGuard:
+    """A different decision or corpus is refused without ``--force``."""
+
+    def _write(self, path: Path, *, decision: str, fingerprint: str) -> None:
+        path.write_text(
+            json.dumps({"decision": decision, "corpus_fingerprint": fingerprint}) + "\n"
+        )
+
+    def test_same_run_rewrite_is_allowed(self, tmp_path: Path) -> None:
+        path = tmp_path / "artifact.json"
+        self._write(path, decision="keep-default", fingerprint="b5d50ce0c696ab3d")
+
+        chunk_sweep.write_committed_artifact(
+            {"decision": "keep-default", "corpus_fingerprint": "b5d50ce0c696ab3d"},
+            path=path,
+        )
+
+        assert json.loads(path.read_text())["decision"] == "keep-default"
+
+    def test_different_decision_is_refused(self, tmp_path: Path) -> None:
+        path = tmp_path / "artifact.json"
+        self._write(path, decision="keep-default", fingerprint="b5d50ce0c696ab3d")
+
+        with pytest.raises(RuntimeError, match="refusing to overwrite"):
+            chunk_sweep.write_committed_artifact(
+                {"decision": "adopt-chunking", "corpus_fingerprint": "b5d50ce0c696ab3d"},
+                path=path,
+            )
+
+    def test_force_replaces_a_different_run(self, tmp_path: Path) -> None:
+        path = tmp_path / "artifact.json"
+        self._write(path, decision="keep-default", fingerprint="b5d50ce0c696ab3d")
+
+        chunk_sweep.write_committed_artifact(
+            {"decision": "adopt-chunking", "corpus_fingerprint": "aaaaaaaaaaaaaaaa"},
+            force=True,
+            path=path,
+        )
+
+        written = json.loads(path.read_text())
+        assert written["decision"] == "adopt-chunking"
+        assert written["corpus_fingerprint"] == "aaaaaaaaaaaaaaaa"
