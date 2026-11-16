@@ -93,7 +93,7 @@ DocSift 是 [qmd](https://github.com/tobi/qmd) 的 Python 重构版本，一个�
 - ✓ 搜索质量：混合权重（BM25/向量/RRF k）可配置（QUAL-01，SC1 逐字节一致 + CLI/MCP/设置全链路） — Validated in Phase 15
 - ✓ 搜索质量：Query suggestions（did-you-mean，QUAL-02/03/04，`sif suggest` 三段式 + query_log + 100ms 预算实测 ≤10ms） — Validated in Phase 15（2026-11-08 重验 30/30，UAT 5/5）
 
-### Validated（v1.2 — Phases 17–22 shipped）
+### Validated（v1.2 — Phases 17–23 shipped）
 
 - ✓ 工程基础：py3.10–3.13 × ubuntu/macos CI 矩阵、Windows 降级 smoke（hc yoga）、`docsif` 1.1.2 trusted publishing 发布 — Validated in Phase 17
 - ✓ 质量仪器：`sif eval --personal` known-item 评测（bias controls + 保存/对比）、rapidfuzz did-you-mean 测量替换 — Validated in Phase 18
@@ -101,6 +101,7 @@ DocSift 是 [qmd](https://github.com/tobi/qmd) 的 Python 重构版本，一个�
 - ✓ 元数据过滤 + 发现：qmd 17 操作符过滤 AST（pre-RRF 双腿下推）、path/mtime 内置字段、类型化 kv 存储 + 回填、MCP `metadata` 工具（冻结契约） — Validated in Phase 20
 - ✓ 规模与维护：bounded staleness/contexts 读取、`index vacuum`/backup、流式 embed、`index_meta` embedder identity + role-aware embed — Validated in Phase 21
 - ✓ MCP SDK v2 + agent 包装：官方 `mcp` SDK 组合根、双 era 客户端、七只读工具 + annotations/structuredContent、query pipeline 对等（懒加载 embedder、rerank opt-in）、transport security + 真实 daemon、引用级输出、Claude Code plugin/skills、MCP Registry manifest + 幂等预检脚本（公开 listing 记录 `blocked no-github-login`） — Validated in Phase 22
+- ✓ Harrier 门禁评估：Phase 18 仪器扩展出 per-language × per-leg held-out gates + 语言感知加宽 + `--require-language`；纯判定的双侧 verdict rule；隔离双臂 runbook（身份校验、adequacy preflight、scope-keyed resume、artifact、cleanup guard）；真实 EN+ZH A/B 在用户批准的 curated 双语子集（498 docs，adequacy en=42/zh=11，held-out N=56）上记录 `keep-qwen3`（整体 Δ +0.00943，CI 含 0；en +0.01385，zh −0.00487），默认值未变，Qwen3 保持 — Validated in Phase 23
 
 ### Active
 
@@ -111,7 +112,8 @@ DocSift 是 [qmd](https://github.com/tobi/qmd) 的 Python 重构版本，一个�
 - [x] MCP SDK v2 现代化 + 注解/structuredContent + query pipeline 对等 + agent 包装 — Phase 22
 - [x] 测试 CI + Windows smoke + PyPI 发布 — Phase 17
 - [x] 个人语料评测仪器 + rapidfuzz 调优 — Phase 18
-- [ ] Harrier held-out 评估（Phase 23）+ chunk/title 调优 + models UX + 安装文档（Phase 24）
+- [x] Harrier held-out 评估 — Phase 23（记录 keep-qwen3，默认值不变）
+- [ ] chunk/title 调优 + models UX + 安装文档 — Phase 24
 
 ### Out of Scope
 
@@ -180,6 +182,10 @@ DocSift 是 [qmd](https://github.com/tobi/qmd) 的 Python 重构版本，一个�
 | Phase 22：引用级输出 = snippet 行窗 + 批量 `content_hash` + `get` 范围；Phase 20 metadata 信封冻结 | 代理引用必须先 `get` 后引用；text/structured 双通道一致，CLI JSON 不受影响（D-04/22-05） | Phase 22 Complete |
 | Phase 22：仓库根即 Claude Code plugin/marketplace + 三个 MCP-first skill；`server.json` + 幂等 `publish_registry.py`；公开 Registry listing 记录 `blocked no-github-login` | 本地 MCP/plugin/skills 不需要 GitHub；公开 listing 是可选维护者动作，D-24 允许 blocked；脚本先查 name+version，已存在打印 `already listed` | Phase 22 Complete（listing deferred） |
 | Phase 22 代码评审 2 Critical + 10 Warning 修复并附前置失败回归测试；1 necessity + 8 Info 保持 open；verifier 另发现 W-01（`multi_get` 显式 `max_bytes` 行号越界）作 follow-up | CR-01 并发首次向量查询把“加载中”当失败→静默降级 BM25；CR-02 `vec_search` 在事件循环上同步加载模型（首次下载会冻结所有会话/health）；W-01 默认预算跳过超大文档且 `get` 路径正确，非阻塞 | Phase 22 Complete |
+| Phase 23：Phase 18 仪器扩展为 per-language / per-leg-language held-out gates + 语言感知加宽 + `--require-language`；严格沿用 1/N 噪声门与 0.01 tie rule，记录 `min_heldout_for_epsilon_win=101` | 250 文档采样上限下只有提高语料的中文占比才能同时满足 en/zh ≥10；0.01 胜出在 N≤100 不可能通过，必须显式记录 | Phase 23 Complete |
+| Phase 23：隔离双臂 + 身份校验 + adequacy preflight + scope-keyed resume + artifact writer + cleanup guard；真实 A/B 在用户批准的 curated 双语子集（7 个中文目录，498 docs）上运行 | 一表一向量空间；同宽 1024 维陷阱靠完整 identity 防；preflight 不花 embed 预算；不伪造、不手抄任何指标 | Phase 23 Complete |
+| Phase 23 verdict：`keep-qwen3`；整体 held-out Δ +0.00943（CI [−0.0296,+0.0484]，N=56，噪声地板 0.01786），en +0.01385，zh −0.00487（未破 −0.01 地板）；`default_flip` 与 `zero_delta_proof` 均记录 not-applicable | 无胜出即不切换；Qwen3 路径字节不变；curated 子集结论不外推到主库；模型下载 + 双arm re-embed 成本已记录 | Phase 23 Complete（default unchanged） |
+| Phase 23 代码评审 2 Critical + 6 Warning 修复并附回归测试；IN-03（runbook ruff/format）一并修复；5 Info 保持 open | CR-01 scratch 根可等于 home 导致误删；CR-02 不足证据路径会复用陈旧 artifact；WR-01/02 resume/scope 幂等、WR-03 held-out 表、WR-04 artifact 保留块、WR-05 ranking 设置记录、WR-06 malformed JSON 错误面 | Phase 23 Complete |
 
 ## Context（v1.1 shipped 2026-11-12）
 
@@ -214,4 +220,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-11-16 after Phase 22（MCP SDK v2 + 七只读工具 + 引用级输出 + plugin/Registry；评审 2C+10W 修复；公开 Registry listing 记录 blocked no-github-login）*
+*Last updated: 2026-11-16 after Phase 23（Harrier gated evaluation：真实 EN+ZH A/B 记录 keep-qwen3，默认 embedder 不变；评审 2C+6W 修复；条件 flip/zero-delta 记录 not-applicable）*

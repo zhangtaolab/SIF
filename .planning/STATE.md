@@ -7,16 +7,15 @@ current_phase_name: Tuning + Models UX + Install Docs
 current_plan: Not started
 status: planning
 stopped_at: Phase 23 complete, ready to plan Phase 24
-last_updated: "2026-11-16T15:30:22.543Z"
+last_updated: "2026-11-16T15:31:19.634Z"
 last_activity: 2026-11-16
 last_activity_desc: Phase 23 complete, transitioned to Phase 24
-state_head: 2fc6be66a63930f7cba07f851dc5ec1f627a3423
+state_head: 3d17365dada705444f4803de5e6b0a7ac135f839
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 48
   completed_plans: 48
-  percent: 88
 ---
 
 # DocSift — Project State
@@ -25,7 +24,7 @@ progress:
 
 - **Name:** DocSift (package `sif`, PyPI `docsif`)
 - **Core Value:** 用户可以在自己的笔记和文档库中，用自然语言快速、准确地找到需要的信息——无论关键词是否匹配。
-- **Current Focus:** v1.2 Search Precision and Agent Experience — Phases 17-22 complete; Phase 22 (MCP SDK v2 + Agent Packaging) shipped and verified 77/77 must-haves at 2889 tests / 95.13% coverage. Next: plan Phase 23 (Harrier Gated Evaluation)
+- **Current Focus:** v1.2 Search Precision and Agent Experience — Phases 17-23 complete; Phase 23 (Harrier Gated Evaluation) shipped and verified 31/31 must-haves with a recorded `keep-qwen3` verdict at 3004 tests / 95.13% coverage. Next: plan Phase 24 (Tuning + Models UX + Install Docs)
 - **Tech Stack:** Python 3.10+, SQLite (FTS5 + sqlite-vec), Click, Pydantic, sentence-transformers 5.4.1 (locked), llama-cpp-python; v1.2 adds ONLY `mcp>=2.3.0,<3` + `rapidfuzz>=3.14.5,<4`
 - See: .planning/PROJECT.md (updated 2026-11-16)
 - Archives: v1.0/v1.1 phase artifacts, full decision logs, per-plan metrics under .planning/milestones/
@@ -46,7 +45,7 @@ Progress: [█████████░] 88%
 
 - **Velocity:** v1.0 shipped 68 plans / 11 phases (2026-04-14 → 2026-11-07); v1.1 shipped 27 plans / 7 phases (2026-11-07 → 2026-11-12); recent plans averaged ~13-20 min
 - **Suite at v1.1 close:** 1591 passed, 1 skipped @ 95.18% coverage (fail_under=90 active); ruff/format/ty green
-- **v1.2:** 6/8 phases, 42/42 plans — suite 2889 passed / 1 skipped @ 95.13% coverage; ruff/format/ty green
+- **v1.2:** 7/8 phases, 48/48 plans — suite 3004 passed / 1 skipped @ 95.13% coverage; ruff/format/ty green
 
 **Per-Plan Metrics:**
 
@@ -298,6 +297,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - [Phase 23]: Plan 23-06 executed its non-flip branch: default_flip.decision not-applicable means zero_delta_proof {status: not-applicable} is recorded and no model runs (D-10)
 - [Phase 23]: No real-model explicit-Qwen3 comparison ran and no proof code or tests were added because the proof is flip-conditional
 - [Phase 23]: The not-applicable block lives at default_flip.zero_delta_proof and every existing artifact field is unchanged
+- [Phase 23]: 23 real EN+ZH A/B on a user-approved curated bilingual subset (7 Chinese-heavy folders, 498 docs; adequacy en=42/zh=11; held-out N=56) recorded keep-qwen3: overall Δ +0.00943 (CI [-0.0296,+0.0484]) below the 0.01 tie rule and strict 1/N floor; en +0.01385, zh -0.00487 above the -0.01 floor; default embedder unchanged; default_flip and zero_delta_proof recorded not-applicable; artifact + docs/benchmarking evidence committed.
+- [Phase 23]: 23 code review: 2 Critical + 6 Warning fixed with regression tests (CR-01 scratch-root home/root guard, CR-02 stale-artifact prevention, WR-01 idempotent arm indexing/resume, WR-02 corpus-fingerprint scope invalidation, WR-03 held-out docs table, WR-04 artifact block preservation, WR-05 ranking settings recorded, WR-06 malformed-JSON error surface) plus IN-03 runbook ruff/format; 5 Info findings remain open. Regression gate 2,268 prior-phase tests passed.
 
 ### Pending Todos
 
@@ -311,6 +312,10 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - ⚠️ [Phase 22, debt] `22-VALIDATION.md` is still `status: draft` (nyquist validate-phase not run) and no `22-SECURITY.md` exists (secure-phase not run); recorded by `phase.complete` warnings — same audit-debt pattern as Phases 20/21
 - ⚠️ [Phase 22, follow-up] W-01: `multi_get` computes `_full_line_range` before `_truncate_content` when an explicit `max_bytes` exceeds the 100 KiB default; the default budget and the `get` citation path are unaffected
 - ⚠️ [Phase 22, deferred] Public MCP Registry listing for `io.github.zhangtaolab/sif` remains unlisted (`blocked no-github-login`); re-run `mcp-publisher login github` + `python scripts/publish_registry.py --publish` when wanted
+- ⚠️ [Phase 23, debt] `23-VALIDATION.md` remains `status: draft` (nyquist validate-phase not run) and no `23-SECURITY.md` exists (secure-phase not run); recorded by `phase.complete` warnings
+- ⚠️ [Phase 23, follow-up] Five open Info review findings: IN-01 (Rich markup path in eval), IN-02 (per-arm identity gate records but does not explicitly compare revision), IN-04 (`docs/benchmarking.md` omits `--require-language`), IN-05 (stale zero-delta sentence), IN-06 (cleanup leaves Harrier saved run/comparison JSON)
+- ℹ️ [Phase 23, corpus scope] The real A/B ran on a user-approved curated bilingual subset (7 Chinese-heavy folders, 498 docs, en=42/zh=11, held-out N=56), not the full 6,213-doc corpus; the artifact and docs scope the claim, and Qwen3 remains the default. A larger bilingual corpus (held-out N≥101) would be needed for the 0.01 tie rule to be admissible.
+- ℹ️ [Phase 23, housekeeping] `.planning/tmp/phase-23/` holds a stale preliminary Qwen3 DB from the earlier 8-root scope; the real evidence is in `.planning/tmp/phase-23-zh-heavy/`. Both are gitignored; deletion is optional.
 - ✅ [17-07 resolved 2026-11-14] The TestPyPI `invalid-publisher` blocker was the missing/mismatched pending publisher. The maintainer created and verified it (project `docsif`, publisher GitHub, repository `zhangtaolab/SIF`, workflow `publish.yml`, environment `testpypi`); the next OIDC attempt minted successfully on Publish run `43562577065` attempt 4. No trusted-publishing fallback was needed. Nothing had been uploaded on attempts 1-3, so version 1.1.2 was published cleanly rather than consumed by a partial upload.
 
 ### Roadmap Evolution
@@ -330,7 +335,7 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-16T14:47:20.561Z
+Last session: 2026-11-16T15:31:18.720Z
 Stopped at: Phase 23 complete, ready to plan Phase 24
 Resume file: None
 
