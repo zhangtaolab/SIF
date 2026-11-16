@@ -42,6 +42,7 @@ from sif.embedding.manager import EmbeddingManager
 from sif.search.hybrid import SearchPipeline, search_dimension_error
 from sif.search.personal_bench import (
     INITIAL_SAMPLE_DOCUMENTS,
+    LANGUAGES,
     MAX_TOP_K,
     MIN_DOCUMENTS,
     SUPPRESS_BELOW,
@@ -724,6 +725,7 @@ def _run_fresh(  # noqa: C901, PLR0913
     limit: int,
     output_json: bool,
     no_save: bool,
+    require_language: tuple[str, ...] = (),
 ) -> None:
     """Synthesize, evaluate, and render a fresh personal run."""
     if len(metadata) < MIN_DOCUMENTS:
@@ -739,7 +741,11 @@ def _run_fresh(  # noqa: C901, PLR0913
     # Bodies load only for the sampled subset; widening re-samples the
     # deterministic prefix and loads only the newly added documents.
     try:
-        sampled, synthesis = ensure_heldout(metadata, db.connection)
+        sampled, synthesis = ensure_heldout(
+            metadata,
+            db.connection,
+            required_languages=require_language,
+        )
     except ValueError as e:
         raise click.ClickException(str(e)) from e
     except (sqlite3.Error, OSError) as e:
@@ -890,6 +896,7 @@ def run_personal(  # noqa: PLR0913
     output_json: bool,
     no_save: bool = False,
     compare: Path | None = None,
+    require_language: tuple[str, ...] = (),
 ) -> None:
     """Run the personal evaluation end to end (fresh or ``--compare``).
 
@@ -915,6 +922,13 @@ def run_personal(  # noqa: PLR0913
         except (sqlite3.Error, OSError) as e:
             raise click.ClickException(f"Personal eval failed: {e}") from e
         if saved is not None:
+            if require_language:
+                console_err.print(
+                    "[yellow]Compare mode evaluates the saved run's query set; "
+                    "ignoring --require-language "
+                    f"{', '.join(require_language)}.[/yellow]",
+                    soft_wrap=True,
+                )
             _run_compare(
                 db,
                 metadata,
@@ -936,6 +950,7 @@ def run_personal(  # noqa: PLR0913
             limit,
             output_json,
             no_save,
+            require_language,
         )
 
 
@@ -976,6 +991,17 @@ def _index_path(ctx: click.Context) -> Path:
     help=f"Number of results per query (1-{MAX_TOP_K})",
 )
 @click.option("-c", "--collection", multiple=True, help="Collection to evaluate")
+@click.option(
+    "--require-language",
+    "require_language",
+    type=click.Choice(LANGUAGES),
+    multiple=True,
+    default=(),
+    help=(
+        "Widen sampling until each required language has at least "
+        f"{SUPPRESS_BELOW} held-out queries (repeatable)"
+    ),
+)
 @click.option("--all", "search_all", is_flag=True, help="Evaluate all collections")
 @click.option("--json", "output_json", is_flag=True, help="Output as JSON")
 @click.pass_context
@@ -987,6 +1013,7 @@ def eval_group(  # noqa: PLR0913
     bm25_only: bool,
     limit: int,
     collection: tuple[str, ...],
+    require_language: tuple[str, ...],
     search_all: bool,
     output_json: bool,
 ) -> None:
@@ -1003,6 +1030,9 @@ def eval_group(  # noqa: PLR0913
     over its own query set at its saved depth and paired deltas are reported
     with a seeded 95% bootstrap CI and the 1/N noise floor; a corpus
     fingerprint mismatch refuses the comparison. --json emits strict JSON.
+    --require-language widens a fresh run's sampling until each named language
+    has at least ten held-out queries; --compare uses the saved query set and
+    ignores it with a stderr warning.
     """
     if ctx.invoked_subcommand is not None:
         return
@@ -1017,4 +1047,5 @@ def eval_group(  # noqa: PLR0913
         output_json,
         no_save,
         compare,
+        require_language,
     )

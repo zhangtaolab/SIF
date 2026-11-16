@@ -1039,12 +1039,72 @@ def synthesize_known_item_queries(
     )
 
 
+class HeldoutFloorError(ValueError):
+    """Raised when the sample cap is reached with a query floor unmet.
+
+    Subclasses ``ValueError`` so the CLI's existing domain-error translation
+    and ``pytest.raises(ValueError)`` callers stay valid. ``language_counts``
+    carries the per-language held-out counts in declared ``LANGUAGES`` order
+    (absent languages 0) so a shortfall is recordable evidence.
+    """
+
+    def __init__(  # noqa: PLR0913
+        self,
+        message: str,
+        *,
+        accepted: int,
+        tuning: int,
+        heldout: int,
+        sampled: int,
+        language_counts: dict[str, int],
+    ) -> None:
+        """Store the counted shortfall and its per-language evidence."""
+        super().__init__(message)
+        self.accepted = accepted
+        self.tuning = tuning
+        self.heldout = heldout
+        self.sampled = sampled
+        self.language_counts = language_counts
+
+
+def heldout_language_counts(queries: Sequence[SynthesizedQuery]) -> dict[str, int]:
+    """Held-out title/body query counts per language, in ``LANGUAGES`` order.
+
+    Every declared language is present (absent ones count 0) so callers never
+    depend on dict iteration order. Replay queries never enter; a query whose
+    language is outside ``LANGUAGES`` is ignored.
+    """
+    counts: dict[str, int] = dict.fromkeys(LANGUAGES, 0)
+    for query in queries:
+        if query.leg not in ("title", "body") or query.split != "heldout":
+            continue
+        if query.language in counts:
+            counts[query.language] += 1
+    return counts
+
+
+def _language_floor_unmet(
+    queries: Sequence[SynthesizedQuery],
+    required_languages: Sequence[str],
+) -> bool:
+    """True when any required language is below ``SUPPRESS_BELOW`` held out.
+
+    An empty requirement list is always satisfied, so the pre-Phase-23
+    default path is unchanged.
+    """
+    if not required_languages:
+        return False
+    counts = heldout_language_counts(queries)
+    return any(counts.get(language, 0) < SUPPRESS_BELOW for language in required_languages)
+
+
 def ensure_heldout(
     metadata: Sequence[DocumentRecord],
     conn: sqlite3.Connection,
     *,
     initial: int = INITIAL_SAMPLE_DOCUMENTS,
     cap: int = MAX_SAMPLE_DOCUMENTS,
+    required_languages: Sequence[str] = (),
 ) -> tuple[list[DocumentRecord], SynthesisResult]:
     """Sample, synthesize, split, and widen until both floors are met (D-06).
 
@@ -1055,7 +1115,14 @@ def ensure_heldout(
     limit toward ``min(len(metadata), cap)``. A widened sample is a superset
     of the previous prefix, so bodies load only for the newly added
     documents. Only a floor still unmet at the cap raises a counted
-    ``ValueError`` naming accepted, tuning, held-out, and rejection counts.
+    ``HeldoutFloorError`` naming accepted, tuning, held-out, and rejection
+    counts.
+
+    ``required_languages`` opts into language-aware widening (D-07): while
+    any listed language has fewer than ``SUPPRESS_BELOW`` held-out queries
+    the same doubling continues, and the cap guard carries the same condition
+    so the error fires even when the total floors are already met. The
+    default empty tuple preserves the pre-Phase-23 behavior byte-for-byte.
     """
     if not metadata:
         raise ValueError(
@@ -1070,7 +1137,11 @@ def ensure_heldout(
     synthesis = _synthesize_and_split(docs)
     accepted = synthesis.queries
     heldout = sum(1 for query in accepted if query.split == "heldout")
-    while (len(accepted) < MIN_QUERIES or heldout < HELDOUT_MIN) and limit < hard_cap:
+    while (
+        len(accepted) < MIN_QUERIES
+        or heldout < HELDOUT_MIN
+        or _language_floor_unmet(accepted, required_languages)
+    ) and limit < hard_cap:
         new_limit = min(limit * 2, hard_cap)
         previous_ids = {doc.id for doc in sampled}
         sampled = sample_documents(metadata, limit=new_limit)
@@ -1081,18 +1152,30 @@ def ensure_heldout(
         accepted = synthesis.queries
         heldout = sum(1 for query in accepted if query.split == "heldout")
         limit = new_limit
-    if len(accepted) < MIN_QUERIES or heldout < HELDOUT_MIN:
+    if (
+        len(accepted) < MIN_QUERIES
+        or heldout < HELDOUT_MIN
+        or _language_floor_unmet(accepted, required_languages)
+    ):
         tuning = len(accepted) - heldout
         empty = sum(synthesis.rejected_empty.values())
         duplicate = sum(synthesis.rejected_duplicate.values())
         overlap = sum(synthesis.rejected_overlap.values())
-        raise ValueError(
+        language_counts = heldout_language_counts(accepted)
+        rendered = ", ".join(f"{language}={count}" for language, count in language_counts.items())
+        raise HeldoutFloorError(
             f"Personal eval needs at least {MIN_QUERIES} accepted queries with "
             f"{HELDOUT_MIN} held out; accepted {len(accepted)} "
             f"(tuning {tuning}, held-out {heldout}) from {len(sampled)} sampled "
             f"documents; rejected {empty + duplicate + overlap} "
-            f"({empty} empty, {duplicate} duplicate, {overlap} overlap). "
-            "Index more documents with 'sif index update' and retry."
+            f"({empty} empty, {duplicate} duplicate, {overlap} overlap); "
+            f"held-out by language {rendered}. "
+            "Index more documents with 'sif index update' and retry.",
+            accepted=len(accepted),
+            tuning=tuning,
+            heldout=heldout,
+            sampled=len(sampled),
+            language_counts=language_counts,
         )
     return sampled, synthesis
 

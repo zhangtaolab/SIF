@@ -26,12 +26,15 @@ from sif.search.personal_bench import (
     SAVED_RUN_VERSION,
     DocumentRecord,
     assign_split,
+    body_candidate,
+    classify_language,
+    ensure_heldout,
     load_saved_run,
     normalize_text,
     sample_documents,
 )
 from tests.support.bench import EMBEDDING_DIM, ConceptEmbedder
-from tests.support.eval import build_personal_db, rewrite_saved_run
+from tests.support.eval import bilingual_titles_and_bodies, build_personal_db, rewrite_saved_run
 
 
 _UNSET = object()
@@ -2070,3 +2073,108 @@ class TestEvalIdentityPolicy:
         assert "FLOAT[4]" in result.output
         assert "sif index embed --force" in result.output
         assert _KwargRecordingPipeline.seen == []
+
+
+class TestBilingualFixture:
+    """``bilingual_titles_and_bodies`` stays deterministic and language-correct."""
+
+    def test_english_then_chinese_blocks_with_unique_zh_body_queries(self) -> None:
+        titles, bodies = bilingual_titles_and_bodies(60, 10)
+
+        assert len(titles) == len(bodies) == 60
+        assert classify_language(titles[0]) == "en"
+        assert classify_language(titles[55]) == "zh"
+        zh_queries = [body_candidate(body) for body in bodies[50:]]
+        assert all(query is not None for query in zh_queries)
+        assert {classify_language(query) for query in zh_queries if query} == {"zh"}
+        assert len(set(zh_queries)) == 10
+
+    def test_rejects_out_of_range_counts(self) -> None:
+        with pytest.raises(ValueError, match="zh_count"):
+            bilingual_titles_and_bodies(10, 11)
+        with pytest.raises(ValueError, match="non-negative"):
+            bilingual_titles_and_bodies(-1, 0)
+
+
+class TestRequireLanguageCli:
+    """MODEL-01/D-07: the additive ``--require-language`` pass-through."""
+
+    def test_flag_appears_in_help(self) -> None:
+        result = CliRunner().invoke(eval_group, ["--help"])
+
+        assert result.exit_code == 0
+        assert "--require-language" in result.output
+
+    def test_invalid_language_is_a_usage_error(self, tmp_path: Path) -> None:
+        result = _invoke(
+            tmp_path / "missing.db",
+            ["--personal", "--require-language", "fr", "--bm25-only", "--json"],
+            settings=_settings(tmp_path),
+        )
+
+        assert result.exit_code == 2
+        assert "--require-language" in result.output
+
+    def test_fresh_run_forwards_required_languages_to_ensure_heldout(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        db_path = build_personal_db(tmp_path / "personal.db", documents=60)
+        settings = _settings(tmp_path)
+        _SpyPipeline.seen = []
+
+        with patch(
+            "sif.cli.commands.eval.ensure_heldout",
+            wraps=ensure_heldout,
+        ) as spy:
+            result = _invoke(
+                db_path,
+                [
+                    "--personal",
+                    "--bm25-only",
+                    "--json",
+                    "--require-language",
+                    "en",
+                ],
+                settings=settings,
+                pipeline=_SpyPipeline,
+            )
+
+        assert result.exit_code == 0, result.output
+        assert spy.call_args.kwargs["required_languages"] == ("en",)
+
+    def test_compare_mode_warns_once_and_keeps_stdout_json_clean(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        db_path = build_personal_db(tmp_path / "personal.db", documents=60)
+        settings = _settings(tmp_path)
+        _ReplaySpyPipeline.seen = []
+        saved_path, _payload = _fresh_saved_run(
+            db_path,
+            settings,
+            pipeline=_ReplaySpyPipeline,
+        )
+
+        result = _invoke(
+            db_path,
+            [
+                "--personal",
+                "--compare",
+                str(saved_path),
+                "--bm25-only",
+                "--json",
+                "--require-language",
+                "en",
+                "--require-language",
+                "zh",
+            ],
+            settings=settings,
+            pipeline=_SpyPipeline,
+        )
+
+        assert result.exit_code == 0, result.output
+        assert result.stderr.count("ignoring --require-language") == 1
+        assert "en, zh" in result.stderr
+        payload = json.loads(result.stdout)
+        assert payload["comparison"]["top_k"] == 10

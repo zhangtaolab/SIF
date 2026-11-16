@@ -37,6 +37,7 @@ from sif.search.personal_bench import (
     CorpusSummary,
     DocumentRecord,
     GroupMetrics,
+    HeldoutFloorError,
     PersonalQueryRecord,
     PersonalReport,
     ReplayResult,
@@ -55,6 +56,7 @@ from sif.search.personal_bench import (
     dedupe_queries,
     ensure_heldout,
     group_metrics,
+    heldout_language_counts,
     jaccard,
     length_bucket,
     load_replay_queries,
@@ -69,6 +71,7 @@ from sif.search.personal_bench import (
     require_minimum_queries,
     resolve_saved_targets,
     run_to_saved,
+    sample_documents,
     saved_run_to_dict,
     split_queries,
     strip_markup,
@@ -416,6 +419,42 @@ def _titles_with_split(count: int, split: str, start: int = 0) -> list[str]:
     return titles
 
 
+def _zh_titles_with_split(count: int, split: str, start: int = 0) -> list[str]:
+    """Distinct Chinese titles whose title-leg query lands in ``split``."""
+    titles: list[str] = []
+    index = start
+    while len(titles) < count:
+        candidate = f"中文标题第{index}号关于本地检索"
+        if assign_split(candidate) == split:
+            titles.append(candidate)
+        index += 1
+    return titles
+
+
+def _titled_by_membership(
+    metadata: list[DocumentRecord],
+    outside_indices: set[int],
+    outside_titles: list[str],
+    initial_titles: list[str],
+) -> list[DocumentRecord]:
+    """Title records: ``outside_indices`` get the Chinese block, rest English."""
+    records: list[DocumentRecord] = []
+    outside_iter = iter(outside_titles)
+    initial_iter = iter(initial_titles)
+    for index, doc in enumerate(metadata):
+        title = next(outside_iter) if index in outside_indices else next(initial_iter)
+        records.append(
+            DocumentRecord(
+                id=doc.id,
+                path=doc.path,
+                title=title,
+                checksum=doc.checksum,
+                file_size=doc.file_size,
+            )
+        )
+    return records
+
+
 def _records_for_metadata(
     bodies: list[str],
     *,
@@ -547,6 +586,109 @@ class TestEnsureHeldout:
         assert len(conn.calls) == 1
         assert len(synthesis.queries) >= MIN_QUERIES
         assert sum(1 for q in synthesis.queries if q.split == "heldout") >= HELDOUT_MIN
+
+    def test_empty_required_languages_preserves_the_default_path(self) -> None:
+        bodies = _tuning_bodies(50)
+        metadata = _records_for_metadata(bodies)
+        titles = _titles_with_split(24, "tuning", start=0) + _titles_with_split(
+            26, "heldout", start=5000
+        )
+        titled = [
+            DocumentRecord(
+                id=doc.id,
+                path=doc.path,
+                title=title,
+                checksum=doc.checksum,
+                file_size=doc.file_size,
+            )
+            for doc, title in zip(metadata, titles, strict=True)
+        ]
+        conn = _RecordingConnection({doc.id: bodies[int(doc.id.split("-")[1])] for doc in titled})
+
+        sampled, synthesis = ensure_heldout(
+            titled,  # type: ignore[arg-type]
+            conn,  # type: ignore[arg-type]
+            required_languages=(),
+        )
+
+        assert len(sampled) == 50
+        assert len(conn.calls) == 1
+        assert len(synthesis.queries) >= MIN_QUERIES
+        assert sum(1 for q in synthesis.queries if q.split == "heldout") >= HELDOUT_MIN
+
+    def test_language_aware_widening_reaches_a_late_chinese_block(self) -> None:
+        bodies = _tuning_bodies(60)
+        metadata = _records_for_metadata(bodies)
+        initial_ids = {doc.id for doc in sample_documents(metadata, limit=INITIAL_SAMPLE_DOCUMENTS)}
+        outside = {index for index, doc in enumerate(metadata) if doc.id not in initial_ids}
+        assert len(outside) == 10
+        en_titles = _titles_with_split(25, "heldout", start=0) + _titles_with_split(
+            25, "tuning", start=5000
+        )
+        zh_titles = _zh_titles_with_split(10, "heldout")
+        titled = _titled_by_membership(metadata, outside, zh_titles, en_titles)
+        conn = _RecordingConnection({doc.id: bodies[int(doc.id.split("-")[1])] for doc in titled})
+
+        sampled, synthesis = ensure_heldout(
+            titled,  # type: ignore[arg-type]
+            conn,  # type: ignore[arg-type]
+            required_languages=("en", "zh"),
+        )
+
+        counts = heldout_language_counts(synthesis.queries)
+        assert len(sampled) == 60
+        assert counts["en"] >= 10
+        assert counts["zh"] >= 10
+        # Bodies were loaded for the initial slice, then only the 10 new docs.
+        assert [len(call[1]) for call in conn.calls] == [50, 10]
+
+    def test_cap_guard_raises_a_counted_language_floor_error(self) -> None:
+        bodies = _tuning_bodies(60)
+        metadata = _records_for_metadata(bodies)
+        initial_ids = {doc.id for doc in sample_documents(metadata, limit=INITIAL_SAMPLE_DOCUMENTS)}
+        outside = {index for index, doc in enumerate(metadata) if doc.id not in initial_ids}
+        assert len(outside) == 10
+        # Totals and the held-out floor are already met; only zh is short.
+        en_titles = _titles_with_split(25, "heldout", start=0) + _titles_with_split(
+            25, "tuning", start=5000
+        )
+        zh_titles = _zh_titles_with_split(5, "heldout") + _zh_titles_with_split(5, "tuning")
+        titled = _titled_by_membership(metadata, outside, zh_titles, en_titles)
+        conn = _RecordingConnection({doc.id: bodies[int(doc.id.split("-")[1])] for doc in titled})
+
+        with pytest.raises(HeldoutFloorError) as excinfo:
+            ensure_heldout(
+                titled,  # type: ignore[arg-type]
+                conn,  # type: ignore[arg-type]
+                required_languages=("en", "zh"),
+            )
+
+        error = excinfo.value
+        message = str(error)
+        assert error.language_counts["zh"] == 5
+        assert error.sampled == 60
+        assert error.accepted >= MIN_QUERIES
+        assert "accepted" in message
+        assert "tuning" in message
+        assert "held-out" in message
+        assert "zh=5" in message
+        # The loop widened to the cap before the guard fired.
+        assert [len(call[1]) for call in conn.calls] == [50, 10]
+
+
+class TestHeldoutLanguageCounts:
+    def test_declared_order_and_replay_exclusion(self) -> None:
+        queries = [
+            replace(_query("alpha", leg="title"), split="heldout", language="en"),
+            replace(_query("如何检索", leg="body"), split="heldout", language="zh"),
+            replace(_query("logged", leg="replay"), split="heldout", language="zh"),
+            replace(_query("tuning only", leg="title"), split="tuning", language="zh"),
+        ]
+
+        counts = heldout_language_counts(queries)
+
+        assert list(counts) == list(LANGUAGES)
+        assert counts == {"en": 1, "zh": 1, "mixed": 0}
 
 
 def _record(

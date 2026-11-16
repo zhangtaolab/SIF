@@ -52,6 +52,58 @@ def _body(title: str, index: int) -> str:
     )
 
 
+# Deterministic Chinese characters for unique body candidates. Base-34
+# encoding of the document index keeps every candidate distinct (and the
+# normalized CJK run is truncated to the first 10 ideographs by the body leg).
+_ZH_POOL = "检索评测文档知识管理本地质量指标采样方法个性笔记语料排序混合向量"
+
+_ZH_INTRO = (
+    "介绍性内容覆盖个人知识管理、本地检索流程与评测方法的多个方面、并且刻意写得足够长、"
+    "以便把候选句子推到开头窗口之外。"
+)
+
+
+def _zh_candidate(index: int) -> str:
+    """A unique Chinese body-sentence candidate for ``index``."""
+    digits: list[str] = []
+    value = index
+    for _offset in range(3):
+        digits.append(_ZH_POOL[value % len(_ZH_POOL)])
+        value //= len(_ZH_POOL)
+    return "".join(digits) + "讨论本地检索质量与评测方法"
+
+
+def _zh_body(title: str, index: int) -> str:
+    """A Chinese body whose candidate sentence starts beyond 200 characters."""
+    return f"{title}。{_ZH_INTRO * 4}{_zh_candidate(index)}。"
+
+
+def bilingual_titles_and_bodies(
+    count: int,
+    zh_count: int,
+) -> tuple[list[str], list[str]]:
+    """Deterministic EN+ZH fixture titles and bodies, Chinese block last.
+
+    The first ``count - zh_count`` documents reuse the default English
+    shapes; the trailing ``zh_count`` documents are Chinese with enough CJK
+    ideographs for ``classify_language`` to return ``zh``. Each Chinese body
+    candidate is unique, so the body leg never dedupes them into one query.
+    ``build_personal_db``'s defaults are untouched.
+    """
+    if count < 0:
+        raise ValueError("count must be non-negative")
+    if not 0 <= zh_count <= count:
+        raise ValueError("zh_count must be between 0 and count")
+    en_count = count - zh_count
+    titles = _default_titles(en_count)
+    bodies = [_body(title, index) for index, title in enumerate(titles)]
+    for index in range(zh_count):
+        title = f"中文笔记第{index}篇关于本地检索"
+        titles.append(title)
+        bodies.append(_zh_body(title, index))
+    return titles, bodies
+
+
 def build_personal_db(
     db_path: Path,
     *,

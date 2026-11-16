@@ -708,6 +708,9 @@ directory unless --no-save. With --compare, a saved run is re-evaluated
 over its own query set at its saved depth and paired deltas are reported
 with a seeded 95% bootstrap CI and the 1/N noise floor; a corpus
 fingerprint mismatch refuses the comparison. --json emits strict JSON.
+--require-language widens a fresh run's sampling until each named language
+has at least ten held-out queries; --compare uses the saved query set and
+ignores it with a stderr warning.
 
 ```bash
 sif eval [OPTIONS]
@@ -723,6 +726,7 @@ sif eval [OPTIONS]
 | `--bm25-only` | `—` | flag | `false` | Explicitly skip the embedder (hybrid is the default; keeps the run local) |
 | `--limit` | `-n` | integer range | `10` | Number of results per query (1-200) |
 | `--collection` | `-c` | text[] | — | Collection to evaluate |
+| `--require-language` | `—` | choice [en|zh|mixed][] | — | Widen sampling until each required language has at least 10 held-out queries (repeatable) |
 | `--all` | `—` | flag | `false` | Evaluate all collections |
 | `--json` | `—` | flag | `false` | Output as JSON |
 
