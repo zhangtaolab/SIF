@@ -320,7 +320,7 @@ v1.2 contracts — defined ONCE; downstream phases consume, never redefine:
 | 21. Scale, Maintenance + Embedder Identity | v1.2 | 8/8 | Complete    | 2026-11-16 |
 | 22. MCP SDK v2 + Agent Packaging | v1.2 | 7/7 | Complete    | 2026-11-16 |
 | 23. Harrier Gated Evaluation | v1.2 | 6/6 | Complete    | 2026-11-16 |
-| 24. Tuning + Models UX + Install Docs | v1.2 | 0/6 | Planned | - |
+| 24. Tuning + Models UX + Install Docs | v1.2 | 0/7 | Planned | - |
 
 ---
 *Roadmap created 2026-11-07 for milestone v1.1; v1.2 (Phases 17-24) added 2026-11-13. v1.0 (Phases 1-10.1) and v1.1 (Phases 11-16.1) shipped. Phase numbering continues at 17 (no reset).*
