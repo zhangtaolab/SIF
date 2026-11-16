@@ -918,8 +918,49 @@ class TestCleanupGuard:
     def test_refuses_the_home_directory(self) -> None:
         home = Path.home()
 
-        with pytest.raises(ValueError, match="home directory"):
+        with pytest.raises(ValueError, match="scratch root"):
             assert_within_scratch(home, home)
+
+    def test_refuses_a_nested_target_under_a_home_root(self) -> None:
+        home = Path.home()
+
+        with pytest.raises(ValueError, match="scratch root"):
+            assert_within_scratch(home / "qwen3.db", home)
+        with pytest.raises(ValueError, match="scratch root"):
+            assert_within_scratch(home / "saved-runs" / "qwen3.json", home)
+
+    def test_refuses_a_nested_target_under_the_filesystem_root(self) -> None:
+        with pytest.raises(ValueError, match="scratch root"):
+            assert_within_scratch(Path("/qwen3.db"), Path("/"))
+
+    def test_refuses_a_symlinked_home_root(self, tmp_path: Path) -> None:
+        link = tmp_path / "home-link"
+        try:
+            link.symlink_to(Path.home(), target_is_directory=True)
+        except (NotImplementedError, OSError):
+            pytest.skip("symlinks are unavailable on this platform")
+
+        with pytest.raises(ValueError, match="scratch root"):
+            assert_within_scratch(link / "qwen3.db", link)
+
+    def test_cleanup_refuses_a_home_scratch_root(self) -> None:
+        home = Path.home()
+
+        with pytest.raises(ValueError, match="scratch root"):
+            cleanup_arms(home, keep_arms=False)
+
+    def test_stage_machine_refuses_a_home_scratch_root(self, tmp_path: Path) -> None:
+        arms = build_arms(Path.home())
+
+        with pytest.raises(ValueError, match="scratch root"):
+            harrier_eval.run_stage_machine(
+                arms,
+                [tmp_path],
+                Path.home(),
+                corpus_label="personal",
+                keep_arms=False,
+                output_json=True,
+            )
 
     def test_refuses_a_sibling_path(self, tmp_path: Path) -> None:
         scratch = tmp_path / "scratch"

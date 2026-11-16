@@ -920,13 +920,21 @@ def write_artifact(path: Path, artifact: Mapping[str, Any]) -> Path:
 
 
 def assert_within_scratch(path: Path, scratch_root: Path) -> Path:
-    """Resolve and refuse the root, the home directory, or any outside path."""
+    """Resolve and refuse the root, the home directory, or any outside path.
+
+    The scratch root is guarded, not only the target: with ``--scratch-root
+    ~`` every run-owned candidate (``~/qwen3.db`` and its sidecars,
+    ``~/saved-runs/qwen3.json``) is nested under the resolved home directory,
+    so a target-only check would let cleanup delete unrelated user files
+    (CR-01). Both sides are resolved first, so a symlink to the home
+    directory is rejected the same way.
+    """
     target = Path(path).resolve()
     root = Path(scratch_root).resolve()
-    if target == Path("/") or root == Path("/"):
-        raise ValueError("refusing to operate on the filesystem root")
-    if target == Path.home():
-        raise ValueError("refusing to operate on the home directory")
+    if root in {Path("/"), Path.home()}:
+        raise ValueError(f"refusing to use {root} as a scratch root")
+    if target in {Path("/"), Path.home()}:
+        raise ValueError("refusing to operate on the filesystem root or home directory")
     if target != root and not target.is_relative_to(root):
         raise ValueError(f"refusing path outside the scratch root: {target}")
     return target
@@ -1323,7 +1331,9 @@ def run_stage_machine(
     preflight_only: bool = False,
 ) -> int:
     """Run (or resume) the scope-keyed two-arm stage machine."""
-    scratch_root = Path(scratch_root).resolve()
+    # The guard runs before any mkdir/write/delete: a home-directory or
+    # filesystem-root scratch root must be refused (CR-01).
+    scratch_root = assert_within_scratch(scratch_root, scratch_root)
     scratch_root.mkdir(parents=True, exist_ok=True)
     saved_runs = scratch_root / "saved-runs"
     saved_runs.mkdir(parents=True, exist_ok=True)
