@@ -65,7 +65,7 @@ Each maps to exactly one roadmap phase. Checkboxes mark committed scope.
 - [x] **MCP-05**: Agent gets full query pipeline parity (expander/reranker opt-in/snippet wired; pipeline hoisted; overclaiming rerank description fixed; rerank stays opt-in and documented).
 - [x] **MCP-06**: User gets a clean-stdout MCP server (lazy embedder; forced quiet before any model import; stdout-purity regression on cold first query; lex/vec wiring).
 - [ ] **MCP-07**: User can run MCP as a daemon (`mcp daemon` un-stubbed via existing `utils/daemon.py`).
-- [ ] **MCP-08**: User can install SIF as a Claude Code plugin (plugin + marketplace.json + citation-discipline skill encoding search→get two-stage citation; `claude plugin validate` passes).
+- [x] **MCP-08**: User can install SIF as a Claude Code plugin (plugin + marketplace.json + citation-discipline skill encoding search→get two-stage citation; `claude plugin validate` passes).
 - [ ] **MCP-09**: User can discover SIF in the MCP Registry (listing via mcp-publisher, scripted and re-runnable; PyPI publish prerequisite satisfied first).
 
 ### Harrier Gated Evaluation (MODEL)
@@ -161,7 +161,7 @@ Populated during roadmap creation. Each requirement maps to exactly one phase.
 | MCP-05 | Phase 22 | Complete |
 | MCP-06 | Phase 22 | Complete |
 | MCP-07 | Phase 22 | Pending |
-| MCP-08 | Phase 22 | Pending |
+| MCP-08 | Phase 22 | Complete |
 | MCP-09 | Phase 22 | Pending |
 | MODEL-01 | Phase 23 | Pending |
 | MODEL-02 | Phase 23 | Pending |

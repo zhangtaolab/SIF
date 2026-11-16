@@ -5,16 +5,16 @@ milestone_name: Search Precision and Agent Experience
 current_phase: 22
 current_phase_name: MCP SDK v2 Modernization + Agent Packaging
 status: executing
-stopped_at: Completed 22-05-PLAN.md
-last_updated: "2026-11-16T08:31:53.274Z"
+stopped_at: Completed 22-06-PLAN.md
+last_updated: "2026-11-16T08:43:38.516Z"
 last_activity: 2026-11-16
 last_activity_desc: Phase 22 execution started
-state_head: 8476392d0b88c3ac82ac03d35cd6eb3dd3c03458
+state_head: 5abc69ce70ca7eb04637fd86105dbc23c33595a8
 progress:
   total_phases: 8
   completed_phases: 5
   total_plans: 42
-  completed_plans: 40
+  completed_plans: 41
 ---
 
 # DocSift — Project State
@@ -31,7 +31,7 @@ progress:
 ## Current Position
 
 Phase: 22 (MCP SDK v2 Modernization + Agent Packaging) — EXECUTING
-Plan: 6 of 7
+Plan: 7 of 7
 Status: Ready to execute
 Last activity: 2026-11-16 — Phase 22 execution started
 
@@ -89,6 +89,7 @@ Progress: [██████░░░░] 63%
 | Phase 22 P03 | 11min | 3 tasks | 10 files |
 | Phase 22 P04 | 12min | 3 tasks | 12 files |
 | Phase 22 P05 | 17min | 3 tasks | 17 files |
+| Phase 22 P06 | 10min | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -258,6 +259,10 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - [Phase 22]: 22-05: extract_with_range reports the inclusive snippet window and extract() delegates to element 0, so CLI snippet bytes never move; line_start/line_end are dataclass-only and excluded from to_dict.
 - [Phase 22]: 22-05: content_hash is the stored documents.checksum fetched by one batched get_checksums call per result page; get is 1..N or the requested range, and the direct lex/BM25 routes keep the documented no-snippet deviation while attaching hashes.
 - [Phase 22]: 22-05: the frozen Phase 20 metadata envelope is deep-equaled on both channels; five era goldens were regenerated and only tools/list exchanges changed.
+- [Phase 22]: 22-06: the repo root is a sif plugin/marketplace; plugin and marketplace versions mirror _version.py and .mcp.json runs only the installed sif mcp stdio with no path or credentials.
+- [Phase 22]: 22-06: plugin skills under skills/ grant mcp__sif__ tools only and keep the untrusted-content warning; sif-cite requires get before citing docid plus lines and forbids snippet-only citation.
+- [Phase 22]: 22-06: the gate is plain claude plugin validate --json . (success, zero errors, no description warning); the repo-root CLAUDE.md warning is tolerated and --strict stays banned.
+- [Phase 22]: 22-06: docs/mcp-server.md and src/sif/mcp/README.md describe the SDK composition root and seven-tool surface; README makes uv tool install docsif[embed] primary with a BM25-only base and uvx fallback.
 
 ### Pending Todos
 
@@ -287,8 +292,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-16T08:31:52.540Z
-Stopped at: Completed 22-05-PLAN.md
+Last session: 2026-11-16T08:43:37.749Z
+Stopped at: Completed 22-06-PLAN.md
 Resume file: None
 
 - **Next expected action:** plan and execute Phase 21 (Scale, Maintenance + Embedder Identity — SCALE-01..03, EMB-01/02), then 22 → 23 → 24. Phase 20 delivered FILT-01..05: shared 17-operator filter grammar on CLI+MCP, `path`/`mtime` built-ins, pre-RRF per-leg pushdown with the corrected vector escalation, typed kv storage + `index_meta`-gated backfill, and the `metadata` discovery tool whose envelope is the frozen Phase 22 contract. Two audits remain recorded as debt (see Blockers/Concerns): `/gsd-secure-phase 20` and `/gsd:validate-phase 20`.

@@ -217,7 +217,7 @@ Full detail: `.planning/milestones/v1.1-ROADMAP.md`
   3. User's loopback MCP server is protected from DNS rebinding — Host/Origin validation via SDK `transport_security`, verified with spoofed headers BEFORE the hand-rolled middleware is deleted
   4. Agent gets full query pipeline parity with a clean server — expander/reranker opt-in/snippet wired (pipeline hoisted, overclaiming rerank description fixed, rerank stays opt-in and documented); lazy embedder with forced quiet before any model import and a stdout-purity regression on cold first query; lex/vec tools wired; `mcp daemon` runs as a real daemon via existing `utils/daemon.py`
   5. User can install SIF as a Claude Code plugin and discover it in the MCP Registry — plugin + marketplace.json + citation-discipline skill encoding search→get two-stage citation (`claude plugin validate` passes); Registry listing via mcp-publisher is scripted and re-runnable, after the Phase 17 PyPI prerequisite
-**Plans:** 5/7 plans executed
+**Plans:** 6/7 plans executed
 **Wave 1**
 - [x] 22-01-PLAN.md — Tracer: SDK composition root, Python 3.10 gate, dual-era transcripts, watch lifespan, transport-security and stdout proof (old shell kept dormant)
 
@@ -232,7 +232,7 @@ Full detail: `.planning/milestones/v1.1-ROADMAP.md`
 - [x] 22-05-PLAN.md — Citation-grade structured output: snippet line ranges, batched content hashes, get ranges
 
 **Wave 5** *(blocked on Wave 4 completion)*
-- [ ] 22-06-PLAN.md — Claude Code plugin, marketplace, MCP-first skills, docs rewrite
+- [x] 22-06-PLAN.md — Claude Code plugin, marketplace, MCP-first skills, docs rewrite
 
 **Wave 6** *(blocked on Wave 5 completion)*
 - [ ] 22-07-PLAN.md — Registry manifest/script preflight + phase gate and real-client evidence
@@ -283,7 +283,7 @@ v1.2 contracts — defined ONCE; downstream phases consume, never redefine:
 | 19. Search Correctness | v1.2 | 9/9 | Complete    | 2026-11-15 |
 | 20. Metadata Filtering + Discovery | v1.2 | 5/5 | Complete    | 2026-11-15 |
 | 21. Scale, Maintenance + Embedder Identity | v1.2 | 8/8 | Complete    | 2026-11-16 |
-| 22. MCP SDK v2 + Agent Packaging | v1.2 | 5/7 | In Progress | - |
+| 22. MCP SDK v2 + Agent Packaging | v1.2 | 6/7 | In Progress | - |
 | 23. Harrier Gated Evaluation | v1.2 | 0/TBD | Not started | - |
 | 24. Tuning + Models UX + Install Docs | v1.2 | 0/TBD | Not started | - |
 
