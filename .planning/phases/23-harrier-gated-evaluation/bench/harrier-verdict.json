@@ -79,6 +79,11 @@
     ]
   },
   "decision": "keep-qwen3",
+  "default_flip": {
+    "artifact": ".planning/phases/23-harrier-gated-evaluation/bench/harrier-verdict.json",
+    "decision": "not-applicable",
+    "reason": "verdict did not authorize a change"
+  },
   "environment": {
     "device": "mps:0",
     "git_dirty": true,
