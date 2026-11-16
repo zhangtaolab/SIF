@@ -245,24 +245,23 @@ Full detail: `.planning/milestones/v1.1-ROADMAP.md`
   1. User gets an evidence-based embedder comparison — EN+ZH held-out A/B of Harrier native vs Qwen3-Embedding-0.6B with per-arm full re-embed on isolated indexes, per-language × per-leg verdicts, paired deltas + intervals; Harrier queries use `prompt_name="web_search_query"`, never `default_prompt_name`
   2. User's default embedder changes ONLY on a proven win — EN+ZH held-out win beyond the 0.01 tie rule; a no-win outcome is recorded as a rejection with numbers; the Qwen3 path stays byte-identical until the gate passes
 **Plans:** 6 plans
-
 **Wave 1**
 - [ ] 23-01-PLAN.md — Instrument additions: per-language/leg-language held-out gates, language-aware widening, `--require-language`
 
-**Wave 2** *(blocked on 23-01)*
+**Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 23-02-PLAN.md — Pure two-sided verdict rule (`embedder_verdict.py`) with boundary tests
 
-**Wave 3** *(blocked on 23-01/23-02)*
+**Wave 3** *(blocked on Wave 2 completion)*
 - [ ] 23-03-PLAN.md — Two-arm runbook: dry-run, identity gate, adequacy preflight, stage machine, artifact writer, cleanup guard
 
-**Wave 4** *(blocked on 23-03; blocking-human)*
-- [ ] 23-04-PLAN.md — Real EN+ZH evidence run, committed verdict artifact, benchmarking section
+**Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 23-04-PLAN.md — Real EN+ZH evidence run, committed verdict artifact, benchmarking section (blocking-human)
 
-**Wave 5** *(blocked on 23-04; conditional on `adopt-harrier`)*
-- [ ] 23-05-PLAN.md — Conditional default flip: Settings/EmbeddingConfig defaults, tests, docs sweep, generated docs
+**Wave 5** *(blocked on Wave 4 completion)*
+- [ ] 23-05-PLAN.md — Conditional default flip: Settings/EmbeddingConfig defaults, tests, docs sweep, generated docs (conditional on `adopt-harrier`)
 
-**Wave 6** *(blocked on 23-05; conditional on flip)*
-- [ ] 23-06-PLAN.md — Explicit-Qwen3 zero-delta proof recorded in the artifact
+**Wave 6** *(blocked on Wave 5 completion)*
+- [ ] 23-06-PLAN.md — Explicit-Qwen3 zero-delta proof recorded in the artifact (conditional on flip)
 
 ### Phase 24: Tuning + Models UX + Install Docs
 **Goal**: Chunking defaults are evidence-gated, model management is reliable, and every platform has a correct install path — the milestone closes on measured defaults and generator-verified docs.
