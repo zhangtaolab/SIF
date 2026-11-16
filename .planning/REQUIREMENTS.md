@@ -25,7 +25,7 @@ Each maps to exactly one roadmap phase. Checkboxes mark committed scope.
 ### Search Quality Tuning (QUAL)
 
 - [x] **QUAL-01**: User gets faster, higher-recall did-you-mean suggestions (rapidfuzz measured swap dropping first-letter bucketing; ≤10 ms budget; cutoff deliberately re-measured on the 0–100 Indel scale; tie-break/probe contracts preserved).
-- [ ] **QUAL-02**: User can find the best chunking via a held-out-gated chunk size/overlap sweep (per-arm re-chunk + re-embed; isolated arms; embed cost reported; defaults change only via the held-out gate).
+- [x] **QUAL-02**: User can find the best chunking via a held-out-gated chunk size/overlap sweep (per-arm re-chunk + re-embed; isolated arms; embed cost reported; defaults change only via the held-out gate).
 - [ ] **QUAL-03**: User can benefit from a title-breadcrumb experiment (per-leg ablation; title-signal duplication checked against title FTS; defaults change only via the held-out gate).
 
 ### Search Correctness (CORR)
@@ -136,7 +136,7 @@ Populated during roadmap creation. Each requirement maps to exactly one phase.
 | EVAL-01 | Phase 18 | Complete |
 | EVAL-02 | Phase 18 | Complete |
 | QUAL-01 | Phase 18 | Complete |
-| QUAL-02 | Phase 24 | Pending |
+| QUAL-02 | Phase 24 | Complete |
 | QUAL-03 | Phase 24 | Pending |
 | CORR-01 | Phase 19 | Complete |
 | CORR-02 | Phase 19 | Complete |
