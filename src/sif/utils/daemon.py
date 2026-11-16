@@ -41,6 +41,7 @@ from sif.utils.logging import get_logger
 logger = get_logger(__name__)
 
 _PID_SUFFIX = ".watch.pid"
+_PID_SUFFIX_MCP = ".mcp.pid"
 _ARM_TIMEOUT_SECONDS = 30.0
 _STOP_TERM_TIMEOUT_SECONDS = 10.0
 _STOP_KILL_TIMEOUT_SECONDS = 5.0
@@ -50,12 +51,13 @@ _PS_TIMEOUT_SECONDS = 5.0
 # Identity markers (Pitfall 3): a real sif watch process appears in ps in one
 # of two program shapes — the module form (`python -m sif.cli.main`) or the
 # installed console-script form (`python <prefix>/sif`, generated from
-# [project.scripts] sif = "sif.cli.main:main"). The watch subcommand must
+# [project.scripts] sif = "sif.cli.main:main"). The owning subcommand must
 # also appear as its own whitespace token (a "watch.db" path fragment must
 # not corroborate), and the console-script token's basename must be exactly
 # `sif` — lookalikes such as `not-sif` and `sif-tools` never corroborate.
+# The marker is per-lifecycle (D-20/C5): the watch daemon is corroborated by
+# `watch`, the MCP daemon by `mcp`, so neither `--stop` can signal the other.
 _CLI_MARKER = "sif.cli.main"
-_WATCH_MARKER = "watch"
 _CONSOLE_SCRIPT_NAME = "sif"
 
 
@@ -93,6 +95,17 @@ def pid_path_for(db_path: str | Path) -> Path:
     """
     resolved = Path(db_path).expanduser().resolve()
     return resolved.with_name(resolved.name + _PID_SUFFIX)
+
+
+def pid_path_for_mcp(db_path: str | Path) -> Path:
+    """Derive the MCP daemon's sibling PID file path (D-20).
+
+    Distinct from :func:`pid_path_for` (``<db>.watch.pid``) so a watch daemon
+    and an MCP daemon can run on one index concurrently without sharing (or
+    removing) each other's lifecycle artifact.
+    """
+    resolved = Path(db_path).expanduser().resolve()
+    return resolved.with_name(resolved.name + _PID_SUFFIX_MCP)
 
 
 def write_pid_file(path: Path, *, pid: int, mode: str, depth: str) -> None:
@@ -175,18 +188,19 @@ def _identifies_sif_cli(command_line: str) -> bool:
     return any(os.path.basename(token) == _CONSOLE_SCRIPT_NAME for token in command_line.split())
 
 
-def corroborate_pid(payload: dict[str, object]) -> bool:
+def corroborate_pid(payload: dict[str, object], *, marker: str = "watch") -> bool:
     """Fail-closed identity check before any signal (Pitfall 3, T-13-03).
 
     A process is only corroborated when it is alive AND its ps command line
     names the sif CLI — the module form (``python -m sif.cli.main``) or the
     installed console-script form (``python <prefix>/sif``) — AND carries
-    the watch subcommand as its own whitespace token. ``ps`` is invoked with
-    ``-ww`` (unlimited width) because the console-script shape places that
-    trailing watch token after the interpreter, script path, and ``--index``
-    value, where default width clipping could otherwise hide it. Every other
-    shape, a wrong-typed pid, a dead process, a missing ``ps``, or a ``ps``
-    failure returns False — an uncorroborated PID is never signalled.
+    ``marker`` (the owning subcommand: ``watch`` by default, ``mcp`` for the
+    MCP daemon) as its own whitespace token. ``ps`` is invoked with ``-ww``
+    (unlimited width) because the console-script shape places that trailing
+    token after the interpreter, script path, and ``--index`` value, where
+    default width clipping could otherwise hide it. Every other shape, a
+    wrong-typed pid, a dead process, a missing ``ps``, or a ``ps`` failure
+    returns False — an uncorroborated PID is never signalled.
     """
     pid = payload.get("pid")
     if isinstance(pid, bool) or not isinstance(pid, int):
@@ -214,7 +228,7 @@ def corroborate_pid(payload: dict[str, object]) -> bool:
         return False
     if result.returncode != 0:
         return False
-    return _identifies_sif_cli(result.stdout) and _WATCH_MARKER in result.stdout.split()
+    return _identifies_sif_cli(result.stdout) and marker in result.stdout.split()
 
 
 def detach(
@@ -296,9 +310,10 @@ def detach(
     return DetachOutcome(daemon=True)
 
 
-def stop_daemon(
+def stop_daemon(  # noqa: PLR0913 — one keyword per escalation tuning seam
     pid_path: Path,
     *,
+    marker: str = "watch",
     term_timeout_s: float = _STOP_TERM_TIMEOUT_SECONDS,
     kill_timeout_s: float = _STOP_KILL_TIMEOUT_SECONDS,
     poll_interval_s: float = _POLL_INTERVAL_SECONDS,
@@ -307,8 +322,11 @@ def stop_daemon(
     """Stop the daemon behind ``pid_path`` with corroborated escalation (D-05).
 
     Read -> corroborate -> SIGTERM -> bounded poll -> SIGKILL fallback ->
-    remove the file. An unreadable or uncorroborated payload is stale: the
-    file is cleaned up and NO signal is ever sent (Pitfall 3, fail-closed).
+    remove the file. ``marker`` names the owning lifecycle the target's ps
+    command line must carry (``watch`` by default, ``mcp`` for the MCP
+    daemon), so a live daemon of the other kind is never treated as stale
+    and never signalled. An unreadable or uncorroborated payload is stale:
+    the file is cleaned up and NO signal is ever sent (Pitfall 3, fail-closed).
     """
     payload = read_pid_file(pid_path)
     if payload is None:
@@ -319,7 +337,7 @@ def stop_daemon(
     pid = payload.get("pid")
     assert isinstance(pid, int)
     assert not isinstance(pid, bool)
-    if not corroborate_pid(payload):
+    if not corroborate_pid(payload, marker=marker):
         remove_pid_file(pid_path)
         return StopOutcome("stale", pid=pid)
     try:

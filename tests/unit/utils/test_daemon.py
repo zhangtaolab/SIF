@@ -344,7 +344,7 @@ class TestStopEscalation:
                 sent.append((pid, sig))
 
         monkeypatch.setattr(daemon.os, "kill", fake_kill)
-        monkeypatch.setattr(daemon, "corroborate_pid", lambda _payload: True)
+        monkeypatch.setattr(daemon, "corroborate_pid", lambda _payload, **_kwargs: True)
 
         outcome = daemon.stop_daemon(
             pid_file, term_timeout_s=0.03, kill_timeout_s=0.03, poll_interval_s=0.01
@@ -372,7 +372,7 @@ class TestStopEscalation:
             gone = True  # the daemon exits promptly on SIGTERM (D-14)
 
         monkeypatch.setattr(daemon.os, "kill", fake_kill)
-        monkeypatch.setattr(daemon, "corroborate_pid", lambda _payload: True)
+        monkeypatch.setattr(daemon, "corroborate_pid", lambda _payload, **_kwargs: True)
 
         outcome = daemon.stop_daemon(
             pid_file, term_timeout_s=5.0, kill_timeout_s=5.0, poll_interval_s=0.01
@@ -393,7 +393,7 @@ class TestStopEscalation:
             raise ProcessLookupError()
 
         monkeypatch.setattr(daemon.os, "kill", fake_kill)
-        monkeypatch.setattr(daemon, "corroborate_pid", lambda _payload: True)
+        monkeypatch.setattr(daemon, "corroborate_pid", lambda _payload, **_kwargs: True)
 
         outcome = daemon.stop_daemon(pid_file)
 
@@ -406,13 +406,32 @@ class TestStopEscalation:
         pid_file = tmp_path / "sif.db.watch.pid"
         _write_payload(pid_file)
         monkeypatch.setattr(daemon.os, "kill", lambda _pid, _sig: pytest.fail("signal sent"))
-        monkeypatch.setattr(daemon, "corroborate_pid", lambda _payload: False)
+        monkeypatch.setattr(daemon, "corroborate_pid", lambda _payload, **_kwargs: False)
 
         outcome = daemon.stop_daemon(pid_file)
 
         assert outcome.status == "stale"
         assert outcome.pid == 999999
         assert not pid_file.exists()
+
+    def test_marker_is_forwarded_and_defaults_to_watch(self, tmp_path: Path, monkeypatch) -> None:
+        """C5/D-20: stop_daemon threads the marker; the default stays ``watch``."""
+        recorded: list[str] = []
+
+        def fake_corroborate(_payload: dict[str, object], *, marker: str = "watch") -> bool:
+            recorded.append(marker)
+            return False
+
+        monkeypatch.setattr(daemon, "corroborate_pid", fake_corroborate)
+        mcp_pid = tmp_path / "sif.db.mcp.pid"
+        _write_payload(mcp_pid)
+        watch_pid = tmp_path / "sif.db.watch.pid"
+        _write_payload(watch_pid)
+
+        assert daemon.stop_daemon(mcp_pid, marker="mcp").status == "stale"
+        assert daemon.stop_daemon(watch_pid).status == "stale"
+
+        assert recorded == ["mcp", "watch"]
 
     def test_garbage_payload_is_stale_and_cleaned(self, tmp_path: Path, monkeypatch) -> None:
         pid_file = tmp_path / "sif.db.watch.pid"
@@ -439,7 +458,7 @@ class TestStopEscalation:
             raise PermissionError(1, "Operation not permitted")
 
         monkeypatch.setattr(daemon.os, "kill", fake_kill)
-        monkeypatch.setattr(daemon, "corroborate_pid", lambda _payload: True)
+        monkeypatch.setattr(daemon, "corroborate_pid", lambda _payload, **_kwargs: True)
 
         outcome = daemon.stop_daemon(pid_file)
 
