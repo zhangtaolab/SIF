@@ -4,17 +4,18 @@ milestone: v1.2
 milestone_name: Search Precision and Agent Experience
 current_phase: 23
 current_phase_name: Harrier Gated Evaluation
+current_plan: 2
 status: executing
-stopped_at: Phase 23 context gathered
-last_updated: "2026-11-16T11:51:25.310Z"
+stopped_at: Completed 23-01-PLAN.md
+last_updated: "2026-11-16T12:03:33.915Z"
 last_activity: 2026-11-16
 last_activity_desc: Phase 22 complete, transitioned to Phase 23
-state_head: bae607757c6b7d75bdcc981d50ac5dfc1772142c
+state_head: 2c948aecff64c0386aa54d88b86561d24cb32384
 progress:
   total_phases: 8
   completed_phases: 6
   total_plans: 48
-  completed_plans: 42
+  completed_plans: 43
 ---
 
 # DocSift — Project State
@@ -30,10 +31,11 @@ progress:
 
 ## Current Position
 
-Phase: 23 (Harrier Gated Evaluation) — READY TO EXECUTE
-Plan: Not started
+Phase: 23 (Harrier Gated Evaluation) — IN PROGRESS
+Current Plan: 2
+Total Plans in Phase: 6
 Status: Ready to execute
-Last activity: 2026-11-16 — Phase 22 complete, transitioned to Phase 23
+Last activity: 2026-11-16 — 23-01 complete (2 tasks, 2 commits); next: 23-02
 
 Progress: [████████░░] 75%
 
@@ -91,6 +93,7 @@ Progress: [████████░░] 75%
 | Phase 22 P05 | 17min | 3 tasks | 17 files |
 | Phase 22 P06 | 10min | 3 tasks | 12 files |
 | Phase 22 P07 | 7 | 3 tasks | 5 files |
+| Phase 23 P01 | 8min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -270,6 +273,9 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - [Phase 22]: 22-07 phase gate green: 2866 passed / 1 skipped at 95.11% coverage, ruff/format/ty clean, make docs-generate no-diff, claude plugin validate success with zero errors, registry --check green; _version.py stays 1.1.2 and no v1.2 tag exists.
 - [Phase 22]: 22 code review: 2 Critical + 10 Warning fixed with pre-fix failing regression tests (CR-01 lazy-load lock, CR-02 vec_search off the event loop, WR-01/02/03/05/06/07/08/09/10/11); 1 necessity (WR-04) + 8 Info remain open per project convention; verifier found non-blocking W-01 (multi_get explicit max_bytes line range) as a follow-up.
 - [Phase 22]: 22 verified 77/77 must-haves and marked complete 2026-11-16; suite 2889 passed / 1 skipped @ 95.13% coverage, ruff/format/ty/docs-generate/plugin-validate/registry --check green; no v1.2 tag; public Registry listing remains blocked no-github-login (deferred maintainer action).
+- [Phase 23]: Defaulted ComparisonReport.language_splits/leg_language_splits keep the Phase 18 constructor and output valid while adding per-language evidence
+- [Phase 23]: Language-aware widening adds the language floor to both the widening loop and the cap guard; required_languages=() is byte-identical
+- [Phase 23]: The --require-language option is click.Choice(LANGUAGES); compare mode warns once on stderr and never resamples the saved query set
 
 ### Pending Todos
 
@@ -302,8 +308,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-16T10:33:52.133Z
-Stopped at: Phase 23 context gathered
-Resume file: .planning/phases/23-harrier-gated-evaluation/23-CONTEXT.md
+Last session: 2026-11-16T12:03:11.060Z
+Stopped at: Completed 23-01-PLAN.md
+Resume file: None
 
 - **Next expected action:** finish 22-07 Task 3 (Registry docs, phase gate, real `claude mcp` stdio smoke, `22-07-SUMMARY.md`), then Phase 22 verification (gsd-verifier, code review, regression gate) and ROADMAP/STATE completion; then Phase 23 → 24. 22-07 Task 2 was recorded `blocked no-github-login` (optional public Registry listing deferred). Two audits remain recorded as debt (see Blockers/Concerns): `/gsd-secure-phase 20` and `/gsd:validate-phase 20`.
