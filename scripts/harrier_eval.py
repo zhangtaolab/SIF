@@ -65,6 +65,17 @@ PINNED_ENV = (
     "SIF_CHUNK_SIZE",
     "SIF_CHUNK_OVERLAP",
 )
+# The personal eval reads the fusion tunables and the rerank candidate cap from
+# Settings, so an inherited SIF_RRF_K / weight / candidate value would silently
+# change both arms' ranking. Pin them to the shipped defaults and record them
+# in the env summary and artifact (WR-05); a unit test keeps this table equal
+# to the live Settings field defaults.
+PINNED_RANKING_ENV = {
+    "SIF_RRF_K": "60",
+    "SIF_BM25_WEIGHT": "1.0",
+    "SIF_VECTOR_WEIGHT": "1.0",
+    "SIF_RERANK_CANDIDATE_LIMIT": "20",
+}
 PROMPT_ENV = ("SIF_QUERY_PROMPT_NAME", "SIF_DOCUMENT_PROMPT_NAME")
 REMOVED_ENV = (
     "SIF_MODEL_PATH",
@@ -153,7 +164,9 @@ def build_arm_env(base_env: Mapping[str, str], arm: ArmSpec) -> dict[str, str]:
     gate requires the exact ``modelscope:Qwen/Qwen3-Embedding-0.6B``) and no
     credentials leak into either local arm. The prompt keys are removed for
     the same reason: the known-model table must supply Harrier's
-    ``web_search_query``, while an empty string would disable it.
+    ``web_search_query``, while an empty string would disable it. The
+    eval-relevant ranking settings are pinned over any inherited value so the
+    recorded artifact describes the configuration actually measured (WR-05).
     """
     env = dict(base_env)
     for key in REMOVED_ENV:
@@ -170,6 +183,7 @@ def build_arm_env(base_env: Mapping[str, str], arm: ArmSpec) -> dict[str, str]:
             "SIF_CACHE_EMBEDDINGS": "1",
         }
     )
+    env.update(PINNED_RANKING_ENV)
     return env
 
 
@@ -241,10 +255,16 @@ def build_arm_commands(
 
 
 def _env_summary(env: Mapping[str, str]) -> dict[str, Any]:
-    """Record only the pinned values and the explicitly removed keys."""
+    """Record the pinned model/chunking/ranking values and removed keys."""
     pinned = {
         key: env[key]
-        for key in ("SIF_MODEL_TYPE", "SIF_MODEL_NAME", *PINNED_ENV, "SIF_CACHE_EMBEDDINGS")
+        for key in (
+            "SIF_MODEL_TYPE",
+            "SIF_MODEL_NAME",
+            *PINNED_ENV,
+            "SIF_CACHE_EMBEDDINGS",
+            *PINNED_RANKING_ENV,
+        )
     }
     return {"pinned": pinned, "removed": list(REMOVED_ENV)}
 
@@ -864,7 +884,7 @@ def _git_value(args: Sequence[str]) -> str:
 
 
 def collect_environment(*, device: str | None = None) -> dict[str, Any]:
-    """Record the Python/platform/package stack, git provenance, and device.
+    """Record the stack, pinned ranking settings, git provenance, and device.
 
     Never records interpreter paths or user home paths.
     """
@@ -881,6 +901,7 @@ def collect_environment(*, device: str | None = None) -> dict[str, Any]:
         "platform": platform.platform(),
         "packages": packages,
         "missing_packages": missing,
+        "ranking": dict(PINNED_RANKING_ENV),
         "git_head": _git_value(["rev-parse", "HEAD"]),
         "git_dirty": bool(_git_value(["status", "--porcelain"])),
         "device": device or "unknown",

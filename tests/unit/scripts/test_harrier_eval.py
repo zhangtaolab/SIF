@@ -61,6 +61,7 @@ from scripts.harrier_eval import (
     verify_arm_pair,
     write_artifact,
 )
+from sif.config.settings import Settings
 from sif.embedding.identity import EmbedderIdentity
 from sif.search.embedder_verdict import decide_from_gates
 from sif.search.personal_bench import noise_gate
@@ -182,6 +183,40 @@ class TestDryRun:
                 assert "--query-prompt" not in joined
                 assert "--document-prompt" not in joined
                 assert "default_prompt_name" not in joined
+
+    def test_ranking_settings_are_pinned_and_match_shipped_defaults(
+        self, tmp_path: Path
+    ) -> None:
+        fields = Settings.model_fields
+        expected = {
+            "SIF_RRF_K": str(fields["rrf_k"].default),
+            "SIF_BM25_WEIGHT": str(fields["bm25_weight"].default),
+            "SIF_VECTOR_WEIGHT": str(fields["vector_weight"].default),
+            "SIF_RERANK_CANDIDATE_LIMIT": str(fields["rerank_candidate_limit"].default),
+        }
+        assert harrier_eval.PINNED_RANKING_ENV == expected
+
+        env = build_arm_env(
+            {"SIF_RRF_K": "5", "SIF_VECTOR_WEIGHT": "0.2"},
+            build_arm("qwen3", tmp_path),
+        )
+
+        for key, value in expected.items():
+            assert env[key] == value
+
+    def test_dry_run_env_summary_records_ranking_settings(self, tmp_path: Path) -> None:
+        payload = build_dry_run_payload(
+            "python", build_arms(tmp_path), [tmp_path], ARTIFACT_PATH
+        )
+
+        pinned = payload["commands"]["qwen3"][0]["env_summary"]["pinned"]
+        for key, value in harrier_eval.PINNED_RANKING_ENV.items():
+            assert pinned[key] == value
+
+    def test_environment_records_the_pinned_ranking_settings(self) -> None:
+        assert harrier_eval.collect_environment()["ranking"] == (
+            harrier_eval.PINNED_RANKING_ENV
+        )
 
     def test_baseline_eval_requires_both_languages(self, tmp_path: Path) -> None:
         arm = build_arm("qwen3", tmp_path)
