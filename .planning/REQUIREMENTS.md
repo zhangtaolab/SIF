@@ -60,7 +60,7 @@ Each maps to exactly one roadmap phase. Checkboxes mark committed scope.
 
 - [x] **MCP-01**: User's existing MCP clients keep working after the official SDK v2 migration (dual-era 2024-11-05 → 2026-07-28 + stateless; tracer-first with golden wire transcripts + real-client matrix; py3.10 install/import smoke at phase start; `SearchBackend`/watch_host/I/O models preserved, protocol shell deleted).
 - [ ] **MCP-02**: Agent gets accurate tool annotations on all tools (read-only tools annotated for parallel calls + one retry; write tools never readOnly; no auto-approval claims — annotations are metadata, not enforcement).
-- [ ] **MCP-03**: Agent gets citation-grade structured output (structuredContent/outputSchema automatic from return annotations with docid, path, line range, hash, staleness; text content kept alongside for legacy clients).
+- [x] **MCP-03**: Agent gets citation-grade structured output (structuredContent/outputSchema automatic from return annotations with docid, path, line range, hash, staleness; text content kept alongside for legacy clients).
 - [x] **MCP-04**: User's loopback MCP server is protected from DNS rebinding (Host/Origin validation via SDK `transport_security`, verified with spoofed headers before deleting the hand-rolled middleware).
 - [x] **MCP-05**: Agent gets full query pipeline parity (expander/reranker opt-in/snippet wired; pipeline hoisted; overclaiming rerank description fixed; rerank stays opt-in and documented).
 - [x] **MCP-06**: User gets a clean-stdout MCP server (lazy embedder; forced quiet before any model import; stdout-purity regression on cold first query; lex/vec wiring).
@@ -156,7 +156,7 @@ Populated during roadmap creation. Each requirement maps to exactly one phase.
 | EMB-02 | Phase 21 | Complete |
 | MCP-01 | Phase 22 | Complete |
 | MCP-02 | Phase 22 | Pending |
-| MCP-03 | Phase 22 | Pending |
+| MCP-03 | Phase 22 | Complete |
 | MCP-04 | Phase 22 | Complete |
 | MCP-05 | Phase 22 | Complete |
 | MCP-06 | Phase 22 | Complete |

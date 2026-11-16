@@ -5,16 +5,16 @@ milestone_name: Search Precision and Agent Experience
 current_phase: 22
 current_phase_name: MCP SDK v2 Modernization + Agent Packaging
 status: executing
-stopped_at: Completed 22-04-PLAN.md
-last_updated: "2026-11-16T08:10:52.112Z"
+stopped_at: Completed 22-05-PLAN.md
+last_updated: "2026-11-16T08:31:53.274Z"
 last_activity: 2026-11-16
 last_activity_desc: Phase 22 execution started
-state_head: "0bd57b7a56e2ef561e7793b55739321d3955118e"
+state_head: 8476392d0b88c3ac82ac03d35cd6eb3dd3c03458
 progress:
   total_phases: 8
   completed_phases: 5
   total_plans: 42
-  completed_plans: 39
+  completed_plans: 40
 ---
 
 # DocSift — Project State
@@ -31,7 +31,7 @@ progress:
 ## Current Position
 
 Phase: 22 (MCP SDK v2 Modernization + Agent Packaging) — EXECUTING
-Plan: 5 of 7
+Plan: 6 of 7
 Status: Ready to execute
 Last activity: 2026-11-16 — Phase 22 execution started
 
@@ -88,6 +88,7 @@ Progress: [██████░░░░] 63%
 | Phase 22 P02 | 15min | 3 tasks | 24 files |
 | Phase 22 P03 | 11min | 3 tasks | 10 files |
 | Phase 22 P04 | 12min | 3 tasks | 12 files |
+| Phase 22 P05 | 17min | 3 tasks | 17 files |
 
 ## Accumulated Context
 
@@ -254,6 +255,9 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - [Phase 22]: 22-03: mcp daemon arms quietly on a schema-ready, model-free backend before bind, removes the PID in finally on every exit path, and the POSIX e2e uses real sif.cli.main subprocesses to prove initialize, stop, bind-failure cleanup, and watch coexistence.
 - [Phase 22]: Prefix-first routing resolves lex:/BM25 before any load decision; a latched load failure degrades query directly to BM25 over prefix-free text with the loader's one warning (D-15).
 - [Phase 22]: Query now reuses CLI SearchPipeline components per request; rerank is gate-before-construct, latches ImportError/ValueError with one warning, and retries execution failures with reranker=None (D-17).
+- [Phase 22]: 22-05: extract_with_range reports the inclusive snippet window and extract() delegates to element 0, so CLI snippet bytes never move; line_start/line_end are dataclass-only and excluded from to_dict.
+- [Phase 22]: 22-05: content_hash is the stored documents.checksum fetched by one batched get_checksums call per result page; get is 1..N or the requested range, and the direct lex/BM25 routes keep the documented no-snippet deviation while attaching hashes.
+- [Phase 22]: 22-05: the frozen Phase 20 metadata envelope is deep-equaled on both channels; five era goldens were regenerated and only tools/list exchanges changed.
 
 ### Pending Todos
 
@@ -283,8 +287,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-16T08:10:51.387Z
-Stopped at: Completed 22-04-PLAN.md
+Last session: 2026-11-16T08:31:52.540Z
+Stopped at: Completed 22-05-PLAN.md
 Resume file: None
 
 - **Next expected action:** plan and execute Phase 21 (Scale, Maintenance + Embedder Identity — SCALE-01..03, EMB-01/02), then 22 → 23 → 24. Phase 20 delivered FILT-01..05: shared 17-operator filter grammar on CLI+MCP, `path`/`mtime` built-ins, pre-RRF per-leg pushdown with the corrected vector escalation, typed kv storage + `index_meta`-gated backfill, and the `metadata` discovery tool whose envelope is the frozen Phase 22 contract. Two audits remain recorded as debt (see Blockers/Concerns): `/gsd-secure-phase 20` and `/gsd:validate-phase 20`.
