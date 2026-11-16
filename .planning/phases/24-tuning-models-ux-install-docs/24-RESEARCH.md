@@ -627,7 +627,20 @@ pytest tests/test_docs.py -v --no-cov
 | A10 | `DEFAULT_MODELS["query_expansion"]` stays `qwen/Qwen2.5-0.5B-Instruct` | Models registry | No runtime feature consumes it; if the user wants another expansion model, change the registry only. |
 | A11 | The `docsif[all]` extra on Python 3.13 may require a llama-cpp source build | Install docs | Users on 3.13 hit a build; mitigation: document Python 3.12 / `uv tool install --python 3.12`. |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+**Orchestrator resolutions (2026-11-17, before planning):**
+
+1. **No ST pre-warm.** `models pull` downloads configured model artifacts via the canonical ModelScope tree + manifest; first encode may still resolve the snapshot. This avoids identity/revision parity risk.
+2. **`chunking.contract` marker only on a flip.** Write the marker only when a chunk/breadcrumb default actually flips; otherwise write nothing.
+3. **Breadcrumb switch = Settings `embed_breadcrumb: bool = False`.** No new CLI flag; regenerate config docs via `make docs-generate`.
+4. **`sif pull` = hidden/deprecated alias** delegating to `models pull`; CLI generator and tests skip hidden commands.
+5. **Model-management docs live in `docs/models.md`** (no new doc file).
+6. **Sixth sweep arm = 448/112.**
+7. **Selection rule = tuning-select → held-out-confirm** (not all-arms held-out comparison).
+8. **`max_tokens > 512` is out of scope;** keep `max_tokens` fixed and do not vary it in the sweep (it is not in the cache key).
+
+**Original questions and recommendations:**
 
 1. **Should `sif models pull` pre-warm sentence-transformers models in the canonical tree?**
    - What we know: `ModelDownloader` serves ModelScope (the shipped default) and the reranker; `SentenceTransformerEmbedder` loads by name from the HF cache layout under `<cache>` [VERIFIED: src/sif/embedding/embedder.py:154-170].
