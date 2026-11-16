@@ -330,6 +330,46 @@ class IdentityGateError(ValueError):
         super().__init__(f"embedder identity gate failed for {arm}: {detail}")
 
 
+def _shared_identity_failures(stored: EmbedderIdentity, arm: ArmSpec) -> list[str]:
+    """The checks every arm shares: source, width, and model identity."""
+    failures: list[str] = []
+    if stored.source != "verified":
+        failures.append(f"source is {stored.source!r}, expected 'verified'")
+    if stored.dimension != EMBEDDING_DIM:
+        failures.append(f"dimension is {stored.dimension}, expected {EMBEDDING_DIM}")
+    if stored.model_name != arm.model_name:
+        failures.append(f"model_name is {stored.model_name!r}, expected {arm.model_name!r}")
+    if stored.model_type != arm.model_type:
+        failures.append(f"model_type is {stored.model_type!r}, expected {arm.model_type!r}")
+    return failures
+
+
+def _harrier_identity_failures(stored: EmbedderIdentity) -> list[str]:
+    """Harrier must carry the query prompt and no document prompt."""
+    failures: list[str] = []
+    if stored.query_prompt != HARRIER_QUERY_PROMPT:
+        failures.append(
+            f"query_prompt is {stored.query_prompt!r}, expected {HARRIER_QUERY_PROMPT!r}"
+        )
+    if stored.document_prompt is not None:
+        failures.append(f"document_prompt is {stored.document_prompt!r}, expected None")
+    return failures
+
+
+def _qwen3_identity_failures(stored: EmbedderIdentity) -> list[str]:
+    """Qwen3 must stay the exact prompt-free shipped cache id."""
+    failures: list[str] = []
+    if stored.cache_model_id != QWEN3_CACHE_MODEL_ID:
+        failures.append(
+            f"cache_model_id is {stored.cache_model_id!r}, expected {QWEN3_CACHE_MODEL_ID!r}"
+        )
+    if stored.query_prompt is not None:
+        failures.append(f"query_prompt is {stored.query_prompt!r}, expected None")
+    if stored.document_prompt is not None:
+        failures.append(f"document_prompt is {stored.document_prompt!r}, expected None")
+    return failures
+
+
 def verify_arm_identity(stored: EmbedderIdentity | None, arm: ArmSpec) -> None:
     """Raise unless the stored identity is this arm's verified vector space.
 
@@ -341,31 +381,11 @@ def verify_arm_identity(stored: EmbedderIdentity | None, arm: ArmSpec) -> None:
     """
     if stored is None:
         raise IdentityGateError(arm.name, ["no stored embedder identity"])
-    failures: list[str] = []
-    if stored.source != "verified":
-        failures.append(f"source is {stored.source!r}, expected 'verified'")
-    if stored.dimension != EMBEDDING_DIM:
-        failures.append(f"dimension is {stored.dimension}, expected {EMBEDDING_DIM}")
-    if stored.model_name != arm.model_name:
-        failures.append(f"model_name is {stored.model_name!r}, expected {arm.model_name!r}")
-    if stored.model_type != arm.model_type:
-        failures.append(f"model_type is {stored.model_type!r}, expected {arm.model_type!r}")
+    failures = _shared_identity_failures(stored, arm)
     if arm.name == "harrier":
-        if stored.query_prompt != HARRIER_QUERY_PROMPT:
-            failures.append(
-                f"query_prompt is {stored.query_prompt!r}, expected {HARRIER_QUERY_PROMPT!r}"
-            )
-        if stored.document_prompt is not None:
-            failures.append(f"document_prompt is {stored.document_prompt!r}, expected None")
+        failures.extend(_harrier_identity_failures(stored))
     elif arm.name == "qwen3":
-        if stored.cache_model_id != QWEN3_CACHE_MODEL_ID:
-            failures.append(
-                f"cache_model_id is {stored.cache_model_id!r}, expected {QWEN3_CACHE_MODEL_ID!r}"
-            )
-        if stored.query_prompt is not None:
-            failures.append(f"query_prompt is {stored.query_prompt!r}, expected None")
-        if stored.document_prompt is not None:
-            failures.append(f"document_prompt is {stored.document_prompt!r}, expected None")
+        failures.extend(_qwen3_identity_failures(stored))
     if failures:
         raise IdentityGateError(arm.name, failures)
 
@@ -561,13 +581,9 @@ def parse_json_stdout(
     D-05 workflow and is informational.
     """
     if proc.returncode != 0:
-        raise RuntimeError(
-            f"{stage} failed with exit {proc.returncode}: {proc.stderr[-4000:]}"
-        )
+        raise RuntimeError(f"{stage} failed with exit {proc.returncode}: {proc.stderr[-4000:]}")
     if _IDENTITY_MISMATCH_LITERAL in proc.stderr:
-        raise RuntimeError(
-            f"{stage} reported an embedder identity mismatch: {proc.stderr[-4000:]}"
-        )
+        raise RuntimeError(f"{stage} reported an embedder identity mismatch: {proc.stderr[-4000:]}")
     try:
         return json.loads(proc.stdout)
     except json.JSONDecodeError as exc:
@@ -636,7 +652,7 @@ def _run_probe(arm_name: str, scratch_root: Path) -> int:
         finally:
             conn.close()
         cache_db_path = Path(settings.get_cache_dir()) / "embeddings_cache.db"
-    except Exception as exc:  # noqa: BLE001 - probe maps any load failure to exit 4
+    except Exception as exc:  # Probe maps any load failure to exit 4.
         _emit_err(f"FAIL probe {arm_name}: {exc}")
         return 4
     payload = {
@@ -649,7 +665,7 @@ def _run_probe(arm_name: str, scratch_root: Path) -> int:
         "device": _model_device(manager),
         "cache_db_path": str(cache_db_path),
     }
-    print(json.dumps(payload, sort_keys=True))
+    print(json.dumps(payload, sort_keys=True))  # noqa: T201 - probe stdout contract
     return 0
 
 
@@ -754,10 +770,7 @@ def query_set_fingerprint(saved_run: Mapping[str, Any]) -> str:
         if not isinstance(record, Mapping):
             raise ValueError("saved run queries must be JSON objects")
         try:
-            line = (
-                f"{record['leg']}\0{record['language']}\0{record['split']}\0"
-                f"{record['query']}"
-            )
+            line = f"{record['leg']}\0{record['language']}\0{record['split']}\0{record['query']}"
         except KeyError as exc:
             raise ValueError(f"saved run query is missing {exc.args[0]!r}") from exc
         lines.append(line)
@@ -779,13 +792,11 @@ def _pair_query_set_fingerprint(
     if not all(path.is_file() for path in paths):
         return None
     fingerprints = [
-        query_set_fingerprint(json.loads(path.read_text(encoding="utf-8")))
-        for path in paths
+        query_set_fingerprint(json.loads(path.read_text(encoding="utf-8"))) for path in paths
     ]
     if fingerprints[0] != fingerprints[1]:
         raise RuntimeError(
-            "query-set fingerprint mismatch between arms: "
-            f"{fingerprints[0]} vs {fingerprints[1]}"
+            f"query-set fingerprint mismatch between arms: {fingerprints[0]} vs {fingerprints[1]}"
         )
     return fingerprints[0]
 
@@ -812,11 +823,7 @@ def _cache_rows(cache_db_path: Path, cache_model_id: str | None) -> int:
         conn.close()
     if cache_model_id is None:
         return sum(int(count) for _model_id, count in rows)
-    return sum(
-        int(count)
-        for model_id, count in rows
-        if str(model_id).startswith(cache_model_id)
-    )
+    return sum(int(count) for model_id, count in rows if str(model_id).startswith(cache_model_id))
 
 
 def _db_counts(db_path: Path) -> dict[str, int]:
@@ -883,6 +890,14 @@ def _git_value(args: Sequence[str]) -> str:
     return proc.stdout.strip()
 
 
+def _package_version(name: str) -> str | None:
+    """One installed package version, or None when it is not installed."""
+    try:
+        return importlib.metadata.version(name)
+    except importlib.metadata.PackageNotFoundError:
+        return None
+
+
 def collect_environment(*, device: str | None = None) -> dict[str, Any]:
     """Record the stack, pinned ranking settings, git provenance, and device.
 
@@ -891,10 +906,9 @@ def collect_environment(*, device: str | None = None) -> dict[str, Any]:
     packages: dict[str, str] = {}
     missing: list[str] = []
     for name in _PACKAGE_NAMES:
-        try:
-            packages[name] = importlib.metadata.version(name)
-        except importlib.metadata.PackageNotFoundError:
-            packages[name] = ""
+        version = _package_version(name)
+        packages[name] = version or ""
+        if version is None:
             missing.append(name)
     return {
         "python": platform.python_version(),
@@ -908,7 +922,7 @@ def collect_environment(*, device: str | None = None) -> dict[str, Any]:
     }
 
 
-def build_artifact(
+def build_artifact(  # noqa: PLR0913 - one keyword-only field per artifact leaf
     *,
     decision: VerdictDecision,
     arms: Mapping[str, Any],
@@ -1302,7 +1316,7 @@ def _run_adequacy_stage(
     return result
 
 
-def _run_embed_stage(
+def _run_embed_stage(  # noqa: PLR0913 - explicit stage context, not a state bag
     state: dict[str, Any],
     state_path: Path,
     commands: Sequence[ArmCommand],
@@ -1352,7 +1366,7 @@ def _run_probe_stage(
     return payload
 
 
-def _run_eval_stage(
+def _run_eval_stage(  # noqa: PLR0913 - explicit stage context, not a state bag
     state: dict[str, Any],
     state_path: Path,
     commands: Sequence[ArmCommand],
@@ -1481,9 +1495,7 @@ def _gates_from_comparison(comparison: Mapping[str, Any]) -> dict[str, Any]:
     splits = _require_mapping(payload.get("splits"), "'splits'")
     legs = _require_mapping(payload.get("legs"), "'legs'")
     leg_splits = _require_mapping(payload.get("leg_splits"), "'leg_splits'")
-    language_splits = _require_mapping(
-        payload.get("language_splits", {}), "'language_splits'"
-    )
+    language_splits = _require_mapping(payload.get("language_splits", {}), "'language_splits'")
     leg_language_splits = _require_mapping(
         payload.get("leg_language_splits", {}), "'leg_language_splits'"
     )
@@ -1540,7 +1552,7 @@ def _build_insufficient_artifact(
     )
 
 
-def _recorded_artifact_if_current(
+def _recorded_artifact_if_current(  # noqa: C901, PLR0911 - one guard per input
     state: Mapping[str, Any],
     corpus_payload: Mapping[str, Any],
     qwen3_saved_run: Path,
@@ -1585,7 +1597,7 @@ def _recorded_artifact_if_current(
     return dict(payload)
 
 
-def _run_verdict_stage(
+def _run_verdict_stage(  # noqa: PLR0913 - explicit stage context, not a state bag
     state: dict[str, Any],
     state_path: Path,
     *,
@@ -1665,7 +1677,7 @@ def _previous_scope_key(state_path: Path) -> str | None:
     return value if isinstance(value, str) else None
 
 
-def run_stage_machine(
+def run_stage_machine(  # noqa: PLR0913 - one flag per documented CLI mode
     arms: Mapping[str, ArmSpec],
     corpus_roots: Sequence[Path],
     scratch_root: Path,
@@ -1710,7 +1722,7 @@ def run_stage_machine(
     _run_index_stage(state, state_path, commands_a, "arm_a_index", qwen3.db_path)
     adequacy = _run_adequacy_stage(state, state_path, qwen3.db_path)
     if preflight_only:
-        print(json.dumps(adequacy, indent=2, sort_keys=True))
+        print(json.dumps(adequacy, indent=2, sort_keys=True))  # noqa: T201 - CLI output
         return 0 if adequacy.get("adequate") else 3
     if not adequacy.get("adequate"):
         artifact = _build_insufficient_artifact(adequacy, corpus_roots, qwen3.db_path)
@@ -1720,19 +1732,17 @@ def run_stage_machine(
         # resumed full run re-checks adequacy and recomputes instead of
         # returning this artifact (CR-02).
         if output_json:
-            print(json.dumps(artifact, indent=2, sort_keys=True))
+            print(json.dumps(artifact, indent=2, sort_keys=True))  # noqa: T201 - CLI output
         else:
-            print(f"SHORT {artifact['decision']} artifact={ARTIFACT_PATH}")
+            print(  # noqa: T201 - CLI output
+                f"SHORT {artifact['decision']} artifact={ARTIFACT_PATH}"
+            )
         return 3
-    costs_a = _run_embed_stage(
-        state, state_path, commands_a, qwen3, "arm_a_embed", cache_db_path
-    )
+    costs_a = _run_embed_stage(state, state_path, commands_a, qwen3, "arm_a_embed", cache_db_path)
     probe_a = _run_probe_stage(state, state_path, qwen3, "arm_a_probe")
     _run_eval_stage(state, state_path, commands_a, "arm_a_eval", qwen3_saved_run)
     _run_arm_b_index_stage(state, state_path, commands_b, qwen3.db_path, harrier.db_path)
-    costs_b = _run_embed_stage(
-        state, state_path, commands_b, harrier, "arm_b_embed", cache_db_path
-    )
+    costs_b = _run_embed_stage(state, state_path, commands_b, harrier, "arm_b_embed", cache_db_path)
     probe_b = _run_probe_stage(state, state_path, harrier, "arm_b_probe")
     _run_pair_identity_stage(state, state_path, qwen3, harrier)
     comparison_path = saved_runs / "harrier-comparison.json"
@@ -1768,9 +1778,11 @@ def run_stage_machine(
     if not keep_arms:
         cleanup_arms(scratch_root, keep_arms=False)
     if output_json:
-        print(json.dumps(artifact, indent=2, sort_keys=True))
+        print(json.dumps(artifact, indent=2, sort_keys=True))  # noqa: T201 - CLI output
     else:
-        print(f"PASS decision={artifact['decision']} artifact={ARTIFACT_PATH}")
+        print(  # noqa: T201 - CLI output
+            f"PASS decision={artifact['decision']} artifact={ARTIFACT_PATH}"
+        )
     return 0
 
 
@@ -1826,7 +1838,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911 - one per CLI mode
     """Run the requested mode; return 0 success, 1 failure, 2 refusal, 3 short."""
     args = build_parser().parse_args(argv)
     if args.probe:
@@ -1843,7 +1855,7 @@ def main(argv: list[str] | None = None) -> int:
     arms = build_arms(Path(args.scratch_root))
     if args.dry_run:
         payload = build_dry_run_payload(sys.executable, arms, corpus_roots, ARTIFACT_PATH)
-        print(json.dumps(payload, indent=2, sort_keys=True))
+        print(json.dumps(payload, indent=2, sort_keys=True))  # noqa: T201 - CLI output
         return 0
     try:
         return run_stage_machine(

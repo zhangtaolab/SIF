@@ -184,9 +184,7 @@ class TestDryRun:
                 assert "--document-prompt" not in joined
                 assert "default_prompt_name" not in joined
 
-    def test_ranking_settings_are_pinned_and_match_shipped_defaults(
-        self, tmp_path: Path
-    ) -> None:
+    def test_ranking_settings_are_pinned_and_match_shipped_defaults(self, tmp_path: Path) -> None:
         fields = Settings.model_fields
         expected = {
             "SIF_RRF_K": str(fields["rrf_k"].default),
@@ -194,7 +192,7 @@ class TestDryRun:
             "SIF_VECTOR_WEIGHT": str(fields["vector_weight"].default),
             "SIF_RERANK_CANDIDATE_LIMIT": str(fields["rerank_candidate_limit"].default),
         }
-        assert harrier_eval.PINNED_RANKING_ENV == expected
+        assert expected == harrier_eval.PINNED_RANKING_ENV
 
         env = build_arm_env(
             {"SIF_RRF_K": "5", "SIF_VECTOR_WEIGHT": "0.2"},
@@ -205,18 +203,14 @@ class TestDryRun:
             assert env[key] == value
 
     def test_dry_run_env_summary_records_ranking_settings(self, tmp_path: Path) -> None:
-        payload = build_dry_run_payload(
-            "python", build_arms(tmp_path), [tmp_path], ARTIFACT_PATH
-        )
+        payload = build_dry_run_payload("python", build_arms(tmp_path), [tmp_path], ARTIFACT_PATH)
 
         pinned = payload["commands"]["qwen3"][0]["env_summary"]["pinned"]
         for key, value in harrier_eval.PINNED_RANKING_ENV.items():
             assert pinned[key] == value
 
     def test_environment_records_the_pinned_ranking_settings(self) -> None:
-        assert harrier_eval.collect_environment()["ranking"] == (
-            harrier_eval.PINNED_RANKING_ENV
-        )
+        assert harrier_eval.collect_environment()["ranking"] == (harrier_eval.PINNED_RANKING_ENV)
 
     def test_baseline_eval_requires_both_languages(self, tmp_path: Path) -> None:
         arm = build_arm("qwen3", tmp_path)
@@ -720,9 +714,7 @@ def _install_db_backed_run(
                     "CREATE TABLE IF NOT EXISTS collections "
                     "(id TEXT PRIMARY KEY, name TEXT UNIQUE, path TEXT)"
                 )
-                if conn.execute(
-                    "SELECT 1 FROM collections WHERE name = ?", (name,)
-                ).fetchone():
+                if conn.execute("SELECT 1 FROM collections WHERE name = ?", (name,)).fetchone():
                     return subprocess.CompletedProcess(
                         argv, 1, "", f"Collection '{name}' already exists"
                     )
@@ -772,9 +764,7 @@ def _gate_payload(baseline: float, current: float, n: int) -> dict[str, Any]:
 
 def _write_saved_run(path: Path, query: str = "alpha") -> str:
     """Write one minimal saved run and return its query-set fingerprint."""
-    payload = {
-        "queries": [{"leg": "title", "language": "en", "split": "heldout", "query": query}]
-    }
+    payload = {"queries": [{"leg": "title", "language": "en", "split": "heldout", "query": query}]}
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload))
     return query_set_fingerprint(payload)
@@ -939,15 +929,15 @@ class TestPreflight:
         # Re-index the arm-A DB externally so the preflight becomes adequate.
         _write_documents_db(scratch / "qwen3.db", english=25, chinese=25)
         verdicts: list[str] = []
-        monkeypatch.setattr(harrier_eval, "_run_embed_stage", lambda *a, **k: {})
-        monkeypatch.setattr(harrier_eval, "_run_arm_b_index_stage", lambda *a, **k: None)
-        monkeypatch.setattr(harrier_eval, "_run_pair_identity_stage", lambda *a, **k: None)
+        monkeypatch.setattr(harrier_eval, "_run_embed_stage", lambda *_a, **_k: {})
+        monkeypatch.setattr(harrier_eval, "_run_arm_b_index_stage", lambda *_a, **_k: None)
+        monkeypatch.setattr(harrier_eval, "_run_pair_identity_stage", lambda *_a, **_k: None)
         monkeypatch.setattr(
             harrier_eval,
             "_run_probe_stage",
-            lambda *a, **k: {"identity": {}, "device": "cpu"},
+            lambda *_a, **_k: {"identity": {}, "device": "cpu"},
         )
-        monkeypatch.setattr(harrier_eval, "_run_eval_stage", lambda *a, **k: {})
+        monkeypatch.setattr(harrier_eval, "_run_eval_stage", lambda *_a, **_k: {})
 
         def _verdict(*_args: object, **kwargs: object) -> dict[str, Any]:
             corpus_payload = kwargs["corpus_payload"]
@@ -1149,7 +1139,7 @@ class TestVerdictStage:
         )
         state = self._state(qfp="", cfp="old", artifact_path=artifact_path)
 
-        with pytest.raises(OSError):
+        with pytest.raises(FileNotFoundError, match="missing-comparison"):
             harrier_eval._run_verdict_stage(
                 state,
                 tmp_path / "run-state.json",
@@ -1187,7 +1177,7 @@ class TestVerdictStage:
             artifact_path=artifact_path,
         )
 
-        with pytest.raises(OSError):
+        with pytest.raises(FileNotFoundError, match="missing-comparison"):
             harrier_eval._run_verdict_stage(
                 state,
                 tmp_path / "run-state.json",
@@ -1247,9 +1237,7 @@ class TestComparisonPayload:
         monkeypatch.setattr(
             harrier_eval,
             "run_command",
-            lambda command, **_kwargs: subprocess.CompletedProcess(
-                command.argv, 0, "[]", ""
-            ),
+            lambda command, **_kwargs: subprocess.CompletedProcess(command.argv, 0, "[]", ""),
         )
         state = load_run_state(tmp_path / "state.json", scope_key="k", scope={})
         commands = [ArmCommand(stage="eval", argv=["sif"], env={})]
@@ -1366,9 +1354,7 @@ class TestArtifact:
             "notes",
         ]
         assert artifact["decision"] == "adopt-harrier"
-        assert artifact["default_flip"]["zero_delta_proof"] == {
-            "status": "not-applicable"
-        }
+        assert artifact["default_flip"]["zero_delta_proof"] == {"status": "not-applicable"}
         assert artifact["gates"]["overall"] == overall
         assert artifact["gates"]["splits"]["heldout"]["n"] == 52
         assert artifact["min_heldout_for_epsilon_win"] == 101
