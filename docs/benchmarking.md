@@ -290,8 +290,10 @@ The overall held-out split helped 8, hurt 6, and left 42 unchanged; `en` helped 
 
 | Held-out leg | N | nDCG@10 baseline → current | Mean delta | 95% CI | 1/N floor | Winner |
 |--------------|---|----------------------------|------------|--------|-----------|--------|
-| `title` | 49 | 0.844285 → 0.866380 | +0.016584 | [-0.010426, +0.049977] | 0.020408 | no |
-| `body` | 50 | 0.748055 → 0.755896 | +0.007841 | [-0.042136, +0.057365] | 0.020000 | no |
+| `title` | 26 | 0.844285 → 0.866380 | +0.022095 | [-0.010072, +0.065790] | 0.038462 | no |
+| `body` | 30 | 0.766928 → 0.765382 | -0.001545 | [-0.067319, +0.061951] | 0.033333 | no |
+
+These are the held-out split gates (`gates.leg_splits[*].heldout`), so the Ns agree with the leg × language rows below; the all-split `gates.legs` values are diagnostic and never fund the verdict.
 
 | Held-out leg × language | N | nDCG@10 baseline → current | Mean delta | 95% CI | 1/N floor | Winner |
 |-------------------------|---|----------------------------|------------|--------|-----------|--------|
