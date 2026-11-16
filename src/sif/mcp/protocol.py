@@ -46,9 +46,10 @@ class Document(BaseModel):
     """Document model.
 
     ``content_hash`` (Phase 22 D-11) is the stored ``documents.checksum`` so a
-    citation can detect drift; ``line_start``/``line_end`` are always
-    populated by ``get``/``multi_get`` (full document = 1..N, ranged request =
-    the requested inclusive range).
+    citation can detect drift; ``line_start``/``line_end`` describe the
+    content actually returned (full document = 1..N, ranged request = the
+    clamped inclusive window). They are ``None`` only when the requested
+    window starts past the end of the document and renders no content.
     """
 
     doc_id: str

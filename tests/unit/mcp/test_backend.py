@@ -252,6 +252,69 @@ async def test_get_document_not_found(backend):
 
 
 @pytest.mark.asyncio
+async def test_get_document_from_line_past_eof_reports_no_range(backend):
+    """WR-02: a window starting past the end renders no line, so no fabricated
+    range is reported."""
+    mock_doc = MagicMock()
+    mock_doc.id = "doc1"
+    mock_doc.path = "/test.md"
+    mock_doc.title = "Test"
+    mock_doc.content = "line1\nline2\nline3"
+    mock_doc.metadata = {}
+    mock_doc.collection_id = "coll1"
+
+    with patch("sif.mcp.backend.DocumentRepository") as mock_repo:
+        mock_repo.return_value.get_by_id.return_value = mock_doc
+        mock_repo.return_value.get_checksum.return_value = "stored-hash-doc1"
+        result = await backend.get_document("doc1", from_line=10)
+
+    assert result.content == ""
+    assert (result.line_start, result.line_end) == (None, None)
+
+
+@pytest.mark.asyncio
+async def test_get_document_max_lines_is_clamped_to_the_document(backend):
+    """WR-02: max_lines beyond EOF reports the clamped window, not phantom
+    lines the document does not have."""
+    mock_doc = MagicMock()
+    mock_doc.id = "doc1"
+    mock_doc.path = "/test.md"
+    mock_doc.title = "Test"
+    mock_doc.content = "line1\nline2\nline3"
+    mock_doc.metadata = {}
+    mock_doc.collection_id = "coll1"
+
+    with patch("sif.mcp.backend.DocumentRepository") as mock_repo:
+        mock_repo.return_value.get_by_id.return_value = mock_doc
+        mock_repo.return_value.get_checksum.return_value = "stored-hash-doc1"
+        result = await backend.get_document("doc1", from_line=2, max_lines=99)
+
+    assert result.content == "line2\nline3"
+    assert (result.line_start, result.line_end) == (2, 3)
+
+
+@pytest.mark.asyncio
+async def test_get_document_truncation_never_reports_unreturned_lines(backend):
+    """WR-02: the range tracks the truncated payload, not the source length."""
+    mock_doc = MagicMock()
+    mock_doc.id = "doc1"
+    mock_doc.path = "/test.md"
+    mock_doc.title = "Test"
+    mock_doc.content = "\n".join(["x" * 100] * 2000)
+    mock_doc.metadata = {}
+    mock_doc.collection_id = "coll1"
+
+    with patch("sif.mcp.backend.DocumentRepository") as mock_repo:
+        mock_repo.return_value.get_by_id.return_value = mock_doc
+        mock_repo.return_value.get_checksum.return_value = "stored-hash-doc1"
+        result = await backend.get_document("doc1")
+
+    assert result.content.endswith("\n... [truncated]")
+    # 100 KiB budget: 1013 complete 100-char lines plus 71 chars of line 1014.
+    assert (result.line_start, result.line_end) == (1, 1014)
+
+
+@pytest.mark.asyncio
 async def test_get_documents_by_pattern(backend):
     """Mock pattern matching documents."""
     mock_doc = MagicMock()

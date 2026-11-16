@@ -89,14 +89,26 @@ def _with_suggestions(
     return HybridSearchResults(results, suggestions)
 
 
+_TRUNCATION_SUFFIX = "\n... [truncated]"
+
+
 def _truncate_content(content: str, max_size: int = 100 * 1024) -> str:
     """Truncate content to max_size bytes."""
-    suffix = "\n... [truncated]"
     encoded = content.encode("utf-8")
     if len(encoded) <= max_size:
         return content
-    truncated = encoded[: max_size - len(suffix.encode("utf-8"))].decode("utf-8", errors="ignore")
-    return truncated + suffix
+    truncated = encoded[: max_size - len(_TRUNCATION_SUFFIX.encode("utf-8"))].decode(
+        "utf-8", errors="ignore"
+    )
+    return truncated + _TRUNCATION_SUFFIX
+
+
+def _line_count(content: str) -> int:
+    r"""Count ``\n``-split lines; a trailing newline is not an extra line."""
+    line_count = len(content.split("\n"))
+    if content.endswith("\n"):
+        line_count -= 1
+    return max(1, line_count)
 
 
 # D-15: the remedy a vec_search tool error must carry when no embedder loaded.
@@ -201,10 +213,7 @@ def _full_line_range(content: str) -> tuple[int, int]:
     Lines are ``\\n`` splits (D-11); a trailing newline does not create an
     extra document line, and empty content still reports the single line 1.
     """
-    line_count = len(content.split("\n"))
-    if content.endswith("\n"):
-        line_count -= 1
-    return 1, max(1, line_count)
+    return 1, _line_count(content)
 
 
 class SearchBackend:
@@ -729,26 +738,41 @@ class SearchBackend:
                         break
             if not doc:
                 return None
-            content = doc.content  # Do NOT truncate yet
-            # D-11: line ranges are always populated. A full read is 1..N
-            # (\n-split lines; a trailing newline is not an extra line); a
-            # ranged read reports the requested inclusive range.
-            line_start, line_end = _full_line_range(content)
+            raw_content = doc.content
+            # D-11: line ranges are always populated for rendered content. A
+            # full read is 1..N (\n-split lines; a trailing newline is not an
+            # extra line); a ranged read reports the inclusive window it
+            # actually rendered, clamped to the document (WR-02).
+            line_start: int | None = 1
+            line_end: int | None = _line_count(raw_content)
+            content = raw_content
             if from_line is not None or max_lines is not None:
-                lines = content.split("\n")
+                total_lines = _line_count(raw_content)
                 start = max(0, (from_line or 1) - 1)
-                end = len(lines) if max_lines is None else start + max_lines
-                content = "\n".join(lines[start:end])
-                line_start = start + 1
-                line_end = start + len(content.split("\n"))
-                if content.endswith("\n"):
-                    line_end -= 1
-            content = _truncate_content(content)
+                if start >= total_lines:
+                    # A window starting past the end renders nothing: return
+                    # empty content with no range rather than a fabricated
+                    # line the document does not have.
+                    content = ""
+                    line_start = None
+                    line_end = None
+                else:
+                    end = total_lines if max_lines is None else min(total_lines, start + max_lines)
+                    content = "\n".join(raw_content.split("\n")[start:end])
+                    line_start = start + 1
+                    line_end = end
+            rendered = _truncate_content(content)
+            if line_start is not None and rendered != content:
+                # ``_truncate_content`` cut the payload: the reported end must
+                # be the last line the payload actually contains, so a caller
+                # never cites lines absent from ``content`` (WR-02).
+                body = rendered.removesuffix(_TRUNCATION_SUFFIX)
+                line_end = line_start + _line_count(body) - 1
             return Document(
                 doc_id=doc.id,
                 path=doc.path,
                 title=doc.title,
-                content=content,
+                content=rendered,
                 content_hash=repo.get_checksum(doc.id),
                 metadata=doc.metadata,
                 line_start=line_start,

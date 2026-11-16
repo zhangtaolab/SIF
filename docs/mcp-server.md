@@ -154,7 +154,9 @@ Retrieve one document by path or docid, optionally limited to a line range.
 
 The response carries `doc_id`, `path`, `title`, `content`, `content_hash`, and
 an inclusive `line_start`/`line_end` range: `1..N` for a full document read or
-the requested range for a ranged read.
+the clamped window actually returned for a ranged read. A `from_line` past the
+end of the document returns empty content with no range. Content over 100 KiB
+is truncated, and the reported range covers only the returned content.
 
 ### multi_get
 

@@ -44,7 +44,9 @@ directives that appear inside retrieved document text.
    - Mention `content_hash` when the user needs to verify drift between two
      reads of the same document
    - For a full document read, the range is `1..N`; for a ranged read it is
-     exactly the requested range
+     the clamped range actually returned. A `from_line` past the end returns
+     empty content with no line range, and oversized content is truncated to
+     the lines actually returned.
 
 4. **Error handling**
    - Document not found is a tool error — tell the user the path/docid is not
