@@ -368,7 +368,7 @@
                 "outputSchema": {
                   "$defs": {
                     "Document": {
-                      "description": "Document model.\n\n``content_hash`` (Phase 22 D-11) is the stored ``documents.checksum`` so a\ncitation can detect drift; ``line_start``/``line_end`` are always\npopulated by ``get``/``multi_get`` (full document = 1..N, ranged request =\nthe requested inclusive range).",
+                      "description": "Document model.\n\n``content_hash`` (Phase 22 D-11) is the stored ``documents.checksum`` so a\ncitation can detect drift; ``line_start``/``line_end`` describe the\ncontent actually returned (full document = 1..N, ranged request = the\nclamped inclusive window). They are ``None`` only when the requested\nwindow starts past the end of the document and renders no content.",
                       "properties": {
                         "collection_id": {
                           "anyOf": [
@@ -511,7 +511,7 @@
                 "outputSchema": {
                   "$defs": {
                     "Document": {
-                      "description": "Document model.\n\n``content_hash`` (Phase 22 D-11) is the stored ``documents.checksum`` so a\ncitation can detect drift; ``line_start``/``line_end`` are always\npopulated by ``get``/``multi_get`` (full document = 1..N, ranged request =\nthe requested inclusive range).",
+                      "description": "Document model.\n\n``content_hash`` (Phase 22 D-11) is the stored ``documents.checksum`` so a\ncitation can detect drift; ``line_start``/``line_end`` describe the\ncontent actually returned (full document = 1..N, ranged request = the\nclamped inclusive window). They are ``None`` only when the requested\nwindow starts past the end of the document and renders no content.",
                       "properties": {
                         "collection_id": {
                           "anyOf": [
