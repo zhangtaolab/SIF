@@ -9,7 +9,7 @@ from collections.abc import Callable
 from functools import partial
 from typing import Any, TypeVar
 
-from sif.config.settings import Settings, get_settings
+from sif.config.settings import Settings, get_settings, resolve_candidate_limit
 from sif.core.filters import FilterNode
 from sif.core.models import SearchOptions, SearchType
 from sif.database.connection import DatabaseConnection
@@ -454,6 +454,9 @@ class SearchBackend:
                 # non-None AST is compiled pre-RRF on both legs, and the
                 # BM25-only fallback below receives this same options object.
                 filter=filter_node,
+                # WR-07: the rerank candidate cap resolves through the same
+                # setting the CLI honors, so parity is not just nominal.
+                candidate_limit=resolve_candidate_limit(None, self.settings),
                 rrf_k=rrf_k if rrf_k is not None else self.settings.rrf_k,
                 bm25_weight=(bm25_weight if bm25_weight is not None else self.settings.bm25_weight),
                 vector_weight=(

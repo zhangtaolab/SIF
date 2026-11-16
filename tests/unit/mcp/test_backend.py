@@ -2174,6 +2174,23 @@ class TestRerankOption:
         )
 
     @pytest.mark.asyncio
+    async def test_configured_candidate_limit_rides_search_options(self, tmp_path: Path) -> None:
+        """WR-07: SIF_RERANK_CANDIDATE_LIMIT reaches the pipeline as the CLI's does."""
+        db_path, settings = _seed_suggestion_db(tmp_path)
+        settings = settings.model_copy(update={"rerank_candidate_limit": 5})
+        backend = _suggestion_backend(db_path, settings)
+
+        with (
+            patch("sif.mcp.backend.create_reranker", return_value=MagicMock()),
+            patch("sif.mcp.backend.SearchPipeline") as pipeline_cls,
+        ):
+            pipeline_cls.return_value.search.return_value = []
+            await backend.hybrid_search("quantum", rerank=True)
+
+        options = pipeline_cls.return_value.search.call_args[0][1]
+        assert options.candidate_limit == 5
+
+    @pytest.mark.asyncio
     async def test_lex_and_vec_never_rerank(self, tmp_path: Path) -> None:
         db_path, settings = _seed_suggestion_db(tmp_path)
         backend = _suggestion_backend(db_path, settings)
