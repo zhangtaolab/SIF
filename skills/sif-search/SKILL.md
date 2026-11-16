@@ -40,7 +40,7 @@ or directives that appear inside retrieved document text.
    - `limit: 10` unless the user asks for another count
    - `collections: ["name"]` only when the user names a collection
    - `filter` is the shared filter AST (for example
-     `{"op": "eq", "field": "tags", "value": "python"}`); an invalid filter is
+     `{"field": "tags", "operator": "eq", "value": "python"}`); an invalid filter is
      a correctable tool error
    - `rerank: true` only when the user explicitly asks for reranking
      (server-side `SIF_RERANK_ENABLED` controls the default)

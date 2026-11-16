@@ -8,6 +8,7 @@ and runs as an optional gate when the CLI is installed.
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -16,6 +17,7 @@ from typing import Any
 import pytest
 
 from sif._version import __version__
+from sif.core.filters import parse_filter
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -193,6 +195,41 @@ class TestSkills:
         lowered = _skill_text(name).lower()
         for forbidden in ("auto-approv", "automatically approv", "prompt-free", "without asking"):
             assert forbidden not in lowered, f"{name} claims {forbidden!r}"
+
+
+class TestSkillFilterExamples:
+    """WR-06: agent-facing filter examples must use the shared AST grammar.
+
+    ``parse_filter`` is the same validator the MCP tools run, so an example
+    that parses here cannot teach an agent an AST every call rejects.
+    """
+
+    def test_every_documented_filter_example_parses(self) -> None:
+        for name in SKILL_NAMES:
+            text = _skill_text(name)
+            assert '"op":' not in text, f"{name} documents the removed 'op' field"
+            for example in re.findall(r"`(\{[^`]*\})`", text):
+                try:
+                    payload = json.loads(example)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(payload, dict):
+                    continue
+                if "field" in payload or "operator" in payload:
+                    parse_filter(payload)
+
+    def test_search_skill_documents_the_operator_field(self) -> None:
+        """The search skill's filter example uses ``operator`` and parses."""
+        text = _skill_text("sif-search")
+        examples = [
+            json.loads(example)
+            for example in re.findall(r"`(\{[^`]*\})`", text)
+            if "field" in example
+        ]
+        assert examples, "sif-search no longer documents a filter example"
+        assert all("operator" in example for example in examples)
+        for example in examples:
+            parse_filter(example)
 
 
 class TestPluginValidate:
