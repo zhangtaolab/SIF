@@ -31,11 +31,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from sif.config.settings import get_settings
+from sif.config.settings import Settings, get_settings
 from sif.core.models import Collection
 from sif.database.database import Database
 from sif.database.factory import WAL_CHECKPOINT_TRUNCATE
 from sif.database.repositories import CollectionRepository
+from sif.embedding.identity import EmbedderIdentity, build_settings_identity
+from sif.embedding.prompts import resolve_prompt_scheme
 from sif.indexing.incremental import IncrementalResult
 from sif.indexing.watcher import FileWatcher, WatchConfig
 from sif.utils.logging import get_logger
@@ -100,8 +102,30 @@ def _enqueue_startup_reconcile(watcher: FileWatcher, collections: list[Collectio
     watcher.enqueue_reconcile(collections)
 
 
-def start_embedded_watch(db_path: str) -> EmbeddedWatch | None:
+def _settings_identity(settings: Settings) -> EmbedderIdentity:
+    """Build the settings-only identity, exactly as ``SearchBackend`` does.
+
+    The watch host opens the index before any search request, so it must
+    migrate and check the schema at the *injected* settings' dimension and
+    identity — never the process environment's (WR-08).
+    """
+    scheme = resolve_prompt_scheme(
+        settings.model_name,
+        settings.model_type,
+        settings.query_prompt_name,
+        settings.document_prompt_name,
+    )
+    return build_settings_identity(settings, scheme)
+
+
+def start_embedded_watch(db_path: str, settings: Settings | None = None) -> EmbeddedWatch | None:
     """Start the embedded watcher when ``SIF_MCP_WATCH`` opted in (D-04).
+
+    ``settings`` is the host's resolved settings (from ``build_server``/
+    ``create_http_app``/``run_stdio``); only ``None`` falls back to the process
+    environment. The watch opens the schema at those settings' dimension and
+    identity so it cannot migrate the index at the environment width before
+    the backend does (WR-08).
 
     Returns ``None`` — and never opens a watch ``Database`` — when the flag
     is unset/false or when zero collections are registered (the server keeps
@@ -110,14 +134,17 @@ def start_embedded_watch(db_path: str) -> EmbeddedWatch | None:
     caller's serving loop (or FastAPI lifespan yield) is never delayed by
     indexing work.
     """
-    settings = get_settings()
-    if not settings.mcp_watch:
+    resolved = settings if settings is not None else get_settings()
+    if not resolved.mcp_watch:
         logger.info("MCP watch disabled (SIF_MCP_WATCH unset/false); serving without a watcher")
         return None
 
     db = Database(db_path)
     try:
-        db.init_schema()
+        db.init_schema(
+            embedding_dim=resolved.embedding_dim,
+            identity=_settings_identity(resolved),
+        )
         collections = CollectionRepository(db.connection).list_all()
     except Exception:
         db.close()
@@ -140,15 +167,15 @@ def start_embedded_watch(db_path: str) -> EmbeddedWatch | None:
         db.connection,
         Path(db_path),
         WatchConfig(
-            debounce_interval=settings.watch_debounce_interval,
-            lock_timeout=settings.lock_wait_timeout,
+            debounce_interval=resolved.watch_debounce_interval,
+            lock_timeout=resolved.lock_wait_timeout,
             depth=_MCP_WATCH_DEPTH,
-            restat_interval=settings.watch_restat_interval,
+            restat_interval=resolved.watch_restat_interval,
             on_event=_render_event,
             on_batch=_render_batch,
             rescope_provider=_registered_collections,
-            rescope_interval=settings.watch_rescope_interval,
-            checkpoint_interval=settings.watch_checkpoint_interval,
+            rescope_interval=resolved.watch_rescope_interval,
+            checkpoint_interval=resolved.watch_checkpoint_interval,
         ),
     )
     watcher.start()
@@ -186,7 +213,7 @@ def stop_embedded_watch(watch: EmbeddedWatch | None) -> None:
     logger.info("MCP watch stopped")
 
 
-def mcp_watch_lifespan(db_path: str) -> Callable[[Any], Any]:
+def mcp_watch_lifespan(db_path: str, settings: Settings | None = None) -> Callable[[Any], Any]:
     """FastAPI lifespan FACTORY hosting the embedded watcher (D-01 HTTP wiring).
 
     Returns a callable accepting the app that itself returns an async context
@@ -204,7 +231,7 @@ def mcp_watch_lifespan(db_path: str) -> Callable[[Any], Any]:
 
     @asynccontextmanager
     async def _lifespan(_app: Any) -> AsyncGenerator[None, None]:
-        watch = start_embedded_watch(db_path)
+        watch = start_embedded_watch(db_path, settings)
         try:
             yield
         finally:
@@ -213,14 +240,19 @@ def mcp_watch_lifespan(db_path: str) -> Callable[[Any], Any]:
     return _lifespan
 
 
-def mcp_session_lifespan(db_path: str, session_manager: Any) -> Callable[[Any], Any]:
+def mcp_session_lifespan(
+    db_path: str,
+    session_manager: Any,
+    settings: Settings | None = None,
+) -> Callable[[Any], Any]:
     """FastAPI lifespan FACTORY composing the SDK session manager and the watch.
 
     D-18 ordering: enter ``session_manager.run()`` (which enters the SDK's own
     lifespan), start the embedded watcher, yield, stop the watcher, then exit
     the session manager. ``session_manager`` is duck-typed (the SDK's
     ``StreamableHTTPSessionManager``) so this module keeps no SDK import; the
-    caller resolves it after ``streamable_http_app()`` created it. The flag
+    caller resolves it after ``streamable_http_app()`` created it. The injected
+    ``settings`` govern the watcher's flag and schema width (WR-08); the flag
     check stays inside :func:`start_embedded_watch`, so ``SIF_MCP_WATCH`` off
     leaves serving unchanged.
     """
@@ -228,7 +260,7 @@ def mcp_session_lifespan(db_path: str, session_manager: Any) -> Callable[[Any], 
     @asynccontextmanager
     async def _lifespan(_app: Any) -> AsyncGenerator[None, None]:
         async with session_manager.run():
-            watch = start_embedded_watch(db_path)
+            watch = start_embedded_watch(db_path, settings)
             try:
                 yield
             finally:

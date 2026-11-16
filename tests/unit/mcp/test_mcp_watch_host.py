@@ -23,6 +23,7 @@ from sif.config.settings import Settings
 from sif.core.models import Collection
 from sif.database.database import Database
 from sif.database.repositories import CollectionRepository
+from sif.embedding.identity import EmbedderIdentity
 from sif.indexing import watcher as watcher_mod
 from sif.mcp import watch_host
 from sif.mcp.watch_host import EmbeddedWatch, start_embedded_watch, stop_embedded_watch
@@ -57,6 +58,49 @@ def test_flag_off_returns_none_and_never_opens_database() -> None:
         patch.object(watch_host, "Database") as database,
     ):
         result = start_embedded_watch("/tmp/any-index.db")
+
+    assert result is None
+    database.assert_not_called()
+
+
+def test_injected_settings_govern_the_flag_and_schema_dimension() -> None:
+    """WR-08: the watch host uses injected Settings, never the process env.
+
+    The schema open must carry the injected dimension and settings-only
+    identity so the watch cannot migrate the index at the environment width
+    before the backend does.
+    """
+    injected = Settings(mcp_watch=True, embedding_dim=16)
+    with (
+        patch.object(
+            watch_host,
+            "get_settings",
+            side_effect=AssertionError("watch host read process settings"),
+        ),
+        patch.object(watch_host, "Database") as database_cls,
+        patch.object(watch_host, "CollectionRepository") as repo_cls,
+    ):
+        repo_cls.return_value.list_all.return_value = []
+        result = start_embedded_watch("/tmp/injected.db", injected)
+
+    assert result is None
+    init_kwargs = database_cls.return_value.init_schema.call_args.kwargs
+    assert init_kwargs["embedding_dim"] == 16
+    identity = init_kwargs["identity"]
+    assert isinstance(identity, EmbedderIdentity)
+    assert identity.dimension == 16
+
+
+def test_injected_flag_off_wins_over_the_process_environment() -> None:
+    """WR-08: the injected mcp_watch flag is honored in both directions."""
+    injected = Settings(mcp_watch=False)
+    process = Settings(mcp_watch=True)
+
+    with (
+        patch.object(watch_host, "get_settings", return_value=process),
+        patch.object(watch_host, "Database") as database,
+    ):
+        result = start_embedded_watch("/tmp/any-index.db", injected)
 
     assert result is None
     database.assert_not_called()
@@ -321,7 +365,7 @@ async def test_lifespan_factory_starts_before_yield_and_stops_after() -> None:
     stopped: list[object] = []
     fake_watch = MagicMock()
 
-    def _start(db_path: str) -> MagicMock:
+    def _start(db_path: str, _settings: Settings | None = None) -> MagicMock:
         started.append(db_path)
         return fake_watch
 
@@ -387,19 +431,25 @@ async def test_session_lifespan_orders_session_manager_around_the_watcher() -> N
         calls.append("session-exit")
 
     manager = SimpleNamespace(run=fake_run)
+    injected = Settings(mcp_watch=False)
+    forwarded: list[Settings | None] = []
+
+    def _start(_path: str, settings: Settings | None = None) -> MagicMock:
+        forwarded.append(settings)
+        calls.append("watch-start")
+        return MagicMock()
+
     with (
-        patch.object(
-            watch_host,
-            "start_embedded_watch",
-            side_effect=lambda _path: calls.append("watch-start") or MagicMock(),
-        ),
+        patch.object(watch_host, "start_embedded_watch", side_effect=_start),
         patch.object(
             watch_host,
             "stop_embedded_watch",
             side_effect=lambda _watch: calls.append("watch-stop"),
         ),
     ):
-        async with mcp_session_lifespan("/tmp/x.db", manager)(None):
+        async with mcp_session_lifespan("/tmp/x.db", manager, injected)(None):
             calls.append("yield")
 
+    # WR-08: the injected settings reach the watch host through the lifespan.
+    assert forwarded == [injected]
     assert calls == ["session-enter", "watch-start", "yield", "watch-stop", "session-exit"]

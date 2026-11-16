@@ -236,7 +236,7 @@ def create_http_app(
         transport_security=security,
     )
 
-    app = FastAPI(lifespan=mcp_session_lifespan(db_path, mcp.session_manager))
+    app = FastAPI(lifespan=mcp_session_lifespan(db_path, mcp.session_manager, settings))
     app.add_middleware(
         CORSMiddleware,
         allow_origins=origins,
@@ -268,7 +268,7 @@ def run_stdio(db_path: str, settings: Settings | None = None) -> None:
     """
     set_quiet(True)
     server = build_server(db_path, settings)
-    watch = start_embedded_watch(db_path)
+    watch = start_embedded_watch(db_path, settings)
     try:
         server.run(transport="stdio")
     finally:
