@@ -204,8 +204,11 @@ def test_2024_golden_records_output_schema_and_structured_content() -> None:
     golden = _load("2024-11-05")
 
     tools = golden["exchanges"][1]["response"]["body"]["result"]["tools"]
-    assert tools[0]["name"] == "status"
-    assert tools[0]["outputSchema"]["type"] == "object"
+    # The seven-tool surface is ordered by contract; status stays the tracer
+    # call the transcript locks, so look it up by name rather than position.
+    status_tool = next(tool for tool in tools if tool["name"] == "status")
+    assert len(tools) == 7
+    assert status_tool["outputSchema"]["type"] == "object"
 
     result = golden["exchanges"][2]["response"]["body"]["result"]
     assert result["isError"] is False

@@ -12,7 +12,7 @@ import sif.cli
 from sif import _version
 from sif.cli.main import cli
 from sif.config.constants import APP_VERSION
-from sif.mcp.protocol import InitializeResult
+from sif.mcp.app import SERVER_NAME, build_server
 
 
 try:
@@ -53,14 +53,23 @@ def test_pyproject_declares_dynamic_version_from_module() -> None:
     assert data["tool"]["hatch"]["version"]["path"] == "src/sif/_version.py"
 
 
-def test_runtime_version_surfaces_agree() -> None:
-    """Every runtime surface derives from the same single literal."""
+def test_runtime_version_surfaces_agree(tmp_path: Path) -> None:
+    """Every runtime surface derives from the same single literal.
+
+    The MCP wire-level half of the release-identity proof lives in
+    ``tests/unit/mcp/test_sdk_clients.py``: the SDK client's
+    ``serverInfo.version`` must equal ``APP_VERSION`` (the golden transcripts
+    normalize that one field). Here the app composition seam pins the same
+    value without a wire round trip.
+    """
+    server = build_server(str(tmp_path / "identity.db"))
+    assert server.name == SERVER_NAME
     surfaces = {
         "sif.__version__": sif.__version__,
         "sif._version.__version__": _version.__version__,
         "sif.cli.__version__": sif.cli.__version__,
         "APP_VERSION": APP_VERSION,
-        "MCP serverInfo": InitializeResult().serverInfo["version"],
+        "MCP server version": server.version,
     }
     distinct = set(surfaces.values())
     assert len(distinct) == 1, f"version surfaces disagree: {surfaces}"

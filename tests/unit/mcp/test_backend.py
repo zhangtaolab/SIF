@@ -8,7 +8,7 @@ import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import ANY, AsyncMock, MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 from pydantic import ValidationError
@@ -481,38 +481,6 @@ class TestQueryInputWeightValidation:
         assert data.vector_weight is None
 
 
-class TestQueryToolHandlerWeightPassThrough:
-    """The handler forwards weight params into backend.hybrid_search (D-04)."""
-
-    @pytest.mark.asyncio
-    async def test_handle_passes_weight_kwargs(self) -> None:
-        """QueryToolHandler.handle forwards rrf_k/bm25_weight/vector_weight."""
-        from sif.mcp.handlers import QueryToolHandler
-
-        mock_backend = MagicMock()
-        mock_backend.hybrid_search = AsyncMock(return_value=[])
-
-        await QueryToolHandler().handle(
-            {"query": "q", "rrf_k": 5, "bm25_weight": 3.0, "vector_weight": 0.5},
-            mock_backend,
-        )
-
-        call = mock_backend.hybrid_search.call_args
-        assert call.kwargs["rrf_k"] == 5
-        assert call.kwargs["bm25_weight"] == 3.0
-        assert call.kwargs["vector_weight"] == 0.5
-
-    @pytest.mark.asyncio
-    async def test_input_schema_declares_weight_properties(self) -> None:
-        """The hand-written schema lists the weight params (tool discovery)."""
-        from sif.mcp.handlers import QueryToolHandler
-
-        props = QueryToolHandler.input_schema["properties"]
-        assert props["rrf_k"]["type"] == "integer"
-        assert props["bm25_weight"]["type"] == "number"
-        assert props["vector_weight"]["type"] == "number"
-
-
 class TestQueryInputOffsetValidation:
     """CORR-03/D-05: offset is validated at the MCP boundary (ASVS V5)."""
 
@@ -535,27 +503,6 @@ class TestQueryInputOffsetValidation:
             LexSearchInput(query="q", offset=-1)
         with pytest.raises(ValidationError, match="offset"):
             VecSearchInput(query="q", offset=-1)
-
-
-class TestQueryToolHandlerOffsetPassThrough:
-    """The handler advertises and forwards offset (CORR-03/D-05)."""
-
-    @pytest.mark.asyncio
-    async def test_handle_forwards_offset(self) -> None:
-        from sif.mcp.handlers import QueryToolHandler
-
-        mock_backend = MagicMock()
-        mock_backend.hybrid_search = AsyncMock(return_value=[])
-
-        await QueryToolHandler().handle({"query": "q", "offset": 7}, mock_backend)
-
-        assert mock_backend.hybrid_search.call_args.kwargs["offset"] == 7
-
-    def test_input_schema_declares_offset(self) -> None:
-        from sif.mcp.handlers import QueryToolHandler
-
-        props = QueryToolHandler.input_schema["properties"]
-        assert props["offset"] == {"type": "integer", "minimum": 0, "default": 0}
 
 
 class TestHybridSearchOffsetForwarding:
@@ -708,22 +655,6 @@ class TestZeroResultSuggestions:
             await backend.hybrid_search("quantum")
 
         assert _query_log_count(db_path) == 0
-
-    @pytest.mark.asyncio
-    async def test_handler_carries_suggestions_into_query_output(self) -> None:
-        """The handler explicitly remaps the list attribute into QueryOutput."""
-        from sif.mcp.handlers import QueryToolHandler
-
-        mock_backend = MagicMock()
-        mock_backend.hybrid_search = AsyncMock(
-            return_value=HybridSearchResults([], ["quantum machin"]),
-        )
-
-        result = await QueryToolHandler().handle({"query": "quantm machin"}, mock_backend)
-
-        payload = json.loads(result.content[0].text)
-        assert payload["results"] == []
-        assert payload["suggestions"] == ["quantum machin"]
 
 
 # =============================================================================
@@ -885,30 +816,6 @@ class TestPerChunkInputs:
         from sif.mcp.protocol import LexSearchInput
 
         assert "per_chunk" not in LexSearchInput.model_fields
-
-
-class TestQueryToolHandlerPerChunk:
-    """The hand-written schema stays in sync and the handler forwards the flag."""
-
-    def test_input_schema_declares_per_chunk_matching_the_model_default(self) -> None:
-        from sif.mcp.handlers import QueryToolHandler
-
-        props = QueryToolHandler.input_schema["properties"]
-        assert props["per_chunk"] == {
-            "type": "boolean",
-            "default": QueryInput(query="q").per_chunk,
-        }
-
-    @pytest.mark.asyncio
-    async def test_handle_forwards_per_chunk(self) -> None:
-        from sif.mcp.handlers import QueryToolHandler
-
-        mock_backend = MagicMock()
-        mock_backend.hybrid_search = AsyncMock(return_value=[])
-
-        await QueryToolHandler().handle({"query": "q", "per_chunk": True}, mock_backend)
-
-        assert mock_backend.hybrid_search.call_args.kwargs["per_chunk"] is True
 
 
 class TestHybridSearchPerChunkForwarding:
@@ -1315,97 +1222,6 @@ class TestFilterInputs:
         assert VecSearchInput(query="q", filter=_FILTER_PAYLOAD).filter == _FILTER_PAYLOAD
 
 
-class TestQueryToolHandlerFilter:
-    """The hand-written schema stays in sync and validation is a tool error."""
-
-    def test_input_schema_declares_filter(self) -> None:
-        from sif.mcp.handlers import QueryToolHandler
-
-        props = QueryToolHandler.input_schema["properties"]
-        assert props["filter"] == {"type": "object"}
-        assert "filter" in QueryInput.model_fields
-
-    @pytest.mark.asyncio
-    async def test_handle_forwards_the_parsed_ast(self) -> None:
-        from sif.core.filters import parse_filter
-        from sif.mcp.handlers import QueryToolHandler
-
-        mock_backend = MagicMock()
-        mock_backend.hybrid_search = AsyncMock(return_value=[])
-
-        result = await QueryToolHandler().handle(
-            {"query": "q", "filter": _FILTER_PAYLOAD}, mock_backend
-        )
-
-        assert result.isError is False
-        kwargs = mock_backend.hybrid_search.call_args.kwargs
-        assert kwargs["filter_node"] == parse_filter(_FILTER_PAYLOAD)
-        assert kwargs["filter_node"] is not None
-
-    @pytest.mark.asyncio
-    async def test_handle_forwards_none_when_filter_absent(self) -> None:
-        from sif.mcp.handlers import QueryToolHandler
-
-        mock_backend = MagicMock()
-        mock_backend.hybrid_search = AsyncMock(return_value=[])
-
-        await QueryToolHandler().handle({"query": "q"}, mock_backend)
-
-        assert mock_backend.hybrid_search.call_args.kwargs["filter_node"] is None
-
-    @pytest.mark.asyncio
-    async def test_invalid_filter_returns_iserror_without_raising(self) -> None:
-        """D-17: an invalid AST is a controlled tool execution error."""
-        from sif.mcp.handlers import QueryToolHandler
-
-        mock_backend = MagicMock()
-        mock_backend.hybrid_search = AsyncMock(return_value=[])
-
-        result = await QueryToolHandler().handle(
-            {"query": "q", "filter": _BAD_FILTER_PAYLOAD}, mock_backend
-        )
-
-        assert result.isError is True
-        text = result.content[0].text or ""
-        assert text.startswith("filter.")
-        assert '"gt" requires a numeric value' in text
-        assert "tags" in text
-        mock_backend.hybrid_search.assert_not_called()
-
-
-class TestInvalidFilterIsNotAProtocolError:
-    """T-20-13/T-20-14: validation stays inside a successful JSON-RPC envelope."""
-
-    @pytest.mark.asyncio
-    async def test_invalid_filter_yields_success_envelope_with_iserror(self) -> None:
-        from sif.mcp.handlers import QueryToolHandler
-        from sif.mcp.protocol import JsonRpcRequest
-        from sif.mcp.server import MCPServer, ServerState
-
-        backend = MagicMock()
-        backend.hybrid_search = AsyncMock(return_value=[])
-        server = MCPServer(backend)
-        server.state = ServerState.INITIALIZED
-        server.register_tools([QueryToolHandler()])
-
-        response = await server.handle_request(
-            JsonRpcRequest(
-                id=1,
-                method="tools/call",
-                params={
-                    "name": "query",
-                    "arguments": {"query": "q", "filter": _BAD_FILTER_PAYLOAD},
-                },
-            )
-        )
-
-        assert response.error is None
-        assert response.result["isError"] is True
-        assert response.result["content"][0]["text"].startswith("filter.")
-        assert "error" not in response.model_dump(exclude_none=True)
-        assert backend.hybrid_search.call_count == 0
-
-
 class TestFilterThroughBackend:
     """T-20-16: the parsed AST rides SearchOptions to every leg, or stays None."""
 
@@ -1518,174 +1334,6 @@ class TestMetadataInputValidation:
 
         with pytest.raises(ValidationError, match=field):
             MetadataInput(**payload)
-
-
-class TestMetadataToolHandlerSchema:
-    """The hand-written input schema stays in sync with MetadataInput (Pitfall 12)."""
-
-    def test_schema_declares_all_seven_properties_in_sync(self) -> None:
-        """Every model field is advertised, with matching defaults."""
-        from sif.mcp.handlers import MetadataToolHandler
-        from sif.mcp.protocol import MetadataInput
-
-        props = MetadataToolHandler.input_schema["properties"]
-        assert set(props) == set(MetadataInput.model_fields)
-        model = MetadataInput()
-        assert props["min_count"]["default"] == model.min_count
-        assert props["sort"]["default"] == model.sort
-        assert props["sort"]["enum"] == ["count", "value"]
-        assert props["limit"]["default"] == model.limit
-        assert props["value_limit"]["default"] == model.value_limit
-
-    def test_create_default_tools_registers_metadata(self) -> None:
-        """create_default_tools advertises the metadata tool alongside the four."""
-        from sif.mcp.handlers import create_default_tools
-
-        names = {handler.name for handler in create_default_tools()}
-        assert names == {"query", "get", "multi_get", "status", "metadata"}
-
-
-class TestMetadataToolHandler:
-    """The metadata handler returns the frozen D-15/D-20 envelope (Phase 22 contract)."""
-
-    @pytest.mark.asyncio
-    async def test_valid_call_returns_envelope_with_exact_remainders(self, backend) -> None:
-        """Windows, remainders, and the built-in section travel in one JSON text item."""
-        from sif.mcp.handlers import MetadataToolHandler
-
-        _seed_metadata_rows(Path(backend.db_path))
-        result = await MetadataToolHandler().handle({"limit": 1, "value_limit": 1}, backend)
-
-        assert result.isError is False
-        payload = json.loads(result.content[0].text)
-        assert payload["documents"] == 3
-        assert "filteredDocuments" not in payload
-        assert payload["totalKeys"] == 2
-        assert payload["remainingKeys"] == 1
-        assert [entry["key"] for entry in payload["builtIns"]] == ["path", "mtime"]
-        assert [entry["documents"] for entry in payload["builtIns"]] == [3, 3]
-        assert payload["builtIns"][1]["types"][0]["range"] == {
-            "min": 100.0,
-            "median": 200.0,
-            "max": 300.0,
-        }
-        assert [entry["key"] for entry in payload["keys"]] == ["tag"]
-        tag_type = payload["keys"][0]["types"][0]
-        assert len(tag_type["values"]) == 1
-        assert tag_type["distinctValues"] == 2
-        assert tag_type["remainingValues"] == 1
-
-    @pytest.mark.asyncio
-    async def test_filtered_call_includes_filtered_documents(self, backend) -> None:
-        """A filter adds ``filteredDocuments`` and narrows the built-in counts."""
-        from sif.mcp.handlers import MetadataToolHandler
-
-        _seed_metadata_rows(Path(backend.db_path))
-        result = await MetadataToolHandler().handle(
-            {"filter": {"field": "tag", "operator": "eq", "value": "common"}}, backend
-        )
-
-        payload = json.loads(result.content[0].text)
-        assert payload["documents"] == 3
-        assert payload["filteredDocuments"] == 2
-        assert [entry["documents"] for entry in payload["builtIns"]] == [2, 2]
-
-    @pytest.mark.asyncio
-    async def test_match_only_call_omits_filtered_documents(self, backend) -> None:
-        """A match-only call must pass ``None`` (never the empty fragment) as the filter."""
-        from sif.mcp.handlers import MetadataToolHandler
-
-        _seed_metadata_rows(Path(backend.db_path))
-        result = await MetadataToolHandler().handle(
-            {"match": {"field": "key", "operator": "prefix", "value": "ta"}}, backend
-        )
-
-        payload = json.loads(result.content[0].text)
-        assert "filteredDocuments" not in payload
-        assert [entry["key"] for entry in payload["keys"]] == ["tag"]
-        assert payload["documents"] == 3
-
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize(
-        "payload",
-        [
-            {"filter": {"field": "tags", "operator": "gt", "value": "x"}},
-            {"match": {"field": "nope", "operator": "eq", "value": "x"}},
-            {"filter": {"field": "tag", "operator": "nope", "value": "x"}},
-            # WR-01: an out-of-double-range integer must stay a controlled error.
-            {"filter": {"field": "priority", "operator": "gt", "value": 10**400}},
-        ],
-    )
-    async def test_invalid_filter_or_match_is_a_tool_error(self, backend, payload) -> None:
-        """Grammar violations are controlled isError results, not exceptions."""
-        from sif.mcp.handlers import MetadataToolHandler
-
-        result = await MetadataToolHandler().handle(payload, backend)
-        assert result.isError is True
-        assert result.content[0].text
-        assert result.content[0].text.startswith("filter")
-
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize(
-        ("payload", "operator", "field"),
-        [
-            ({"field": "path", "operator": "lt", "value": 5}, "lt", "path"),
-            ({"field": "path", "operator": "eq", "value": 5}, "eq", "path"),
-            ({"field": "path", "operator": "all", "value": ["a"]}, "all", "path"),
-            (
-                {"field": "path", "operator": "type", "value": "string", "caseInsensitive": True},
-                "type",
-                "path",
-            ),
-            ({"field": "mtime", "operator": "prefix", "value": "x"}, "prefix", "mtime"),
-            ({"field": "mtime", "operator": "all", "value": [1]}, "all", "mtime"),
-            ({"field": "mtime", "operator": "contains", "value": "x"}, "contains", "mtime"),
-            (
-                {"field": "mtime", "operator": "eq", "value": 1, "caseInsensitive": True},
-                "eq",
-                "mtime",
-            ),
-        ],
-    )
-    async def test_reserved_field_mistakes_are_tool_errors(
-        self, backend, payload: dict, operator: str, field: str
-    ) -> None:
-        """WR-02: the same rejected forms are controlled isError results over MCP."""
-        from sif.mcp.handlers import MetadataToolHandler
-
-        result = await MetadataToolHandler().handle({"filter": payload}, backend)
-
-        assert result.isError is True
-        assert result.content[0].text.startswith(f"filter.{operator}:")
-        assert field in result.content[0].text
-
-    @pytest.mark.asyncio
-    async def test_invalid_match_is_not_a_protocol_error(self) -> None:
-        """D-17: the JSON-RPC envelope is a success with ``result.isError`` true."""
-        from sif.mcp.handlers import MetadataToolHandler
-        from sif.mcp.protocol import JsonRpcRequest
-        from sif.mcp.server import MCPServer, ServerState
-
-        backend = MagicMock()
-        backend.metadata = AsyncMock()
-        server = MCPServer(backend)
-        server.state = ServerState.INITIALIZED
-        server.register_tools([MetadataToolHandler()])
-
-        response = await server.handle_request(
-            JsonRpcRequest(
-                id=1,
-                method="tools/call",
-                params={
-                    "name": "metadata",
-                    "arguments": {"match": {"field": "nope", "operator": "eq", "value": "x"}},
-                },
-            )
-        )
-
-        assert response.error is None
-        assert response.result["isError"] is True
-        assert backend.metadata.call_count == 0
 
 
 class TestSearchBackendMetadata:

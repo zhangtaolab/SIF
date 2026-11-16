@@ -9,20 +9,39 @@ real tmp databases back the envelope, empty-index, and idempotency proofs.
 from __future__ import annotations
 
 import json
+import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi.testclient import TestClient
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
+from mcp.types import ToolAnnotations
 
 from sif.config.settings import Settings
 from sif.core.models import Collection, Document as CoreDocument
 from sif.database.connection import DatabaseConnection
 from sif.database.repositories import CollectionRepository, DocumentRepository
+from sif.mcp.app import create_http_app
 from sif.mcp.backend import HybridSearchResults, SearchBackend
 from sif.mcp.protocol import CollectionInfo, Document, SearchResult
 from sif.mcp.tools import TOOL_DESCRIPTIONS, register_tools
+from sif.search.vector import VectorSearcher
+
+
+_EXPECTED_TOOL_ORDER = [
+    "query",
+    "get",
+    "multi_get",
+    "status",
+    "metadata",
+    "lex_search",
+    "vec_search",
+]
+# D-06: no mutation surface ships in Phase 22; these names must never appear.
+_MUTATION_TOOL_NAMES = {"index_update", "index_embed", "vacuum", "backup", "collection_create"}
 
 
 _FILTER_PAYLOAD = {"field": "status", "operator": "eq", "value": "active"}
@@ -625,3 +644,242 @@ class TestLexAndVecSearchTools:
 
         backend.lex_search.assert_not_called()
         backend.vec_search.assert_not_called()
+
+
+# =============================================================================
+# Task 3: the seven-tool contract battery (D-06/D-07/D-10/D-12)
+# =============================================================================
+
+_SEARCH_DOCS = [
+    ("d1", "quantum machine learning algorithms"),
+    ("d2", "quantum computing quick quantifiers"),
+    ("d3", "studies of machine learning contexts"),
+]
+
+
+def _seed_search_rows(db_path: Path) -> None:
+    """Seed the deterministic three-document corpus used by the seven tools."""
+    _seed_documents(db_path, [(doc_id, body, {"tag": "x"}) for doc_id, body in _SEARCH_DOCS])
+
+
+def _add_embeddings(db_path: Path, document_ids: list[str], *, dimension: int = 8) -> None:
+    """Seed one chunk + vector row per document so vec_search has real rows."""
+    import sqlite_vec
+
+    bodies = dict(_SEARCH_DOCS)
+    now = datetime.now(timezone.utc).isoformat()
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.enable_load_extension(True)
+        sqlite_vec.load(conn)
+        conn.enable_load_extension(False)
+        with conn:
+            conn.executemany(
+                "INSERT OR IGNORE INTO document_chunks"
+                " (id, document_id, sequence, content, created_at)"
+                " VALUES (?, ?, 0, ?, ?)",
+                [(f"chunk-{doc_id}", doc_id, bodies[doc_id], now) for doc_id in document_ids],
+            )
+            VectorSearcher(conn, embedding_dim=dimension).add_embeddings_batch(
+                [
+                    (f"e-{doc_id}", doc_id, f"chunk-{doc_id}", [0.1] * dimension)
+                    for doc_id in document_ids
+                ]
+            )
+    finally:
+        conn.close()
+
+
+class _FakeVectorManager:
+    """vec_search manager double: fixed query vectors, no model load."""
+
+    def embed_query(self, _text: str) -> list[float]:
+        return [0.1] * 8
+
+
+def _assert_future_write_tool_policy(annotations: ToolAnnotations) -> None:
+    """D-07: a future mutation tool must not claim read-only and must warn.
+
+    Any write-capable tool registered later has to set ``read_only_hint=False``
+    and ``destructive_hint=True`` where its effect is destructive. This helper
+    is the executable policy the read-only enumeration below is the complement
+    of.
+    """
+    assert annotations.read_only_hint is False
+    if annotations.destructive_hint is not None:
+        assert annotations.destructive_hint is True
+
+
+class TestSevenToolEnumeration:
+    """The published tools/list surface is exact, ordered, and honest."""
+
+    @pytest.mark.asyncio
+    async def test_exact_ordered_tool_set_with_no_mutation_names(self) -> None:
+        tools = await _make_server(_mock_backend()).list_tools()
+
+        assert [tool.name for tool in tools] == _EXPECTED_TOOL_ORDER
+        assert {tool.name for tool in tools}.isdisjoint(_MUTATION_TOOL_NAMES)
+
+    @pytest.mark.asyncio
+    async def test_every_tool_is_read_only_with_truthful_annotations(self) -> None:
+        for tool in await _make_server(_mock_backend()).list_tools():
+            assert tool.annotations is not None, tool.name
+            assert tool.annotations.read_only_hint is True, tool.name
+            assert tool.annotations.open_world_hint is False, tool.name
+            # D-07: only meaningful for non-read-only tools, so never set here.
+            assert tool.annotations.idempotent_hint is None, tool.name
+            assert tool.annotations.destructive_hint is None, tool.name
+
+    @pytest.mark.asyncio
+    async def test_every_tool_publishes_a_non_empty_output_schema(self) -> None:
+        for tool in await _make_server(_mock_backend()).list_tools():
+            assert tool.output_schema is not None, tool.name
+            assert tool.output_schema["type"] == "object", tool.name
+            assert tool.output_schema.get("properties"), tool.name
+
+    @pytest.mark.asyncio
+    async def test_descriptions_are_the_reviewed_constants(self) -> None:
+        for tool in await _make_server(_mock_backend()).list_tools():
+            assert tool.description == TOOL_DESCRIPTIONS[tool.name], tool.name
+
+    def test_future_write_policy_rejects_a_read_only_claim(self) -> None:
+        _assert_future_write_tool_policy(
+            ToolAnnotations(read_only_hint=False, destructive_hint=True)
+        )
+        _assert_future_write_tool_policy(
+            ToolAnnotations(read_only_hint=False, open_world_hint=False)
+        )
+        with pytest.raises(AssertionError):
+            _assert_future_write_tool_policy(ToolAnnotations(read_only_hint=True))
+
+
+class TestEmptyIndexAndIdempotency:
+    """Read-only tools never write: empty status and repeated reads are stable."""
+
+    @pytest.mark.asyncio
+    async def test_status_on_a_real_empty_index(self, tmp_path: Path) -> None:
+        backend = SearchBackend(str(tmp_path / "empty.db"), settings=_settings())
+
+        result = await _make_server(backend).call_tool("status", {})
+
+        payload = json.loads(result.content[0].text)
+        assert payload == {"collections": [], "total_documents": 0}
+        assert payload == result.structured_content
+
+    @pytest.mark.asyncio
+    async def test_all_seven_tools_are_dual_channel_and_idempotent(self, tmp_path: Path) -> None:
+        """Every tool's text parses to structuredContent; a repeat writes nothing."""
+        db_path = tmp_path / "seven.db"
+        backend = SearchBackend(str(db_path), settings=_settings())
+        _seed_search_rows(db_path)
+        _add_embeddings(db_path, ["d1", "d2", "d3"])
+        manager = _FakeVectorManager()
+        calls: dict[str, dict[str, object]] = {
+            "query": {"query": "quantum", "limit": 2},
+            "get": {"path_or_docid": "d1"},
+            "multi_get": {"pattern": "d1.md"},
+            "status": {},
+            "metadata": {},
+            "lex_search": {"query": "quantum", "limit": 2},
+            "vec_search": {"query": "quantum", "limit": 2},
+        }
+
+        import sqlite_vec
+
+        monitor = sqlite3.connect(db_path)
+        monitor.enable_load_extension(True)
+        sqlite_vec.load(monitor)
+        monitor.enable_load_extension(False)
+        try:
+            before_version = monitor.execute("PRAGMA data_version").fetchone()[0]
+            tables = ("documents", "document_chunks", "document_embeddings", "query_log")
+            before_counts = tuple(
+                monitor.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] for table in tables
+            )
+            first: dict[str, object] = {}
+            second: dict[str, object] = {}
+            with patch.object(SearchBackend, "_ensure_embedder", return_value=manager):
+                for name, arguments in calls.items():
+                    server = _make_server(backend)
+                    first[name] = await server.call_tool(name, arguments)
+                    second[name] = await server.call_tool(name, arguments)
+            after_version = monitor.execute("PRAGMA data_version").fetchone()[0]
+            after_counts = tuple(
+                monitor.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] for table in tables
+            )
+        finally:
+            monitor.close()
+
+        assert before_version == after_version
+        assert before_counts == after_counts
+        for name in calls:
+            result = first[name]
+            assert result.is_error is False, name
+            payload = json.loads(result.content[0].text)
+            assert payload == result.structured_content, name
+            assert result.structured_content == second[name].structured_content, name
+
+
+def _initialize_http(client: TestClient) -> str:
+    """Complete a 2024-11-05 handshake and return the session id."""
+    response = client.post(
+        "/mcp",
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "sif-tools", "version": "1"},
+            },
+        },
+    )
+    assert response.status_code == 200
+    session_id = response.headers.get("mcp-session-id")
+    assert session_id
+    client.post(
+        "/mcp",
+        json={"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}},
+        headers={"mcp-session-id": session_id},
+    )
+    return session_id
+
+
+def test_expected_errors_are_iserror_results_not_protocol_errors(tmp_path: Path) -> None:
+    """D-08: expected tool-input failures ride a successful JSON-RPC envelope."""
+    db_path = tmp_path / "errors.db"
+    # Migrate the real schema first (the app's lifespan backend would otherwise
+    # be the first writer and the handshake would race the seeded rows).
+    SearchBackend(str(db_path), settings=_settings())
+    _seed_search_rows(db_path)
+    app = create_http_app(str(db_path), settings=_settings())
+
+    cases = [
+        ("query", {"query": "q", "filter": _BAD_FILTER_PAYLOAD}),
+        ("metadata", {"match": {"field": "nope", "operator": "eq", "value": "x"}}),
+        ("metadata", {"collections": ["missing"]}),
+        ("get", {"path_or_docid": "missing"}),
+        ("lex_search", {"query": "q", "filter": _BAD_FILTER_PAYLOAD}),
+        ("vec_search", {"query": "q", "filter": _BAD_FILTER_PAYLOAD}),
+    ]
+
+    with TestClient(app, base_url="http://localhost") as client:
+        session_id = _initialize_http(client)
+        for name, arguments in cases:
+            response = client.post(
+                "/mcp",
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 9,
+                    "method": "tools/call",
+                    "params": {"name": name, "arguments": arguments},
+                },
+                headers={"mcp-session-id": session_id},
+            )
+
+            assert response.status_code == 200, name
+            body = response.json()
+            assert "error" not in body, name
+            assert body["result"]["isError"] is True, name
+            assert body["result"]["content"][0]["text"], name
