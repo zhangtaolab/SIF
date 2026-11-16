@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "sif": {
+      "command": "sif",
+      "args": ["mcp", "stdio"]
+    }
+  }
+}
