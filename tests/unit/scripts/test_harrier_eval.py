@@ -1203,6 +1203,85 @@ class TestVerdictStage:
         assert "verdict" not in state["stages"]
 
 
+class TestComparisonPayload:
+    """Malformed comparison/payload JSON is a named FAIL, not a traceback."""
+
+    def _gate(self) -> dict[str, Any]:
+        return _gate_payload(0.5, 0.52, 12)
+
+    def test_rejects_a_non_object_payload(self) -> None:
+        with pytest.raises(RuntimeError, match="malformed comparison payload"):
+            harrier_eval._gates_from_comparison([])  # type: ignore[arg-type]
+
+    def test_rejects_an_empty_payload(self) -> None:
+        with pytest.raises(RuntimeError, match="malformed comparison payload"):
+            harrier_eval._gates_from_comparison({})
+
+    def test_rejects_a_payload_without_the_leg_mapping(self) -> None:
+        with pytest.raises(RuntimeError, match="'legs'"):
+            harrier_eval._gates_from_comparison({"splits": {}, "leg_splits": {}})
+
+    def test_accepts_a_complete_payload(self) -> None:
+        gate = self._gate()
+        comparison = {
+            "overall": gate,
+            "splits": {"heldout": gate},
+            "legs": {"title": gate},
+            "leg_splits": {"title": {"heldout": gate}},
+            "groups": [],
+            "suppressed": [],
+            "top_k": 10,
+        }
+
+        gates = harrier_eval._gates_from_comparison(comparison)
+
+        assert gates["overall"] == gate
+        assert gates["top_k"] == 10
+        assert gates["language_splits"] == {}
+
+    def test_eval_stage_rejects_a_non_object_stdout(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(
+            harrier_eval,
+            "run_command",
+            lambda command, **_kwargs: subprocess.CompletedProcess(
+                command.argv, 0, "[]", ""
+            ),
+        )
+        state = load_run_state(tmp_path / "state.json", scope_key="k", scope={})
+        commands = [ArmCommand(stage="eval", argv=["sif"], env={})]
+
+        with pytest.raises(RuntimeError, match="did not emit a JSON object"):
+            harrier_eval._run_eval_stage(
+                state,
+                tmp_path / "state.json",
+                commands,
+                "arm_a_eval",
+                tmp_path / "qwen3.json",
+            )
+
+    def test_main_maps_payload_type_errors_to_a_named_fail(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        def _raise(*_args: object, **_kwargs: object) -> int:
+            raise TypeError("boom")
+
+        monkeypatch.setattr(harrier_eval, "run_stage_machine", _raise)
+
+        code = main(["--corpus", str(tmp_path)])
+        captured = capsys.readouterr()
+
+        assert code == 1
+        assert captured.err.startswith("FAIL ")
+        assert captured.err.strip().splitlines() == ["FAIL boom"]
+
+
 class TestDiskHeadroom:
     """The env preflight refuses a run that could exhaust the disk."""
 

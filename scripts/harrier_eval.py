@@ -1366,8 +1366,10 @@ def _run_eval_stage(
     command = _find_command(commands, "eval")
     proc = run_command(command, timeout=STAGE_TIMEOUT_SECONDS)
     payload = parse_json_stdout(proc, stage)
+    if not isinstance(payload, Mapping):
+        raise RuntimeError(f"{stage} did not emit a JSON object")
     run_path = payload.get("run_path")
-    if not run_path:
+    if not isinstance(run_path, str) or not run_path:
         raise RuntimeError(f"{stage} did not report a saved run path")
     saved_run_path.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(Path(str(run_path)), saved_run_path)
@@ -1451,26 +1453,59 @@ def _run_pair_identity_stage(
     )
 
 
+def _malformed_comparison(detail: str) -> RuntimeError:
+    """One named error for a truncated or hand-edited comparison payload."""
+    return RuntimeError(f"malformed comparison payload: {detail}")
+
+
+def _require_mapping(value: Any, label: str) -> Mapping[str, Any]:
+    """Raise the named payload error unless ``value`` is a JSON object."""
+    if not isinstance(value, Mapping):
+        raise _malformed_comparison(f"{label} must be a JSON object")
+    return value
+
+
 def _gates_from_comparison(comparison: Mapping[str, Any]) -> dict[str, Any]:
     """Copy the documented gate leaves verbatim from the comparison payload.
 
     ``ComparisonReport.to_dict`` names the overall gate ``gate`` (with the
     ``warrants_default_change`` flag folded in); the artifact envelope's
-    documented leaf name is ``overall``.
+    documented leaf name is ``overall``. Every required leaf is shape-checked
+    so a truncated or hand-edited file raises the named payload error instead
+    of escaping as ``KeyError``/``TypeError`` (WR-06).
     """
-    overall = comparison.get("overall")
+    payload = _require_mapping(comparison, "comparison")
+    overall = payload.get("overall")
     if overall is None:
-        overall = comparison.get("gate", {})
+        overall = payload.get("gate", {})
+    splits = _require_mapping(payload.get("splits"), "'splits'")
+    legs = _require_mapping(payload.get("legs"), "'legs'")
+    leg_splits = _require_mapping(payload.get("leg_splits"), "'leg_splits'")
+    language_splits = _require_mapping(
+        payload.get("language_splits", {}), "'language_splits'"
+    )
+    leg_language_splits = _require_mapping(
+        payload.get("leg_language_splits", {}), "'leg_language_splits'"
+    )
+    groups = payload.get("groups")
+    suppressed = payload.get("suppressed")
+    top_k = payload.get("top_k")
+    if not isinstance(groups, list):
+        raise _malformed_comparison("'groups' must be a list")
+    if not isinstance(suppressed, list):
+        raise _malformed_comparison("'suppressed' must be a list")
+    if isinstance(top_k, bool) or not isinstance(top_k, int):
+        raise _malformed_comparison("'top_k' must be an integer")
     return {
-        "overall": overall,
-        "splits": comparison["splits"],
-        "language_splits": comparison.get("language_splits", {}),
-        "legs": comparison["legs"],
-        "leg_splits": comparison["leg_splits"],
-        "leg_language_splits": comparison.get("leg_language_splits", {}),
-        "groups": comparison["groups"],
-        "suppressed": comparison["suppressed"],
-        "top_k": comparison["top_k"],
+        "overall": dict(_require_mapping(overall, "'overall'")),
+        "splits": dict(splits),
+        "language_splits": dict(language_splits),
+        "legs": dict(legs),
+        "leg_splits": dict(leg_splits),
+        "leg_language_splits": dict(leg_language_splits),
+        "groups": groups,
+        "suppressed": suppressed,
+        "top_k": top_k,
     }
 
 
@@ -1824,7 +1859,15 @@ def main(argv: list[str] | None = None) -> int:
     except IdentityGateError as exc:
         _emit_err(f"FAIL {exc}")
         return 1
-    except (OSError, RuntimeError, ValueError, sqlite3.Error) as exc:
+    except (
+        AttributeError,
+        KeyError,
+        OSError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+        sqlite3.Error,
+    ) as exc:
         _emit_err(f"FAIL {exc}")
         return 1
 
