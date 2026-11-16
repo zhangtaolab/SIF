@@ -27,7 +27,7 @@ from sif.database.repositories import CollectionRepository, DocumentRepository
 from sif.mcp.app import create_http_app
 from sif.mcp.backend import HybridSearchResults, SearchBackend
 from sif.mcp.protocol import CollectionInfo, Document, SearchResult
-from sif.mcp.tools import TOOL_DESCRIPTIONS, register_tools
+from sif.mcp.tools import TOOL_DESCRIPTIONS, register_resource, register_tools
 from sif.search.vector import VectorSearcher
 
 
@@ -413,6 +413,23 @@ class TestGetAndMultiGetTools:
         assert payload["documents"][0]["doc_id"] == "doc-1"
         assert payload["errors"] == ["b.md: unreadable"]
         backend.get_documents_by_pattern.assert_awaited_once_with("*.md", 1024)
+
+
+class TestDocsResource:
+    """WR-09: the ``docs://`` resource's advertised surface."""
+
+    @pytest.mark.asyncio
+    async def test_description_names_doc_ids_and_truncation(self) -> None:
+        """The description cannot promise path lookup the SDK rejects."""
+        mcp = MCPServer("test-resource")
+        register_resource(mcp, _mock_backend())
+
+        templates = await mcp.list_resource_templates()
+
+        description = templates[0].description or ""
+        assert "document ID" in description
+        assert "path" not in description.lower()
+        assert "100 KiB" in description
 
 
 class TestStatusTool:

@@ -410,20 +410,24 @@ def register_tools(mcp: MCPServer, backend: SearchBackend) -> None:
 def register_resource(mcp: MCPServer, backend: SearchBackend) -> None:
     """Register the ``docs://`` document resource (D-09).
 
-    The full Markdown document is returned by default; ``from_line`` and
+    The resource is addressed by SIF document ID (``docs://{doc_id}``): the
+    SDK's secure-by-default resource security rejects absolute paths and the
+    ``{doc_id}`` template variable cannot match embedded slashes, so path-form
+    lookup is served by the ``get`` tool instead (WR-09). ``from_line`` and
     ``max_lines`` are RFC 6570 query variables honored through
-    ``SearchBackend.get_document``. The ``get`` tool remains the citation-grade
-    line-range surface. The MIME type is template-level (the high-level API
-    cannot vary it per document), so ``text/markdown`` is the honest choice for
-    a Markdown-first corpus.
+    ``SearchBackend.get_document``; content over 100 KiB is truncated and the
+    line window covers only the returned content. The ``get`` tool remains the
+    citation-grade line-range surface. The MIME type is template-level (the
+    high-level API cannot vary it per document), so ``text/markdown`` is the
+    honest choice for a Markdown-first corpus.
     """
 
     @mcp.resource(
         "docs://{doc_id}{?from_line,max_lines}",
         name="document",
         description=(
-            "Read a SIF document by doc id or path as Markdown, optionally a "
-            "1-based inclusive line window."
+            "Read a SIF document by document ID as Markdown, optionally a "
+            "1-based inclusive line window. Content over 100 KiB is truncated."
         ),
         mime_type="text/markdown",
     )
