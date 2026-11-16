@@ -4,18 +4,18 @@ milestone: v1.2
 milestone_name: Search Precision and Agent Experience
 current_phase: 23
 current_phase_name: Harrier Gated Evaluation
-current_plan: 5
+current_plan: 6
 status: executing
-stopped_at: Completed 23-04-PLAN.md
-last_updated: "2026-11-16T14:20:15.342Z"
+stopped_at: Completed 23-05-PLAN.md
+last_updated: "2026-11-16T14:40:41.223Z"
 last_activity: 2026-11-16
 last_activity_desc: Phase 22 complete, transitioned to Phase 23
-state_head: "0b9c143e414892e6537d1896b0cecc412c8a0349"
+state_head: 9f688080fe7f28d7855d4e1b92e40ddb9d255d1a
 progress:
   total_phases: 8
   completed_phases: 6
   total_plans: 48
-  completed_plans: 46
+  completed_plans: 47
 ---
 
 # DocSift — Project State
@@ -32,7 +32,7 @@ progress:
 ## Current Position
 
 Phase: 23 (Harrier Gated Evaluation) — IN PROGRESS
-Current Plan: 5
+Current Plan: 6
 Total Plans in Phase: 6
 Status: Ready to execute
 Last activity: 2026-11-16 — 23-01 complete (2 tasks, 2 commits); next: 23-02
@@ -97,6 +97,7 @@ Progress: [████████░░] 75%
 | Phase 23 P2 | 6min | 2 tasks | 2 files |
 | Phase 23 P03 | 13min | 3 tasks | 4 files |
 | Phase 23 P04 | 5min | 3 tasks | 3 files |
+| Phase 23 P05 | 5min | 3 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -290,6 +291,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - [Phase 23]: 23-04: Both arm identities are source: verified at 1024 dimensions with distinct fingerprints, so the arms could not share an embedding cache bucket
 - [Phase 23]: 23-04: The docs section records the full held-out/per-language/per-leg/per-leg-language gates, suppressed group names, per-arm costs, and replay unavailability; the committed artifact remains aggregate-only
 - [Phase 23]: 23-04: The conditional default flip and explicit-Qwen3 zero-delta proof were not exercised by keep-qwen3 and remain pending for plans 23-05/23-06
+- [Phase 23]: The blocking-human checkpoint resolved to keep-qwen3, matching the artifact decision; default_flip is recorded as not-applicable and no code or default-claim doc changed
+- [Phase 23]: Plan 23-06 remains flip-conditional: with default_flip.decision not flipped, its specified branch records zero_delta_proof not-applicable without a model run
 
 ### Pending Todos
 
@@ -322,8 +325,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-16T14:20:14.390Z
-Stopped at: Completed 23-04-PLAN.md
+Last session: 2026-11-16T14:40:40.266Z
+Stopped at: Completed 23-05-PLAN.md
 Resume file: None
 
 - **Next expected action:** finish 22-07 Task 3 (Registry docs, phase gate, real `claude mcp` stdio smoke, `22-07-SUMMARY.md`), then Phase 22 verification (gsd-verifier, code review, regression gate) and ROADMAP/STATE completion; then Phase 23 → 24. 22-07 Task 2 was recorded `blocked no-github-login` (optional public Registry listing deferred). Two audits remain recorded as debt (see Blockers/Concerns): `/gsd-secure-phase 20` and `/gsd:validate-phase 20`.
