@@ -10,8 +10,10 @@ cleanup guard. Nothing here loads a model, downloads a snapshot, or runs the
 from __future__ import annotations
 
 import json
+import sqlite3
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -27,21 +29,27 @@ from scripts.harrier_eval import (
     HARRIER_MODEL_TYPE,
     HARRIER_QUERY_PROMPT,
     MAX_TOKENS,
+    MIN_FREE_DISK_BYTES,
     QWEN3_CACHE_MODEL_ID,
     QWEN3_MODEL_NAME,
     QWEN3_MODEL_TYPE,
     ArmCommand,
     IdentityGateError,
+    assert_disk_headroom,
+    assert_within_scratch,
     build_arm,
     build_arm_commands,
     build_arm_env,
     build_arms,
+    build_artifact,
     build_dry_run_payload,
+    cleanup_arms,
     load_run_state,
     main,
     mark_stage,
     parse_json_stdout,
     probe_arm_command,
+    query_set_fingerprint,
     require_probe_ok,
     resolve_corpus_roots,
     run_command,
@@ -51,8 +59,11 @@ from scripts.harrier_eval import (
     stage_done,
     verify_arm_identity,
     verify_arm_pair,
+    write_artifact,
 )
 from sif.embedding.identity import EmbedderIdentity
+from sif.search.embedder_verdict import decide_from_gates
+from sif.search.personal_bench import noise_gate
 
 
 def _qwen3_identity(**overrides: Any) -> EmbedderIdentity:
@@ -505,3 +516,504 @@ class TestStageMachine:
 
         with pytest.raises(RuntimeError, match="did not emit JSON"):
             parse_json_stdout(proc, "arm_a_eval")
+
+
+_OPENING_EN = (
+    "Padding words are repeated here to move the later sentence beyond the "
+    "opening window so the body query is not rejected by the overlap budget. "
+) * 2
+_OPENING_ZH = "填充内容用于把后面的句子推到开头窗口之外这样正文查询不会被重叠预算拒绝。" * 6
+
+
+def _write_documents_db(db_path: Path, *, english: int, chinese: int) -> None:
+    """Write a minimal documents table with deterministic bilingual bodies."""
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            "CREATE TABLE documents (id TEXT PRIMARY KEY, path TEXT, title TEXT, "
+            "checksum TEXT, file_size INTEGER, content TEXT)"
+        )
+        rows: list[tuple[str, str, str, str, int, str]] = [
+            (
+                f"en-{index}",
+                f"/notes/en-{index}.md",
+                f"English note number {index}",
+                f"sum-en-{index}",
+                10,
+                _OPENING_EN + f"Gardening weather patterns describe evening observations {index}.",
+            )
+            for index in range(english)
+        ]
+        rows.extend(
+            (
+                f"zh-{index}",
+                f"/notes/zh-{index}.md",
+                f"中文笔记第{index}号",
+                f"sum-zh-{index}",
+                10,
+                _OPENING_ZH + f"{index} 号园艺天气模式描述无关观。",
+            )
+            for index in range(chinese)
+        )
+        conn.executemany("INSERT INTO documents VALUES (?, ?, ?, ?, ?, ?)", rows)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _install_noop_run(
+    monkeypatch: pytest.MonkeyPatch,
+    stages: list[str],
+) -> None:
+    """Replace the subprocess runner with one that records stage names."""
+
+    def _run(
+        command: ArmCommand,
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        stages.append(command.stage)
+        return subprocess.CompletedProcess(command.argv, 0, "", "")
+
+    monkeypatch.setattr(harrier_eval, "run_command", _run)
+
+
+def _adopt_decision() -> Any:
+    """A real adopt-harrier verdict over Phase 18 gates."""
+    return decide_from_gates(
+        noise_gate([0.5] * 101, [0.52] * 101),
+        {
+            "en": noise_gate([0.5] * 12, [0.52] * 12),
+            "zh": noise_gate([0.5] * 12, [0.51] * 12),
+        },
+    )
+
+
+def _gate_payload(baseline: float, current: float, n: int) -> dict[str, Any]:
+    """One real GateResult serialized leaf."""
+    return noise_gate([baseline] * n, [current] * n).to_dict()
+
+
+def _artifact_corpus() -> dict[str, Any]:
+    """Aggregate corpus input, including data build_artifact must not copy."""
+    return {
+        "fingerprint": "0123456789abcdef",
+        "documents": 50,
+        "sampled": 50,
+        "adequacy": {"adequate": True, "sampled": 50, "counts": {"en": 27, "zh": 25}},
+        "scope_labels": ["/Users/someone/notes/corpus-a", "corpus-b"],
+        "records": [{"query": "secret query text"}],
+    }
+
+
+class TestPreflight:
+    """EN+ZH adequacy gates the embed budget and is recorded honestly."""
+
+    def _preflight(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        *,
+        corpus_name: str,
+        english: int,
+        chinese: int,
+    ) -> tuple[int, dict[str, Any], Path]:
+        scratch = tmp_path / "scratch"
+        scratch.mkdir(exist_ok=True)
+        _write_documents_db(scratch / "qwen3.db", english=english, chinese=chinese)
+        corpus = tmp_path / corpus_name
+        monkeypatch.setattr(harrier_eval, "_cache_db_path", lambda: tmp_path / "cache.db")
+        monkeypatch.setattr(harrier_eval, "ARTIFACT_PATH", tmp_path / "artifact.json")
+        code = main(
+            [
+                "--preflight-only",
+                "--corpus",
+                str(corpus),
+                "--scratch-root",
+                str(scratch),
+            ]
+        )
+        captured = capsys.readouterr()
+        return code, json.loads(captured.out), scratch
+
+    def test_bilingual_corpus_is_adequate(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        _install_noop_run(monkeypatch, [])
+
+        code, payload, scratch = self._preflight(
+            tmp_path,
+            monkeypatch,
+            capsys,
+            corpus_name="corpus",
+            english=25,
+            chinese=25,
+        )
+
+        assert code == 0
+        assert payload["adequate"] is True
+        assert payload["counts"]["en"] >= 10
+        assert payload["counts"]["zh"] >= 10
+        state = json.loads((scratch / "run-state.json").read_text())
+        assert state["stages"]["adequacy"]["status"] == "complete"
+        assert state["stages"]["arm_a_index"]["status"] == "complete"
+
+    def test_english_only_corpus_is_inadequate_and_incomplete(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        stages: list[str] = []
+        _install_noop_run(monkeypatch, stages)
+
+        code, payload, scratch = self._preflight(
+            tmp_path,
+            monkeypatch,
+            capsys,
+            corpus_name="corpus",
+            english=50,
+            chinese=0,
+        )
+
+        assert code == 3
+        assert payload["adequate"] is False
+        assert payload["counts"]["zh"] == 0
+        state = json.loads((scratch / "run-state.json").read_text())
+        assert state["adequacy"]["adequate"] is False
+        assert state["adequacy"]["counts"]["zh"] == 0
+        assert "adequacy" not in state["stages"]
+        assert state["stages"]["arm_a_index"]["status"] == "complete"
+        assert "index_embed" not in stages
+
+    def test_resumed_full_run_rechecks_adequacy_without_embedding(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        stages: list[str] = []
+        _install_noop_run(monkeypatch, stages)
+        scratch = tmp_path / "scratch"
+        scratch.mkdir()
+        _write_documents_db(scratch / "qwen3.db", english=50, chinese=0)
+        corpus = tmp_path / "corpus"
+        calls: list[Path] = []
+        real_preflight = harrier_eval.preflight_adequacy
+
+        def _counted(db_path: Path, **kwargs: Any) -> dict[str, Any]:
+            calls.append(Path(db_path))
+            return real_preflight(db_path, **kwargs)
+
+        monkeypatch.setattr(harrier_eval, "_cache_db_path", lambda: tmp_path / "cache.db")
+        monkeypatch.setattr(harrier_eval, "ARTIFACT_PATH", tmp_path / "artifact.json")
+        monkeypatch.setattr(harrier_eval, "preflight_adequacy", _counted)
+        argv = ["--corpus", str(corpus), "--scratch-root", str(scratch)]
+
+        assert main(argv) == 3
+        assert main(argv) == 3
+        capsys.readouterr()
+
+        assert len(calls) == 2
+        assert "index_embed" not in stages
+        artifact = json.loads((tmp_path / "artifact.json").read_text())
+        assert artifact["decision"] == "insufficient-evidence"
+        assert artifact["query_set_fingerprint"] is None
+        assert artifact["arms"] == {}
+        assert artifact["gates"] == {}
+        assert artifact["corpus"]["adequacy"]["counts"]["zh"] == 0
+
+    def test_changed_corpus_scope_rebuilds_the_baseline_arm(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        stages: list[str] = []
+        _install_noop_run(monkeypatch, stages)
+        scratch = tmp_path / "scratch"
+        scratch.mkdir()
+        _write_documents_db(scratch / "qwen3.db", english=25, chinese=25)
+        monkeypatch.setattr(harrier_eval, "_cache_db_path", lambda: tmp_path / "cache.db")
+        monkeypatch.setattr(harrier_eval, "ARTIFACT_PATH", tmp_path / "artifact.json")
+
+        first = main(
+            [
+                "--preflight-only",
+                "--corpus",
+                str(tmp_path / "first"),
+                "--scratch-root",
+                str(scratch),
+            ]
+        )
+        second = main(
+            [
+                "--preflight-only",
+                "--corpus",
+                str(tmp_path / "second"),
+                "--scratch-root",
+                str(scratch),
+            ]
+        )
+        capsys.readouterr()
+
+        assert first == 0
+        assert second == 0
+        assert stages.count("index_update") == 2
+        assert stages.count("collection_add_1") == 2
+
+
+class TestDiskHeadroom:
+    """The env preflight refuses a run that could exhaust the disk."""
+
+    def test_refuses_below_the_floor(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(
+            harrier_eval.shutil,
+            "disk_usage",
+            lambda _path: SimpleNamespace(free=MIN_FREE_DISK_BYTES - 1),
+        )
+
+        with pytest.raises(RuntimeError, match="insufficient disk space"):
+            assert_disk_headroom(tmp_path)
+
+    def test_accepts_at_the_floor(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(
+            harrier_eval.shutil,
+            "disk_usage",
+            lambda _path: SimpleNamespace(free=MIN_FREE_DISK_BYTES),
+        )
+
+        assert_disk_headroom(tmp_path)
+
+
+class TestArtifact:
+    """The committed envelope carries aggregate evidence only."""
+
+    def test_key_order_and_verbatim_gate_leaves(self) -> None:
+        overall = _gate_payload(0.5, 0.52, 101)
+        heldout = _gate_payload(0.5, 0.52, 52)
+        gates = {
+            "overall": overall,
+            "splits": {"tuning": _gate_payload(0.5, 0.5, 48), "heldout": heldout},
+            "language_splits": {"en": {"heldout": _gate_payload(0.5, 0.52, 27)}},
+            "legs": {"title": _gate_payload(0.5, 0.52, 50)},
+            "leg_splits": {"title": {"heldout": _gate_payload(0.5, 0.52, 26)}},
+            "leg_language_splits": {"title": {"en": {"heldout": _gate_payload(0.5, 0.52, 13)}}},
+            "groups": [],
+            "suppressed": ["body/zh/short"],
+            "top_k": 10,
+        }
+
+        artifact = build_artifact(
+            decision=_adopt_decision(),
+            arms={
+                "qwen3": {
+                    "identity": {"model_name": QWEN3_MODEL_NAME},
+                    "costs": {"chunks": 100},
+                }
+            },
+            corpus=_artifact_corpus(),
+            query_set_fingerprint="deadbeefdeadbeef",
+            gates=gates,
+            environment={"python": "3.13.9", "device": "mps"},
+            replay_available=False,
+            notes=["aggregate only"],
+        )
+
+        assert list(artifact) == [
+            "version",
+            "decision",
+            "rule",
+            "arms",
+            "corpus",
+            "query_set_fingerprint",
+            "gates",
+            "replay",
+            "environment",
+            "min_heldout_for_epsilon_win",
+            "notes",
+        ]
+        assert artifact["decision"] == "adopt-harrier"
+        assert artifact["gates"]["overall"] == overall
+        assert artifact["gates"]["splits"]["heldout"]["n"] == 52
+        assert artifact["min_heldout_for_epsilon_win"] == 101
+        assert artifact["corpus"]["adequacy"]["counts"] == {"en": 27, "zh": 25}
+        assert artifact["corpus"]["scope_labels"] == ["corpus-a", "corpus-b"]
+        serialized = json.dumps(artifact, sort_keys=True)
+        assert "/Users/someone" not in serialized
+        assert "secret query text" not in serialized
+
+    def test_write_is_sorted_atomic_and_newline_terminated(self, tmp_path: Path) -> None:
+        artifact = build_artifact(
+            decision=_adopt_decision(),
+            arms={},
+            corpus=_artifact_corpus(),
+            query_set_fingerprint=None,
+            gates={},
+            environment={},
+            replay_available=False,
+            notes=[],
+        )
+        path = tmp_path / "bench" / "harrier-verdict.json"
+
+        written = write_artifact(path, artifact)
+
+        text = path.read_text()
+        assert written == path
+        assert text == json.dumps(artifact, indent=2, sort_keys=True) + "\n"
+        assert json.loads(text) == artifact
+
+    def test_insufficient_evidence_variant_carries_adequacy_only(self) -> None:
+        artifact = build_artifact(
+            decision=decide_from_gates(None, {}),
+            arms={},
+            corpus={
+                "fingerprint": "abc123",
+                "documents": 50,
+                "sampled": 50,
+                "adequacy": {
+                    "adequate": False,
+                    "sampled": 50,
+                    "counts": {"en": 58, "zh": 0},
+                },
+                "scope_labels": ["corpus"],
+            },
+            query_set_fingerprint=None,
+            gates={},
+            environment={"python": "3.13.9"},
+            replay_available=False,
+            notes=["short"],
+        )
+
+        assert artifact["decision"] == "insufficient-evidence"
+        assert artifact["query_set_fingerprint"] is None
+        assert artifact["arms"] == {}
+        assert artifact["gates"] == {}
+        assert artifact["corpus"]["adequacy"] == {
+            "adequate": False,
+            "sampled": 50,
+            "counts": {"en": 58, "zh": 0},
+        }
+        assert "missing overall held-out gate" in artifact["rule"]["reasons"]
+
+
+class TestCleanupGuard:
+    """Cleanup can never delete outside the declared scratch root."""
+
+    def test_refuses_the_filesystem_root(self, tmp_path: Path) -> None:
+        with pytest.raises(ValueError, match="filesystem root"):
+            assert_within_scratch(Path("/"), tmp_path)
+
+    def test_refuses_the_home_directory(self) -> None:
+        home = Path.home()
+
+        with pytest.raises(ValueError, match="home directory"):
+            assert_within_scratch(home, home)
+
+    def test_refuses_a_sibling_path(self, tmp_path: Path) -> None:
+        scratch = tmp_path / "scratch"
+        sibling = tmp_path / "elsewhere"
+        scratch.mkdir()
+        sibling.mkdir()
+
+        with pytest.raises(ValueError, match="outside the scratch root"):
+            assert_within_scratch(sibling, scratch)
+
+    def test_accepts_a_nested_run_db(self, tmp_path: Path) -> None:
+        scratch = tmp_path / "scratch"
+        scratch.mkdir()
+        target = scratch / "qwen3.db"
+
+        assert assert_within_scratch(target, scratch) == target.resolve()
+
+    def test_keep_arms_preserves_every_file(self, tmp_path: Path) -> None:
+        scratch = tmp_path / "scratch"
+        scratch.mkdir()
+        db = scratch / "qwen3.db"
+        db.write_text("x")
+
+        assert cleanup_arms(scratch, keep_arms=True) == []
+        assert db.exists()
+
+    def test_removes_only_the_runs_own_files(self, tmp_path: Path) -> None:
+        scratch = tmp_path / "scratch"
+        saved_runs = scratch / "saved-runs"
+        saved_runs.mkdir(parents=True)
+        owned = [
+            scratch / "qwen3.db",
+            scratch / "qwen3.db-wal",
+            scratch / "qwen3.db-shm",
+            scratch / "qwen3.db.lock",
+            scratch / "harrier.db",
+            saved_runs / "qwen3.json",
+        ]
+        for path in owned:
+            path.write_text("x")
+        foreign = scratch / "notes.txt"
+        foreign.write_text("keep")
+
+        removed = cleanup_arms(scratch, keep_arms=False)
+
+        assert set(removed) == {
+            "qwen3.db",
+            "qwen3.db-wal",
+            "qwen3.db-shm",
+            "qwen3.db.lock",
+            "harrier.db",
+            "qwen3.json",
+        }
+        assert all(not path.exists() for path in owned)
+        assert foreign.exists()
+
+
+class TestQueryFingerprint:
+    """The query-set fingerprint ignores per-arm target ids."""
+
+    def test_target_ids_are_excluded(self) -> None:
+        base = {
+            "queries": [
+                {
+                    "leg": "title",
+                    "language": "en",
+                    "split": "heldout",
+                    "query": "alpha",
+                    "target_doc_id": "arm-a-uuid",
+                }
+            ]
+        }
+        other = {
+            "queries": [
+                {
+                    "leg": "title",
+                    "language": "en",
+                    "split": "heldout",
+                    "query": "alpha",
+                    "target_doc_id": "arm-b-uuid",
+                }
+            ]
+        }
+
+        assert query_set_fingerprint(base) == query_set_fingerprint(other)
+
+    def test_different_query_sets_hash_differently(self) -> None:
+        alpha = {
+            "queries": [{"leg": "title", "language": "en", "split": "tuning", "query": "alpha"}]
+        }
+        beta = {"queries": [{"leg": "title", "language": "en", "split": "tuning", "query": "beta"}]}
+
+        assert query_set_fingerprint(alpha) != query_set_fingerprint(beta)
+
+    def test_malformed_saved_run_is_refused(self) -> None:
+        with pytest.raises(ValueError, match="queries"):
+            query_set_fingerprint({})

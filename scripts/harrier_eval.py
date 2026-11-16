@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.metadata
 import json
 import os
 import platform
@@ -652,6 +653,310 @@ def resolve_corpus_roots(roots: Sequence[Path]) -> tuple[Path, ...]:
     return tuple(resolved)
 
 
+def preflight_adequacy(
+    db_path: Path,
+    *,
+    required_languages: Sequence[str] = REQUIRED_LANGUAGES,
+) -> dict[str, Any]:
+    """Run the EN+ZH adequacy preflight on one arm DB before embedding.
+
+    Adequacy is the Phase 18 instrument's own language-aware widening; an
+    inadequate corpus returns its sampled/language counts instead of raising,
+    so the runbook can record the honest outcome and never claim a verdict.
+    """
+    from sif.search.personal_bench import (  # noqa: PLC0415
+        HeldoutFloorError,
+        ensure_heldout,
+        heldout_language_counts,
+        load_document_metadata,
+    )
+
+    try:
+        conn = _connect_read_only(db_path)
+    except sqlite3.Error as exc:
+        raise RuntimeError(f"adequacy preflight could not open {db_path.name}: {exc}") from exc
+    try:
+        metadata = load_document_metadata(conn, None)
+        try:
+            sampled, synthesis = ensure_heldout(
+                metadata,
+                conn,
+                required_languages=required_languages,
+            )
+        except HeldoutFloorError as exc:
+            return {
+                "adequate": False,
+                "sampled": exc.sampled,
+                "counts": dict(exc.language_counts),
+                "accepted": exc.accepted,
+                "heldout": exc.heldout,
+            }
+        counts = heldout_language_counts(synthesis.queries)
+        return {
+            "adequate": True,
+            "sampled": len(sampled),
+            "counts": counts,
+            "accepted": len(synthesis.queries),
+            "heldout": sum(counts.values()),
+        }
+    except (ValueError, sqlite3.Error) as exc:
+        raise RuntimeError(f"adequacy preflight failed for {db_path.name}: {exc}") from exc
+    finally:
+        conn.close()
+
+
+def assert_disk_headroom(
+    scratch_root: Path,
+    *,
+    minimum_bytes: int = MIN_FREE_DISK_BYTES,
+) -> None:
+    """Refuse a multi-GB two-arm run below the free-space floor."""
+    free = shutil.disk_usage(scratch_root).free
+    if free < minimum_bytes:
+        raise RuntimeError(
+            f"insufficient disk space for the two-arm run: {free} bytes free, "
+            f"{minimum_bytes} required"
+        )
+
+
+def query_set_fingerprint(saved_run: Mapping[str, Any]) -> str:
+    """Hash the saved query set to 16 hex chars; target ids are excluded.
+
+    Target doc ids are per-arm UUIDs, so including them would make two
+    identical query sets hash differently. Every field that defines the
+    measured query is included.
+    """
+    queries = saved_run.get("queries")
+    if not isinstance(queries, list):
+        raise ValueError("saved run is missing a 'queries' list")
+    lines: list[str] = []
+    for record in queries:
+        if not isinstance(record, Mapping):
+            raise ValueError("saved run queries must be JSON objects")
+        try:
+            line = (
+                f"{record['leg']}\0{record['language']}\0{record['split']}\0"
+                f"{record['query']}"
+            )
+        except KeyError as exc:
+            raise ValueError(f"saved run query is missing {exc.args[0]!r}") from exc
+        lines.append(line)
+    return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()[:16]
+
+
+def _cache_rows(cache_db_path: Path, cache_model_id: str | None) -> int:
+    """Count cache rows for one arm's bucket prefix; never write."""
+    cache_db_path = Path(cache_db_path)
+    if not cache_db_path.exists():
+        return 0
+    try:
+        conn = sqlite3.connect(
+            f"file:{cache_db_path.resolve().as_posix()}?mode=ro",
+            uri=True,
+        )
+    except sqlite3.Error:
+        return 0
+    try:
+        rows = conn.execute(
+            "SELECT model_id, COUNT(*) FROM embeddings GROUP BY model_id"
+        ).fetchall()
+    except sqlite3.Error:
+        return 0
+    finally:
+        conn.close()
+    if cache_model_id is None:
+        return sum(int(count) for _model_id, count in rows)
+    return sum(
+        int(count)
+        for model_id, count in rows
+        if str(model_id).startswith(cache_model_id)
+    )
+
+
+def _db_counts(db_path: Path) -> dict[str, int]:
+    """Count documents, chunks, and vectors in one arm DB."""
+    conn = _connect_read_only(db_path)
+    counts: dict[str, int] = {}
+    try:
+        for table in ("documents", "document_chunks", "embedded_documents"):
+            try:
+                row = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
+            except sqlite3.Error:
+                counts[table] = 0
+                continue
+            counts[table] = int(row[0]) if row is not None else 0
+    finally:
+        conn.close()
+    return counts
+
+
+def collect_arm_costs(
+    db_path: Path,
+    cache_db_path: Path,
+    wall_seconds: float,
+    *,
+    cache_model_id: str | None = None,
+    cache_rows_before: int | None = None,
+) -> dict[str, Any]:
+    """Aggregate one arm's counts, wall time, and shared-cache deltas."""
+    counts = _db_counts(db_path)
+    cache_rows_after = _cache_rows(cache_db_path, cache_model_id)
+    cache_hits: int | None = None
+    if cache_rows_before is not None:
+        added = max(0, cache_rows_after - cache_rows_before)
+        cache_hits = max(0, counts["document_chunks"] - added)
+    return {
+        "documents": counts["documents"],
+        "chunks": counts["document_chunks"],
+        "embedded_documents": counts["embedded_documents"],
+        "embed_wall_seconds": round(float(wall_seconds), 3),
+        "cache_rows_before": cache_rows_before,
+        "cache_rows_after": cache_rows_after,
+        "cache_hits": cache_hits,
+    }
+
+
+_PACKAGE_NAMES = ("sentence-transformers", "transformers", "torch", "modelscope")
+
+
+def _git_value(args: Sequence[str]) -> str:
+    """Read one git value from the project root; empty on any failure."""
+    try:
+        proc = subprocess.run(
+            ["git", *args],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    if proc.returncode != 0:
+        return ""
+    return proc.stdout.strip()
+
+
+def collect_environment(*, device: str | None = None) -> dict[str, Any]:
+    """Record the Python/platform/package stack, git provenance, and device.
+
+    Never records interpreter paths or user home paths.
+    """
+    packages: dict[str, str] = {}
+    missing: list[str] = []
+    for name in _PACKAGE_NAMES:
+        try:
+            packages[name] = importlib.metadata.version(name)
+        except importlib.metadata.PackageNotFoundError:
+            packages[name] = ""
+            missing.append(name)
+    return {
+        "python": platform.python_version(),
+        "platform": platform.platform(),
+        "packages": packages,
+        "missing_packages": missing,
+        "git_head": _git_value(["rev-parse", "HEAD"]),
+        "git_dirty": bool(_git_value(["status", "--porcelain"])),
+        "device": device or "unknown",
+    }
+
+
+def build_artifact(
+    *,
+    decision: VerdictDecision,
+    arms: Mapping[str, Any],
+    corpus: Mapping[str, Any],
+    query_set_fingerprint: str | None,
+    gates: Mapping[str, Any],
+    environment: Mapping[str, Any],
+    replay_available: bool,
+    notes: Sequence[str],
+) -> dict[str, Any]:
+    """Build the committed aggregate envelope in its documented key order.
+
+    Gate leaves are copied verbatim, corpus scope labels are reduced to
+    basenames, and only aggregate counts/hashes survive: never query text,
+    saved-run records, or absolute personal paths.
+    """
+    adequacy = corpus.get("adequacy") or {}
+    if not isinstance(adequacy, Mapping):
+        raise ValueError("corpus adequacy must be a mapping")
+    labels = corpus.get("scope_labels") or []
+    return {
+        "version": 1,
+        "decision": decision.decision,
+        "rule": decision.to_dict(),
+        "arms": dict(arms),
+        "corpus": {
+            "fingerprint": corpus.get("fingerprint"),
+            "documents": corpus.get("documents"),
+            "sampled": corpus.get("sampled"),
+            "adequacy": {
+                "adequate": bool(adequacy.get("adequate", False)),
+                "sampled": adequacy.get("sampled"),
+                "counts": dict(adequacy.get("counts") or {}),
+            },
+            "scope_labels": [Path(str(label)).name for label in labels],
+        },
+        "query_set_fingerprint": query_set_fingerprint,
+        "gates": dict(gates),
+        "replay": {
+            "available": bool(replay_available),
+            "note": (
+                "Replay stability was reported by the comparison."
+                if replay_available
+                else _REPLAY_NOTE
+            ),
+        },
+        "environment": dict(environment),
+        "min_heldout_for_epsilon_win": decision.min_heldout_for_epsilon_win,
+        "notes": list(notes),
+    }
+
+
+def write_artifact(path: Path, artifact: Mapping[str, Any]) -> Path:
+    """Write the committed artifact atomically, sorted, with a trailing newline."""
+    return write_json(path, artifact)
+
+
+def assert_within_scratch(path: Path, scratch_root: Path) -> Path:
+    """Resolve and refuse the root, the home directory, or any outside path."""
+    target = Path(path).resolve()
+    root = Path(scratch_root).resolve()
+    if target == Path("/") or root == Path("/"):
+        raise ValueError("refusing to operate on the filesystem root")
+    if target == Path.home():
+        raise ValueError("refusing to operate on the home directory")
+    if target != root and not target.is_relative_to(root):
+        raise ValueError(f"refusing path outside the scratch root: {target}")
+    return target
+
+
+def cleanup_arms(scratch_root: Path, *, keep_arms: bool) -> list[str]:
+    """Delete only the run's own DB files/sidecars and the baseline saved run."""
+    if keep_arms:
+        return []
+    root = Path(scratch_root).resolve()
+    candidates: list[Path] = []
+    for name in SCRATCH_DB_NAMES:
+        candidates.extend(
+            [
+                root / f"{name}.db",
+                root / f"{name}.db-wal",
+                root / f"{name}.db-shm",
+                root / f"{name}.db.lock",
+            ]
+        )
+    candidates.append(root / "saved-runs" / "qwen3.json")
+    removed: list[str] = []
+    for candidate in candidates:
+        target = assert_within_scratch(candidate, root)
+        if target.is_file():
+            target.unlink()
+            removed.append(target.name)
+    return removed
+
+
 def _complete_stage(
     state: dict[str, Any],
     state_path: Path,
@@ -896,9 +1201,17 @@ def _run_pair_identity_stage(
 
 
 def _gates_from_comparison(comparison: Mapping[str, Any]) -> dict[str, Any]:
-    """Copy the documented gate leaves verbatim from the comparison payload."""
+    """Copy the documented gate leaves verbatim from the comparison payload.
+
+    ``ComparisonReport.to_dict`` names the overall gate ``gate`` (with the
+    ``warrants_default_change`` flag folded in); the artifact envelope's
+    documented leaf name is ``overall``.
+    """
+    overall = comparison.get("overall")
+    if overall is None:
+        overall = comparison.get("gate", {})
     return {
-        "overall": comparison["overall"],
+        "overall": overall,
         "splits": comparison["splits"],
         "language_splits": comparison.get("language_splits", {}),
         "legs": comparison["legs"],
@@ -953,8 +1266,10 @@ def _run_verdict_stage(
     device: str,
 ) -> dict[str, Any]:
     """Compute the pure two-sided verdict and write the aggregate artifact."""
-    if stage_done(state, "artifact"):
-        return {"path": str(ARTIFACT_PATH)}
+    if stage_done(state, "artifact") and ARTIFACT_PATH.exists():
+        payload = json.loads(ARTIFACT_PATH.read_text(encoding="utf-8"))
+        if isinstance(payload, Mapping):
+            return dict(payload)
     from sif.search.embedder_verdict import decide_from_payload  # noqa: PLC0415
 
     comparison = json.loads(comparison_path.read_text(encoding="utf-8"))
@@ -1168,7 +1483,7 @@ def main(argv: list[str] | None = None) -> int:
     except IdentityGateError as exc:
         _emit_err(f"FAIL {exc}")
         return 1
-    except (OSError, RuntimeError, ValueError) as exc:
+    except (OSError, RuntimeError, ValueError, sqlite3.Error) as exc:
         _emit_err(f"FAIL {exc}")
         return 1
 
