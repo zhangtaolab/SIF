@@ -670,7 +670,17 @@ query_set_fingerprint = hashlib.sha256("\n".join(lines).encode()).hexdigest()[:1
 | A13 | The evidence environment may be the local conda env (ST 5.4.1 / transformers 4.57.6 / torch 2.7.1) rather than the uv-locked env (transformers 5.5.4); both are valid if recorded. | Environment Availability | Cross-environment vector differences are irrelevant within the A/B; only reproducibility across runs is affected. |
 | A14 | A pass requires a docs sweep of hand-maintained default claims, not only `make docs-generate`; Phase 24 still owns the broader install docs. | Plan 23-04 | Stale docs would tell users Qwen3 is still the default. |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+**Orchestrator resolutions (2026-11-16, before planning):**
+
+1. **Corpus/scope:** The runbook accepts `--corpus` roots and runs an adequacy preflight on the baseline arm DB before spending the embed budget. If the curated bilingual scope still yields zh held-out N < 10 at the widening cap, the artifact records `insufficient-evidence` and Qwen3 remains the default. A curated bilingual scope example is documented (Chinese-heavy `~/SynologyDrive` subfolders plus representative English docs); no user path is hard-coded.
+2. **Rule (a):** Use `GateResult.winner` / the Phase 18 `noise_gate` including the strict `abs(mean_delta) > 1/N` floor verbatim; record `min_heldout_for_epsilon_win: 101` in the artifact and docs.
+3. **Adequacy granularity:** Language-level held-out N ≥ 10 per language (across legs); per-leg × language × length cells are diagnostics with Phase 18's < 10 suppression/naming.
+4. **Artifact location:** `.planning/phases/23-harrier-gated-evaluation/bench/harrier-verdict.json` (Phase 19 `bench/d12-verdict.json` precedent).
+5. **Default flip:** Update Settings/`EmbeddingConfig` defaults and every hand-maintained default claim (`README.md`, `docs/quickstart.md`, `docs/search-algorithms.md`, `docs/models.md`, `docs/mcp-server.md`, `docs/migration.md`, `docs/installation.md`), plus generator-owned docs via `make docs-generate`; keep explicit Qwen3 selectable with a zero-delta proof. Phase 24 still owns install docs.
+
+**Remaining questions:** recommendations accepted as written — replay is left unavailable with a recorded reason; the exact environment and git HEAD are recorded in the artifact; `insufficient-evidence` remains a recorded outcome after operator acceptance, not a silent pass.
 
 1. **Which corpus will provide EN+ZH adequacy?**
    - What we know: the local default index has 2 documents; the largest local Markdown collection (~6,590 files) is ~2% Chinese by content, and a 250-document sample would contain roughly 6 Chinese documents `[VERIFIED: local filesystem/SQLite probes 2026-11-16]`.
