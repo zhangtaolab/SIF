@@ -5,11 +5,11 @@ milestone_name: Search Precision and Agent Experience
 current_phase: 22
 current_phase_name: MCP SDK v2 Modernization + Agent Packaging
 status: executing
-stopped_at: Completed 22-06-PLAN.md
-last_updated: "2026-11-16T08:43:38.516Z"
+stopped_at: "Session resumed, proceeding to 22-07 Task 3 (continuation executor: Registry docs, phase gate, real claude mcp smoke, SUMMARY)"
+last_updated: "2026-11-16T09:26:20.309Z"
 last_activity: 2026-11-16
 last_activity_desc: Phase 22 execution started
-state_head: 5abc69ce70ca7eb04637fd86105dbc23c33595a8
+state_head: 00814e3c1b05692ca889439bf08941c6a03406d8
 progress:
   total_phases: 8
   completed_phases: 5
@@ -263,6 +263,7 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - [Phase 22]: 22-06: plugin skills under skills/ grant mcp__sif__ tools only and keep the untrusted-content warning; sif-cite requires get before citing docid plus lines and forbids snippet-only citation.
 - [Phase 22]: 22-06: the gate is plain claude plugin validate --json . (success, zero errors, no description warning); the repo-root CLAUDE.md warning is tolerated and --strict stays banned.
 - [Phase 22]: 22-06: docs/mcp-server.md and src/sif/mcp/README.md describe the SDK composition root and seven-tool surface; README makes uv tool install docsif[embed] primary with a BM25-only base and uvx fallback.
+- [Phase 22]: 22-07 Task 2 recorded `blocked no-github-login` (user decision 2026-11-16): the optional public MCP Registry listing is deferred; no GitHub auth was performed and no publish attempted. The local MCP server/plugin/skills/transports need no GitHub login. 22-07 Task 3 proceeds with the blocked outcome recorded in 22-07-SUMMARY; re-run `python scripts/publish_registry.py --publish` after a future `mcp-publisher login github`. — Plan D-24 explicitly allows a blocked run as a non-code outcome, and --publish is idempotent (already listed), so deferring loses nothing.
 
 ### Pending Todos
 
@@ -292,8 +293,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-16T08:43:37.749Z
-Stopped at: Completed 22-06-PLAN.md
+Last session: 2026-11-16T09:26:18.856Z
+Stopped at: Session resumed, proceeding to 22-07 Task 3 (continuation executor: Registry docs, phase gate, real claude mcp smoke, SUMMARY)
 Resume file: None
 
-- **Next expected action:** plan and execute Phase 21 (Scale, Maintenance + Embedder Identity — SCALE-01..03, EMB-01/02), then 22 → 23 → 24. Phase 20 delivered FILT-01..05: shared 17-operator filter grammar on CLI+MCP, `path`/`mtime` built-ins, pre-RRF per-leg pushdown with the corrected vector escalation, typed kv storage + `index_meta`-gated backfill, and the `metadata` discovery tool whose envelope is the frozen Phase 22 contract. Two audits remain recorded as debt (see Blockers/Concerns): `/gsd-secure-phase 20` and `/gsd:validate-phase 20`.
+- **Next expected action:** finish 22-07 Task 3 (Registry docs, phase gate, real `claude mcp` stdio smoke, `22-07-SUMMARY.md`), then Phase 22 verification (gsd-verifier, code review, regression gate) and ROADMAP/STATE completion; then Phase 23 → 24. 22-07 Task 2 was recorded `blocked no-github-login` (optional public Registry listing deferred). Two audits remain recorded as debt (see Blockers/Concerns): `/gsd-secure-phase 20` and `/gsd:validate-phase 20`.
