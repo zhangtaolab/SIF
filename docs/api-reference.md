@@ -656,45 +656,99 @@ class EmbeddingManager:
 
 ## MCP Server Module
 
-### MCPServer
+The MCP server runs on the official MCP Python SDK (`mcp>=2.3.0,<3`). The
+SIF-owned surface is the composition root, the tool registration, and the
+backend; the SDK owns protocol negotiation, sessions, and era routing.
+
+### Composition root (`sif.mcp.app`)
 
 ```python
-from sif.mcp.server import MCPServer
-from sif.mcp.transports.stdio import StdioTransport
-from sif.mcp.transports.http import HTTPTransport
+from collections.abc import Sequence
+
+from fastapi import FastAPI
+from mcp.server import MCPServer
+
+from sif.config.settings import Settings
+
+
+def build_server(
+    db_path: str,
+    settings: Settings | None = None,
+    *,
+    allowed_hosts: Sequence[str] | None = None,
+    cors_origins: Sequence[str] | None = None,
+) -> MCPServer: ...
+
+
+def create_http_app(
+    db_path: str,
+    settings: Settings | None = None,
+    *,
+    cors_origins: Sequence[str] | None = None,
+    allowed_hosts: Sequence[str] | None = None,
+    server: MCPServer | None = None,
+) -> FastAPI: ...
+
+
+def run_stdio(db_path: str, settings: Settings | None = None) -> None: ...
+
+
+def run_http(
+    db_path: str,
+    host: str = "127.0.0.1",
+    port: int = 8080,
+    cors_origins: Sequence[str] | None = None,
+    allowed_hosts: Sequence[str] | None = None,
+    settings: Settings | None = None,
+) -> None: ...
 ```
 
-#### Class: `MCPServer`
+`build_server` constructs the one `MCPServer` for the process and records its
+resolved `TransportSecuritySettings`. `SearchBackend`, the seven tools, and the
+`docs://` resource are created inside the server lifespan, never at import
+time. `create_http_app` mounts the SDK Streamable HTTP app at `/mcp` on a
+FastAPI parent and adds `/health` with a narrow Host guard. Calls to
+`streamable_http_app()` are made exactly once per server.
+
+### Tool registration (`sif.mcp.tools`)
 
 ```python
-class MCPServer:
-    def __init__(self, backend: SearchBackend) -> None: ...
-
-    def register_tools(self, tools: list[ToolHandler]) -> None: ...
-
-    async def handle_request(self, request: JsonRpcRequest) -> JsonRpcResponse: ...
-
-    async def handle_notification(self, notification: JsonRpcNotification) -> None: ...
-```
-
-Transports wrap a server: `StdioTransport(server, stdin=None, stdout=None)` runs a stdin/stdout loop via `await transport.run()`, and `HTTPTransport(server, host="127.0.0.1", port=8080, cors_origins=None)` serves it with FastAPI via `transport.run()`.
-
-**Usage:**
-```python
-from pathlib import Path
+from mcp.server import MCPServer
 
 from sif.mcp.backend import SearchBackend
-from sif.mcp.handlers import create_default_tools
-from sif.mcp.server import MCPServer
-from sif.mcp.transports.stdio import StdioTransport
 
-server = MCPServer(SearchBackend(str(Path("~/.local/share/sif/sif.db").expanduser())))
-server.register_tools(create_default_tools())
 
-transport = StdioTransport(server)
+def register_tools(mcp: MCPServer, backend: SearchBackend) -> None: ...
+
+
+def register_resource(mcp: MCPServer, backend: SearchBackend) -> None: ...
 ```
 
-Module-level runners wire everything together: `run_stdio_server_sync(db_path)` (also `run_stdio_server`) and `run_http_server(db_path, host, port, cors_origins)`.
+`register_tools` registers `query`, `get`, `multi_get`, `status`, `metadata`,
+`lex_search`, and `vec_search` — every one annotated `read_only_hint=True`
+and `open_world_hint=False`. Each tool returns a `CallToolResult` with the
+compact JSON text payload and `structured_content`, so legacy clients and
+structured-output clients share one backend model. Expected input failures
+raise `ToolError` with a correctable message.
+
+**Usage:**
+
+```python
+from sif.mcp.app import build_server, create_http_app, run_stdio
+from sif.mcp.tools import register_tools
+
+# stdio host: model-free until the first vector query
+run_stdio("/path/to/sif.db")
+
+# HTTP host: /mcp plus /health
+app = create_http_app("/path/to/sif.db")
+
+# The server object for tests or hosted apps; tools register in its lifespan
+server = build_server("/path/to/sif.db")
+```
+
+The CLI commands `sif mcp stdio`, `sif mcp http`, and `sif mcp daemon` use
+these entry points; see [MCP Server](mcp-server.md).
 
 ## Examples
 

@@ -17,7 +17,7 @@ SIF is a local hybrid search engine for personal knowledge bases. It indexes Mar
 - **Hybrid Search**: Combines BM25 and vector search with weighted RRF fusion
 - **Query Expansion**: Embedding-based pseudo-relevance feedback in hybrid search
 - **Reranking (opt-in)**: Qwen3-Reranker, a sentence-transformers cross-encoder, or a llama.cpp GGUF reranker via `--rerank` or `SIF_RERANK_ENABLED=1`
-- **MCP Server**: Model Context Protocol support for AI assistants (stdio + HTTP) with `query`, `get`, `multi_get`, and `status` tools
+- **MCP Server**: Model Context Protocol support for AI assistants (stdio, HTTP, and a background daemon) with seven read-only tools: `query`, `get`, `multi_get`, `status`, `metadata`, `lex_search`, `vec_search`
 - **Live Indexing**: `sif watch` keeps the index fresh as files change (foreground, detached daemon, or launchd/systemd service; BM25-only unless `--embed` is given)
 - **Query Suggestions**: Prefix completions, did-you-mean rewrites, and local query history via `sif suggest`
 - **Benchmarking**: `sif bench` evaluates search quality against a fixture and can sweep fusion settings
@@ -29,19 +29,35 @@ SIF is a local hybrid search engine for personal knowledge bases. It indexes Mar
 
 SIF is distributed on PyPI as `docsif`; the installed command is `sif`. Python 3.10 or newer is required.
 
-### From PyPI (Recommended)
+### Recommended: uv tool install
 
 ```bash
-pip install docsif
+# Embedding stack: hybrid and vector search (primary install)
+uv tool install 'docsif[embed]'
 ```
 
-The base install provides the CLI, the MCP server, BM25 search, and the SQLite vector store. Hybrid and vector search additionally need an embedding backend:
+`uv tool install` keeps SIF in an isolated environment and puts the `sif`
+command on PATH. On Linux, the embed install resolves CPU-only torch from the
+explicit PyTorch CPU index declared in `pyproject.toml`
+(`https://download.pytorch.org/whl/cpu`), so no CUDA stack is pulled in.
+
+The base install is BM25-only (keyword search, retrieval, status, metadata,
+and the MCP server); it skips the torch/embedding stack:
 
 ```bash
-# sentence-transformers and ModelScope backends
+uv tool install docsif
+```
+
+### With pip
+
+```bash
+# Embedding stack (hybrid and vector search)
 pip install "docsif[embed]"
 
-# every backend, including llama-cpp-python (GGUF) and OpenAI-compatible APIs
+# BM25-only base install
+pip install docsif
+
+# Every backend, including llama-cpp-python (GGUF) and OpenAI-compatible APIs
 pip install "docsif[all]"
 ```
 
@@ -205,19 +221,46 @@ sif suggest --clear-history
 
 ### MCP Server
 
-Start the MCP server for integration with AI assistants:
+SIF ships a Claude Code plugin at the repository root; its `.mcp.json` starts
+the installed `sif` command (`sif mcp stdio`). Install SIF first (see
+[Installation](#installation)), then install the plugin in Claude Code:
+
+```text
+/plugin install sif --marketplace zhangtaolab/SIF
+```
+
+The server provides seven read-only tools: `query`, `get`, `multi_get`,
+`status`, `metadata`, `lex_search`, and `vec_search`, with citation-grade
+`structuredContent` (docid, path, line range, content hash, snippet, and
+staleness). The `sif-cite` skill encodes the search → `get` → cite workflow:
+never cite a snippet alone.
+
+A pre-existing manual `sif` MCP entry duplicates the plugin-provided server
+until it is removed — keep one registration.
+
+Run the server directly when not using the plugin:
 
 ```bash
-# Start with stdio transport (default)
+# Start with stdio transport (used by the plugin)
 sif mcp stdio
 
 # Start with HTTP transport
 sif mcp http --host 127.0.0.1 --port 8080
+
+# Run the HTTP server as a background daemon
+sif mcp daemon
 ```
 
-The HTTP transport serves the JSON-RPC endpoint at `/mcp` (POST and SSE GET) and a health check at `/health`.
+The HTTP transport serves the Streamable HTTP endpoint at `/mcp` (POST and SSE
+GET) and a health check at `/health`.
 
-Configure in Claude Desktop:
+Zero-install fallback (BM25-only; the plugin cache supplies the package):
+
+```bash
+uvx --from ${CLAUDE_PLUGIN_ROOT} sif mcp stdio
+```
+
+Configure in Claude Desktop or another host without plugin support:
 
 ```json
 {

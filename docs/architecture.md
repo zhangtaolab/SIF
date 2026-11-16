@@ -41,7 +41,7 @@ SIF (DocSIF) is a local-first hybrid search engine for personal knowledge bases:
 Both entry points sit at the top of the dependency graph and are never imported by lower layers:
 
 - **CLI**: Click commands with Rich console output. The groups are `collection`, `context`, `index`, `search`, `get`, and `mcp`, plus the top-level `ls`, `pull`, `bench`, `suggest`, `watch`, `status`, and `cleanup` commands.
-- **MCP server**: `MCPServer` (`sif/mcp/server.py`) handles JSON-RPC 2.0 requests and notifications over pluggable transports — `StdioTransport` and a FastAPI-based streamable HTTP transport. One `ToolHandler` subclass per tool (`query`, `get`, `multi_get`, `status`) delegates to `SearchBackend`, which wires the database, repositories, embedding factory, and `SearchPipeline` together per call. With `SIF_MCP_WATCH=1`, the server also starts an embedded `FileWatcher` via `sif/mcp/watch_host.py`.
+- **MCP server**: the official MCP Python SDK's `MCPServer` (SDK v2) owns protocol negotiation, sessions, and era routing (2024-11-05 through 2026-07-28 plus the stateless era). The composition root `sif/mcp/app.py` builds the one server, registers the seven read-only tools (`query`, `get`, `multi_get`, `status`, `metadata`, `lex_search`, `vec_search`) and the `docs://` resource, mounts the Streamable HTTP app, and composes the required `TransportSecuritySettings`. Each tool delegates to `SearchBackend` (`sif/mcp/backend.py`), which wires database, repositories, embedding manager, and `SearchPipeline` together per call and loads the embedding model lazily on first vector need. With `SIF_MCP_WATCH=1`, the lifespan also starts an embedded `FileWatcher` via `sif/mcp/watch_host.py`.
 
 ### Orchestration
 
@@ -341,18 +341,14 @@ sif/
 │   ├── model.py             # EmbeddingModel interface
 │   ├── embedder.py          # Embedding model implementations
 │   └── cache.py             # Embedding cache
-├── mcp/                     # Unified MCP server
+├── mcp/                     # Unified MCP server (official SDK v2)
 │   ├── __init__.py
-│   ├── server.py            # MCPServer
-│   ├── backend.py           # SearchBackend for tool handlers
-│   ├── handlers.py          # ToolHandler implementations
-│   ├── protocol.py          # MCP protocol (JSON-RPC 2.0) definitions
+│   ├── app.py               # Composition root (server, mounts, runners)
+│   ├── tools.py             # Seven tool definitions + docs:// resource
+│   ├── backend.py           # SearchBackend for tool calls
+│   ├── protocol.py          # SIF tool input/output models
 │   ├── cli.py               # MCP server CLI helpers
-│   ├── watch_host.py        # Embedded watch host (SIF_MCP_WATCH opt-in)
-│   └── transports/          # Transport implementations
-│       ├── __init__.py
-│       ├── stdio.py         # StdioTransport
-│       └── http.py          # HTTPTransport (streamable HTTP)
+│   └── watch_host.py        # Embedded watch host (SIF_MCP_WATCH opt-in)
 ├── cli/                     # Command-line interface
 │   ├── __init__.py
 │   ├── main.py              # CLI entry point
@@ -662,7 +658,7 @@ The package layout under `src/sif/` maps closely onto the layers: each layer is 
 - **`embedding/` — provider isolation.** Two abstractions split the concern: the `Embedder` protocol from `core/` is what callers use, and the provider embedders in `embedding/embedder.py` implement it; the `EmbeddingModel` ABC in `embedding/model.py` remains defined but is not implemented by any production embedder. `EmbeddingModelFactory` builds instances from `ModelType` and `EmbeddingManager` loads and caches them, so switching GGUF, Sentence Transformers, OpenAI-compatible, or ModelScope backends touches only this package. The one infrastructure touch is `embedding/cache.py`, which opens its cache database through `database/factory.create_connection` for the same pragma recipe.
 - **`search/` — strategies over the indices.** Strategies query SQLite directly (e.g., `bm25.py` uses the stdlib `sqlite3` module). Dependencies on `database/` and `config/` are limited to cross-cutting storage services: `suggest.py` uses `QueryLogRepository` and `Settings`, while embedding dependencies stay lazy — `expansion.py` imports `EmbeddingManager` only under `TYPE_CHECKING`, and `rerank.py` defers `ModelDownloader` and its ML-library imports to call time, so BM25 search works without an embedding stack present.
 - **`indexing/` — pipeline orchestration.** scanner → parser → chunker, with `incremental.py` as the single per-file update loop, `drift.py` for pre-search freshness, and `watcher.py` for live indexing. It combines `database/` and `embedding/` in one flow, and reaches into `search/vector.py` through a deferred `create_embedding_purger` import so BM25-only paths do not require the vector stack.
-- **`cli/` and `mcp/` — the two entry points.** Both sit at the top of the dependency graph: they may import every layer below them, and nothing imports them. `mcp/` is self-contained by design: `MCPServer` plus JSON-RPC 2.0 protocol handling (`server.py`, `protocol.py`), a `SearchBackend` that wires the database, repositories, embedding factory, and `SearchPipeline` together (`backend.py`), one `ToolHandler` subclass per tool (`handlers.py`), an optional embedded watcher (`watch_host.py`), and a `transports/` subpackage (`StdioTransport`, `HTTPTransport`) so a new transport can be added without touching server logic.
+- **`cli/` and `mcp/` — the two entry points.** Both sit at the top of the dependency graph: they may import every layer below them, and nothing imports them. `mcp/` is self-contained by design: the composition root `app.py` builds the one SDK `MCPServer` (the SDK owns protocol negotiation, sessions, and era routing), `tools.py` registers the seven read-only tools and the `docs://` resource, `SearchBackend` (`backend.py`) wires the database, repositories, embedding manager, and `SearchPipeline` together per call, `protocol.py` holds the SIF tool input/output models that drive `outputSchema`, and `watch_host.py` composes the optional embedded watcher. The stdio, Streamable HTTP, and daemon hosts all share that composition root.
 
 Two conventions reinforce the layout. Deferred imports (marked `# noqa: PLC0415`, e.g. `get_settings()` inside `database/database.py` or `ModelDownloader` inside `search/rerank.py`) keep heavy or cycle-prone dependencies out of module import time. Cross-layer imports that do exist are deliberately narrow and one-directional at the package level: `indexing/` reaches into `search/` only for vector writes and types (the deferred embedding purger in `incremental.py`, a function-local `VectorSearcher` import in `watcher.py` for the watch embed leg, and `TYPE_CHECKING`-only `VectorSearcher` imports in both modules), `embedding/` reaches into `database/` only for the connection factory, and `search/` reaches into `database/` only for the query-log repository used by suggestions.
 
@@ -766,7 +762,7 @@ The seams that make the layering work, as a quick index. Code for several of the
 | `PromptScheme`, `resolve_prompt_scheme` | `sif/embedding/prompts.py` | The effective query/document prompt names from Settings overrides plus a known-model table; Qwen3 stays prompt-free (D-19). |
 | `StreamingEmbedWriter`, `validate_batch`, `SystemicEmbedError` | `sif/indexing/embed_writer.py` | Streaming per-document embed: chunk/embed outside transactions, bounded batches, count/dimension/finiteness/norm sanity, one short transaction carrying chunks, vectors, shadow, and first-write identity. |
 | `vacuum_index`, `backup_index`, `reconcile_embedded_documents` | `sif/database/maintenance.py` | CLI-only maintenance: TRUNCATE checkpoint + 2× disk precheck + `VACUUM`; online-API backup verified by `integrity_check`; derived-shadow repair in the caller's transaction. |
-| `MCPServer`, `SearchBackend`, `ToolHandler` (ABC) | `sif/mcp/server.py`, `sif/mcp/backend.py`, `sif/mcp/handlers.py` | The MCP surface: a JSON-RPC 2.0 server core over pluggable transports, a backend that wires database, repositories, factory, and `SearchPipeline` together per call, and one handler subclass per tool (`query`, `get`, `multi_get`, `status`). |
+| `MCPServer` composition, `register_tools`, `SearchBackend` | `sif/mcp/app.py`, `sif/mcp/tools.py`, `sif/mcp/backend.py` | The MCP surface on SDK v2: one `MCPServer` per process with stdio/HTTP/daemon hosts, seven read-only tools with truthful annotations and dual-channel (legacy text + `structuredContent`) output, explicit transport security, and a backend that wires database, repositories, embedding manager, and `SearchPipeline` together per call. |
 | `create_connection`, `Database`, `DatabaseConnection`, `index_lock`, `SchemaManager` | `sif/database/factory.py`, `sif/database/database.py`, `sif/database/connection.py`, `sif/database/locking.py`, `sif/database/schema.py` | Storage lifecycle: the shared pragma recipe, command-scoped and per-operation connection wrappers over raw `sqlite3.Connection` (repositories stay agnostic), cross-process write arbitration, and idempotent schema creation and in-place adaptation. |
 | `Settings` / `get_settings()` | `sif/config/settings.py` | Pydantic Settings with `SIF_`-prefixed environment variables, cached via `@lru_cache`; the single source for database/cache paths, model selection, watch depth, search refresh, query history, and defaults. |
 

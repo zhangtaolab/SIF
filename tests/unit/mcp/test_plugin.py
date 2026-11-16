@@ -8,6 +8,8 @@ and runs as an optional gate when the CLI is installed.
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -191,3 +193,39 @@ class TestSkills:
         lowered = _skill_text(name).lower()
         for forbidden in ("auto-approv", "automatically approv", "prompt-free", "without asking"):
             assert forbidden not in lowered, f"{name} claims {forbidden!r}"
+
+
+class TestPluginValidate:
+    """The authoritative Claude CLI validation gate (D-22, C4).
+
+    Plain validation, never ``--strict``: the repository root is both the
+    project and the plugin root, so ``CLAUDE.md`` produces a tolerated warning
+    and ``--strict`` would exit 1. The marketplace ``description`` warning is
+    absent because ``marketplace.json`` carries a top-level description.
+    """
+
+    @pytest.mark.skipif(shutil.which("claude") is None, reason="claude CLI not installed")
+    def test_claude_plugin_validate_succeeds(self) -> None:
+        """Exit 0, success, zero errors, and no description warning."""
+        command = ["claude", "plugin", "validate", "--json", "."]
+        assert "--strict" not in command
+        result = subprocess.run(
+            command,
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=180,
+        )
+        assert result.returncode == 0, result.stderr
+        report = json.loads(result.stdout)
+        assert report["success"] is True
+        assert report["strict"] is False
+        assert report["manifest"]["errors"] == []
+        assert report["manifest"]["warnings"] == [] or all(
+            warning.get("path") != "description" for warning in report["manifest"]["warnings"]
+        )
+        for entry in report["contents"]:
+            assert entry["errors"] == []
+            for warning in entry.get("warnings", []):
+                assert warning.get("path") != "description"
