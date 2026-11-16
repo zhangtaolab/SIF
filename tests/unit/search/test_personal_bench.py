@@ -33,6 +33,7 @@ from sif.search.personal_bench import (
     OVERLAP_BUDGET,
     SAVED_RUN_VERSION,
     SUPPRESS_BELOW,
+    ComparisonReport,
     CorpusSummary,
     DocumentRecord,
     GroupMetrics,
@@ -2185,3 +2186,129 @@ class TestPerLegNoiseGates:
             comparison.to_dict()["gate"]["warrants_default_change"]
             == comparison.splits["heldout"].winner
         )
+
+
+class TestPerLanguageNoiseGates:
+    """D-06/D-08: per-language and per-leg x per-language held-out gates."""
+
+    def _comparison(self, *, include_zh: bool = True):
+        pairs = (("doc-1", "/corpus/1.md"),)
+        metadata = _metadata(*pairs)
+        records = [
+            _saved_query(
+                f"en title {index}",
+                leg="title",
+                language="en",
+                split="heldout",
+                retrieved=["/corpus/1.md"],
+                retrieved_doc_ids=["missing"],
+            )
+            for index in range(10)
+        ]
+        records += [
+            _saved_query(
+                f"en tuning {index}",
+                leg="title",
+                language="en",
+                split="tuning",
+                retrieved=["/corpus/1.md"],
+                retrieved_doc_ids=["doc-1"],
+            )
+            for index in range(10)
+        ]
+        if include_zh:
+            records += [
+                _saved_query(
+                    f"zh body {index}",
+                    leg="body",
+                    language="zh",
+                    split="heldout",
+                    retrieved=["/corpus/1.md"],
+                    retrieved_doc_ids=["doc-1"],
+                )
+                for index in range(10)
+            ]
+        saved = _saved_run(records, fingerprint=corpus_fingerprint(metadata))
+        return compare_saved_run(
+            saved,
+            metadata,
+            lambda _query: [_hit("doc-1", "/corpus/1.md")],
+            conn=_compare_conn(*pairs),
+            retrieval="bm25",
+            model=None,
+        )
+
+    def test_language_gates_partition_the_saved_records_in_declared_order(self) -> None:
+        comparison = self._comparison()
+
+        assert list(comparison.language_splits) == ["en", "zh"]
+        assert comparison.language_splits["en"]["heldout"].n == 10
+        assert comparison.language_splits["en"]["tuning"].n == 10
+        assert comparison.language_splits["en"]["heldout"].winner is True
+        assert comparison.language_splits["zh"]["heldout"].n == 10
+        assert comparison.language_splits["zh"]["tuning"].n == 0
+        assert comparison.language_splits["zh"]["tuning"].sufficient is False
+        assert sum(gate.n for gate in comparison.language_splits["en"].values()) == 20
+        assert (
+            sum(
+                gate.n
+                for per_split in comparison.language_splits.values()
+                for gate in per_split.values()
+            )
+            == 30
+        )
+
+    def test_an_absent_language_has_no_key_at_all(self) -> None:
+        comparison = self._comparison(include_zh=False)
+
+        assert list(comparison.language_splits) == ["en"]
+        assert "zh" not in comparison.language_splits
+        assert "mixed" not in comparison.language_splits
+
+    def test_leg_language_gates_nest_leg_language_and_split(self) -> None:
+        comparison = self._comparison()
+
+        assert list(comparison.leg_language_splits) == ["title", "body"]
+        assert list(comparison.leg_language_splits["title"]) == ["en"]
+        assert set(comparison.leg_language_splits["title"]["en"]) == {"tuning", "heldout"}
+        assert comparison.leg_language_splits["title"]["en"]["heldout"].n == 10
+        assert comparison.leg_language_splits["body"]["zh"]["heldout"].n == 10
+        assert comparison.leg_language_splits["body"]["zh"]["tuning"].n == 0
+        assert "zh" not in comparison.leg_language_splits["title"]
+
+    def test_to_dict_serializes_every_language_gate_leaf(self) -> None:
+        comparison = self._comparison()
+        data = comparison.to_dict()
+
+        assert set(data["language_splits"]) == {"en", "zh"}
+        assert data["language_splits"]["en"]["heldout"] == (
+            comparison.language_splits["en"]["heldout"].to_dict()
+        )
+        assert data["leg_language_splits"]["body"]["zh"]["heldout"] == (
+            comparison.leg_language_splits["body"]["zh"]["heldout"].to_dict()
+        )
+        assert data["language_splits"]["zh"]["tuning"]["n"] == 0
+
+    def test_language_fields_default_to_empty_for_the_constructor(self) -> None:
+        comparison = self._comparison()
+        report = ComparisonReport(
+            current_report=comparison.current_report,
+            baseline_metrics=comparison.baseline_metrics,
+            current_metrics=comparison.current_metrics,
+            overall=comparison.overall,
+            splits=comparison.splits,
+            legs=comparison.legs,
+            leg_splits=comparison.leg_splits,
+            groups=comparison.groups,
+            suppressed=comparison.suppressed,
+            replay=comparison.replay,
+            retrieval=comparison.retrieval,
+            top_k=comparison.top_k,
+            warrants_default_change=comparison.warrants_default_change,
+            model_mismatch=comparison.model_mismatch,
+        )
+
+        assert report.language_splits == {}
+        assert report.leg_language_splits == {}
+        assert report.to_dict()["language_splits"] == {}
+        assert report.to_dict()["leg_language_splits"] == {}

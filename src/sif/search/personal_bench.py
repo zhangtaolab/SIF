@@ -29,7 +29,7 @@ import re
 import sqlite3
 import unicodedata
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, NoReturn
@@ -472,11 +472,13 @@ class ComparisonReport:
     """The paired saved-vs-current comparison (D-07/D-12).
 
     ``current_report`` is the single ``PersonalReport`` contract ``--compare``
-    auto-saves; ``splits``, ``legs``, ``leg_splits``, and ``groups`` are gate
-    results, and only the held-out summary gate can warrant a defaults change
+    auto-saves; ``splits``, ``legs``, ``leg_splits``, ``language_splits``,
+    ``leg_language_splits``, and ``groups`` are gate results, and only the
+    held-out summary gate can warrant a defaults change
     (``warrants_default_change``). ``legs`` and ``leg_splits`` exist so the
     D-12 clause "the title leg improves while body held-out does not regress"
-    is directly readable from ``--compare`` output.
+    is directly readable from ``--compare`` output; the language axes make
+    Phase 23's two-sided EN+ZH rule computable from the report alone.
     """
 
     current_report: PersonalReport
@@ -493,6 +495,8 @@ class ComparisonReport:
     top_k: int
     warrants_default_change: bool
     model_mismatch: bool
+    language_splits: dict[str, dict[str, GateResult]] = field(default_factory=dict)
+    leg_language_splits: dict[str, dict[str, dict[str, GateResult]]] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize the comparison object for ``--json`` output."""
@@ -526,6 +530,17 @@ class ComparisonReport:
             "leg_splits": {
                 leg: {split: gate.to_dict() for split, gate in splits.items()}
                 for leg, splits in self.leg_splits.items()
+            },
+            "language_splits": {
+                language: {split: gate.to_dict() for split, gate in splits.items()}
+                for language, splits in self.language_splits.items()
+            },
+            "leg_language_splits": {
+                leg: {
+                    language: {split: gate.to_dict() for split, gate in splits.items()}
+                    for language, splits in by_language.items()
+                }
+                for leg, by_language in self.leg_language_splits.items()
             },
             "groups": [group.to_dict() for group in self.groups],
             "suppressed": list(self.suppressed),
@@ -1928,6 +1943,82 @@ def leg_noise_gates(
     return legs, leg_splits
 
 
+def language_noise_gates(
+    saved_queries: Sequence[SavedQueryRecord],
+    baseline_values: Sequence[float],
+    current_values: Sequence[float],
+) -> dict[str, dict[str, GateResult]]:
+    """Per-language and per-language x split paired gates (D-06, D-08).
+
+    Every language present in the saved run's title/body records gets one
+    gate per split, emitted in declared ``LANGUAGES`` order (never dict
+    order). A language with no records at all has no key; a present language
+    with no records in one split is passed two empty series, which
+    ``noise_gate`` reports as ``n=0, sufficient=False`` — a visible
+    diagnostic, never a fabricated zero winner.
+    """
+    if not (len(saved_queries) == len(baseline_values) == len(current_values)):
+        raise ValueError("saved queries and both metric series must have equal lengths")
+    indices: dict[str, dict[str, list[int]]] = {}
+    for index, record in enumerate(saved_queries):
+        if record.leg not in ("title", "body"):
+            continue
+        per_split = indices.setdefault(record.language, {"tuning": [], "heldout": []})
+        per_split.setdefault(record.split, []).append(index)
+    languages: dict[str, dict[str, GateResult]] = {}
+    for language in LANGUAGES:
+        per_split = indices.get(language)
+        if per_split is None:
+            continue
+        languages[language] = {
+            split: noise_gate(
+                [baseline_values[index] for index in per_split.get(split, [])],
+                [current_values[index] for index in per_split.get(split, [])],
+            )
+            for split in ("tuning", "heldout")
+        }
+    return languages
+
+
+def leg_language_noise_gates(
+    saved_queries: Sequence[SavedQueryRecord],
+    baseline_values: Sequence[float],
+    current_values: Sequence[float],
+) -> dict[str, dict[str, dict[str, GateResult]]]:
+    """Per-leg x per-language x split paired gates for the MODEL-01 report.
+
+    Shape ``{leg: {language: {split: GateResult}}}`` in ``("title", "body")``
+    then declared ``LANGUAGES`` order. An absent leg x language pair is
+    omitted rather than fabricated; a present pair with no records in one
+    split carries an ``n=0, sufficient=False`` gate for that split.
+    """
+    if not (len(saved_queries) == len(baseline_values) == len(current_values)):
+        raise ValueError("saved queries and both metric series must have equal lengths")
+    indices: dict[tuple[str, str], dict[str, list[int]]] = {}
+    for index, record in enumerate(saved_queries):
+        if record.leg not in ("title", "body"):
+            continue
+        per_split = indices.setdefault(
+            (record.leg, record.language),
+            {"tuning": [], "heldout": []},
+        )
+        per_split.setdefault(record.split, []).append(index)
+    nested: dict[str, dict[str, dict[str, GateResult]]] = {}
+    for leg in ("title", "body"):
+        for language in LANGUAGES:
+            per_split = indices.get((leg, language))
+            if per_split is None:
+                continue
+            nested.setdefault(leg, {})[language] = {
+                split: noise_gate(
+                    [baseline_values[index] for index in per_split.get(split, [])],
+                    [current_values[index] for index in per_split.get(split, [])],
+                )
+                for split in ("tuning", "heldout")
+            }
+    return nested
+
+
 def replay_stability(
     saved_replay: dict[str, Any],
     current_top_k_paths: dict[str, list[str]],
@@ -2087,7 +2178,8 @@ def compare_saved_run(  # noqa: PLR0913
     ``SearchEvaluator.evaluate_per_query``; grades the saved arm through its
     own ``retrieved_doc_ids`` against ``target_doc_id`` (first-occurrence
     dedupe); and reports the seeded paired-bootstrap gate overall, per split,
-    per leg, per leg x split, and per group. The returned ``current_report``
+    per leg, per leg x split, per language, per leg x language, and per
+    group. The returned ``current_report``
     is the single ``PersonalReport`` contract ``run_to_saved`` consumes.
     """
     if not saved.queries:
@@ -2126,6 +2218,12 @@ def compare_saved_run(  # noqa: PLR0913
         for split, indices in split_indices.items()
     }
     legs, leg_splits = leg_noise_gates(saved.queries, baseline_ndcg, current_ndcg)
+    language_splits = language_noise_gates(saved.queries, baseline_ndcg, current_ndcg)
+    leg_language_splits = leg_language_noise_gates(
+        saved.queries,
+        baseline_ndcg,
+        current_ndcg,
+    )
     groups, suppressed = group_noise_gates(
         saved.queries,
         baseline_ndcg,
@@ -2182,6 +2280,8 @@ def compare_saved_run(  # noqa: PLR0913
         splits=splits,
         legs=legs,
         leg_splits=leg_splits,
+        language_splits=language_splits,
+        leg_language_splits=leg_language_splits,
         groups=groups,
         suppressed=suppressed,
         replay=stability,
