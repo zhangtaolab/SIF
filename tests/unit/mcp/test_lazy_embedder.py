@@ -143,6 +143,10 @@ def _core_result() -> MagicMock:
     result.chunk_id = None
     result.sequence = None
     result.chunk_matches = 0
+    # D-11 citation fields: the direct BM25 routes have no snippet window.
+    result.snippet = None
+    result.line_start = None
+    result.line_end = None
     return result
 
 

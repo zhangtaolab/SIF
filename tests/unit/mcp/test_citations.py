@@ -16,10 +16,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from mcp.server import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 
 from sif.config.settings import Settings
-from sif.core.models import SearchResult as CoreSearchResult
+from sif.core.models import Collection, Document as CoreDocument, SearchResult as CoreSearchResult
+from sif.database.connection import DatabaseConnection
 from sif.database.database import Database
+from sif.database.repositories import CollectionRepository, DocumentRepository
 from sif.mcp.backend import SearchBackend
 from sif.mcp.protocol import (
     Document,
@@ -347,3 +350,219 @@ def test_protocol_models_keep_the_pre_existing_fields() -> None:
         "line_end",
         "collection_id",
     }
+
+
+# =============================================================================
+# Task 3: frozen Phase 20 envelope, dual-channel parity, citation edge cases
+# =============================================================================
+
+# The independent Phase 20 D-15/D-20 oracle: two documents carrying tag=x.
+# ``builtIns`` is exactly path then mtime; string types carry no ``range``.
+_FROZEN_ENVELOPE = {
+    "documents": 2,
+    "totalKeys": 1,
+    "remainingKeys": 0,
+    "skippedKeys": 0,
+    "builtIns": [
+        {
+            "key": "path",
+            "documents": 2,
+            "types": [
+                {
+                    "type": "string",
+                    "multiValued": False,
+                    "documents": 2,
+                    "distinctValues": 2,
+                    "values": [],
+                    "remainingValues": 2,
+                }
+            ],
+        },
+        {
+            "key": "mtime",
+            "documents": 2,
+            "types": [
+                {
+                    "type": "number",
+                    "multiValued": False,
+                    "documents": 2,
+                    "distinctValues": 2,
+                    "values": [],
+                    "remainingValues": 2,
+                    "range": {"min": 100.0, "median": 150.0, "max": 200.0},
+                }
+            ],
+        },
+    ],
+    "keys": [
+        {
+            "key": "tag",
+            "documents": 2,
+            "types": [
+                {
+                    "type": "string",
+                    "multiValued": False,
+                    "documents": 2,
+                    "distinctValues": 1,
+                    "values": [{"value": "x", "documents": 2}],
+                    "remainingValues": 0,
+                }
+            ],
+        }
+    ],
+}
+
+
+def _seed_envelope_db(tmp_path: Path) -> Path:
+    """Repository-created documents so the typed metadata view is populated."""
+    db_path = tmp_path / "mcp-envelope.db"
+    # Migrate the real production schema first.
+    SearchBackend(str(db_path), settings=_settings())
+    with DatabaseConnection(db_path).transaction() as conn:
+        CollectionRepository(conn).create(Collection(id="c1", name="notes", path="/notes"))
+        repo = DocumentRepository(conn)
+        for position, doc_id in enumerate(("e0", "e1")):
+            repo.create(
+                CoreDocument(
+                    id=doc_id,
+                    collection_id="c1",
+                    path=f"/notes/{doc_id}.md",
+                    title=doc_id,
+                    content="body",
+                    mtime=100.0 * (position + 1),
+                    metadata={"tag": "x"},
+                )
+            )
+    return db_path
+
+
+def _server(backend: SearchBackend, name: str) -> MCPServer:
+    server = MCPServer(name)
+    register_tools(server, backend)
+    return server
+
+
+class TestFrozenMetadataEnvelope:
+    """D-12/C8: Phase 20's envelope is unchanged in text and structured form."""
+
+    @pytest.mark.asyncio
+    async def test_envelope_is_deep_equal_on_both_channels(self, tmp_path: Path) -> None:
+        backend = _backend(_seed_envelope_db(tmp_path))
+
+        result = await _server(backend, "citation-envelope").call_tool("metadata", {})
+
+        assert result.is_error is False
+        text_payload = json.loads(result.content[0].text)
+        assert text_payload == result.structured_content
+        assert text_payload == _FROZEN_ENVELOPE
+        # No filter supplied -> the optional key is absent, not null.
+        assert "filteredDocuments" not in text_payload
+        assert "filteredDocuments" not in result.structured_content
+        # builtIns is exactly path then mtime; range only on numeric types.
+        assert [item["key"] for item in text_payload["builtIns"]] == ["path", "mtime"]
+        assert "range" not in text_payload["builtIns"][0]["types"][0]
+        assert text_payload["builtIns"][1]["types"][0]["range"] == {
+            "min": 100.0,
+            "median": 150.0,
+            "max": 200.0,
+        }
+        # No wrapper key around the frozen envelope.
+        assert set(text_payload) == {
+            "documents",
+            "totalKeys",
+            "remainingKeys",
+            "skippedKeys",
+            "builtIns",
+            "keys",
+        }
+
+    @pytest.mark.asyncio
+    async def test_envelope_never_gains_citation_fields(self, tmp_path: Path) -> None:
+        """Citation enrichment is query/get-only; metadata stays untouched."""
+        backend = _backend(_seed_envelope_db(tmp_path))
+
+        result = await _server(backend, "citation-envelope-fields").call_tool("metadata", {})
+
+        serialized = json.dumps(result.structured_content)
+        for field in ("snippet", "content_hash", "line_start", "line_end"):
+            assert field not in serialized
+
+
+class TestCitationEdgeCases:
+    """Zero-result, missing-document, encoding, and CLI-exclusion guards."""
+
+    @pytest.mark.asyncio
+    async def test_zero_result_query_is_an_empty_conforming_page(self, tmp_path: Path) -> None:
+        backend = _backend(_seed_citation_db(tmp_path))
+
+        with patch("sif.mcp.backend.SearchPipeline") as pipeline_cls:
+            pipeline_cls.return_value.search.return_value = []
+            result = await _server(backend, "citation-zero").call_tool(
+                "query", {"query": "definitely-not-in-the-index-zzzz"}
+            )
+
+        assert result.is_error is False
+        payload = json.loads(result.content[0].text)
+        assert payload["results"] == []
+        assert payload == result.structured_content
+        # The structured payload still conforms to the published output model.
+        QueryOutput.model_validate(result.structured_content)
+
+    @pytest.mark.asyncio
+    async def test_missing_get_is_a_tool_error_with_no_payload(self, tmp_path: Path) -> None:
+        backend = _backend(_seed_citation_db(tmp_path))
+
+        with pytest.raises(ToolError, match="Document not found"):
+            await _server(backend, "citation-missing").call_tool(
+                "get", {"path_or_docid": "missing-doc"}
+            )
+
+    @pytest.mark.asyncio
+    async def test_line_ranges_count_newline_splits(self, tmp_path: Path) -> None:
+        backend = _backend(_seed_citation_db(tmp_path))
+
+        document = await backend.get_document("multi")
+
+        assert document is not None
+        assert len(document.content.split("\n")) == 5
+        assert (document.line_start, document.line_end) == (1, 5)
+        # A full read of an empty-bodied-esque single line is 1..1.
+        second = await backend.get_document("second")
+        assert second is not None
+        assert (second.line_start, second.line_end) == (1, 1)
+
+    @pytest.mark.asyncio
+    async def test_query_hash_is_the_stored_checksum_not_snippet_recomputed(
+        self, tmp_path: Path
+    ) -> None:
+        backend = _backend(_seed_citation_db(tmp_path))
+        cores = [_core_result("multi", snippet="line three", line_start=3, line_end=3)]
+
+        with patch("sif.mcp.backend.SearchPipeline") as pipeline_cls:
+            pipeline_cls.return_value.search.return_value = cores
+            results = await backend.hybrid_search("anything")
+
+        assert results[0].content_hash == _STORED_CHECKSUMS["multi"]
+        snippet_hash = hashlib.sha256(b"line three").hexdigest()
+        assert results[0].content_hash != snippet_hash
+
+    def test_to_dict_never_carries_line_fields(self) -> None:
+        """D-11 prohibition: CLI JSON stays byte-identical."""
+        result = CoreSearchResult(
+            document_id="d",
+            title="t",
+            path="p",
+            collection_name="c",
+            score=1.0,
+        )
+        # Set explicitly: even populated, the dataclass fields stay out.
+        result.line_start = 3
+        result.line_end = 4
+
+        payload = result.to_dict()
+
+        assert "line_start" not in payload
+        assert "line_end" not in payload
+        # The pre-change key set is otherwise unchanged.
+        assert "snippet" in payload
+        assert "vectors_stale" in payload
