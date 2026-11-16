@@ -4,18 +4,18 @@ milestone: v1.2
 milestone_name: Search Precision and Agent Experience
 current_phase: 23
 current_phase_name: Harrier Gated Evaluation
-current_plan: 2
+current_plan: 3
 status: executing
-stopped_at: Completed 23-01-PLAN.md
-last_updated: "2026-11-16T12:03:33.915Z"
+stopped_at: Completed 23-02-PLAN.md
+last_updated: "2026-11-16T12:12:22.075Z"
 last_activity: 2026-11-16
 last_activity_desc: Phase 22 complete, transitioned to Phase 23
-state_head: 2c948aecff64c0386aa54d88b86561d24cb32384
+state_head: 2c66e00fff8bc822e417cd1fb744689451cf6094
 progress:
   total_phases: 8
   completed_phases: 6
   total_plans: 48
-  completed_plans: 43
+  completed_plans: 44
 ---
 
 # DocSift — Project State
@@ -32,7 +32,7 @@ progress:
 ## Current Position
 
 Phase: 23 (Harrier Gated Evaluation) — IN PROGRESS
-Current Plan: 2
+Current Plan: 3
 Total Plans in Phase: 6
 Status: Ready to execute
 Last activity: 2026-11-16 — 23-01 complete (2 tasks, 2 commits); next: 23-02
@@ -94,6 +94,7 @@ Progress: [████████░░] 75%
 | Phase 22 P06 | 10min | 3 tasks | 12 files |
 | Phase 22 P07 | 7 | 3 tasks | 5 files |
 | Phase 23 P01 | 8min | 2 tasks | 6 files |
+| Phase 23 P2 | 6min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -276,6 +277,9 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - [Phase 23]: Defaulted ComparisonReport.language_splits/leg_language_splits keep the Phase 18 constructor and output valid while adding per-language evidence
 - [Phase 23]: Language-aware widening adds the language floor to both the widening loop and the cap guard; required_languages=() is byte-identical
 - [Phase 23]: The --require-language option is click.Choice(LANGUAGES); compare mode warns once on stderr and never resamples the saved query set
+- [Phase 23]: 23-02: A missing overall held-out gate is insufficient-evidence with zeroed overall fields; language evidence is still recorded for audit
+- [Phase 23]: 23-02: Non-mapping top-level language_splits raises ValueError; missing/malformed per-language entries are absent evidence, never a pass
+- [Phase 23]: 23-02: VerdictDecision.to_dict emits a fixed 16-key order with copied nested maps, and adopt-harrier carries empty reasons while every rejection names its failed conditions
 
 ### Pending Todos
 
@@ -308,8 +312,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-16T12:03:11.060Z
-Stopped at: Completed 23-01-PLAN.md
+Last session: 2026-11-16T12:12:21.108Z
+Stopped at: Completed 23-02-PLAN.md
 Resume file: None
 
 - **Next expected action:** finish 22-07 Task 3 (Registry docs, phase gate, real `claude mcp` stdio smoke, `22-07-SUMMARY.md`), then Phase 22 verification (gsd-verifier, code review, regression gate) and ROADMAP/STATE completion; then Phase 23 → 24. 22-07 Task 2 was recorded `blocked no-github-login` (optional public Registry listing deferred). Two audits remain recorded as debt (see Blockers/Concerns): `/gsd-secure-phase 20` and `/gsd:validate-phase 20`.

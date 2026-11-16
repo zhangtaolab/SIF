@@ -71,7 +71,7 @@ Each maps to exactly one roadmap phase. Checkboxes mark committed scope.
 ### Harrier Gated Evaluation (MODEL)
 
 - [x] **MODEL-01**: User gets an evidence-based embedder comparison (EN+ZH held-out A/B of Harrier-OSS-v1-0.6b native vs Qwen3-Embedding-0.6B baseline; per-arm full re-embed; isolated indexes; per-language × per-leg verdict; paired deltas + intervals; query `prompt_name="web_search_query"`, never `default_prompt_name`).
-- [ ] **MODEL-02**: User's default embedder changes only on a proven win (default switch ONLY on an EN+ZH held-out win beyond the 0.01 tie rule; recorded rejection with numbers if no win; Qwen3 path byte-identical until the gate passes).
+- [x] **MODEL-02**: User's default embedder changes only on a proven win (default switch ONLY on an EN+ZH held-out win beyond the 0.01 tie rule; recorded rejection with numbers if no win; Qwen3 path byte-identical until the gate passes).
 
 ### Models UX (MODELS)
 
@@ -164,7 +164,7 @@ Populated during roadmap creation. Each requirement maps to exactly one phase.
 | MCP-08 | Phase 22 | Complete |
 | MCP-09 | Phase 22 | Complete |
 | MODEL-01 | Phase 23 | Complete |
-| MODEL-02 | Phase 23 | Pending |
+| MODEL-02 | Phase 23 | Complete |
 | MODELS-01 | Phase 24 | Pending |
 | MODELS-02 | Phase 24 | Pending |
 | DOCS-01 | Phase 24 | Pending |
