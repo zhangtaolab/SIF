@@ -744,6 +744,32 @@ def query_set_fingerprint(saved_run: Mapping[str, Any]) -> str:
     return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()[:16]
 
 
+def _pair_query_set_fingerprint(
+    qwen3_saved_run: Path,
+    harrier_saved_run: Path,
+) -> str | None:
+    """Fingerprint the paired saved query sets, or None when either is absent.
+
+    A recorded verdict whose scratch runs were cleaned up after a completed
+    run is still a valid resume: there is nothing left to disagree with.
+    When both runs exist the arms must name the same query set (the
+    ``--compare`` pairing contract).
+    """
+    paths = (Path(qwen3_saved_run), Path(harrier_saved_run))
+    if not all(path.is_file() for path in paths):
+        return None
+    fingerprints = [
+        query_set_fingerprint(json.loads(path.read_text(encoding="utf-8")))
+        for path in paths
+    ]
+    if fingerprints[0] != fingerprints[1]:
+        raise RuntimeError(
+            "query-set fingerprint mismatch between arms: "
+            f"{fingerprints[0]} vs {fingerprints[1]}"
+        )
+    return fingerprints[0]
+
+
 def _cache_rows(cache_db_path: Path, cache_model_id: str | None) -> int:
     """Count cache rows for one arm's bucket prefix; never write."""
     cache_db_path = Path(cache_db_path)
@@ -974,6 +1000,20 @@ def _complete_stage(
     """Mark one stage complete and persist the state immediately."""
     mark_stage(state, stage, detail)
     save_run_state(state_path, state)
+
+
+def _drop_stages(state: dict[str, Any], state_path: Path, stages: Sequence[str]) -> bool:
+    """Remove named completion markers; persist when anything changed."""
+    recorded = state.get("stages")
+    if not isinstance(recorded, dict):
+        return False
+    dropped = False
+    for stage in stages:
+        if recorded.pop(stage, None) is not None:
+            dropped = True
+    if dropped:
+        save_run_state(state_path, state)
+    return dropped
 
 
 def _find_command(commands: Sequence[ArmCommand], stage: str) -> ArmCommand:
@@ -1262,6 +1302,51 @@ def _build_insufficient_artifact(
     )
 
 
+def _recorded_artifact_if_current(
+    state: Mapping[str, Any],
+    corpus_payload: Mapping[str, Any],
+    qwen3_saved_run: Path,
+    harrier_saved_run: Path,
+) -> dict[str, Any] | None:
+    """Return the recorded artifact only when every input fingerprint agrees.
+
+    The insufficient-evidence path never marks the artifact complete, and an
+    older marker is trusted only while its stored query-set and corpus
+    fingerprints still match this run's inputs (CR-02). Otherwise the caller
+    drops the stale markers and recomputes.
+    """
+    if not stage_done(state, "artifact") or not Path(ARTIFACT_PATH).is_file():
+        return None
+    recorded = state.get("stages")
+    entry = recorded.get("artifact") if isinstance(recorded, Mapping) else None
+    detail = entry.get("detail") if isinstance(entry, Mapping) else None
+    if not isinstance(detail, Mapping):
+        return None
+    stored_query = detail.get("query_set_fingerprint")
+    stored_corpus = detail.get("corpus_fingerprint")
+    if not isinstance(stored_query, str) or not isinstance(stored_corpus, str):
+        return None
+    if stored_corpus != corpus_payload.get("fingerprint"):
+        return None
+    try:
+        payload = json.loads(Path(ARTIFACT_PATH).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(payload, Mapping):
+        return None
+    artifact_corpus = payload.get("corpus")
+    if not isinstance(artifact_corpus, Mapping):
+        return None
+    if artifact_corpus.get("fingerprint") != stored_corpus:
+        return None
+    if payload.get("query_set_fingerprint") != stored_query:
+        return None
+    current_query = _pair_query_set_fingerprint(qwen3_saved_run, harrier_saved_run)
+    if current_query is not None and current_query != stored_query:
+        return None
+    return dict(payload)
+
+
 def _run_verdict_stage(
     state: dict[str, Any],
     state_path: Path,
@@ -1274,24 +1359,23 @@ def _run_verdict_stage(
     device: str,
 ) -> dict[str, Any]:
     """Compute the pure two-sided verdict and write the aggregate artifact."""
-    if stage_done(state, "artifact") and ARTIFACT_PATH.exists():
-        payload = json.loads(ARTIFACT_PATH.read_text(encoding="utf-8"))
-        if isinstance(payload, Mapping):
-            return dict(payload)
+    recorded = _recorded_artifact_if_current(
+        state, corpus_payload, qwen3_saved_run, harrier_saved_run
+    )
+    if recorded is not None:
+        return recorded
+    if stage_done(state, "artifact"):
+        # A marker whose inputs no longer agree is stale; never let it shadow
+        # the recomputation below (CR-02).
+        _drop_stages(state, state_path, ("verdict", "artifact"))
     from sif.search.embedder_verdict import decide_from_payload  # noqa: PLC0415
 
     comparison = json.loads(comparison_path.read_text(encoding="utf-8"))
     if not isinstance(comparison, Mapping):
         raise RuntimeError("comparison payload is not a JSON object")
-    saved_a = json.loads(qwen3_saved_run.read_text(encoding="utf-8"))
-    saved_b = json.loads(harrier_saved_run.read_text(encoding="utf-8"))
-    fingerprint_a = query_set_fingerprint(saved_a)
-    fingerprint_b = query_set_fingerprint(saved_b)
-    if fingerprint_a != fingerprint_b:
-        raise RuntimeError(
-            "query-set fingerprint mismatch between arms: "
-            f"{fingerprint_a} vs {fingerprint_b}"
-        )
+    fingerprint_a = _pair_query_set_fingerprint(qwen3_saved_run, harrier_saved_run)
+    if fingerprint_a is None:
+        raise RuntimeError("saved runs are missing; cannot compute the verdict")
     decision = decide_from_payload(comparison, required_languages=REQUIRED_LANGUAGES)
     replay = comparison.get("replay")
     replay_available = bool(replay.get("available")) if isinstance(replay, Mapping) else False
@@ -1316,7 +1400,17 @@ def _run_verdict_stage(
         "verdict",
         {"decision": decision.decision, "query_set_fingerprint": fingerprint_a},
     )
-    _complete_stage(state, state_path, "artifact", {"path": str(ARTIFACT_PATH)})
+    _complete_stage(
+        state,
+        state_path,
+        "artifact",
+        {
+            "path": str(ARTIFACT_PATH),
+            "decision": decision.decision,
+            "query_set_fingerprint": fingerprint_a,
+            "corpus_fingerprint": corpus_payload.get("fingerprint"),
+        },
+    )
     return artifact
 
 
@@ -1361,8 +1455,10 @@ def run_stage_machine(
     if not adequacy.get("adequate"):
         artifact = _build_insufficient_artifact(adequacy, corpus_roots, qwen3.db_path)
         write_artifact(ARTIFACT_PATH, artifact)
-        _complete_stage(state, state_path, "verdict", {"decision": artifact["decision"]})
-        _complete_stage(state, state_path, "artifact", {"path": str(ARTIFACT_PATH)})
+        # Deliberately no verdict/artifact marker: an inadequate preflight is
+        # recorded in ``state["adequacy"]`` but never marked complete, so a
+        # resumed full run re-checks adequacy and recomputes instead of
+        # returning this artifact (CR-02).
         if output_json:
             print(json.dumps(artifact, indent=2, sort_keys=True))
         else:

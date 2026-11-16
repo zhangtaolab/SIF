@@ -526,13 +526,14 @@ _OPENING_ZH = "填充内容用于把后面的句子推到开头窗口之外这�
 
 
 def _write_documents_db(db_path: Path, *, english: int, chinese: int) -> None:
-    """Write a minimal documents table with deterministic bilingual bodies."""
+    """Write (or rewrite) a minimal documents table with deterministic bodies."""
     conn = sqlite3.connect(db_path)
     try:
         conn.execute(
-            "CREATE TABLE documents (id TEXT PRIMARY KEY, path TEXT, title TEXT, "
+            "CREATE TABLE IF NOT EXISTS documents (id TEXT PRIMARY KEY, path TEXT, title TEXT, "
             "checksum TEXT, file_size INTEGER, content TEXT)"
         )
+        conn.execute("DELETE FROM documents")
         rows: list[tuple[str, str, str, str, int, str]] = [
             (
                 f"en-{index}",
@@ -591,6 +592,16 @@ def _adopt_decision() -> Any:
 def _gate_payload(baseline: float, current: float, n: int) -> dict[str, Any]:
     """One real GateResult serialized leaf."""
     return noise_gate([baseline] * n, [current] * n).to_dict()
+
+
+def _write_saved_run(path: Path, query: str = "alpha") -> str:
+    """Write one minimal saved run and return its query-set fingerprint."""
+    payload = {
+        "queries": [{"leg": "title", "language": "en", "split": "heldout", "query": query}]
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload))
+    return query_set_fingerprint(payload)
 
 
 def _artifact_corpus() -> dict[str, Any]:
@@ -725,6 +736,54 @@ class TestPreflight:
         assert artifact["arms"] == {}
         assert artifact["gates"] == {}
         assert artifact["corpus"]["adequacy"]["counts"]["zh"] == 0
+        state = json.loads((scratch / "run-state.json").read_text())
+        assert "verdict" not in state["stages"]
+        assert "artifact" not in state["stages"]
+
+    def test_inadequate_then_adequate_rerun_reaches_the_full_flow(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        stages: list[str] = []
+        _install_noop_run(monkeypatch, stages)
+        scratch = tmp_path / "scratch"
+        scratch.mkdir()
+        _write_documents_db(scratch / "qwen3.db", english=50, chinese=0)
+        monkeypatch.setattr(harrier_eval, "_cache_db_path", lambda: tmp_path / "cache.db")
+        monkeypatch.setattr(harrier_eval, "ARTIFACT_PATH", tmp_path / "artifact.json")
+        argv = ["--corpus", str(tmp_path / "corpus"), "--scratch-root", str(scratch)]
+
+        assert main(argv) == 3
+        first = json.loads((tmp_path / "artifact.json").read_text())
+        assert first["decision"] == "insufficient-evidence"
+        capsys.readouterr()
+
+        # Re-index the arm-A DB externally so the preflight becomes adequate.
+        _write_documents_db(scratch / "qwen3.db", english=25, chinese=25)
+        verdicts: list[str] = []
+        monkeypatch.setattr(harrier_eval, "_run_embed_stage", lambda *a, **k: {})
+        monkeypatch.setattr(harrier_eval, "_run_arm_b_index_stage", lambda *a, **k: None)
+        monkeypatch.setattr(harrier_eval, "_run_pair_identity_stage", lambda *a, **k: None)
+        monkeypatch.setattr(
+            harrier_eval,
+            "_run_probe_stage",
+            lambda *a, **k: {"identity": {}, "device": "cpu"},
+        )
+        monkeypatch.setattr(harrier_eval, "_run_eval_stage", lambda *a, **k: {})
+
+        def _verdict(*_args: object, **kwargs: object) -> dict[str, Any]:
+            corpus_payload = kwargs["corpus_payload"]
+            assert isinstance(corpus_payload, dict)
+            verdicts.append(str(corpus_payload["fingerprint"]))
+            return {"decision": "keep-qwen3"}
+
+        monkeypatch.setattr(harrier_eval, "_run_verdict_stage", _verdict)
+
+        assert main(argv) == 0
+        assert verdicts
+        capsys.readouterr()
 
     def test_changed_corpus_scope_rebuilds_the_baseline_arm(
         self,
@@ -764,6 +823,131 @@ class TestPreflight:
         assert second == 0
         assert stages.count("index_update") == 2
         assert stages.count("collection_add_1") == 2
+
+
+class TestVerdictStage:
+    """A recorded artifact is reused only while its inputs still agree."""
+
+    def _state(self, *, qfp: str, cfp: str, artifact_path: Path) -> dict[str, Any]:
+        return {
+            "version": 1,
+            "scope_key": "scope",
+            "scope": {},
+            "stages": {
+                "verdict": {"status": "complete", "detail": {}},
+                "artifact": {
+                    "status": "complete",
+                    "detail": {
+                        "path": str(artifact_path),
+                        "query_set_fingerprint": qfp,
+                        "corpus_fingerprint": cfp,
+                    },
+                },
+            },
+        }
+
+    def test_returns_the_recorded_artifact_when_inputs_agree(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        artifact_path = tmp_path / "artifact.json"
+        monkeypatch.setattr(harrier_eval, "ARTIFACT_PATH", artifact_path)
+        saved_a = tmp_path / "qwen3.json"
+        saved_b = tmp_path / "harrier.json"
+        qfp = _write_saved_run(saved_a)
+        _write_saved_run(saved_b)
+        recorded = {
+            "decision": "keep-qwen3",
+            "query_set_fingerprint": qfp,
+            "corpus": {"fingerprint": "abc"},
+        }
+        artifact_path.write_text(json.dumps(recorded))
+        state = self._state(qfp=qfp, cfp="abc", artifact_path=artifact_path)
+
+        result = harrier_eval._run_verdict_stage(
+            state,
+            tmp_path / "run-state.json",
+            comparison_path=tmp_path / "missing-comparison.json",
+            qwen3_saved_run=saved_a,
+            harrier_saved_run=saved_b,
+            arms_payload={},
+            corpus_payload={"fingerprint": "abc"},
+            device="cpu",
+        )
+
+        assert result == recorded
+
+    def test_missing_inputs_are_not_shadowed_by_a_stale_marker(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        artifact_path = tmp_path / "artifact.json"
+        monkeypatch.setattr(harrier_eval, "ARTIFACT_PATH", artifact_path)
+        artifact_path.write_text(
+            json.dumps(
+                {
+                    "decision": "insufficient-evidence",
+                    "query_set_fingerprint": None,
+                    "corpus": {"fingerprint": "old"},
+                }
+            )
+        )
+        state = self._state(qfp="", cfp="old", artifact_path=artifact_path)
+
+        with pytest.raises(OSError):
+            harrier_eval._run_verdict_stage(
+                state,
+                tmp_path / "run-state.json",
+                comparison_path=tmp_path / "missing-comparison.json",
+                qwen3_saved_run=tmp_path / "missing-a.json",
+                harrier_saved_run=tmp_path / "missing-b.json",
+                arms_payload={},
+                corpus_payload={"fingerprint": "new"},
+                device="cpu",
+            )
+
+        assert "artifact" not in state["stages"]
+        assert "verdict" not in state["stages"]
+
+    def test_changed_query_set_is_not_shadowed_by_a_stale_marker(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        artifact_path = tmp_path / "artifact.json"
+        monkeypatch.setattr(harrier_eval, "ARTIFACT_PATH", artifact_path)
+        saved_a = tmp_path / "qwen3.json"
+        saved_b = tmp_path / "harrier.json"
+        _write_saved_run(saved_a, query="beta")
+        _write_saved_run(saved_b, query="beta")
+        recorded = {
+            "decision": "keep-qwen3",
+            "query_set_fingerprint": "oldfingerprint",
+            "corpus": {"fingerprint": "abc"},
+        }
+        artifact_path.write_text(json.dumps(recorded))
+        state = self._state(
+            qfp="oldfingerprint",
+            cfp="abc",
+            artifact_path=artifact_path,
+        )
+
+        with pytest.raises(OSError):
+            harrier_eval._run_verdict_stage(
+                state,
+                tmp_path / "run-state.json",
+                comparison_path=tmp_path / "missing-comparison.json",
+                qwen3_saved_run=saved_a,
+                harrier_saved_run=saved_b,
+                arms_payload={},
+                corpus_payload={"fingerprint": "abc"},
+                device="cpu",
+            )
+
+        assert "artifact" not in state["stages"]
+        assert "verdict" not in state["stages"]
 
 
 class TestDiskHeadroom:
