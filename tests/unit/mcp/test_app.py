@@ -130,7 +130,13 @@ def test_http_health_and_mcp_mount_serve_without_a_redirect(tmp_path: Path) -> N
             headers={"mcp-session-id": session_id},
         )
         assert tools.status_code == 200
-        assert [tool["name"] for tool in tools.json()["result"]["tools"]] == ["status"]
+        assert [tool["name"] for tool in tools.json()["result"]["tools"]] == [
+            "query",
+            "get",
+            "multi_get",
+            "status",
+            "metadata",
+        ]
 
         called = client.post(
             "/mcp",
@@ -231,7 +237,8 @@ def test_status_output_schema_is_published_from_the_output_model(tmp_path: Path)
             json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
             headers={"mcp-session-id": session_id},
         )
-        status_tool = tools.json()["result"]["tools"][0]
+        tools = tools.json()["result"]["tools"]
+        status_tool = next(tool for tool in tools if tool["name"] == "status")
 
     assert status_tool["name"] == "status"
     assert status_tool["outputSchema"]["type"] == "object"

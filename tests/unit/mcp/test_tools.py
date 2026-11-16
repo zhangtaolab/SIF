@@ -1,0 +1,524 @@
+"""Contract battery for the SIF MCP tool surface (Phase 22 D-06/D-07/D-08).
+
+The tests drive the real SDK ``MCPServer`` registration (never a hand-written
+schema): ``list_tools`` is the published contract and ``call_tool`` runs the
+same function a host invokes. A mocked backend isolates forwarding assertions;
+real tmp databases back the envelope, empty-index, and idempotency proofs.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+from mcp.server import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
+
+from sif.config.settings import Settings
+from sif.core.models import Collection, Document as CoreDocument
+from sif.database.connection import DatabaseConnection
+from sif.database.repositories import CollectionRepository, DocumentRepository
+from sif.mcp.backend import HybridSearchResults, SearchBackend
+from sif.mcp.protocol import CollectionInfo, Document, SearchResult
+from sif.mcp.tools import TOOL_DESCRIPTIONS, register_tools
+
+
+_FILTER_PAYLOAD = {"field": "status", "operator": "eq", "value": "active"}
+_BAD_FILTER_PAYLOAD = {"field": "tags", "operator": "gt", "value": "x"}
+
+_METADATA_ENVELOPE = {
+    "documents": 2,
+    "totalKeys": 1,
+    "remainingKeys": 0,
+    "skippedKeys": 0,
+    "builtIns": [
+        {
+            "key": "path",
+            "documents": 2,
+            "types": [
+                {
+                    "type": "string",
+                    "multiValued": False,
+                    "documents": 2,
+                    "distinctValues": 2,
+                    "values": [],
+                    "remainingValues": 2,
+                }
+            ],
+        },
+        {
+            "key": "mtime",
+            "documents": 2,
+            "types": [
+                {
+                    "type": "number",
+                    "multiValued": False,
+                    "documents": 2,
+                    "distinctValues": 2,
+                    "values": [],
+                    "remainingValues": 2,
+                    "range": {"min": 100.0, "median": 150.0, "max": 200.0},
+                }
+            ],
+        },
+    ],
+    "keys": [
+        {
+            "key": "tag",
+            "documents": 2,
+            "types": [
+                {
+                    "type": "string",
+                    "multiValued": False,
+                    "documents": 2,
+                    "distinctValues": 1,
+                    "values": [{"value": "x", "documents": 2}],
+                    "remainingValues": 0,
+                }
+            ],
+        }
+    ],
+}
+
+
+def _settings(**overrides: object) -> Settings:
+    """Hermetic settings: small dimension, no cache side effects."""
+    values: dict[str, object] = {
+        "embedding_dim": 8,
+        "model_name": "test",
+        "cache_embeddings": False,
+    }
+    values.update(overrides)
+    return Settings(_env_file=None, **values)
+
+
+def _make_server(backend: SearchBackend | MagicMock) -> MCPServer:
+    """Register the SIF tools on a bare SDK server (no lifespan needed)."""
+    mcp = MCPServer("test-tools")
+    register_tools(mcp, backend)
+    return mcp
+
+
+def _mock_backend() -> MagicMock:
+    """Backend double whose async surface mirrors SearchBackend."""
+    backend = MagicMock()
+    backend.hybrid_search = AsyncMock(return_value=[])
+    backend.lex_search = AsyncMock(return_value=[])
+    backend.vec_search = AsyncMock(return_value=[])
+    backend.get_document = AsyncMock(return_value=None)
+    backend.get_documents_by_pattern = AsyncMock(return_value=([], []))
+    backend.get_status = AsyncMock(return_value=([], 0))
+    backend.metadata = AsyncMock(return_value=dict(_METADATA_ENVELOPE))
+    return backend
+
+
+def _seed_documents(
+    db_path: Path,
+    documents: list[tuple[str, str, dict[str, object]]],
+) -> None:
+    """Seed one collection and repository-created documents on the real DDL.
+
+    ``documents`` entries are ``(doc_id, content, metadata)``. The repository
+    path keeps the typed metadata store and FTS index synchronized exactly the
+    way production does.
+    """
+    with DatabaseConnection(db_path).transaction() as conn:
+        CollectionRepository(conn).create(Collection(id="c1", name="notes", path="/notes"))
+        repo = DocumentRepository(conn)
+        for position, (doc_id, content, metadata) in enumerate(documents):
+            repo.create(
+                CoreDocument(
+                    id=doc_id,
+                    collection_id="c1",
+                    path=f"/notes/{doc_id}.md",
+                    title=doc_id,
+                    content=content,
+                    mtime=100.0 * (position + 1),
+                    metadata=metadata,
+                )
+            )
+
+
+def _seed_metadata_rows(db_path: Path) -> None:
+    """The Phase 20 handler fixture: three documents, two tag values."""
+    _seed_documents(
+        db_path,
+        [
+            ("d0", "body", {"tag": "rare", "priority": 1}),
+            ("d1", "body", {"tag": "common", "priority": 2}),
+            ("d2", "body", {"tag": "common"}),
+        ],
+    )
+
+
+def _seed_envelope_rows(db_path: Path) -> None:
+    """Two documents carrying the one ``tag=x`` value the envelope oracle pins."""
+    _seed_documents(
+        db_path,
+        [
+            ("e0", "body", {"tag": "x"}),
+            ("e1", "body", {"tag": "x"}),
+        ],
+    )
+
+
+@pytest.fixture
+def backend(tmp_path: Path) -> SearchBackend:
+    """A real, model-free SearchBackend on a fresh production-schema DB."""
+    return SearchBackend(str(tmp_path / "tools.db"), settings=_settings())
+
+
+# =============================================================================
+# Task 1: the five read-capable tools (D-06/D-07/D-08)
+# =============================================================================
+
+
+class TestReviewedDescriptions:
+    """D-07: descriptions match backend behavior, never auto-approval."""
+
+    def test_query_description_marks_rerank_as_opt_in(self) -> None:
+        text = TOOL_DESCRIPTIONS["query"]
+        assert "Reranking is opt-in" in text
+        assert "SIF_RERANK_ENABLED" in text
+        assert "and reranking" not in text
+
+    @pytest.mark.parametrize("tool_name", ["query", "get", "multi_get", "status", "metadata"])
+    def test_descriptions_never_overclaim(self, tool_name: str) -> None:
+        text = TOOL_DESCRIPTIONS[tool_name].lower()
+        for banned in ("auto-approve", "auto approve", "prompt-free", "no permission"):
+            assert banned not in text
+
+    def test_metadata_description_keeps_the_reviewed_phase_20_wording(self) -> None:
+        assert TOOL_DESCRIPTIONS["metadata"] == (
+            "Report filterable metadata keys, value types, document counts, numeric "
+            "min/median/max ranges, and exact remaining window counts. Accepts the "
+            "same filter grammar as query; path and mtime are reported as built-ins."
+        )
+
+
+class TestQueryTool:
+    """The query tool forwards its preserved input and keeps both channels."""
+
+    @pytest.mark.asyncio
+    async def test_text_parses_to_structured_content(self) -> None:
+        backend = _mock_backend()
+        backend.hybrid_search.return_value = [
+            SearchResult(doc_id="d1", path="/a.md", score=0.9, highlights=["hi"]),
+        ]
+
+        result = await _make_server(backend).call_tool("query", {"query": "hello"})
+
+        assert result.is_error is False
+        payload = json.loads(result.content[0].text)
+        assert payload == result.structured_content
+        assert payload["results"][0]["doc_id"] == "d1"
+
+    @pytest.mark.asyncio
+    async def test_forwards_weight_overrides(self) -> None:
+        backend = _mock_backend()
+
+        await _make_server(backend).call_tool(
+            "query",
+            {"query": "q", "rrf_k": 5, "bm25_weight": 3.0, "vector_weight": 0.5},
+        )
+
+        kwargs = backend.hybrid_search.call_args.kwargs
+        assert kwargs["rrf_k"] == 5
+        assert kwargs["bm25_weight"] == 3.0
+        assert kwargs["vector_weight"] == 0.5
+
+    @pytest.mark.asyncio
+    async def test_forwards_offset_per_chunk_and_min_score(self) -> None:
+        backend = _mock_backend()
+
+        await _make_server(backend).call_tool(
+            "query",
+            {"query": "q", "offset": 7, "per_chunk": True, "min_score": 0.2},
+        )
+
+        kwargs = backend.hybrid_search.call_args.kwargs
+        assert kwargs["offset"] == 7
+        assert kwargs["per_chunk"] is True
+        assert kwargs["min_score"] == 0.2
+
+    @pytest.mark.asyncio
+    async def test_forwards_the_parsed_filter_ast(self) -> None:
+        from sif.core.filters import parse_filter
+
+        backend = _mock_backend()
+
+        result = await _make_server(backend).call_tool(
+            "query", {"query": "q", "filter": _FILTER_PAYLOAD}
+        )
+
+        assert result.is_error is False
+        kwargs = backend.hybrid_search.call_args.kwargs
+        assert kwargs["filter_node"] == parse_filter(_FILTER_PAYLOAD)
+
+    @pytest.mark.asyncio
+    async def test_absent_filter_forwards_none(self) -> None:
+        backend = _mock_backend()
+
+        await _make_server(backend).call_tool("query", {"query": "q"})
+
+        assert backend.hybrid_search.call_args.kwargs["filter_node"] is None
+
+    @pytest.mark.asyncio
+    async def test_invalid_filter_is_a_tool_error(self) -> None:
+        """D-08/D-17: a controlled ToolError, never a protocol error."""
+        backend = _mock_backend()
+
+        with pytest.raises(ToolError) as excinfo:
+            await _make_server(backend).call_tool(
+                "query", {"query": "q", "filter": _BAD_FILTER_PAYLOAD}
+            )
+
+        # The SDK prefixes the tool name; the shared parser's remedy is intact.
+        text = str(excinfo.value)
+        assert "filter.gt:" in text
+        assert '"gt" requires a numeric value' in text
+        backend.hybrid_search.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_suggestions_are_remapped_into_the_output(self) -> None:
+        backend = _mock_backend()
+        backend.hybrid_search.return_value = HybridSearchResults([], ["quantum machin"])
+
+        result = await _make_server(backend).call_tool("query", {"query": "quantm machin"})
+
+        payload = json.loads(result.content[0].text)
+        assert payload["results"] == []
+        assert payload["suggestions"] == ["quantum machin"]
+        assert payload == result.structured_content
+
+
+class TestGetAndMultiGetTools:
+    """get/multi_get forward their preserved inputs and map not-found to ToolError."""
+
+    @pytest.mark.asyncio
+    async def test_get_serializes_document_and_forwards_line_arguments(self) -> None:
+        backend = _mock_backend()
+        backend.get_document.return_value = Document(
+            doc_id="doc-1",
+            path="notes/知识.md",
+            content="你好\nsecond line",
+            line_start=2,
+            line_end=3,
+        )
+
+        result = await _make_server(backend).call_tool(
+            "get", {"path_or_docid": "doc-1", "from_line": 2, "max_lines": 4}
+        )
+
+        payload = json.loads(result.content[0].text)
+        assert payload == result.structured_content
+        assert payload["document"]["path"] == "notes/知识.md"
+        assert payload["document"]["line_start"] == 2
+        backend.get_document.assert_awaited_once_with("doc-1", 2, 4)
+
+    @pytest.mark.asyncio
+    async def test_get_missing_document_is_a_tool_error(self) -> None:
+        backend = _mock_backend()
+        backend.get_document.return_value = None
+
+        with pytest.raises(ToolError, match="Document not found"):
+            await _make_server(backend).call_tool("get", {"path_or_docid": "missing"})
+
+    @pytest.mark.asyncio
+    async def test_multi_get_serializes_documents_and_errors(self) -> None:
+        backend = _mock_backend()
+        backend.get_documents_by_pattern.return_value = (
+            [Document(doc_id="doc-1", path="a.md", content="alpha")],
+            ["b.md: unreadable"],
+        )
+
+        result = await _make_server(backend).call_tool(
+            "multi_get", {"pattern": "*.md", "max_bytes": 1024}
+        )
+
+        payload = json.loads(result.content[0].text)
+        assert payload == result.structured_content
+        assert payload["documents"][0]["doc_id"] == "doc-1"
+        assert payload["errors"] == ["b.md: unreadable"]
+        backend.get_documents_by_pattern.assert_awaited_once_with("*.md", 1024)
+
+
+class TestStatusTool:
+    """status keeps the existing output model and dual-channel contract."""
+
+    @pytest.mark.asyncio
+    async def test_serializes_collection_totals(self) -> None:
+        backend = _mock_backend()
+        backend.get_status.return_value = (
+            [CollectionInfo(name="notes", document_count=3, last_updated="today")],
+            3,
+        )
+
+        result = await _make_server(backend).call_tool("status", {})
+
+        payload = json.loads(result.content[0].text)
+        assert payload == {
+            "collections": [
+                {
+                    "name": "notes",
+                    "document_count": 3,
+                    "last_updated": "today",
+                    "size_bytes": None,
+                }
+            ],
+            "total_documents": 3,
+        }
+        assert payload == result.structured_content
+
+
+class TestMetadataTool:
+    """The metadata tool surfaces the frozen Phase 20 envelope unchanged."""
+
+    @pytest.mark.asyncio
+    async def test_text_and_structured_content_exclude_none(self) -> None:
+        backend = _mock_backend()
+
+        result = await _make_server(backend).call_tool("metadata", {})
+
+        payload = json.loads(result.content[0].text)
+        assert payload == result.structured_content
+        assert payload == _METADATA_ENVELOPE
+        assert "filteredDocuments" not in payload
+
+    @pytest.mark.asyncio
+    async def test_unknown_collection_is_a_tool_error(self) -> None:
+        backend = _mock_backend()
+        backend.metadata.side_effect = ValueError("One or more collections were not found")
+
+        with pytest.raises(ToolError, match="were not found"):
+            await _make_server(backend).call_tool("metadata", {"collections": ["missing"]})
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {"filter": {"field": "tags", "operator": "gt", "value": "x"}},
+            {"match": {"field": "nope", "operator": "eq", "value": "x"}},
+            {"filter": {"field": "tag", "operator": "nope", "value": "x"}},
+            # WR-01: an out-of-double-range integer must stay a controlled error.
+            {"filter": {"field": "priority", "operator": "gt", "value": 10**400}},
+        ],
+    )
+    async def test_invalid_filter_or_match_is_a_tool_error(self, payload: dict) -> None:
+        backend = _mock_backend()
+
+        with pytest.raises(ToolError) as excinfo:
+            await _make_server(backend).call_tool("metadata", payload)
+
+        assert "filter" in str(excinfo.value)
+        backend.metadata.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("payload", "operator", "field"),
+        [
+            ({"field": "path", "operator": "lt", "value": 5}, "lt", "path"),
+            ({"field": "path", "operator": "eq", "value": 5}, "eq", "path"),
+            ({"field": "path", "operator": "all", "value": ["a"]}, "all", "path"),
+            (
+                {"field": "path", "operator": "type", "value": "string", "caseInsensitive": True},
+                "type",
+                "path",
+            ),
+            ({"field": "mtime", "operator": "prefix", "value": "x"}, "prefix", "mtime"),
+            ({"field": "mtime", "operator": "all", "value": [1]}, "all", "mtime"),
+            ({"field": "mtime", "operator": "contains", "value": "x"}, "contains", "mtime"),
+            (
+                {"field": "mtime", "operator": "eq", "value": 1, "caseInsensitive": True},
+                "eq",
+                "mtime",
+            ),
+        ],
+    )
+    async def test_reserved_field_mistakes_are_tool_errors(
+        self, payload: dict, operator: str, field: str
+    ) -> None:
+        """WR-02: the same rejected forms are controlled ToolErrors over MCP."""
+        backend = _mock_backend()
+
+        with pytest.raises(ToolError) as excinfo:
+            await _make_server(backend).call_tool("metadata", {"filter": payload})
+
+        text = str(excinfo.value)
+        assert f"filter.{operator}:" in text
+        assert field in text
+
+    @pytest.mark.asyncio
+    async def test_valid_call_returns_envelope_with_exact_remainders(self, backend) -> None:
+        """Windows, remainders, and the built-in section travel in one payload."""
+        _seed_metadata_rows(Path(backend.db_path))
+
+        result = await _make_server(backend).call_tool("metadata", {"limit": 1, "value_limit": 1})
+
+        payload = json.loads(result.content[0].text)
+        assert payload == result.structured_content
+        assert payload["documents"] == 3
+        assert "filteredDocuments" not in payload
+        assert payload["totalKeys"] == 2
+        assert payload["remainingKeys"] == 1
+        assert [entry["key"] for entry in payload["builtIns"]] == ["path", "mtime"]
+        assert [entry["documents"] for entry in payload["builtIns"]] == [3, 3]
+        assert payload["builtIns"][1]["types"][0]["range"] == {
+            "min": 100.0,
+            "median": 200.0,
+            "max": 300.0,
+        }
+        assert [entry["key"] for entry in payload["keys"]] == ["tag"]
+        tag_type = payload["keys"][0]["types"][0]
+        assert len(tag_type["values"]) == 1
+        assert tag_type["distinctValues"] == 2
+        assert tag_type["remainingValues"] == 1
+
+    @pytest.mark.asyncio
+    async def test_filtered_call_includes_filtered_documents(self, backend) -> None:
+        """A filter adds ``filteredDocuments`` and narrows the built-in counts."""
+        _seed_metadata_rows(Path(backend.db_path))
+
+        result = await _make_server(backend).call_tool(
+            "metadata", {"filter": {"field": "tag", "operator": "eq", "value": "common"}}
+        )
+
+        payload = json.loads(result.content[0].text)
+        assert payload["documents"] == 3
+        assert payload["filteredDocuments"] == 2
+        assert [entry["documents"] for entry in payload["builtIns"]] == [2, 2]
+
+    @pytest.mark.asyncio
+    async def test_match_only_call_omits_filtered_documents(self, backend) -> None:
+        """A match-only call must pass ``None`` (never the empty fragment) as the filter."""
+        _seed_metadata_rows(Path(backend.db_path))
+
+        result = await _make_server(backend).call_tool(
+            "metadata", {"match": {"field": "key", "operator": "prefix", "value": "ta"}}
+        )
+
+        payload = json.loads(result.content[0].text)
+        assert "filteredDocuments" not in payload
+        assert [entry["key"] for entry in payload["keys"]] == ["tag"]
+        assert payload["documents"] == 3
+
+    @pytest.mark.asyncio
+    async def test_envelope_oracle_matches_both_channels(self, backend) -> None:
+        """The Phase 20 oracle: the frozen envelope deep-equals both channels."""
+        _seed_envelope_rows(Path(backend.db_path))
+
+        result = await _make_server(backend).call_tool("metadata", {})
+
+        assert result.structured_content == _METADATA_ENVELOPE
+        assert json.loads(result.content[0].text) == _METADATA_ENVELOPE
+        # No wrapper key, no null keys: the envelope is exactly the frozen set.
+        assert set(result.structured_content) == {
+            "documents",
+            "totalKeys",
+            "remainingKeys",
+            "skippedKeys",
+            "builtIns",
+            "keys",
+        }

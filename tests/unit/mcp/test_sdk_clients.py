@@ -55,7 +55,13 @@ def _assert_status_result(result: CallToolResult) -> None:
 async def _assert_client_matrix(client: Client) -> None:
     """List tools and call status through one connected client."""
     tools = await client.list_tools()
-    assert [tool.name for tool in tools.tools] == ["status"]
+    assert [tool.name for tool in tools.tools] == [
+        "query",
+        "get",
+        "multi_get",
+        "status",
+        "metadata",
+    ]
 
     result = await client.call_tool("status", {})
     _assert_status_result(result)
