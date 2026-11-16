@@ -44,3 +44,6 @@ htmlcov/
 Thumbs.db
 /models/
 .claude/
+
+# GSD phase scratch (arm DBs, saved runs, run state)
+.planning/tmp/
