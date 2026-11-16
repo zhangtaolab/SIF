@@ -612,9 +612,13 @@ class SearchBackend:
         reranking.
 
         A missing embedder raises ``RuntimeError`` naming the install/model
-        remedy; the tool boundary maps it to a ``ToolError`` (D-15).
+        remedy; the tool boundary maps it to a ``ToolError`` (D-15). The lazy
+        load runs off the event-loop thread (``asyncio.to_thread``): a cold
+        first ``vec_search`` may download a model for minutes, and the SDK
+        executes async tool functions on the loop (CR-02), so loading there
+        would freeze every session and ``/health``.
         """
-        manager = self._ensure_embedder()
+        manager = await asyncio.to_thread(self._ensure_embedder)
         if manager is None:
             raise RuntimeError(VECTOR_SEARCH_REMEDY)
 

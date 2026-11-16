@@ -8,6 +8,7 @@ BM25 before any load decision (prefix stripped).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import threading
 import time
@@ -23,6 +24,7 @@ from sif.database.database import Database
 from sif.embedding.identity import EmbedderIdentity
 from sif.mcp import backend as backend_module
 from sif.mcp.backend import SearchBackend
+from sif.mcp.protocol import CollectionInfo
 
 
 def _settings(**overrides: object) -> Settings:
@@ -272,6 +274,48 @@ class TestOneAttempt:
 
         assert from_settings.call_count == 1
         assert manager.load_calls == 1
+
+
+class TestVecSearchEventLoop:
+    """CR-02: a cold vec_search load must not freeze the event loop."""
+
+    @pytest.mark.asyncio
+    async def test_cold_vec_search_load_does_not_block_concurrent_requests(
+        self, tmp_path: Path
+    ) -> None:
+        """The load runs in a worker thread; a concurrent request completes.
+
+        The load hook waits (off the loop) for ``get_status`` to finish. If
+        the load ran on the event-loop thread, the status coroutine could not
+        start and the hook would observe the timeout instead.
+        """
+        db_path, settings = _seed_db(tmp_path)
+        backend = SearchBackend(str(db_path), settings=settings)
+        status_completed = threading.Event()
+        load_saw_status_done: list[bool] = []
+
+        def _slow_load() -> None:
+            load_saw_status_done.append(status_completed.wait(timeout=2.0))
+
+        manager = _StubManager(load_hook=_slow_load)
+
+        async def _status() -> tuple[list[CollectionInfo], int]:
+            result = await backend.get_status()
+            status_completed.set()
+            return result
+
+        with (
+            patch("sif.mcp.backend.EmbeddingManager.from_settings", return_value=manager),
+            patch("sif.mcp.backend.VectorSearcher") as vec_cls,
+        ):
+            vec_cls.return_value.search.return_value = []
+            _vec_results, (status_collections, total) = await asyncio.gather(
+                backend.vec_search("quantum"), _status()
+            )
+
+        assert load_saw_status_done == [True]
+        assert total == 1
+        assert [info.name for info in status_collections] == ["notes"]
 
 
 class TestHonestFailure:
