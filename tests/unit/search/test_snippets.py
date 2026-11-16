@@ -157,3 +157,84 @@ class TestMarkdownLineAwareExtraction:
         assert snippet.endswith("...")
         assert len(snippet) <= 66  # window + both ellipses
         assert snippet.count("H") <= 30  # line head is cut away
+
+
+class TestExtractWithRange:
+    """D-11: every snippet path reports its inclusive 1-based line window."""
+
+    def test_multiline_window_range_brackets_the_center_line(self):
+        """The rendered window's range contains the matched line."""
+        extractor = SmartSnippetExtractor(max_length=120)
+        text = (
+            "# Changelog\n"
+            "\n"
+            "## Configuration Options\n"
+            "\n"
+            "| Option | Description |\n"
+            "|--------|-------------|\n"
+            "| SIF_CHUNK_OVERLAP | Tokens of overlap between chunks |\n"
+            "| SIF_DB_PATH | Database location |\n"
+            "\n"
+            "Some trailing prose about defaults.\n"
+        )
+        snippet, line_start, line_end = extractor.extract_with_range(
+            text, ["chunk", "overlap", "tokens"]
+        )
+        lines = text.split("\n")
+        center_line = next(idx for idx, line in enumerate(lines) if "SIF_CHUNK_OVERLAP" in line)
+        assert line_start <= center_line + 1 <= line_end
+        # The reported range is exactly the newline-joined window the snippet
+        # rendered (ellipses are edge markers, not content).
+        rendered = snippet.removeprefix("...").removesuffix("...")
+        assert "\n".join(lines[line_start - 1 : line_end]) == rendered
+        assert extractor.extract(text, ["chunk", "overlap", "tokens"]) == snippet
+
+    def test_long_line_cut_reports_that_single_line(self):
+        """A max_length cut inside one line reports that line only."""
+        extractor = SmartSnippetExtractor(max_length=60)
+        text = "short line\n" + "H " * 100 + "needle" + " T" * 100
+
+        snippet, line_start, line_end = extractor.extract_with_range(text, ["needle"])
+
+        assert "needle" in snippet
+        assert (line_start, line_end) == (2, 2)
+
+    def test_fallback_range_spans_first_renderable_line_through_last(self):
+        """No-match fallback reports the lines it actually rendered."""
+        extractor = SmartSnippetExtractor()
+        text = "\n```python\nx = 1\n```\n\nReal content starts here."
+
+        snippet, line_start, line_end = extractor.extract_with_range(text, ["zzzz"])
+
+        assert snippet.startswith("x = 1")
+        assert (line_start, line_end) == (3, 6)
+
+    def test_fallback_truncation_reports_the_truncated_line(self):
+        """A truncated fallback ends at the line containing max_length."""
+        extractor = SmartSnippetExtractor(max_length=10)
+        text = "0123456789\nsecond line\nthird line"
+
+        snippet, line_start, line_end = extractor.extract_with_range(text, ["zzzz"])
+
+        assert snippet == "0123456789..."
+        assert (line_start, line_end) == (1, 1)
+
+    def test_empty_text_reports_a_degenerate_range(self):
+        """Empty text yields an empty snippet and the (1, 1) sentinel."""
+        extractor = SmartSnippetExtractor()
+
+        assert extractor.extract_with_range("", ["anything"]) == ("", 1, 1)
+        assert extractor.extract_with_range("\n\n```", ["zzzz"]) == ("", 1, 1)
+
+    def test_extract_bytes_are_unchanged_across_paths(self):
+        """``extract`` is a thin wrapper over element 0 for every path."""
+        extractor = SmartSnippetExtractor(max_length=60)
+        fixtures = [
+            ("", ["term"]),
+            ("alpha beta gamma", ["missing"]),
+            ("alpha beta\ngamma delta\nepsilon zeta", ["gamma"]),
+            ("H " * 100 + "needle" + " T" * 100, ["needle"]),
+            ("no terms needed here", []),
+        ]
+        for text, terms in fixtures:
+            assert extractor.extract(text, terms) == extractor.extract_with_range(text, terms)[0]

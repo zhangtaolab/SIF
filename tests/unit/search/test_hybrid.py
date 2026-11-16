@@ -675,8 +675,54 @@ class TestPipelineSnippetRoutes:
 
         results = pipeline.search("lex: decorators")
 
+        extractor.extract_with_range.assert_not_called()
         extractor.extract.assert_not_called()
         assert results[0].snippet == "preexisting snippet"
+
+    def test_apply_snippets_fills_snippet_and_line_fields_together(
+        self, mock_db: MagicMock
+    ) -> None:
+        """D-11: one pass assigns the snippet bytes and its line window.
+
+        Ordering and scores are untouched, and the assigned snippet is
+        byte-identical to the extractor's own output.
+        """
+        extractor = SmartSnippetExtractor()
+        pipeline = SearchPipeline(mock_db, snippet_extractor=extractor)
+        self._stub_content_feed(pipeline)
+        pipeline.hybrid.bm25 = create_autospec(BM25Searcher, instance=True)
+        first = self._result()
+        second = SearchResult(
+            document_id="doc-2",
+            path="/other.md",
+            title="Other",
+            collection_name="default",
+            score=0.5,
+        )
+        pipeline.hybrid.bm25.search.return_value = [first, second]
+
+        results = pipeline.search("lex: decorators")
+        expected = extractor.extract(self.CONTENT, ["decorators"])
+
+        for result in results:
+            assert result.snippet == expected
+            assert result.line_start == 1
+            assert result.line_end == 1
+        assert [r.document_id for r in results] == ["doc-1", "doc-2"]
+        assert [r.score for r in results] == [0.9, 0.5]
+
+    def test_empty_snippet_leaves_line_fields_unset(self, mock_db: MagicMock) -> None:
+        """An empty snippet keeps CLI bytes but never claims a line window."""
+        pipeline = SearchPipeline(mock_db, snippet_extractor=SmartSnippetExtractor())
+        pipeline.hybrid._get_document_content = MagicMock(return_value="\n\n```")
+        pipeline.hybrid.bm25 = create_autospec(BM25Searcher, instance=True)
+        pipeline.hybrid.bm25.search.return_value = [self._result()]
+
+        results = pipeline.search("lex: decorators")
+
+        assert results[0].snippet == ""
+        assert results[0].line_start is None
+        assert results[0].line_end is None
 
     def test_no_extractor_leaves_routes_unchanged(self, mock_db: MagicMock) -> None:
         """Without an extractor the snippet stage is a no-op on prefix routes."""

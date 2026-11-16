@@ -504,7 +504,18 @@ class SearchPipeline:
             if not text:
                 text = self.hybrid._get_document_content(result.document_id)  # noqa: SLF001
             if text:
-                result.snippet = self.snippet_extractor.extract(text, query_terms)
+                # D-11: one extractor pass yields the snippet bytes and the
+                # inclusive 1-based document line window it rendered, so the
+                # MCP citation fields cost no second content scan. The empty
+                # snippet still lands on the result (CLI bytes unchanged),
+                # while the line fields stay unset for it.
+                snippet, line_start, line_end = self.snippet_extractor.extract_with_range(
+                    text, query_terms
+                )
+                result.snippet = snippet
+                if snippet:
+                    result.line_start = line_start
+                    result.line_end = line_end
         return results
 
     def _default_search_type_enum(self) -> SearchType:

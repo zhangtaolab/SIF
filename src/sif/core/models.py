@@ -317,6 +317,11 @@ class SearchResult:
     chunk_id: str | None = None
     sequence: int | None = None
     chunk_matches: int = 0
+    # Citation line window (Phase 22 D-11): MCP-only fields assigned by the
+    # snippet stage and consumed by the MCP boundary. Deliberately NOT in
+    # to_dict() — CLI JSON output stays byte-identical.
+    line_start: int | None = None
+    line_end: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
