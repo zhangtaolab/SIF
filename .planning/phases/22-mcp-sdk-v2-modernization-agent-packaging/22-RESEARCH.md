@@ -617,29 +617,31 @@ def stop_daemon(pid_path, *, marker: str | None = None, ...): ...
 | A7 | Per-document resource MIME types are not expressible at the high-level API (probe returned JSON-encoded `TextResourceContents`) | D-09 | A low-level custom resource path could restore them at extra cost |
 | A8 | `mcp` 2.3.0 will be the resolved version after `uv lock` (pin allows later 2.x) | Standard stack | A later 2.x changes behavior; the pin is `<3` and golden tests catch drift |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> All seven recommendations below are adopted by the Phase 22 plans; each is marked RESOLVED with its disposition.
 
 1. **serverInfo name**: keep `sif-mcp-server` (current wire value) or use `sif` (plugin/marketplace identity)?
    - What we know: `MCPServer(name=...)` defaults to `"mcp-server"`; current SIF sends `"sif-mcp-server"` [VERIFIED: `protocol.py:115-117`].
-   - Recommendation: pass `"sif-mcp-server"` for wire continuity; the plugin name remains `sif`.
+   - RESOLVED: pass `"sif-mcp-server"` (exposed as `SERVER_NAME` in `app.py`) for wire continuity; the plugin name remains `sif`.
 
 2. **`/health` Host validation**: narrow parent-level guard vs documented deviation (D-14 says "subject to Host validation"; the SDK mount does not cover it).
-   - Recommendation: a tiny `/health` dependency sharing the allowlist, tested with a spoofed Host.
+   - RESOLVED: a tiny `/health` dependency sharing the allowlist, tested with a spoofed Host.
 
 3. **`lex_search`/`vec_search` `min_score` parity**: the declared inputs lack `min_score` while CLI `search`/`vsearch` have `--min-score`.
-   - Recommendation: add `min_score` (additive field) to both inputs for full parity; otherwise document the gap.
+   - RESOLVED: add `min_score` (additive field) to both inputs for full parity; otherwise document the gap.
 
 4. **Resource MIME type**: one template-level type for all documents.
-   - Recommendation: `text/markdown` (Markdown-first corpus) or `text/plain` (truthful for all); document the choice.
+   - RESOLVED: `text/markdown` (Markdown-first corpus) or `text/plain` (truthful for all); document the choice.
 
 5. **`--allowed-hosts` syntax**: repeatable vs comma-separated (D-13 leaves it to the planner).
-   - Recommendation: repeatable (`multiple=True`) like `--cors-origins`, for consistency.
+   - RESOLVED: repeatable (`multiple=True`) like `--cors-origins`, for consistency.
 
 6. **Daemon PID payload `depth`**: `read_pid_file` requires a string `depth`.
-   - Recommendation: write `depth="bm25"` (the serving depth concept) or `"http"`; document the choice.
+   - RESOLVED: write `depth="bm25"` (the serving depth concept) or `"http"`; document the choice.
 
 7. **structuredContent `exclude_none` policy outside metadata**: mirror each tool's text flags vs always schema-complete.
-   - Recommendation: text mirrors today exactly; structuredContent uses `exclude_none=True` only for `MetadataOutput` (frozen envelope), full nulls elsewhere.
+   - RESOLVED: text mirrors today exactly; structuredContent uses `exclude_none=True` only for `MetadataOutput` (frozen envelope), full nulls elsewhere.
 
 ## Environment Availability
 
