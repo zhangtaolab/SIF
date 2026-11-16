@@ -25,8 +25,24 @@ from sif.utils.paths import normalize_path
 def backend(tmp_path: Path):
     """Create a SearchBackend with mocked settings."""
     with patch("sif.mcp.backend.get_settings") as mock_settings:
-        mock_settings.return_value = MagicMock(embedding_dim=1024)
-        return SearchBackend(str(tmp_path / "test.db"))
+        mock_settings.return_value = MagicMock(embedding_dim=1024, rerank_enabled=False)
+        created = SearchBackend(str(tmp_path / "test.db"))
+    _seed_loaded_embedder(created, dimension=1024)
+    return created
+
+
+def _seed_loaded_embedder(backend: SearchBackend, dimension: int = 8) -> None:
+    """Seed the lazy path with a stub manager (never loads a real model).
+
+    D-15/D-17: ``hybrid_search`` now resolves a prefix and consults the lazy
+    loader before constructing a pipeline. Tests that patch ``SearchPipeline``
+    exercise the pipeline path, so they need a completed, model-free load.
+    """
+    manager = _FakeManager(dimension=dimension)
+    backend._manager = manager
+    backend._embedder = manager.model
+    backend._dimension = dimension
+    backend._load_attempted = True
 
 
 @pytest.mark.asyncio
@@ -396,9 +412,12 @@ def _settings_backend(db_path: Path) -> SearchBackend:
         rrf_k=7,
         bm25_weight=2.0,
         vector_weight=0.5,
+        rerank_enabled=False,
     )
     with patch("sif.mcp.backend.get_settings", return_value=settings):
-        return SearchBackend(str(db_path))
+        created = SearchBackend(str(db_path))
+    _seed_loaded_embedder(created, dimension=1024)
+    return created
 
 
 class TestHybridSearchWeightOverrides:
@@ -584,8 +603,10 @@ def _seed_suggestion_db(tmp_path: Path) -> tuple[Path, Settings]:
 
 
 def _suggestion_backend(db_path: Path, settings: Settings) -> SearchBackend:
-    """Construction is model-free (D-15); the pipeline is mocked per test."""
-    return SearchBackend(str(db_path), settings=settings)
+    """Construction is model-free (D-15); seed the lazy path for pipeline tests."""
+    backend = SearchBackend(str(db_path), settings=settings)
+    _seed_loaded_embedder(backend, dimension=settings.embedding_dim)
+    return backend
 
 
 def _query_log_count(db_path: Path) -> int:
@@ -1471,17 +1492,39 @@ class TestHybridSearchIdentity:
     """EMB-01: MCP warns/marks a swap and degrades a width mismatch to BM25."""
 
     @pytest.mark.asyncio
-    async def test_no_identity_passes_no_closure(self, tmp_path: Path) -> None:
-        """A failed embedder load invents no identity and keeps BM25 degradation."""
+    async def test_no_identity_passes_no_closure(self, tmp_path: Path, caplog) -> None:
+        """A failed embedder load invents no identity: BM25 degrade, one warning."""
         db_path, settings = _seed_suggestion_db(tmp_path)
         backend = _suggestion_backend(db_path, settings)
+        # Undo the seeded success so the lazy loader itself attempts (and
+        # fails) exactly once, producing the one warning.
+        backend._manager = None
+        backend._embedder = None
+        backend._identity = None
+        backend._load_attempted = False
+        backend._load_failed = False
         assert backend._identity is None
 
-        with patch("sif.mcp.backend.SearchPipeline") as mock_pipeline:
-            mock_pipeline.return_value.search.return_value = []
-            await backend.hybrid_search("quantum")
+        with (
+            patch(
+                "sif.mcp.backend.EmbeddingManager.from_settings",
+                side_effect=RuntimeError("missing backend"),
+            ),
+            patch("sif.mcp.backend.SearchPipeline") as mock_pipeline,
+            caplog.at_level(logging.WARNING, logger=backend_module.logger.name),
+        ):
+            results = await backend.hybrid_search("quantum")
 
-        assert mock_pipeline.call_args.kwargs["identity_check"] is None
+        # D-15: the lazy-none path never constructs a pipeline and returns
+        # the BM25 rows instead.
+        mock_pipeline.assert_not_called()
+        assert {result.doc_id for result in results} == {"d1", "d2"}
+        load_warnings = [
+            record
+            for record in caplog.records
+            if "Embedding model unavailable" in record.getMessage()
+        ]
+        assert len(load_warnings) == 1
 
     @pytest.mark.asyncio
     async def test_same_dimension_mismatch_marks_results_and_warns_once(
@@ -1496,6 +1539,7 @@ class TestHybridSearchIdentity:
         backend = _suggestion_backend(db_path, settings)
         backend._embedder = _FixedEmbedder(8)
         backend._identity = _identity("loaded")
+        backend._dimension = 8
 
         with caplog.at_level(logging.WARNING, logger="sif.embedding.identity"):
             first = await backend.hybrid_search("quantum")
@@ -1526,6 +1570,7 @@ class TestHybridSearchIdentity:
         backend = _suggestion_backend(db_path, settings)
         backend._embedder = _FixedEmbedder(4)
         backend._identity = _identity("loaded", dimension=4)
+        backend._dimension = 4
 
         with caplog.at_level(logging.WARNING, logger="sif.embedding.identity"):
             results = await backend.hybrid_search("quantum")

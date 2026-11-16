@@ -11,7 +11,7 @@ from typing import Any, TypeVar
 
 from sif.config.settings import Settings, get_settings
 from sif.core.filters import FilterNode
-from sif.core.models import SearchOptions
+from sif.core.models import SearchOptions, SearchType
 from sif.database.connection import DatabaseConnection
 from sif.database.database import Database
 from sif.database.metadata_repository import MetadataValueRepository
@@ -28,8 +28,11 @@ from sif.embedding.prompts import resolve_prompt_scheme
 from sif.mcp.protocol import CollectionInfo, Document, SearchResult
 from sif.search.bm25 import BM25Searcher
 from sif.search.context_attach import enrich_results
+from sif.search.expansion import QueryExpansion
 from sif.search.filters import compile_filter, compile_match
 from sif.search.hybrid import SearchPipeline, search_dimension_error
+from sif.search.rerank import create_reranker
+from sif.search.snippets import SmartSnippetExtractor
 from sif.search.suggest import SuggestionEngine
 from sif.search.vector import VectorSearcher
 from sif.utils.logging import get_logger
@@ -102,6 +105,35 @@ VECTOR_SEARCH_REMEDY = (
     'with `pip install "docsif[embed]"`, check the SIF_MODEL_* settings, and retry.'
 )
 
+# D-15/D-17: the same prefix map ``SearchPipeline._parse_query_prefix`` uses.
+# The backend consults it BEFORE any load decision so a ``lex:`` query never
+# pays a model load and every other route strips its prefix before the
+# BM25 degrade.
+_PREFIX_ROUTES: dict[str, SearchType] = {
+    "lex:": SearchType.BM25,
+    "vec:": SearchType.VECTOR,
+    "hyde:": SearchType.HYDE,
+    "expand:": SearchType.EXPAND,
+}
+
+_DEFAULT_SEARCH_TYPES: dict[str, SearchType] = {
+    "bm25": SearchType.BM25,
+    "vector": SearchType.VECTOR,
+}
+
+
+def _split_query_prefix(query: str, default_search_type: str) -> tuple[str, SearchType]:
+    """Mirror the pipeline's prefix routing without constructing a pipeline.
+
+    Returns the prefix-free query text and the resolved search type, so the
+    backend can decide whether a model load is needed before handing the raw
+    query to ``SearchPipeline`` (which performs its own identical routing).
+    """
+    for prefix, search_type in _PREFIX_ROUTES.items():
+        if query.startswith(prefix):
+            return query[len(prefix) :].strip(), search_type
+    return query, _DEFAULT_SEARCH_TYPES.get(default_search_type, SearchType.HYBRID)
+
 
 def _resolve_collection_ids(conn: Any, names: list[str] | None) -> list[str] | None:
     """Resolve request collection names the way every search path does.
@@ -167,6 +199,20 @@ class SearchBackend:
         self._load_attempted = False
         self._load_failed = False
         self._manager: EmbeddingManager | None = None
+        # D-15: the loaded identity's dimension governs the pipeline after a
+        # successful load; until then this holds the settings value (unused by
+        # the pipeline because no pipeline is built before a successful load).
+        self._dimension: int = self.settings.embedding_dim
+        # D-17: heavyweight pipeline components are hoisted. The snippet
+        # extractor is model-free and cheap; the expander attaches to the
+        # manager after a successful lazy load, and the reranker is built on
+        # the first request that actually asks for one.
+        self._snippet_extractor = SmartSnippetExtractor(
+            max_length=SearchOptions().snippet_max_length
+        )
+        self._query_expander: QueryExpansion | None = None
+        self._reranker: Any = None
+        self._reranker_failed = False
 
         # D-07/D-04: resolve the prompt scheme ONCE from the backend's own
         # settings. The same scheme feeds the settings-only identity (schema
@@ -217,13 +263,16 @@ class SearchBackend:
         """Load the embedding manager once per process, latching failure (D-15).
 
         One thread-safe attempt: ``EmbeddingManager.from_settings`` (which
-        creates the cache directory/database) and ``load_model`` run under
-        ``_load_lock``, and a failure latches ``_load_failed`` so later
-        requests never retry. 22-04 hardens the warning, BM25-degrade, and
-        loaded-dimension policy; this plan only guarantees vec_search has a
-        manager and the hybrid path keeps its existing BM25 degradation.
+        creates the cache directory/database), ``load_model``, and
+        ``get_identity`` run under ``_load_lock``. A successful load caches
+        the manager, the loaded embedder, the identity, and the identity's
+        dimension (which then governs the pipeline instead of the settings
+        value). A failure latches ``_load_failed`` and logs exactly one
+        warning naming the install/model remedy, so later requests never
+        retry the load or repeat the warning; ``query`` degrades to BM25 and
+        ``vec_search`` raises the remedy-bearing error.
         """
-        if self._load_attempted and (self._manager is not None or self._load_failed):
+        if self._load_attempted:
             return None if self._load_failed else self._manager
         with self._load_lock:
             # Another thread completed the attempt while we waited.
@@ -236,18 +285,67 @@ class SearchBackend:
                 # ``get_identity`` itself calls ``load_model``; calling it only
                 # after a successful load keeps construction lazy (Pitfall 9).
                 identity = manager.get_identity()
-            except Exception:
+            except Exception as exc:
                 self._manager = None
                 self._embedder = None
                 self._identity = None
                 self._load_failed = True
+                logger.warning(
+                    "Embedding model unavailable; hybrid queries degrade to BM25-only. "
+                    'Install the embedding backend with `pip install "docsif[embed]"` '
+                    "and check the SIF_MODEL_* settings: %s",
+                    exc,
+                )
                 return None
             self._manager = manager
             self._embedder = manager.model
             # A protocol-only double yields no described identity; inventing
             # one would apply a policy the injector never stated (21-04).
             self._identity = identity if isinstance(identity, EmbedderIdentity) else None
+            if self._identity is not None:
+                self._dimension = self._identity.dimension
+            else:
+                model_dimension = getattr(self._embedder, "dimension", None)
+                if isinstance(model_dimension, int):
+                    self._dimension = model_dimension
+            self._query_expander = QueryExpansion(embedding_manager=manager)
             return self._manager
+
+    def _reranker_for(self, rerank: bool | None) -> Any:
+        """Resolve the per-request rerank gate and build the reranker lazily.
+
+        D-17: ``None`` follows ``SIF_RERANK_ENABLED``; ``True``/``False``
+        override it. The gate is checked BEFORE construction, so the off path
+        is zero-cost (no optional-backend import, no model load). A requested
+        construction that fails for a missing optional backend (``ImportError``)
+        or an unknown model type (``ValueError``) soft-degrades: one warning
+        naming the cause and remedy, no reranker, and the failure is latched so
+        later requested reranks neither retry nor re-warn. Neither cause can
+        change at runtime.
+        """
+        requested = self.settings.rerank_enabled if rerank is None else rerank
+        if not requested or self._reranker_failed:
+            return None
+        if self._reranker is None:
+            try:
+                self._reranker = create_reranker(self.settings)
+            except ImportError as exc:
+                self._reranker_failed = True
+                logger.warning(
+                    "Reranker backend unavailable; install the optional reranker backend "
+                    '(for example `pip install "docsif[embed]"`) to enable reranking: %s',
+                    exc,
+                )
+                return None
+            except ValueError as exc:
+                self._reranker_failed = True
+                logger.warning(
+                    "Unknown reranker model type; correct SIF_RERANKER_MODEL_TYPE to enable "
+                    "reranking: %s",
+                    exc,
+                )
+                return None
+        return self._reranker
 
     async def hybrid_search(  # noqa: PLR0913 — weight overrides are per-request
         # params by design (D-04: request field ≈ CLI flag); a params object
@@ -263,8 +361,9 @@ class SearchBackend:
         bm25_weight: float | None = None,
         vector_weight: float | None = None,
         filter_node: FilterNode | None = None,
+        rerank: bool | None = None,
     ) -> list[SearchResult]:
-        """Perform hybrid search.
+        """Perform hybrid search with full CLI pipeline parity (D-17).
 
         Weight overrides (Phase 15, D-04): each ``None`` falls back to the
         server process's ``SIF_`` settings (request field ≈ CLI flag); the
@@ -275,12 +374,29 @@ class SearchBackend:
         D-02) is the already-validated metadata AST; the parameter is named
         ``filter_node`` rather than ``filter`` because ruff A002 flags a
         function argument shadowing the builtin (annotated model fields are
-        exempt, A003 does not apply).
+        exempt, A003 does not apply). ``rerank`` (D-17) is opt-in: ``None``
+        follows ``SIF_RERANK_ENABLED`` and ``True``/``False`` overrides it.
+
+        Prefix-first routing (D-15/D-17) runs before any load decision, using
+        the same map as ``SearchPipeline``. A ``lex:`` query (or a host whose
+        configured default search type is BM25) takes a direct BM25 route with
+        the prefix stripped and never calls ``_ensure_embedder``. Documented
+        deviation: that direct route returns enriched BM25 rows with
+        highlights, staleness, and suggestions but intentionally bypasses the
+        pipeline's snippet extraction, so snippet/line-range citation fields
+        stay unset; the dedicated ``lex_search`` tool has none by design, and
+        citation uses ``get``. Every other route loads the embedder lazily; on
+        a latched load failure it degrades to BM25 over the prefix-free text
+        (the loader already logged the one warning) instead of passing a
+        ``vec:``/``hyde:``/``expand:`` token to FTS. On success the raw query
+        is handed to ``SearchPipeline`` so its own prefix routing is
+        unchanged.
 
         When sqlite-vec is unavailable (SearchPipeline construction raises
         ``RuntimeError``), the search degrades to BM25-only with a one-time
         warning (Phase 10 WR-08, user decision); search-time errors still
-        propagate.
+        propagate. A requested rerank whose execution fails soft-degrades to
+        the unranked page with one warning (D-17).
         """
 
         def _search(conn: Any) -> list[SearchResult]:
@@ -305,24 +421,40 @@ class SearchBackend:
             if collections and not collection_ids:
                 return _with_suggestions(conn, query, [])
             options.collection_ids = collection_ids
+
+            parsed_query, search_type = _split_query_prefix(
+                query, self.settings.default_search_type
+            )
+
+            if search_type is SearchType.BM25:
+                # D-15: prefix-first BM25 bypasses the loader entirely; the
+                # prefix is stripped so FTS sees the intended terms.
+                core_results = BM25Searcher(conn).search(parsed_query, options)
+                core_results = enrich_results(conn, core_results)
+                return _with_suggestions(
+                    conn, parsed_query, _map_core_results(core_results)
+                )
+
+            if self._ensure_embedder() is None:
+                # D-15: latched load failure -> BM25 degrade over the
+                # prefix-free text, with the loader's single warning.
+                core_results = BM25Searcher(conn).search(parsed_query, options)
+                core_results = enrich_results(conn, core_results)
+                return _with_suggestions(
+                    conn, parsed_query, _map_core_results(core_results)
+                )
+
             try:
                 # EMB-01: the closure is built only from the full identity a
-                # successful embedder load recorded (21-08). When the load
-                # failed, no check is invented and the existing BM25
-                # degradation below is unchanged.
+                # successful embedder load recorded (21-08).
                 identity = self._identity
                 identity_check = (
                     partial(check_identity, current=identity, mode="search")
                     if identity is not None
                     else None
                 )
-                pipeline = SearchPipeline(
-                    conn,
-                    embedder=self._embedder,
-                    embedding_dim=self.settings.embedding_dim,
-                    default_search_type=self.settings.default_search_type,
-                    identity_check=identity_check,
-                )
+                rerank_requested = self.settings.rerank_enabled if rerank is None else rerank
+                pipeline = self._build_pipeline(conn, identity_check, self._reranker_for(rerank))
             except RuntimeError:
                 # WR-08 (user decision): MCP-boundary carve-out — a missing
                 # sqlite-vec extension fails SearchPipeline construction, so
@@ -333,20 +465,53 @@ class SearchBackend:
                     logger.warning(
                         "sqlite-vec unavailable; MCP hybrid search degrades to BM25-only"
                     )
-                core_results = BM25Searcher(conn).search(query, options)
+                core_results = BM25Searcher(conn).search(parsed_query, options)
                 # CORR-05 (Plan 19-04): the fallback bypasses SearchPipeline,
                 # so this boundary owns its one enrichment. The pipeline path
                 # below is already enriched by SearchPipeline — enriching it
                 # again here would double-attach.
                 core_results = enrich_results(conn, core_results)
             else:
-                core_results = pipeline.search(query, options)
+                try:
+                    core_results = pipeline.search(query, options)
+                except RuntimeError as exc:
+                    # D-17: an execution-time rerank failure returns the
+                    # unranked page (one warning) rather than a tool error.
+                    if not rerank_requested or not str(exc).startswith("Reranking failed"):
+                        raise
+                    logger.warning("Reranking failed; returning the unranked page: %s", exc)
+                    core_results = self._build_pipeline(conn, identity_check, None).search(
+                        query, options
+                    )
             mapped = _map_core_results(core_results)
             # Same boundary rule for D-05: suggestions are attached explicitly
             # on the zero-result path; MCP queries never write query_log (D-08).
             return _with_suggestions(conn, query, mapped)
 
         return await self._run_in_db(_search)
+
+    def _build_pipeline(
+        self,
+        conn: Any,
+        identity_check: Any,
+        reranker: Any,
+    ) -> SearchPipeline:
+        """Construct a per-request pipeline over the fresh request connection.
+
+        D-17: ``SearchPipeline`` is connection-bound, so it is built inside
+        ``_run_in_db``; the manager, expander, reranker, and snippet extractor
+        are hoisted on the backend and reused.
+        """
+        return SearchPipeline(
+            conn,
+            embedder=self._embedder,
+            query_expander=self._query_expander,
+            reranker=reranker,
+            snippet_extractor=self._snippet_extractor,
+            embedding_dim=self._dimension,
+            default_search_type=self.settings.default_search_type,
+            identity_check=identity_check,
+        )
 
     async def lex_search(  # noqa: PLR0913 — one parameter per frozen LexSearchInput field
         self,
