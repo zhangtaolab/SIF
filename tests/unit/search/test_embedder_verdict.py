@@ -15,6 +15,8 @@ import pytest
 
 from sif.search.embedder_verdict import (
     DECISION_ADOPT,
+    DECISION_INSUFFICIENT,
+    DECISION_KEEP,
     LANGUAGE_FLOOR,
     MIN_HELDOUT_FOR_EPSILON_WIN,
     decide,
@@ -116,3 +118,149 @@ class TestAdoptEndToEnd:
         assert serialized["reasons"] is not decision.reasons
         serialized["language_heldout_n"]["en"] = 999
         assert decision.language_heldout_n["en"] == 12
+
+
+class TestBoundaryRules:
+    def test_n100_delta_0_01_ties_its_own_noise_floor(self) -> None:
+        overall = _gate(0.5, 0.51, 100)
+
+        decision = decide_from_gates(overall, _adequate_languages())
+
+        assert overall.n == 100
+        assert overall.noise_floor == pytest.approx(0.01)
+        assert overall.winner is False
+        assert decision.decision == DECISION_KEEP
+        assert decision.above_noise_floor is False
+        assert decision.ci_excludes_zero is True
+        assert decision.mean_delta_at_least_epsilon is True
+        assert any("noise floor" in reason for reason in decision.reasons)
+
+    def test_n101_delta_0_02_clears_the_floor(self) -> None:
+        decision = decide_from_gates(_gate(0.5, 0.52, 101), _adequate_languages())
+
+        assert decision.decision == DECISION_ADOPT
+        assert decision.overall_winner is True
+        assert decision.above_noise_floor is True
+
+    def test_ci_containing_zero_never_adopts(self) -> None:
+        overall = noise_gate([0.0, 0.0], [0.0, 0.02])
+
+        decision = decide_from_gates(overall, _adequate_languages())
+
+        assert decision.decision == DECISION_KEEP
+        assert decision.ci_excludes_zero is False
+        assert any("95% CI includes zero" in reason for reason in decision.reasons)
+
+    def test_language_regression_vetoes_a_winning_overall_gate(self) -> None:
+        languages = {"en": _gate(0.5, 0.52, 10), "zh": _gate(0.5, 0.48, 10)}
+
+        decision = decide_from_gates(_winning_overall(), languages)
+
+        assert decision.decision == DECISION_KEEP
+        assert decision.overall_winner is True
+        assert decision.per_language_floor_ok is False
+        assert any("zh" in reason and "-0.02" in reason for reason in decision.reasons)
+
+    def test_language_floor_is_inclusive_at_exactly_minus_0_01(self) -> None:
+        languages = {"en": _gate(0.5, 0.50, 10), "zh": _gate(0.5, 0.49, 10)}
+
+        decision = decide_from_gates(_winning_overall(), languages)
+
+        assert languages["zh"].mean_delta == pytest.approx(-0.01)
+        assert decision.decision == DECISION_ADOPT
+        assert decision.per_language_floor_ok is True
+
+
+class TestAdequacy:
+    def test_absent_required_language_is_insufficient(self) -> None:
+        decision = decide_from_gates(_winning_overall(), {"en": _gate(0.5, 0.52, 12)})
+
+        assert decision.decision == DECISION_INSUFFICIENT
+        assert decision.decision != DECISION_ADOPT
+        assert decision.adequate is False
+        assert decision.language_heldout_n["zh"] == 0
+        assert decision.per_language_floor_ok is False
+        assert any("zh" in reason and "no held-out gate" in reason for reason in decision.reasons)
+
+    def test_thin_language_nine_is_insufficient(self) -> None:
+        languages = {"en": _gate(0.5, 0.52, 10), "zh": _gate(0.5, 0.52, 9)}
+
+        decision = decide_from_gates(_winning_overall(), languages)
+
+        assert decision.decision == DECISION_INSUFFICIENT
+        assert decision.decision != DECISION_ADOPT
+        assert decision.adequate is False
+        assert decision.language_heldout_n["zh"] == 9
+        assert any("9" in reason and "10" in reason for reason in decision.reasons)
+
+    def test_language_n10_is_adequate(self) -> None:
+        languages = {"en": _gate(0.5, 0.52, 10), "zh": _gate(0.5, 0.50, 10)}
+
+        decision = decide_from_gates(_winning_overall(), languages)
+
+        assert decision.adequate is True
+        assert decision.decision == DECISION_ADOPT
+
+    def test_decide_without_language_splits_is_insufficient(self) -> None:
+        comparison = SimpleNamespace(splits={"heldout": _winning_overall()})
+
+        decision = decide(comparison)
+
+        assert decision.decision == DECISION_INSUFFICIENT
+        assert decision.language_heldout_n == {"en": 0, "zh": 0}
+
+
+class TestMalformedPayloads:
+    def test_empty_payload_raises_naming_splits(self) -> None:
+        with pytest.raises(ValueError, match="splits"):
+            decide_from_payload({})
+
+    def test_payload_without_heldout_raises(self) -> None:
+        payload = {"splits": {"tuning": _gate(0.5, 0.5, 20).to_dict()}}
+
+        with pytest.raises(ValueError, match="heldout"):
+            decide_from_payload(payload)
+
+    def test_non_mapping_language_splits_raises(self) -> None:
+        payload = {
+            "splits": {"heldout": _winning_overall().to_dict()},
+            "language_splits": [],
+        }
+
+        with pytest.raises(ValueError, match="language_splits"):
+            decide_from_payload(payload)
+
+    def test_decide_without_heldout_split_raises(self) -> None:
+        comparison = SimpleNamespace(splits={"tuning": _gate(0.5, 0.5, 20)})
+
+        with pytest.raises(ValueError, match="heldout"):
+            decide(comparison)
+
+    def test_missing_overall_gate_directly_is_insufficient(self) -> None:
+        decision = decide_from_gates(None, {"en": _gate(0.5, 0.5, 10)})
+
+        assert decision.decision == DECISION_INSUFFICIENT
+        assert decision.overall_n == 0
+        assert "missing overall held-out gate" in decision.reasons
+
+
+class TestReasonAuditability:
+    def test_every_rejection_names_a_reason_and_adopt_is_clean(self) -> None:
+        rejections = [
+            decide_from_gates(_gate(0.5, 0.51, 100), _adequate_languages()),
+            decide_from_gates(noise_gate([0.0, 0.0], [0.0, 0.02]), _adequate_languages()),
+            decide_from_gates(
+                _winning_overall(),
+                {"en": _gate(0.5, 0.52, 10), "zh": _gate(0.5, 0.48, 10)},
+            ),
+            decide_from_gates(_winning_overall(), {"en": _gate(0.5, 0.52, 12)}),
+            decide_from_gates(_winning_overall(), {"en": _gate(0.5, 0.52, 9)}),
+        ]
+
+        for decision in rejections:
+            assert decision.decision != DECISION_ADOPT
+            assert decision.reasons, f"{decision.decision} rejection is anonymous"
+
+        adopted = decide_from_gates(_winning_overall(), _adequate_languages())
+        assert adopted.decision == DECISION_ADOPT
+        assert adopted.reasons == ()
