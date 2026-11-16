@@ -20,6 +20,7 @@ are parallel read-only calls plus one retry only.
 
 from __future__ import annotations
 
+import json
 from typing import Annotated, Any, Literal
 
 from mcp.server import MCPServer
@@ -95,7 +96,11 @@ def _result(output: BaseModel, *, exclude_none: bool = False) -> CallToolResult:
     ``filteredDocuments: null``), every other tool keeps the full schema.
     """
     text = json_dumps_strict(output.model_dump(exclude_none=exclude_none), ensure_ascii=False)
-    structured = output.model_dump(mode="json", by_alias=True, exclude_none=exclude_none)
+    # WR-03: derive the structured mapping from the same strict JSON text so
+    # the two channels cannot drift. ``model_dump(mode="json")`` alone renders
+    # legacy NaN/Infinity metadata as ``null`` while ``json_dumps_strict``
+    # stringifies it (``"nan"``/``"inf"``).
+    structured = json.loads(text)
     return CallToolResult(
         content=[TextContent(type="text", text=text)],
         structured_content=structured,

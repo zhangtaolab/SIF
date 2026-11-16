@@ -368,6 +368,27 @@ class TestGetAndMultiGetTools:
         backend.get_document.assert_awaited_once_with("doc-1", 2, 4)
 
     @pytest.mark.asyncio
+    async def test_non_finite_metadata_is_identical_across_channels(self) -> None:
+        """WR-03: legacy NaN/Infinity stringifies in BOTH channels.
+
+        ``json_dumps_strict`` writes ``"nan"``/``"inf"``; the structured
+        channel must not drift to ``null`` via plain ``model_dump(mode="json")``.
+        """
+        backend = _mock_backend()
+        backend.get_document.return_value = Document(
+            doc_id="doc-1",
+            path="a.md",
+            content="x",
+            metadata={"score": float("nan"), "inf": float("inf")},
+        )
+
+        result = await _make_server(backend).call_tool("get", {"path_or_docid": "doc-1"})
+
+        payload = json.loads(result.content[0].text)
+        assert payload == result.structured_content
+        assert payload["document"]["metadata"] == {"score": "nan", "inf": "inf"}
+
+    @pytest.mark.asyncio
     async def test_get_missing_document_is_a_tool_error(self) -> None:
         backend = _mock_backend()
         backend.get_document.return_value = None
