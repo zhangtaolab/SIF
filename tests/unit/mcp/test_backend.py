@@ -18,7 +18,6 @@ from sif.database.database import Database
 from sif.mcp import backend as backend_module
 from sif.mcp.backend import HybridSearchResults, SearchBackend, _truncate_content
 from sif.mcp.protocol import CollectionInfo, Document, QueryInput, SearchResult
-from sif.models.embedding import ModelType
 from sif.utils.paths import normalize_path
 
 
@@ -38,9 +37,14 @@ async def test_search_backend_init(backend, tmp_path: Path):
 
 
 @pytest.mark.asyncio
-async def test_search_backend_forwards_api_settings_to_factory(tmp_path: Path):
-    """Verify SearchBackend passes api_key/api_base/dim/cache_dir to the factory."""
-    mock_embedder = MagicMock()
+async def test_search_backend_construction_is_model_free(tmp_path: Path):
+    """D-15: construction opens the schema but never builds or loads a model.
+
+    The eager ``EmbeddingModelFactory`` call was removed in Phase 22; the lazy
+    manager attaches through ``_embedder``/``_identity`` on the first vector
+    need (22-02/22-04), so both stay ``None`` after construction and the
+    load-attempt latch is untouched.
+    """
     settings = MagicMock(
         model_type="openai",
         model_name="text-embedding-3-small",
@@ -51,20 +55,13 @@ async def test_search_backend_forwards_api_settings_to_factory(tmp_path: Path):
         cache_embeddings=False,
     )
 
-    with (
-        patch("sif.mcp.backend.get_settings", return_value=settings),
-        patch("sif.mcp.backend.EmbeddingModelFactory") as mock_factory_cls,
-    ):
-        mock_factory_cls.return_value.create_model.return_value = mock_embedder
+    with patch("sif.mcp.backend.get_settings", return_value=settings):
         backend = SearchBackend(str(tmp_path / "test.db"))
 
-    call = mock_factory_cls.return_value.create_model.call_args
-    assert call.args[0] == ModelType.OPENAI
-    assert call.kwargs["api_key"] == "sk-test"
-    assert call.kwargs["api_base"] == "https://api.example.com/v1"
-    assert call.kwargs["embedding_dim"] == 8
-    assert call.kwargs["cache_dir"] is None
-    assert backend._embedder is mock_embedder
+    assert backend._embedder is None
+    assert backend._identity is None
+    assert backend._load_attempted is False
+    assert backend._load_failed is False
 
 
 @pytest.mark.asyncio
@@ -640,9 +637,8 @@ def _seed_suggestion_db(tmp_path: Path) -> tuple[Path, Settings]:
 
 
 def _suggestion_backend(db_path: Path, settings: Settings) -> SearchBackend:
-    """Backend with no embedder load (the pipeline is mocked per test)."""
-    with patch("sif.mcp.backend.EmbeddingModelFactory", side_effect=RuntimeError("no embedder")):
-        return SearchBackend(str(db_path), settings=settings)
+    """Construction is model-free (D-15); the pipeline is mocked per test."""
+    return SearchBackend(str(db_path), settings=settings)
 
 
 def _query_log_count(db_path: Path) -> int:
@@ -766,7 +762,7 @@ class TestHybridSearchVecDegradation:
     async def test_vec_unavailable_warning_emitted_once(self, tmp_path: Path, caplog) -> None:
         """Repeated degraded queries warn exactly once per backend instance."""
         db_path, settings = _seed_suggestion_db(tmp_path)
-        # Built before capture: the __init__ embedder warning is unrelated.
+        # Construction is model-free (D-15): no embedder warning exists.
         backend = _suggestion_backend(db_path, settings)
 
         with (
@@ -1070,10 +1066,7 @@ class TestSchemaInitializationAtStartup:
     def test_constructor_migrates_a_pre_title_database(self, tmp_path: Path) -> None:
         """Construction applies the title column, triggers, and mtime index."""
         db_path, settings = _seed_pre_title_db(tmp_path)
-        with patch(
-            "sif.mcp.backend.EmbeddingModelFactory", side_effect=RuntimeError("no embedder")
-        ):
-            SearchBackend(str(db_path), settings=settings)
+        SearchBackend(str(db_path), settings=settings)
 
         conn = sqlite3.connect(db_path)
         try:
@@ -1104,13 +1097,10 @@ class TestSchemaInitializationAtStartup:
     ) -> None:
         """A second backend over the migrated DB pays detection reads only."""
         db_path, settings = _seed_pre_title_db(tmp_path)
-        with patch(
-            "sif.mcp.backend.EmbeddingModelFactory", side_effect=RuntimeError("no embedder")
-        ):
-            SearchBackend(str(db_path), settings=settings)
-            first = _schema_ddl(db_path)
-            SearchBackend(str(db_path), settings=settings)
-            second = _schema_ddl(db_path)
+        SearchBackend(str(db_path), settings=settings)
+        first = _schema_ddl(db_path)
+        SearchBackend(str(db_path), settings=settings)
+        second = _schema_ddl(db_path)
 
         assert first == second
 
@@ -1123,10 +1113,7 @@ class TestSchemaInitializationAtStartup:
         """
         db_path, settings = _seed_pre_title_db(tmp_path)
         process_settings = settings.model_copy(update={"embedding_dim": 1024})
-        with (
-            patch("sif.config.settings.get_settings", return_value=process_settings),
-            patch("sif.mcp.backend.EmbeddingModelFactory", side_effect=RuntimeError("no embedder")),
-        ):
+        with patch("sif.config.settings.get_settings", return_value=process_settings):
             SearchBackend(str(db_path), settings=settings)
 
         conn = sqlite3.connect(db_path)
@@ -1147,11 +1134,8 @@ class TestSchemaInitializationAtStartup:
             model_name="test",
             cache_embeddings=False,
         )
-        with patch(
-            "sif.mcp.backend.EmbeddingModelFactory", side_effect=RuntimeError("no embedder")
-        ):
-            with pytest.raises(RuntimeError, match="Embedding dimension mismatch"):
-                SearchBackend(str(db_path), settings=wrong)
+        with pytest.raises(RuntimeError, match="Embedding dimension mismatch"):
+            SearchBackend(str(db_path), settings=wrong)
 
     def test_dimension_mismatch_leaves_the_migrated_index_populated(self, tmp_path: Path) -> None:
         """CR-01: the rebuild is durable even when init fails after it.
@@ -1169,11 +1153,8 @@ class TestSchemaInitializationAtStartup:
             model_name="test",
             cache_embeddings=False,
         )
-        with patch(
-            "sif.mcp.backend.EmbeddingModelFactory", side_effect=RuntimeError("no embedder")
-        ):
-            with pytest.raises(RuntimeError, match="Embedding dimension mismatch"):
-                SearchBackend(str(db_path), settings=wrong)
+        with pytest.raises(RuntimeError, match="Embedding dimension mismatch"):
+            SearchBackend(str(db_path), settings=wrong)
 
         conn = sqlite3.connect(db_path)
         try:
@@ -1196,10 +1177,7 @@ class TestSchemaInitializationAtStartup:
 
         # A later open at the correct width keeps the pre-existing document
         # MATCHable through the title column.
-        with patch(
-            "sif.mcp.backend.EmbeddingModelFactory", side_effect=RuntimeError("no embedder")
-        ):
-            SearchBackend(str(db_path), settings=settings)
+        SearchBackend(str(db_path), settings=settings)
 
         conn = sqlite3.connect(db_path)
         try:
@@ -1226,8 +1204,9 @@ class TestEmbedderIdentityAtStartup:
     """The MCP host records the scheme it applies and adopts legacy indexes.
 
     T-21-28: the identity's prompt fields must describe the vectors this host
-    actually produces, so one resolved scheme feeds both the settings-only
-    identity (schema open) and ``factory.create_model``.
+    actually produces, so one resolved scheme feeds the settings-only identity
+    at schema open and the lazy manager's loaded-model identity in 22-02/22-04.
+    Construction itself stays model-free (D-15).
     """
 
     @staticmethod
@@ -1243,13 +1222,7 @@ class TestEmbedderIdentityAtStartup:
     def test_init_schema_receives_the_settings_only_identity(self, tmp_path: Path) -> None:
         settings = self._settings(query_prompt_name="qry", document_prompt_name="doc")
 
-        with (
-            patch(
-                "sif.mcp.backend.EmbeddingModelFactory",
-                side_effect=RuntimeError("no embedder"),
-            ),
-            patch.object(Database, "init_schema") as init_schema,
-        ):
+        with patch.object(Database, "init_schema") as init_schema:
             SearchBackend(str(tmp_path / "identity.db"), settings=settings)
 
         init_schema.assert_called_once()
@@ -1264,34 +1237,11 @@ class TestEmbedderIdentityAtStartup:
         assert identity.pooling == "unknown"
         assert identity.revision is None
 
-    def test_factory_receives_the_resolved_prompt_scheme_and_identity_is_stored(
-        self, tmp_path: Path
-    ) -> None:
+    def test_construction_leaves_the_loaded_identity_unset(self, tmp_path: Path) -> None:
+        """The full identity arrives only after a successful lazy load (D-15)."""
         settings = self._settings(query_prompt_name="qry", document_prompt_name="doc")
-        mock_embedder = MagicMock()
-        mock_embedder.dimension = 8
 
-        with (
-            patch("sif.mcp.backend.get_settings", return_value=settings),
-            patch("sif.mcp.backend.EmbeddingModelFactory") as mock_factory_cls,
-        ):
-            mock_factory_cls.return_value.create_model.return_value = mock_embedder
-            backend = SearchBackend(str(tmp_path / "prompts.db"), settings=settings)
-
-        kwargs = mock_factory_cls.return_value.create_model.call_args.kwargs
-        assert kwargs["query_prompt_name"] == "qry"
-        assert kwargs["document_prompt_name"] == "doc"
-        assert backend._identity is not None
-        assert backend._identity.query_prompt == "qry"
-        assert backend._identity.document_prompt == "doc"
-        assert backend._identity.dimension == 8
-        assert backend._identity.cache_model_id.startswith("modelscope:test")
-
-    def test_failed_embedder_leaves_identity_none(self, tmp_path: Path) -> None:
-        settings = self._settings()
-
-        with patch("sif.mcp.backend.EmbeddingModelFactory", side_effect=RuntimeError("boom")):
-            backend = SearchBackend(str(tmp_path / "failed.db"), settings=settings)
+        backend = SearchBackend(str(tmp_path / "prompts.db"), settings=settings)
 
         assert backend._embedder is None
         assert backend._identity is None
@@ -1317,13 +1267,7 @@ class TestEmbedderIdentityAtStartup:
         finally:
             seed.close()
 
-        with (
-            patch(
-                "sif.mcp.backend.EmbeddingModelFactory",
-                side_effect=RuntimeError("no embedder"),
-            ),
-            caplog.at_level(logging.WARNING),
-        ):
+        with caplog.at_level(logging.WARNING):
             SearchBackend(str(db_path), settings=settings)
 
         conn = sqlite3.connect(db_path)

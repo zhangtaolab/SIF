@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+from mcp.server import MCPServer
+
+from sif.mcp.app import build_server
 from sif.mcp.backend import SearchBackend
-from sif.mcp.handlers import ToolHandler
-from sif.mcp.server import MCPServer
 
 
 __all__ = [
     "MCPServer",
     "SearchBackend",
-    "ToolHandler",
+    "build_server",
 ]

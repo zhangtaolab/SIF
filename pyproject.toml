@@ -39,6 +39,7 @@ dependencies = [
     "watchdog>=4.0.0,<7.0.0",
     "numpy>=1.24.0",
     "rapidfuzz>=3.14.5,<4",
+    "mcp>=2.3.0,<3",
 ]
 
 [project.optional-dependencies]
@@ -58,6 +59,9 @@ embed = [
 openai = [
     "openai>=2.0.0",
 ]
+# Deprecated compatibility aliases: `mcp` is a core dependency now and the
+# SDK shell ships with it. Both extras stay installable (uvicorn only) so
+# existing `pip install docsif[mcp]` / `docsif[http]` commands keep working.
 mcp = [
     "uvicorn>=0.20.0",
 ]

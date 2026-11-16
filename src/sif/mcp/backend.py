@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import fnmatch
+import threading
 from collections.abc import Callable
 from functools import partial
 from typing import Any, TypeVar
@@ -15,17 +16,13 @@ from sif.database.connection import DatabaseConnection
 from sif.database.database import Database
 from sif.database.metadata_repository import MetadataValueRepository
 from sif.database.repositories import CollectionRepository, DocumentRepository
-from sif.embedding.factory import EmbeddingModelFactory
 from sif.embedding.identity import (
     EmbedderIdentity,
-    build_identity,
     build_settings_identity,
     check_identity,
 )
-from sif.embedding.model import ModelType
 from sif.embedding.prompts import resolve_prompt_scheme
 from sif.mcp.protocol import CollectionInfo, Document, SearchResult
-from sif.models.embedding import EmbeddingConfig
 from sif.search.bm25 import BM25Searcher
 from sif.search.context_attach import enrich_results
 from sif.search.filters import compile_filter, compile_match
@@ -99,17 +96,29 @@ class SearchBackend:
     """Backend for MCP search and retrieval operations."""
 
     def __init__(self, db_path: str, settings: Settings | None = None) -> None:
-        """Initialize SearchBackend."""
+        """Initialize SearchBackend without loading an embedding model (D-15).
+
+        Construction is deliberately model-free: no ``EmbeddingManager``, no
+        ``EmbeddingModelFactory``, and no ``load_model()``/``get_identity()``
+        call. A cold ``sif mcp stdio`` start must stay cheap and quiet, and
+        ``status``/``get``/``metadata`` must never pay a model load. The lazy
+        load path (one thread-safe attempt, failure latched) lands in 22-02/
+        22-04 and attaches through the fields initialized below.
+        """
         self.db_path = db_path
         self.settings = settings or get_settings()
         self._embedder: Any = None
         self._identity: EmbedderIdentity | None = None
         self._vec_unavailable_warned = False
+        # Lazy-load skeleton: one attempt per process, latched on failure.
+        self._load_lock = threading.Lock()
+        self._load_attempted = False
+        self._load_failed = False
 
         # D-07/D-04: resolve the prompt scheme ONCE from the backend's own
         # settings. The same scheme feeds the settings-only identity (schema
-        # open) and the factory call, so the recorded prompt fields describe
-        # the vectors this host actually produces (T-21-28), and a legacy DB
+        # open); the loaded-model identity computed after a successful lazy
+        # load consumes the same resolved names (T-21-28), and a legacy DB
         # first opened here gets the assumed row exactly once.
         scheme = resolve_prompt_scheme(
             self.settings.model_name,
@@ -141,40 +150,6 @@ class SearchBackend:
             )
         finally:
             db.close()
-
-        try:
-            factory = EmbeddingModelFactory()
-            model_type = ModelType(self.settings.model_type)
-            model_path = str(self.settings.model_path) if self.settings.model_path else None
-            self._embedder = factory.create_model(
-                model_type,
-                model_path,
-                self.settings.model_name,
-                api_key=self.settings.api_key,
-                api_base=self.settings.api_base,
-                embedding_dim=self.settings.embedding_dim,
-                cache_dir=(
-                    str(self.settings.get_cache_dir()) if self.settings.cache_embeddings else None
-                ),
-                # A host that records a prompt scheme must embed with it: the
-                # same resolved names reach the backend constructor.
-                query_prompt_name=scheme.query_prompt,
-                document_prompt_name=scheme.document_prompt,
-            )
-            # The full identity (loaded-model pooling/revision included) is
-            # the search-mode check's `current` in 21-04's `hybrid_search`.
-            self._identity = build_identity(
-                EmbeddingConfig(
-                    model_type=model_type,
-                    model_name=self.settings.model_name,
-                    embedding_dim=self.settings.embedding_dim,
-                    api_base=self.settings.api_base,
-                ),
-                self._embedder,
-                scheme,
-            )
-        except Exception:
-            logger.warning("Failed to load embedder; vector search will be unavailable")
 
     async def _run_in_db(self, callback: Callable[[Any], T]) -> T:
         """Run a callback with a fresh database connection in a thread."""
