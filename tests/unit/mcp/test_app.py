@@ -28,6 +28,7 @@ from sif.mcp.app import (
     DEFAULT_ALLOWED_HOSTS,
     DEFAULT_CORS_ORIGINS,
     SERVER_NAME,
+    _resolve_transport_security,
     build_server,
     build_transport_security,
     create_http_app,
@@ -120,6 +121,45 @@ def test_build_transport_security_never_honors_a_wildcard_host() -> None:
 
     assert security.allowed_hosts == [*DEFAULT_ALLOWED_HOSTS, "sif.local"]
     assert "*" not in security.allowed_hosts
+
+
+class TestPartialTransportSecurityOverrides:
+    """WR-05: a one-dimensional override must not drop the other dimension."""
+
+    def test_host_override_keeps_the_recorded_origins(self, tmp_path: Path) -> None:
+        """Overriding allowed_hosts keeps the caller-supplied origins."""
+        server = build_server(
+            str(tmp_path / "policy.db"),
+            allowed_hosts=["sif.local"],
+            cors_origins=["https://sif.local"],
+        )
+
+        security = _resolve_transport_security(server, ["other.local"], None)
+
+        assert security.allowed_hosts == [*DEFAULT_ALLOWED_HOSTS, "other.local"]
+        assert security.allowed_origins == ["https://sif.local"]
+
+    def test_origin_override_keeps_the_recorded_host_allowlist(self, tmp_path: Path) -> None:
+        """Overriding origins keeps the operator's host allowlist."""
+        server = build_server(
+            str(tmp_path / "policy.db"),
+            allowed_hosts=["sif.local"],
+            cors_origins=["https://sif.local"],
+        )
+
+        security = _resolve_transport_security(server, None, ["https://other.local"])
+
+        assert security.allowed_hosts == [*DEFAULT_ALLOWED_HOSTS, "sif.local"]
+        assert security.allowed_origins == ["https://other.local"]
+
+    def test_host_override_keeps_a_fail_closed_origin_list(self, tmp_path: Path) -> None:
+        """A fail-closed ``cors_origins=[]`` is not widened to the defaults."""
+        server = build_server(str(tmp_path / "policy.db"), cors_origins=[])
+
+        security = _resolve_transport_security(server, ["sif.local"], None)
+
+        assert security.allowed_hosts == [*DEFAULT_ALLOWED_HOSTS, "sif.local"]
+        assert security.allowed_origins == []
 
 
 def test_http_health_and_mcp_mount_serve_without_a_redirect(tmp_path: Path) -> None:

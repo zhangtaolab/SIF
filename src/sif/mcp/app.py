@@ -146,11 +146,20 @@ def _resolve_transport_security(
     allowed_hosts: Sequence[str] | None,
     allowed_origins: Sequence[str] | None,
 ) -> TransportSecuritySettings:
-    """Reuse the server's policy unless the caller overrides an allowlist."""
-    if allowed_hosts is None and allowed_origins is None:
-        existing = getattr(server, _TRANSPORT_SECURITY_ATTR, None)
-        if isinstance(existing, TransportSecuritySettings):
+    """Merge overrides per dimension with the server's recorded policy.
+
+    An override on one allowlist must not drop the other recorded one: a
+    partial override that rebuilt both from the caller's arguments would
+    silently lose the operator's host allowlist or widen a fail-closed
+    ``allowed_origins=[]`` back to the defaults (WR-05).
+    """
+    existing = getattr(server, _TRANSPORT_SECURITY_ATTR, None)
+    if isinstance(existing, TransportSecuritySettings):
+        if allowed_hosts is None and allowed_origins is None:
             return existing
+        hosts = existing.allowed_hosts if allowed_hosts is None else allowed_hosts
+        origins = existing.allowed_origins if allowed_origins is None else allowed_origins
+        return build_transport_security(hosts, origins)
     return build_transport_security(allowed_hosts, allowed_origins)
 
 
