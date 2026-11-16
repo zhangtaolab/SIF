@@ -883,3 +883,30 @@ def test_expected_errors_are_iserror_results_not_protocol_errors(tmp_path: Path)
             assert "error" not in body, name
             assert body["result"]["isError"] is True, name
             assert body["result"]["content"][0]["text"], name
+
+
+class TestQueryRerankOption:
+    """D-17: the additive rerank parameter is opt-in and forwarded verbatim."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("value", [True, False, None])
+    async def test_forwards_rerank_or_none(self, value: bool | None) -> None:
+        backend = _mock_backend()
+        arguments: dict[str, object] = {"query": "q"}
+        if value is not None:
+            arguments["rerank"] = value
+
+        await _make_server(backend).call_tool("query", arguments)
+
+        assert backend.hybrid_search.call_args.kwargs["rerank"] is value
+
+    @pytest.mark.asyncio
+    async def test_published_schema_keeps_rerank_optional(self) -> None:
+        tools = {tool.name: tool for tool in await _make_server(_mock_backend()).list_tools()}
+        schema = tools["query"].input_schema
+        rerank = schema["properties"]["rerank"]
+
+        assert any(
+            option.get("type") == "boolean" for option in rerank.get("anyOf", [rerank])
+        )
+        assert "rerank" not in schema.get("required", [])

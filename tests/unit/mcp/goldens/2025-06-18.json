@@ -70,7 +70,7 @@
                   "openWorldHint": false,
                   "readOnlyHint": true
                 },
-                "description": "Hybrid search combining BM25 full-text search, vector semantic search, and RRF fusion. Reranking is opt-in and off unless SIF_RERANK_ENABLED is set.",
+                "description": "Hybrid search combining BM25 full-text search, vector semantic search, and RRF fusion. Reranking is opt-in: it is off unless SIF_RERANK_ENABLED is set, and the rerank parameter forces it on or off for one query.",
                 "inputSchema": {
                   "properties": {
                     "bm25_weight": {
@@ -140,6 +140,18 @@
                     "query": {
                       "title": "Query",
                       "type": "string"
+                    },
+                    "rerank": {
+                      "anyOf": [
+                        {
+                          "type": "boolean"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "title": "Rerank"
                     },
                     "rrf_k": {
                       "anyOf": [

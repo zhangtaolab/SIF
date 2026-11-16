@@ -41,8 +41,12 @@ def _seed_loaded_embedder(backend: SearchBackend, dimension: int = 8) -> None:
     manager = _FakeManager(dimension=dimension)
     backend._manager = manager
     backend._embedder = manager.model
+    backend._identity = _identity("loaded", dimension=dimension)
     backend._dimension = dimension
     backend._load_attempted = True
+    from sif.search.expansion import QueryExpansion  # noqa: PLC0415
+
+    backend._query_expander = QueryExpansion(embedding_manager=manager)
 
 
 @pytest.mark.asyncio
@@ -1903,3 +1907,199 @@ class TestVecSearchDirectPath:
         assert calls == []
         check.assert_not_called()
         mock_vec_cls.assert_not_called()
+
+
+# =============================================================================
+# Query pipeline parity and opt-in rerank (Phase 22 D-17)
+# =============================================================================
+
+
+def _rerank_backend(
+    tmp_path: Path, *, enabled: bool
+) -> SearchBackend:
+    """Seeded backend whose settings carry the requested rerank default."""
+    db_path, settings = _seed_suggestion_db(tmp_path)
+    settings = settings.model_copy(update={"rerank_enabled": enabled})
+    return _suggestion_backend(db_path, settings)
+
+
+class TestQueryPipelineParity:
+    """D-17: query reuses the CLI pipeline components; the pipeline is per request."""
+
+    @pytest.mark.asyncio
+    async def test_components_are_hoisted_and_the_pipeline_is_per_request(
+        self, tmp_path: Path
+    ) -> None:
+        db_path, settings = _seed_suggestion_db(tmp_path)
+        backend = _suggestion_backend(db_path, settings)
+
+        with patch("sif.mcp.backend.SearchPipeline") as pipeline_cls:
+            pipeline_cls.return_value.search.return_value = [_weight_result()]
+            await backend.hybrid_search("quantum")
+            await backend.hybrid_search("quantum")
+
+        assert pipeline_cls.call_count == 2
+        first_conn = pipeline_cls.call_args_list[0].args[0]
+        second_conn = pipeline_cls.call_args_list[1].args[0]
+        assert first_conn is not second_conn
+        kwargs = pipeline_cls.call_args.kwargs
+        assert kwargs["embedder"] is backend._embedder
+        assert kwargs["query_expander"] is backend._query_expander
+        assert kwargs["snippet_extractor"] is backend._snippet_extractor
+        assert kwargs["embedding_dim"] == 8
+        assert kwargs["identity_check"] is not None
+
+    @pytest.mark.asyncio
+    async def test_query_path_invokes_the_smart_snippet_extractor(self, tmp_path: Path) -> None:
+        """D-17: the CLI snippet extractor runs on query results.
+
+        The MCP ``SearchResult`` model gains the citation ``snippet`` field in
+        22-05; this plan proves the pipeline-stage extractor is wired and
+        invoked (the boundary drops unlisted fields by design).
+        """
+        pytest.importorskip("sqlite_vec")
+        db_path, settings = _seed_suggestion_db(tmp_path)
+        backend = _suggestion_backend(db_path, settings)
+        extractor = MagicMock()
+        extractor.extract.return_value = "snip"
+        backend._snippet_extractor = extractor
+
+        results = await backend.hybrid_search("quantum")
+
+        assert results
+        assert extractor.extract.called
+
+
+class TestRerankOption:
+    """D-17: rerank is opt-in, zero-cost off, and soft-degrades on failure."""
+
+    @pytest.mark.asyncio
+    async def test_none_follows_the_setting(self, tmp_path: Path) -> None:
+        backend = _rerank_backend(tmp_path, enabled=True)
+        reranker = MagicMock()
+
+        with (
+            patch("sif.mcp.backend.create_reranker", return_value=reranker) as create,
+            patch("sif.mcp.backend.SearchPipeline") as pipeline_cls,
+        ):
+            pipeline_cls.return_value.search.return_value = [_weight_result()]
+            await backend.hybrid_search("quantum")
+
+        create.assert_called_once()
+        assert pipeline_cls.call_args.kwargs["reranker"] is reranker
+
+    @pytest.mark.asyncio
+    async def test_false_overrides_a_true_setting_and_never_constructs(
+        self, tmp_path: Path
+    ) -> None:
+        backend = _rerank_backend(tmp_path, enabled=True)
+
+        with (
+            patch("sif.mcp.backend.create_reranker") as create,
+            patch("sif.mcp.backend.SearchPipeline") as pipeline_cls,
+        ):
+            pipeline_cls.return_value.search.return_value = [_weight_result()]
+            await backend.hybrid_search("quantum", rerank=False)
+
+        create.assert_not_called()
+        assert pipeline_cls.call_args.kwargs["reranker"] is None
+
+    @pytest.mark.asyncio
+    async def test_true_overrides_a_false_setting(self, tmp_path: Path) -> None:
+        backend = _rerank_backend(tmp_path, enabled=False)
+        reranker = MagicMock()
+
+        with (
+            patch("sif.mcp.backend.create_reranker", return_value=reranker) as create,
+            patch("sif.mcp.backend.SearchPipeline") as pipeline_cls,
+        ):
+            pipeline_cls.return_value.search.return_value = [_weight_result()]
+            await backend.hybrid_search("quantum", rerank=True)
+
+        create.assert_called_once()
+        assert pipeline_cls.call_args.kwargs["reranker"] is reranker
+
+    @pytest.mark.asyncio
+    async def test_execution_failure_returns_the_unranked_page_with_one_warning(
+        self, tmp_path: Path, caplog
+    ) -> None:
+        backend = _rerank_backend(tmp_path, enabled=False)
+        reranker = MagicMock()
+        expected = _weight_result()
+
+        with (
+            patch("sif.mcp.backend.create_reranker", return_value=reranker),
+            patch("sif.mcp.backend.SearchPipeline") as pipeline_cls,
+            caplog.at_level(logging.WARNING, logger=backend_module.logger.name),
+        ):
+            pipeline_cls.return_value.search.side_effect = [
+                RuntimeError("Reranking failed: boom"),
+                [expected],
+            ]
+            results = await backend.hybrid_search("quantum", rerank=True)
+
+        assert [result.doc_id for result in results] == ["doc1"]
+        assert pipeline_cls.call_count == 2
+        assert pipeline_cls.call_args.kwargs["reranker"] is None
+        warnings = [
+            record
+            for record in caplog.records
+            if "Reranking failed" in record.getMessage()
+        ]
+        assert len(warnings) == 1
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("error", "expected_text"),
+        [
+            (ImportError("llama_cpp missing"), "Reranker backend unavailable"),
+            (ValueError("Unknown reranker model_type: nope"), "Unknown reranker model type"),
+        ],
+    )
+    async def test_construction_failure_soft_degrades_once(
+        self, tmp_path: Path, caplog, error: Exception, expected_text: str
+    ) -> None:
+        backend = _rerank_backend(tmp_path, enabled=False)
+        expected = _weight_result()
+
+        with (
+            patch("sif.mcp.backend.create_reranker", side_effect=error) as create,
+            patch("sif.mcp.backend.SearchPipeline") as pipeline_cls,
+            caplog.at_level(logging.WARNING, logger=backend_module.logger.name),
+        ):
+            pipeline_cls.return_value.search.return_value = [expected]
+            first = await backend.hybrid_search("quantum", rerank=True)
+            second = await backend.hybrid_search("quantum", rerank=True)
+
+        assert [result.doc_id for result in first] == ["doc1"]
+        assert [result.doc_id for result in second] == ["doc1"]
+        assert pipeline_cls.call_args.kwargs["reranker"] is None
+        assert create.call_count == 1
+        warnings = [
+            record
+            for record in caplog.records
+            if expected_text in record.getMessage()
+        ]
+        assert len(warnings) == 1
+        # The remedy names the install/model correction for the operator.
+        message = warnings[0].getMessage()
+        assert "docsif[embed]" in message if expected_text.startswith("Reranker") else (
+            "SIF_RERANKER_MODEL_TYPE" in message
+        )
+
+    @pytest.mark.asyncio
+    async def test_lex_and_vec_never_rerank(self, tmp_path: Path) -> None:
+        db_path, settings = _seed_suggestion_db(tmp_path)
+        backend = _suggestion_backend(db_path, settings)
+
+        with (
+            patch("sif.mcp.backend.create_reranker") as create,
+            patch("sif.mcp.backend.BM25Searcher") as bm25_cls,
+            patch("sif.mcp.backend.VectorSearcher") as vec_cls,
+        ):
+            bm25_cls.return_value.search.return_value = []
+            vec_cls.return_value.search.return_value = []
+            await backend.lex_search("quantum")
+            await backend.vec_search("quantum")
+
+        create.assert_not_called()

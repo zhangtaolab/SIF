@@ -57,8 +57,8 @@ TOOL_ANNOTATIONS = ToolAnnotations(read_only_hint=True, open_world_hint=False)
 TOOL_DESCRIPTIONS: dict[str, str] = {
     "query": (
         "Hybrid search combining BM25 full-text search, vector semantic search, "
-        "and RRF fusion. Reranking is opt-in and off unless SIF_RERANK_ENABLED "
-        "is set."
+        "and RRF fusion. Reranking is opt-in: it is off unless SIF_RERANK_ENABLED "
+        "is set, and the rerank parameter forces it on or off for one query."
     ),
     "get": (
         "Get a document by path or document ID, optionally limited to a line "
@@ -136,6 +136,7 @@ def _register_query_tool(mcp: MCPServer, backend: SearchBackend) -> None:
         rrf_k: Annotated[int | None, Field(ge=1)] = None,
         bm25_weight: Annotated[float | None, Field(gt=0.0)] = None,
         vector_weight: Annotated[float | None, Field(gt=0.0)] = None,
+        rerank: bool | None = None,
     ) -> Annotated[CallToolResult, QueryOutput]:
         try:
             input_data = QueryInput(
@@ -164,6 +165,7 @@ def _register_query_tool(mcp: MCPServer, backend: SearchBackend) -> None:
             bm25_weight=input_data.bm25_weight,
             vector_weight=input_data.vector_weight,
             filter_node=filter_node,
+            rerank=rerank,
         )
         output = QueryOutput(
             results=results,
