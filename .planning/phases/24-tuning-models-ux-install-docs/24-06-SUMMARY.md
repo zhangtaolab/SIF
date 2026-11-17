@@ -125,6 +125,20 @@ The plan's Task 2 verify originally expected a replay gate inside `legs`; the co
 - `make docs-generate` is idempotent on a second run; only the intended 3-line `--min-heldout` addition in `docs/cli-reference.md` differs from HEAD.
 - Defaults assertion: `(DEFAULT_CHUNK_SIZE, DEFAULT_CHUNK_OVERLAP) == (512, 128)` and `Settings().embed_breadcrumb is False`; the migration re-embed assertion passes because no default flipped.
 
+### Platform Verification (2026-11-17)
+
+The committed tree (`256380e`) was verified on all three platforms:
+
+| Platform | Environment | Result |
+|----------|-------------|--------|
+| macOS arm64 | local, Python 3.12, full suite | **3,233 passed, 1 skipped, 95.03%**; ruff/format/ty green |
+| Linux x86_64 | nv5090 (Ubuntu 5.15), Python 3.13.18 | **3,232 passed, 2 skipped, 95.04%**; ruff/format/ty green; 470 focused tests green |
+| Windows 11 | Yoga (DESKTOP-JEIOI9A), managed Python 3.12 | **`windows_smoke.py` 8/8 PASS at HEAD `256380e`**; 346 changed-area tests + 124 affected-module tests passed |
+
+- **Linux environment deviation:** `download-r2.pytorch.org` was DNS-unreachable on nv5090, so the lock's `torch==2.15.0+cpu` could not be fetched. Verification reused an existing Python 3.13 venv's `torch==2.14.1+cu130` through a `.pth` path, with `CUDA_VISIBLE_DEVICES=` to match the CI's CPU-only runner. A stale `platformdirs` pytest entry point from that shared path required `-p no:platformdirs`; neither workaround changes the repository. The full suite is green under the CI-equivalent CPU mode.
+- **Windows locale caveat:** under the machine's default GBK locale, 14 `tests/test_docs.py` tests fail with `UnicodeDecodeError` because they call `Path.read_text()` without an encoding. The same failure occurs on the untouched `48759e2` checkout, so it is pre-existing and unrelated to 24-06; with `PYTHONUTF8=1` all 20 docs tests pass and the affected-module run is 124/124. Full Windows support remains deferred to v2.
+- **Windows checkout safety:** verification used a fresh clone at `D:\Github\SIF-verify-256380e`; the pre-existing `D:\Github\SIF` checkout was not modified.
+
 ## Next Phase Readiness
 
 - 24-06 execution is complete and the evidence is committed to disk (uncommitted in git).

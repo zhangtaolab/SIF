@@ -9,7 +9,7 @@ status: verifying
 stopped_at: Phase 24 24-06 complete — both evidence artifacts recorded keep-defaults; Phase 24 verification pending
 last_updated: "2026-11-17T09:21:17.000Z"
 last_activity: 2026-11-17
-last_activity_desc: 24-06 real evidence complete (keep-default, keep-breadcrumb-off); Phase 24 verification pending
+last_activity_desc: 24-06 complete and platform-verified (macOS, Linux, Windows); Phase 24 verifier/code review pending
 state_head: 1fdb9f7d3e575aa17ed794cddc2786359eeab252
 progress:
   total_phases: 8
@@ -34,8 +34,8 @@ progress:
 Phase: 24 (Tuning + Models UX + Install Docs) — 7/7 plans executed
 Current Plan: 7
 Total Plans in Phase: 7
-Status: Ready for Phase 24 verification
-Last activity: 2026-11-17 — 24-06 real evidence complete; chunk sweep keep-default, breadcrumb keep-breadcrumb-off
+Status: Platform verification green (macOS/Linux/Windows); Phase 24 verifier/code review pending
+Last activity: 2026-11-17 — 24-06 complete; macOS/Linux full suites and Windows smoke green at 256380e
 
 Progress: [█████████░] 88%
 
@@ -325,6 +325,7 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - [Phase 24]: 24-06 corpus amended on 2026-11-17 (user-authorized) to `/Users/forrest/Playground/books_markdown` — 610 documents (2 English books + 608 mostly-Chinese papers; 422 zh-dominant, 163 en-dominant, 23 mixed) — because Phase 23's SynologyDrive roots are off-limits; artifacts are corpus-scoped to label `books-markdown-papers-2026-11`.
 - [Phase 24]: `sif eval` gained the additive `--min-heldout` option (default 25, range 25–500); the runbooks pass 101 for the fresh baseline, which sampled 200 documents and produced held-out N=194 (en=136/zh=244/mixed=12), making the 0.01 gate admissible (1/N≈0.00515); the limitation text is generated from the measured N and the Phase 23 N=56 wording is retired.
 - [Phase 24]: 24-06 real evidence is complete on the amended corpus: QUAL-02 `keep-default` (tuning-selected overlap-0 +0.000737, held-out -0.008605, CI [-0.021559, +0.003094], helped 2/hurt 9/unchanged 183, N=194) and QUAL-03 `keep-breadcrumb-off` (overall +0.014104, CI [-0.005664, +0.035548], winner false; title leg +0.048521 winner, body leg +0.006243 not; duplicate metrics title_share=1.0, in_content_share=0.622955; replay unavailable). No defaults changed, no marker code, no re-embed migration.
+- [Phase 24]: Platform verification at `256380e` is green — macOS arm64: 3,233 passed / 1 skipped / 95.03%; Linux x86_64 (nv5090, Python 3.13.18): 3,232 passed / 2 skipped / 95.04% with ruff/format/ty green, using a shared torch 2.14.1+cu130 under `CUDA_VISIBLE_DEVICES=` and `-p no:platformdirs` because the CPU torch index was DNS-unreachable; Windows 11 (Yoga): `windows_smoke.py` 8/8 PASS plus 346 changed-area and 124 affected-module tests. Windows' 14 docs-test failures under GBK are pre-existing at `48759e2` and pass with `PYTHONUTF8=1`; full Windows support stays deferred to v2.
 - [Phase 24]: Breadcrumb artifact write bug fixed: `breadcrumb_eval.write_committed_artifact` now defaults to its own `ARTIFACT_PATH` instead of forwarding `None` to the chunk-sweep path; the shared guard had refused the overwrite after a 34-minute arm run. The resumed artifact write took 0.38 s and a regression test pins the default path.
 
 ### Pending Todos
@@ -333,6 +334,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - [ ] (Backlog) Phase 10.1 regen code review: IN-10..IN-13 — ledger in 10.1-REVIEW-DISPOSITION.md
 
 ### Blockers/Concerns
+
+- ℹ️ [Windows, pre-existing] 14 `tests/test_docs.py` tests fail under the GBK locale because they call `Path.read_text()` without an encoding; the same failure occurs at the untouched `48759e2` checkout. Use `PYTHONUTF8=1` for Windows runs, or make the docs tests UTF-8-explicit in a future Windows-support phase. Full Windows support remains deferred to v2.
 
 - ✅ [Phase 24, resolved 2026-11-17] 24-06 corpus amended to `/Users/forrest/Playground/books_markdown` (610 docs: 2 English books + 608 mostly-Chinese papers; sampled 200, held-out N=194, en=136/zh=244/mixed=12) after the user supplied the papers and authorized the instrument extension. Both real runs completed and recorded keep-defaults; artifacts are in `bench/`, evidence in `docs/benchmarking.md`; Phase 24 verification remains. SynologyDrive was never read or written.
 - ⚠️ [Phase 11 re-review, advisory] WR-03 init_schema raw tracebacks, WR-04 impossible-state guards, IN-05 model-type set duplication — carried in 11-REVIEW-DISPOSITION.md (WR-01/WR-02 fixed)
@@ -363,8 +366,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-17T09:21:17.000Z
-Stopped at: 24-06 complete with keep-defaults recorded; Phase 24 verification and milestone close pending
-Resume file: .planning/HANDOFF.json (stale after this session; the .continue-here.md in the phase directory is current)
+Last session: 2026-11-17T10:04:14.000Z
+Stopped at: 24-06 complete and platform-verified at 256380e; Phase 24 verifier/code review pending
+Resume file: (none; .continue-here.md in the phase directory is current)
 
-- **Next expected action:** run Phase 24 verification (gsd-verifier, code review, regression gate), then mark Phase 24 complete and close the v1.2 milestone. No defaults changed, so no `sif index embed --force` is required. Two audits remain recorded as debt (see Blockers/Concerns): `/gsd-secure-phase 20` and `/gsd:validate-phase 20`.
+- **Next expected action:** run Phase 24 verification (gsd-verifier, code review), then mark Phase 24 complete and close the v1.2 milestone. Platform evidence at `256380e`: macOS 3,233 passed / 1 skipped / 95.03%; Linux 3,232 passed / 2 skipped / 95.04% with ruff/format/ty green; Windows smoke 8/8 plus 346 changed-area and 124 affected-module tests. Two audits remain recorded as debt (see Blockers/Concerns): `/gsd-secure-phase 20` and `/gsd:validate-phase 20`.
