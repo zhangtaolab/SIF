@@ -8,7 +8,8 @@ Get up and running with SIF in minutes.
 Before installing SIF, make sure your system meets these requirements:
 
 - **Python `>= 3.10`** — check your version with `python3 --version`
-- **pip** — included with Python; any recent version works
+- **uv `>= 0.9.19`** — the recommended installer; `uv tool install` keeps SIF
+  isolated and on PATH
 - **SQLite** — nothing to install separately. SIF stores all data locally in a
   SQLite database via Python's built-in `sqlite3` module; the `sqlite-vec`
   dependency for vector tables is installed automatically
@@ -20,9 +21,9 @@ Optional, depending on which features you plan to use:
   search, install one of the extras:
 
   ```bash
-  pip install "docsif[embed]"   # sentence-transformers and modelscope backends
+  uv tool install 'docsif[embed]'   # sentence-transformers and modelscope backends
   # or
-  pip install "docsif[all]"     # adds GGUF (llama-cpp-python) and OpenAI API support
+  uv tool install --python 3.12 'docsif[all]'   # adds GGUF (llama-cpp-python) and OpenAI API support
   ```
 
   The first `sif index embed` run downloads the default embedding model
@@ -37,19 +38,27 @@ troubleshooting, see the [Installation Guide](installation.md).
 
 ## Installation
 
-Install SIF from PyPI:
+Install SIF with uv, the recommended installer:
 
 ```bash
-pip install docsif
+# Embedding stack: hybrid and vector search (primary install)
+uv tool install 'docsif[embed]'
+
+# Linux: resolve CPU-only torch explicitly (uv 0.9.19+, no CUDA stack)
+uv tool install --torch-backend=cpu 'docsif[embed]'
+
+# BM25-only base install
+uv tool install docsif
 ```
 
-For vector and hybrid search, install an embedding backend:
+The `all` extra adds GGUF (llama-cpp-python) and OpenAI-compatible backends:
 
 ```bash
-pip install "docsif[embed]"   # sentence-transformers and ModelScope backends
-# or
-pip install "docsif[all]"     # adds GGUF (llama-cpp-python) and OpenAI API support
+uv tool install --python 3.12 'docsif[all]'
 ```
+
+Prefer a one-off run? `uvx --from 'docsif[embed]' sif --help` works without
+installing anything.
 
 Verify installation:
 
@@ -65,15 +74,15 @@ cd sif
 pip install -e ".[dev]"
 ```
 
-See the [Installation Guide](installation.md#method-2-install-from-source) for
-details on the source install.
+See the [Installation Guide](installation.md) for the pip method, the
+llama-cpp backend indexes, the degradation matrix, and client configuration.
 
 ## First Run
 
 The [Your First Collection](#your-first-collection) walkthrough below sets up a
 real collection. To confirm a fresh install works end to end first, run this
 self-contained smoke test. It uses BM25 keyword search only, so it works with
-the base `pip install docsif` — no embedding extras, no model downloads.
+the base `uv tool install docsif` — no embedding extras, no model downloads.
 
 ```bash
 # 1. Create a tiny test corpus

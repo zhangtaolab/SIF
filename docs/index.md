@@ -65,15 +65,29 @@ sif search query "python decorators"
 
 ## Installation
 
-```bash
-pip install docsif
-```
-
-For full functionality:
+Install SIF with uv, the recommended installer:
 
 ```bash
-pip install "docsif[all]"
+# Embedding stack: hybrid and vector search (primary install)
+uv tool install 'docsif[embed]'
+
+# Linux: resolve CPU-only torch explicitly (uv 0.9.19+, no CUDA stack)
+uv tool install --torch-backend=cpu 'docsif[embed]'
+
+# BM25-only base install
+uv tool install docsif
 ```
+
+For every backend, including GGUF (llama-cpp-python) and OpenAI-compatible
+APIs:
+
+```bash
+uv tool install --python 3.12 'docsif[all]'
+```
+
+pip remains a supported secondary method; see the
+[Installation Guide](installation.md) for pip, `uvx`, llama-cpp wheel indexes,
+the degradation matrix, and client configuration.
 
 ## Quick Start
 

@@ -27,19 +27,29 @@ SIF is a local hybrid search engine for personal knowledge bases. It indexes Mar
 
 ## Installation
 
-SIF is distributed on PyPI as `docsif`; the installed command is `sif`. Python 3.10 or newer is required.
+SIF is distributed on PyPI as `docsif`; the installed command is `sif`. Python 3.10 or newer is required, and the recommended installer is [uv](https://docs.astral.sh/uv/) 0.9.19 or newer. See the [Installation Guide](docs/installation.md) for llama-cpp backend wheels, the full degradation matrix, and client configuration.
 
 ### Recommended: uv tool install
 
 ```bash
 # Embedding stack: hybrid and vector search (primary install)
 uv tool install 'docsif[embed]'
+
+# Linux: resolve CPU-only torch explicitly (uv 0.9.19+)
+uv tool install --torch-backend=cpu 'docsif[embed]'
 ```
 
 `uv tool install` keeps SIF in an isolated environment and puts the `sif`
-command on PATH. On Linux, the embed install resolves CPU-only torch from the
-explicit PyTorch CPU index declared in `pyproject.toml`
-(`https://download.pytorch.org/whl/cpu`), so no CUDA stack is pulled in.
+command on PATH. The `--torch-backend=cpu` recipe is the verified Linux path
+for the embedding stack: without it, the PyPI `torch` wheel pulls the CUDA
+stack. The flag applies to `uv tool` commands from uv 0.9.19 onward.
+
+To upgrade or reinstall an existing tool install:
+
+```bash
+uv tool upgrade docsif
+uv tool install --force 'docsif[embed]'
+```
 
 The base install is BM25-only (keyword search, retrieval, status, metadata,
 and the MCP server); it skips the torch/embedding stack:
@@ -48,10 +58,18 @@ and the MCP server); it skips the torch/embedding stack:
 uv tool install docsif
 ```
 
+### One-off runs: uvx
+
+```bash
+uvx --from 'docsif[embed]' sif --help
+```
+
 ### With pip
 
 ```bash
-# Embedding stack (hybrid and vector search)
+# Embedding stack (hybrid and vector search); on Linux install CPU-only
+# torch from the CPU index first so no CUDA stack is pulled in
+pip install torch --index-url https://download.pytorch.org/whl/cpu
 pip install "docsif[embed]"
 
 # BM25-only base install
@@ -80,7 +98,7 @@ pipx install docsif
 1. Install SIF with an embedding backend:
 
    ```bash
-   pip install "docsif[embed]"
+   uv tool install 'docsif[embed]'
    ```
 
 2. Add a collection pointing at your notes:
@@ -527,10 +545,12 @@ sif get multi-get "doc-id-1,notes/python_guide.md"
 sif ls
 sif ls my-notes subfolder
 
-# Download a GGUF embedding model (owner/repo/filename.gguf or a direct URL;
-# tries HuggingFace first, falls back to ModelScope; caches in ~/.sif/models)
-sif pull owner/repo/model.gguf
-sif pull https://example.com/model.gguf --cache-dir ~/models
+# Download a model through the verified canonical cache (embeddings, reranker,
+# query expansion, or a ModelScope owner/name id); see docs/models.md
+sif models pull
+
+# Inspect configured, cached, and persisted model identity
+sif models status --json
 
 # Benchmark search quality against a JSON fixture of queries and relevant doc IDs
 sif bench fixture.json --all --json
