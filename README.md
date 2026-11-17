@@ -8,7 +8,7 @@
 
 **SIF** = **S**earch / **I**ndex / **F**ind
 
-SIF is a local hybrid search engine for personal knowledge bases. It indexes Markdown notes and documents, combining BM25 keyword search, semantic vector search, and hybrid ranking behind both a `sif` CLI and a Model Context Protocol (MCP) server. All data stays on your machine in a single SQLite database.
+SIF is a local hybrid search engine for personal knowledge bases. It indexes Markdown notes and documents, combining BM25 keyword search, semantic vector search, and hybrid ranking behind both a `sif` CLI and a Model Context Protocol (MCP) server. All data stays on your machine in local SQLite databases: a main index database plus a separate embedding cache database (enabled by default).
 
 ## Features
 
@@ -17,10 +17,10 @@ SIF is a local hybrid search engine for personal knowledge bases. It indexes Mar
 - **Hybrid Search**: Combines BM25 and vector search with weighted RRF fusion
 - **Query Expansion**: Embedding-based pseudo-relevance feedback in hybrid search
 - **Reranking (opt-in)**: Qwen3-Reranker, a sentence-transformers cross-encoder, or a llama.cpp GGUF reranker via `--rerank` or `SIF_RERANK_ENABLED=1`
-- **MCP Server**: Model Context Protocol support for AI assistants (stdio, HTTP, and a background daemon) with seven read-only tools: `query`, `get`, `multi_get`, `status`, `metadata`, `lex_search`, `vec_search`
+- **MCP Server**: Model Context Protocol support for AI assistants, built on the official Python MCP SDK v2 (stdio, HTTP, and a background daemon), with seven read-only tools: `query`, `get`, `multi_get`, `status`, `metadata`, `lex_search`, `vec_search`
 - **Live Indexing**: `sif watch` keeps the index fresh as files change (foreground, detached daemon, or launchd/systemd service; BM25-only unless `--embed` is given)
 - **Query Suggestions**: Prefix completions, did-you-mean rewrites, and local query history via `sif suggest`
-- **Benchmarking**: `sif bench` evaluates search quality against a fixture and can sweep fusion settings
+- **Benchmarking**: `sif bench` evaluates search quality against a fixture and can sweep fusion settings; `sif eval --personal` measures quality on your own indexed corpus
 - **Python API**: Use the search strategies as a library from your own Python code
 - **Local-First**: All data stays on your machine
 - **Multiple Backends**: sentence-transformers, llama-cpp-python (GGUF), OpenAI-compatible API, ModelScope
@@ -40,9 +40,10 @@ uv tool install --torch-backend=cpu 'docsif[embed]'
 ```
 
 `uv tool install` keeps SIF in an isolated environment and puts the `sif`
-command on PATH. The `--torch-backend=cpu` recipe is the verified Linux path
-for the embedding stack: without it, the PyPI `torch` wheel pulls the CUDA
-stack. The flag applies to `uv tool` commands from uv 0.9.19 onward.
+command on PATH. The `--torch-backend=cpu` recipe is the manually verified
+Linux path for the embedding stack (verified on uv 0.13.7; not CI-proven):
+without it, the PyPI `torch` wheel pulls the CUDA stack. The flag applies to
+`uv tool` commands from uv 0.9.19 onward.
 
 To upgrade or reinstall an existing tool install:
 
@@ -107,10 +108,11 @@ pipx install docsif
    sif collection add ~/Documents/notes --name my-notes
    ```
 
-3. Index the collection:
+3. Index the collection and generate chunk embeddings for semantic search:
 
    ```bash
    sif index update --collection my-notes
+   sif index embed --collection my-notes
    ```
 
 4. Search:
@@ -555,11 +557,20 @@ sif models status --json
 # Benchmark search quality against a JSON fixture of queries and relevant doc IDs
 sif bench fixture.json --all --json
 
+# Measure quality on your own indexed corpus; --min-heldout raises the
+# held-out floor (101 makes the 0.01 mean-delta gate admissible)
+sif eval --personal --json
+sif eval --personal --min-heldout 101
+
 # Query suggestions
 sif suggest "python dec"
 
 # Watch collections and keep the index current
 sif watch -c my-notes
+
+# Reclaim unused space or create a verified backup copy of the index database
+sif index vacuum
+sif index backup --output ~/sif-backup.db
 
 # Remove orphaned chunks/embeddings and expired cache entries (asks for confirmation)
 sif cleanup
@@ -589,6 +600,14 @@ with db.connection:
 
 for result in results:
     print(f"{result.score:.3f}  {result.path}")
+```
+
+For a runnable end-to-end demo, `examples/quickstart.py` indexes a throwaway
+directory (temporary `SIF_DB_PATH`, so your real index is untouched) and drives
+both the CLI and the Python API equivalent:
+
+```bash
+python examples/quickstart.py
 ```
 
 See the [API Reference](docs/api-reference.md) for the full library API.

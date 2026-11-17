@@ -45,7 +45,7 @@ All environment variables changed prefix from `DOCSIFT_` to `SIF_`:
 
 ### Data Paths
 
-- **Old**: `~/.docsift/`
+- **Old**: `~/.local/share/docsift/`
 - **New**: Platform-dependent, via platformdirs `user_data_dir` (see `get_db_path()` in `src/sif/config/settings.py`):
   `~/.local/share/sif/` on Linux, `~/Library/Application Support/sif/` on macOS
 - **Database**: Must re-run `sif index update` to rebuild (no automatic DB migration)

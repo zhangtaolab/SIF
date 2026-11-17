@@ -10,6 +10,7 @@ Guide for contributing to SIF development.
 - Python 3.10+ (`requires-python = ">=3.10"` in `pyproject.toml`)
 - Git
 - Virtual environment tool (venv, conda, or pyenv)
+- `uv` (optional) — CI installs the committed `uv.lock` with `uv sync --frozen`
 
 The distribution is published as `docsif`; the installed command is `sif`.
 
@@ -47,6 +48,15 @@ pip install -e ".[embed]"    # sentence-transformers, ModelScope
 pip install -e ".[all]"      # Every embedding backend, including llama-cpp-python and OpenAI
 ```
 
+CI installs the committed `uv.lock` and runs pytest inside that frozen environment. To mirror CI locally:
+
+```bash
+uv sync --frozen --extra dev --extra embed
+uv run --frozen pytest
+```
+
+The `dev` extra provides pytest, pytest-cov, pytest-asyncio, ruff, and ty. `bandit`, `build`, `check-wheel-contents`, and `twine` are not included; the [Build Commands](#build-commands) section explains when they are needed.
+
 ### Verify Installation
 
 ```bash
@@ -68,26 +78,32 @@ sif/
 │   ├── cli/               # Click CLI (main.py entry; commands/ holds one module per group)
 │   ├── mcp/               # MCP server, handlers, and stdio/HTTP transports
 │   ├── core/              # Domain entities and protocol seams
-│   ├── models/            # Pydantic boundary schemas (search, collection, ...)
-│   ├── database/          # Connection, schema, migrations, repositories
+│   ├── models/            # Pydantic boundary schemas (collection, document, context, ...)
+│   ├── database/          # Connection, schema, maintenance, repositories
 │   ├── search/            # BM25, vector, hybrid pipeline, RRF, reranking
 │   ├── indexing/          # Chunkers, incremental indexer, drift detection, watcher
 │   ├── embedding/         # Embedder factory, managers, cache, providers
 │   ├── config/            # Pydantic Settings and constants
 │   └── utils/             # Logging, paths, daemon, progress helpers
 ├── tests/
-│   ├── unit/              # Unit tests grouped by module area
-│   ├── integration/       # Cross-component and subprocess tests
-│   ├── e2e/               # End-to-end tests (placeholder — only __init__.py)
+│   ├── unit/              # Unit tests grouped by module area (includes scripts/)
+│   ├── integration/       # Cross-component, subprocess, and watch/MCP end-to-end tests
+│   ├── e2e/               # Placeholder — only __init__.py
 │   ├── fixtures/bench/    # Benchmark corpus and query fixtures
-│   ├── support/           # Shared test support (bench harness)
-│   ├── conftest.py        # Shared fixtures
-│   ├── factories.py       # Reusable test data factories
-│   └── test_docs.py       # Documentation validation tests
-├── scripts/               # Doc generators and benchmark fixture builder
+│   ├── support/           # Shared bench and eval helpers
+│   ├── conftest.py        # Shared fixtures and autouse hermeticity fixtures
+│   ├── test_docs.py       # Documentation code-block validation
+│   ├── test_ci_workflows.py         # CI workflow and packaging regression guards
+│   ├── test_hygiene.py              # Removed-layer and dead-reference guards
+│   ├── test_release_metadata.py     # Version, changelog, and publish-workflow guards
+│   ├── test_sif_complete.py         # Core-module smoke checks
+│   ├── test_version_identity.py     # Single-sourced version identity guards
+│   └── test_windows_smoke_script.py # Windows smoke matcher tests
+├── scripts/               # Doc generators, benchmark/eval builders, publish registry, Windows smoke
 ├── examples/              # Runnable quickstart example
 ├── docs/                  # Documentation (MkDocs source)
 ├── pyproject.toml         # Project configuration
+├── uv.lock                # Frozen dependency lock used by CI
 ├── Makefile               # Convenience targets for common tasks
 ├── mkdocs.yml             # MkDocs site configuration
 └── README.md              # Project readme
@@ -248,11 +264,9 @@ def search(
 
 ```
 tests/
-├── conftest.py           # Shared fixtures
-├── factories.py          # Test data factories
+├── conftest.py           # Shared fixtures and autouse hermeticity fixtures
 ├── unit/                 # Unit tests grouped by module area
 │   ├── test_collection.py
-│   ├── test_search.py
 │   ├── cli/
 │   ├── config/
 │   ├── core/
@@ -263,18 +277,31 @@ tests/
 │   ├── inference/
 │   ├── mcp/
 │   ├── models/
+│   ├── scripts/
 │   ├── search/
 │   └── utils/
 ├── integration/          # Cross-component and subprocess tests
 │   ├── test_concurrency.py
 │   ├── test_embed_idempotency.py
+│   ├── test_incremental_equivalence.py
+│   ├── test_search_correctness.py
 │   ├── test_search_pipeline.py
-│   └── ...               # Watch, MCP, and incremental-equivalence tests
+│   └── ...               # Watch, MCP, service, and two-writer subprocess tests
 ├── e2e/                  # End-to-end tests (placeholder — only __init__.py)
 ├── fixtures/bench/       # Benchmark corpus and query fixtures
-├── support/              # Bench harness helpers
-└── test_docs.py          # Documentation validation
+├── support/              # Shared bench and eval helpers
+├── test_docs.py          # Documentation code-block validation
+├── test_ci_workflows.py         # CI workflow and packaging regression guards
+├── test_hygiene.py              # Removed-layer and dead-reference guards
+├── test_release_metadata.py     # Version, changelog, and publish-workflow guards
+├── test_sif_complete.py         # Core-module smoke checks
+├── test_version_identity.py     # Single-sourced version identity guards
+└── test_windows_smoke_script.py # Windows smoke matcher tests
 ```
+
+The suite currently holds 120 `test_*.py` modules: 101 under `tests/unit/`, 12 under
+`tests/integration/`, and 7 at the `tests/` root. There is no shared factories module;
+build related objects with the shared `sample_*` fixtures or a fixture local to the test module.
 
 ### Writing Tests
 
@@ -325,14 +352,19 @@ When the collaborator is a protocol, prefer a spec'd mock over a hand-written fa
 
 `tests/conftest.py` provides the shared fixtures used across the suite:
 
+- Autouse hermeticity fixtures: `_hermetic_color_env`, `_hermetic_sif_logging`, `reset_identity_state`, `reset_context_cache` — scrub color-forcing environment variables, reset `sif` logger state, and clear embedder-identity/context-cache latches around every test.
 - Path and file fixtures: `temp_dir`, `sample_markdown_file`, `sample_markdown_content`
 - Database fixtures: `temp_db_path`, `db_connection`, `temp_db`
-- Domain fixtures: `sample_collection`, `sample_collections`, `sample_document`, `sample_documents`, `sample_chunk`, `sample_chunks`, `sample_context`
-- Search fixtures: `sample_search_options`, `sample_search_result`, `sample_search_results`
+- Domain fixtures: `sample_collection_id`, `sample_document_id`, `sample_chunk_id`, `sample_collection`, `sample_collections`, `sample_document_metadata`, `sample_document`, `sample_documents`, `sample_chunk`, `sample_chunks`, `sample_context`
 - Mock fixtures: `mock_embedder`, `mock_repository`, `mock_search_repository`, `mock_embedding_manager`
+- Async fixture: `event_loop`
 - Docs fixtures: `docs_test_db`, `docs_runner` (used by `test_docs.py`)
 
-`tests/factories.py` adds reusable factories (`CollectionFactory`, `DocumentFactory`, `DocumentChunkFactory`, `ContextFactory`, `SearchOptionsFactory`, `SearchResultFactory`) when a test needs several related objects. See [Testing](testing.md) for the full fixture catalogue and factory usage.
+The module also exposes two plain helper functions, `create_test_document()` and
+`create_test_collection()`, for constructing entities. Search-specific fixtures such as
+`sample_search_options` (in `tests/unit/search/test_hybrid.py`) and `sample_search_results`
+(in `tests/unit/search/test_rrf.py`) are local to the test modules that use them,
+not part of `conftest.py`. See [Testing](testing.md) for the fixture catalogue.
 
 ### Running Tests
 
@@ -402,13 +434,13 @@ from sif.utils.logging import setup_logging
 setup_logging("DEBUG")
 ```
 
-`SIF_LOG_LEVEL` is read by the CLI when neither `--verbose` nor `--quiet` is given; the flags win when present.
+`SIF_LOG_LEVEL` is read by the CLI when neither `--verbose` nor `--quiet` is given; `SIF_DEBUG` takes precedence over it, and the CLI flags win over both.
 
 ### IDE Setup
 
 #### VS Code
 
-`.vscode/launch.json`:
+Create `.vscode/launch.json` with:
 
 ```json
 {
@@ -533,7 +565,7 @@ def custom_command(input: str) -> None:
     click.echo(f"Processing: {input}")
 ```
 
-2. Add the import alongside the other deferred imports at the bottom of `src/sif/cli/main.py` (they run after the `cli` group is defined to avoid circular imports) and register it:
+2. Add the import alongside the other deferred imports in `src/sif/cli/main.py` (the import block sits directly after the `cli` group definition to avoid circular imports) and register it:
 
 ```python
 from sif.cli.commands.custom import custom_command  # noqa: E402
@@ -569,7 +601,7 @@ class CustomModel(BaseModel):
 
 2. **Update the changelog.** Add the release section and its compare/release links in `docs/changelog.md`.
 
-3. **Run the Windows degradation smoke.** On a clean checkout of the release commit, run `make windows-smoke` against the Windows host (hc remote yoga) and record the tested HEAD that the script prints. This is an on-demand, pre-release step only — never a per-PR or scheduled job.
+3. **Run the Windows degradation smoke.** On a clean checkout of the release commit, run `make windows-smoke` against the Windows host (hc remote yoga) and record the tested HEAD that the script prints. The target drives `scripts/windows_smoke.py` over `hc exec --on yoga` and accepts `YOGA_DIR` / `YOGA_PYTHON` overrides when the checkout path or interpreter differs. It asserts only the documented degradations (fcntl lock warning, missing-root "all documents preserved" guard, and POSIX fork/service refusals); it is not a claim of full Windows support, which remains deferred. This is an on-demand, pre-release step only — never a per-PR or scheduled job.
 
 4. **Commit and confirm CI.** Commit the release changes and confirm the Test Matrix is green on that commit: all eight py3.10–3.13 × ubuntu/macos cells plus the lint job.
 
@@ -667,6 +699,7 @@ The [Makefile](../Makefile) defines convenience targets for every common develop
 | `make typecheck` | Type check with ty (`ty check src/sif`) |
 | `make coverage` | Generate an HTML coverage report at `htmlcov/index.html` |
 | `make security` | Run a bandit security scan (`bandit -r src/sif -c pyproject.toml`) |
+| `make windows-smoke` | Run the on-demand Windows degradation smoke on the hc yoga host (`scripts/windows_smoke.py`) |
 
 ### Build and Maintenance
 
@@ -685,6 +718,22 @@ The [Makefile](../Makefile) defines convenience targets for every common develop
 
 The `security` target requires `bandit`, and `make build` requires `build`; none of these are included in the `[dev]` extras, so install them separately when needed. `check-wheel-contents` and `twine` are optional — `make build` skips them with a message when they are missing.
 
+`make ci` runs the same ruff, format, type, and pytest gates as CI, plus bandit; CI does not run bandit and executes the suite through `uv run --frozen pytest`.
+
+## Continuous Integration
+
+Three GitHub Actions workflows live in `.github/workflows/`:
+
+| Workflow | File | Trigger | What it runs |
+|----------|------|---------|--------------|
+| Test Matrix | `test-matrix.yml` | Every branch push and every pull request | Eight test cells (Python 3.10–3.13 × `ubuntu-latest` / `macos-latest`) run `uv sync --frozen --extra dev --extra embed` and then `env -u FORCE_COLOR NO_COLOR=1 uv run --frozen pytest` (the suite is color-environment hermetic, so CI strips color-forcing variables before running it); a separate Python 3.12 lint job runs `ruff check src tests`, `ruff format --check src tests`, and `ty check src/sif` |
+| Docs Validation | `docs.yml` | Pull requests touching `docs/**`, `README.md`, `src/sif/cli/**`, `src/sif/config/**`, the generator scripts, or `tests/test_docs.py`; pushes to `main` | Runs `pytest tests/test_docs.py -v --no-cov`, regenerates `docs/cli-reference.md` and `docs/configuration.md`, and fails on any diff |
+| Publish | `publish.yml` | Pushes of `v*` tags | Verifies the tag matches `src/sif/_version.py`, builds and checks the distributions once, uploads the `dist` artifact, then publishes to TestPyPI first and PyPI second via trusted publishing (see [Release Process](#release-process)) |
+
+No Windows runner is in the matrix. Windows behavior is checked only by the on-demand
+`make windows-smoke` step before a release; full Windows support is deferred. There is also
+no scheduled workflow and no bandit job in CI.
+
 ## Branch Conventions
 
 - The default branch is `main`: `origin/HEAD` points to `origin/main`, and pull requests are opened against it.
@@ -694,9 +743,9 @@ The `security` target requires `bandit`, and `make build` requires `build`; none
 ## PR Process
 
 - Push your branch and open the pull request against `main` on GitHub. There is no `.github/PULL_REQUEST_TEMPLATE.md`; follow the description template in [Contributing](contributing.md) (Description, Type of Change, Testing, Checklist).
-- Before requesting review, the [Contributing](contributing.md) checklist expects: `pytest` passes, `ruff format .` applied, `ruff check .` clean, `ty check src/sif` passes, and documentation (including `docs/changelog.md`) updated.
+- Before requesting review, the [Contributing](contributing.md) checklist expects: `pytest` passes, `ruff format .` applied, `ruff check .` clean, `ty check src/sif` passes, documentation updated, reference docs regenerated with `make docs-generate` when CLI commands or configuration settings changed, and `docs/changelog.md` updated.
 - Commit messages follow Conventional Commits, as described in Commit Changes above.
-- PR CI only validates documentation: the "Docs Validation" workflow (`.github/workflows/docs.yml`) runs `pytest tests/test_docs.py` and regenerates `docs/cli-reference.md` and `docs/configuration.md` whenever a PR touches `docs/**`, `README.md`, `src/sif/cli/**`, `src/sif/config/**`, the generation scripts, or `tests/test_docs.py` — it fails if the committed reference docs are stale. The workflow also runs on pushes to `main`. No workflow runs the full test suite or linters on PRs, so run `make ci` locally before pushing.
+- PR CI runs the full Test Matrix on every push and pull request: the eight py3.10–3.13 × ubuntu/macos cells run the complete pytest suite (with the 90% coverage gate), and the lint job runs `ruff check src tests`, `ruff format --check src tests`, and `ty check src/sif`. The separate "Docs Validation" workflow runs `pytest tests/test_docs.py` and regenerates `docs/cli-reference.md` and `docs/configuration.md` whenever a PR touches `docs/**`, `README.md`, `src/sif/cli/**`, `src/sif/config/**`, the generation scripts, or `tests/test_docs.py` — it fails if the committed reference docs are stale. That workflow also runs on pushes to `main`. No CI job runs bandit, so run `make ci` locally before pushing.
 - Review turnaround is not documented; maintainers triage pull requests on GitHub. Respond to comments and push follow-up commits to the same branch.
 
 ## Coverage Requirements
@@ -711,8 +760,11 @@ Because the coverage flags live in `addopts`, they apply to the Makefile targets
 ```bash
 # Every test in the file passes, but the run still fails the gate:
 pytest tests/unit/test_collection.py -q
-# FAIL Required test coverage of 90.0% not reached. Total coverage: 12.96%
+# FAIL Required test coverage of 90.0% not reached.
 ```
+
+CI's Test Matrix runs bare `pytest` in every cell, so the same gate applies on all eight
+py3.10–3.13 × ubuntu/macos combinations.
 
 Append `--no-cov` when iterating on a narrow slice of the suite:
 
@@ -724,7 +776,7 @@ pytest tests/unit/test_collection.py --no-cov
 pytest tests/unit/search/test_bm25.py::TestBM25Searcher::test_search_executes_fts_query --no-cov
 ```
 
-Before pushing, run the full suite (`pytest` or `make test`) so the 90% gate is evaluated over real totals. See [Testing](testing.md) for the suite layout, shared fixtures, and factories.
+Before pushing, run the full suite (`pytest` or `make test`) so the 90% gate is evaluated over real totals. See [Testing](testing.md) for the suite layout and shared fixtures.
 
 ## Generated Documentation
 
@@ -740,7 +792,7 @@ The "Docs Validation" workflow (`.github/workflows/docs.yml`) regenerates `docs/
 
 ### Documentation Tests
 
-`make docs-test` (`pytest tests/test_docs.py -v --no-cov`) validates the code blocks in `README.md`, `docs/index.md`, `docs/cli-reference.md`, `docs/configuration.md`, `docs/quickstart.md`, `docs/mcp-server.md`, `docs/search-algorithms.md`, `docs/benchmarking.md`, `docs/architecture.md`, and `docs/models.md`:
+`make docs-test` (`pytest tests/test_docs.py -v --no-cov`) validates the code blocks in `README.md`, `docs/index.md`, `docs/cli-reference.md`, `docs/configuration.md`, `docs/quickstart.md`, `docs/mcp-server.md`, `docs/search-algorithms.md`, `docs/benchmarking.md`, `docs/architecture.md`, `docs/models.md`, `docs/installation.md`, and `docs/migration.md`:
 
 - JSON blocks must parse, and JSON output examples must contain the expected keys.
 - Python blocks must be syntactically valid.

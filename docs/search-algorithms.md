@@ -100,16 +100,18 @@ results = searcher.search("python decorators", options)
 SIF uses SQLite FTS5 for BM25 implementation:
 
 ```sql
--- Create FTS5 virtual table
+-- Create FTS5 virtual table (external content; title is indexed second —
+-- bm25() weights map left-to-right by column order: content, title)
 CREATE VIRTUAL TABLE documents_fts USING fts5(
     content,
+    title,
     content='documents',
     content_rowid='rowid',
     tokenize='porter'
 );
 
--- Search with BM25 ranking
-SELECT rowid, bm25(documents_fts) as score
+-- Search with BM25 ranking (weights bind per column: content, then title)
+SELECT rowid, bm25(documents_fts, ?, ?) as score
 FROM documents_fts
 WHERE documents_fts MATCH 'python decorators'
 ORDER BY score;
@@ -172,12 +174,11 @@ CREATE VIRTUAL TABLE document_embeddings USING vec0(
     embedding FLOAT[{dim}]  -- dimension from model (default: 1024)
 );
 
--- Search similar vectors
+-- Search similar vectors (vec0 KNN: k binds the neighbor count)
 SELECT document_id, distance
 FROM document_embeddings
-WHERE embedding MATCH ?
-ORDER BY distance
-LIMIT 10;
+WHERE embedding MATCH ? AND k = ?
+ORDER BY distance;
 ```
 
 ## Hybrid Search

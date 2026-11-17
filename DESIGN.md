@@ -130,15 +130,12 @@ src/sif/
 │   └── cache.py             # Embedding cache
 ├── mcp/                     # MCP server implementation
 │   ├── __init__.py
-│   ├── server.py            # MCP server
+│   ├── app.py               # Composition root; build_server() assembles the MCP server
 │   ├── backend.py           # SearchBackend for MCP tools
 │   ├── protocol.py          # MCP protocol definitions
-│   ├── handlers.py          # Request handlers
+│   ├── tools.py             # MCP tool definitions
 │   ├── cli.py               # MCP server CLI helpers
-│   └── transports/          # Transport implementations
-│       ├── __init__.py
-│       ├── stdio.py         # stdio transport
-│       └── http.py          # HTTP transport (FastAPI)
+│   └── watch_host.py        # MCP-embedded watch host (SIF_MCP_WATCH opt-in)
 ├── cli/                     # Command-line interface
 │   ├── __init__.py
 │   ├── main.py              # CLI entry point
@@ -343,6 +340,7 @@ CREATE TABLE contexts (
 ```sql
 CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(
     content,
+    title,                  -- title declared second; bm25() weights map left-to-right by this order
     content='documents',
     content_rowid='rowid',
     tokenize='porter'

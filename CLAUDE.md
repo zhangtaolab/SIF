@@ -55,7 +55,7 @@ SIF uses a layered architecture with clean separation between presentation, appl
 ```
 src/sif/
 ├── cli/                    # Click CLI entry point and commands
-├── mcp/                    # Unified MCP server (MCPServer, transports in mcp/transports/)
+├── mcp/                    # Unified MCP server (built in mcp/app.py: build_server, run_stdio, create_http_app)
 ├── core/                   # Domain models, enums, and protocols
 ├── indexing/               # Document ingestion pipeline
 ├── search/                 # Search strategies (BM25, Vector, Hybrid)
@@ -74,8 +74,8 @@ src/sif/
 **Factory Pattern:** `EmbeddingModelFactory` creates model instances based on `ModelType`. `Chunker` hierarchy (`FixedSizeChunker`, `MarkdownChunker`, `CodeChunker`, `AutoChunker`) uses `create_chunker()` factory in `src/sif/indexing/chunker.py`.
 
 **MCP Server:** The unified `src/sif/mcp/` package provides the MCP server:
-- `MCPServer` in `src/sif/mcp/server.py` — server core
-- Transports in `src/sif/mcp/transports/` — `StdioTransport` (`stdio.py`), `HTTPTransport` (`http.py`, FastAPI-based)
+- `MCPServer` — server core, imported from the third-party `mcp` package and constructed by `build_server()` in `src/sif/mcp/app.py`
+- Serving entry points in `src/sif/mcp/app.py` — `run_stdio()` (stdio transport) and `create_http_app()` (HTTP transport, FastAPI-based); CLI wrappers in `src/sif/mcp/cli.py`
 
 **Search Strategy Pattern:** Each search type is a class in `src/sif/search/`:
 - `BM25Searcher` — SQLite FTS5

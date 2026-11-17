@@ -192,6 +192,7 @@ Options for controlling search behavior.
 
 ```python
 from sif.core.models import SearchOptions
+from sif.core.filters import FilterNode
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -199,7 +200,9 @@ from typing import Optional
 class SearchOptions:
     limit: int = 10
     offset: int = 0
+    per_chunk: bool = False
     collection_ids: list[str] | None = None
+    filter: FilterNode | None = None
     min_score: float = 0.0
     include_content: bool = False
     include_highlights: bool = True
@@ -208,6 +211,7 @@ class SearchOptions:
     candidate_limit: int = 20
     intent: str | None = None
     snippet_max_length: int = 300
+    title_weight: float | None = None
     rrf_k: int = 60
     bm25_weight: float = 1.0
     vector_weight: float = 1.0
@@ -246,6 +250,11 @@ class SearchResult:
     scores: dict[str, float | None] = field(default_factory=dict)
     snippet: str | None = None
     context_description: str | None = None
+    chunk_id: str | None = None
+    sequence: int | None = None
+    chunk_matches: int = 0
+    line_start: int | None = None
+    line_end: int | None = None
 ```
 
 **Example:**
@@ -300,6 +309,10 @@ class EmbeddingConfig(BaseModel):
     # API keys (for remote models)
     api_key: str | None = Field(None, exclude=True)
     api_base: str | None = None
+
+    # Role-aware embedding prompts
+    query_prompt_name: str | None = Field(None, description="Query-role prompt name for the backend")
+    document_prompt_name: str | None = Field(None, description="Document-role prompt name for the backend")
 
     # Caching
     cache_embeddings: bool = Field(True, description="Cache embeddings")

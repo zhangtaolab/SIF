@@ -77,6 +77,7 @@ Feature requests are welcome! Include:
 - [ ] Code is formatted (`ruff format .`)
 - [ ] Code passes linting (`ruff check .`)
 - [ ] Type checking passes (`ty check src/sif`)
+- [ ] Full local check passes (`make ci`; `bandit` is not in the `[dev]` extras, so install it separately)
 - [ ] Documentation updated
 - [ ] Reference docs regenerated (`make docs-generate`) if CLI commands or configuration settings changed
 - [ ] Changelog updated (docs/changelog.md)
@@ -333,13 +334,22 @@ For significant documentation changes:
 
 ## Release Process
 
-Maintainers follow this process:
+Releases are published by the tag-triggered `Publish` workflow; there is no manual build or upload. Maintainers follow this process:
 
-1. Update version in `src/sif/_version.py`
-2. Update docs/changelog.md
-3. Create git tag
-4. Build the distribution (`make build`) and upload it to PyPI
-5. Create GitHub release
+1. **Bump the version.** Update `__version__` in `src/sif/_version.py` — it is the single version literal that packaging, `sif.__version__`, `APP_VERSION`, and the MCP server version all derive from.
+2. **Update the changelog.** Add the release section to `docs/changelog.md`.
+3. **Run the Windows degradation smoke.** On a clean checkout of the release commit, run `make windows-smoke` against the Windows host (hc remote yoga) and record the tested HEAD the script prints. This is an on-demand, pre-release step — never a per-PR or scheduled job. It requires the `hc` CLI and a synced checkout at `D:\Github\SIF` (override with `YOGA_DIR=...`); `YOGA_PYTHON` defaults to `3.12`.
+4. **Commit and confirm the Test Matrix.** Commit the release changes and confirm all eight test cells (Python 3.10–3.13 × ubuntu/macos) plus the lint job are green on that commit.
+5. **Tag the release.** Create and push an annotated tag using the `vX.Y[.Z]` form:
+
+   ```bash
+   git tag -a v1.1.2 -m "Release version 1.1.2"
+   git push origin v1.1.2
+   ```
+
+6. **Let the Publish workflow release it.** Pushing the tag triggers `Publish`, which builds once, verifies the tag matches `src/sif/_version.py`, and publishes to TestPyPI first and PyPI second through trusted publishing with PEP 740 attestations. A tag that does not exactly equal `v` + the version literal fails the build job before anything is published.
+
+For post-release verification commands (PyPI JSON check, attestation verification, scratch install), see the Release Process section of the [Development Guide](development.md#release-process).
 
 ## Areas for Contribution
 
@@ -360,12 +370,20 @@ Look for issues labeled:
 
 ## Continuous Integration
 
-The repository has one GitHub Actions workflow, `.github/workflows/docs.yml` ("Docs Validation"). It is triggered:
+Three GitHub Actions workflows live in `.github/workflows/`:
 
-- **On pull requests** that touch `docs/**`, `README.md`, `src/sif/cli/**`, `src/sif/config/**`, `scripts/generate_cli_ref.py`, `scripts/generate_config_ref.py`, or `tests/test_docs.py`
-- **On pushes** to `main`
+### Test Matrix — `test-matrix.yml`
 
-The workflow installs the package with `pip install -e ".[dev]"` on Python 3.11, runs `pytest tests/test_docs.py -v --no-cov`, then regenerates the reference docs via `scripts/generate_cli_ref.py` and `scripts/generate_config_ref.py` and fails if `git diff --exit-code docs/cli-reference.md docs/configuration.md` detects drift. In practice:
+Runs on every push to any branch and on every pull request, with two jobs:
+
+- **Test** — eight cells: Python 3.10, 3.11, 3.12, and 3.13 on both `ubuntu-latest` and `macos-latest`. Each cell installs with `uv sync --frozen --extra dev --extra embed` and runs the full suite via `env -u FORCE_COLOR NO_COLOR=1 uv run --frozen pytest`; the coverage floor applies exactly as it does locally.
+- **Lint** — Python 3.12 on `ubuntu-latest`, running `ruff check src tests`, `ruff format --check src tests`, and `ty check src/sif`.
+
+All eight test cells plus the lint job must be green on the release commit before it is tagged (see [Release Process](#release-process)). The Test Matrix does not run `bandit`; run `make security` locally if your change touches code the security scan covers.
+
+### Docs Validation — `docs.yml`
+
+Triggered by pushes to `main` and by pull requests that touch `docs/**`, `README.md`, `src/sif/cli/**`, `src/sif/config/**`, `scripts/generate_cli_ref.py`, `scripts/generate_config_ref.py`, or `tests/test_docs.py`. On Python 3.11 it installs `pip install -e ".[dev]"`, runs `pytest tests/test_docs.py -v --no-cov`, then regenerates the reference docs via `scripts/generate_cli_ref.py` and `scripts/generate_config_ref.py` and fails if `git diff --exit-code docs/cli-reference.md docs/configuration.md` detects drift. In practice:
 
 > If you change CLI commands or configuration settings, regenerate the reference docs and commit the result, or CI will fail:
 >
@@ -375,7 +393,9 @@ The workflow installs the package with `pip install -e ".[dev]"` on Python 3.11,
 
 `docs/cli-reference.md` and `docs/configuration.md` are written wholesale by the generation scripts — do not edit them by hand; change the CLI or settings source and rerun `make docs-generate`.
 
-Note: CI does **not** currently run the lint, format, type-check, or test suite — those checks are enforced locally only. Run the full quality suite before opening a PR (see [Coding Standards](#coding-standards) and the Makefile targets below).
+### Publish — `publish.yml`
+
+Triggered by pushing a `v*` tag. It builds the distributions once with `uv build`, verifies that the tag equals `v` + the `src/sif/_version.py` literal, runs `twine check` on the artifacts, then publishes to TestPyPI first and PyPI second through GitHub OIDC trusted publishing (the `testpypi` and `pypi` environments) with PEP 740 attestations. No API token or manual upload is involved — see [Release Process](#release-process).
 
 ## Makefile Targets
 
@@ -388,9 +408,10 @@ The `Makefile` wraps the common development commands:
 | `make test-fast` | `pytest -x -q` | Coverage still applies via `addopts`; stops at first failure |
 | `make docs-test` | `pytest tests/test_docs.py -v --no-cov` | Same docs validation CI runs |
 | `make docs-generate` | `scripts/generate_cli_ref.py` + `scripts/generate_config_ref.py` | Regenerate reference docs before committing CLI/config changes |
+| `make windows-smoke` | `hc exec` on the Windows host (hc remote yoga): prints HEAD, checks the tree is clean, syncs with `uv`, runs `scripts/windows_smoke.py` | On-demand release step only; needs the `hc` CLI and a synced checkout (`YOGA_DIR`, default `D:\Github\SIF`) |
 | `make lint` / `make lint-fix` | `ruff check .` / `ruff check --fix .` | |
 | `make format` / `make format-check` | `ruff format .` / `ruff format --check .` | |
-| `make typecheck` | `ty check src/sif` | ty is configured in `pyproject.toml` (`[tool.ty]`) |
+| `make typecheck` | `ty check src/sif` | ty is configured in `pyproject.toml` (`[tool.ty.src]`, `[tool.ty.environment]`, `[tool.ty.rules]`) |
 | `make security` | `bandit -r src/sif -c pyproject.toml` | bandit is not in the `[dev]` extras; install it separately |
 | `make all` | lint + typecheck + test | Quick combined check |
 | `make ci` | format-check + lint + typecheck + security + test | Full local CI-equivalent run |
