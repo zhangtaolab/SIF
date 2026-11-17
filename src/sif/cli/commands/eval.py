@@ -41,8 +41,10 @@ from sif.embedding.identity import (
 from sif.embedding.manager import EmbeddingManager
 from sif.search.hybrid import SearchPipeline, search_dimension_error
 from sif.search.personal_bench import (
+    HELDOUT_MIN,
     INITIAL_SAMPLE_DOCUMENTS,
     LANGUAGES,
+    MAX_QUERIES,
     MAX_TOP_K,
     MIN_DOCUMENTS,
     SUPPRESS_BELOW,
@@ -726,6 +728,7 @@ def _run_fresh(  # noqa: C901, PLR0913
     output_json: bool,
     no_save: bool,
     require_language: tuple[str, ...] = (),
+    min_heldout: int = HELDOUT_MIN,
 ) -> None:
     """Synthesize, evaluate, and render a fresh personal run."""
     if len(metadata) < MIN_DOCUMENTS:
@@ -745,6 +748,7 @@ def _run_fresh(  # noqa: C901, PLR0913
             metadata,
             db.connection,
             required_languages=require_language,
+            min_heldout=min_heldout,
         )
     except ValueError as e:
         raise click.ClickException(str(e)) from e
@@ -897,6 +901,7 @@ def run_personal(  # noqa: PLR0913
     no_save: bool = False,
     compare: Path | None = None,
     require_language: tuple[str, ...] = (),
+    min_heldout: int = HELDOUT_MIN,
 ) -> None:
     """Run the personal evaluation end to end (fresh or ``--compare``).
 
@@ -929,6 +934,12 @@ def run_personal(  # noqa: PLR0913
                     f"{', '.join(require_language)}.[/yellow]",
                     soft_wrap=True,
                 )
+            if min_heldout != HELDOUT_MIN:
+                console_err.print(
+                    "[yellow]Compare mode evaluates the saved run's query set; "
+                    f"ignoring --min-heldout {min_heldout}.[/yellow]",
+                    soft_wrap=True,
+                )
             _run_compare(
                 db,
                 metadata,
@@ -951,6 +962,7 @@ def run_personal(  # noqa: PLR0913
             output_json,
             no_save,
             require_language,
+            min_heldout,
         )
 
 
@@ -1002,6 +1014,17 @@ def _index_path(ctx: click.Context) -> Path:
         f"{SUPPRESS_BELOW} held-out queries (repeatable)"
     ),
 )
+@click.option(
+    "--min-heldout",
+    "min_heldout",
+    default=HELDOUT_MIN,
+    show_default=True,
+    type=click.IntRange(HELDOUT_MIN, MAX_QUERIES),
+    help=(
+        "Widen a fresh run's sampling until at least this many held-out "
+        f"queries (default {HELDOUT_MIN}; 101 makes the 0.01 gate admissible)"
+    ),
+)
 @click.option("--all", "search_all", is_flag=True, help="Evaluate all collections")
 @click.option("--json", "output_json", is_flag=True, help="Output as JSON")
 @click.pass_context
@@ -1014,6 +1037,7 @@ def eval_group(  # noqa: PLR0913
     limit: int,
     collection: tuple[str, ...],
     require_language: tuple[str, ...],
+    min_heldout: int,
     search_all: bool,
     output_json: bool,
 ) -> None:
@@ -1032,6 +1056,8 @@ def eval_group(  # noqa: PLR0913
     fingerprint mismatch refuses the comparison. --json emits strict JSON.
     --require-language widens a fresh run's sampling until each named language
     has at least ten held-out queries; --compare uses the saved query set and
+    ignores it with a stderr warning. --min-heldout raises the held-out floor
+    (for example 101 makes the 0.01 mean-delta gate admissible); --compare
     ignores it with a stderr warning.
     """
     if ctx.invoked_subcommand is not None:
@@ -1048,4 +1074,5 @@ def eval_group(  # noqa: PLR0913
         no_save,
         compare,
         require_language,
+        min_heldout,
     )

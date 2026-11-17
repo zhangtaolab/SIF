@@ -1098,37 +1098,42 @@ def _language_floor_unmet(
     return any(counts.get(language, 0) < SUPPRESS_BELOW for language in required_languages)
 
 
-def ensure_heldout(
+def ensure_heldout(  # noqa: PLR0913 - explicit sample and floor controls
     metadata: Sequence[DocumentRecord],
     conn: sqlite3.Connection,
     *,
     initial: int = INITIAL_SAMPLE_DOCUMENTS,
     cap: int = MAX_SAMPLE_DOCUMENTS,
     required_languages: Sequence[str] = (),
+    min_heldout: int = HELDOUT_MIN,
 ) -> tuple[list[DocumentRecord], SynthesisResult]:
     """Sample, synthesize, split, and widen until both floors are met (D-06).
 
     Starts from the first ``initial`` documents in deterministic sample order
     (strictly smaller than the cap whenever the corpus has more documents),
     loads bodies only for that slice, and while accepted queries are below
-    ``MIN_QUERIES`` or held-out queries below ``HELDOUT_MIN`` doubles the
+    ``MIN_QUERIES`` or held-out queries below ``min_heldout`` doubles the
     limit toward ``min(len(metadata), cap)``. A widened sample is a superset
     of the previous prefix, so bodies load only for the newly added
     documents. Only a floor still unmet at the cap raises a counted
     ``HeldoutFloorError`` naming accepted, tuning, held-out, and rejection
     counts.
 
-    ``required_languages`` opts into language-aware widening (D-07): while
-    any listed language has fewer than ``SUPPRESS_BELOW`` held-out queries
-    the same doubling continues, and the cap guard carries the same condition
-    so the error fires even when the total floors are already met. The
-    default empty tuple preserves the pre-Phase-23 behavior byte-for-byte.
+    ``min_heldout`` defaults to ``HELDOUT_MIN`` (25) and can only raise the
+    held-out floor: the epsilon gate's 101-query sample is requested by
+    passing 101. ``required_languages`` opts into language-aware widening
+    (D-07): while any listed language has fewer than ``SUPPRESS_BELOW``
+    held-out queries the same doubling continues, and the cap guard carries
+    the same condition so the error fires even when the total floors are
+    already met. The default empty tuple preserves the pre-Phase-23 behavior
+    byte-for-byte.
     """
     if not metadata:
         raise ValueError(
             "Personal eval needs indexed documents; found 0. "
             "Index documents with 'sif index update' and retry."
         )
+    required_heldout = max(HELDOUT_MIN, int(min_heldout))
     hard_cap = min(len(metadata), cap)
     limit = max(1, min(initial, hard_cap))
     sampled = sample_documents(metadata, limit=limit)
@@ -1139,7 +1144,7 @@ def ensure_heldout(
     heldout = sum(1 for query in accepted if query.split == "heldout")
     while (
         len(accepted) < MIN_QUERIES
-        or heldout < HELDOUT_MIN
+        or heldout < required_heldout
         or _language_floor_unmet(accepted, required_languages)
     ) and limit < hard_cap:
         new_limit = min(limit * 2, hard_cap)
@@ -1154,7 +1159,7 @@ def ensure_heldout(
         limit = new_limit
     if (
         len(accepted) < MIN_QUERIES
-        or heldout < HELDOUT_MIN
+        or heldout < required_heldout
         or _language_floor_unmet(accepted, required_languages)
     ):
         tuning = len(accepted) - heldout
@@ -1165,7 +1170,7 @@ def ensure_heldout(
         rendered = ", ".join(f"{language}={count}" for language, count in language_counts.items())
         raise HeldoutFloorError(
             f"Personal eval needs at least {MIN_QUERIES} accepted queries with "
-            f"{HELDOUT_MIN} held out; accepted {len(accepted)} "
+            f"{required_heldout} held out; accepted {len(accepted)} "
             f"(tuning {tuning}, held-out {heldout}) from {len(sampled)} sampled "
             f"documents; rejected {empty + duplicate + overlap} "
             f"({empty} empty, {duplicate} duplicate, {overlap} overlap); "

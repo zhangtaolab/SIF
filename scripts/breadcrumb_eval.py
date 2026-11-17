@@ -77,13 +77,7 @@ CHUNK_SIZE = 512
 CHUNK_OVERLAP = 128
 COLLECTION_PREFIX = "phase24b"
 SELECTION_RULE = "overall-heldout-plus-body-leg-veto"
-EXPECTED_CORPUS_FINGERPRINT = "b5d50ce0c696ab3d"
 MIN_HELDOUT_FOR_EPSILON_WIN = 101
-LIMITATION = (
-    "The Phase 23 curated corpus has N=56 held-out queries, below the 101 needed "
-    "for a 0.01 mean-delta win, so insufficient-evidence is the expected "
-    "outcome until a larger corpus is supplied; the result is corpus-scoped."
-)
 STATE_FILE_NAME = "run-state.json"
 STAGE_TIMEOUT_SECONDS = 6 * 60 * 60
 STAGE_SUFFIXES = ("index", "embed", "identity", "eval")
@@ -183,9 +177,9 @@ def build_stage_commands(
 
     Every ``sif`` argv is an argv list starting with ``-q`` (ModelScope
     pollutes stdout even on a cache hit) and ``--index``; no command is a
-    shell string. A fresh baseline eval names both required languages; every
-    comparison eval re-evaluates the saved query set with ``--compare`` and
-    never resamples.
+    shell string. A fresh baseline eval names both required languages and
+    raises the held-out floor to the epsilon gate's 101; every comparison eval
+    re-evaluates the saved query set with ``--compare`` and never resamples.
     """
     base = [sys.executable, "-m", "sif.cli.main", "-q", "--index", str(arm_spec.db_path)]
     env = build_arm_env(os.environ, arm_spec)
@@ -204,6 +198,8 @@ def build_stage_commands(
             "en",
             "--require-language",
             "zh",
+            "--min-heldout",
+            str(MIN_HELDOUT_FOR_EPSILON_WIN),
             "--json",
         ]
     else:
@@ -284,7 +280,7 @@ def build_dry_run_payload(
         "max_tokens": MAX_TOKENS,
         "model_name": MODEL_NAME,
         "model_type": MODEL_TYPE,
-        "expected_corpus_fingerprint": EXPECTED_CORPUS_FINGERPRINT,
+        "expected_corpus_fingerprint": None,
         "min_heldout_for_epsilon_win": MIN_HELDOUT_FOR_EPSILON_WIN,
     }
 
@@ -445,6 +441,17 @@ def _leg_gates(eval_payload: Any) -> dict[str, dict[str, Any]]:
         if isinstance(gate, Mapping):
             gates[leg] = dict(gate)
     return gates
+
+
+def _replay_section(eval_payload: Any) -> dict[str, Any]:
+    """Return the comparison's replay stability section, or an empty mapping."""
+    if isinstance(eval_payload, Mapping):
+        comparison = eval_payload.get("comparison")
+        if isinstance(comparison, Mapping):
+            replay = comparison.get("replay")
+            if isinstance(replay, Mapping):
+                return dict(replay)
+    return {}
 
 
 def _load_document_chunks(db_path: Path) -> list[tuple[str, list[DocumentChunk]]]:
@@ -676,6 +683,7 @@ def _stage_detail(  # noqa: PLR0913 - explicit stage context
         "tuning": _split_gate(payload, "tuning"),
         "heldout": _split_gate(payload, "heldout"),
         "legs": _leg_gates(payload),
+        "replay": _replay_section(payload),
         "duplicates": collect_duplicate_summary(spec.db_path),
     }
 
@@ -693,6 +701,7 @@ def _absorb_detail(suffix: str, detail: Mapping[str, Any], result: dict[str, Any
         result["tuning"] = detail.get("tuning")
         result["heldout"] = detail.get("heldout")
         result["legs"] = detail.get("legs")
+        result["replay"] = detail.get("replay")
         result["duplicates"] = detail.get("duplicates")
         result["run_path"] = detail.get("run_path")
 
@@ -782,6 +791,7 @@ def build_breadcrumb_artifact(  # noqa: PLR0913 - one keyword per artifact input
     identity: Mapping[str, Any],
     confirmation: Mapping[str, Any],
     legs: Mapping[str, Mapping[str, Any]],
+    replay: Mapping[str, Any] | None = None,
     duplicates: Mapping[str, Any],
     corpus_label: str,
     corpus_fingerprint: str,
@@ -808,13 +818,17 @@ def build_breadcrumb_artifact(  # noqa: PLR0913 - one keyword per artifact input
         "identity": {key: identity.get(key) for key in IDENTITY_KEYS},
         "confirmation": dict(confirmation),
         "legs": {leg: dict(gate) for leg, gate in legs.items()},
+        "replay": dict(replay or {}),
         "duplicates": dict(duplicates),
         "corpus_label": corpus_label,
         "corpus_fingerprint": corpus_fingerprint,
         "baseline_source": baseline_source,
         "selection_rule": SELECTION_RULE,
         "min_heldout_for_epsilon_win": MIN_HELDOUT_FOR_EPSILON_WIN,
-        "limitation": LIMITATION,
+        "limitation": chunk_sweep.build_limitation(
+            corpus_label,
+            int(confirmation.get("n", 0) or 0),
+        ),
     }
 
 
@@ -824,8 +838,16 @@ def write_committed_artifact(
     force: bool = False,
     path: Path | None = None,
 ) -> Path:
-    """Write the committed evidence, never silently replacing another run."""
-    return chunk_sweep.write_committed_artifact(artifact, force=force, path=path)
+    """Write the committed evidence, never silently replacing another run.
+
+    The default target is this runbook's ``ARTIFACT_PATH``; passing ``None``
+    through to the shared writer would target the chunk-sweep artifact.
+    """
+    return chunk_sweep.write_committed_artifact(
+        artifact,
+        force=force,
+        path=ARTIFACT_PATH if path is None else path,
+    )
 
 
 def finalize_breadcrumb(  # noqa: PLR0913 - one keyword per artifact input
@@ -835,6 +857,7 @@ def finalize_breadcrumb(  # noqa: PLR0913 - one keyword per artifact input
     identity: Mapping[str, Any],
     confirmation: Mapping[str, Any],
     legs: Mapping[str, Mapping[str, Any]],
+    replay: Mapping[str, Any] | None = None,
     duplicates: Mapping[str, Any],
     corpus_label: str,
     corpus_fingerprint: str,
@@ -855,6 +878,7 @@ def finalize_breadcrumb(  # noqa: PLR0913 - one keyword per artifact input
         identity=identity,
         confirmation=confirmation,
         legs=legs,
+        replay=replay,
         duplicates=duplicates,
         corpus_label=corpus_label,
         corpus_fingerprint=corpus_fingerprint,
@@ -966,6 +990,7 @@ def run_stage_machine(  # noqa: PLR0913 - one keyword per run option
         identity=identity,
         confirmation=heldout,
         legs=legs,
+        replay=arm_result.get("replay"),
         duplicates=duplicates,
         corpus_label=corpus_label,
         corpus_fingerprint=live_fingerprint,

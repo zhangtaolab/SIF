@@ -548,6 +548,14 @@ class TestArtifact:
                 "title": {"n": 101, "mean_delta": 0.03, "winner": True, "sufficient": True},
                 "replay": {"n": 101, "mean_delta": 0.0, "winner": False, "sufficient": True},
             },
+            replay={
+                "available": False,
+                "baseline_available": True,
+                "num_queries": 0,
+                "jaccard_at_10": 0.0,
+                "top1_stability": 0.0,
+                "note": "no CLI query history",
+            },
             duplicates={"chunks": 100, "documents": 10, "title_share": 1.0},
             corpus_label="phase23-zh-heavy",
             corpus_fingerprint="b5d50ce0c696ab3d",
@@ -571,7 +579,9 @@ class TestArtifact:
         assert artifact["baseline_source"] == "saved-run"
         assert artifact["selection_rule"] == "overall-heldout-plus-body-leg-veto"
         assert artifact["min_heldout_for_epsilon_win"] == 101
-        assert "N=56" in artifact["limitation"]
+        assert "101" in artifact["limitation"]
+        assert "at or above" in artifact["limitation"]
+        assert artifact["replay"]["available"] is False
         assert set(artifact["legs"]) == {"body", "title", "replay"}
 
     def test_artifact_is_aggregate_only(self, tmp_path: Path) -> None:
@@ -584,6 +594,19 @@ class TestArtifact:
             isinstance(value, str) and value.startswith("/") for value in artifact.values()
         )
         assert artifact["decision_record"]["duplicate_summary"]["chunks"] == 100
+
+    def test_default_path_is_the_breadcrumb_artifact(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        target = tmp_path / "breadcrumb-verdict.json"
+        monkeypatch.setattr(breadcrumb_eval, "ARTIFACT_PATH", target)
+
+        written = breadcrumb_eval.write_committed_artifact(
+            {"decision": "keep-breadcrumb-off", "corpus_fingerprint": "abc"}
+        )
+
+        assert written == target
+        assert json.loads(target.read_text(encoding="utf-8"))["decision"] == "keep-breadcrumb-off"
 
     def test_differing_decision_requires_force(self, tmp_path: Path) -> None:
         path = tmp_path / "artifact.json"

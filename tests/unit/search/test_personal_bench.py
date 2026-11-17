@@ -587,6 +587,35 @@ class TestEnsureHeldout:
         assert len(synthesis.queries) >= MIN_QUERIES
         assert sum(1 for q in synthesis.queries if q.split == "heldout") >= HELDOUT_MIN
 
+    def test_min_heldout_raises_the_floor_and_widens_to_the_cap(self) -> None:
+        bodies = _tuning_bodies(120)
+        metadata = _records_for_metadata(bodies)
+        titles = _titles_with_split(60, "heldout", start=0) + _titles_with_split(
+            60, "tuning", start=5000
+        )
+        titled = [
+            DocumentRecord(
+                id=doc.id,
+                path=doc.path,
+                title=title,
+                checksum=doc.checksum,
+                file_size=doc.file_size,
+            )
+            for doc, title in zip(metadata, titles, strict=True)
+        ]
+        conn = _RecordingConnection({doc.id: bodies[int(doc.id.split("-")[1])] for doc in titled})
+
+        sampled, synthesis = ensure_heldout(
+            titled,  # type: ignore[arg-type]
+            conn,  # type: ignore[arg-type]
+            min_heldout=60,
+        )
+
+        assert len(sampled) == 120
+        assert sum(1 for q in synthesis.queries if q.split == "heldout") >= 60
+        # The default floor (25) was met at 50; min_heldout=60 widened twice.
+        assert [len(call[1]) for call in conn.calls] == [50, 50, 20]
+
     def test_empty_required_languages_preserves_the_default_path(self) -> None:
         bodies = _tuning_bodies(50)
         metadata = _records_for_metadata(bodies)

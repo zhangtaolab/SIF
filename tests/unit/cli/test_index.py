@@ -14,11 +14,16 @@ from click.testing import CliRunner
 from rich.console import Console
 
 from sif.cli.commands.index import embed_cmd, index_group
+from sif.config.constants import DEFAULT_CHUNK_OVERLAP, DEFAULT_CHUNK_SIZE
 from sif.config.settings import Settings
 from sif.core.models import Collection, Document
 from sif.database.database import Database
 from sif.database.maintenance import BackupResult, MaintenanceBusyError, VacuumResult
-from sif.database.repositories import CollectionRepository, DocumentRepository
+from sif.database.repositories import (
+    CollectionRepository,
+    DocumentRepository,
+    IndexMetaRepository,
+)
 from sif.embedding.identity import build_identity, read_identity, write_identity
 from sif.embedding.prompts import PromptScheme
 from sif.models.embedding import EmbeddingConfig, ModelType
@@ -983,6 +988,41 @@ class TestStreamingEmbed:
         assert replaced.source == "verified"
         ids = _document_ids(db_path)
         assert _embedded_chunk_count(db_path, ids["/notes/a.md"]) >= 1
+
+    def test_embed_writes_chunking_contract_marker_iff_contract_flipped(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """24-06: the marker exists only when a chunk/breadcrumb default flipped."""
+        self._delenv(monkeypatch)
+        db_path = tmp_path / "contract.db"
+        settings = self._settings()
+        _seed_real_index(db_path, settings, [("/notes/a.md", "# A\n\nbody")])
+
+        result = _invoke_real_embed(
+            db_path,
+            _streaming_manager(_identity()),
+            settings,
+            [],
+        )
+
+        assert result.exit_code == 0, result.output
+        conn = sqlite3.connect(str(db_path))
+        try:
+            value = IndexMetaRepository(conn).get("chunking.contract")
+        finally:
+            conn.close()
+        flipped = (DEFAULT_CHUNK_SIZE, DEFAULT_CHUNK_OVERLAP) != (512, 128) or (
+            settings.embed_breadcrumb
+        )
+        if flipped:
+            assert json.loads(value) == {
+                "schema": 1,
+                "chunk_size": settings.chunk_size,
+                "chunk_overlap": settings.chunk_overlap,
+                "embed_breadcrumb": settings.embed_breadcrumb,
+            }
+        else:
+            assert value is None
 
 
 class TestEmbedIdentityLocking:

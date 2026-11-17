@@ -205,6 +205,8 @@ class TestDryRunCommands:
         baseline_argv = payload["commands"][0]["stages"][3]["commands"][0]
 
         assert baseline_argv.count("--require-language") == 2
+        assert baseline_argv.count("--min-heldout") == 1
+        assert baseline_argv[baseline_argv.index("--min-heldout") + 1] == "101"
         assert "--compare" not in baseline_argv
 
         for entry in payload["commands"][1:]:
@@ -543,6 +545,25 @@ def _artifact_results(
             },
         }
     return results
+
+
+class TestLimitation:
+    """The limitation text is corpus-scoped and names the measured N."""
+
+    def test_above_the_epsilon_floor_reports_an_admissible_sample(self) -> None:
+        text = chunk_sweep.build_limitation("books-markdown-papers-2026-11", 239)
+
+        assert "books-markdown-papers-2026-11" in text
+        assert "239" in text
+        assert "101" in text
+        assert "at or above" in text
+
+    def test_below_the_epsilon_floor_names_the_shortfall(self) -> None:
+        text = chunk_sweep.build_limitation("books-markdown-papers-2026-11", 43)
+
+        assert "43" in text
+        assert "101" in text
+        assert "below" in text
 
 
 class TestArtifact:

@@ -2178,3 +2178,75 @@ class TestRequireLanguageCli:
         assert "en, zh" in result.stderr
         payload = json.loads(result.stdout)
         assert payload["comparison"]["top_k"] == 10
+
+
+class TestMinHeldoutCli:
+    """The additive ``--min-heldout`` pass-through (24-06 corpus amendment)."""
+
+    def test_flag_appears_in_help(self) -> None:
+        result = CliRunner().invoke(eval_group, ["--help"])
+
+        assert result.exit_code == 0
+        assert "--min-heldout" in result.output
+
+    def test_fresh_run_forwards_min_heldout_to_ensure_heldout(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        db_path = build_personal_db(tmp_path / "personal.db", documents=120)
+        settings = _settings(tmp_path)
+        _SpyPipeline.seen = []
+
+        with patch(
+            "sif.cli.commands.eval.ensure_heldout",
+            wraps=ensure_heldout,
+        ) as spy:
+            result = _invoke(
+                db_path,
+                [
+                    "--personal",
+                    "--bm25-only",
+                    "--json",
+                    "--min-heldout",
+                    "30",
+                ],
+                settings=settings,
+                pipeline=_SpyPipeline,
+            )
+
+        assert result.exit_code == 0, result.output
+        assert spy.call_args.kwargs["min_heldout"] == 30
+
+    def test_compare_mode_warns_once_and_keeps_stdout_json_clean(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        db_path = build_personal_db(tmp_path / "personal.db", documents=60)
+        settings = _settings(tmp_path)
+        _ReplaySpyPipeline.seen = []
+        saved_path, _payload = _fresh_saved_run(
+            db_path,
+            settings,
+            pipeline=_ReplaySpyPipeline,
+        )
+
+        result = _invoke(
+            db_path,
+            [
+                "--personal",
+                "--compare",
+                str(saved_path),
+                "--bm25-only",
+                "--json",
+                "--min-heldout",
+                "40",
+            ],
+            settings=settings,
+            pipeline=_SpyPipeline,
+        )
+
+        assert result.exit_code == 0, result.output
+        assert result.stderr.count("ignoring --min-heldout") == 1
+        assert "40" in result.stderr
+        payload = json.loads(result.stdout)
+        assert payload["comparison"]["top_k"] == 10

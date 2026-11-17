@@ -749,6 +749,8 @@ with a seeded 95% bootstrap CI and the 1/N noise floor; a corpus
 fingerprint mismatch refuses the comparison. --json emits strict JSON.
 --require-language widens a fresh run's sampling until each named language
 has at least ten held-out queries; --compare uses the saved query set and
+ignores it with a stderr warning. --min-heldout raises the held-out floor
+(for example 101 makes the 0.01 mean-delta gate admissible); --compare
 ignores it with a stderr warning.
 
 ```bash
@@ -766,6 +768,7 @@ sif eval [OPTIONS]
 | `--limit` | `-n` | integer range | `10` | Number of results per query (1-200) |
 | `--collection` | `-c` | text[] | — | Collection to evaluate |
 | `--require-language` | `—` | choice [en|zh|mixed][] | — | Widen sampling until each required language has at least 10 held-out queries (repeatable) |
+| `--min-heldout` | `—` | integer range | `25` | Widen a fresh run's sampling until at least this many held-out queries (default 25; 101 makes the 0.01 gate admissible) |
 | `--all` | `—` | flag | `false` | Evaluate all collections |
 | `--json` | `—` | flag | `false` | Output as JSON |
 

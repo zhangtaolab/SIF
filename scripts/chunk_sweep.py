@@ -70,13 +70,23 @@ MAX_TOKENS = 512
 BATCH_SIZE = 32
 COLLECTION_PREFIX = "phase24"
 SELECTION_RULE = "tuning-select-then-heldout-confirm"
-EXPECTED_CORPUS_FINGERPRINT = "b5d50ce0c696ab3d"
 MIN_HELDOUT_FOR_EPSILON_WIN = 101
-LIMITATION = (
-    "The Phase 23 curated corpus has 56 held-out queries, below the 101 needed "
-    "for a 0.01 mean-delta win, so only keep-default or insufficient-evidence "
-    "is reachable until a larger corpus is supplied."
-)
+
+
+def build_limitation(corpus_label: str, heldout_n: int) -> str:
+    """Return corpus-scoped limitation text with the measured held-out count."""
+    if heldout_n >= MIN_HELDOUT_FOR_EPSILON_WIN:
+        return (
+            f"The {corpus_label} corpus has {heldout_n} held-out queries, at or above "
+            f"the {MIN_HELDOUT_FOR_EPSILON_WIN} needed for a 0.01 mean-delta win."
+        )
+    return (
+        f"The {corpus_label} corpus has {heldout_n} held-out queries, below the "
+        f"{MIN_HELDOUT_FOR_EPSILON_WIN} needed for a 0.01 mean-delta win, so only "
+        "keep-default or insufficient-evidence is reachable until a larger sample is supplied."
+    )
+
+
 STATE_FILE_NAME = "run-state.json"
 _STAGE_PARTS = 3
 STAGE_SUFFIXES = ("index", "embed", "identity", "eval")
@@ -182,9 +192,9 @@ def build_arm_commands(
 
     Every ``sif`` argv is an argv list starting with ``-q`` (ModelScope
     pollutes stdout even on a cache hit) and ``--index``; no command is a
-    shell string. The baseline arm evaluated without a saved run names both
-    required languages; every comparison eval re-evaluates the saved query set
-    with ``--compare`` and never resamples.
+    shell string. A fresh baseline eval names both required languages and
+    raises the held-out floor to the epsilon gate's 101; every comparison eval
+    re-evaluates the saved query set with ``--compare`` and never resamples.
     """
     base = [sys.executable, "-m", "sif.cli.main", "-q", "--index", str(arm_spec.db_path)]
     env = build_arm_env(os.environ, arm_spec)
@@ -210,6 +220,8 @@ def build_arm_commands(
             "en",
             "--require-language",
             "zh",
+            "--min-heldout",
+            str(MIN_HELDOUT_FOR_EPSILON_WIN),
             "--json",
         ]
     else:
@@ -293,7 +305,7 @@ def build_dry_run_payload(
         "max_tokens": MAX_TOKENS,
         "model_name": MODEL_NAME,
         "model_type": MODEL_TYPE,
-        "expected_corpus_fingerprint": EXPECTED_CORPUS_FINGERPRINT,
+        "expected_corpus_fingerprint": None,
         "min_heldout_for_epsilon_win": MIN_HELDOUT_FOR_EPSILON_WIN,
     }
 
@@ -906,6 +918,7 @@ def build_sweep_artifact(
         "sufficient": False,
     }
     decision = decide_chunk_default(selected, tuning.get("mean_delta"), confirmation)
+    confirmation_n = int(confirmation.get("n", 0) or 0)
     return {
         "schema_version": 1,
         "decision": decision.decision,
@@ -930,7 +943,7 @@ def build_sweep_artifact(
         "baseline_source": baseline_source,
         "selection_rule": SELECTION_RULE,
         "min_heldout_for_epsilon_win": MIN_HELDOUT_FOR_EPSILON_WIN,
-        "limitation": LIMITATION,
+        "limitation": build_limitation(corpus_label, confirmation_n),
     }
 
 

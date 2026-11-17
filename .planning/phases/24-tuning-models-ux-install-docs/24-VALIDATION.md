@@ -78,11 +78,20 @@ created: "2026-11-16"
 
 | Behavior | Requirement | Why Manual | Test Instructions |
 |----------|-------------|------------|-------------------|
-| Real chunk sweep on the Phase 23 corpus (6 arms) | QUAL-02 | Requires full re-chunk + re-embed (≈77 min) on the user's corpus; results are hardware/version-dependent and cannot gate CI | Run `python scripts/chunk_sweep.py --corpus <roots> --baseline-saved-run <qwen3.json> --keep-arms --json`; record per-arm costs, the tuning-selected arm, the held-out confirmation, and the decision; commit the aggregate artifact + docs section only |
-| Real breadcrumb arm (≈22 min) | QUAL-03 | Requires a full re-embed and the per-leg comparison; not a CI gate | Run `python scripts/breadcrumb_eval.py --corpus <roots> --baseline-saved-run <qwen3.json> --keep-arms --json`; record duplicate metrics, per-leg gates, and the decision |
+| Real chunk sweep on the authorized books_markdown corpus (6 arms) | QUAL-02 | Requires full re-chunk + re-embed (≈2.5 h) on the user's corpus; the corpus is 610 documents (2 English books + 608 Chinese/English papers) after the 2026-11-17 amendment; results are hardware/version-dependent and cannot gate CI | Run `python scripts/chunk_sweep.py --corpus /Users/forrest/Playground/books_markdown --corpus-label books-markdown-papers-2026-11 --scratch-root .planning/tmp/phase-24-chunk-sweep-books --keep-arms --json`; the fresh baseline uses `--min-heldout 101` and measured held-out N=194; record per-arm costs, the tuning-selected arm, the held-out confirmation, and the decision; commit the aggregate artifact + docs section only |
+| Real breadcrumb arm (≈25–35 min) | QUAL-03 | Requires a full re-embed and the per-leg comparison; not a CI gate | Run `python scripts/breadcrumb_eval.py --corpus /Users/forrest/Playground/books_markdown --corpus-label books-markdown-papers-2026-11 --baseline-saved-run .planning/tmp/phase-24-chunk-sweep-books/saved-runs/baseline.json --scratch-root .planning/tmp/phase-24-breadcrumb-books --keep-arms --json`; record duplicate metrics, per-leg gates, and the decision |
 | Install docs end-to-end verification | DOCS-01 | The uv/torch/llama-cpp recipes are platform- and release-dependent; a real install on Linux/macOS is the proof | Follow `docs/installation.md` and `docs/models.md` on each platform; record the exact commands/output and any degradation observed |
 
 ---
+
+## Manual Evidence (2026-11-17)
+
+Both manual rows ran on the user-authorized `books-markdown-papers-2026-11` corpus (610 documents: 2 English books + 608 Chinese/English papers; fingerprint `9ccbf4eea9263ed4`) with the modelscope Qwen3-Embedding-0.6B identity. The fresh baseline passed `--min-heldout 101`; sampling widened to 200 documents with held-out **N=194** (en=136, zh=244, mixed=12).
+
+- **QUAL-02 chunk sweep**: six arms completed in 2h08m; **decision `keep-default`**. Tuning selected `overlap-0` (+0.000737), but the held-out confirmation was -0.008605 (CI [-0.021559, +0.003094], helped 2 / hurt 9 / unchanged 183); every non-baseline arm's held-out delta was negative or flat. No chunk default changed. Artifact: `bench/chunk-sweep.json`.
+- **QUAL-03 breadcrumb arm**: **decision `keep-breadcrumb-off`**. Overall held-out delta +0.014104 (CI [-0.005664, +0.035548], winner false); title leg +0.048521 (winner true), body leg +0.006243 (winner false); duplicate metrics `title_share=1.0`, `in_content_share=0.622955`, `subchunk_share=0.387919`; replay unavailable (no saved snapshot). `embed_breadcrumb` stays False. Artifact: `bench/breadcrumb-verdict.json`.
+- **Conditional marker**: no default flipped, so no `chunking.contract` marker code was added; `test_embed_writes_chunking_contract_marker_iff_contract_flipped` asserts the marker is absent through the real embed path.
+- The manual rows above are complete; the Nyquist sign-off fields remain owned by `validate-phase` (this file stays `status: draft` until that audit runs).
 
 ## Validation Sign-Off
 
