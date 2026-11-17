@@ -312,6 +312,7 @@ class TestEmbedCommand:
                 return_value=MagicMock(
                     model_name="test",
                     batch_size=32,
+                    embed_breadcrumb=False,
                     model_dump=lambda: {"model_name": "test"},
                 ),
             ),
@@ -371,7 +372,7 @@ class TestEmbedCommand:
             ),
             patch(
                 "sif.config.settings.get_settings",
-                return_value=MagicMock(model_name="test", batch_size=32),
+                return_value=MagicMock(model_name="test", batch_size=32, embed_breadcrumb=False),
             ),
         ):
             result = runner.invoke(
@@ -492,6 +493,7 @@ class TestEmbedCommand:
                 return_value=MagicMock(
                     model_name="test",
                     batch_size=32,
+                    embed_breadcrumb=False,
                     model_dump=lambda: {"model_name": "test"},
                 ),
             ),
@@ -708,7 +710,7 @@ class TestEmbedCommand:
             ),
             patch(
                 "sif.config.settings.get_settings",
-                return_value=MagicMock(model_name="test", batch_size=32),
+                return_value=MagicMock(model_name="test", batch_size=32, embed_breadcrumb=False),
             ),
             patch(
                 "sif.search.vector.VectorSearcher",
