@@ -29,6 +29,8 @@ DOCS_FILES = [
     Path("docs/benchmarking.md"),
     Path("docs/architecture.md"),
     Path("docs/models.md"),
+    Path("docs/installation.md"),
+    Path("docs/migration.md"),
 ]
 
 # Commands that should never be executed
@@ -492,3 +494,65 @@ class TestDocsCodeBlocks:
                         pytest.fail(
                             f"Invalid SQL in {block['file']}: does not start with a valid keyword",
                         )
+
+
+INSTALLATION_DOC = Path("docs/installation.md")
+MODELS_DOC = Path("docs/models.md")
+RETIRED_MODEL = "iic/gte_Qwen2-7B-instruct"
+GENERATOR_OWNED = {"cli-reference.md", "configuration.md"}
+
+
+class TestInstallAndModelDocs:
+    """DOCS-01 guards: uv-first install, degradation matrix, model management."""
+
+    def test_installation_doc_is_uv_first(self) -> None:
+        """Installation leads with uv tool, then uvx, then pip."""
+        text = INSTALLATION_DOC.read_text(encoding="utf-8")
+        for required in ("uv tool install", "--torch-backend=cpu", "uvx", "llama-cpp-python"):
+            assert required in text, f"docs/installation.md is missing {required!r}"
+        positions = [text.index(item) for item in ("uv tool install", "uvx", "pip install")]
+        assert positions == sorted(positions), (
+            f"install methods are not ordered uv tool, uvx, pip: {positions}"
+        )
+
+    def test_installation_doc_degradation_matrix(self) -> None:
+        """The degradation matrix names the BM25-only, sqlite-vec, and Windows rows."""
+        text = INSTALLATION_DOC.read_text(encoding="utf-8")
+        assert "## Degradation Matrix" in text
+        for row in ("BM25", "sqlite-vec", "Windows"):
+            assert row in text, f"degradation matrix is missing {row!r}"
+        assert "one-time warning" in text, "the MCP hybrid_search BM25 degradation is not stated"
+
+    def test_installation_doc_links_client_guide_and_models_commands(self) -> None:
+        """Client snippets link mcp-server.md and the models commands are documented."""
+        text = INSTALLATION_DOC.read_text(encoding="utf-8")
+        assert "mcp-server.md" in text
+        for command in ("sif models pull", "sif models status"):
+            assert command in text, f"docs/installation.md is missing {command!r}"
+
+    def test_models_doc_has_model_management_section(self) -> None:
+        """Model Management precedes Related Documentation and carries the cache surface."""
+        text = MODELS_DOC.read_text(encoding="utf-8")
+        assert "## Model Management" in text
+        assert text.index("## Model Management") < text.index("## Related Documentation")
+        for required in ("sif models pull", "sif models status", ".sif-model.json"):
+            assert required in text, f"docs/models.md Model Management is missing {required!r}"
+        for state in ("absent", "empty", "unverified", "legacy", "valid"):
+            assert state in text, f"docs/models.md is missing cache state {state!r}"
+
+    def test_hand_docs_do_not_name_the_retired_7b_default(self) -> None:
+        """No hand-maintained doc advertises the retired 7B gte_Qwen2 default."""
+        offenders = [
+            md_file.name
+            for md_file in DOCS_FILES
+            if md_file.name not in GENERATOR_OWNED
+            and md_file.exists()
+            and RETIRED_MODEL in md_file.read_text(encoding="utf-8")
+        ]
+        assert offenders == [], f"retired model {RETIRED_MODEL!r} appears in {offenders}"
+
+    def test_deprecated_pull_alias_is_described(self) -> None:
+        """The legacy sif pull alias is documented as deprecated."""
+        text = MODELS_DOC.read_text(encoding="utf-8")
+        assert "sif pull" in text
+        assert "deprecated" in text.lower()

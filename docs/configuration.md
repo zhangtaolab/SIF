@@ -32,6 +32,8 @@ SIF_LOG_LEVEL=INFO
 
 ## Configuration Options
 
+Each environment variable maps to a lowercase Settings field: `SIF_CHUNK_SIZE` sets `chunk_size`, `SIF_EMBED_BREADCRUMB` sets `embed_breadcrumb`, and so on.
+
 ### Application Settings
 
 | Variable | Type | Default | Description |

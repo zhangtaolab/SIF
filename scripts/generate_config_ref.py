@@ -247,6 +247,12 @@ def _append_header(lines: list[str]) -> None:
     lines.append("")
     lines.append("## Configuration Options")
     lines.append("")
+    lines.append(
+        "Each environment variable maps to a lowercase Settings field: "
+        "`SIF_CHUNK_SIZE` sets `chunk_size`, `SIF_EMBED_BREADCRUMB` sets "
+        "`embed_breadcrumb`, and so on."
+    )
+    lines.append("")
 
 
 def _append_device_selection_note(lines: list[str]) -> None:

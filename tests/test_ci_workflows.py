@@ -280,3 +280,54 @@ def test_lint_job_runs_repo_gates() -> None:
     assert "ruff check" not in test_job, (
         "ruff gates must live in the lint job, not the matrix test job"
     )
+
+
+UV_TOOL_INSTALL = "uv tool install"
+TORCH_BACKEND_RECIPE = "--torch-backend=cpu"
+
+
+def test_installation_docs_are_uv_first() -> None:
+    """Installation docs lead with uv tool, then uvx, then pip."""
+    text = INSTALLATION.read_text(encoding="utf-8")
+
+    for required in (UV_TOOL_INSTALL, TORCH_BACKEND_RECIPE, "uvx"):
+        assert required in text, f"docs/installation.md is missing {required!r}"
+
+    positions = [text.index(item) for item in (UV_TOOL_INSTALL, "uvx", "pip install")]
+    assert positions == sorted(positions), (
+        f"install methods are not ordered uv tool, uvx, pip: {positions}"
+    )
+
+
+def test_installation_docs_cpu_recipe_and_pip_alternative() -> None:
+    """The CPU recipe names --torch-backend=cpu and pip keeps the CPU index URL."""
+    text = INSTALLATION.read_text(encoding="utf-8")
+
+    assert TORCH_BACKEND_RECIPE in text, "docs/installation.md is missing the CPU torch recipe"
+    assert CPU_INDEX_URL in text, (
+        f"docs/installation.md is missing the pip CPU index alternative {CPU_INDEX_URL!r}"
+    )
+    assert "uv 0.9.19" in text, "docs/installation.md is missing the uv version floor"
+
+
+def test_installation_docs_degradation_matrix() -> None:
+    """The degradation matrix states the BM25-only, sqlite-vec, and Windows rows."""
+    text = INSTALLATION.read_text(encoding="utf-8")
+
+    assert "## Degradation Matrix" in text, "docs/installation.md has no degradation matrix"
+    missing = [
+        row for row in ("BM25", "sqlite-vec", "llama-cpp-python", "Windows") if row not in text
+    ]
+    assert missing == [], f"degradation matrix is missing rows {missing}"
+    assert "one-time warning" in text, "the MCP hybrid_search BM25 degradation is not stated"
+
+
+def test_installation_docs_do_not_claim_pyproject_index_for_tool_installs() -> None:
+    """A published tool install never resolves its CPU index from pyproject.toml."""
+    text = INSTALLATION.read_text(encoding="utf-8").lower()
+
+    for stale in (
+        "resolves cpu-only torch from the explicit pytorch cpu index declared",
+        "declared in `pyproject.toml`",
+    ):
+        assert stale not in text, f"docs/installation.md keeps the false CPU-index claim: {stale!r}"
