@@ -273,7 +273,7 @@ Full detail: `.planning/milestones/v1.1-ROADMAP.md`
   3. User can pull models reliably — `sif models pull` with DEFAULT_MODELS corrected from 7B gte_Qwen2 to the Qwen3-0.6B family, md5 cache-check bug fixed, deterministic ModelScope path, canonical cache dir
   4. User can inspect model status — `sif models status` shows identity/backend/dims with a backend probe, and stays silent in non-TTY contexts
   5. User can install SIF correctly on every platform — uv-first docs with the Linux CPU torch index recipe, llama-cpp backend indexes, degradation matrix, and client config snippets; every new command/Settings field across the milestone passes the `make docs-generate` CI diff gate
-**Plans**: 2/7 plans executed
+**Plans**: 3/7 plans executed
 **Wave 1**
 - [x] 24-01-PLAN.md — Chunk-sweep instrument: pure tuning verdict + isolated-arm runbook with per-arm identity gate + tests
 
@@ -281,7 +281,7 @@ Full detail: `.planning/milestones/v1.1-ROADMAP.md`
 - [x] 24-02-PLAN.md — Breadcrumb embed contract: builder, default-off Settings switch, writer/watcher/index wiring, generated config reference
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 24-03-PLAN.md — Model cache rewrite: canonical dir, SHA-256 manifest, atomic download, legacy migration, Qwen3 DEFAULT_MODELS
+- [x] 24-03-PLAN.md — Model cache rewrite: canonical dir, SHA-256 manifest, atomic download, legacy migration, Qwen3 DEFAULT_MODELS
 - [ ] 24-07-PLAN.md — Breadcrumb evaluation layer: duplicate metrics, body-leg verdict policy, one-arm identity-gated runbook + tests
 
 **Wave 4** *(blocked on Wave 3 completion)*
@@ -320,7 +320,7 @@ v1.2 contracts — defined ONCE; downstream phases consume, never redefine:
 | 21. Scale, Maintenance + Embedder Identity | v1.2 | 8/8 | Complete    | 2026-11-16 |
 | 22. MCP SDK v2 + Agent Packaging | v1.2 | 7/7 | Complete    | 2026-11-16 |
 | 23. Harrier Gated Evaluation | v1.2 | 6/6 | Complete    | 2026-11-16 |
-| 24. Tuning + Models UX + Install Docs | v1.2 | 2/7 | In Progress | - |
+| 24. Tuning + Models UX + Install Docs | v1.2 | 3/7 | In Progress | - |
 
 ---
 *Roadmap created 2026-11-07 for milestone v1.1; v1.2 (Phases 17-24) added 2026-11-13. v1.0 (Phases 1-10.1) and v1.1 (Phases 11-16.1) shipped. Phase numbering continues at 17 (no reset).*
