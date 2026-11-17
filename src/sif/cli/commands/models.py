@@ -247,7 +247,7 @@ def models_status_cmd(ctx: click.Context, output_json: bool) -> None:
     current = build_settings_identity(settings, scheme)
     model_cache_dir = settings.get_cache_dir() / "models"
     cache = inspect_cache(settings.model_name, model_cache_dir)
-    vector_module, vector_distribution = _VECTOR_BACKEND
+    vector_name, vector_module, vector_distribution = _VECTOR_BACKEND
 
     payload: dict[str, dict[str, object]] = {
         "settings": {
@@ -264,7 +264,7 @@ def models_status_cmd(ctx: click.Context, output_json: bool) -> None:
         },
         "backend": _backend_section(settings.model_type),
         "vector_backend": _probe_module(
-            vector_module,
+            vector_name,
             vector_module,
             vector_distribution,
         ),
