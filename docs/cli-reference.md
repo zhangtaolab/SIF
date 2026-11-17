@@ -17,6 +17,9 @@ These options can be used with any command:
 
 ```
 sif
+├── models          Download and inspect embedding, reranker, and query-expansion models.
+│   ├── pull            Download the configured or named model through the verified cache.
+│   └── status          Show configured, cached, and persisted model identity.
 ├── collection      Manage document collections.
 │   ├── add             Add a new collection.
 │   ├── remove          Remove a collection.
@@ -54,7 +57,6 @@ sif
 │   ├── http            Run MCP server in HTTP mode.
 │   └── daemon          Run the MCP Streamable HTTP server as a detached daemon.
 ├── ls              List indexed documents as a virtual file tree.
-├── pull            Download a GGUF model file.
 ├── bench           Run benchmark evaluation against a fixture file.
 ├── eval            Measure search quality on your own indexed corpus.
 ├── suggest         Show prefix completions, did-you-mean rewrites, and query history.
@@ -632,6 +634,43 @@ Run MCP server in stdio mode.
 sif mcp stdio [OPTIONS]
 ```
 
+## Model Commands
+
+### `models pull`
+
+Download the configured or named model through the verified cache.
+
+```bash
+sif models pull [OPTIONS]
+```
+
+**Arguments:**
+
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `name` | text | No |  |
+
+**Options:**
+
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--force` | `—` | flag | `false` | Re-download even when the cached copy verifies |
+| `--cache-dir` | `—` | path | — | Cache root (defaults to the SIF cache directory) |
+
+### `models status`
+
+Show configured, cached, and persisted model identity.
+
+```bash
+sif models status [OPTIONS]
+```
+
+**Options:**
+
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--json` | `—` | flag | `false` | Output as JSON |
+
 ## Other Commands
 
 ### `bench`
@@ -744,26 +783,6 @@ sif ls [OPTIONS]
 |----------|------|----------|-------------|
 | `collection` | text | No |  |
 | `subpath` | text | No |  |
-
-### `pull`
-
-Download a GGUF model file.
-
-```bash
-sif pull [OPTIONS]
-```
-
-**Arguments:**
-
-| Argument | Type | Required | Description |
-|----------|------|----------|-------------|
-| `model_spec` | text | Yes |  |
-
-**Options:**
-
-| Option | Short | Type | Default | Description |
-|--------|-------|------|---------|-------------|
-| `--cache-dir` | `—` | path | — | Custom cache directory |
 
 ### `status`
 

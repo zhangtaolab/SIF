@@ -101,6 +101,8 @@ def traverse_commands(
     results: list[tuple[str, click.Command]] = []
     if isinstance(cmd, click.Group) and cmd.commands:
         for name, subcmd in cmd.commands.items():
+            if getattr(subcmd, "hidden", False):
+                continue
             new_path = f"{path} {name}".strip()
             results.extend(traverse_commands(subcmd, new_path))
     else:
@@ -112,7 +114,11 @@ def _build_tree_lines(cmd: click.Command, prefix: str = "") -> list[str]:
     """Build ASCII tree lines for command overview."""
     tree_lines: list[str] = []
     if isinstance(cmd, click.Group):
-        items = list(cmd.commands.items())
+        items = [
+            (name, subcmd)
+            for name, subcmd in cmd.commands.items()
+            if not getattr(subcmd, "hidden", False)
+        ]
         for i, (name, subcmd) in enumerate(items):
             is_last = i == len(items) - 1
             connector = "└──" if is_last else "├──"
@@ -177,6 +183,7 @@ GROUP_ORDER: list[tuple[str, str]] = [
     ("index", "Index Commands"),
     ("search", "Search Commands"),
     ("mcp", "MCP Commands"),
+    ("models", "Model Commands"),
     ("bench", "Other Commands"),
     ("eval", "Other Commands"),
     ("pull", "Other Commands"),

@@ -259,6 +259,7 @@ class TestDocsCodeBlocks:
         "search": ["search", "query", "vsearch"],
         "get": ["get", "multi-get"],
         "mcp": ["stdio", "http", "daemon"],
+        "models": ["pull", "status"],
         "eval": [],
         "config": ["show"],
     }
@@ -289,6 +290,16 @@ class TestDocsCodeBlocks:
         result = runner.invoke(cli, help_args)
         if result.exit_code != 0 and "No such command" in result.output:
             pytest.fail(f"Unknown command in {file_name}: {cmd}")
+
+    def test_cli_reference_lists_models_and_hides_pull(self) -> None:
+        """The generated reference shows models pull/status, not the hidden alias."""
+        cli_ref = Path("docs/cli-reference.md")
+        if not cli_ref.exists():
+            pytest.skip("cli-reference.md not found")
+        content = cli_ref.read_text()
+        assert "sif models pull" in content
+        assert "sif models status" in content
+        assert "### sif pull" not in content, "hidden alias leaked into generated docs"
 
     def test_no_removed_commands_in_docs(self) -> None:
         """Docs must not contain removed commands."""
@@ -438,6 +449,8 @@ class TestDocsCodeBlocks:
 
         def collect(group: click.Group, prefix: str = "") -> None:
             for name, cmd in group.commands.items():
+                if getattr(cmd, "hidden", False):
+                    continue
                 full_name = f"{prefix} {name}" if prefix else name
                 commands.append(full_name)
                 if isinstance(cmd, click.Group):
