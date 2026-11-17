@@ -4,18 +4,18 @@ milestone: v1.2
 milestone_name: Search Precision and Agent Experience
 current_phase: 24
 current_phase_name: Tuning + Models UX + Install Docs
-current_plan: 2
+current_plan: 3
 status: executing
-stopped_at: Completed 24-01-PLAN.md
-last_updated: "2026-11-16T23:58:37.337Z"
+stopped_at: Completed 24-02-PLAN.md
+last_updated: "2026-11-17T00:08:04.121Z"
 last_activity: 2026-11-16
 last_activity_desc: Phase 23 complete, transitioned to Phase 24
-state_head: 139b0e37946e036c71b3936db9f6163890690e55
+state_head: 88141cfbb7081e878cbc95120c541690d8b4d93a
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 55
-  completed_plans: 49
+  completed_plans: 50
 ---
 
 # DocSift — Project State
@@ -32,7 +32,7 @@ progress:
 ## Current Position
 
 Phase: 24 (Tuning + Models UX + Install Docs) — READY TO EXECUTE
-Current Plan: 2
+Current Plan: 3
 Total Plans in Phase: 7
 Status: Ready to execute
 Last activity: 2026-11-16 — Phase 23 complete, transitioned to Phase 24
@@ -100,6 +100,7 @@ Progress: [█████████░] 88%
 | Phase 23 P05 | 5min | 3 tasks | 1 files |
 | Phase 23 P06 | 4min | 2 tasks | 1 files |
 | Phase 24 P01 | 15 | 2 tasks | 4 files |
+| Phase 24 P02 | 10min | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -301,6 +302,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - [Phase 23]: 23 real EN+ZH A/B on a user-approved curated bilingual subset (7 Chinese-heavy folders, 498 docs; adequacy en=42/zh=11; held-out N=56) recorded keep-qwen3: overall Δ +0.00943 (CI [-0.0296,+0.0484]) below the 0.01 tie rule and strict 1/N floor; en +0.01385, zh -0.00487 above the -0.01 floor; default embedder unchanged; default_flip and zero_delta_proof recorded not-applicable; artifact + docs/benchmarking evidence committed.
 - [Phase 23]: 23 code review: 2 Critical + 6 Warning fixed with regression tests (CR-01 scratch-root home/root guard, CR-02 stale-artifact prevention, WR-01 idempotent arm indexing/resume, WR-02 corpus-fingerprint scope invalidation, WR-03 held-out docs table, WR-04 artifact block preservation, WR-05 ranking settings recorded, WR-06 malformed-JSON error surface) plus IN-03 runbook ruff/format; 5 Info findings remain open. Regression gate 2,268 prior-phase tests passed.
 - [Phase 24]: Chunk sweep selects on tuning, adopts only a strict held-out winner; every arm pins modelscope Qwen3/1024/512 and varies only chunk size/overlap
+- [Phase 24]: The breadcrumb is an embed-text-only overlay: stored chunk content, chunks FTS, snippets, and BM25 stay byte-identical; only the embedding input changes.
+- [Phase 24]: Settings embed_breadcrumb (SIF_EMBED_BREADCRUMB, default False) is the only switch surface; no CLI flag is added, and the default-off path passes raw chunk content byte-identically.
 
 ### Pending Todos
 
@@ -337,8 +340,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-16T23:58:26.391Z
-Stopped at: Completed 24-01-PLAN.md
+Last session: 2026-11-17T00:08:03.133Z
+Stopped at: Completed 24-02-PLAN.md
 Resume file: None
 
 - **Next expected action:** finish 22-07 Task 3 (Registry docs, phase gate, real `claude mcp` stdio smoke, `22-07-SUMMARY.md`), then Phase 22 verification (gsd-verifier, code review, regression gate) and ROADMAP/STATE completion; then Phase 23 → 24. 22-07 Task 2 was recorded `blocked no-github-login` (optional public Registry listing deferred). Two audits remain recorded as debt (see Blockers/Concerns): `/gsd-secure-phase 20` and `/gsd:validate-phase 20`.
