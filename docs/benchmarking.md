@@ -329,6 +329,39 @@ When enabled:
 
 `sif bench --rerank` measures the off and on states as two separate states (metrics + latency each) so the quality/latency trade-off is visible; a missing backend or model-load failure degrades to the off state with a warning.
 
+## Chunk-Size/Overlap Sweep (QUAL-02)
+
+Real six-arm sweep, 2026-11-17, on the authorized `books-markdown-papers-2026-11` corpus (610 Markdown documents: 2 English books plus 608 Chinese/English papers; 422 zh-dominant, 163 en-dominant, 23 mixed), corpus fingerprint `9ccbf4eea9263ed4`. Embedder: `modelscope:Qwen/Qwen3-Embedding-0.6B`, 1024 dimensions, `max_tokens=512`, batch 32; only chunk size/overlap varies. Adequacy: 200 documents sampled, held-out **N=194** (en=136, zh=244, mixed=12), above the `min_heldout_for_epsilon_win = 101` floor, so the 0.01 mean-delta gate is admissible; the 1/N noise floor is ≈0.00515. Selection rule: tuning-select-then-heldout-confirm; only the held-out confirmation can authorize a default change.
+
+| Arm | Size/Overlap | Documents | Chunks | Vectors | Embed seconds | Cache hits | Tuning Δ | Held-out Δ | Held-out winner |
+|-----|--------------|-----------|--------|---------|---------------|------------|----------|------------|-----------------|
+| baseline-512-128 | 512/128 | 610 | 21,886 | 21,886 | 1,776.1 | 7,565 | — | — | — |
+| overlap-64 | 512/64 | 610 | 20,980 | 20,980 | 707.1 | 13,506 | -0.003333 | -0.001350 | false |
+| overlap-0 | 512/0 | 610 | 20,275 | 20,275 | 571.1 | 13,517 | **+0.000737** | -0.008605 | false |
+| near-default-448-112 | 448/112 | 610 | 23,450 | 23,450 | 1,002.4 | 10,377 | -0.002688 | -0.002172 | false |
+| smaller-384-96 | 384/96 | 610 | 25,611 | 25,611 | 1,244.6 | 10,003 | -0.002160 | -0.003904 | false |
+| smallest-256-64 | 256/64 | 610 | 33,160 | 33,160 | 2,040.0 | 8,918 | -0.004722 | -0.003718 | false |
+
+**Decision: `keep-default`.** The tuning split selected `overlap-0` with a +0.000737 mean delta, but its held-out confirmation was **-0.008605** (95% CI [-0.021559, +0.003094], helped 2 / hurt 9 / unchanged 183, N=194): no strict held-out winner, so `DEFAULT_CHUNK_SIZE=512` and `DEFAULT_CHUNK_OVERLAP=128` stay unchanged. Every non-baseline arm's held-out mean delta was negative or flat. No `chunking.contract` marker is written and no `sif index embed --force` migration is required.
+
+The measurement is hardware- and version-dependent manual evidence (macOS arm64 Apple Silicon, 2026-11-17), never a CI gate. Artifact: `.planning/phases/24-tuning-models-ux-install-docs/bench/chunk-sweep.json`. Limitation: the N=194 held-out sample clears the 101 floor; a larger or different corpus could still change the verdict.
+
+## Title-Breadcrumb Experiment (QUAL-03)
+
+Real single-arm ablation, 2026-11-17, on the same `books-markdown-papers-2026-11` corpus and Qwen3 identity, chunk 512/128, `embed_breadcrumb=True` for the arm. The baseline is the sweep's fresh 512/128 saved run (same corpus fingerprint and model identity). Held-out **N=194**.
+
+| Gate | n | Mean Δ | 95% CI | Helped / hurt / unchanged | Sufficient | Winner |
+|------|---|--------|--------|---------------------------|------------|--------|
+| overall held-out | 194 | +0.014104 | [-0.005664, +0.035548] | 11 / 7 / 176 | true | **false** |
+| title leg | 198 | +0.048521 | [+0.022742, +0.075609] | 21 / 5 / 172 | true | true |
+| body leg | 199 | +0.006243 | [-0.007615, +0.021192] | 9 / 5 / 185 | true | false |
+
+Replay stability: **unavailable** (`available=false`, no saved replay snapshot), so no replay gate is claimed. Duplicate-signal metrics over 21,886 chunks / 610 documents: `title_share=1.0`, `in_content_share=0.622955`, `subchunk_share=0.387919`, `title_equals_heading_share=0.026364`.
+
+**Decision: `keep-breadcrumb-off`.** The overall held-out gate did not win (its CI includes zero), and the title leg's win is duplicate signal: the title is already indexed by the Phase 19 title FTS, the body leg did not win, and 62.3% of titles already occur in chunk content. The body-leg veto rejects a title-only gain even when the overall gate wins. `embed_breadcrumb` stays `False`; no `chunking.contract` marker is written and no re-embed is required.
+
+The measurement is hardware- and version-dependent manual evidence, never a CI gate. Artifact: `.planning/phases/24-tuning-models-ux-install-docs/bench/breadcrumb-verdict.json`. Limitation: held-out N=194 ≥ 101 and 1/N ≈ 0.00515; the corpus is 2 English books plus 608 Chinese/English papers, and a different corpus could change the rejection.
+
 ## Commands and Reproduction
 
 The full recipe against your own corpus:
