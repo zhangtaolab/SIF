@@ -601,3 +601,140 @@ def test_identity_claim_stays_pending_when_the_commit_fails(tmp_path: Path) -> N
     finally:
         conn.close()
         db.close()
+
+
+def _stored_contents(conn: sqlite3.Connection, document_id: str) -> list[str]:
+    """Return the persisted chunk contents of one document in sequence order."""
+    rows = conn.execute(
+        "SELECT content FROM document_chunks WHERE document_id = ? ORDER BY sequence",
+        (document_id,),
+    ).fetchall()
+    return [row[0] for row in rows]
+
+
+def test_breadcrumb_off_embeds_exactly_the_chunk_content(tmp_path: Path) -> None:
+    """The default-off path is byte-identical: the manager sees raw content."""
+    db, _coll, doc, searcher = _setup(tmp_path)
+    manager = _RecordingManager(db.connection)
+    writer = StreamingEmbedWriter(
+        db.connection,
+        manager,
+        _FixedChunker(["one", "two"]),
+        searcher,
+        _identity(),
+        batch_size=32,
+        write_identity=False,
+    )
+
+    try:
+        assert writer.embed_document(doc) == 2
+        contents = _stored_contents(db.connection, doc.id)
+    finally:
+        db.close()
+
+    assert manager.calls == [["one", "two"]]
+    assert contents == ["one", "two"]
+
+
+def test_breadcrumb_on_changes_only_the_embedding_input(tmp_path: Path) -> None:
+    """The manager receives breadcrumb text while chunks and FTS stay identical."""
+    db, _coll, doc, searcher = _setup(tmp_path)
+    manager = _RecordingManager(db.connection)
+    original = ["# One\n\nalpha body", "continuation without a heading"]
+    writer = StreamingEmbedWriter(
+        db.connection,
+        manager,
+        _FixedChunker(original),
+        searcher,
+        _identity(),
+        batch_size=32,
+        write_identity=False,
+        embed_breadcrumb=True,
+    )
+
+    try:
+        assert writer.embed_document(doc) == 2
+        contents = _stored_contents(db.connection, doc.id)
+        fts_rows = [
+            row[0]
+            for row in db.connection.execute(
+                "SELECT content FROM chunks_fts WHERE chunks_fts MATCH 'alpha'"
+            )
+        ]
+        fts_count = db.connection.execute("SELECT COUNT(*) FROM chunks_fts").fetchone()[0]
+    finally:
+        db.close()
+
+    assert manager.calls == [
+        ["A > One\n\n# One\n\nalpha body", "A > One\n\ncontinuation without a heading"]
+    ]
+    assert contents == original
+    assert fts_rows == ["# One\n\nalpha body"]
+    assert fts_count == 2
+
+
+def test_breadcrumb_on_keeps_batch_slices_aligned(tmp_path: Path) -> None:
+    """Each manager batch receives the matching slice of the parallel list."""
+    db, _coll, doc, searcher = _setup(tmp_path)
+    manager = _RecordingManager(db.connection)
+    original = [f"# Section {index}\n\nbody {index}" for index in range(5)]
+    writer = StreamingEmbedWriter(
+        db.connection,
+        manager,
+        _FixedChunker(original),
+        searcher,
+        _identity(),
+        batch_size=2,
+        write_identity=False,
+        embed_breadcrumb=True,
+    )
+
+    try:
+        assert writer.embed_document(doc) == 5
+        contents = _stored_contents(db.connection, doc.id)
+    finally:
+        db.close()
+
+    expected = [f"A > Section {index}\n\n# Section {index}\n\nbody {index}" for index in range(5)]
+    assert [len(call) for call in manager.calls] == [2, 2, 1]
+    assert [text for call in manager.calls for text in call] == expected
+    assert contents == original
+
+
+def test_breadcrumb_flag_changes_the_embedded_strings(tmp_path: Path) -> None:
+    """Enabling the flag changes the cache key by changing every embedded string."""
+    db, _coll, doc, searcher = _setup(tmp_path)
+    original = ["# One\n\nbody", "tail"]
+
+    off_manager = _RecordingManager(db.connection)
+    off_writer = StreamingEmbedWriter(
+        db.connection,
+        off_manager,
+        _FixedChunker(original),
+        searcher,
+        _identity(),
+        batch_size=32,
+        write_identity=False,
+    )
+    on_manager = _RecordingManager(db.connection)
+    on_writer = StreamingEmbedWriter(
+        db.connection,
+        on_manager,
+        _FixedChunker(original),
+        searcher,
+        _identity(),
+        batch_size=32,
+        write_identity=False,
+        embed_breadcrumb=True,
+    )
+    try:
+        off_writer.embed_document(doc)
+        on_writer.embed_document(doc)
+    finally:
+        db.close()
+
+    assert off_manager.calls == [original]
+    assert on_manager.calls != off_manager.calls
+    assert all(
+        text.endswith(chunk) for text, chunk in zip(on_manager.calls[0], original, strict=True)
+    )

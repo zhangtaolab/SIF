@@ -221,6 +221,11 @@ class Settings(BaseSettings):
         description="Default chunk overlap in tokens (converted to ~4 characters "
         "per token for the character-based chunkers)",
     )
+    embed_breadcrumb: bool = Field(
+        default=False,
+        description="Prepend the document title and current heading path to each "
+        "chunk's embedding text; stored content and full-text search stay unchanged",
+    )
 
     # Search settings
     default_search_type: str = Field(

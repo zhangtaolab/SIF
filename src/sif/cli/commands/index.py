@@ -419,6 +419,7 @@ def embed_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                     current,
                     batch_size=settings.batch_size,
                     write_identity=write_identity_on_first,
+                    embed_breadcrumb=settings.embed_breadcrumb,
                 )
                 try:
                     # One unindexed metadata scan per collection; judging every

@@ -293,6 +293,7 @@ class _EmbedSession:
                 current,
                 batch_size=settings.batch_size,
                 write_identity=not had_vectors,
+                embed_breadcrumb=settings.embed_breadcrumb,
             )
             self._ready = True
         except Exception as e:

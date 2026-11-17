@@ -286,3 +286,16 @@ def test_wired_settings_reach_settings_object() -> None:
     assert settings.mcp_host == "0.0.0.0"
     assert settings.mcp_port == 9000
     assert settings.mcp_transport == "http"
+
+
+def test_embed_breadcrumb_is_off_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """QUAL-03: the breadcrumb embedding overlay is opt-in."""
+    monkeypatch.delenv("SIF_EMBED_BREADCRUMB", raising=False)
+    assert Settings(_env_file=None).embed_breadcrumb is False
+
+
+def test_embed_breadcrumb_enabled_via_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """SIF_EMBED_BREADCRUMB=1 is the arm switch (no CLI flag)."""
+    with monkeypatch.context() as m:
+        m.setenv("SIF_EMBED_BREADCRUMB", "1")
+        assert Settings(_env_file=None).embed_breadcrumb is True

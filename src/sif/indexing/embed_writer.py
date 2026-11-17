@@ -31,6 +31,7 @@ from sif.embedding.identity import (
     read_identity,
     write_identity,
 )
+from sif.indexing.breadcrumb import breadcrumb_embed_texts
 from sif.models.embedding import EmbeddingOutputError
 
 
@@ -149,6 +150,7 @@ class StreamingEmbedWriter:
         *,
         batch_size: int,
         write_identity: bool,
+        embed_breadcrumb: bool = False,
     ) -> None:
         """Bind the writer to one index connection and its collaborators."""
         if batch_size < 1:
@@ -160,6 +162,7 @@ class StreamingEmbedWriter:
         self._identity = identity
         self._batch_size = batch_size
         self._write_identity = bool(write_identity and identity is not None)
+        self._embed_breadcrumb = bool(embed_breadcrumb)
         self._chunk_repo = DocumentChunkRepository(conn)
 
     @property
@@ -179,10 +182,20 @@ class StreamingEmbedWriter:
         if not chunks:
             return 0
 
+        # QUAL-03: the breadcrumb changes only the embedding input. The
+        # default-off path is byte-identical to the pre-change behavior, so
+        # existing cache keys and indexes are unaffected until it is enabled.
+        embed_texts = (
+            breadcrumb_embed_texts(doc.title or "", chunks)
+            if self._embed_breadcrumb
+            else [chunk.content for chunk in chunks]
+        )
+
         vectors: list[list[float]] = []
         for batch_index, batch in enumerate(_batches(chunks, self._batch_size)):
+            start = batch_index * self._batch_size
             try:
-                response = self._manager.embed_documents([chunk.content for chunk in batch])
+                response = self._manager.embed_documents(embed_texts[start : start + len(batch)])
             except EmbeddingOutputError as e:
                 # WR-02: the manager validates model output before
                 # ``validate_batch`` can see it. That class is systemic — the
