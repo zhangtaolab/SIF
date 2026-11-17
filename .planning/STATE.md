@@ -5,17 +5,17 @@ milestone_name: Search Precision and Agent Experience
 current_phase: 24
 current_phase_name: Tuning + Models UX + Install Docs
 current_plan: 7
-status: executing
-stopped_at: Phase 24 paused before 24-06 real evidence — user asked not to touch SynologyDrive; see HANDOFF.json
-last_updated: "2026-11-17T01:22:06.812Z"
-last_activity: 2026-11-16
-last_activity_desc: Phase 23 complete, transitioned to Phase 24
-state_head: d8d9eb09db1a6eb5caf0be2a0877cbce4809a4f4
+status: verifying
+stopped_at: Phase 24 24-06 complete — both evidence artifacts recorded keep-defaults; Phase 24 verification pending
+last_updated: "2026-11-17T09:21:17.000Z"
+last_activity: 2026-11-17
+last_activity_desc: 24-06 real evidence complete (keep-default, keep-breadcrumb-off); Phase 24 verification pending
+state_head: 1fdb9f7d3e575aa17ed794cddc2786359eeab252
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 55
-  completed_plans: 54
+  completed_plans: 55
 ---
 
 # DocSift — Project State
@@ -24,18 +24,18 @@ progress:
 
 - **Name:** DocSift (package `sif`, PyPI `docsif`)
 - **Core Value:** 用户可以在自己的笔记和文档库中，用自然语言快速、准确地找到需要的信息——无论关键词是否匹配。
-- **Current Focus:** v1.2 Search Precision and Agent Experience — Phases 17-23 complete; Phase 23 (Harrier Gated Evaluation) shipped and verified 31/31 must-haves with a recorded `keep-qwen3` verdict at 3004 tests / 95.13% coverage. Next: plan Phase 24 (Tuning + Models UX + Install Docs)
+- **Current Focus:** v1.2 Search Precision and Agent Experience — Phases 17-23 complete; Phase 24 has all 7 plans executed (24-06 recorded `keep-default` and `keep-breadcrumb-off` on the amended books_markdown corpus); Phase 24 verification and the milestone close remain.
 - **Tech Stack:** Python 3.10+, SQLite (FTS5 + sqlite-vec), Click, Pydantic, sentence-transformers 5.4.1 (locked), llama-cpp-python; v1.2 adds ONLY `mcp>=2.3.0,<3` + `rapidfuzz>=3.14.5,<4`
 - See: .planning/PROJECT.md (updated 2026-11-16)
 - Archives: v1.0/v1.1 phase artifacts, full decision logs, per-plan metrics under .planning/milestones/
 
 ## Current Position
 
-Phase: 24 (Tuning + Models UX + Install Docs) — READY TO EXECUTE
+Phase: 24 (Tuning + Models UX + Install Docs) — 7/7 plans executed
 Current Plan: 7
 Total Plans in Phase: 7
-Status: Ready to execute
-Last activity: 2026-11-16 — Phase 23 complete, transitioned to Phase 24
+Status: Ready for Phase 24 verification
+Last activity: 2026-11-17 — 24-06 real evidence complete; chunk sweep keep-default, breadcrumb keep-breadcrumb-off
 
 Progress: [█████████░] 88%
 
@@ -45,7 +45,7 @@ Progress: [█████████░] 88%
 
 - **Velocity:** v1.0 shipped 68 plans / 11 phases (2026-04-14 → 2026-11-07); v1.1 shipped 27 plans / 7 phases (2026-11-07 → 2026-11-12); recent plans averaged ~13-20 min
 - **Suite at v1.1 close:** 1591 passed, 1 skipped @ 95.18% coverage (fail_under=90 active); ruff/format/ty green
-- **v1.2:** 7/8 phases, 48/48 plans — suite 3004 passed / 1 skipped @ 95.13% coverage; ruff/format/ty green
+- **v1.2:** 7/8 phases, 55/55 plans — suite 3233 passed / 1 skipped @ 95.03% coverage; ruff/format/ty green (Phase 24 verification pending)
 
 **Per-Plan Metrics:**
 
@@ -105,6 +105,7 @@ Progress: [█████████░] 88%
 | Phase 24 P07 | ~20 min | 3 tasks | 6 files |
 | Phase 24 P04 | ~7 min | 3 tasks | 8 files |
 | Phase 24 P05 | 20 min | 3 tasks | 10 files |
+| Phase 24 P06 | ~3h | 3 tasks | 17 files |
 
 ## Accumulated Context
 
@@ -321,6 +322,10 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - [Phase 24]: sif pull stays hidden and delegates registry/owner-name ids to models pull; legacy GGUF/URL path uses a 60s urlopen timeout and stderr-only notices.
 - [Phase 24]: Install docs are uv-first (uv tool, uvx, pip order) with the explicit --torch-backend=cpu Linux recipe and a uv 0.9.19 floor; llama-cpp wheel recipes are marked manually verified.
 - [Phase 24]: The degradation matrix separates CLI fail-fast from the MCP hybrid_search BM25 degradation, and model management documents the canonical manifest cache plus legacy migration.
+- [Phase 24]: 24-06 corpus amended on 2026-11-17 (user-authorized) to `/Users/forrest/Playground/books_markdown` — 610 documents (2 English books + 608 mostly-Chinese papers; 422 zh-dominant, 163 en-dominant, 23 mixed) — because Phase 23's SynologyDrive roots are off-limits; artifacts are corpus-scoped to label `books-markdown-papers-2026-11`.
+- [Phase 24]: `sif eval` gained the additive `--min-heldout` option (default 25, range 25–500); the runbooks pass 101 for the fresh baseline, which sampled 200 documents and produced held-out N=194 (en=136/zh=244/mixed=12), making the 0.01 gate admissible (1/N≈0.00515); the limitation text is generated from the measured N and the Phase 23 N=56 wording is retired.
+- [Phase 24]: 24-06 real evidence is complete on the amended corpus: QUAL-02 `keep-default` (tuning-selected overlap-0 +0.000737, held-out -0.008605, CI [-0.021559, +0.003094], helped 2/hurt 9/unchanged 183, N=194) and QUAL-03 `keep-breadcrumb-off` (overall +0.014104, CI [-0.005664, +0.035548], winner false; title leg +0.048521 winner, body leg +0.006243 not; duplicate metrics title_share=1.0, in_content_share=0.622955; replay unavailable). No defaults changed, no marker code, no re-embed migration.
+- [Phase 24]: Breadcrumb artifact write bug fixed: `breadcrumb_eval.write_committed_artifact` now defaults to its own `ARTIFACT_PATH` instead of forwarding `None` to the chunk-sweep path; the shared guard had refused the overwrite after a 34-minute arm run. The resumed artifact write took 0.38 s and a regression test pins the default path.
 
 ### Pending Todos
 
@@ -329,6 +334,7 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ### Blockers/Concerns
 
+- ✅ [Phase 24, resolved 2026-11-17] 24-06 corpus amended to `/Users/forrest/Playground/books_markdown` (610 docs: 2 English books + 608 mostly-Chinese papers; sampled 200, held-out N=194, en=136/zh=244/mixed=12) after the user supplied the papers and authorized the instrument extension. Both real runs completed and recorded keep-defaults; artifacts are in `bench/`, evidence in `docs/benchmarking.md`; Phase 24 verification remains. SynologyDrive was never read or written.
 - ⚠️ [Phase 11 re-review, advisory] WR-03 init_schema raw tracebacks, WR-04 impossible-state guards, IN-05 model-type set duplication — carried in 11-REVIEW-DISPOSITION.md (WR-01/WR-02 fixed)
 - [Research gaps — resolved] qmd AST parity pinned in Phase 20; MCP py3.10 install/import smoke and transport_security spoofed-header proof completed in Phase 22; documents_fts_v shadow survival covered in Phase 19. Remaining: contexts normalization decision touches a locked Key Decision (21 discussion)
 - ⚠️ [Phase 22, debt] `22-VALIDATION.md` is still `status: draft` (nyquist validate-phase not run) and no `22-SECURITY.md` exists (secure-phase not run); recorded by `phase.complete` warnings — same audit-debt pattern as Phases 20/21
@@ -357,8 +363,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-17T01:22:06.282Z
-Stopped at: Phase 24 paused before 24-06 real evidence — user asked not to touch SynologyDrive; see HANDOFF.json
-Resume file: .planning/HANDOFF.json
+Last session: 2026-11-17T09:21:17.000Z
+Stopped at: 24-06 complete with keep-defaults recorded; Phase 24 verification and milestone close pending
+Resume file: .planning/HANDOFF.json (stale after this session; the .continue-here.md in the phase directory is current)
 
-- **Next expected action:** finish 22-07 Task 3 (Registry docs, phase gate, real `claude mcp` stdio smoke, `22-07-SUMMARY.md`), then Phase 22 verification (gsd-verifier, code review, regression gate) and ROADMAP/STATE completion; then Phase 23 → 24. 22-07 Task 2 was recorded `blocked no-github-login` (optional public Registry listing deferred). Two audits remain recorded as debt (see Blockers/Concerns): `/gsd-secure-phase 20` and `/gsd:validate-phase 20`.
+- **Next expected action:** run Phase 24 verification (gsd-verifier, code review, regression gate), then mark Phase 24 complete and close the v1.2 milestone. No defaults changed, so no `sif index embed --force` is required. Two audits remain recorded as debt (see Blockers/Concerns): `/gsd-secure-phase 20` and `/gsd:validate-phase 20`.
