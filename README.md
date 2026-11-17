@@ -474,7 +474,7 @@ Where `k` is a constant (default: 60), `w_i` is the per-source weight (default: 
 
 ### Search Pipeline
 
-The hybrid `query` subcommand runs the full pipeline: query parsing and routing, optional embedding-based query expansion, BM25 and vector retrieval, weighted RRF fusion, snippet extraction, and optional reranking. Reranking is off by default; enable it with `--rerank` or `SIF_RERANK_ENABLED=1`. When enabled, `SIF_RERANK_CANDIDATE_LIMIT` (default 20, clamped to 5-50) bounds the candidate pool and `SIF_RERANK_RELATIVE_THRESHOLD` (default 0.5) drops candidates scoring below `top_score * alpha`.
+The hybrid `query` subcommand runs the full pipeline: query parsing and routing, optional embedding-based query expansion, BM25 and vector retrieval, weighted RRF fusion, optional reranking, and snippet extraction. Reranking is off by default; enable it with `--rerank` or `SIF_RERANK_ENABLED=1`. When enabled, `SIF_RERANK_CANDIDATE_LIMIT` (default 20, clamped to 5-50) bounds the candidate pool and `SIF_RERANK_RELATIVE_THRESHOLD` (default 0.5) drops candidates scoring below `top_score * alpha`.
 
 ## Development
 

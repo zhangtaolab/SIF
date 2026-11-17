@@ -195,7 +195,7 @@ SIF degrades honestly rather than silently returning weaker results:
 | Situation | What still works | What degrades |
 |-----------|------------------|---------------|
 | Base install without the `embed` extra | BM25 keyword search (`sif search search <query>`), indexing, status, metadata, get, MCP BM25 tools | `sif index embed`, `sif search vsearch <query>`, and `sif search query <query>` need an embedding backend and stop with an install message |
-| `embed` extra installed but `sqlite-vec` cannot load | BM25 keyword search and all indexing | CLI vector and hybrid commands raise the vector-store error (`sqlite-vec extension is not available`); the MCP `hybrid_search` backend degrades to BM25-only with a one-time warning |
+| `embed` extra installed but `sqlite-vec` cannot load | BM25 keyword search (`sif search search <query>`) and BM25 indexing (`sif index update`), status, metadata, get | `sif index embed` and the CLI vector and hybrid search commands raise the vector-store error (`sqlite-vec extension is not available`); the MCP `hybrid_search` backend degrades to BM25-only with a one-time warning |
 | `embed` extra without the GGUF or OpenAI extra | sentence-transformers and ModelScope backends | `model_type = gguf` and `model_type = openai` are unavailable until `all` (or `openai`) is installed |
 | Windows daemon/service installs | Foreground `sif watch`, MCP stdio and HTTP, CLI search and indexing | Detached watch, `--install-service`, and POSIX index locking are refused or degrade with a clear message; Windows is degradation-only in v1.2 |
 
@@ -336,9 +336,10 @@ Options:
   --help            Show this message and exit.
 
 Commands:
+  bench       Run benchmark evaluation against a fixture file.
+  cleanup     Clean up the index (remove orphaned entries).
   collection  Manage document collections.
-  context     Manage contextual descriptions for paths, collections, and global scope.
-  search      Search commands.
+  context     Manage contextual descriptions for paths, collections, and...
   ...
 ```
 
@@ -403,9 +404,18 @@ export SIF_MODEL_PATH=/path/to/local/model
 
 **Solution**:
 ```bash
-# Create sif directory with proper permissions
+# The default database directory is resolved by Settings.get_db_path()
+# (platformdirs user_data_dir), so it differs per platform.
+# Linux (default: ~/.local/share/sif)
 mkdir -p ~/.local/share/sif
 chmod 755 ~/.local/share/sif
+
+# macOS (default: ~/Library/Application Support/sif)
+mkdir -p "$HOME/Library/Application Support/sif"
+chmod 755 "$HOME/Library/Application Support/sif"
+
+# Windows (PowerShell; default is under %LOCALAPPDATA%)
+# New-Item -ItemType Directory -Force (Join-Path $env:LOCALAPPDATA 'sif')
 
 # Or change database path
 export SIF_DB_PATH=/path/with/write/permission/sif.db
@@ -432,8 +442,13 @@ pip uninstall docsif
 To also remove data and configuration:
 
 ```bash
-# Remove database
+# Remove the database's platform data directory
+# Linux (default: ~/.local/share/sif)
 rm -rf ~/.local/share/sif
+# macOS (default: ~/Library/Application Support/sif)
+rm -rf "$HOME/Library/Application Support/sif"
+# Windows (PowerShell; default is under %LOCALAPPDATA%)
+# Remove-Item -Recurse -Force (Join-Path $env:LOCALAPPDATA 'sif')
 
 # Remove configuration
 rm -rf ~/.config/sif

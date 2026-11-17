@@ -272,9 +272,16 @@ and skips the torch/embedding stack:
 uv tool install docsif
 ```
 
-On Linux, the embed install resolves CPU-only torch from the explicit
-PyTorch CPU index declared in `pyproject.toml`
-(`https://download.pytorch.org/whl/cpu`), so no CUDA stack is pulled in.
+On Linux, PyPI's `torch` wheel is CUDA-enabled, so the plain embed install
+pulls the CUDA stack. Resolve CPU-only torch explicitly (requires uv 0.9.19 or
+newer; the `UV_TORCH_BACKEND=cpu` environment variable is equivalent):
+
+```bash
+uv tool install --torch-backend=cpu 'docsif[embed]'
+```
+
+The `--torch-backend=cpu` recipe was manually verified on Linux with uv 0.13.7;
+it is not CI-proven.
 
 ### Install the plugin
 
