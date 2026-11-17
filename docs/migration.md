@@ -49,7 +49,7 @@ All environment variables changed prefix from `DOCSIFT_` to `SIF_`:
 - **New**: Platform-dependent, via platformdirs `user_data_dir` (see `get_db_path()` in `src/sif/config/settings.py`):
   `~/.local/share/sif/` on Linux, `~/Library/Application Support/sif/` on macOS
 - **Database**: Must re-run `sif index update` to rebuild (no automatic DB migration)
-- **Model cache**: Auto-migrates on first `sif` run if old directory exists
+- **Model cache**: The canonical location is `<cache>/models/<owner>/<name>`, where `<cache>` is the platform cache directory resolved by `Settings.get_cache_dir()` (e.g. `~/.cache/sif` on Linux, `~/Library/Caches/sif` on macOS); override it with `SIF_CACHE_DIR`. Recognized legacy layouts — `~/.sif/models` and the ModelScope `name___` tree under the cache root — migrate automatically on the next `sif models pull`. Existing indexes are unaffected by the cache move: only the stored model files relocate. Use `sif models pull` / `sif models status`; the old `sif pull` command remains as a hidden, deprecated alias for one release.
 
 ### Python Package
 

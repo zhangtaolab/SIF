@@ -511,6 +511,110 @@ restored = EmbeddingConfig.model_validate_json(json_str)
 data = config.model_dump()
 ```
 
+## Model Management
+
+SIF manages embedder-family models through the `sif models` command group and a
+canonical, manifest-verified cache. Install recipes live in the
+[Installation Guide](installation.md); client configuration lives in the
+[MCP Server](mcp-server.md) guide.
+
+### Downloading models
+
+`sif models pull` downloads the configured embedding model by default. Pass a
+registry name or a ModelScope `owner/name` id to download something else:
+
+```bash
+# The configured embedder (Settings.model_name)
+sif models pull
+
+# Registry names: embedding, reranker, query_expansion
+sif models pull reranker
+
+# An explicit ModelScope id
+sif models pull Qwen/Qwen3-Embedding-0.6B
+
+# Re-download even when the cached copy verifies
+sif models pull embedding --force
+
+# Use a non-default cache root
+sif models pull --cache-dir /tmp/sif-models
+```
+
+`--force` bypasses a valid cache entry and re-downloads. `--cache-dir` accepts
+any writable directory and defaults to the SIF cache directory (see below). The
+command is idempotent and non-interactive: a verified cache entry returns
+without network access, and non-TTY output is a single `model_id: path` line.
+
+`sif models pull` does **not** pre-warm sentence-transformers models. It
+downloads the configured model artifacts through the canonical ModelScope tree
+and manifest; the first `sif index embed` may still resolve its own
+sentence-transformers snapshot, so plan for network access on that first encode.
+
+### Inspecting model status
+
+`sif models status` reports configured identity, cache state, and backend
+availability without importing a backend or downloading anything:
+
+```bash
+sif models status
+sif models status --json
+```
+
+The payload has five sections:
+
+- `settings` — configured model name, model type, API base, dimension, and the
+  cache directory.
+- `cache` — the canonical path, the cache state, and the recorded revision.
+- `backend` and `vector_backend` — availability and installed version from an
+  import probe (`find_spec` plus distribution metadata); nothing is imported or
+  downloaded.
+- `identity` — configured versus persisted embedder identity read from
+  `index_meta` when an index exists. A mismatch is reported, never treated as
+  a failure: the command always exits 0.
+
+Cache states are:
+
+| State | Meaning |
+|-------|---------|
+| `absent` | No directory exists for the model |
+| `empty` | A directory exists but holds no files |
+| `unverified` | Files exist but `.sif-model.json` is missing or does not match |
+| `legacy` | A recognized legacy layout holds the model; a pull migrates it |
+| `valid` | The manifest and every listed file match size and SHA-256 |
+
+Non-TTY output is plain `section.key: value` lines so pipes stay clean; Rich
+tables appear only on a terminal. `SIF_API_KEY` never appears in status output.
+
+### Canonical cache and manifest
+
+The canonical location is `<cache>/models/<owner>/<name>`, where `<cache>` is
+`Settings.get_cache_dir()` — the platform cache directory, overridable with
+`SIF_CACHE_DIR`. For example, `Qwen/Qwen3-Embedding-0.6B` resolves to
+`<cache>/models/Qwen/Qwen3-Embedding-0.6B`.
+
+Each completed download writes `.sif-model.json`, a versioned manifest listing
+every file with its size and SHA-256, plus the requested and resolved revision.
+A cache hit requires the manifest and every listed file to match; a non-empty
+directory without a valid manifest is never accepted as cached. Downloads land
+in a sibling temporary directory and replace the target atomically, so a failed
+download leaves the previous cache untouched.
+
+The manifest gives **local-content determinism**, not upstream immutability:
+ModelScope accepts branch/tag revisions only for these models, so a pull
+records `master` and the resolved revision while the upstream branch can still
+move. Re-running after upstream changes re-verifies against the recorded
+hashes; use `--force` to accept refreshed upstream content.
+
+Recognized legacy layouts are migrated automatically on the next pull:
+`~/.sif/models` from older releases and the ModelScope `name___` tree (dots
+replaced with three underscores) under the cache root. Existing indexes are
+unaffected by the cache move — only the stored model files relocate.
+
+The legacy `sif pull` command is deprecated and hidden for one release. It
+still accepts a GGUF `owner/repo/filename.gguf` spec or a direct URL, emits a
+deprecation notice on stderr, and delegates registry names and ModelScope ids
+to `sif models pull`. Use `sif models pull` for the public surface.
+
 ## Related Documentation
 
 - [API Reference](api-reference.md) - Python API usage
