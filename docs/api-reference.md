@@ -274,7 +274,7 @@ from sif.models.collection import CollectionCreate, CollectionUpdate, Collection
 #### Class: `CollectionCreate`
 
 ```python
-class CollectionCreate(BaseModel):
+class CollectionCreate(CollectionBase):
     name: str = Field(..., min_length=1, max_length=255)
     description: str | None = Field(None)
     paths: list[str] = Field(default_factory=list)
@@ -294,7 +294,7 @@ class CollectionUpdate(BaseModel):
 #### Class: `CollectionResponse`
 
 ```python
-class CollectionResponse(BaseModel):
+class CollectionResponse(CollectionBase):
     id: str
     name: str
     description: str | None
@@ -826,7 +826,7 @@ SIF uses full type hints throughout. Entity IDs are plain `str` values, embeddin
 
 ## Error Handling
 
-SIF defines a small custom exception hierarchy in `sif.utils.service` and otherwise raises built-in exceptions:
+SIF defines a small custom exception hierarchy for service management in `sif.utils.service`, targeted exception types in other modules — `EmbeddingOutputError` (`sif.models.embedding`), `IdentityDimensionError` (`sif.embedding.identity`), `FilterValidationError` (`sif.core.filters`), `MaintenanceBusyError` and `MaintenanceTargetError` (`sif.database.maintenance`), `HeldoutFloorError` (`sif.search.personal_bench`), and `SystemicEmbedError` (`sif.indexing.embed_writer`) — and otherwise raises built-in exceptions:
 
 - `ServiceManagerMissing` (subclass of `RuntimeError`, `sif.utils.service`) is raised when the platform's service-manager binary (`launchctl` on macOS or `systemctl` on Linux) is not on `PATH`.
 - `ServiceCommandError` (subclass of `RuntimeError`, `sif.utils.service`) is raised when a service-manager invocation fails or times out; it carries the failing `argv` and the manager's failure detail.

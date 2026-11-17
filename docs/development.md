@@ -168,6 +168,7 @@ Follow [Conventional Commits](https://www.conventionalcommits.org/):
 - `docs:` Documentation
 - `style:` Code style (formatting)
 - `refactor:` Code refactoring
+- `perf:` Performance improvement
 - `test:` Tests
 - `chore:` Maintenance
 
@@ -286,7 +287,7 @@ tests/
 │   ├── test_incremental_equivalence.py
 │   ├── test_search_correctness.py
 │   ├── test_search_pipeline.py
-│   └── ...               # Watch, MCP, service, and two-writer subprocess tests
+│   └── ...               # Maintenance, metadata-filtering, watch, MCP, service, and two-writer subprocess tests
 ├── e2e/                  # End-to-end tests (placeholder — only __init__.py)
 ├── fixtures/bench/       # Benchmark corpus and query fixtures
 ├── support/              # Shared bench and eval helpers
@@ -300,7 +301,9 @@ tests/
 ```
 
 The suite currently holds 120 `test_*.py` modules: 101 under `tests/unit/`, 12 under
-`tests/integration/`, and 7 at the `tests/` root. There is no shared factories module;
+`tests/integration/`, and 7 at the `tests/` root. `pytest --collect-only -q --no-cov`
+reports the current collection total (3,234 tests at the time of writing); see
+[Testing](testing.md) for the tier-by-tier breakdown. There is no shared factories module;
 build related objects with the shared `sample_*` fixtures or a fixture local to the test module.
 
 ### Writing Tests
@@ -451,7 +454,7 @@ Create `.vscode/launch.json` with:
       "type": "python",
       "request": "launch",
       "module": "sif.cli.main",
-      "args": ["search", "python decorators"],
+      "args": ["search", "search", "python decorators"],
       "console": "integratedTerminal"
     },
     {
@@ -601,7 +604,7 @@ class CustomModel(BaseModel):
 
 2. **Update the changelog.** Add the release section and its compare/release links in `docs/changelog.md`.
 
-3. **Run the Windows degradation smoke.** On a clean checkout of the release commit, run `make windows-smoke` against the Windows host (hc remote yoga) and record the tested HEAD that the script prints. The target drives `scripts/windows_smoke.py` over `hc exec --on yoga` and accepts `YOGA_DIR` / `YOGA_PYTHON` overrides when the checkout path or interpreter differs. It asserts only the documented degradations (fcntl lock warning, missing-root "all documents preserved" guard, and POSIX fork/service refusals); it is not a claim of full Windows support, which remains deferred. This is an on-demand, pre-release step only — never a per-PR or scheduled job.
+3. **Run the Windows degradation smoke.** On a clean checkout of the release commit, run `make windows-smoke` against the Windows host (hc remote yoga) and record the tested HEAD that the script prints. The target prints HEAD and status (the script refuses a dirty tree), installs Python `YOGA_PYTHON` on the host, syncs the frozen `dev` environment with `uv sync --frozen --extra dev`, then runs `scripts/windows_smoke.py` over `hc exec --on yoga`; it accepts `YOGA_DIR` / `YOGA_PYTHON` overrides when the checkout path or interpreter differs. It asserts only the documented degradations (fcntl lock warning, missing-root "all documents preserved" guard, and POSIX fork/service refusals); it is not a claim of full Windows support, which remains deferred. This is an on-demand, pre-release step only — never a per-PR or scheduled job.
 
 4. **Commit and confirm CI.** Commit the release changes and confirm the Test Matrix is green on that commit: all eight py3.10–3.13 × ubuntu/macos cells plus the lint job.
 
@@ -743,7 +746,7 @@ no scheduled workflow and no bandit job in CI.
 ## PR Process
 
 - Push your branch and open the pull request against `main` on GitHub. There is no `.github/PULL_REQUEST_TEMPLATE.md`; follow the description template in [Contributing](contributing.md) (Description, Type of Change, Testing, Checklist).
-- Before requesting review, the [Contributing](contributing.md) checklist expects: `pytest` passes, `ruff format .` applied, `ruff check .` clean, `ty check src/sif` passes, documentation updated, reference docs regenerated with `make docs-generate` when CLI commands or configuration settings changed, and `docs/changelog.md` updated.
+- Before requesting review, the [Contributing](contributing.md) checklist expects: `pytest` passes, `ruff format .` applied, `ruff check .` clean, `ty check src/sif` passes, `make ci` passes (`bandit` is not in the `[dev]` extras, so install it separately), documentation updated, reference docs regenerated with `make docs-generate` when CLI commands or configuration settings changed, and `docs/changelog.md` updated.
 - Commit messages follow Conventional Commits, as described in Commit Changes above.
 - PR CI runs the full Test Matrix on every push and pull request: the eight py3.10–3.13 × ubuntu/macos cells run the complete pytest suite (with the 90% coverage gate), and the lint job runs `ruff check src tests`, `ruff format --check src tests`, and `ty check src/sif`. The separate "Docs Validation" workflow runs `pytest tests/test_docs.py` and regenerates `docs/cli-reference.md` and `docs/configuration.md` whenever a PR touches `docs/**`, `README.md`, `src/sif/cli/**`, `src/sif/config/**`, the generation scripts, or `tests/test_docs.py` — it fails if the committed reference docs are stale. That workflow also runs on pushes to `main`. No CI job runs bandit, so run `make ci` locally before pushing.
 - Review turnaround is not documented; maintainers triage pull requests on GitHub. Respond to comments and push follow-up commits to the same branch.

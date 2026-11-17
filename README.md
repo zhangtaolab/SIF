@@ -15,10 +15,11 @@ SIF is a local hybrid search engine for personal knowledge bases. It indexes Mar
 - **Full-Text Search**: BM25 ranking via SQLite FTS5
 - **Semantic Search**: Vector similarity using sqlite-vec and configurable embeddings
 - **Hybrid Search**: Combines BM25 and vector search with weighted RRF fusion
+- **Metadata Filtering**: Filter results on indexed frontmatter fields with `--filter`, and inspect filterable keys and value windows with `sif collection metadata`
 - **Query Expansion**: Embedding-based pseudo-relevance feedback in hybrid search
 - **Reranking (opt-in)**: Qwen3-Reranker, a sentence-transformers cross-encoder, or a llama.cpp GGUF reranker via `--rerank` or `SIF_RERANK_ENABLED=1`
 - **MCP Server**: Model Context Protocol support for AI assistants, built on the official Python MCP SDK v2 (stdio, HTTP, and a background daemon), with seven read-only tools: `query`, `get`, `multi_get`, `status`, `metadata`, `lex_search`, `vec_search`
-- **Live Indexing**: `sif watch` keeps the index fresh as files change (foreground, detached daemon, or launchd/systemd service; BM25-only unless `--embed` is given)
+- **Live Indexing**: `sif watch` keeps the index fresh as files change (foreground, detached daemon, or launchd/systemd service; BM25-only by default, with `--embed` to also write vectors)
 - **Query Suggestions**: Prefix completions, did-you-mean rewrites, and local query history via `sif suggest`
 - **Benchmarking**: `sif bench` evaluates search quality against a fixture and can sweep fusion settings; `sif eval --personal` measures quality on your own indexed corpus
 - **Python API**: Use the search strategies as a library from your own Python code
@@ -57,6 +58,12 @@ and the MCP server); it skips the torch/embedding stack:
 
 ```bash
 uv tool install docsif
+```
+
+The `all` extra adds GGUF (llama-cpp-python) and OpenAI-compatible backends:
+
+```bash
+uv tool install --python 3.12 'docsif[all]'
 ```
 
 ### One-off runs: uvx
@@ -148,7 +155,7 @@ sif collection rename my-notes personal-notes
 sif collection remove old-collection --yes
 ```
 
-Collections added with `--no-default` are excluded from default searches; use `sif collection enable`/`sif collection disable` to toggle that behavior later.
+Collections added with `--no-default` are excluded from default searches; use `sif collection enable`/`sif collection disable` (or the equivalent `include`/`exclude`) to toggle that behavior later.
 
 ### Context Management
 
@@ -179,6 +186,9 @@ sif index update --collection my-notes --force
 
 # Show indexing status (documents, chunks, watch state, vector lag)
 sif status
+
+# `sif index status` is an alias for `sif status`
+sif index status
 ```
 
 Vector search also needs chunk embeddings, generated separately with `sif index embed` (see [More CLI Commands](#more-cli-commands)).
@@ -201,6 +211,16 @@ sif search vsearch "functions that wrap other functions" -c my-notes
 # Limit results
 sif search query "python decorators" --limit 20
 
+# Paginate, or return one row per matched chunk
+sif search query "python decorators" --offset 10
+sif search query "python decorators" --per-chunk
+
+# Filter on indexed frontmatter metadata
+sif search query "release checklist" --filter '{"operator": "eq", "field": "status", "value": "done"}'
+
+# Enable reranking for this query (requires the embed or all extra)
+sif search query "python decorators" --rerank
+
 # Show score breakdowns across pipeline stages
 sif search query "AI" --explain
 ```
@@ -209,7 +229,7 @@ sif search query "AI" --explain
 
 ### Live Indexing
 
-`sif watch` updates the index as files change. It is BM25-only by default; pass `--embed` to also write vectors for changed documents.
+`sif watch` updates the index as files change. It is BM25-only by default; pass `--embed` to also write vectors for changed documents (set `SIF_WATCH_UPDATE_DEPTH=embed` to change the default, and `--no-embed` to override it for one run).
 
 ```bash
 # Watch all default collections in the foreground
@@ -224,6 +244,9 @@ sif watch --stop
 
 # Install as a launchd LaunchAgent (macOS) or systemd user unit (Linux)
 sif watch --install-service
+
+# Stop and remove the installed service
+sif watch --uninstall-service
 ```
 
 ### Query Suggestions
@@ -234,6 +257,9 @@ sif suggest "python dec"
 
 # Machine-readable output
 sif suggest "python dec" --json
+
+# Cap entries per section (default 5)
+sif suggest "python dec" --limit 3
 
 # Delete the locally recorded query history
 sif suggest --clear-history
@@ -251,7 +277,7 @@ the installed `sif` command (`sif mcp stdio`). Install SIF first (see
 
 The server provides seven read-only tools: `query`, `get`, `multi_get`,
 `status`, `metadata`, `lex_search`, and `vec_search`, with citation-grade
-`structuredContent` (docid, path, line range, content hash, snippet, and
+`structuredContent` (`doc_id`, path, line range, content hash, snippet, and
 staleness). The `sif-cite` skill encodes the search → `get` → cite workflow:
 never cite a snippet alone.
 
@@ -269,6 +295,9 @@ sif mcp http --host 127.0.0.1 --port 8080
 
 # Run the HTTP server as a background daemon
 sif mcp daemon
+
+# Stop the background daemon
+sif mcp daemon --stop
 ```
 
 The HTTP transport serves the Streamable HTTP endpoint at `/mcp` (POST and SSE
@@ -547,15 +576,21 @@ sif get multi-get "doc-id-1,notes/python_guide.md"
 sif ls
 sif ls my-notes subfolder
 
+# Inspect filterable metadata keys, types, numeric ranges, and value windows
+sif collection metadata my-notes
+sif collection metadata my-notes --json
+
 # Download a model through the verified canonical cache (embeddings, reranker,
 # query expansion, or a ModelScope owner/name id); see docs/models.md
 sif models pull
+sif models pull reranker
 
 # Inspect configured, cached, and persisted model identity
 sif models status --json
 
 # Benchmark search quality against a JSON fixture of queries and relevant doc IDs
 sif bench fixture.json --all --json
+sif bench fixture.json --sweep
 
 # Measure quality on your own indexed corpus; --min-heldout raises the
 # held-out floor (101 makes the 0.01 mean-delta gate admissible)
@@ -603,8 +638,8 @@ for result in results:
 ```
 
 For a runnable end-to-end demo, `examples/quickstart.py` indexes a throwaway
-directory (temporary `SIF_DB_PATH`, so your real index is untouched) and drives
-both the CLI and the Python API equivalent:
+directory (temporary `SIF_DB_PATH`, so your real index is untouched) and runs the
+CLI walkthrough, printing the equivalent Python API calls without executing them:
 
 ```bash
 python examples/quickstart.py

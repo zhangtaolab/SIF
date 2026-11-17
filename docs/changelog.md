@@ -35,7 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - N/A
 
-## [1.1.2] - 2026-11-13
+## [1.1.2] - 2026-11-14
 
 ### Changed
 - The release version is now `1.1.2`, still single-sourced in `src/sif/_version.py`.
@@ -65,7 +65,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Install-command typo fix: corrected the extras install command package name (docdocsif to docsif) in README.md and docs (quick task 261107-cdh, commit 2429c09)
 - Parser checksum fix: `sif index update` now compares body-hash checksums so unchanged documents are correctly detected and skipped instead of being re-indexed (commit f1f4b30)
 
-## [0.1.0] - 2024-01-20
+## [0.1.0] - 2026-04-15
 
 ### Added
 - Initial release of SIF
@@ -225,24 +225,12 @@ sif index update
 
 ## Future Roadmap
 
-### 0.2.0 (Planned)
-- [ ] Incremental indexing
-- [ ] File system watching
+### Future
 - [ ] Web UI
-- [ ] Advanced reranking
-- [ ] Query suggestions
-
-### 0.3.0 (Planned)
 - [ ] Plugin system
 - [ ] Multi-language support
 - [ ] REST API
 - [ ] Distributed search
-
-### 1.0.0 (Planned)
-- [ ] Stable API
-- [ ] Production-ready
-- [ ] Comprehensive test coverage
-- [ ] Performance benchmarks
 
 ## Contributors
 

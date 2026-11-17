@@ -5,7 +5,7 @@ Thank you for your interest in contributing to SIF! This document provides guide
 
 ## Code of Conduct
 
-This project adheres to a code of conduct. By participating, you are expected to:
+The repository does not currently include a `CODE_OF_CONDUCT.md`; this section sets the expectations for participation. By participating, you are expected to:
 
 - Be respectful and inclusive
 - Welcome newcomers
@@ -15,6 +15,8 @@ This project adheres to a code of conduct. By participating, you are expected to
 ## How to Contribute
 
 ### Reporting Bugs
+
+The repository has no `.github/ISSUE_TEMPLATE/` directory, so file bugs directly on GitHub Issues using the template below.
 
 Before creating a bug report:
 
@@ -46,8 +48,8 @@ What you expected to happen.
 
 **Environment**
 - OS: [e.g., macOS 14.0]
-- Python: [e.g., 3.11.0]
-- SIF: [e.g., 1.1.1]
+- Python: [e.g., 3.11.0; supported versions are 3.10–3.13]
+- SIF: [output of `sif --version`]
 
 **Logs**
 ```
@@ -57,7 +59,7 @@ Paste relevant logs here
 
 ### Suggesting Features
 
-Feature requests are welcome! Include:
+Feature requests are welcome — there is no feature-request issue template, so include the following in a GitHub issue:
 
 - **Use case**: What problem does it solve?
 - **Proposed solution**: How should it work?
@@ -69,19 +71,25 @@ Feature requests are welcome! Include:
 2. **Create** a branch (`git checkout -b feature/amazing-feature`)
 3. **Commit** changes (`git commit -m 'feat: add amazing feature'`)
 4. **Push** to branch (`git push origin feature/amazing-feature`)
-5. **Open** a Pull Request
+5. **Open** a Pull Request against `main`
+
+#### Branch Conventions
+
+- `main` is the default branch and the target for pull requests. A `dev` branch carries in-progress work before it lands on `main`.
+- Name feature branches `feature/<short-description>` and bug fix branches `fix/<short-description>`.
+- No other branch naming convention is formally documented.
 
 #### PR Checklist
 
-- [ ] Tests pass (`pytest`)
-- [ ] Code is formatted (`ruff format .`)
-- [ ] Code passes linting (`ruff check .`)
-- [ ] Type checking passes (`ty check src/sif`)
-- [ ] Full local check passes (`make ci`; `bandit` is not in the `[dev]` extras, so install it separately)
+- [ ] Tests pass: the full suite via `pytest` (coverage is enabled by `addopts` and the 90% gate applies; see [Troubleshooting](#troubleshooting))
+- [ ] Code is formatted: `ruff format src tests` (`ruff format --check src tests` verifies without rewriting)
+- [ ] Linting passes: `ruff check src tests`
+- [ ] Type checking passes: `ty check src/sif`
+- [ ] Full local check passes: `make ci` (install `bandit` first — it is not in the `[dev]` extras)
 - [ ] Documentation updated
-- [ ] Reference docs regenerated (`make docs-generate`) if CLI commands or configuration settings changed
-- [ ] Changelog updated (docs/changelog.md)
-- [ ] Commit messages follow conventions
+- [ ] Reference docs regenerated: `make docs-generate` if CLI commands or configuration settings changed
+- [ ] Changelog updated: add an entry under `[Unreleased]` in `docs/changelog.md`
+- [ ] Commit messages follow the convention below
 
 #### PR Description Format
 
@@ -116,18 +124,22 @@ Quick start:
 git clone https://github.com/zhangtaolab/sif.git
 cd sif
 python -m venv venv
-source venv/bin/activate
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -e ".[dev]"
 ```
+
+The distribution is published as `docsif`; the installed command is `sif`. CI uses the committed `uv.lock` — to mirror it locally, run `uv sync --frozen --extra dev --extra embed` and then `uv run --frozen pytest`.
 
 ## Coding Standards
 
 ### Python Style
 
-- Follow PEP 8
-- Use type hints
+- Follow PEP 8 and target Python 3.10+ (use `list[str] | None` union syntax)
+- Use type hints; type annotations are checked with `ty check src/sif`
 - Maximum line length: 100 characters
-- Use docstrings for all public functions
+- Maximum mccabe complexity: 10
+- Use double quotes; ruff isort orders stdlib, third-party, then first-party `sif` with `combine-as-imports = true` and two blank lines after imports
+- Use Google-style docstrings for all public functions
 
 ### Code Formatting
 
@@ -158,14 +170,14 @@ ty check src/sif
 ### Testing
 
 ```bash
-# Run all tests
+# Run all tests (coverage is collected on every run via addopts)
 pytest
 
-# Run with coverage
-pytest --cov=src/sif
-
-# Run specific test
+# Run a specific test file — add --no-cov while iterating on a subset
 pytest tests/unit/test_collection.py
+
+# Generate the HTML coverage report
+pytest --cov-report=html
 ```
 
 ## Commit Message Convention
@@ -229,25 +241,23 @@ Add instructions for Windows users and conda.
 - Use Google-style docstrings
 - Include type information
 
-Example:
+Example (from `HybridSearcher.search` in `src/sif/search/hybrid.py`):
 
 ```python
 def search(
     self,
     query: str,
-    limit: int = 10,
+    options: SearchOptions | None = None,
 ) -> list[SearchResult]:
-    """Search documents matching the query.
-    
+    """Search using hybrid approach (BM25 + Vector + RRF).
+
     Args:
-        query: Search query string
-        limit: Maximum number of results
-        
+        query: Search query
+        options: Search options
+
     Returns:
-        List of search results
-        
-    Raises:
-        ValueError: If query is empty
+        Ranked list of search results, raw and unenriched (the pipeline
+        exit owns the single context/staleness enrichment).
     """
 ```
 
@@ -260,6 +270,8 @@ Update relevant documentation when adding features:
 - Docstrings - API reference
 
 ## Testing Guidelines
+
+Tests live under `tests/unit/<area>/` (module-level, using mocks or temporary databases) and `tests/integration/` (cross-layer and real-subprocess pipelines); `tests/e2e/` is reserved and currently empty. Files are named `test_*.py`, classes `Test*`, and functions `test_*`, as configured under `[tool.pytest.ini_options]`. Shared fixtures and the autouse hermeticity fixtures live in `tests/conftest.py`; see the [Testing Guide](testing.md) for the full suite layout and fixture list.
 
 ### Unit Tests
 
@@ -327,7 +339,7 @@ For significant documentation changes:
 
 ### For Maintainers
 
-- Review PRs within a week
+- Review turnaround is not formally documented; maintainers triage pull requests on GitHub
 - Be constructive in feedback
 - Approve when ready
 - Merge with appropriate strategy
@@ -347,7 +359,7 @@ Releases are published by the tag-triggered `Publish` workflow; there is no manu
    git push origin v1.1.2
    ```
 
-6. **Let the Publish workflow release it.** Pushing the tag triggers `Publish`, which builds once, verifies the tag matches `src/sif/_version.py`, and publishes to TestPyPI first and PyPI second through trusted publishing with PEP 740 attestations. A tag that does not exactly equal `v` + the version literal fails the build job before anything is published.
+6. **Let the Publish workflow release it.** Pushing the tag triggers `Publish`, which verifies the tag matches `src/sif/_version.py`, builds the distributions once, and publishes them to TestPyPI first and PyPI second through trusted publishing with PEP 740 attestations. A tag that does not exactly equal `v` + the version literal fails the build job before anything is published.
 
 For post-release verification commands (PyPI JSON check, attestation verification, scratch install), see the Release Process section of the [Development Guide](development.md#release-process).
 
@@ -379,6 +391,8 @@ Runs on every push to any branch and on every pull request, with two jobs:
 - **Test** — eight cells: Python 3.10, 3.11, 3.12, and 3.13 on both `ubuntu-latest` and `macos-latest`. Each cell installs with `uv sync --frozen --extra dev --extra embed` and runs the full suite via `env -u FORCE_COLOR NO_COLOR=1 uv run --frozen pytest`; the coverage floor applies exactly as it does locally.
 - **Lint** — Python 3.12 on `ubuntu-latest`, running `ruff check src tests`, `ruff format --check src tests`, and `ty check src/sif`.
 
+There is no Windows runner in the matrix, and `push: branches: ['**']` means tag pushes do not trigger the Test Matrix — tags go to `Publish`.
+
 All eight test cells plus the lint job must be green on the release commit before it is tagged (see [Release Process](#release-process)). The Test Matrix does not run `bandit`; run `make security` locally if your change touches code the security scan covers.
 
 ### Docs Validation — `docs.yml`
@@ -395,18 +409,18 @@ Triggered by pushes to `main` and by pull requests that touch `docs/**`, `README
 
 ### Publish — `publish.yml`
 
-Triggered by pushing a `v*` tag. It builds the distributions once with `uv build`, verifies that the tag equals `v` + the `src/sif/_version.py` literal, runs `twine check` on the artifacts, then publishes to TestPyPI first and PyPI second through GitHub OIDC trusted publishing (the `testpypi` and `pypi` environments) with PEP 740 attestations. No API token or manual upload is involved — see [Release Process](#release-process).
+Triggered by pushing a `v*` tag. It verifies that the tag equals `v` + the `src/sif/_version.py` literal, builds the distributions once with `uv build`, runs `twine check` on the artifacts, uploads the `dist` artifact, then publishes to TestPyPI first and PyPI second through GitHub OIDC trusted publishing (the `testpypi` and `pypi` environments) with PEP 740 attestations. No API token or manual upload is involved — see [Release Process](#release-process).
 
 ## Makefile Targets
 
-The `Makefile` wraps the common development commands:
+The `Makefile` wraps the common development commands; `make help` lists the common targets, and the `.PHONY` line at the top of the `Makefile` enumerates every declared target (the table below covers the rest):
 
 | Target | What it runs | Notes |
 |--------|--------------|-------|
 | `make install-dev` | `pip install -e ".[dev]"` | |
 | `make test` | `pytest --cov=src/sif ...` | Coverage is also on by default via `pyproject.toml` `addopts` |
 | `make test-fast` | `pytest -x -q` | Coverage still applies via `addopts`; stops at first failure |
-| `make docs-test` | `pytest tests/test_docs.py -v --no-cov` | Same docs validation CI runs |
+| `make docs-test` | `pytest tests/test_docs.py -v --no-cov` | The pytest half of Docs Validation in CI; CI also regenerates the reference docs and fails on drift |
 | `make docs-generate` | `scripts/generate_cli_ref.py` + `scripts/generate_config_ref.py` | Regenerate reference docs before committing CLI/config changes |
 | `make windows-smoke` | `hc exec` on the Windows host (hc remote yoga): prints HEAD, checks the tree is clean, syncs with `uv`, runs `scripts/windows_smoke.py` | On-demand release step only; needs the `hc` CLI and a synced checkout (`YOGA_DIR`, default `D:\Github\SIF`) |
 | `make lint` / `make lint-fix` | `ruff check .` / `ruff check --fix .` | |
@@ -418,19 +432,17 @@ The `Makefile` wraps the common development commands:
 
 ## Questions?
 
-GitHub Discussions is not enabled on this repository. For questions and support, open an issue:
+For questions and support, open an issue on GitHub:
 
 - Issues: [github.com/zhangtaolab/sif/issues](https://github.com/zhangtaolab/sif/issues)
 
 ## Recognition
 
-Contributors will be:
-- Mentioned in release notes
-- Credited in documentation
+Contributor authorship is recorded in the repository's commit history and pull requests. Release entries in [docs/changelog.md](changelog.md) describe changes release by release.
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the MIT License.
+SIF is released under the MIT License — see [LICENSE](https://github.com/zhangtaolab/sif/blob/main/LICENSE) for the full text. By contributing, you agree that your contributions will be licensed under the same terms.
 
 ## Troubleshooting
 
@@ -439,7 +451,7 @@ By contributing, you agree that your contributions will be licensed under the MI
 `pyproject.toml` enables coverage on every `pytest` invocation (`addopts = "--cov=src/sif ..."` under `[tool.pytest.ini_options]`) and enforces a floor of 90% (`[tool.coverage.report] fail_under = 90`). Running a single test file therefore fails the run even when every test in it passes:
 
 ```
-FAIL Required test coverage of 90.0% not reached. Total coverage: 12.96%
+FAIL Required test coverage of 90.0% not reached.
 ```
 
 For subset runs during development, disable coverage explicitly:
@@ -448,7 +460,7 @@ For subset runs during development, disable coverage explicitly:
 pytest --no-cov tests/unit/test_collection.py
 ```
 
-Before opening a PR, run the full suite (`make test`) so total coverage is measured against the 90% floor — the PR checklist item "Tests pass (`pytest`)" means the full suite with coverage, not a single file.
+Before opening a PR, run the full suite (`make test`) so total coverage is measured against the 90% floor — the PR checklist item "Tests pass" means the full suite with coverage, not a single file.
 
 ### Tests fail with ANSI escape codes in assertions
 

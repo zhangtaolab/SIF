@@ -59,7 +59,7 @@ Where:
 
 ### Parameters
 
-SIF does not expose k1/b configuration; BM25 ranking uses SQLite FTS5's built-in defaults via the `rank` column:
+SIF does not expose k1/b configuration; document search scores with the weighted `bm25(documents_fts, ?, ?)` expression, whose internal content/title weights are pinned at 1.0/1.0, while FTS5 still supplies the built-in k1/b defaults:
 
 | Parameter | Value | Description |
 |-----------|-------|-------------|
