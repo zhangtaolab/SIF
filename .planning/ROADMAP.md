@@ -273,7 +273,7 @@ Full detail: `.planning/milestones/v1.1-ROADMAP.md`
   3. User can pull models reliably — `sif models pull` with DEFAULT_MODELS corrected from 7B gte_Qwen2 to the Qwen3-0.6B family, md5 cache-check bug fixed, deterministic ModelScope path, canonical cache dir
   4. User can inspect model status — `sif models status` shows identity/backend/dims with a backend probe, and stays silent in non-TTY contexts
   5. User can install SIF correctly on every platform — uv-first docs with the Linux CPU torch index recipe, llama-cpp backend indexes, degradation matrix, and client config snippets; every new command/Settings field across the milestone passes the `make docs-generate` CI diff gate
-**Plans**: 4/7 plans executed
+**Plans**: 5/7 plans executed
 **Wave 1**
 - [x] 24-01-PLAN.md — Chunk-sweep instrument: pure tuning verdict + isolated-arm runbook with per-arm identity gate + tests
 
@@ -285,7 +285,7 @@ Full detail: `.planning/milestones/v1.1-ROADMAP.md`
 - [x] 24-07-PLAN.md — Breadcrumb evaluation layer: duplicate metrics, body-leg verdict policy, one-arm identity-gated runbook + tests
 
 **Wave 4** *(blocked on Wave 3 completion)*
-- [ ] 24-04-PLAN.md — `sif models pull/status`, hidden deprecated `sif pull`, skip-hidden docs generator
+- [x] 24-04-PLAN.md — `sif models pull/status`, hidden deprecated `sif pull`, skip-hidden docs generator
 
 **Wave 5** *(blocked on Wave 4 completion)*
 - [ ] 24-05-PLAN.md — uv-first install docs, degradation matrix, model-management docs, docs tests
@@ -320,7 +320,7 @@ v1.2 contracts — defined ONCE; downstream phases consume, never redefine:
 | 21. Scale, Maintenance + Embedder Identity | v1.2 | 8/8 | Complete    | 2026-11-16 |
 | 22. MCP SDK v2 + Agent Packaging | v1.2 | 7/7 | Complete    | 2026-11-16 |
 | 23. Harrier Gated Evaluation | v1.2 | 6/6 | Complete    | 2026-11-16 |
-| 24. Tuning + Models UX + Install Docs | v1.2 | 4/7 | In Progress | - |
+| 24. Tuning + Models UX + Install Docs | v1.2 | 5/7 | In Progress | - |
 
 ---
 *Roadmap created 2026-11-07 for milestone v1.1; v1.2 (Phases 17-24) added 2026-11-13. v1.0 (Phases 1-10.1) and v1.1 (Phases 11-16.1) shipped. Phase numbering continues at 17 (no reset).*

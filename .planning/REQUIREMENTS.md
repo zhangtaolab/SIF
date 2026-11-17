@@ -76,7 +76,7 @@ Each maps to exactly one roadmap phase. Checkboxes mark committed scope.
 ### Models UX (MODELS)
 
 - [x] **MODELS-01**: User can pull models reliably (`sif models pull`; DEFAULT_MODELS corrected from 7B gte_Qwen2 to the Qwen3-0.6B family; md5 cache-check bug fixed; deterministic ModelScope path; canonical cache dir).
-- [ ] **MODELS-02**: User can inspect model status (`sif models status`; identity/backend/dims display; backend probe; non-TTY silence).
+- [x] **MODELS-02**: User can inspect model status (`sif models status`; identity/backend/dims display; backend probe; non-TTY silence).
 
 ### Install Documentation (DOCS)
 
@@ -166,7 +166,7 @@ Populated during roadmap creation. Each requirement maps to exactly one phase.
 | MODEL-01 | Phase 23 | Complete |
 | MODEL-02 | Phase 23 | Complete |
 | MODELS-01 | Phase 24 | Complete |
-| MODELS-02 | Phase 24 | Pending |
+| MODELS-02 | Phase 24 | Complete |
 | DOCS-01 | Phase 24 | Pending |
 
 **Coverage:**

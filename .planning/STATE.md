@@ -4,18 +4,18 @@ milestone: v1.2
 milestone_name: Search Precision and Agent Experience
 current_phase: 24
 current_phase_name: Tuning + Models UX + Install Docs
-current_plan: 5
+current_plan: 6
 status: executing
-stopped_at: Completed 24-07-PLAN.md
-last_updated: "2026-11-17T00:28:51.359Z"
+stopped_at: Completed 24-04-PLAN.md
+last_updated: "2026-11-17T00:38:45.651Z"
 last_activity: 2026-11-16
 last_activity_desc: Phase 23 complete, transitioned to Phase 24
-state_head: 409d7465fec31f32ee78f9185de5386f7ff86635
+state_head: a74c4b533587839848d359db7536111776232f35
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 55
-  completed_plans: 52
+  completed_plans: 53
 ---
 
 # DocSift — Project State
@@ -32,7 +32,7 @@ progress:
 ## Current Position
 
 Phase: 24 (Tuning + Models UX + Install Docs) — READY TO EXECUTE
-Current Plan: 5
+Current Plan: 6
 Total Plans in Phase: 7
 Status: Ready to execute
 Last activity: 2026-11-16 — Phase 23 complete, transitioned to Phase 24
@@ -103,6 +103,7 @@ Progress: [█████████░] 88%
 | Phase 24 P02 | 10min | 2 tasks | 11 files |
 | Phase 24 P03 | ~9 min | 2 tasks | 2 files |
 | Phase 24 P07 | ~20 min | 3 tasks | 6 files |
+| Phase 24 P04 | ~7 min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -313,6 +314,10 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - [Phase 24]: A baseline saved run whose corpus fingerprint or model_type/model_name differs is rejected and a fresh breadcrumb-off Qwen3 baseline is generated, so no backend swap enters the breadcrumb delta (T-24-13).
 - [Phase 24]: Breadcrumb adoption requires an overall held-out win plus a winning, sufficient body leg and a recorded duplicate summary; title-leg-only, flat, and regressing body legs are keep-breadcrumb-off with named reasons, and an absent body leg is insufficient evidence (D-04/D-05).
 - [Phase 24]: Duplicate shares aggregate weighted by chunk count; the artifact records identity/model_type, min_heldout_for_epsilon_win=101, and the N=56 limitation, and refuses a differing decision or fingerprint without --force (T-24-06).
+- [Phase 24]: Pull target resolution: configured embedder/reranker/registry ids or one-slash owner/name; unknown tokens fail with the accepted list; --force and --cache-dir reach the downloader.
+- [Phase 24]: models status decides match/mismatch/dimension-mismatch from stored dimension, schema FLOAT width, and cache_model_id; source and display fingerprints are display-only (D-08).
+- [Phase 24]: Backend probes use find_spec plus importlib.metadata.version with distribution names (llama-cpp-python, sentence-transformers, sqlite-vec); no backend import and no download.
+- [Phase 24]: sif pull stays hidden and delegates registry/owner-name ids to models pull; legacy GGUF/URL path uses a 60s urlopen timeout and stderr-only notices.
 
 ### Pending Todos
 
@@ -349,8 +354,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-17T00:28:50.906Z
-Stopped at: Completed 24-07-PLAN.md
+Last session: 2026-11-17T00:38:45.096Z
+Stopped at: Completed 24-04-PLAN.md
 Resume file: None
 
 - **Next expected action:** finish 22-07 Task 3 (Registry docs, phase gate, real `claude mcp` stdio smoke, `22-07-SUMMARY.md`), then Phase 22 verification (gsd-verifier, code review, regression gate) and ROADMAP/STATE completion; then Phase 23 → 24. 22-07 Task 2 was recorded `blocked no-github-login` (optional public Registry listing deferred). Two audits remain recorded as debt (see Blockers/Concerns): `/gsd-secure-phase 20` and `/gsd:validate-phase 20`.
