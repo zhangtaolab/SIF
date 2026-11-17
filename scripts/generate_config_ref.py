@@ -177,7 +177,7 @@ SECTIONS: list[tuple[str, list[str]]] = [
             "rerank_relative_threshold",
         ],
     ),
-    ("Chunking Settings", ["chunk_size", "chunk_overlap"]),
+    ("Chunking Settings", ["chunk_size", "chunk_overlap", "embed_breadcrumb"]),
     (
         "Search Settings",
         [

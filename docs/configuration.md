@@ -98,6 +98,7 @@ BM25/FTS5 keyword search and sqlite-vec vector search always run on CPU regardle
 |----------|------|---------|-------------|
 | `SIF_CHUNK_SIZE` | int | `512` | Default chunk size in tokens (converted to ~4 characters per token for the character-based chunkers) |
 | `SIF_CHUNK_OVERLAP` | int | `128` | Default chunk overlap in tokens (converted to ~4 characters per token for the character-based chunkers) |
+| `SIF_EMBED_BREADCRUMB` | bool | `False` | Prepend the document title and current heading path to each chunk's embedding text; stored content and full-text search stay unchanged |
 
 ### Search Settings
 
