@@ -4,18 +4,18 @@ milestone: v1.2
 milestone_name: Search Precision and Agent Experience
 current_phase: 24
 current_phase_name: Tuning + Models UX + Install Docs
-current_plan: 4
+current_plan: 5
 status: executing
-stopped_at: Completed 24-03-PLAN.md
-last_updated: "2026-11-17T00:18:06.418Z"
+stopped_at: Completed 24-07-PLAN.md
+last_updated: "2026-11-17T00:28:51.359Z"
 last_activity: 2026-11-16
 last_activity_desc: Phase 23 complete, transitioned to Phase 24
-state_head: 75c6e54e0f4b541bc115a4d408da23ef1e39ac53
+state_head: 409d7465fec31f32ee78f9185de5386f7ff86635
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 55
-  completed_plans: 51
+  completed_plans: 52
 ---
 
 # DocSift — Project State
@@ -32,7 +32,7 @@ progress:
 ## Current Position
 
 Phase: 24 (Tuning + Models UX + Install Docs) — READY TO EXECUTE
-Current Plan: 4
+Current Plan: 5
 Total Plans in Phase: 7
 Status: Ready to execute
 Last activity: 2026-11-16 — Phase 23 complete, transitioned to Phase 24
@@ -102,6 +102,7 @@ Progress: [█████████░] 88%
 | Phase 24 P01 | 15 | 2 tasks | 4 files |
 | Phase 24 P02 | 10min | 2 tasks | 11 files |
 | Phase 24 P03 | ~9 min | 2 tasks | 2 files |
+| Phase 24 P07 | ~20 min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -308,6 +309,10 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - [Phase 24]: A cache hit requires .sif-model.json with per-file size + SHA-256; manifestless directories re-download.
 - [Phase 24]: Home legacy (~/.sif/models) detection applies only to the default cache root; explicit cache_dir is hermetic.
 - [Phase 24]: Downloads stage in a sibling temp dir and replace the target only after verification, restoring the backup on failure.
+- [Phase 24]: The breadcrumb arm is one isolated DB at 512/128 with SIF_EMBED_BREADCRUMB=1, pinned to modelscope Qwen/Qwen3-Embedding-0.6B, dim 1024, max_tokens 512, no prompts (D-04).
+- [Phase 24]: A baseline saved run whose corpus fingerprint or model_type/model_name differs is rejected and a fresh breadcrumb-off Qwen3 baseline is generated, so no backend swap enters the breadcrumb delta (T-24-13).
+- [Phase 24]: Breadcrumb adoption requires an overall held-out win plus a winning, sufficient body leg and a recorded duplicate summary; title-leg-only, flat, and regressing body legs are keep-breadcrumb-off with named reasons, and an absent body leg is insufficient evidence (D-04/D-05).
+- [Phase 24]: Duplicate shares aggregate weighted by chunk count; the artifact records identity/model_type, min_heldout_for_epsilon_win=101, and the N=56 limitation, and refuses a differing decision or fingerprint without --force (T-24-06).
 
 ### Pending Todos
 
@@ -344,8 +349,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-17T00:18:06.062Z
-Stopped at: Completed 24-03-PLAN.md
+Last session: 2026-11-17T00:28:50.906Z
+Stopped at: Completed 24-07-PLAN.md
 Resume file: None
 
 - **Next expected action:** finish 22-07 Task 3 (Registry docs, phase gate, real `claude mcp` stdio smoke, `22-07-SUMMARY.md`), then Phase 22 verification (gsd-verifier, code review, regression gate) and ROADMAP/STATE completion; then Phase 23 → 24. 22-07 Task 2 was recorded `blocked no-github-login` (optional public Registry listing deferred). Two audits remain recorded as debt (see Blockers/Concerns): `/gsd-secure-phase 20` and `/gsd:validate-phase 20`.
