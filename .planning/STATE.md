@@ -6,11 +6,11 @@ current_phase: 24
 current_phase_name: Tuning + Models UX + Install Docs
 current_plan: 7
 status: executing
-stopped_at: Completed 24-05-PLAN.md
-last_updated: "2026-11-17T00:46:53.650Z"
+stopped_at: Phase 24 paused before 24-06 real evidence — user asked not to touch SynologyDrive; see HANDOFF.json
+last_updated: "2026-11-17T01:22:06.812Z"
 last_activity: 2026-11-16
 last_activity_desc: Phase 23 complete, transitioned to Phase 24
-state_head: d8d286becfc0d0921216e59f80aea90f16424107
+state_head: d8d9eb09db1a6eb5caf0be2a0877cbce4809a4f4
 progress:
   total_phases: 8
   completed_phases: 7
@@ -357,8 +357,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-17T00:46:53.105Z
-Stopped at: Completed 24-05-PLAN.md
-Resume file: None
+Last session: 2026-11-17T01:22:06.282Z
+Stopped at: Phase 24 paused before 24-06 real evidence — user asked not to touch SynologyDrive; see HANDOFF.json
+Resume file: .planning/HANDOFF.json
 
 - **Next expected action:** finish 22-07 Task 3 (Registry docs, phase gate, real `claude mcp` stdio smoke, `22-07-SUMMARY.md`), then Phase 22 verification (gsd-verifier, code review, regression gate) and ROADMAP/STATE completion; then Phase 23 → 24. 22-07 Task 2 was recorded `blocked no-github-login` (optional public Registry listing deferred). Two audits remain recorded as debt (see Blockers/Concerns): `/gsd-secure-phase 20` and `/gsd:validate-phase 20`.
