@@ -80,7 +80,7 @@ Each maps to exactly one roadmap phase. Checkboxes mark committed scope.
 
 ### Install Documentation (DOCS)
 
-- [ ] **DOCS-01**: User can install SIF correctly on every platform (uv-first docs; Linux CPU torch index recipe; llama-cpp backend indexes; degradation matrix; client config snippets; every new command/Settings field passes `make docs-generate` CI diff gate).
+- [x] **DOCS-01**: User can install SIF correctly on every platform (uv-first docs; Linux CPU torch index recipe; llama-cpp backend indexes; degradation matrix; client config snippets; every new command/Settings field passes `make docs-generate` CI diff gate).
 
 ## Future Requirements (Deferred)
 
@@ -167,7 +167,7 @@ Populated during roadmap creation. Each requirement maps to exactly one phase.
 | MODEL-02 | Phase 23 | Complete |
 | MODELS-01 | Phase 24 | Complete |
 | MODELS-02 | Phase 24 | Complete |
-| DOCS-01 | Phase 24 | Pending |
+| DOCS-01 | Phase 24 | Complete |
 
 **Coverage:**
 - v1.2 requirements: 39 total

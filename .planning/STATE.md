@@ -4,18 +4,18 @@ milestone: v1.2
 milestone_name: Search Precision and Agent Experience
 current_phase: 24
 current_phase_name: Tuning + Models UX + Install Docs
-current_plan: 6
+current_plan: 7
 status: executing
-stopped_at: Completed 24-04-PLAN.md
-last_updated: "2026-11-17T00:38:45.651Z"
+stopped_at: Completed 24-05-PLAN.md
+last_updated: "2026-11-17T00:46:53.650Z"
 last_activity: 2026-11-16
 last_activity_desc: Phase 23 complete, transitioned to Phase 24
-state_head: a74c4b533587839848d359db7536111776232f35
+state_head: d8d286becfc0d0921216e59f80aea90f16424107
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 55
-  completed_plans: 53
+  completed_plans: 54
 ---
 
 # DocSift — Project State
@@ -32,7 +32,7 @@ progress:
 ## Current Position
 
 Phase: 24 (Tuning + Models UX + Install Docs) — READY TO EXECUTE
-Current Plan: 6
+Current Plan: 7
 Total Plans in Phase: 7
 Status: Ready to execute
 Last activity: 2026-11-16 — Phase 23 complete, transitioned to Phase 24
@@ -104,6 +104,7 @@ Progress: [█████████░] 88%
 | Phase 24 P03 | ~9 min | 2 tasks | 2 files |
 | Phase 24 P07 | ~20 min | 3 tasks | 6 files |
 | Phase 24 P04 | ~7 min | 3 tasks | 8 files |
+| Phase 24 P05 | 20 min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -318,6 +319,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - [Phase 24]: models status decides match/mismatch/dimension-mismatch from stored dimension, schema FLOAT width, and cache_model_id; source and display fingerprints are display-only (D-08).
 - [Phase 24]: Backend probes use find_spec plus importlib.metadata.version with distribution names (llama-cpp-python, sentence-transformers, sqlite-vec); no backend import and no download.
 - [Phase 24]: sif pull stays hidden and delegates registry/owner-name ids to models pull; legacy GGUF/URL path uses a 60s urlopen timeout and stderr-only notices.
+- [Phase 24]: Install docs are uv-first (uv tool, uvx, pip order) with the explicit --torch-backend=cpu Linux recipe and a uv 0.9.19 floor; llama-cpp wheel recipes are marked manually verified.
+- [Phase 24]: The degradation matrix separates CLI fail-fast from the MCP hybrid_search BM25 degradation, and model management documents the canonical manifest cache plus legacy migration.
 
 ### Pending Todos
 
@@ -354,8 +357,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-17T00:38:45.096Z
-Stopped at: Completed 24-04-PLAN.md
+Last session: 2026-11-17T00:46:53.105Z
+Stopped at: Completed 24-05-PLAN.md
 Resume file: None
 
 - **Next expected action:** finish 22-07 Task 3 (Registry docs, phase gate, real `claude mcp` stdio smoke, `22-07-SUMMARY.md`), then Phase 22 verification (gsd-verifier, code review, regression gate) and ROADMAP/STATE completion; then Phase 23 → 24. 22-07 Task 2 was recorded `blocked no-github-login` (optional public Registry listing deferred). Two audits remain recorded as debt (see Blockers/Concerns): `/gsd-secure-phase 20` and `/gsd:validate-phase 20`.
