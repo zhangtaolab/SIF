@@ -14,16 +14,27 @@ from sif.search.personal_bench import noise_gate
 from sif.search.tuning_verdict import (
     BASELINE_ARM_NAME,
     DECISION_ADOPT,
+    DECISION_ADOPT_BREADCRUMB,
     DECISION_INSUFFICIENT,
     DECISION_KEEP,
+    DECISION_KEEP_BREADCRUMB,
     MIN_HELDOUT_FOR_EPSILON_WIN,
     SWEEP_GRID,
+    decide_breadcrumb_default,
     decide_chunk_default,
     select_tuning_candidate,
 )
 
 
 CANDIDATE = "smaller-384-96"
+BREADCRUMB_DUPLICATES = {
+    "chunks": 100,
+    "documents": 10,
+    "title_share": 1.0,
+    "in_content_share": 0.545,
+    "subchunk_share": 0.459,
+    "title_equals_heading_share": 0.937,
+}
 
 
 def _constant_gate(n: int, delta: float) -> object:
@@ -157,3 +168,183 @@ class TestMalformedConfirmation:
     def test_non_gate_object_raises_named_error(self) -> None:
         with pytest.raises(ValueError, match="GateResult"):
             decide_chunk_default(CANDIDATE, 0.02, object())
+
+
+class TestBreadcrumbBodyLegVeto:
+    """A title-leg-only or flat-body gain never changes the breadcrumb default."""
+
+    def test_n100_epsilon_tie_does_not_adopt(self) -> None:
+        confirmation = noise_gate([0.0] * 100, [0.01] * 100)
+        assert confirmation.winner is False
+
+        decision = decide_breadcrumb_default(
+            confirmation,
+            {
+                "body": _constant_gate(100, 0.02),
+                "title": _constant_gate(100, 0.02),
+            },
+            BREADCRUMB_DUPLICATES,
+        )
+
+        assert decision.decision == DECISION_KEEP_BREADCRUMB
+        assert "overall held-out gate winner is false" in decision.reasons
+
+    def test_n101_overall_and_body_win_adopts(self) -> None:
+        decision = decide_breadcrumb_default(
+            _constant_gate(101, 0.02),
+            {
+                "body": _constant_gate(101, 0.015),
+                "title": _constant_gate(101, 0.03),
+                "replay": _constant_gate(101, 0.0),
+            },
+            BREADCRUMB_DUPLICATES,
+        )
+
+        assert decision.decision == DECISION_ADOPT_BREADCRUMB
+        assert decision.confirmation_winner is True
+        assert decision.body_winner is True
+        assert decision.reasons == ()
+
+    def test_overall_winner_with_a_flat_body_leg_is_title_leg_only(self) -> None:
+        decision = decide_breadcrumb_default(
+            {"n": 101, "mean_delta": 0.02, "winner": True, "sufficient": True},
+            {
+                "body": {"n": 101, "mean_delta": 0.0, "winner": False, "sufficient": True},
+                "title": {"n": 101, "mean_delta": 0.03, "winner": True, "sufficient": True},
+            },
+            {"title_share": 1.0, "in_content_share": 0.5, "subchunk_share": 0.4},
+        )
+
+        assert decision.decision == DECISION_KEEP_BREADCRUMB
+        assert decision.title_winner is True
+        assert decision.body_winner is False
+        assert any("confined to the title leg" in reason for reason in decision.reasons)
+
+    def test_overall_winner_with_a_non_winning_body_and_title_is_flat_body(self) -> None:
+        decision = decide_breadcrumb_default(
+            _constant_gate(101, 0.02),
+            {
+                "body": {"n": 101, "mean_delta": 0.0, "winner": False, "sufficient": True},
+                "title": {"n": 101, "mean_delta": 0.0, "winner": False, "sufficient": True},
+            },
+            BREADCRUMB_DUPLICATES,
+        )
+
+        assert decision.decision == DECISION_KEEP_BREADCRUMB
+        assert any("flat body leg" in reason for reason in decision.reasons)
+
+    def test_regressing_body_leg_is_rejected_with_numbers(self) -> None:
+        decision = decide_breadcrumb_default(
+            _constant_gate(101, 0.02),
+            {
+                "body": {"n": 101, "mean_delta": -0.02, "winner": False, "sufficient": True},
+                "title": _constant_gate(101, 0.04),
+            },
+            BREADCRUMB_DUPLICATES,
+        )
+
+        assert decision.decision == DECISION_KEEP_BREADCRUMB
+        assert any("negative (regressing)" in reason for reason in decision.reasons)
+
+    def test_regressing_body_leg_alone_keeps_even_without_an_overall_win(self) -> None:
+        decision = decide_breadcrumb_default(
+            _constant_gate(101, -0.01),
+            {
+                "body": {"n": 101, "mean_delta": -0.02, "winner": False, "sufficient": True},
+            },
+            BREADCRUMB_DUPLICATES,
+        )
+
+        assert decision.decision == DECISION_KEEP_BREADCRUMB
+        assert any("negative (regressing)" in reason for reason in decision.reasons)
+
+    def test_absent_body_leg_is_insufficient_evidence(self) -> None:
+        decision = decide_breadcrumb_default(
+            _constant_gate(101, 0.02),
+            {"title": _constant_gate(101, 0.03)},
+            BREADCRUMB_DUPLICATES,
+        )
+
+        assert decision.decision == DECISION_INSUFFICIENT
+        assert decision.body_winner is False
+        assert any("absent" in reason for reason in decision.reasons)
+
+    def test_empty_confirmation_is_insufficient(self) -> None:
+        decision = decide_breadcrumb_default(
+            noise_gate([], []),
+            {"body": _constant_gate(101, 0.02)},
+            BREADCRUMB_DUPLICATES,
+        )
+
+        assert decision.decision == DECISION_INSUFFICIENT
+        assert decision.confirmation_n == 0
+
+    def test_insufficient_body_leg_cannot_adopt(self) -> None:
+        decision = decide_breadcrumb_default(
+            _constant_gate(101, 0.02),
+            {
+                "body": {"n": 5, "mean_delta": 0.5, "winner": True, "sufficient": False},
+            },
+            BREADCRUMB_DUPLICATES,
+        )
+
+        assert decision.decision == DECISION_KEEP_BREADCRUMB
+        assert decision.body_sufficient is False
+
+    def test_missing_duplicate_summary_cannot_adopt(self) -> None:
+        decision = decide_breadcrumb_default(
+            _constant_gate(101, 0.02),
+            {"body": _constant_gate(101, 0.02)},
+            {},
+        )
+
+        assert decision.decision == DECISION_KEEP_BREADCRUMB
+        assert any("duplicate-signal summary is missing" in reason for reason in decision.reasons)
+
+    @pytest.mark.parametrize(
+        ("confirmation", "leg_gates"),
+        [
+            (noise_gate([], []), {}),
+            (noise_gate([0.0] * 100, [0.01] * 100), {"body": _constant_gate(100, 0.02)}),
+            (_constant_gate(101, 0.02), {"title": _constant_gate(101, 0.02)}),
+            (_constant_gate(101, 0.02), {"body": _constant_gate(101, 0.02)}),
+        ],
+    )
+    def test_duplicate_summary_survives_every_outcome(
+        self, confirmation: object, leg_gates: dict[str, object]
+    ) -> None:
+        decision = decide_breadcrumb_default(confirmation, leg_gates, BREADCRUMB_DUPLICATES)
+
+        assert decision.duplicate_summary == BREADCRUMB_DUPLICATES
+        assert decision.to_dict()["duplicate_summary"] == BREADCRUMB_DUPLICATES
+        assert decision.min_heldout_for_epsilon_win == 101
+
+    def test_fixed_key_order_and_reasons_are_serialized(self) -> None:
+        decision = decide_breadcrumb_default(
+            _constant_gate(101, 0.02),
+            {"body": {"n": 101, "mean_delta": 0.0, "winner": False, "sufficient": True}},
+            BREADCRUMB_DUPLICATES,
+        )
+
+        assert list(decision.to_dict()) == [
+            "decision",
+            "confirmation_n",
+            "confirmation_mean_delta",
+            "confirmation_winner",
+            "confirmation_sufficient",
+            "body_winner",
+            "body_sufficient",
+            "title_winner",
+            "duplicate_summary",
+            "reasons",
+            "min_heldout_for_epsilon_win",
+        ]
+        assert isinstance(decision.to_dict()["reasons"], list)
+
+    def test_missing_leg_field_raises_a_named_error(self) -> None:
+        with pytest.raises(ValueError, match="winner"):
+            decide_breadcrumb_default(
+                _constant_gate(101, 0.02),
+                {"body": {"n": 101, "mean_delta": 0.0, "sufficient": True}},
+                BREADCRUMB_DUPLICATES,
+            )

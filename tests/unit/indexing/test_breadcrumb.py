@@ -8,7 +8,7 @@ objects it reads.
 from __future__ import annotations
 
 from sif.core.models import DocumentChunk
-from sif.indexing.breadcrumb import HEADING_PATTERN, breadcrumb_embed_texts
+from sif.indexing.breadcrumb import HEADING_PATTERN, breadcrumb_embed_texts, duplicate_metrics
 
 
 def _chunks(*contents: str) -> list[DocumentChunk]:
@@ -118,3 +118,83 @@ def test_non_heading_hash_lines_do_not_seed_a_section() -> None:
         "Doc\n\n#tag line",
         "Doc\n\n####### seven",
     ]
+
+
+class TestDuplicateMetrics:
+    """The duplicate-signal shares measure the reported breadcrumb risk."""
+
+    def test_h1_equal_to_title_reports_full_duplication(self) -> None:
+        metrics = duplicate_metrics("Doc", _chunks("# Doc\n\nbody"))
+
+        assert metrics == {
+            "chunks": 1,
+            "documents": 1,
+            "title_share": 1.0,
+            "in_content_share": 1.0,
+            "subchunk_share": 0.0,
+            "title_equals_heading_share": 1.0,
+        }
+
+    def test_sub_chunk_heavy_document_reports_half_the_chunks(self) -> None:
+        metrics = duplicate_metrics("Doc", _chunks("# Section\n\nlead", "continuation"))
+
+        assert metrics["chunks"] == 2
+        assert metrics["documents"] == 1
+        assert metrics["subchunk_share"] == 0.5
+        assert metrics["in_content_share"] == 0.5
+        assert metrics["title_equals_heading_share"] == 0.0
+
+    def test_document_without_headings_is_all_sub_chunks_and_title_only(self) -> None:
+        metrics = duplicate_metrics("Doc", _chunks("plain", "more"))
+
+        assert metrics["title_share"] == 1.0
+        assert metrics["subchunk_share"] == 1.0
+        assert metrics["in_content_share"] == 0.0
+        assert metrics["title_equals_heading_share"] == 0.0
+
+    def test_empty_chunk_list_returns_zero_counts_and_shares(self) -> None:
+        metrics = duplicate_metrics("Doc", [])
+
+        assert metrics == {
+            "chunks": 0,
+            "documents": 0,
+            "title_share": 0.0,
+            "in_content_share": 0.0,
+            "subchunk_share": 0.0,
+            "title_equals_heading_share": 0.0,
+        }
+
+    def test_single_chunk_is_a_valid_denominator(self) -> None:
+        metrics = duplicate_metrics("Doc", _chunks("## Only\n\nbody"))
+
+        assert metrics["chunks"] == 1
+        assert metrics["subchunk_share"] == 0.0
+        assert metrics["in_content_share"] == 1.0
+
+    def test_cjk_headings_are_measured_through_the_hash_run(self) -> None:
+        metrics = duplicate_metrics("文档", _chunks("### 方法\n\n正文"))
+
+        assert metrics["title_share"] == 1.0
+        assert metrics["in_content_share"] == 1.0
+        assert metrics["subchunk_share"] == 0.0
+        assert metrics["title_equals_heading_share"] == 0.0
+
+    def test_empty_title_never_counts_as_a_title_bearing_path(self) -> None:
+        metrics = duplicate_metrics("   ", _chunks("# Doc\n\nbody"))
+
+        assert metrics["title_share"] == 0.0
+        assert metrics["title_equals_heading_share"] == 0.0
+
+    def test_shares_are_rounded_to_six_decimals(self) -> None:
+        metrics = duplicate_metrics("Doc", _chunks("# Section\n\nlead", "middle", "tail"))
+
+        assert metrics["subchunk_share"] == 0.666667
+        assert metrics["in_content_share"] == 0.333333
+
+    def test_a_heading_already_in_the_content_is_counted_even_when_inherited(self) -> None:
+        chunks = _chunks("# Alpha\n\nlead", "see Alpha again", "unrelated tail")
+
+        metrics = duplicate_metrics("Doc", chunks)
+
+        assert metrics["in_content_share"] == 0.666667
+        assert metrics["subchunk_share"] == 0.666667

@@ -76,3 +76,62 @@ def breadcrumb_embed_texts(
         path = separator.join(parts)
         texts.append(f"{path}\n\n{chunk.content}" if path else chunk.content)
     return texts
+
+
+def _share(count: int, total: int) -> float:
+    """Return ``count / total`` rounded to six decimals, or 0.0 without input."""
+    return 0.0 if total == 0 else round(count / total, 6)
+
+
+def duplicate_metrics(title: str, chunks: Sequence[DocumentChunk]) -> dict[str, object]:
+    """Measure how much of the breadcrumb repeats already-indexed text.
+
+    The measured duplicate risk is real: most baseline documents have an H1
+    equal to their title, and nearly half of all chunks are headingless
+    sub-chunks. This function reports the shares the verdict needs so a
+    title-only gain can be rejected with numbers (research Pitfall 5, D-04).
+
+    The section heading is derived exactly as the builder derives it, so a
+    headingless continuation chunk inherits the section's most recent heading.
+
+    Args:
+        title: Document title; blank or whitespace-only never counts as a
+            title-bearing path.
+        chunks: Ordered document chunks; never mutated.
+
+    Returns:
+        ``chunks``, ``documents`` (1 when any chunk exists, else 0),
+        ``title_share`` (path includes a non-empty title), ``in_content_share``
+        (the current heading text already occurs in that chunk's content),
+        ``subchunk_share`` (the first non-empty line is not a heading), and
+        ``title_equals_heading_share`` (the current heading equals the title).
+        Shares are rounded to six decimals; an empty chunk list returns zero
+        counts and zero shares, and a single chunk is a valid denominator.
+    """
+    title_text = title.strip()
+    total = len(chunks)
+    titled = 0
+    in_content = 0
+    subchunk = 0
+    title_equals_heading = 0
+    current_heading: str | None = None
+    for chunk in chunks:
+        heading = _heading_label(chunk.content)
+        if heading is not None:
+            current_heading = heading
+        else:
+            subchunk += 1
+        if title_text:
+            titled += 1
+        if current_heading is not None and current_heading in chunk.content:
+            in_content += 1
+        if title_text and current_heading == title_text:
+            title_equals_heading += 1
+    return {
+        "chunks": total,
+        "documents": 1 if total else 0,
+        "title_share": _share(titled, total),
+        "in_content_share": _share(in_content, total),
+        "subchunk_share": _share(subchunk, total),
+        "title_equals_heading_share": _share(title_equals_heading, total),
+    }

@@ -1,4 +1,4 @@
-"""Pure chunk-sweep selection and held-out gate policy (Phase 24, QUAL-02).
+"""Pure chunk-sweep and breadcrumb gate policy (Phase 24, QUAL-02/03).
 
 No Click, Rich, embedding, or database imports: this module is a policy over
 Phase 18 gate values, unit-testable without loading a model. ``GateResult``
@@ -31,6 +31,8 @@ BASELINE_ARM_NAME = "baseline-512-128"
 DECISION_ADOPT = "adopt-chunking"
 DECISION_KEEP = "keep-default"
 DECISION_INSUFFICIENT = "insufficient-evidence"
+DECISION_ADOPT_BREADCRUMB = "adopt-breadcrumb"
+DECISION_KEEP_BREADCRUMB = "keep-breadcrumb-off"
 # The strict 1/N floor makes a 0.01 mean delta a tie at N=100; only N >= 101
 # can be strictly above its own floor (research Pitfall 1, D-02).
 MIN_HELDOUT_FOR_EPSILON_WIN = 101
@@ -189,5 +191,168 @@ def decide_chunk_default(
         confirmation_mean_delta=confirmation_mean_delta,
         confirmation_winner=confirmation_winner,
         confirmation_sufficient=confirmation_sufficient,
+        reasons=tuple(reasons),
+    )
+
+
+@dataclass(frozen=True)
+class BreadcrumbDecision:
+    """One breadcrumb verdict plus the held-out, per-leg, and duplicate inputs.
+
+    ``decision`` is ``DECISION_ADOPT_BREADCRUMB`` or
+    ``DECISION_KEEP_BREADCRUMB``, or ``DECISION_INSUFFICIENT`` when the
+    evidence cannot decide. ``reasons`` names every false rule, and
+    ``duplicate_summary`` is carried on every outcome so a rejection is
+    auditable with the measured duplicate shares (D-05, T-24-06).
+    """
+
+    decision: str
+    confirmation_n: int
+    confirmation_mean_delta: float
+    confirmation_winner: bool
+    confirmation_sufficient: bool
+    body_winner: bool
+    body_sufficient: bool
+    title_winner: bool
+    duplicate_summary: dict[str, Any]
+    reasons: tuple[str, ...]
+    min_heldout_for_epsilon_win: int = MIN_HELDOUT_FOR_EPSILON_WIN
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize with a fixed key order matching the field order."""
+        return {
+            "decision": self.decision,
+            "confirmation_n": self.confirmation_n,
+            "confirmation_mean_delta": self.confirmation_mean_delta,
+            "confirmation_winner": self.confirmation_winner,
+            "confirmation_sufficient": self.confirmation_sufficient,
+            "body_winner": self.body_winner,
+            "body_sufficient": self.body_sufficient,
+            "title_winner": self.title_winner,
+            "duplicate_summary": dict(self.duplicate_summary),
+            "reasons": list(self.reasons),
+            "min_heldout_for_epsilon_win": self.min_heldout_for_epsilon_win,
+        }
+
+
+def _body_gate(leg_gates: Mapping[str, Any]) -> Any | None:
+    """Return the body-leg gate, or ``None`` when the leg is absent."""
+    return leg_gates.get("body")
+
+
+def _breadcrumb_insufficient_reason(
+    confirmation_n: int,
+    confirmation_sufficient: bool,
+    body_present: bool,
+) -> str | None:
+    """Return why the evidence cannot decide, or ``None`` when it can."""
+    if confirmation_n == 0:
+        return "the overall held-out confirmation has 0 evaluated queries"
+    if not confirmation_sufficient:
+        return (
+            f"the overall held-out confirmation has {confirmation_n} queries and is below "
+            "the instrument's sufficiency floor"
+        )
+    if not body_present:
+        return (
+            "the body leg gate is absent; a title-leg-only comparison cannot decide the "
+            "breadcrumb default"
+        )
+    return None
+
+
+def _breadcrumb_keep_reasons(  # noqa: PLR0913 - one keyword per gate input
+    *,
+    confirmation_winner: bool,
+    body_winner: bool,
+    body_sufficient: bool,
+    body_mean_delta: float,
+    title_winner: bool,
+    duplicate_summary: Mapping[str, Any],
+) -> list[str] | None:
+    """Return the rejection reasons, or ``None`` when adoption is warranted."""
+    reasons: list[str] = []
+    if not confirmation_winner:
+        reasons.append("overall held-out gate winner is false")
+        if body_mean_delta < 0:
+            reasons.append("body leg mean delta is negative (regressing)")
+    elif not body_winner:
+        if body_mean_delta < 0:
+            reasons.append("body leg mean delta is negative (regressing)")
+        elif title_winner:
+            reasons.append(
+                "the gain is confined to the title leg, which re-states the already-indexed "
+                "title; the body leg did not win"
+            )
+        else:
+            reasons.append(
+                "the body leg gate winner is false; a flat body leg cannot justify the breadcrumb"
+            )
+    elif not body_sufficient:
+        reasons.append("the body leg gate is below the instrument's sufficiency floor")
+    elif not duplicate_summary:
+        reasons.append("the duplicate-signal summary is missing")
+    return reasons or None
+
+
+def decide_breadcrumb_default(
+    confirmation: GateResult | Mapping[str, Any],
+    leg_gates: Mapping[str, GateResult | Mapping[str, Any]],
+    duplicates: Mapping[str, Any],
+) -> BreadcrumbDecision:
+    """Decide the breadcrumb default from the held-out gate and the leg gates.
+
+    ``confirmation`` is the overall held-out ``GateResult`` (or a mapping with
+    ``n``, ``mean_delta``, ``winner``, ``sufficient``); ``leg_gates`` maps
+    ``title``/``body``/``replay`` to their gates; ``duplicates`` is the
+    aggregate duplicate-metric mapping.
+
+    The body-leg veto is mandatory (research Pitfall 5): a breadcrumb gain
+    confined to the title leg re-states the already-indexed title, so it is
+    ``keep-breadcrumb-off`` even when the overall held-out gate wins. A flat
+    or regressing body leg is rejected the same way, and an absent body leg is
+    insufficient evidence rather than an implicit pass. Only an overall
+    held-out winner with a winning, sufficient body leg and a recorded
+    duplicate summary may adopt (D-04, D-05). Bootstrap and the 1/N floor are
+    never recomputed here.
+    """
+    confirmation_n = int(_gate_value(confirmation, "n"))
+    confirmation_mean_delta = float(_gate_value(confirmation, "mean_delta"))
+    confirmation_winner = bool(_gate_value(confirmation, "winner"))
+    confirmation_sufficient = bool(_gate_value(confirmation, "sufficient"))
+    body = _body_gate(leg_gates)
+    title = leg_gates.get("title")
+    body_winner = False if body is None else bool(_gate_value(body, "winner"))
+    body_sufficient = False if body is None else bool(_gate_value(body, "sufficient"))
+    body_mean_delta = 0.0 if body is None else float(_gate_value(body, "mean_delta"))
+    title_winner = False if title is None else bool(_gate_value(title, "winner"))
+    summary = dict(duplicates) if isinstance(duplicates, Mapping) else {}
+    insufficient = _breadcrumb_insufficient_reason(
+        confirmation_n, confirmation_sufficient, body is not None
+    )
+    if insufficient is not None:
+        decision = DECISION_INSUFFICIENT
+        reasons = [insufficient]
+    else:
+        keep_reasons = _breadcrumb_keep_reasons(
+            confirmation_winner=confirmation_winner,
+            body_winner=body_winner,
+            body_sufficient=body_sufficient,
+            body_mean_delta=body_mean_delta,
+            title_winner=title_winner,
+            duplicate_summary=summary,
+        )
+        decision = DECISION_ADOPT_BREADCRUMB if keep_reasons is None else DECISION_KEEP_BREADCRUMB
+        reasons = [] if keep_reasons is None else keep_reasons
+    return BreadcrumbDecision(
+        decision=decision,
+        confirmation_n=confirmation_n,
+        confirmation_mean_delta=confirmation_mean_delta,
+        confirmation_winner=confirmation_winner,
+        confirmation_sufficient=confirmation_sufficient,
+        body_winner=body_winner,
+        body_sufficient=body_sufficient,
+        title_winner=title_winner,
+        duplicate_summary=summary,
         reasons=tuple(reasons),
     )
