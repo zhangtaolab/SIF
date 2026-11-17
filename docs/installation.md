@@ -194,7 +194,7 @@ SIF degrades honestly rather than silently returning weaker results:
 
 | Situation | What still works | What degrades |
 |-----------|------------------|---------------|
-| Base install without the `embed` extra | BM25 keyword search (`sif search search`), indexing, status, metadata, get, MCP BM25 tools | `sif index embed`, `sif search vsearch`, and `sif search query` need an embedding backend and stop with an install message |
+| Base install without the `embed` extra | BM25 keyword search (`sif search search <query>`), indexing, status, metadata, get, MCP BM25 tools | `sif index embed`, `sif search vsearch <query>`, and `sif search query <query>` need an embedding backend and stop with an install message |
 | `embed` extra installed but `sqlite-vec` cannot load | BM25 keyword search and all indexing | CLI vector and hybrid commands raise the vector-store error (`sqlite-vec extension is not available`); the MCP `hybrid_search` backend degrades to BM25-only with a one-time warning |
 | `embed` extra without the GGUF or OpenAI extra | sentence-transformers and ModelScope backends | `model_type = gguf` and `model_type = openai` are unavailable until `all` (or `openai`) is installed |
 | Windows daemon/service installs | Foreground `sif watch`, MCP stdio and HTTP, CLI search and indexing | Detached watch, `--install-service`, and POSIX index locking are refused or degrade with a clear message; Windows is degradation-only in v1.2 |
