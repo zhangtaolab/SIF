@@ -21,7 +21,7 @@ SIF is a local hybrid search engine for personal knowledge bases. It indexes Mar
 - **MCP Server**: Model Context Protocol support for AI assistants, built on the official Python MCP SDK v2 (stdio, HTTP, and a background daemon), with seven read-only tools: `query`, `get`, `multi_get`, `status`, `metadata`, `lex_search`, `vec_search`
 - **Live Indexing**: `sif watch` keeps the index fresh as files change (foreground, detached daemon, or launchd/systemd service; BM25-only by default, with `--embed` to also write vectors)
 - **Query Suggestions**: Prefix completions, did-you-mean rewrites, and local query history via `sif suggest`
-- **Benchmarking**: `sif bench` evaluates search quality against a fixture and can sweep fusion settings; `sif eval --personal` measures quality on your own indexed corpus
+- **Benchmarking**: `sif bench` evaluates search quality against a fixture and can sweep fusion settings; `sif eval --personal` measures quality on your own indexed corpus and can compare against a saved run with paired deltas
 - **Python API**: Use the search strategies as a library from your own Python code
 - **Local-First**: All data stays on your machine
 - **Multiple Backends**: sentence-transformers, llama-cpp-python (GGUF), OpenAI-compatible API, ModelScope
@@ -29,6 +29,10 @@ SIF is a local hybrid search engine for personal knowledge bases. It indexes Mar
 ## Installation
 
 SIF is distributed on PyPI as `docsif`; the installed command is `sif`. Python 3.10 or newer is required, and the recommended installer is [uv](https://docs.astral.sh/uv/) 0.9.19 or newer. See the [Installation Guide](docs/installation.md) for llama-cpp backend wheels, the full degradation matrix, and client configuration.
+
+<!-- VERIFY: docsif is published on PyPI and the embed, openai, and all extras resolve there -->
+
+Linux and macOS are fully supported. Windows is degradation-only: foreground `sif watch`, MCP stdio and HTTP, and CLI search and indexing work; detached watch and service installs are refused with a clear message, while POSIX index locking degrades to a warning and indexing runs unlocked (WAL + busy_timeout still protect database integrity). See the [Installation Guide](docs/installation.md#windows) for details.
 
 ### Recommended: uv tool install
 
@@ -45,6 +49,8 @@ command on PATH. The `--torch-backend=cpu` recipe is the manually verified
 Linux path for the embedding stack (verified on uv 0.13.7; not CI-proven):
 without it, the PyPI `torch` wheel pulls the CUDA stack. The flag applies to
 `uv tool` commands from uv 0.9.19 onward.
+
+<!-- VERIFY: the --torch-backend=cpu recipe was manually verified on Linux with uv 0.13.7 and is not CI-proven -->
 
 To upgrade or reinstall an existing tool install:
 
@@ -109,7 +115,7 @@ pipx install docsif
    uv tool install 'docsif[embed]'
    ```
 
-2. Add a collection pointing at your notes:
+2. Add a collection pointing at your notes (replace `~/Documents/notes` with a directory that exists):
 
    ```bash
    sif collection add ~/Documents/notes --name my-notes
@@ -328,6 +334,8 @@ SIF is listed in the official MCP Registry as `io.github.zhangtaolab/sif`. The
 listing resolves to the [PyPI package `docsif`](https://pypi.org/project/docsif/)
 over **stdio** transport (`sif mcp stdio`), so a Registry-aware host installs
 the published package and starts the same server the plugin uses.
+
+<!-- VERIFY: the MCP Registry lists io.github.zhangtaolab/sif at the current release version -->
 
 The listing is scripted and re-runnable. `scripts/publish_registry.py --check`
 is the read-only preflight: it verifies the README `mcp-name` marker, that PyPI
@@ -553,6 +561,8 @@ SIF is a Python reimplementation of the original TypeScript QMD (Query Markup Do
 - GitHub Issues: [github.com/zhangtaolab/sif/issues](https://github.com/zhangtaolab/sif/issues)
 - GitHub Discussions: [github.com/zhangtaolab/sif/discussions](https://github.com/zhangtaolab/sif/discussions)
 
+<!-- VERIFY: GitHub Discussions is enabled for zhangtaolab/sif -->
+
 ## More CLI Commands
 
 Beyond the commands shown above, the `sif` CLI also provides:
@@ -596,6 +606,12 @@ sif bench fixture.json --sweep
 # held-out floor (101 makes the 0.01 mean-delta gate admissible)
 sif eval --personal --json
 sif eval --personal --min-heldout 101
+
+# Compare against a saved run (paired deltas with a 95% bootstrap CI)
+sif eval --personal --compare ~/sif-eval-run.json
+
+# Require per-language held-out coverage when widening a fresh run
+sif eval --personal --require-language en --require-language zh
 
 # Query suggestions
 sif suggest "python dec"

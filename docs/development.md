@@ -501,7 +501,7 @@ stats.print_stats(20)
 
 Runtime schema creation lives in `SchemaManager.create_all()` in `src/sif/database/schema.py`, which `Database.init_schema()` calls on first use. Add tables, indexes, FTS/vector DDL, or additive columns there:
 
-- For a new column, follow `_add_column_if_missing` (see `collections.pre_update_cmd` at `src/sif/database/schema.py`), which checks `PRAGMA table_info` before altering the table so existing indexes pick the column up in place.
+- For a new column, follow `_add_column_if_missing` (see `collections.pre_update_cmd` at `src/sif/database/schema.py`), which checks `PRAGMA table_info` before altering the table so existing databases pick the column up in place.
 - For data rewrites, follow `_migrate_path_contexts()`, which moves `path_contexts` rows into `contexts` inside a SAVEPOINT.
 - Update the schema tests under `tests/unit/database/` (`test_schema.py`).
 
@@ -676,7 +676,7 @@ ty check --python .venv/bin/python src/sif
 
 ## Build Commands
 
-The [Makefile](../Makefile) defines convenience targets for every common development task. Run `make help` to see the full list from the command line.
+The [Makefile](../Makefile) defines convenience targets for every common development task. Run `make help` to see the common targets from the command line; it does not list every target. The `.PHONY` line at the top of the Makefile enumerates every declared target.
 
 ### Installation and Setup
 
@@ -730,7 +730,7 @@ Three GitHub Actions workflows live in `.github/workflows/`:
 | Workflow | File | Trigger | What it runs |
 |----------|------|---------|--------------|
 | Test Matrix | `test-matrix.yml` | Every branch push and every pull request | Eight test cells (Python 3.10–3.13 × `ubuntu-latest` / `macos-latest`) run `uv sync --frozen --extra dev --extra embed` and then `env -u FORCE_COLOR NO_COLOR=1 uv run --frozen pytest` (the suite is color-environment hermetic, so CI strips color-forcing variables before running it); a separate Python 3.12 lint job runs `ruff check src tests`, `ruff format --check src tests`, and `ty check src/sif` |
-| Docs Validation | `docs.yml` | Pull requests touching `docs/**`, `README.md`, `src/sif/cli/**`, `src/sif/config/**`, the generator scripts, or `tests/test_docs.py`; pushes to `main` | Runs `pytest tests/test_docs.py -v --no-cov`, regenerates `docs/cli-reference.md` and `docs/configuration.md`, and fails on any diff |
+| Docs Validation | `docs.yml` | Pull requests touching `docs/**`, `README.md`, `src/sif/cli/**`, `src/sif/config/**`, `scripts/generate_cli_ref.py`, `scripts/generate_config_ref.py`, or `tests/test_docs.py`; pushes to `main` | Runs `pytest tests/test_docs.py -v --no-cov`, regenerates `docs/cli-reference.md` and `docs/configuration.md`, and fails on any diff |
 | Publish | `publish.yml` | Pushes of `v*` tags | Verifies the tag matches `src/sif/_version.py`, builds and checks the distributions once, uploads the `dist` artifact, then publishes to TestPyPI first and PyPI second via trusted publishing (see [Release Process](#release-process)) |
 
 No Windows runner is in the matrix. Windows behavior is checked only by the on-demand
@@ -746,9 +746,9 @@ no scheduled workflow and no bandit job in CI.
 ## PR Process
 
 - Push your branch and open the pull request against `main` on GitHub. There is no `.github/PULL_REQUEST_TEMPLATE.md`; follow the description template in [Contributing](contributing.md) (Description, Type of Change, Testing, Checklist).
-- Before requesting review, the [Contributing](contributing.md) checklist expects: `pytest` passes, `ruff format .` applied, `ruff check .` clean, `ty check src/sif` passes, `make ci` passes (`bandit` is not in the `[dev]` extras, so install it separately), documentation updated, reference docs regenerated with `make docs-generate` when CLI commands or configuration settings changed, and `docs/changelog.md` updated.
+- Before requesting review, the [Contributing](contributing.md) checklist expects: `pytest` passes, `ruff format src tests` applied, `ruff check src tests` clean, `ty check src/sif` passes, `make ci` passes (`bandit` is not in the `[dev]` extras, so install it separately), documentation updated, reference docs regenerated with `make docs-generate` when CLI commands or configuration settings changed, and `docs/changelog.md` updated.
 - Commit messages follow Conventional Commits, as described in Commit Changes above.
-- PR CI runs the full Test Matrix on every push and pull request: the eight py3.10–3.13 × ubuntu/macos cells run the complete pytest suite (with the 90% coverage gate), and the lint job runs `ruff check src tests`, `ruff format --check src tests`, and `ty check src/sif`. The separate "Docs Validation" workflow runs `pytest tests/test_docs.py` and regenerates `docs/cli-reference.md` and `docs/configuration.md` whenever a PR touches `docs/**`, `README.md`, `src/sif/cli/**`, `src/sif/config/**`, the generation scripts, or `tests/test_docs.py` — it fails if the committed reference docs are stale. That workflow also runs on pushes to `main`. No CI job runs bandit, so run `make ci` locally before pushing.
+- PR CI runs the full Test Matrix on every push and pull request: the eight py3.10–3.13 × ubuntu/macos cells run the complete pytest suite (with the 90% coverage gate), and the lint job runs `ruff check src tests`, `ruff format --check src tests`, and `ty check src/sif`. The separate "Docs Validation" workflow runs `pytest tests/test_docs.py` and regenerates `docs/cli-reference.md` and `docs/configuration.md` whenever a PR touches `docs/**`, `README.md`, `src/sif/cli/**`, `src/sif/config/**`, `scripts/generate_cli_ref.py`, `scripts/generate_config_ref.py`, or `tests/test_docs.py` — it fails if the committed reference docs are stale. That workflow also runs on pushes to `main`. No CI job runs bandit, so run `make ci` locally before pushing.
 - Review turnaround is not documented; maintainers triage pull requests on GitHub. Respond to comments and push follow-up commits to the same branch.
 
 ## Coverage Requirements
@@ -766,7 +766,7 @@ pytest tests/unit/test_collection.py -q
 # FAIL Required test coverage of 90.0% not reached.
 ```
 
-CI's Test Matrix runs bare `pytest` in every cell, so the same gate applies on all eight
+CI's Test Matrix runs the full suite in every cell, so the same gate applies on all eight
 py3.10–3.13 × ubuntu/macos combinations.
 
 Append `--no-cov` when iterating on a narrow slice of the suite:
@@ -791,7 +791,7 @@ Some documentation files are generated from source — edit the source, then reg
 | `docs/configuration.md` | `scripts/generate_config_ref.py` (Pydantic Settings introspection) | `make docs-generate` |
 | Mermaid package diagram in `docs/architecture.md` | `scripts/generate_arch_diagram.py` (source import scan) | Run `python scripts/generate_arch_diagram.py` and replace the diagram block with the printed output |
 
-The "Docs Validation" workflow (`.github/workflows/docs.yml`) regenerates `docs/cli-reference.md` and `docs/configuration.md` on every PR that touches `docs/**`, `README.md`, `src/sif/cli/**`, `src/sif/config/**`, the generator scripts, or `tests/test_docs.py` (and on pushes to `main`), then fails on any diff (`git diff --exit-code`). After changing the CLI or settings, run `make docs-generate` and commit the regenerated docs together with the code change. The architecture diagram script is not wired into `make docs-generate` or CI — regenerate it manually when package-level dependencies change.
+The "Docs Validation" workflow (`.github/workflows/docs.yml`) regenerates `docs/cli-reference.md` and `docs/configuration.md` on every PR that touches `docs/**`, `README.md`, `src/sif/cli/**`, `src/sif/config/**`, `scripts/generate_cli_ref.py`, `scripts/generate_config_ref.py`, or `tests/test_docs.py` (and on pushes to `main`), then fails on any diff (`git diff --exit-code`). After changing the CLI or settings, run `make docs-generate` and commit the regenerated docs together with the code change. The architecture diagram script is not wired into `make docs-generate` or CI — regenerate it manually when package-level dependencies change.
 
 ### Documentation Tests
 

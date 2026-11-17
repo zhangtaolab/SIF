@@ -13,6 +13,13 @@ Before installing SIF, make sure your system meets these requirements:
 - **SQLite** — nothing to install separately. SIF stores all data locally in a
   SQLite database via Python's built-in `sqlite3` module; the `sqlite-vec`
   dependency for vector tables is installed automatically
+- **Operating system** — Linux and macOS are fully supported. Windows is
+  degradation-only in v1.2: CLI search and indexing, MCP stdio and HTTP, and
+  foreground `sif watch` work; detached watch and service installs are refused
+  with a clear message, while POSIX index locking is unavailable and degrades
+  to a warning — index writes run unlocked, with WAL + `busy_timeout` still
+  protecting database integrity. See the
+  [Installation Guide](installation.md#windows) for details.
 
 Optional, depending on which features you plan to use:
 
@@ -52,6 +59,8 @@ uv tool install --torch-backend=cpu 'docsif[embed]'
 # BM25-only base install
 uv tool install docsif
 ```
+
+The `--torch-backend=cpu` recipe was manually verified on Linux with uv 0.13.7; it is not CI-proven.
 
 The `all` extra adds GGUF (llama-cpp-python) and OpenAI-compatible backends.
 Use Python 3.12 for this extra: official `llama-cpp-python` wheels list Python
@@ -129,10 +138,11 @@ A collection is a group of documents you want to search together.
 sif collection add ~/Documents/notes --name my-notes --description "My personal notes"
 ```
 
-The `PATH` argument is the directory to index. Use `--name` to give your
-collection a short identifier. You can also set `--pattern` (default `**/*.md`)
-and `--ignore` for fine-grained control over which files are included. Pass
-`--no-default` to keep the collection out of default searches.
+The `PATH` argument must be an existing directory to index. Use `--name` to
+give your collection a short identifier. You can also set `--pattern`
+(default `**/*.md`) and `--ignore` for fine-grained control over which files
+are included. Pass `--no-default` to keep the collection out of default
+searches.
 
 ### 2. Index Documents
 
@@ -799,6 +809,19 @@ base install does not include. Install the `embed` (or `all`) extra — see
 [Prerequisites](#prerequisites) for the exact commands. The underlying error
 may name the specific missing package (for example
 `sentence-transformers not installed`).
+
+### `collection add` fails with `Directory ... does not exist`
+
+`collection add` validates the `PATH` argument before it does anything else,
+so the directory must already exist. Create it first, then retry:
+
+```bash
+mkdir -p ~/Documents/notes
+sif collection add ~/Documents/notes --name my-notes
+```
+
+The command also requires `--name`; omitting it fails with
+`Missing option '--name' / '-n'.`
 
 ## Next Steps
 

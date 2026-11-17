@@ -174,7 +174,7 @@ ty check src/sif
 pytest
 
 # Run a specific test file — add --no-cov while iterating on a subset
-pytest tests/unit/test_collection.py
+pytest --no-cov tests/unit/test_collection.py
 
 # Generate the HTML coverage report
 pytest --cov-report=html
@@ -271,7 +271,7 @@ Update relevant documentation when adding features:
 
 ## Testing Guidelines
 
-Tests live under `tests/unit/<area>/` (module-level, using mocks or temporary databases) and `tests/integration/` (cross-layer and real-subprocess pipelines); `tests/e2e/` is reserved and currently empty. Files are named `test_*.py`, classes `Test*`, and functions `test_*`, as configured under `[tool.pytest.ini_options]`. Shared fixtures and the autouse hermeticity fixtures live in `tests/conftest.py`; see the [Testing Guide](testing.md) for the full suite layout and fixture list.
+Tests live under `tests/unit/` (area subdirectories plus a few top-level module suites, using mocks or temporary databases) and `tests/integration/` (cross-layer and real-subprocess pipelines); `tests/e2e/` is reserved and currently contains only `__init__.py`. Files are named `test_*.py`, classes `Test*`, and functions `test_*`, as configured under `[tool.pytest.ini_options]`. Shared fixtures and the autouse hermeticity fixtures live in `tests/conftest.py`; see the [Testing Guide](testing.md) for the full suite layout and fixture list.
 
 ### Unit Tests
 
@@ -289,8 +289,19 @@ Test component interactions, for example the `SearchPipeline` routing a `lex:`-p
 
 ```python
 def test_bm25_search_pipeline(mock_db):
-    # mock_db is a MagicMock standing in for the sqlite3 connection
+    # mock_db is a MagicMock standing in for the sqlite3 connection;
+    # the BM25 leg is stubbed to return a fixed result
     pipeline = SearchPipeline(mock_db)
+    pipeline.hybrid.bm25 = MagicMock(spec=BM25Searcher)
+    pipeline.hybrid.bm25.search.return_value = [
+        SearchResult(
+            document_id="doc-1",
+            path="/test.md",
+            title="Test",
+            collection_name="default",
+            score=0.9,
+        ),
+    ]
 
     results = pipeline.search("lex: machine learning")
 
@@ -304,7 +315,7 @@ Coverage is collected on every pytest run and the suite fails below 90% total co
 
 ```bash
 pytest --cov=src/sif --cov-report=html
-open htmlcov/index.html
+# open htmlcov/index.html in a browser
 ```
 
 ## Documentation Contributions
