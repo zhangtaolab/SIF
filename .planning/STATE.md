@@ -7,10 +7,10 @@ current_phase_name: Tuning + Models UX + Install Docs
 current_plan: 7
 status: verifying
 stopped_at: context exhaustion at 75% (2026-11-18)
-last_updated: "2026-11-18T07:22:00.755Z"
+last_updated: "2026-11-18T09:28:19.144Z"
 last_activity: 2026-11-18
 last_activity_desc: Phases 18-23 re-verified 2026-11-18 with fresh fingerprints and marked complete
-state_head: 06562ce952ed5ea03eb070392b9044b37b246f09
+state_head: d97838c82a3ffb1849436f40ae8fae35946cce3b
 progress:
   total_phases: 8
   completed_phases: 8
@@ -36,7 +36,7 @@ Phase: 24 (Tuning + Models UX + Install Docs) — 7/7 plans executed
 Current Plan: 7
 Total Plans in Phase: 7
 Status: All v1.2 phases verified and complete; Phases 17-23 re-verified 2026-11-18 with fresh fingerprints; milestone close pending
-Last activity: 2026-11-18 — Phases 18-23 re-verified and completed (44/44, 63/63, 26/26, 63/63, 77/77, 31/31); full suite 3233 passed / 1 skipped @ 95.03%
+Last activity: 2026-11-18 - Completed quick task 261118-np7: bump version for the v1.2 milestone release
 
 Progress: [██████████] 100%
 
@@ -349,6 +349,12 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - ℹ️ [Phase 23, corpus scope] The real A/B ran on a user-approved curated bilingual subset (7 Chinese-heavy folders, 498 docs, en=42/zh=11, held-out N=56), not the full 6,213-doc corpus; the artifact and docs scope the claim, and Qwen3 remains the default. A larger bilingual corpus (held-out N≥101) would be needed for the 0.01 tie rule to be admissible.
 - ℹ️ [Phase 23, housekeeping] `.planning/tmp/phase-23/` holds a stale preliminary Qwen3 DB from the earlier 8-root scope; the real evidence is in `.planning/tmp/phase-23-zh-heavy/`. Both are gitignored; deletion is optional.
 - ✅ [17-07 resolved 2026-11-14] The TestPyPI `invalid-publisher` blocker was the missing/mismatched pending publisher. The maintainer created and verified it (project `docsif`, publisher GitHub, repository `zhangtaolab/SIF`, workflow `publish.yml`, environment `testpypi`); the next OIDC attempt minted successfully on Publish run `43562577065` attempt 4. No trusted-publishing fallback was needed. Nothing had been uploaded on attempts 1-3, so version 1.1.2 was published cleanly rather than consumed by a partial upload.
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 261118-np7 | bump version for the v1.2 milestone release | 2026-11-18 | d97838c | [261118-np7-bump-version-for-the-v1-2-milestone-rele](./quick/261118-np7-bump-version-for-the-v1-2-milestone-rele/) |
 
 ### Roadmap Evolution
 
