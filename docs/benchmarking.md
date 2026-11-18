@@ -358,7 +358,7 @@ Real single-arm ablation, 2026-11-17, on the same `books-markdown-papers-2026-11
 
 Replay stability: **unavailable** (`available=false`, no saved replay snapshot), so no replay gate is claimed. Duplicate-signal metrics over 21,886 chunks / 610 documents: `title_share=1.0`, `in_content_share=0.622955`, `subchunk_share=0.387919`, `title_equals_heading_share=0.026364`.
 
-**Decision: `keep-breadcrumb-off`.** The overall held-out gate did not win (its CI includes zero), and the title leg's win is duplicate signal: the title is already indexed by the Phase 19 title FTS, the body leg did not win, and 62.3% of titles already occur in chunk content. The body-leg veto rejects a title-only gain even when the overall gate wins. `embed_breadcrumb` stays `False`; no `chunking.contract` marker is written and no re-embed is required.
+**Decision: `keep-breadcrumb-off`.** The overall held-out gate did not win (its CI includes zero), and the title leg's win is duplicate signal: the title is already indexed by the Phase 19 title FTS, the body leg did not win, and 62.3% of chunks already contain their current section-heading text in their content. The body-leg veto rejects a title-only gain even when the overall gate wins. `embed_breadcrumb` stays `False`; no `chunking.contract` marker is written and no re-embed is required.
 
 The measurement is hardware- and version-dependent manual evidence, never a CI gate. Artifact: `.planning/phases/24-tuning-models-ux-install-docs/bench/breadcrumb-verdict.json`. Limitation: held-out N=194 ≥ 101 and 1/N ≈ 0.00515; the corpus is 2 English books plus 608 Chinese/English papers, and a different corpus could change the rejection.
 

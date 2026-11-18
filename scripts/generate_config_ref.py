@@ -141,8 +141,15 @@ def get_validator_choices() -> dict[str, list[str]]:
 def get_computed_default(field_name: str) -> str | None:
     """Return computed default description for Path fields that default to None."""
     computed = {
-        "db_path": "~/.local/share/sif/sif.db (computed)",
-        "cache_dir": "~/.cache/sif (computed)",
+        "db_path": (
+            "platformdirs user_data_dir('sif')/sif.db (computed; "
+            "e.g. ~/.local/share/sif/sif.db on Linux, "
+            "~/Library/Application Support/sif/sif.db on macOS)"
+        ),
+        "cache_dir": (
+            "platformdirs user_cache_dir('sif') (computed; "
+            "e.g. ~/.cache/sif on Linux, ~/Library/Caches/sif on macOS)"
+        ),
     }
     return computed.get(field_name)
 
