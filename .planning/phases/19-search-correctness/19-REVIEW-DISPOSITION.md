@@ -1,5 +1,5 @@
 ---
-phase: 19-search-correctness
+phase: 19
 review: 19-REVIEW.md
 titles: json
 findings:
@@ -10,15 +10,15 @@ findings:
   - id: CR-02
     severity: critical
     disposition: fixed
-    title: "Non-string frontmatter title crashes the whole index update"
+    title: "A non-string frontmatter `title` aborts the entire index update with a raw traceback"
   - id: WR-01
     severity: warning
     disposition: fixed
-    title: "Convention migration never converges with a permanently unparseable file in scope"
+    title: "The convention migration never completes when any in-scope file permanently fails to parse"
   - id: WR-02
     severity: warning
     disposition: fixed
-    title: "-n/--limit accepts zero/negative with three different behaviors"
+    title: "`-n/--limit` accepts zero/negative values with three different behaviors"
   - id: IN-01
     severity: info
     disposition: deferred
@@ -34,7 +34,7 @@ findings:
   - id: IN-04
     severity: info
     disposition: fixed
-    title: "Migration tests only assert on the same open connection and never reopen"
+    title: "Migration tests never reopen the database, so rebuild rollbacks are invisible"
   - id: IN-05
     severity: info
     disposition: deferred
@@ -43,25 +43,27 @@ findings:
     severity: info
     disposition: deferred
     title: "MCP backend silently creates an empty index at a nonexistent SIF_DB_PATH"
-open: 6
+open: 0
 total: 10
-recorded: 2026-11-15T05:20:00Z
+unparsed: 10
+recorded: 2026-11-18T06:39:07.450Z
 ---
 
 # Phase 19: Code Review Disposition
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| CR-01 | critical | fixed | 19-REVIEW-FIX.md (4546047) |
-| CR-02 | critical | fixed | 19-REVIEW-FIX.md (a43296e) |
-| WR-01 | warning | fixed | 19-REVIEW-FIX.md (dd0bfa5) |
-| WR-02 | warning | fixed | 19-REVIEW-FIX.md (340546e) |
-| IN-01 | info | deferred | out of dispatch scope |
-| IN-02 | info | deferred | out of dispatch scope |
-| IN-03 | info | deferred | out of dispatch scope |
-| IN-04 | info | fixed | 19-REVIEW-FIX.md (4546047) |
-| IN-05 | info | deferred | out of dispatch scope |
-| IN-06 | info | deferred | out of dispatch scope |
+| CR-01 | critical | fixed | 19-REVIEW-FIX.md (not in the current review) |
+| CR-02 | critical | fixed | 19-REVIEW-FIX.md (not in the current review) |
+| WR-01 | warning | fixed | 19-REVIEW-FIX.md (not in the current review) |
+| WR-02 | warning | fixed | 19-REVIEW-FIX.md (not in the current review) |
+| IN-01 | info | deferred | out of dispatch scope (not in the current review) |
+| IN-02 | info | deferred | out of dispatch scope (not in the current review) |
+| IN-03 | info | deferred | out of dispatch scope (not in the current review) |
+| IN-04 | info | fixed | 19-REVIEW-FIX.md (not in the current review) |
+| IN-05 | info | deferred | out of dispatch scope (not in the current review) |
+| IN-06 | info | deferred | out of dispatch scope (not in the current review) |
 
 Dispositions: `open` (recorded, not yet triaged), `fixed`, `skipped`, `deferred`.
-The four Critical/Warning findings and the reopen-test gap (IN-04) were fixed in four atomic commits; the remaining Info findings are deferred with their reasons recorded in `19-REVIEW-FIX.md`.
+Set `deferred` by hand and put the reason in the Source cell; both are preserved. A `|` in the reason is kept as prose and escaped on the next run.
+Re-running the gate keeps every row it can. A row the current review no longer reports is kept and its Source cell flagged, so a finding does not leave this record silently. ONE exception: when a finding id is REUSED by a different finding, the earlier decision cannot keep a row — the id is taken — and it is dropped. A RECORDED decision (anything but `open`) is named on the console when that happens; a row still at `open` is replaced silently, because `open` records no decision to lose.
