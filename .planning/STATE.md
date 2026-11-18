@@ -24,7 +24,7 @@ progress:
 
 - **Name:** DocSift (package `sif`, PyPI `docsif`)
 - **Core Value:** 用户可以在自己的笔记和文档库中，用自然语言快速、准确地找到需要的信息——无论关键词是否匹配。
-- **Current Focus:** v1.2 Search Precision and Agent Experience — all 8 phases are roadmap-complete; Phase 17 was re-verified on 2026-11-18 (55/55, fresh fingerprint) and Phase 24 passed goal-backward verification. Phases 18-23 were re-verified on 2026-11-18 against the current tree (44/44, 63/63, 26/26, 63/63, 77/77, 31/31 must-haves; all fresh fingerprints; all six marked complete). The v1.2 milestone close remains.
+- **Current Focus:** v1.2 Search Precision and Agent Experience — **shipped 2026-11-18**: PR #3 merged `dev` → `main` (merge commit `975cb09`), tag `v1.2.0` pushed, and `docsif 1.2.0` published to TestPyPI and PyPI by Publish run 44289577210. All 8 phases verified `passed` with fresh fingerprints on 2026-11-18 (17: 55/55, 18: 44/44, 19: 63/63, 20: 26/26, 21: 63/63, 22: 77/77, 23: 31/31, 24: 43/43 truths) and all carry `threats_open: 0`. The v1.2 milestone close/archive remains.
 - **Tech Stack:** Python 3.10+, SQLite (FTS5 + sqlite-vec), Click, Pydantic, sentence-transformers 5.4.1 (locked), llama-cpp-python; v1.2 adds ONLY `mcp>=2.3.0,<3` + `rapidfuzz>=3.14.5,<4`
 - See: .planning/PROJECT.md (updated 2026-11-16)
 - Archives: v1.0/v1.1 phase artifacts, full decision logs, per-plan metrics under .planning/milestones/
@@ -35,7 +35,7 @@ Phase: 24
 Current Plan: Not started
 Total Plans in Phase: 7
 Status: All phases complete
-Last activity: 2026-11-18 — Phase 24 complete
+Last activity: 2026-11-18 — v1.2 shipped: PR #3 merged to main (`975cb09`), tag `v1.2.0`, docsif 1.2.0 live on PyPI + TestPyPI (run 44289577210)
 
 Progress: [██████████] 100%
 
