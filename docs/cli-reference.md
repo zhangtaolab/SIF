@@ -10,7 +10,6 @@ These options can be used with any command:
 |--------|-------|------|---------|-------------|
 | `--version` | `` | flag | `false` | Show the version and exit. |
 | `--index` | `-i` | path | — | Path to the index database |
-| `--config` | `-c` | path | `~/.config/sif` | Path to the configuration file |
 | `--verbose` | `-v` | flag | `false` | Enable verbose output |
 | `--quiet` | `-q` | flag | `false` | Suppress non-error output |
 
@@ -18,6 +17,9 @@ These options can be used with any command:
 
 ```
 sif
+├── models          Download and inspect embedding, reranker, and query-expansion models.
+│   ├── pull            Download the configured or named model through the verified cache.
+│   └── status          Show configured, cached, and persisted model identity.
 ├── collection      Manage document collections.
 │   ├── add             Add a new collection.
 │   ├── remove          Remove a collection.
@@ -29,7 +31,8 @@ sif
 │   ├── update-cmd      Set or clear a pre-index shell command for a collection.
 │   ├── include         Include a collection in default searches.
 │   ├── exclude         Exclude a collection from default searches.
-│   └── ls              List files in a collection.
+│   ├── ls              List files in a collection.
+│   └── metadata        Report filterable metadata keys, types, counts, ranges, and remainders.
 ├── context         Manage contextual descriptions for paths, collections, and global scope.
 │   ├── add             Add context for a path, collection, or global scope.
 │   ├── remove          Remove a context by its ID.
@@ -39,6 +42,8 @@ sif
 ├── index           Index management commands.
 │   ├── update          Update the index by scanning collections.
 │   ├── embed           Generate embeddings for documents.
+│   ├── vacuum          Reclaim unused space in the index database.
+│   ├── backup          Create a verified backup copy of the index database.
 │   └── status          Show index status.
 ├── search          Search commands.
 │   ├── search          Search documents using BM25.
@@ -50,10 +55,12 @@ sif
 ├── mcp             MCP server commands.
 │   ├── stdio           Run MCP server in stdio mode.
 │   ├── http            Run MCP server in HTTP mode.
-│   └── daemon          Run MCP server as a daemon.
+│   └── daemon          Run the MCP Streamable HTTP server as a detached daemon.
 ├── ls              List indexed documents as a virtual file tree.
-├── pull            Download a GGUF model file.
 ├── bench           Run benchmark evaluation against a fixture file.
+├── eval            Measure search quality on your own indexed corpus.
+├── suggest         Show prefix completions, did-you-mean rewrites, and query history.
+├── watch           Watch collections and keep the index current as files change.
 ├── status          Show index status.
 └── cleanup         Clean up the index (remove orphaned entries).
 ```
@@ -168,6 +175,37 @@ sif collection ls [OPTIONS]
 |----------|------|----------|-------------|
 | `name` | text | Yes |  |
 | `subpath` | text | No |  |
+
+### `collection metadata`
+
+Report filterable metadata keys, types, counts, ranges, and remainders.
+
+No NAME means every collection. `path` and `mtime` are reserved built-in
+fields (D-03): they appear in the built-in section, never as frontmatter
+keys, and their counts narrow with `--filter` exactly like every other
+count.
+
+```bash
+sif collection metadata [OPTIONS]
+```
+
+**Arguments:**
+
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `name` | text | No |  |
+
+**Options:**
+
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--filter` | `—` | text | — | Metadata filter as a JSON AST; counts become filter-aware. |
+| `--match` | `—` | text | — | Narrow reported entries by key or value (JSON AST). |
+| `--min-count` | `—` | integer range | `1` | Minimum documents per reported value (default: 1) |
+| `--sort` | `—` | choice [count|value] | `count` | Key ordering: document count descending, or key ascending (default: count) |
+| `--limit` | `—` | integer range | `50` | Key window size (default: 50) |
+| `--value-limit` | `—` | integer range | `10` | Per-key value window size (default: 10) |
+| `--json` | `—` | flag | `false` | Output the JSON envelope |
 
 ### `collection remove`
 
@@ -364,6 +402,20 @@ sif get multi-get [OPTIONS]
 
 ## Index Commands
 
+### `index backup`
+
+Create a verified backup copy of the index database.
+
+```bash
+sif index backup [OPTIONS]
+```
+
+**Options:**
+
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--output` | `—` | path | — | Destination file for the verified backup copy |
+
 ### `index embed`
 
 Generate embeddings for documents.
@@ -405,6 +457,14 @@ sif index update [OPTIONS]
 | `--collection` | `-c` | text | — | Update specific collection only |
 | `--force` | `-f` | flag | `false` | Force re-index all documents |
 
+### `index vacuum`
+
+Reclaim unused space in the index database.
+
+```bash
+sif index vacuum [OPTIONS]
+```
+
 ## Search Commands
 
 ### `search query`
@@ -427,14 +487,21 @@ sif search query [OPTIONS]
 
 | Option | Short | Type | Default | Description |
 |--------|-------|------|---------|-------------|
-| `--limit` | `-n` | integer | `10` | Number of results |
+| `--limit` | `-n` | integer range | — | Number of results (default: SIF_DEFAULT_LIMIT or 10) |
+| `--offset` | `—` | integer range | `0` | Result offset for pagination (default: 0) |
+| `--filter` | `—` | text | — | Metadata filter as a JSON AST (qmd-compatible). |
 | `--collection` | `-c` | text[] | — | Collection to search |
 | `--all` | `—` | flag | `false` | Search all collections |
 | `--min-score` | `—` | float | `0.0` | Minimum score threshold |
 | `--full` | `—` | flag | `false` | Include full content |
 | `--explain` | `—` | flag | `false` | Show score breakdowns across pipeline stages |
-| `--candidate-limit` | `-C` | integer range | `20` | Reranker candidate pool size |
+| `--candidate-limit` | `-C` | integer range | — | Reranker candidate pool size (default: SIF_RERANK_CANDIDATE_LIMIT or 20; clamped to 5-50) |
+| `--rerank` | `—` | flag | `false` | Rerank results (default: SIF_RERANK_ENABLED or false) |
 | `--intent` | `—` | text | — | Search intent hint for query expansion |
+| `--rrf-k` | `—` | integer range | — | RRF k constant for hybrid fusion (default: SIF_RRF_K or 60) |
+| `--bm25-weight` | `—` | float range | — | BM25 fusion weight (default: SIF_BM25_WEIGHT or 1.0) |
+| `--vector-weight` | `—` | float range | — | Vector fusion weight (default: SIF_VECTOR_WEIGHT or 1.0) |
+| `--per-chunk` | `—` | flag | `false` | Return one row per matched chunk instead of one row per document |
 | `--line-numbers` | `—` | flag | `false` | Show line numbers in content |
 | `--json` | `—` | flag | `false` | Output as JSON |
 | `--csv` | `—` | flag | `false` | Output as CSV |
@@ -442,6 +509,7 @@ sif search query [OPTIONS]
 | `--xml` | `—` | flag | `false` | Output as XML |
 | `--files` | `—` | flag | `false` | Output file paths only |
 | `--model-type` | `—` | choice [sentence_transformers|gguf|openai|modelscope] | — | Embedding model type override |
+| `--no-refresh` | `—` | flag | `false` | Skip the pre-search drift refresh check |
 | `--quiet` | `-q` | flag | `false` | Suppress non-error output |
 
 ### `search search`
@@ -462,7 +530,9 @@ sif search search [OPTIONS]
 
 | Option | Short | Type | Default | Description |
 |--------|-------|------|---------|-------------|
-| `--limit` | `-n` | integer | `10` | Number of results |
+| `--limit` | `-n` | integer range | — | Number of results (default: SIF_DEFAULT_LIMIT or 10) |
+| `--offset` | `—` | integer range | `0` | Result offset for pagination (default: 0) |
+| `--filter` | `—` | text | — | Metadata filter as a JSON AST (qmd-compatible). |
 | `--collection` | `-c` | text[] | — | Collection to search |
 | `--all` | `—` | flag | `false` | Search all collections |
 | `--min-score` | `—` | float | `0.0` | Minimum score threshold |
@@ -474,6 +544,7 @@ sif search search [OPTIONS]
 | `--md` | `—` | flag | `false` | Output as Markdown |
 | `--xml` | `—` | flag | `false` | Output as XML |
 | `--files` | `—` | flag | `false` | Output file paths only |
+| `--no-refresh` | `—` | flag | `false` | Skip the pre-search drift refresh check |
 | `--quiet` | `-q` | flag | `false` | Suppress non-error output |
 
 ### `search vsearch`
@@ -494,21 +565,32 @@ sif search vsearch [OPTIONS]
 
 | Option | Short | Type | Default | Description |
 |--------|-------|------|---------|-------------|
-| `--limit` | `-n` | integer | `10` | Number of results |
+| `--limit` | `-n` | integer range | — | Number of results (default: SIF_DEFAULT_LIMIT or 10) |
+| `--offset` | `—` | integer range | `0` | Result offset for pagination (default: 0) |
+| `--filter` | `—` | text | — | Metadata filter as a JSON AST (qmd-compatible). |
 | `--collection` | `-c` | text[] | — | Collection to search |
 | `--all` | `—` | flag | `false` | Search all collections |
 | `--min-score` | `—` | float | `0.0` | Minimum score threshold |
 | `--full` | `—` | flag | `false` | Include full content |
+| `--per-chunk` | `—` | flag | `false` | Return one row per matched chunk instead of one row per document |
 | `--line-numbers` | `—` | flag | `false` | Show line numbers in content |
 | `--json` | `—` | flag | `false` | Output as JSON |
 | `--model-type` | `—` | choice [sentence_transformers|gguf|openai|modelscope] | — | Embedding model type override |
+| `--no-refresh` | `—` | flag | `false` | Skip the pre-search drift refresh check |
 | `--quiet` | `-q` | flag | `false` | Suppress non-error output |
 
 ## MCP Commands
 
 ### `mcp daemon`
 
-Run MCP server as a daemon.
+Run the MCP Streamable HTTP server as a detached daemon.
+
+The daemon arms on readiness — schema initialized and the model-free
+backend constructed — then binds the HTTP host; a bind failure removes
+the PID file and exits non-zero. Daemon mode serves HTTP only; stdio is
+not a daemon mode (run `sif mcp stdio` from a client instead). Logs
+default to the platform log directory (mcp.log); --log-file overrides.
+--stop targets only the MCP daemon's own <db>.mcp.pid artifact.
 
 ```bash
 sif mcp daemon [OPTIONS]
@@ -518,11 +600,13 @@ sif mcp daemon [OPTIONS]
 
 | Option | Short | Type | Default | Description |
 |--------|-------|------|---------|-------------|
-| `--host` | `-h` | text | `127.0.0.1` | Host to bind to |
-| `--port` | `-p` | integer | `3000` | Port to listen on |
+| `--host` | `-h` | text | — | Host to bind to (default: SIF_MCP_HOST or 127.0.0.1) |
+| `--port` | `-p` | integer | — | Port to listen on (default: SIF_MCP_PORT or 8080) |
 | `--pid-file` | `—` | text | — | PID file path |
 | `--log-file` | `—` | text | — | Log file path |
 | `--stop` | `—` | flag | `false` | Stop the daemon |
+| `--allowed-hosts` | `—` | text[] | — | Additional allowed Host header values (repeatable); loopback hosts are always allowed |
+| `--cors-origins` | `—` | text[] | — | CORS allowed origins |
 
 ### `mcp http`
 
@@ -536,10 +620,11 @@ sif mcp http [OPTIONS]
 
 | Option | Short | Type | Default | Description |
 |--------|-------|------|---------|-------------|
-| `--host` | `-h` | text | `127.0.0.1` | Host to bind to |
-| `--port` | `-p` | integer | `3000` | Port to listen on |
-| `--reload` | `—` | flag | `false` | Enable auto-reload |
+| `--host` | `-h` | text | — | Host to bind to (default: SIF_MCP_HOST or 127.0.0.1) |
+| `--port` | `-p` | integer | — | Port to listen on (default: SIF_MCP_PORT or 8080) |
+| `--reload` | `—` | flag | `false` | Accepted for compatibility; currently has no effect |
 | `--cors-origins` | `—` | text[] | — | CORS allowed origins |
+| `--allowed-hosts` | `—` | text[] | — | Additional allowed Host header values (repeatable); loopback hosts are always allowed |
 
 ### `mcp stdio`
 
@@ -548,6 +633,43 @@ Run MCP server in stdio mode.
 ```bash
 sif mcp stdio [OPTIONS]
 ```
+
+## Model Commands
+
+### `models pull`
+
+Download the configured or named model through the verified cache.
+
+```bash
+sif models pull [OPTIONS]
+```
+
+**Arguments:**
+
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `name` | text | No |  |
+
+**Options:**
+
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--force` | `—` | flag | `false` | Re-download even when the cached copy verifies |
+| `--cache-dir` | `—` | path | — | Cache root (defaults to the SIF cache directory) |
+
+### `models status`
+
+Show configured, cached, and persisted model identity.
+
+```bash
+sif models status [OPTIONS]
+```
+
+**Options:**
+
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--json` | `—` | flag | `false` | Output as JSON |
 
 ## Other Commands
 
@@ -560,11 +682,18 @@ Fixture format (JSON):
         "queries": [
             {
                 "query": "search terms",
-                "relevant_docids": ["doc-id-1", "doc-id-2"],
-                "collections": ["optional-collection-filter"]
+                "relevant_docids": ["doc-id-1", "doc-id-2"]
             }
         ]
     }
+
+Graded fixtures (Phase 16) instead declare corpus_root/relevance_key and
+per-query category/split/relevance; the report layers nDCG@10, Hit@10,
+warmed p50/p95 latency and a per-category breakdown over the legacy flat
+metrics. With --sweep, the 45-configuration declared grid
+(rrf_k x bm25_weight x vector_weight) is measured on the tuning split
+only and ranked with the 0.01 tie-group rule. With --rerank, the
+rerank-on state is measured beside the always-measured off state.
 
 ```bash
 sif bench [OPTIONS]
@@ -581,9 +710,11 @@ sif bench [OPTIONS]
 | Option | Short | Type | Default | Description |
 |--------|-------|------|---------|-------------|
 | `--limit` | `-n` | integer | `10` | Number of results per query |
-| `--candidate-limit` | `-C` | integer | `20` | Reranker candidate pool size |
+| `--candidate-limit` | `-C` | integer range | — | Reranker candidate pool size (default: SIF_RERANK_CANDIDATE_LIMIT or 20; clamped to 5-50) |
 | `--collection` | `-c` | text[] | — | Collection to search |
 | `--all` | `—` | flag | `false` | Search all collections |
+| `--sweep` | `—` | flag | `false` | Sweep the declared rrf_k/weight grid |
+| `--rerank` | `—` | flag | `false` | Also measure the rerank-on state (default: off only) |
 | `--model-type` | `—` | choice [sentence_transformers|gguf|openai|modelscope] | — | Embedding model type override |
 | `--json` | `—` | flag | `false` | Output as JSON |
 
@@ -601,6 +732,46 @@ sif cleanup [OPTIONS]
 |--------|-------|------|---------|-------------|
 | `--yes` | `—` | flag | `false` | Confirm the action without prompting. |
 
+### `eval`
+
+Measure search quality on your own indexed corpus.
+
+With --personal, title/H1 (exact-term) and body-snippet (paraphrased,
+overlap-budgeted) known-item queries are synthesized from deterministically
+sampled documents; NDCG@10/Hit@10 are reported overall and per leg x
+language x length bucket with small-group suppression, alongside the
+query_log replay stability leg. Hybrid retrieval is the default; pass
+--bm25-only when the embed extra is unavailable (the default path fails
+loudly with an install remedy). Every run is saved under the cache
+directory unless --no-save. With --compare, a saved run is re-evaluated
+over its own query set at its saved depth and paired deltas are reported
+with a seeded 95% bootstrap CI and the 1/N noise floor; a corpus
+fingerprint mismatch refuses the comparison. --json emits strict JSON.
+--require-language widens a fresh run's sampling until each named language
+has at least ten held-out queries; --compare uses the saved query set and
+ignores it with a stderr warning. --min-heldout raises the held-out floor
+(for example 101 makes the 0.01 mean-delta gate admissible); --compare
+ignores it with a stderr warning.
+
+```bash
+sif eval [OPTIONS]
+```
+
+**Options:**
+
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--personal` | `—` | flag | `false` | Measure quality on the indexed personal corpus |
+| `--compare` | `—` | file | — | Compare against a saved run (evaluates its query set) |
+| `--no-save` | `—` | flag | `false` | Do not write the run to the cache directory |
+| `--bm25-only` | `—` | flag | `false` | Explicitly skip the embedder (hybrid is the default; keeps the run local) |
+| `--limit` | `-n` | integer range | `10` | Number of results per query (1-200) |
+| `--collection` | `-c` | text[] | — | Collection to evaluate |
+| `--require-language` | `—` | choice [en|zh|mixed][] | — | Widen sampling until each required language has at least 10 held-out queries (repeatable) |
+| `--min-heldout` | `—` | integer range | `25` | Widen a fresh run's sampling until at least this many held-out queries (default 25; 101 makes the 0.01 gate admissible) |
+| `--all` | `—` | flag | `false` | Evaluate all collections |
+| `--json` | `—` | flag | `false` | Output as JSON |
+
 ### `ls`
 
 List indexed documents as a virtual file tree.
@@ -616,26 +787,6 @@ sif ls [OPTIONS]
 | `collection` | text | No |  |
 | `subpath` | text | No |  |
 
-### `pull`
-
-Download a GGUF model file.
-
-```bash
-sif pull [OPTIONS]
-```
-
-**Arguments:**
-
-| Argument | Type | Required | Description |
-|----------|------|----------|-------------|
-| `model_spec` | text | Yes |  |
-
-**Options:**
-
-| Option | Short | Type | Default | Description |
-|--------|-------|------|---------|-------------|
-| `--cache-dir` | `—` | path | — | Custom cache directory |
-
 ### `status`
 
 Show index status.
@@ -643,6 +794,54 @@ Show index status.
 ```bash
 sif status [OPTIONS]
 ```
+
+### `suggest`
+
+Show prefix completions, did-you-mean rewrites, and query history.
+
+```bash
+sif suggest [OPTIONS]
+```
+
+**Arguments:**
+
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `query` | text | No |  |
+
+**Options:**
+
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--limit` | `—` | integer range | `5` | Maximum entries per section |
+| `--json` | `—` | flag | `false` | Output as JSON |
+| `--quiet` | `-q` | flag | `false` | Suppress table output |
+| `--clear-history` | `—` | flag | `false` | Delete all recorded query history |
+
+### `watch`
+
+Watch collections and keep the index current as files change.
+
+Collection-set changes are picked up live by the detached daemon
+(--detach); the foreground watch still requires a restart in this MVP.
+
+```bash
+sif watch [OPTIONS]
+```
+
+**Options:**
+
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--collection` | `-c` | text[] | — | Watch only the named collection(s); repeatable. The detached daemon picks up collection-set changes live; the foreground watch requires a restart. |
+| `--embed` | `—` | flag | `false` | Also write vector embeddings for changed documents (opt-in; default is BM25-only) |
+| `--no-embed` | `—` | flag | `false` | Force BM25-only updates even when SIF_WATCH_UPDATE_DEPTH=embed |
+| `--verbose` | `—` | flag | `false` | Print per-file event lines instead of per-batch summaries |
+| `--detach` | `—` | flag | `false` | Run the watcher in the background as a detached daemon and print its PID; logs go to the platform log dir unless --log-file is given |
+| `--stop` | `—` | flag | `false` | Stop the detached watch daemon (SIGTERM, bounded wait, SIGKILL fallback) |
+| `--log-file` | `—` | text | — | Daemon log file path (requires --detach; default: platform log dir) |
+| `--install-service` | `—` | flag | `false` | Generate and install a launchd LaunchAgent (macOS) or systemd user unit (Linux) running the FOREGROUND watcher under the OS supervisor; the -c and depth (--embed/--no-embed) flags given now are baked into the service definition |
+| `--uninstall-service` | `—` | flag | `false` | Stop the installed watch service and remove its artifact |
 
 ## Output Formats
 
@@ -653,7 +852,7 @@ Several commands support multiple output formats via flags:
 | Table (default) | — | Rich formatted table |
 | JSON | `--json` | Machine-readable JSON |
 | CSV | `--csv` | Comma-separated values |
-| Markdown | `--md` | Markdown table format |
+| Markdown | `--md` | Markdown headings and lists |
 | XML | `--xml` | XML format |
 | Files | `--files` | Plain file paths, one per line |
 
@@ -664,6 +863,7 @@ Several commands support multiple output formats via flags:
 | 0 | Success |
 | 1 | General error |
 | 2 | Invalid arguments |
+| 130 | `sif watch`: second SIGINT/SIGTERM during shutdown — immediate exit without the final flush |
 
 ## Common Workflows
 

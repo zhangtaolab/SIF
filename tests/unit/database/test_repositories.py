@@ -11,12 +11,20 @@ database created from the production DDL (no sqlite-vec extension involved).
 
 from __future__ import annotations
 
+import os
 import sqlite3
-from datetime import datetime, timezone
+import time
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
-from sif.core.models import Collection, Document, DocumentChunk, PathContext
+from sif.core.models import (
+    Collection,
+    Document,
+    DocumentChunk,
+    PathContext,
+    canonical_metadata_json,
+)
 from sif.database.repositories import (
     CollectionRepository,
     ContextRepository,
@@ -36,6 +44,11 @@ def db():
     manager = SchemaManager(conn)
     manager._create_collections_table()
     manager._create_documents_table()
+    # Phase 20 (D-05): the typed kv sync is unconditional in
+    # DocumentRepository.create/.update, so the fixture must mirror production
+    # create_all() order or every document write raises
+    # "no such table: document_metadata_values".
+    manager._create_metadata_tables()
     manager._create_document_chunks_table()
     manager._create_contexts_table()
     manager._create_llm_cache_table()
@@ -43,6 +56,46 @@ def db():
     manager._create_indexes()
     yield conn
     conn.close()
+
+
+@pytest.fixture
+def east_of_utc(monkeypatch):
+    """Force a fixed east-of-UTC local zone (WR-09 legacy naive-local rows).
+
+    ``time.tzset`` mutates process-global state, so the prior TZ is restored
+    unconditionally in teardown (Asia/Shanghai is fixed UTC+8, no DST).
+    """
+    prior = os.environ.get("TZ")
+    monkeypatch.setenv("TZ", "Asia/Shanghai")
+    time.tzset()
+    try:
+        yield
+    finally:
+        if prior is None:
+            monkeypatch.delenv("TZ", raising=False)
+        else:
+            monkeypatch.setenv("TZ", prior)
+        time.tzset()
+
+
+@pytest.fixture
+def west_of_utc(monkeypatch):
+    """Force a fixed west-of-UTC local zone (14-WR-03 legacy naive-local rows).
+
+    ``time.tzset`` mutates process-global state, so the prior TZ is restored
+    unconditionally in teardown (America/Phoenix is fixed UTC-7, no DST).
+    """
+    prior = os.environ.get("TZ")
+    monkeypatch.setenv("TZ", "America/Phoenix")
+    time.tzset()
+    try:
+        yield
+    finally:
+        if prior is None:
+            monkeypatch.delenv("TZ", raising=False)
+        else:
+            monkeypatch.setenv("TZ", prior)
+        time.tzset()
 
 
 @pytest.fixture
@@ -481,3 +534,343 @@ class TestRepositoryCoverage:
         assert repo.get("model", "persistent") is None
         assert repo.clear_expired() == 1
         assert repo.get("model", "short-lived") == "future response"
+
+
+class TestDocumentMetadataCanonicalStorage:
+    """D-08: metadata persistence uses the canonical serializer (Pitfall 10).
+
+    The stored string must be byte-equal to the checksum input, and typed YAML
+    values (``datetime.date``) must serialize through ``default=str`` instead
+    of raising ``TypeError`` and aborting the whole index update.
+    """
+
+    @staticmethod
+    def _seed_collection(db) -> Collection:
+        collection = Collection(id="coll-meta", name="meta", path="/meta")
+        CollectionRepository(db).create(collection)
+        return collection
+
+    def test_create_with_date_metadata_stores_canonical_iso_text(self, db):
+        """Create persists the canonical JSON; the date reloads as an ISO string."""
+        collection = self._seed_collection(db)
+        document = Document(
+            id="doc-date-create",
+            collection_id=collection.id,
+            path="/meta/dated.md",
+            content="body",
+            metadata={"date": date(2024, 1, 1), "tags": ["a", "b"]},
+        )
+        repo = DocumentRepository(db)
+
+        assert repo.create(document) is document
+
+        loaded = repo.get_by_id(document.id)
+        assert loaded is not None
+        assert loaded.metadata == {"date": "2024-01-01", "tags": ["a", "b"]}
+        stored = db.execute(
+            "SELECT metadata FROM documents WHERE id = ?", (document.id,)
+        ).fetchone()["metadata"]
+        # Byte-equal to the exact string the checksum hashed as its input.
+        assert stored == canonical_metadata_json(document.metadata)
+
+    def test_update_with_date_metadata_stores_canonical_iso_text(self, db):
+        """Update persists the canonical JSON; the date reloads as an ISO string."""
+        collection = self._seed_collection(db)
+        document = Document(
+            id="doc-date-update",
+            collection_id=collection.id,
+            path="/meta/updated.md",
+            content="body",
+            metadata={"date": date(2024, 1, 1)},
+        )
+        repo = DocumentRepository(db)
+        repo.create(document)
+
+        document.metadata = {"date": date(2025, 2, 3), "author": "Ada"}
+        assert repo.update(document) is document
+
+        loaded = repo.get_by_id(document.id)
+        assert loaded is not None
+        assert loaded.metadata == {"date": "2025-02-03", "author": "Ada"}
+        stored = db.execute(
+            "SELECT metadata FROM documents WHERE id = ?", (document.id,)
+        ).fetchone()["metadata"]
+        assert stored == canonical_metadata_json(document.metadata)
+
+
+class TestLLMCacheExpiryWR09:
+    """WR-09: cache expiry must compare parsed instants, not ISO string order."""
+
+    @pytest.mark.usefixtures("east_of_utc")
+    def test_set_stores_aware_utc_expiry(self, db):
+        """set() writes an aware-UTC (+00:00) expiry at the correct instant."""
+        repo = LLMCacheRepository(db)
+        repo.set("model", "hash", "prompt", "response", ttl_seconds=3600)
+
+        value = db.execute(
+            "SELECT expires_at FROM llm_cache WHERE prompt_hash = 'hash'"
+        ).fetchone()["expires_at"]
+
+        assert value.endswith("+00:00")
+        assert abs(
+            datetime.fromisoformat(value) - (datetime.now(timezone.utc) + timedelta(seconds=3600))
+        ) < timedelta(seconds=5)
+
+    @pytest.mark.skipif(not hasattr(time, "tzset"), reason="tzset unavailable")
+    @pytest.mark.usefixtures("east_of_utc")
+    def test_clear_expired_removes_legacy_naive_local_expired_row(self, db):
+        """Legacy naive-local rows expire by instant east of UTC (WR-09 read side).
+
+        The rows use the exact naive-local form the old ``set`` writer
+        produced; lexicographic order puts their wall time ahead of the
+        aware-UTC now string, so the old predicate kept the expired row.
+        """
+        now = datetime.now(timezone.utc)
+        for row_id, instant in (
+            ("legacy-expired", (now - timedelta(hours=1)).timestamp()),
+            ("legacy-fresh", (now + timedelta(hours=1)).timestamp()),
+        ):
+            db.execute(
+                "INSERT INTO llm_cache "
+                "(id, model_name, prompt_hash, prompt, response, created_at, expires_at) "
+                "VALUES (?, 'm', ?, 'p', 'r', ?, ?)",
+                (
+                    row_id,
+                    f"hash-{row_id}",
+                    now.isoformat(),
+                    datetime.fromtimestamp(instant).isoformat(),
+                ),
+            )
+
+        repo = LLMCacheRepository(db)
+        assert repo.clear_expired() == 1
+        assert (
+            db.execute("SELECT COUNT(*) FROM llm_cache WHERE id = 'legacy-expired'").fetchone()[0]
+            == 0
+        )
+        assert (
+            db.execute("SELECT COUNT(*) FROM llm_cache WHERE id = 'legacy-fresh'").fetchone()[0]
+            == 1
+        )
+
+    def test_clear_expired_aware_utc_rows(self, db):
+        """Aware-UTC expired rows are deleted; aware-UTC fresh rows survive."""
+        now = datetime.now(timezone.utc)
+        for row_id, expires_at in (
+            ("aware-expired", (now - timedelta(hours=1)).isoformat()),
+            ("aware-fresh", (now + timedelta(hours=1)).isoformat()),
+        ):
+            db.execute(
+                "INSERT INTO llm_cache "
+                "(id, model_name, prompt_hash, prompt, response, created_at, expires_at) "
+                "VALUES (?, 'm', ?, 'p', 'r', ?, ?)",
+                (row_id, f"hash-{row_id}", now.isoformat(), expires_at),
+            )
+
+        repo = LLMCacheRepository(db)
+        assert repo.clear_expired() == 1
+        assert (
+            db.execute("SELECT COUNT(*) FROM llm_cache WHERE id = 'aware-fresh'").fetchone()[0] == 1
+        )
+
+    def test_clear_expired_retains_null_and_unparseable(self, db):
+        """NULL and unparseable expiries are retained; cleanup never guesses."""
+        now = datetime.now(timezone.utc).isoformat()
+        for row_id, expires_at in (("null-expiry", None), ("garbage-expiry", "not-a-timestamp")):
+            db.execute(
+                "INSERT INTO llm_cache "
+                "(id, model_name, prompt_hash, prompt, response, created_at, expires_at) "
+                "VALUES (?, 'm', ?, 'p', 'r', ?, ?)",
+                (row_id, f"hash-{row_id}", now, expires_at),
+            )
+
+        repo = LLMCacheRepository(db)
+        assert repo.clear_expired() == 0
+        assert db.execute("SELECT COUNT(*) FROM llm_cache").fetchone()[0] == 2
+
+
+class TestLLMCacheClearExpiredWR01:
+    """WR-01: clear_expired must stay under SQLite's bound-variable limit.
+
+    The old single ``DELETE ... WHERE id IN (...)`` bound one variable per
+    expired row; ~1000 expired rows exceed SQLITE_LIMIT_VARIABLE_NUMBER
+    (999 on stock builds), raising ``sqlite3.OperationalError: too many SQL
+    variables`` and aborting the caller's whole cleanup transaction.
+    """
+
+    def test_clear_expired_deletes_1000_rows_under_variable_limit(self, db):
+        """1000 expired rows delete cleanly; NULL/future/garbage expiries survive."""
+        # Pin the historical 999-variable floor so the regression reproduces
+        # on modern builds whose default limit is 32766+ (masks the bug).
+        # setlimit is Python 3.11+; on 3.10 stock SQLite the default is 999.
+        if hasattr(db, "setlimit"):
+            db.setlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER, 999)
+
+        now = datetime.now(timezone.utc)
+        created = now.isoformat()
+        expired_at = (now - timedelta(hours=1)).isoformat()
+        insert_sql = (
+            "INSERT INTO llm_cache "
+            "(id, model_name, prompt_hash, prompt, response, created_at, expires_at) "
+            "VALUES (?, 'm', ?, 'p', 'r', ?, ?)"
+        )
+        db.executemany(
+            insert_sql,
+            ((f"expired-{i}", f"hash-expired-{i}", created, expired_at) for i in range(1000)),
+        )
+        for row_id, expires_at in (
+            ("null-expiry", None),
+            ("future-expiry", (now + timedelta(hours=1)).isoformat()),
+            ("garbage-expiry", "not-a-timestamp"),
+        ):
+            db.execute(insert_sql, (row_id, f"hash-{row_id}", created, expires_at))
+
+        repo = LLMCacheRepository(db)
+        assert repo.clear_expired() == 1000
+        survivors = {row["id"] for row in db.execute("SELECT id FROM llm_cache")}
+        assert survivors == {"null-expiry", "future-expiry", "garbage-expiry"}
+
+
+class TestLLMCacheGetTTL14WR03:
+    """14-WR-03 read side: get() must compare parsed instants, not ISO text (D-05).
+
+    The old SQL predicate ``expires_at > now_utc_iso`` mis-orders legacy
+    naive-local rows in BOTH timezone directions: east of UTC an expired
+    row's wall time sorts ahead of the aware-UTC now string (wrongly served);
+    west of UTC a fresh row's wall time sorts behind it (wrongly missed).
+    """
+
+    @staticmethod
+    def _insert_legacy_row(db, row_id: str, expires_at: str, now: datetime) -> None:
+        """Insert one row in the old writer's exact naive-local legacy form."""
+        db.execute(
+            "INSERT INTO llm_cache "
+            "(id, model_name, prompt_hash, prompt, response, created_at, expires_at) "
+            "VALUES (?, 'm', ?, 'p', 'r', ?, ?)",
+            (row_id, f"hash-{row_id}", now.isoformat(), expires_at),
+        )
+
+    @pytest.mark.skipif(not hasattr(time, "tzset"), reason="tzset unavailable")
+    @pytest.mark.usefixtures("east_of_utc")
+    def test_get_rejects_legacy_naive_local_expired_row_east_of_utc(self, db):
+        """An expired legacy naive-local row must miss east of UTC.
+
+        At the pre-fix HEAD this returned 'r': UTC+8 wall time sorts after
+        the aware-UTC now string, so the SQL predicate kept the expired row.
+        """
+        now = datetime.now(timezone.utc)
+        expires = datetime.fromtimestamp((now - timedelta(hours=1)).timestamp()).isoformat()
+        self._insert_legacy_row(db, "legacy-expired", expires, now)
+
+        assert LLMCacheRepository(db).get("m", "hash-legacy-expired") is None
+
+    @pytest.mark.skipif(not hasattr(time, "tzset"), reason="tzset unavailable")
+    @pytest.mark.usefixtures("west_of_utc")
+    def test_get_returns_legacy_naive_local_fresh_row_west_of_utc(self, db):
+        """A fresh legacy naive-local row must hit west of UTC.
+
+        At the pre-fix HEAD this returned None: UTC-7 wall time sorts before
+        the aware-UTC now string, so the SQL predicate dropped the fresh row.
+        """
+        now = datetime.now(timezone.utc)
+        expires = datetime.fromtimestamp((now + timedelta(hours=1)).timestamp()).isoformat()
+        self._insert_legacy_row(db, "legacy-fresh", expires, now)
+
+        assert LLMCacheRepository(db).get("m", "hash-legacy-fresh") == "r"
+
+
+class TestLLMCacheExpiryEdgePolicy:
+    """14-WR-03 edge policy: aware-offset, NULL, and malformed rows on both methods."""
+
+    @staticmethod
+    def _insert_row(db, row_id: str, expires_at: object) -> None:
+        """Insert one row with an explicit stored expiry value."""
+        db.execute(
+            "INSERT INTO llm_cache "
+            "(id, model_name, prompt_hash, prompt, response, created_at, expires_at) "
+            "VALUES (?, 'm', ?, 'p', 'r', ?, ?)",
+            (row_id, f"hash-{row_id}", datetime.now(timezone.utc).isoformat(), expires_at),
+        )
+
+    def test_get_compares_aware_offset_expiry_as_instant(self, db):
+        """Explicit +08:00 offsets compare as instants, never as text."""
+        now = datetime.now(timezone.utc)
+        tz_plus8 = timezone(timedelta(hours=8))
+        for row_id, instant in (
+            ("offset-expired", now - timedelta(hours=1)),
+            ("offset-fresh", now + timedelta(hours=1)),
+        ):
+            self._insert_row(db, row_id, instant.astimezone(tz_plus8).isoformat())
+
+        repo = LLMCacheRepository(db)
+        assert repo.get("m", "hash-offset-expired") is None
+        assert repo.get("m", "hash-offset-fresh") == "r"
+
+    def test_get_null_expiry_never_expires(self, db):
+        """NULL expires_at is a permanent hit."""
+        self._insert_row(db, "null-expiry", None)
+
+        assert LLMCacheRepository(db).get("m", "hash-null-expiry") == "r"
+
+    def test_get_malformed_expiry_misses_and_retains_row(self, db):
+        """Unparseable non-NULL expiry is a miss; the row is never deleted.
+
+        Adopted policy (16.1-RESEARCH Open Question 1, resolved): a read must
+        not trust an unreadable TTL, but the row stays untouched — cleanup's
+        WR-09 retain-guarantee still owns it.
+        """
+        self._insert_row(db, "garbage-expiry", "not-a-date")
+
+        repo = LLMCacheRepository(db)
+        assert repo.get("m", "hash-garbage-expiry") is None
+        assert (
+            db.execute("SELECT COUNT(*) FROM llm_cache WHERE id = 'garbage-expiry'").fetchone()[0]
+            == 1
+        )
+
+    def test_clear_expired_retains_malformed_row_after_get_miss(self, db):
+        """The get-miss policy never deletes: cleanup retains the same row."""
+        self._insert_row(db, "garbage-expiry", "not-a-date")
+
+        repo = LLMCacheRepository(db)
+        assert repo.get("m", "hash-garbage-expiry") is None
+        assert repo.clear_expired() == 0
+        assert db.execute("SELECT COUNT(*) FROM llm_cache").fetchone()[0] == 1
+
+    def test_get_overflowing_expiry_misses_and_retains_row(self, db):
+        """CR-02: an ISO boundary overflow is an uninterpretable-expiry miss."""
+        self._insert_row(db, "overflow-expiry", "0001-01-01T00:00:00+14:00")
+
+        repo = LLMCacheRepository(db)
+        assert repo.get("m", "hash-overflow-expiry") is None
+        assert (
+            db.execute("SELECT COUNT(*) FROM llm_cache WHERE id = 'overflow-expiry'").fetchone()[0]
+            == 1
+        )
+
+    def test_clear_expired_retains_overflowing_expiry(self, db):
+        """CR-02: cleanup retains a row whose UTC conversion overflows."""
+        self._insert_row(db, "overflow-expiry", "0001-01-01T00:00:00+14:00")
+
+        repo = LLMCacheRepository(db)
+        assert repo.clear_expired() == 0
+        assert (
+            db.execute("SELECT COUNT(*) FROM llm_cache WHERE id = 'overflow-expiry'").fetchone()[0]
+            == 1
+        )
+
+    def test_clear_expired_non_string_expiry_survives(self, db):
+        """A non-string stored expiry raises nothing; the row is retained.
+
+        ``expires_at`` has TEXT affinity, so an INTEGER coerces to text on
+        insert — a BLOB is the one non-string form the production DDL can
+        actually store. Parsing it raises TypeError, which cleanup must
+        catch alongside ValueError (never delete what it cannot interpret).
+        """
+        self._insert_row(db, "blob-expiry", b"not-a-date")
+
+        repo = LLMCacheRepository(db)
+        assert repo.clear_expired() == 0
+        assert (
+            db.execute("SELECT COUNT(*) FROM llm_cache WHERE id = 'blob-expiry'").fetchone()[0] == 1
+        )

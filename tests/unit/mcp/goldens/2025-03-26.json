@@ -1,0 +1,1414 @@
+{
+  "exchanges": [
+    {
+      "request": {
+        "body": {
+          "id": 1,
+          "jsonrpc": "2.0",
+          "method": "initialize",
+          "params": {
+            "capabilities": {},
+            "clientInfo": {
+              "name": "sif-golden",
+              "version": "1"
+            },
+            "protocolVersion": "2025-03-26"
+          }
+        },
+        "headers": {}
+      },
+      "response": {
+        "body": {
+          "id": 1,
+          "jsonrpc": "2.0",
+          "result": {
+            "capabilities": {
+              "prompts": {
+                "listChanged": false
+              },
+              "resources": {
+                "listChanged": false,
+                "subscribe": false
+              },
+              "tools": {
+                "listChanged": false
+              }
+            },
+            "protocolVersion": "2025-03-26",
+            "serverInfo": {
+              "name": "sif-mcp-server",
+              "version": "<version>"
+            }
+          }
+        },
+        "headers": {
+          "mcp-session-id": "<session>"
+        },
+        "status": 200
+      }
+    },
+    {
+      "request": {
+        "body": {
+          "id": 2,
+          "jsonrpc": "2.0",
+          "method": "tools/list",
+          "params": {}
+        },
+        "headers": {
+          "mcp-session-id": "<session>"
+        }
+      },
+      "response": {
+        "body": {
+          "id": 2,
+          "jsonrpc": "2.0",
+          "result": {
+            "tools": [
+              {
+                "annotations": {
+                  "openWorldHint": false,
+                  "readOnlyHint": true
+                },
+                "description": "Hybrid search combining BM25 full-text search, vector semantic search, and RRF fusion. Reranking is opt-in: it is off unless SIF_RERANK_ENABLED is set, and the rerank parameter forces it on or off for one query.",
+                "inputSchema": {
+                  "properties": {
+                    "bm25_weight": {
+                      "anyOf": [
+                        {
+                          "exclusiveMinimum": 0.0,
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "title": "Bm25 Weight"
+                    },
+                    "collections": {
+                      "anyOf": [
+                        {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "title": "Collections"
+                    },
+                    "filter": {
+                      "anyOf": [
+                        {
+                          "additionalProperties": true,
+                          "type": "object"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "title": "Filter"
+                    },
+                    "limit": {
+                      "default": 10,
+                      "minimum": 1,
+                      "title": "Limit",
+                      "type": "integer"
+                    },
+                    "min_score": {
+                      "default": 0.0,
+                      "minimum": 0.0,
+                      "title": "Min Score",
+                      "type": "number"
+                    },
+                    "offset": {
+                      "default": 0,
+                      "minimum": 0,
+                      "title": "Offset",
+                      "type": "integer"
+                    },
+                    "per_chunk": {
+                      "default": false,
+                      "title": "Per Chunk",
+                      "type": "boolean"
+                    },
+                    "query": {
+                      "title": "Query",
+                      "type": "string"
+                    },
+                    "rerank": {
+                      "anyOf": [
+                        {
+                          "type": "boolean"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "title": "Rerank"
+                    },
+                    "rrf_k": {
+                      "anyOf": [
+                        {
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "title": "Rrf K"
+                    },
+                    "vector_weight": {
+                      "anyOf": [
+                        {
+                          "exclusiveMinimum": 0.0,
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "title": "Vector Weight"
+                    }
+                  },
+                  "required": [
+                    "query"
+                  ],
+                  "title": "queryArguments",
+                  "type": "object"
+                },
+                "name": "query",
+                "outputSchema": {
+                  "$defs": {
+                    "SearchResult": {
+                      "description": "Search result item.\n\nCitation fields (Phase 22 D-11) are additive: ``snippet`` is the smart\nsnippet bytes, ``content_hash`` is the stored ``documents.checksum``, and\n``line_start``/``line_end`` are the inclusive 1-based window the snippet\nrendered. They stay ``None`` where the producing route has no snippet\nwindow (the direct ``lex:``/BM25 route and ``lex_search``).",
+                      "properties": {
+                        "content": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null,
+                          "title": "Content"
+                        },
+                        "content_hash": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null,
+                          "title": "Content Hash"
+                        },
+                        "doc_id": {
+                          "title": "Doc Id",
+                          "type": "string"
+                        },
+                        "highlights": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "title": "Highlights",
+                          "type": "array"
+                        },
+                        "line_end": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null,
+                          "title": "Line End"
+                        },
+                        "line_start": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null,
+                          "title": "Line Start"
+                        },
+                        "metadata": {
+                          "additionalProperties": true,
+                          "title": "Metadata",
+                          "type": "object"
+                        },
+                        "path": {
+                          "title": "Path",
+                          "type": "string"
+                        },
+                        "score": {
+                          "title": "Score",
+                          "type": "number"
+                        },
+                        "snippet": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null,
+                          "title": "Snippet"
+                        },
+                        "title": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null,
+                          "title": "Title"
+                        }
+                      },
+                      "required": [
+                        "doc_id",
+                        "path",
+                        "score"
+                      ],
+                      "title": "SearchResult",
+                      "type": "object"
+                    }
+                  },
+                  "description": "Output for query tool.",
+                  "properties": {
+                    "results": {
+                      "items": {
+                        "$ref": "#/$defs/SearchResult"
+                      },
+                      "title": "Results",
+                      "type": "array"
+                    },
+                    "suggestions": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "title": "Suggestions",
+                      "type": "array"
+                    }
+                  },
+                  "title": "QueryOutput",
+                  "type": "object"
+                }
+              },
+              {
+                "annotations": {
+                  "openWorldHint": false,
+                  "readOnlyHint": true
+                },
+                "description": "Get a document by path or document ID, optionally limited to a line range. Returns docid, path, line range, content hash, and content for citation.",
+                "inputSchema": {
+                  "properties": {
+                    "from_line": {
+                      "anyOf": [
+                        {
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "title": "From Line"
+                    },
+                    "max_lines": {
+                      "anyOf": [
+                        {
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "title": "Max Lines"
+                    },
+                    "path_or_docid": {
+                      "title": "Path Or Docid",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "path_or_docid"
+                  ],
+                  "title": "getArguments",
+                  "type": "object"
+                },
+                "name": "get",
+                "outputSchema": {
+                  "$defs": {
+                    "Document": {
+                      "description": "Document model.\n\n``content_hash`` (Phase 22 D-11) is the stored ``documents.checksum`` so a\ncitation can detect drift; ``line_start``/``line_end`` describe the\ncontent actually returned (full document = 1..N, ranged request = the\nclamped inclusive window). They are ``None`` only when the requested\nwindow starts past the end of the document and renders no content.",
+                      "properties": {
+                        "collection_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null,
+                          "title": "Collection Id"
+                        },
+                        "content": {
+                          "title": "Content",
+                          "type": "string"
+                        },
+                        "content_hash": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null,
+                          "title": "Content Hash"
+                        },
+                        "doc_id": {
+                          "title": "Doc Id",
+                          "type": "string"
+                        },
+                        "line_end": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null,
+                          "title": "Line End"
+                        },
+                        "line_start": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null,
+                          "title": "Line Start"
+                        },
+                        "metadata": {
+                          "additionalProperties": true,
+                          "title": "Metadata",
+                          "type": "object"
+                        },
+                        "path": {
+                          "title": "Path",
+                          "type": "string"
+                        },
+                        "title": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null,
+                          "title": "Title"
+                        }
+                      },
+                      "required": [
+                        "doc_id",
+                        "path",
+                        "content"
+                      ],
+                      "title": "Document",
+                      "type": "object"
+                    }
+                  },
+                  "description": "Output for get tool.",
+                  "properties": {
+                    "document": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/Document"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null
+                    }
+                  },
+                  "title": "GetOutput",
+                  "type": "object"
+                }
+              },
+              {
+                "annotations": {
+                  "openWorldHint": false,
+                  "readOnlyHint": true
+                },
+                "description": "Batch get documents matching a glob pattern. Returns docid, path, line range, content hash, and content for citation.",
+                "inputSchema": {
+                  "properties": {
+                    "max_bytes": {
+                      "anyOf": [
+                        {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "title": "Max Bytes"
+                    },
+                    "pattern": {
+                      "title": "Pattern",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "pattern"
+                  ],
+                  "title": "multi_getArguments",
+                  "type": "object"
+                },
+                "name": "multi_get",
+                "outputSchema": {
+                  "$defs": {
+                    "Document": {
+                      "description": "Document model.\n\n``content_hash`` (Phase 22 D-11) is the stored ``documents.checksum`` so a\ncitation can detect drift; ``line_start``/``line_end`` describe the\ncontent actually returned (full document = 1..N, ranged request = the\nclamped inclusive window). They are ``None`` only when the requested\nwindow starts past the end of the document and renders no content.",
+                      "properties": {
+                        "collection_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null,
+                          "title": "Collection Id"
+                        },
+                        "content": {
+                          "title": "Content",
+                          "type": "string"
+                        },
+                        "content_hash": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null,
+                          "title": "Content Hash"
+                        },
+                        "doc_id": {
+                          "title": "Doc Id",
+                          "type": "string"
+                        },
+                        "line_end": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null,
+                          "title": "Line End"
+                        },
+                        "line_start": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null,
+                          "title": "Line Start"
+                        },
+                        "metadata": {
+                          "additionalProperties": true,
+                          "title": "Metadata",
+                          "type": "object"
+                        },
+                        "path": {
+                          "title": "Path",
+                          "type": "string"
+                        },
+                        "title": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null,
+                          "title": "Title"
+                        }
+                      },
+                      "required": [
+                        "doc_id",
+                        "path",
+                        "content"
+                      ],
+                      "title": "Document",
+                      "type": "object"
+                    }
+                  },
+                  "description": "Output for multi_get tool.",
+                  "properties": {
+                    "documents": {
+                      "items": {
+                        "$ref": "#/$defs/Document"
+                      },
+                      "title": "Documents",
+                      "type": "array"
+                    },
+                    "errors": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "title": "Errors",
+                      "type": "array"
+                    }
+                  },
+                  "title": "MultiGetOutput",
+                  "type": "object"
+                }
+              },
+              {
+                "annotations": {
+                  "openWorldHint": false,
+                  "readOnlyHint": true
+                },
+                "description": "Get the current status of all document collections.",
+                "inputSchema": {
+                  "properties": {},
+                  "title": "statusArguments",
+                  "type": "object"
+                },
+                "name": "status",
+                "outputSchema": {
+                  "$defs": {
+                    "CollectionInfo": {
+                      "description": "Collection information.",
+                      "properties": {
+                        "document_count": {
+                          "title": "Document Count",
+                          "type": "integer"
+                        },
+                        "last_updated": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null,
+                          "title": "Last Updated"
+                        },
+                        "name": {
+                          "title": "Name",
+                          "type": "string"
+                        },
+                        "size_bytes": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null,
+                          "title": "Size Bytes"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "document_count"
+                      ],
+                      "title": "CollectionInfo",
+                      "type": "object"
+                    }
+                  },
+                  "description": "Output for status tool.",
+                  "properties": {
+                    "collections": {
+                      "items": {
+                        "$ref": "#/$defs/CollectionInfo"
+                      },
+                      "title": "Collections",
+                      "type": "array"
+                    },
+                    "total_documents": {
+                      "default": 0,
+                      "title": "Total Documents",
+                      "type": "integer"
+                    }
+                  },
+                  "title": "StatusOutput",
+                  "type": "object"
+                }
+              },
+              {
+                "annotations": {
+                  "openWorldHint": false,
+                  "readOnlyHint": true
+                },
+                "description": "Report filterable metadata keys, value types, document counts, numeric min/median/max ranges, and exact remaining window counts. Accepts the same filter grammar as query; path and mtime are reported as built-ins.",
+                "inputSchema": {
+                  "properties": {
+                    "collections": {
+                      "anyOf": [
+                        {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "title": "Collections"
+                    },
+                    "filter": {
+                      "anyOf": [
+                        {
+                          "additionalProperties": true,
+                          "type": "object"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "title": "Filter"
+                    },
+                    "limit": {
+                      "default": 50,
+                      "minimum": 1,
+                      "title": "Limit",
+                      "type": "integer"
+                    },
+                    "match": {
+                      "anyOf": [
+                        {
+                          "additionalProperties": true,
+                          "type": "object"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "title": "Match"
+                    },
+                    "min_count": {
+                      "default": 1,
+                      "minimum": 1,
+                      "title": "Min Count",
+                      "type": "integer"
+                    },
+                    "sort": {
+                      "default": "count",
+                      "enum": [
+                        "count",
+                        "value"
+                      ],
+                      "title": "Sort",
+                      "type": "string"
+                    },
+                    "value_limit": {
+                      "default": 10,
+                      "minimum": 0,
+                      "title": "Value Limit",
+                      "type": "integer"
+                    }
+                  },
+                  "title": "metadataArguments",
+                  "type": "object"
+                },
+                "name": "metadata",
+                "outputSchema": {
+                  "$defs": {
+                    "MetadataKeySummary": {
+                      "description": "One reported metadata key: a frontmatter key or a D-03 built-in.",
+                      "properties": {
+                        "documents": {
+                          "title": "Documents",
+                          "type": "integer"
+                        },
+                        "key": {
+                          "title": "Key",
+                          "type": "string"
+                        },
+                        "types": {
+                          "items": {
+                            "$ref": "#/$defs/MetadataTypeSummary"
+                          },
+                          "title": "Types",
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "key",
+                        "documents"
+                      ],
+                      "title": "MetadataKeySummary",
+                      "type": "object"
+                    },
+                    "MetadataRange": {
+                      "description": "Numeric min/median/max for a key's ``number`` type (D-15).",
+                      "properties": {
+                        "max": {
+                          "title": "Max",
+                          "type": "number"
+                        },
+                        "median": {
+                          "title": "Median",
+                          "type": "number"
+                        },
+                        "min": {
+                          "title": "Min",
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "min",
+                        "median",
+                        "max"
+                      ],
+                      "title": "MetadataRange",
+                      "type": "object"
+                    },
+                    "MetadataTypeSummary": {
+                      "description": "One value type of a key: counts, a windowed value list, optional range.",
+                      "properties": {
+                        "distinctValues": {
+                          "title": "Distinctvalues",
+                          "type": "integer"
+                        },
+                        "documents": {
+                          "title": "Documents",
+                          "type": "integer"
+                        },
+                        "multiValued": {
+                          "title": "Multivalued",
+                          "type": "boolean"
+                        },
+                        "range": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/MetadataRange"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null
+                        },
+                        "remainingValues": {
+                          "title": "Remainingvalues",
+                          "type": "integer"
+                        },
+                        "type": {
+                          "enum": [
+                            "string",
+                            "number",
+                            "boolean"
+                          ],
+                          "title": "Type",
+                          "type": "string"
+                        },
+                        "values": {
+                          "items": {
+                            "$ref": "#/$defs/MetadataValueSummary"
+                          },
+                          "title": "Values",
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "multiValued",
+                        "documents",
+                        "distinctValues",
+                        "remainingValues"
+                      ],
+                      "title": "MetadataTypeSummary",
+                      "type": "object"
+                    },
+                    "MetadataValueSummary": {
+                      "description": "One distinct value and the document count that carries it (D-15).",
+                      "properties": {
+                        "documents": {
+                          "title": "Documents",
+                          "type": "integer"
+                        },
+                        "value": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "boolean"
+                            }
+                          ],
+                          "title": "Value"
+                        }
+                      },
+                      "required": [
+                        "value",
+                        "documents"
+                      ],
+                      "title": "MetadataValueSummary",
+                      "type": "object"
+                    }
+                  },
+                  "description": "Output for the ``metadata`` discovery tool (D-15 + D-20, Phase 22 schema).\n\nThe camelCase names are written verbatim: the mixed casing against SIF's\nsnake_case outputs is deliberate and part of the frozen Phase 22 contract.\nSerialize with ``model_dump(exclude_none=True)`` so ``filteredDocuments``\nis absent without a filter and ``range`` is absent on non-numeric types.\n``builtIns`` always carries exactly ``path`` then ``mtime`` (D-03/D-20) and\nis never counted by ``totalKeys``/``remainingKeys``.",
+                  "properties": {
+                    "builtIns": {
+                      "items": {
+                        "$ref": "#/$defs/MetadataKeySummary"
+                      },
+                      "title": "Builtins",
+                      "type": "array"
+                    },
+                    "documents": {
+                      "title": "Documents",
+                      "type": "integer"
+                    },
+                    "filteredDocuments": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "title": "Filtereddocuments"
+                    },
+                    "keys": {
+                      "items": {
+                        "$ref": "#/$defs/MetadataKeySummary"
+                      },
+                      "title": "Keys",
+                      "type": "array"
+                    },
+                    "remainingKeys": {
+                      "title": "Remainingkeys",
+                      "type": "integer"
+                    },
+                    "skippedKeys": {
+                      "title": "Skippedkeys",
+                      "type": "integer"
+                    },
+                    "totalKeys": {
+                      "title": "Totalkeys",
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "documents",
+                    "totalKeys",
+                    "remainingKeys",
+                    "skippedKeys",
+                    "builtIns"
+                  ],
+                  "title": "MetadataOutput",
+                  "type": "object"
+                }
+              },
+              {
+                "annotations": {
+                  "openWorldHint": false,
+                  "readOnlyHint": true
+                },
+                "description": "Lexical BM25 search only, matching `sif search search` (filter, offset, min_score). No expansion or reranking.",
+                "inputSchema": {
+                  "properties": {
+                    "collections": {
+                      "anyOf": [
+                        {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "title": "Collections"
+                    },
+                    "filter": {
+                      "anyOf": [
+                        {
+                          "additionalProperties": true,
+                          "type": "object"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "title": "Filter"
+                    },
+                    "limit": {
+                      "default": 10,
+                      "minimum": 1,
+                      "title": "Limit",
+                      "type": "integer"
+                    },
+                    "min_score": {
+                      "default": 0.0,
+                      "minimum": 0.0,
+                      "title": "Min Score",
+                      "type": "number"
+                    },
+                    "offset": {
+                      "default": 0,
+                      "minimum": 0,
+                      "title": "Offset",
+                      "type": "integer"
+                    },
+                    "query": {
+                      "title": "Query",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "query"
+                  ],
+                  "title": "lex_searchArguments",
+                  "type": "object"
+                },
+                "name": "lex_search",
+                "outputSchema": {
+                  "$defs": {
+                    "SearchResult": {
+                      "description": "Search result item.\n\nCitation fields (Phase 22 D-11) are additive: ``snippet`` is the smart\nsnippet bytes, ``content_hash`` is the stored ``documents.checksum``, and\n``line_start``/``line_end`` are the inclusive 1-based window the snippet\nrendered. They stay ``None`` where the producing route has no snippet\nwindow (the direct ``lex:``/BM25 route and ``lex_search``).",
+                      "properties": {
+                        "content": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null,
+                          "title": "Content"
+                        },
+                        "content_hash": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null,
+                          "title": "Content Hash"
+                        },
+                        "doc_id": {
+                          "title": "Doc Id",
+                          "type": "string"
+                        },
+                        "highlights": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "title": "Highlights",
+                          "type": "array"
+                        },
+                        "line_end": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null,
+                          "title": "Line End"
+                        },
+                        "line_start": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null,
+                          "title": "Line Start"
+                        },
+                        "metadata": {
+                          "additionalProperties": true,
+                          "title": "Metadata",
+                          "type": "object"
+                        },
+                        "path": {
+                          "title": "Path",
+                          "type": "string"
+                        },
+                        "score": {
+                          "title": "Score",
+                          "type": "number"
+                        },
+                        "snippet": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null,
+                          "title": "Snippet"
+                        },
+                        "title": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null,
+                          "title": "Title"
+                        }
+                      },
+                      "required": [
+                        "doc_id",
+                        "path",
+                        "score"
+                      ],
+                      "title": "SearchResult",
+                      "type": "object"
+                    }
+                  },
+                  "description": "Output for lex_search tool.",
+                  "properties": {
+                    "results": {
+                      "items": {
+                        "$ref": "#/$defs/SearchResult"
+                      },
+                      "title": "Results",
+                      "type": "array"
+                    }
+                  },
+                  "title": "LexSearchOutput",
+                  "type": "object"
+                }
+              },
+              {
+                "annotations": {
+                  "openWorldHint": false,
+                  "readOnlyHint": true
+                },
+                "description": "Vector semantic search only, matching `sif search vsearch` (filter, offset, per_chunk, min_score). Requires an embedding model; no expansion or reranking.",
+                "inputSchema": {
+                  "properties": {
+                    "collections": {
+                      "anyOf": [
+                        {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "title": "Collections"
+                    },
+                    "filter": {
+                      "anyOf": [
+                        {
+                          "additionalProperties": true,
+                          "type": "object"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "title": "Filter"
+                    },
+                    "limit": {
+                      "default": 10,
+                      "minimum": 1,
+                      "title": "Limit",
+                      "type": "integer"
+                    },
+                    "min_score": {
+                      "default": 0.0,
+                      "minimum": 0.0,
+                      "title": "Min Score",
+                      "type": "number"
+                    },
+                    "offset": {
+                      "default": 0,
+                      "minimum": 0,
+                      "title": "Offset",
+                      "type": "integer"
+                    },
+                    "per_chunk": {
+                      "default": false,
+                      "title": "Per Chunk",
+                      "type": "boolean"
+                    },
+                    "query": {
+                      "title": "Query",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "query"
+                  ],
+                  "title": "vec_searchArguments",
+                  "type": "object"
+                },
+                "name": "vec_search",
+                "outputSchema": {
+                  "$defs": {
+                    "SearchResult": {
+                      "description": "Search result item.\n\nCitation fields (Phase 22 D-11) are additive: ``snippet`` is the smart\nsnippet bytes, ``content_hash`` is the stored ``documents.checksum``, and\n``line_start``/``line_end`` are the inclusive 1-based window the snippet\nrendered. They stay ``None`` where the producing route has no snippet\nwindow (the direct ``lex:``/BM25 route and ``lex_search``).",
+                      "properties": {
+                        "content": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null,
+                          "title": "Content"
+                        },
+                        "content_hash": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null,
+                          "title": "Content Hash"
+                        },
+                        "doc_id": {
+                          "title": "Doc Id",
+                          "type": "string"
+                        },
+                        "highlights": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "title": "Highlights",
+                          "type": "array"
+                        },
+                        "line_end": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null,
+                          "title": "Line End"
+                        },
+                        "line_start": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null,
+                          "title": "Line Start"
+                        },
+                        "metadata": {
+                          "additionalProperties": true,
+                          "title": "Metadata",
+                          "type": "object"
+                        },
+                        "path": {
+                          "title": "Path",
+                          "type": "string"
+                        },
+                        "score": {
+                          "title": "Score",
+                          "type": "number"
+                        },
+                        "snippet": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null,
+                          "title": "Snippet"
+                        },
+                        "title": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null,
+                          "title": "Title"
+                        }
+                      },
+                      "required": [
+                        "doc_id",
+                        "path",
+                        "score"
+                      ],
+                      "title": "SearchResult",
+                      "type": "object"
+                    }
+                  },
+                  "description": "Output for vec_search tool.",
+                  "properties": {
+                    "results": {
+                      "items": {
+                        "$ref": "#/$defs/SearchResult"
+                      },
+                      "title": "Results",
+                      "type": "array"
+                    }
+                  },
+                  "title": "VecSearchOutput",
+                  "type": "object"
+                }
+              }
+            ]
+          }
+        },
+        "headers": {
+          "mcp-session-id": "<session>"
+        },
+        "status": 200
+      }
+    },
+    {
+      "request": {
+        "body": {
+          "id": 3,
+          "jsonrpc": "2.0",
+          "method": "tools/call",
+          "params": {
+            "arguments": {},
+            "name": "status"
+          }
+        },
+        "headers": {
+          "mcp-session-id": "<session>"
+        }
+      },
+      "response": {
+        "body": {
+          "id": 3,
+          "jsonrpc": "2.0",
+          "result": {
+            "content": [
+              {
+                "text": "{\"collections\": [], \"total_documents\": 0}",
+                "type": "text"
+              }
+            ],
+            "isError": false,
+            "structuredContent": {
+              "collections": [],
+              "total_documents": 0
+            }
+          }
+        },
+        "headers": {
+          "mcp-session-id": "<session>"
+        },
+        "status": 200
+      }
+    }
+  ],
+  "protocolVersion": "2025-03-26"
+}

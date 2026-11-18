@@ -2,13 +2,48 @@
 
 from __future__ import annotations
 
+import json
+import logging
 import sqlite3
 from datetime import datetime, timezone
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
+from sif.config.settings import Settings
+from sif.core.models import canonical_metadata_json
+from sif.database.database import Database
 from sif.database.schema import SchemaManager
+from sif.embedding.identity import (
+    IdentityDimensionError,
+    build_settings_identity,
+    check_identity,
+    read_identity,
+    schema_embedding_dim,
+)
+from sif.embedding.prompts import PromptScheme
+
+
+def _settings_identity(dim: int):
+    """A settings-only identity at ``dim`` with no prompts (the D-04 shape)."""
+    return build_settings_identity(
+        Settings(_env_file=None, embedding_dim=dim, model_name="test", cache_embeddings=False),
+        PromptScheme(None, None, True),
+    )
+
+
+def _seed_vector(conn: sqlite3.Connection, dim: int, doc_id: str = "d1") -> None:
+    """Insert one real vec0 row so the index counts as populated (D-04)."""
+    conn.execute(
+        "INSERT INTO document_embeddings (embedding_id, document_id, chunk_id, embedding) "
+        "VALUES (?, ?, ?, vec_f32(?))",
+        (f"e-{doc_id}", doc_id, f"c-{doc_id}", json.dumps([0.1] * dim)),
+    )
+    conn.commit()
+
+
+def _identity_warning_count(caplog: pytest.LogCaptureFixture, needle: str) -> int:
+    return sum(needle in record.message for record in caplog.records)
 
 
 def _load_vec(db: sqlite3.Connection) -> bool:
@@ -201,8 +236,25 @@ class TestSchemaManagerVectorTables:
         manager = SchemaManager(vec_db, embedding_dim=384)
         manager._create_vector_tables()
         manager2 = SchemaManager(vec_db, embedding_dim=768)
-        with pytest.raises(RuntimeError, match="Embedding dimension mismatch"):
+        with pytest.raises(RuntimeError, match="Embedding dimension mismatch") as exc_info:
             manager2._create_vector_tables()
+
+        assert isinstance(exc_info.value, IdentityDimensionError)
+        assert exc_info.value.stored_dimension == 384
+        assert exc_info.value.current_dimension == 768
+        message = str(exc_info.value)
+        # D-05/T-21-27: the pre-change schema guard text survives byte-identically.
+        assert message == (
+            "Embedding dimension mismatch: database has FLOAT[384], "
+            "but settings require FLOAT[768]. "
+            "Restore the model and SIF_EMBEDDING_DIM that match FLOAT[384], "
+            "or delete the database file and rebuild the index."
+        )
+        assert "database has FLOAT[384]" in message
+        assert "settings require FLOAT[768]" in message
+        assert "Restore the model and SIF_EMBEDDING_DIM that match FLOAT[384]" in message
+        assert "delete the database file and rebuild the index" in message
+        assert "sif cleanup" not in message
 
     def test_same_dimension_does_not_raise(self, vec_db):
         manager = SchemaManager(vec_db, embedding_dim=384)
@@ -219,6 +271,94 @@ class TestSchemaManagerVectorTables:
         tables = {row[0] for row in cursor.fetchall()}
         assert "document_embeddings" not in tables
         conn.close()
+
+
+class TestInitialIdentityAtSchemaOpen:
+    """D-04/D-05: the schema open owns the shared guard and the assumed write.
+
+    With an initial identity the init-mode check is the production caller of
+    ``check_identity(mode="init")``; a legacy populated index is assumed once
+    (one warning), a fresh/empty index writes nothing, and the injected-
+    dimension path never reads settings or writes an identity.
+    """
+
+    def test_shared_read_delegates_to_the_identity_module(self, vec_db):
+        """The width read exists only in ``identity.schema_embedding_dim``."""
+        SchemaManager(vec_db, embedding_dim=384)._create_vector_tables()
+
+        with patch("sif.embedding.identity.schema_embedding_dim", return_value=384) as read:
+            SchemaManager(vec_db, embedding_dim=384)._create_vector_tables()
+
+        read.assert_called_once_with(vec_db)
+
+    def test_init_mode_check_runs_with_an_initial_identity(self, vec_db):
+        """The init-mode check has a production caller at schema open."""
+        identity = _settings_identity(384)
+        # create_all always creates index_meta before the vector tables; the
+        # direct method call needs the same ordering.
+        SchemaManager(vec_db, embedding_dim=384)._create_index_meta_table()
+
+        with patch("sif.embedding.identity.check_identity", wraps=check_identity) as check:
+            SchemaManager(
+                vec_db,
+                embedding_dim=384,
+                initial_identity=identity,
+            )._create_vector_tables()
+
+        check.assert_called_once_with(vec_db, identity, mode="init")
+
+    def test_initial_identity_width_mismatch_raises_the_pre_change_text(self, vec_db):
+        SchemaManager(vec_db, embedding_dim=384)._create_index_meta_table()
+        SchemaManager(vec_db, embedding_dim=384)._create_vector_tables()
+
+        with pytest.raises(IdentityDimensionError) as exc_info:
+            SchemaManager(
+                vec_db,
+                embedding_dim=768,
+                initial_identity=_settings_identity(768),
+            )._create_vector_tables()
+
+        assert exc_info.value.stored_dimension == 384
+        assert exc_info.value.current_dimension == 768
+        assert str(exc_info.value) == (
+            "Embedding dimension mismatch: database has FLOAT[384], "
+            "but settings require FLOAT[768]. "
+            "Restore the model and SIF_EMBEDDING_DIM that match FLOAT[384], "
+            "or delete the database file and rebuild the index."
+        )
+
+    def test_legacy_populated_index_is_assumed_once_and_warns_once(
+        self, vec_db, caplog: pytest.LogCaptureFixture
+    ):
+        SchemaManager(vec_db, embedding_dim=8).create_all()
+        _seed_vector(vec_db, 8)
+        identity = _settings_identity(8)
+
+        with caplog.at_level(logging.WARNING):
+            SchemaManager(vec_db, embedding_dim=8, initial_identity=identity).create_all()
+
+        stored = read_identity(vec_db)
+        assert stored is not None
+        assert stored.source == "legacy-assumed"
+        assert stored.dimension == 8
+        assert _identity_warning_count(caplog, "Index predates embedder identity") == 1
+
+        with caplog.at_level(logging.WARNING):
+            SchemaManager(vec_db, embedding_dim=8, initial_identity=identity).create_all()
+
+        assert _identity_warning_count(caplog, "Index predates embedder identity") == 1
+        assert read_identity(vec_db) == stored
+
+    def test_fresh_index_writes_no_identity(self, vec_db, caplog: pytest.LogCaptureFixture):
+        with caplog.at_level(logging.WARNING):
+            SchemaManager(
+                vec_db,
+                embedding_dim=8,
+                initial_identity=_settings_identity(8),
+            ).create_all()
+
+        assert read_identity(vec_db) is None
+        assert _identity_warning_count(caplog, "Index predates embedder identity") == 0
 
 
 class _VectorDropFailureConnection:
@@ -255,6 +395,7 @@ class TestSchemaRealSQLiteCoverage:
                 "idx_documents_collection",
                 "idx_documents_path",
                 "idx_documents_checksum",
+                "idx_documents_mtime",
                 "idx_chunks_document",
                 "idx_contexts_target",
                 "idx_llm_cache_lookup",
@@ -304,6 +445,56 @@ class TestSchemaRealSQLiteCoverage:
                 ).fetchone()[0]
                 == 0
             )
+        finally:
+            conn.close()
+
+    def test_mtime_index_is_created_on_fresh_and_migrated_databases(self):
+        """CORR-04: idx_documents_mtime exists on fresh and upgraded databases.
+
+        A database created before this index existed is simulated by dropping
+        it and re-running ``create_all``: the ``IF NOT EXISTS`` create is the
+        whole migration, so the upgrade must restore it without any other
+        schema change.
+        """
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            manager = SchemaManager(conn, embedding_dim=384)
+            manager.create_all()
+
+            def index_names() -> set[str]:
+                return {
+                    row[0]
+                    for row in conn.execute(
+                        "SELECT name FROM sqlite_master WHERE type = 'index'",
+                    ).fetchall()
+                }
+
+            assert "idx_documents_mtime" in index_names()
+            conn.execute("DROP INDEX idx_documents_mtime")
+            conn.commit()
+            assert "idx_documents_mtime" not in index_names()
+
+            manager.create_all()
+            assert "idx_documents_mtime" in index_names()
+        finally:
+            conn.close()
+
+    def test_fresh_schema_creates_two_column_documents_fts(self):
+        """CORR-04: fresh databases create the title-carrying FTS directly."""
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            SchemaManager(conn, embedding_dim=384).create_all()
+            sql = conn.execute(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='documents_fts'"
+            ).fetchone()[0]
+            column_clause = sql.split("USING fts5(", 1)[1].split("content=", 1)[0]
+            column_names = [
+                part.strip().strip("'\"") for part in column_clause.split(",") if part.strip()
+            ]
+            assert column_names == ["content", "title"]
+            assert "content='documents'" in sql
         finally:
             conn.close()
 
@@ -424,6 +615,464 @@ class TestSchemaRealSQLiteCoverage:
                 ).fetchone()[0]
                 == 0
             )
+        finally:
+            conn.close()
+
+
+class TestVocabShadowTable:
+    """Phase 15 D-06: the fts5vocab row-mode shadow of documents_fts.
+
+    ``documents_fts_v`` is the suggestion engine's term source: one row per
+    distinct porter-stem term with its document frequency, derived from the
+    index (no sync maintenance). It must be created by ``create_all`` in the
+    main schema (a temp-schema vocab cannot reference main FTS, Pitfall 8)
+    and dropped by ``drop_all`` for test isolation.
+    """
+
+    def test_create_all_creates_vocab_table_enumerating_stems(self):
+        """create_all creates documents_fts_v listing real porter stems + doc counts."""
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            SchemaManager(conn, embedding_dim=8).create_all()
+            now = datetime.now(timezone.utc).isoformat()
+            conn.execute(
+                "INSERT INTO collections (id, name, path, created_at, updated_at) "
+                "VALUES ('c1', 'notes', '/vault', ?, ?)",
+                (now, now),
+            )
+            conn.execute(
+                "INSERT INTO documents (id, collection_id, path, filename, title, content, "
+                "checksum, mtime, created_at, updated_at) VALUES "
+                "('d1', 'c1', '/vault/a.md', 'a.md', 'T', "
+                "'machines are learning', 'ck1', 1.0, ?, ?)",
+                (now, now),
+            )
+            conn.execute(
+                "INSERT INTO documents (id, collection_id, path, filename, title, content, "
+                "checksum, mtime, created_at, updated_at) VALUES "
+                "('d2', 'c1', '/vault/b.md', 'b.md', 'T', "
+                "'machines dreaming', 'ck2', 1.0, ?, ?)",
+                (now, now),
+            )
+            conn.commit()
+
+            try:
+                terms = {row[0] for row in conn.execute("SELECT term FROM documents_fts_v")}
+            except sqlite3.OperationalError:
+                terms = None
+            assert terms is not None, "documents_fts_v missing after create_all"
+            # tokenize='porter': vocab rows are stems (machines->machin, are->ar)
+            assert {"machin", "ar", "learn"} <= terms
+            # row mode: doc = number of documents containing the term
+            row = conn.execute(
+                "SELECT doc, cnt FROM documents_fts_v WHERE term = 'machin'"
+            ).fetchone()
+            assert row is not None
+            assert row[0] == 2
+        finally:
+            conn.close()
+
+    def test_drop_all_removes_vocab_table(self):
+        """drop_all drops documents_fts_v alongside the FTS tables (isolation)."""
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            manager = SchemaManager(conn, embedding_dim=8)
+            manager.create_all()
+            assert (
+                conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE name = 'documents_fts_v'"
+                ).fetchone()
+                is not None
+            ), "documents_fts_v missing after create_all"
+
+            manager.drop_all()
+            assert (
+                conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE name = 'documents_fts_v'"
+                ).fetchone()
+                is None
+            )
+        finally:
+            conn.close()
+
+
+class TestIndexMetaTable:
+    """D-09: the key/value ``index_meta`` convention-marker table.
+
+    It must exist on every fresh schema and be dropped by ``drop_all`` so test
+    isolation holds (a stale marker would silently suppress a migration pass).
+    """
+
+    def test_create_all_creates_index_meta_table(self):
+        """A fresh schema has index_meta with the key/value contract."""
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            SchemaManager(conn, embedding_dim=8).create_all()
+            columns = {
+                row["name"]: row["type"]
+                for row in conn.execute("PRAGMA table_info(index_meta)").fetchall()
+            }
+            assert columns == {"key": "TEXT", "value": "TEXT"}
+            # key is the primary key; value is NOT NULL.
+            pk = [
+                row["name"]
+                for row in conn.execute("PRAGMA table_info(index_meta)").fetchall()
+                if row["pk"]
+            ]
+            assert pk == ["key"]
+            notnull = {
+                row["name"]: row["notnull"]
+                for row in conn.execute("PRAGMA table_info(index_meta)").fetchall()
+            }
+            assert notnull["value"] == 1
+        finally:
+            conn.close()
+
+    def test_drop_all_removes_index_meta_and_create_all_recreates_it(self):
+        """drop_all drops index_meta (and its rows); create_all recreates the
+        table holding only the fresh-database version markers — the legacy
+        convention row and any embedder identity are gone."""
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            manager = SchemaManager(conn, embedding_dim=8)
+            manager.create_all()
+            conn.execute(
+                "INSERT INTO index_meta (key, value) VALUES (?, ?)",
+                ("convention:coll1", "2"),
+            )
+            conn.commit()
+
+            manager.drop_all()
+            assert (
+                conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'index_meta'").fetchone()
+                is None
+            ), "index_meta survived drop_all"
+
+            manager.create_all()
+            # ``embedded_documents_version`` is allowed here: a vec0-capable
+            # fresh database writes it immediately (D-10). This connection has
+            # no vec0, so it is absent in practice; the allowance keeps the
+            # assertion about "only fresh markers" portable across both shapes.
+            legacy = conn.execute(
+                "SELECT COUNT(*) FROM index_meta WHERE key NOT IN"
+                " ('metadata_values_version', 'embedded_documents_version')"
+            ).fetchone()[0]
+            assert legacy == 0, "the legacy convention row must not survive drop_all"
+            identity = conn.execute(
+                "SELECT COUNT(*) FROM index_meta WHERE key = 'embedder.identity'"
+            ).fetchone()[0]
+            assert identity == 0, "an embeddings-empty fresh DB must not carry an identity row"
+            marker = conn.execute(
+                "SELECT value FROM index_meta WHERE key = 'metadata_values_version'"
+            ).fetchone()
+            assert marker is not None, "create_all must write the fresh-DB marker"
+            assert marker[0] == "1"
+        finally:
+            conn.close()
+
+
+class TestMetadataBackfill:
+    """D-06: the one-time typed-metadata pass for pre-Phase-20 indexes.
+
+    The marker lives in ``index_meta`` and is written only after a complete
+    pass, so a half-populated store can never serve filtering. A fresh
+    database pays nothing; an already-backfilled one pays one kv read.
+    """
+
+    _COLLECTION = ("coll-backfill", "backfill", "/backfill")
+
+    @staticmethod
+    def _insert_document(
+        conn: sqlite3.Connection,
+        document_id: str,
+        metadata_json: str,
+    ) -> None:
+        """Insert one document the pre-Phase-20 way (raw SQL, no typed rows)."""
+        conn.execute(
+            "INSERT INTO documents (id, collection_id, path, filename, title, content,"
+            " checksum, file_size, mtime, created_at, updated_at, metadata)"
+            " VALUES (?, 'coll-backfill', ?, ?, ?, 'body', 'checksum', 4, 1.0, ?, ?, ?)",
+            (
+                document_id,
+                f"/backfill/{document_id}.md",
+                f"{document_id}.md",
+                document_id,
+                "2026-11-15T00:00:00+00:00",
+                "2026-11-15T00:00:00+00:00",
+                metadata_json,
+            ),
+        )
+
+    def _seed_populated(self, conn: sqlite3.Connection, count: int = 3) -> SchemaManager:
+        """Build the schema, insert raw documents, and drop the marker."""
+        manager = SchemaManager(conn, embedding_dim=8)
+        manager.create_all()
+        conn.execute(
+            "INSERT INTO collections (id, name, path, created_at, updated_at)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (*self._COLLECTION, "2026-11-15T00:00:00+00:00", "2026-11-15T00:00:00+00:00"),
+        )
+        for index in range(count):
+            self._insert_document(
+                conn,
+                f"doc-{index}",
+                canonical_metadata_json({"status": f"s{index}"}),
+            )
+        conn.execute("DELETE FROM index_meta WHERE key = 'metadata_values_version'")
+        conn.commit()
+        return manager
+
+    @staticmethod
+    def _snapshot(conn: sqlite3.Connection) -> list[tuple[object, ...]]:
+        """All typed rows and skips in a deterministic order."""
+        rows = [
+            tuple(row)
+            for row in conn.execute(
+                "SELECT document_id, key, ordinal, value_type, text_value, number_value,"
+                " boolean_value FROM document_metadata_values ORDER BY document_id, key, ordinal"
+            )
+        ]
+        skips = [
+            tuple(row)
+            for row in conn.execute(
+                "SELECT document_id, key, reason FROM document_metadata_skips"
+                " ORDER BY document_id, key"
+            )
+        ]
+        return rows + skips
+
+    @staticmethod
+    def _marker(conn: sqlite3.Connection) -> str | None:
+        row = conn.execute(
+            "SELECT value FROM index_meta WHERE key = 'metadata_values_version'"
+        ).fetchone()
+        return row[0] if row else None
+
+    def test_fresh_database_writes_marker_without_warning(self, caplog, capsys):
+        """A zero-document database writes the marker immediately and announces nothing."""
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            with caplog.at_level(logging.WARNING):
+                SchemaManager(conn, embedding_dim=8).create_all()
+
+            assert self._marker(conn) == "1"
+            assert [record for record in caplog.records if record.levelno >= logging.WARNING] == []
+            assert capsys.readouterr().out == ""
+        finally:
+            conn.close()
+
+    def test_populated_database_without_marker_derives_rows_once(self, caplog, capsys):
+        """The first pass derives every document's rows and announces once on stderr."""
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            manager = self._seed_populated(conn)
+            caplog.clear()
+
+            with caplog.at_level(logging.WARNING):
+                manager.create_all()
+
+            notices = [record for record in caplog.records if record.levelno == logging.WARNING]
+            assert len(notices) == 1
+            assert "3 documents" in notices[0].getMessage()
+            assert self._marker(conn) == "1"
+            for index in range(3):
+                rows = conn.execute(
+                    "SELECT key, value_type, text_value FROM document_metadata_values"
+                    " WHERE document_id = ?",
+                    (f"doc-{index}",),
+                ).fetchall()
+                assert [tuple(row) for row in rows] == [("status", "string", f"s{index}")]
+            # The migration notice goes through the logger, never stdout.
+            assert capsys.readouterr().out == ""
+        finally:
+            conn.close()
+
+    def test_marker_survives_reopen_and_second_create_all_is_a_no_op(
+        self, tmp_path, monkeypatch, caplog
+    ):
+        """A completed pass survives close/reopen; the next create_all does zero work."""
+        db_path = tmp_path / "index.db"
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        try:
+            manager = self._seed_populated(conn)
+            manager.create_all()
+            assert self._marker(conn) == "1"
+        finally:
+            conn.close()
+
+        from sif.database.metadata_repository import MetadataValueRepository
+
+        calls: list[str] = []
+        original = MetadataValueRepository.replace_from_canonical
+
+        def spy(self, document_id: str, canonical_json: str) -> tuple[int, int]:
+            calls.append(document_id)
+            return original(self, document_id, canonical_json)
+
+        monkeypatch.setattr(MetadataValueRepository, "replace_from_canonical", spy)
+
+        reopened = sqlite3.connect(db_path)
+        reopened.row_factory = sqlite3.Row
+        try:
+            caplog.clear()
+            with caplog.at_level(logging.WARNING):
+                SchemaManager(reopened, embedding_dim=8).create_all()
+            assert calls == []
+            assert [record for record in caplog.records if record.levelno >= logging.WARNING] == []
+            assert self._marker(reopened) == "1"
+        finally:
+            reopened.close()
+
+    def test_interrupted_pass_resumes_without_duplicates(self, monkeypatch):
+        """A mid-pass failure leaves the marker absent and committed rows intact."""
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            manager = self._seed_populated(conn, count=3)
+
+            from sif.database.metadata_repository import MetadataValueRepository
+
+            original = MetadataValueRepository.replace_from_canonical
+            calls: list[str] = []
+
+            def flaky(self, document_id: str, canonical_json: str) -> tuple[int, int]:
+                calls.append(document_id)
+                if len(calls) == 3:
+                    raise RuntimeError("simulated interruption")
+                return original(self, document_id, canonical_json)
+
+            monkeypatch.setattr(MetadataValueRepository, "replace_from_canonical", flaky)
+
+            with pytest.raises(RuntimeError):
+                manager.create_all()
+
+            assert self._marker(conn) is None, "a failed pass must not write the marker"
+            committed = {
+                row[0]
+                for row in conn.execute("SELECT DISTINCT document_id FROM document_metadata_values")
+            }
+            assert committed == {"doc-0", "doc-1"}
+
+            monkeypatch.setattr(MetadataValueRepository, "replace_from_canonical", original)
+            manager.create_all()
+
+            assert self._marker(conn) == "1"
+            duplicates = conn.execute(
+                "SELECT document_id, key, ordinal, COUNT(*) FROM document_metadata_values"
+                " GROUP BY document_id, key, ordinal HAVING COUNT(*) > 1"
+            ).fetchall()
+            assert duplicates == []
+
+            reference = sqlite3.connect(":memory:")
+            reference.row_factory = sqlite3.Row
+            try:
+                self._seed_populated(reference, count=3).create_all()
+                assert self._snapshot(conn) == self._snapshot(reference)
+            finally:
+                reference.close()
+        finally:
+            conn.close()
+
+    def test_drop_all_removes_both_metadata_tables(self):
+        """drop_all drops the typed value and skip sidecar tables."""
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            manager = SchemaManager(conn, embedding_dim=8)
+            manager.create_all()
+            manager.drop_all()
+            names = {
+                row[0]
+                for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+            }
+            assert "document_metadata_values" not in names
+            assert "document_metadata_skips" not in names
+        finally:
+            conn.close()
+
+    def test_unrepresentable_number_skip_does_not_brick_every_open(self):
+        """CR-01: stored huge ints / bare NaN skip that key and complete the pass.
+
+        Before the fix the huge integer raised OverflowError out of the
+        backfill and the bare NaN violated the typed-column CHECK (mapped by
+        ``open_initialized_database`` to "database may be corrupted"), so
+        neither marker was written and every subsequent open failed.
+        """
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            manager = SchemaManager(conn, embedding_dim=8)
+            manager.create_all()
+            conn.execute(
+                "INSERT INTO collections (id, name, path, created_at, updated_at)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (*self._COLLECTION, "2026-11-15T00:00:00+00:00", "2026-11-15T00:00:00+00:00"),
+            )
+            self._insert_document(conn, "doc-huge", '{"big":' + "9" * 400 + ',"ok":"yes"}')
+            self._insert_document(conn, "doc-nan", '{"bad":NaN,"ok":"yes"}')
+            conn.execute("DELETE FROM index_meta WHERE key = 'metadata_values_version'")
+            conn.commit()
+
+            manager.create_all()
+
+            assert self._marker(conn) == "1"
+            skips = {
+                (row[0], row[1], row[2])
+                for row in conn.execute(
+                    "SELECT document_id, key, reason FROM document_metadata_skips"
+                )
+            }
+            assert skips == {
+                ("doc-huge", "big", "cap_number"),
+                ("doc-nan", "bad", "non_finite"),
+            }
+            # The healthy key still derives, so the document stays filterable.
+            healthy = {
+                (row[0], row[1])
+                for row in conn.execute(
+                    "SELECT document_id, text_value FROM document_metadata_values WHERE key = 'ok'"
+                )
+            }
+            assert healthy == {("doc-huge", "yes"), ("doc-nan", "yes")}
+
+            # A completed pass means a re-open pays only the marker read.
+            manager.create_all()
+            assert self._marker(conn) == "1"
+        finally:
+            conn.close()
+
+    def test_unparseable_stored_blob_skip_does_not_brick_every_open(self):
+        """CR-01: one undecomposable stored blob records a skip and completes the pass."""
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            manager = SchemaManager(conn, embedding_dim=8)
+            manager.create_all()
+            conn.execute(
+                "INSERT INTO collections (id, name, path, created_at, updated_at)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (*self._COLLECTION, "2026-11-15T00:00:00+00:00", "2026-11-15T00:00:00+00:00"),
+            )
+            self._insert_document(conn, "doc-broken", '{"not json')
+            conn.execute("DELETE FROM index_meta WHERE key = 'metadata_values_version'")
+            conn.commit()
+
+            manager.create_all()
+
+            assert self._marker(conn) == "1"
+            skip = conn.execute(
+                "SELECT key, reason FROM document_metadata_skips WHERE document_id = 'doc-broken'"
+            ).fetchone()
+            assert tuple(skip) == ("<metadata>", "invalid_json")
+            manager.create_all()
+            assert self._marker(conn) == "1"
         finally:
             conn.close()
 
@@ -704,3 +1353,142 @@ class TestFtsUpdateTrigger:
             ).fetchone()[0]
             == 1
         )
+
+
+class TestDatabaseInitSchemaDimension:
+    """CORR-04: ``Database.init_schema`` accepts an explicit embedding width.
+
+    An MCP backend with injected settings initializes the schema at its own
+    dimension, so an override must not fall back to the process environment;
+    the no-argument form keeps the existing settings resolution unchanged.
+    """
+
+    def _vector_sql(self, db: Database) -> str:
+        row = db.connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='document_embeddings'"
+        ).fetchone()
+        return "" if row is None else row[0]
+
+    def test_explicit_dimension_overrides_environment(self, tmp_path):
+        """An override never consults ``get_settings`` and sets the vec width."""
+        db = Database(tmp_path / "override.db")
+        try:
+            with patch(
+                "sif.config.settings.get_settings",
+                side_effect=AssertionError("get_settings must not be called with an override"),
+            ):
+                db.init_schema(embedding_dim=8)
+            assert db._schema is not None
+            assert db._schema.embedding_dim == 8
+            vector_sql = self._vector_sql(db)
+            if vector_sql:
+                assert "FLOAT[8]" in vector_sql
+        finally:
+            db.close()
+
+    def test_no_argument_form_still_uses_process_settings(self, tmp_path):
+        """The pre-existing no-argument call keeps resolving settings."""
+        db = Database(tmp_path / "env.db")
+        try:
+            with patch("sif.config.settings.get_settings", return_value=MagicMock(embedding_dim=7)):
+                db.init_schema()
+            assert db._schema is not None
+            assert db._schema.embedding_dim == 7
+            vector_sql = self._vector_sql(db)
+            if vector_sql:
+                assert "FLOAT[7]" in vector_sql
+        finally:
+            db.close()
+
+
+class TestDatabaseInitSchemaIdentity:
+    """D-04/D-05: ``Database.init_schema`` is one identity-aware schema host.
+
+    The no-argument form builds the settings-only identity (so a legacy
+    populated index gets the assumed row once); a supplied identity supplies
+    the width; an injected dimension with no identity stays width-only and
+    never reads settings (the Phase 19 contract).
+    """
+
+    _DIM = 8
+
+    def _seed_legacy(self, db_path) -> bool:
+        """Create a populated index at ``_DIM`` with no identity row."""
+        db = Database(db_path)
+        try:
+            db.init_schema(embedding_dim=self._DIM)
+            if schema_embedding_dim(db.connection) is None:
+                return False
+            _seed_vector(db.connection, self._DIM)
+        finally:
+            db.close()
+        return True
+
+    @staticmethod
+    def _settings():
+        return Settings(
+            _env_file=None,
+            embedding_dim=TestDatabaseInitSchemaIdentity._DIM,
+            model_name="test",
+            cache_embeddings=False,
+        )
+
+    def test_no_argument_form_writes_legacy_assumed_once(
+        self, tmp_path, caplog: pytest.LogCaptureFixture
+    ):
+        db_path = tmp_path / "legacy.db"
+        if not self._seed_legacy(db_path):
+            pytest.skip("sqlite-vec not available")
+
+        with (
+            patch("sif.config.settings.get_settings", return_value=self._settings()),
+            caplog.at_level(logging.WARNING),
+        ):
+            db = Database(db_path)
+            try:
+                db.init_schema()
+                stored = read_identity(db.connection)
+            finally:
+                db.close()
+
+        assert stored is not None
+        assert stored.source == "legacy-assumed"
+        assert stored.dimension == self._DIM
+        assert _identity_warning_count(caplog, "Index predates embedder identity") == 1
+
+        with (
+            patch("sif.config.settings.get_settings", return_value=self._settings()),
+            caplog.at_level(logging.WARNING),
+        ):
+            db = Database(db_path)
+            try:
+                db.init_schema()
+            finally:
+                db.close()
+
+        assert _identity_warning_count(caplog, "Index predates embedder identity") == 1
+
+    def test_supplied_identity_supplies_the_width(self, tmp_path):
+        db = Database(tmp_path / "identity.db")
+        try:
+            db.init_schema(identity=_settings_identity(6))
+            assert db._schema is not None
+            assert db._schema.embedding_dim == 6
+        finally:
+            db.close()
+
+    def test_injected_dimension_without_identity_never_reads_settings_or_writes(self, tmp_path):
+        db_path = tmp_path / "injected.db"
+        if not self._seed_legacy(db_path):
+            pytest.skip("sqlite-vec not available")
+
+        with patch(
+            "sif.config.settings.get_settings",
+            side_effect=AssertionError("get_settings must not be called"),
+        ):
+            db = Database(db_path)
+            try:
+                db.init_schema(embedding_dim=self._DIM)
+                assert read_identity(db.connection) is None
+            finally:
+                db.close()

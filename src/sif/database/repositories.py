@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 from datetime import datetime, timezone
 
 from sif.core.models import (
@@ -11,8 +12,51 @@ from sif.core.models import (
     Document,
     DocumentChunk,
     PathContext,
+    QueryLogEntry,
+    canonical_metadata_json,
 )
+from sif.database.metadata_repository import MetadataValueRepository
 from sif.utils.paths import normalize_path
+
+
+class _ContextWriteGeneration:
+    """Mutable process-level context-write counter (D-12 invalidation trigger).
+
+    A container instead of a module global (ruff PLW0603) mirroring the
+    ``_IdentityState`` precedent in ``sif.embedding.identity``. Every
+    ``ContextRepository`` write bumps the value, which the per-process
+    context-map cache in ``sif.search.context_attach`` compares against its
+    stored sample. The lock keeps concurrent bumps from losing an increment.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._value = 0
+
+    def bump(self) -> None:
+        """Increment the generation."""
+        with self._lock:
+            self._value += 1
+
+    def value(self) -> int:
+        """Return the current generation (0 until the first context write)."""
+        return self._value
+
+
+_context_write_generation = _ContextWriteGeneration()
+
+
+def bump_context_write_generation() -> None:
+    """Mark the process's cached context map stale after a context write.
+
+    Rolled-back writes may cause an unnecessary rebuild, which is safe.
+    """
+    _context_write_generation.bump()
+
+
+def context_write_generation() -> int:
+    """Return the process-wide context-write generation."""
+    return _context_write_generation.value()
 
 
 class CollectionRepository:
@@ -139,7 +183,13 @@ class DocumentRepository:
         self.db = db
 
     def create(self, document: Document) -> Document:
-        """Create a new document."""
+        """Create a new document.
+
+        The typed metadata view (Phase 20, D-05) is rebuilt from the SAME
+        canonical JSON string stored on the row, in the caller's transaction,
+        so the stored, hashed, and filterable views can never disagree.
+        """
+        metadata_json = canonical_metadata_json(document.metadata)
         self.db.execute(
             """
             INSERT INTO documents (
@@ -159,9 +209,12 @@ class DocumentRepository:
                 document.mtime,
                 document.created_at.isoformat(),
                 document.updated_at.isoformat(),
-                json.dumps(document.metadata) if document.metadata else "{}",
+                metadata_json,
             ),
         )
+        # The kv target row exists now, so the FK reference resolves. Never
+        # commits: the caller owns the transaction (D-05).
+        MetadataValueRepository(self.db).replace_from_canonical(document.id, metadata_json)
 
         return document
 
@@ -197,9 +250,28 @@ class DocumentRepository:
         )
         return [self._row_to_document(row) for row in cursor.fetchall()]
 
+    def list_stat_by_collection(self, collection_id: str) -> dict[str, float]:
+        """Return {resolved path: mtime} for a collection without loading content.
+
+        The lightweight stat snapshot the pre-search drift walk compares
+        against (LIVE-10): never calls ``_row_to_document`` — that would
+        materialize every document's full text for a path/mtime compare the
+        ``idx_documents_collection`` index already serves.
+        """
+        cursor = self.db.execute(
+            "SELECT path, mtime FROM documents WHERE collection_id = ?",
+            (collection_id,),
+        )
+        return {row[0]: row[1] for row in cursor.fetchall()}
+
     def update(self, document: Document) -> Document:
-        """Update a document."""
+        """Update a document.
+
+        Mirrors :meth:`create`: one canonical metadata string feeds both the
+        row write and the typed kv rebuild (Phase 20, D-05).
+        """
         document.updated_at = datetime.now(timezone.utc)
+        metadata_json = canonical_metadata_json(document.metadata)
         self.db.execute(
             """
             UPDATE documents SET
@@ -214,10 +286,11 @@ class DocumentRepository:
                 document.file_size,
                 document.mtime,
                 document.updated_at.isoformat(),
-                json.dumps(document.metadata) if document.metadata else "{}",
+                metadata_json,
                 document.id,
             ),
         )
+        MetadataValueRepository(self.db).replace_from_canonical(document.id, metadata_json)
 
         return document
 
@@ -256,6 +329,26 @@ class DocumentRepository:
         cursor = self.db.execute("SELECT checksum FROM documents WHERE id = ?", (document_id,))
         row = cursor.fetchone()
         return row[0] if row else None
+
+    def get_checksums(self, document_ids: list[str]) -> dict[str, str | None]:
+        """Get stored checksums for a page of documents in batched queries.
+
+        Phase 22 D-11: one ``WHERE id IN (...)`` query per chunk of at most
+        :data:`_CHECKSUM_QUERY_CHUNK_SIZE` placeholders (well under SQLite's
+        variable limit), never a per-document N+1 loop. Repeated ids collapse
+        and unknown ids are absent from the map.
+        """
+        checksums: dict[str, str | None] = {}
+        unique_ids = list(dict.fromkeys(document_ids))
+        for start in range(0, len(unique_ids), _CHECKSUM_QUERY_CHUNK_SIZE):
+            chunk = unique_ids[start : start + _CHECKSUM_QUERY_CHUNK_SIZE]
+            placeholders = ",".join("?" for _ in chunk)
+            cursor = self.db.execute(
+                f"SELECT id, checksum FROM documents WHERE id IN ({placeholders})",
+                chunk,
+            )
+            checksums.update(dict(cursor.fetchall()))
+        return checksums
 
     def exists(self, path: str, collection_id: str) -> bool:
         """Check if document exists."""
@@ -381,6 +474,7 @@ class ContextRepository:
             """,
             (context.id, context.path, context.context_type, context.context, now, now),
         )
+        bump_context_write_generation()
         return context
 
     def get_by_target(self, target_id: str, context_type: str = "path") -> PathContext | None:
@@ -428,6 +522,7 @@ class ContextRepository:
             """,
             (context.context, datetime.now(timezone.utc).isoformat(), context.id),
         )
+        bump_context_write_generation()
         return context
 
     def update_target(self, context_id: str, target_id: str) -> bool:
@@ -453,11 +548,13 @@ class ContextRepository:
             """,
             (target_id, datetime.now(timezone.utc).isoformat(), context_id),
         )
+        bump_context_write_generation()
         return cursor.rowcount > 0
 
     def delete(self, context_id: str) -> bool:
         """Delete a context."""
         cursor = self.db.execute("DELETE FROM contexts WHERE id = ?", (context_id,))
+        bump_context_write_generation()
         return cursor.rowcount > 0
 
     def delete_orphaned_paths(self) -> int:
@@ -501,6 +598,27 @@ class ContextRepository:
 PathContextRepository = ContextRepository
 
 
+def _expiry_instant(value: str) -> datetime:
+    """Parse a stored expiry into an aware-UTC instant (D-05, WR-09 semantics).
+
+    Legacy naive-local strings (the old ``set`` writer's
+    ``datetime.fromtimestamp`` form) are interpreted as system-local time by
+    ``astimezone`` — never relabeled via ``replace(tzinfo=...)``. One parser
+    serves both ``get`` and ``clear_expired`` so the read and cleanup paths
+    can never diverge on what an expiry means.
+    """
+    return datetime.fromisoformat(value).astimezone(timezone.utc)
+
+
+# Bound variables per expiry DELETE well under SQLite's historical
+# SQLITE_LIMIT_VARIABLE_NUMBER floor of 999 (WR-01).
+_EXPIRY_DELETE_BATCH_SIZE = 500
+
+# Phase 22 D-11: batched ``IN (...)`` page size for citation checksums, well
+# under SQLite's default variable limit.
+_CHECKSUM_QUERY_CHUNK_SIZE = 900
+
+
 class LLMCacheRepository:
     """Repository for LLM cache operations."""
 
@@ -509,17 +627,37 @@ class LLMCacheRepository:
         self.db = db
 
     def get(self, model_name: str, prompt_hash: str) -> str | None:
-        """Get cached response."""
+        """Get cached response, comparing expiry as instants (14-WR-03, D-05).
+
+        The row is fetched by key without a SQL expiry predicate: ISO text
+        order is not chronological across naive-local/aware forms. NULL
+        expiry never expires; legacy naive-local values convert through
+        ``_expiry_instant`` exactly as ``clear_expired`` interprets them.
+        An unparseable non-NULL expiry is a miss with the row left untouched
+        (16.1-RESEARCH Open Question 1): a read never trusts an unreadable
+        TTL, and only cleanup's retain-guarantee owns the row.
+        """
         cursor = self.db.execute(
             """
-            SELECT response FROM llm_cache
+            SELECT response, expires_at FROM llm_cache
             WHERE model_name = ? AND prompt_hash = ?
-            AND (expires_at IS NULL OR expires_at > ?)
             """,
-            (model_name, prompt_hash, datetime.now(timezone.utc).isoformat()),
+            (model_name, prompt_hash),
         )
         row = cursor.fetchone()
-        return row[0] if row else None
+        if row is None:
+            return None
+        expires_at = row["expires_at"]
+        if expires_at is None:
+            return row["response"]
+        try:
+            expires = _expiry_instant(expires_at)
+        except (ValueError, TypeError, OverflowError):
+            # A read must not trust an unreadable TTL: miss, row untouched.
+            return None
+        if expires <= datetime.now(timezone.utc):
+            return None
+        return row["response"]
 
     def set(
         self,
@@ -533,7 +671,7 @@ class LLMCacheRepository:
         expires_at = None
         if ttl_seconds:
             expires_at = datetime.now(timezone.utc).timestamp() + ttl_seconds
-            expires_at = datetime.fromtimestamp(expires_at).isoformat()
+            expires_at = datetime.fromtimestamp(expires_at, tz=timezone.utc).isoformat()
 
         self.db.execute(
             """
@@ -553,9 +691,120 @@ class LLMCacheRepository:
         )
 
     def clear_expired(self) -> int:
-        """Clear expired cache entries."""
+        """Clear expired cache entries by parsed datetime (WR-09).
+
+        Expiry is compared as instants, never as ISO string order. Legacy
+        naive-local ``expires_at`` strings (the old ``set`` writer's
+        ``datetime.fromtimestamp`` form) are interpreted as system-local time
+        via ``astimezone`` — the exact semantics of that writer; aware values
+        convert losslessly. Rows with NULL or unparseable expiries are
+        retained: cleanup never deletes a row whose expiry it cannot interpret.
+        Deletion runs in bounded batches (WR-01) so a large expired set never
+        exceeds SQLITE_LIMIT_VARIABLE_NUMBER; all batches stay on the
+        caller's transaction.
+        """
+        now = datetime.now(timezone.utc)
         cursor = self.db.execute(
-            "DELETE FROM llm_cache WHERE expires_at IS NOT NULL AND expires_at <= ?",
-            (datetime.now(timezone.utc).isoformat(),),
+            "SELECT id, expires_at FROM llm_cache WHERE expires_at IS NOT NULL"
         )
+        expired_ids: list[str] = []
+        for row in cursor.fetchall():
+            try:
+                expires = _expiry_instant(row["expires_at"])
+            except (ValueError, TypeError, OverflowError):
+                # Cleanup never deletes a row whose expiry it cannot interpret.
+                continue
+            if expires <= now:
+                expired_ids.append(row["id"])
+        deleted = 0
+        for start in range(0, len(expired_ids), _EXPIRY_DELETE_BATCH_SIZE):
+            batch = expired_ids[start : start + _EXPIRY_DELETE_BATCH_SIZE]
+            placeholders = ",".join("?" for _ in batch)
+            cursor = self.db.execute(
+                f"DELETE FROM llm_cache WHERE id IN ({placeholders})",
+                batch,
+            )
+            deleted += cursor.rowcount
+        return deleted
+
+
+class IndexMetaRepository:
+    """Repository for the key/value ``index_meta`` table (D-09 convention marker).
+
+    One namespaced key per concern (``convention:<collection_id>`` today,
+    embedder identity in Phase 21). A miss returns ``None`` so "absent" and
+    "old" are distinguished from the current value by the caller.
+    """
+
+    def __init__(self, db: sqlite3.Connection) -> None:
+        """Initialize the index metadata repository."""
+        self.db = db
+
+    def get(self, key: str) -> str | None:
+        """Get a metadata value; a missing key returns None."""
+        cursor = self.db.execute("SELECT value FROM index_meta WHERE key = ?", (key,))
+        row = cursor.fetchone()
+        return row[0] if row else None
+
+    def set(self, key: str, value: str) -> None:
+        """Store (or replace) a metadata value."""
+        self.db.execute(
+            "INSERT OR REPLACE INTO index_meta (key, value) VALUES (?, ?)",
+            (key, value),
+        )
+
+
+class QueryLogRepository:
+    """Repository for local query history (Phase 15, D-08/D-09).
+
+    Writes are the Phase 11 D-01 "short CRUD outside the flock" class —
+    ``busy_timeout`` + ``BEGIN IMMEDIATE`` arbitrate them; no index lock.
+    :meth:`add` pairs the INSERT with a trim-in-write DELETE so the table
+    never exceeds ``keep`` rows (T-15-05), both on the caller's transaction.
+    All SQL is parameterized.
+    """
+
+    def __init__(self, db: sqlite3.Connection) -> None:
+        """Initialize the query-log repository."""
+        self.db = db
+
+    def add(self, entry: QueryLogEntry, keep: int) -> None:
+        """Insert one entry, then trim to the most-recent ``keep`` rows (D-09)."""
+        self.db.execute(
+            """
+            INSERT INTO query_log (id, query, result_count, collections, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                entry.id,
+                entry.query,
+                entry.result_count,
+                json.dumps(entry.collections),
+                entry.created_at.isoformat(),
+            ),
+        )
+        self.db.execute(
+            """
+            DELETE FROM query_log WHERE id NOT IN
+                (SELECT id FROM query_log ORDER BY created_at DESC LIMIT ?)
+            """,
+            (keep,),
+        )
+
+    def history(self) -> list[tuple[str, int, str]]:
+        """Aggregate per query string as ``(query, count, last_used)`` (D-13).
+
+        One GROUP BY over the capped table (<= ``SIF_QUERY_HISTORY_LIMIT``
+        rows); the recency decay is applied in Python by the suggest engine.
+        """
+        return [
+            (str(row[0]), int(row[1]), str(row[2]))
+            for row in self.db.execute(
+                "SELECT query, COUNT(*), MAX(created_at) FROM query_log GROUP BY query"
+            ).fetchall()
+        ]
+
+    def clear(self) -> int:
+        """Delete every history row; returns the number of rows removed."""
+        cursor = self.db.execute("DELETE FROM query_log")
         return cursor.rowcount

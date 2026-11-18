@@ -10,7 +10,8 @@ from unittest.mock import patch
 
 import pytest
 
-from sif.embedding.cache import EmbeddingCache
+from sif.database.factory import create_connection
+from sif.embedding.cache import EmbeddingCache, _connection
 
 
 class TestEmbeddingCache:
@@ -149,11 +150,39 @@ class TestEmbeddingCache:
         cache.set("corrupt", [4.0], "model-corrupt")
         assert cache.get("corrupt", "model-corrupt") == [4.0]
 
+    def test_connection_uses_shared_factory_and_pragmas(self, tmp_path: Path):
+        """W-1: every cache connection is acquired through the Phase 11 factory.
+
+        Delegation is proven at the module seam (the factory is called with
+        the cache DB path) and on the real file: busy_timeout 5000 and
+        synchronous NORMAL are per-connection settings, so they are read on
+        the cache's own factory-delegated connection; WAL persists in the
+        file header and is additionally read from a plain sqlite3.connect.
+        """
+        cache_dir = tmp_path / "cache"
+        db_path = cache_dir / "embeddings_cache.db"
+        with patch("sif.embedding.cache.create_connection", wraps=create_connection) as factory:
+            cache = EmbeddingCache(cache_dir)
+            cache.set("content", [1.0], "model")
+        assert factory.call_args is not None
+        assert factory.call_args.args == (db_path,)
+
+        with _connection(db_path) as conn:
+            assert conn.execute("PRAGMA busy_timeout").fetchone()[0] == 5000
+            assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+            assert conn.execute("PRAGMA synchronous").fetchone()[0] == 1
+
+        raw = sqlite3.connect(db_path)
+        try:
+            assert raw.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+        finally:
+            raw.close()
+
     def test_get_set_clear_and_stats_failure_fallbacks(self, tmp_path: Path):
         """External connection failures return documented fallbacks and do not corrupt data."""
         cache = EmbeddingCache(tmp_path / "cache")
         cache.set("survivor", [7.0], "model-safe")
-        with patch("sif.embedding.cache.sqlite3.connect", side_effect=OSError("connect failed")):
+        with patch("sif.embedding.cache.create_connection", side_effect=OSError("connect failed")):
             assert cache.get("survivor", "model-safe") is None
             assert cache.set("survivor", [8.0], "model-safe") is None
             assert cache.clear("model-safe") == 0

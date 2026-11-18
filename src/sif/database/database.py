@@ -6,10 +6,14 @@ import sqlite3
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-import sqlite_vec
-
+from sif.database.factory import create_connection
 from sif.database.schema import SchemaManager
+
+
+if TYPE_CHECKING:
+    from sif.embedding.identity import EmbedderIdentity
 
 
 class Database:
@@ -26,37 +30,50 @@ class Database:
     def connection(self) -> sqlite3.Connection:
         """Get or create database connection."""
         if self._connection is None:
-            self._connection = sqlite3.connect(
-                str(self.db_path),
-                detect_types=sqlite3.PARSE_DECLTYPES,
-                check_same_thread=False,
-            )
-            self._connection.row_factory = sqlite3.Row
-            self._enable_extensions()
+            self._connection = create_connection(self.db_path)
         return self._connection
 
-    def _enable_extensions(self) -> None:
-        """Enable SQLite extensions."""
-        conn = self._connection
-        assert conn is not None
+    def init_schema(
+        self,
+        embedding_dim: int | None = None,
+        identity: EmbedderIdentity | None = None,
+    ) -> None:
+        """Initialize database schema.
 
-        # Enable FTS5
-        conn.execute("PRAGMA foreign_keys = ON")
+        ``embedding_dim`` overrides the process setting so a host with
+        injected settings (the MCP backend) can initialize the schema at its
+        own dimension. When supplied, ``get_settings()`` is never consulted;
+        the no-argument form keeps resolving the process environment.
 
-        # Load sqlite-vec extension
-        try:
-            conn.enable_load_extension(True)
-            sqlite_vec.load(conn)
-            conn.enable_load_extension(False)
-        except Exception:
-            pass  # sqlite-vec is optional
+        ``identity`` is the host's settings-only embedder identity (D-04).
+        With neither argument the identity is built from the process
+        settings; a supplied identity supplies the width when
+        ``embedding_dim`` is omitted; an injected ``embedding_dim`` with no
+        identity builds none, preserving the Phase 19 "injected caller never
+        reads settings" contract. The identity lets the schema open run the
+        init-mode width check and write the legacy-assumed row exactly once.
+        """
+        if embedding_dim is None and identity is None:
+            from sif.config.settings import get_settings  # noqa: PLC0415
+            from sif.embedding.identity import build_settings_identity  # noqa: PLC0415
+            from sif.embedding.prompts import resolve_prompt_scheme  # noqa: PLC0415
 
-    def init_schema(self) -> None:
-        """Initialize database schema."""
-        from sif.config.settings import get_settings  # noqa: PLC0415
-
-        settings = get_settings()
-        self._schema = SchemaManager(self.connection, embedding_dim=settings.embedding_dim)
+            settings = get_settings()
+            scheme = resolve_prompt_scheme(
+                settings.model_name,
+                settings.model_type,
+                settings.query_prompt_name,
+                settings.document_prompt_name,
+            )
+            identity = build_settings_identity(settings, scheme)
+        if embedding_dim is None:
+            assert identity is not None
+            embedding_dim = identity.dimension
+        self._schema = SchemaManager(
+            self.connection,
+            embedding_dim=embedding_dim,
+            initial_identity=identity,
+        )
         self._schema.create_all()
 
     @contextmanager
@@ -103,40 +120,3 @@ class Database:
             self._schema = SchemaManager(self.connection, embedding_dim=settings.embedding_dim)
         self._schema.drop_all()
         self._schema.create_all()
-
-
-class DatabaseConnection:
-    """Lightweight database connection wrapper."""
-
-    def __init__(self, db_path: str | Path) -> None:
-        """Initialize the database connection wrapper."""
-        self.db_path = Path(db_path).expanduser().resolve()
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-
-    @contextmanager
-    def connect(self) -> Generator[sqlite3.Connection, None, None]:
-        """Create a connection context."""
-        conn = sqlite3.connect(
-            str(self.db_path),
-            detect_types=sqlite3.PARSE_DECLTYPES,
-            check_same_thread=False,
-        )
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys = ON")
-
-        # Load sqlite-vec extension
-        try:
-            conn.enable_load_extension(True)
-            sqlite_vec.load(conn)
-            conn.enable_load_extension(False)
-        except Exception:
-            pass  # sqlite-vec is optional
-
-        try:
-            yield conn
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()

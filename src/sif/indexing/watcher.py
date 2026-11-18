@@ -1,171 +1,950 @@
-"""File system watcher for auto-indexing."""
+"""Host-agnostic filesystem-watch pipeline for live indexing (Phase 12).
 
+observer -> IndexingEventHandler -> EventDebouncer -> fold_events -> queue ->
+single worker thread -> per-burst index_lock -> IncrementalIndexer. The
+module owns no presentation: hosts pass ``on_event``/``on_batch`` callbacks
+and render themselves (D-13). At embed depth the worker adds an inline
+chunk+embed leg that computes embeddings OUTSIDE any write transaction
+(D-09). Signal handling and the WAL checkpoint stay in the CLI host (D-14);
+the worker's idle wait doubles as the D-12 missing-root re-stat loop.
+"""
+
+from __future__ import annotations
+
+import contextlib
 import os
+import queue
+import sqlite3
+import threading
+import time
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
-from watchdog.observers.api import BaseObserver
+from watchdog.observers.api import BaseObserver, ObservedWatch
+from watchdog.utils.event_debouncer import EventDebouncer
 
+from sif.core.models import Collection
+from sif.database.factory import WAL_CHECKPOINT_TRUNCATE
+from sif.database.locking import index_lock
+from sif.database.repositories import DocumentRepository
+from sif.indexing.embed_writer import StreamingEmbedWriter, SystemicEmbedError
+from sif.indexing.incremental import IncrementalIndexer, IncrementalResult
+from sif.indexing.scanner import FileScanner
 from sif.utils.logging import get_logger
 
 
 if TYPE_CHECKING:
-    from sif.indexing.indexer import DocumentIndexer
+    from sif.embedding.manager import EmbeddingManager
+    from sif.indexing.chunker import Chunker
+    from sif.search.vector import VectorSearcher
+
 
 logger = get_logger(__name__)
 
+_JOIN_TIMEOUT_SECONDS = 5.0
+_WORKER_JOIN_TIMEOUT_SECONDS = 10.0
+
+SettledCallback = Callable[[list[FileSystemEvent]], None]
+
+# Wakes a worker parked on its re-stat-timeout idle wait so shutdown never
+# waits out the interval; nothing is enqueued after it (D-14 bounded stop).
+_WORKER_STOP_SENTINEL = None
+
+# D-17 remedy text: the standard Linux fix for inotify watch exhaustion.
+_INOTIFY_REMEDY = (
+    "on Linux this is usually inotify watch exhaustion — raise "
+    "fs.inotify.max_user_watches (e.g. sysctl -w fs.inotify.max_user_watches=524288)"
+)
+
 
 def _event_path(path: bytes | str) -> str:
-    """Normalize a watchdog event path to str."""
+    """Normalize a watchdog event path to str (T-12-01)."""
     return os.fsdecode(path)
 
 
+@dataclass
+class FoldResult:
+    """Candidate paths folded from one settled event burst (D-06).
+
+    Disk is truth and events are hints: candidates are stat-checked by
+    ``IncrementalIndexer.update_paths`` before anything is written.
+    """
+
+    index_candidates: set[Path] = field(default_factory=set)
+    remove_candidates: set[Path] = field(default_factory=set)
+    needs_reconcile: bool = False
+
+
+@dataclass
+class WatchConfig:
+    """Tunables and host callbacks for :class:`FileWatcher`.
+
+    Bundled so the constructor stays under the project's argument-count lint
+    gate; host flags extend this struct without touching call sites. The
+    ``rescope_provider``/``rescope_interval``/``checkpoint_interval`` trio is
+    the long-lived-host opt-in (D-15/D-16): 13-02's daemon and 13-03's MCP
+    watch host wire them, and the foreground MVP host passes none of the
+    three, keeping its restart-on-change behavior. ``now`` is the tick clock
+    — monotonic in production, injectable for zero-timing tests.
+    """
+
+    debounce_interval: float = 0.5
+    lock_timeout: float = 30.0
+    depth: str = "bm25"
+    restat_interval: float = 5.0
+    on_event: Callable[[str], None] | None = None
+    on_batch: Callable[[Collection, IncrementalResult], None] | None = None
+    rescope_provider: Callable[[], list[Collection]] | None = None
+    rescope_interval: float = 0.0
+    checkpoint_interval: float = 0.0
+    now: Callable[[], float] = time.monotonic
+
+
+@dataclass
+class _WatchState:
+    """Per-collection watch lifecycle state for the D-12 recovery loop."""
+
+    collection: Collection
+    root: Path
+    handle: ObservedWatch | None = None
+    missing: bool = False
+    debouncer: EventDebouncer | None = None
+    # D-17 warn-once flag: one schedule-failure warning per failure episode
+    # (reset on a successful schedule so a later episode warns again).
+    schedule_warned: bool = False
+
+
+def fold_events(
+    events: Iterable[FileSystemEvent],
+    should_track: Callable[[Path], bool],
+) -> FoldResult:
+    """Fold one settled event batch into candidate path sets (D-06/D-07).
+
+    ``created``/``modified`` mark the src path for indexing; ``deleted`` marks
+    it for removal; ``moved`` marks dest for indexing and src for removal.
+    Directory events are skipped except directory ``moved``, which flags
+    ``needs_reconcile`` (children get no individual events — Pitfall 7).
+    Every candidate is resolved (FSEvents delivers realpaths — Pitfall 2) and
+    predicate-checked via ``should_track``; a path both touched and deleted
+    in one burst stays an index candidate only — update_paths stats it and
+    disk state decides. The fold is order-independent by construction.
+
+    Args:
+        events: Settled batch from the EventDebouncer callback.
+        should_track: The collection's shared scanner predicate.
+
+    Returns:
+        The folded candidate sets and reconcile flag.
+    """
+    result = FoldResult()
+    for event in events:
+        if event.is_directory:
+            if event.event_type == "moved":
+                result.needs_reconcile = True
+            continue
+        src = Path(_event_path(event.src_path)).resolve()
+        if event.event_type in ("created", "modified"):
+            result.index_candidates.add(src)
+        elif event.event_type == "deleted":
+            result.remove_candidates.add(src)
+        elif event.event_type == "moved":
+            dest = Path(_event_path(event.dest_path)).resolve()
+            result.index_candidates.add(dest)
+            result.remove_candidates.add(src)
+    result.index_candidates = {p for p in result.index_candidates if should_track(p)}
+    result.remove_candidates = {p for p in result.remove_candidates if should_track(p)}
+    # A path both touched and deleted in the same burst is an index
+    # candidate: the stat inside update_paths lets the disk state decide
+    # (the atomic-save trailing delete and delete+create pairs both land
+    # here), and a gone index candidate is still removed by that stat.
+    result.remove_candidates -= result.index_candidates
+    return result
+
+
 class IndexingEventHandler(FileSystemEventHandler):
-    """Event handler for file system changes."""
+    """Thin forwarder: every dispatched event goes to the bound debouncer.
 
-    def __init__(
+    watchdog's ``dispatch`` invokes ``on_any_event`` before the per-type
+    handlers (verified against the installed 6.0.0 source), so this single
+    intake override is exactly one forward per event.
+    """
+
+    def __init__(self, debouncer: EventDebouncer) -> None:
+        """Bind the handler to its debouncer.
+
+        Args:
+            debouncer: EventDebouncer receiving every dispatched event.
+        """
+        self._debouncer = debouncer
+
+    def on_any_event(self, event: FileSystemEvent) -> None:
+        """Forward one event into the debounce pipeline."""
+        self._debouncer.handle_event(event)
+
+
+class _EmbedSession:
+    """Lazy embed-depth state for the watch worker (D-09/LIVE-05).
+
+    Nothing loads at construction — the model loads on first embed work and
+    stays cached, keeping watch startup BM25-cheap. The first use also runs
+    embed_cmd's probe-free dimension check against the vec0 schema; any
+    first-use failure (backend missing, model load, dimension mismatch,
+    sqlite-vec unavailable) is fail-soft: one ``error`` event, embed
+    disabled for the session, BM25 freshness continues.
+    """
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        """Initialize with a factory connection; model work stays lazy."""
+        self._conn = conn
+        self._attempted = False
+        self._ready = False
+        self._manager: EmbeddingManager | None = None
+        self._searcher: VectorSearcher | None = None
+        self._chunker: Chunker | None = None
+        self._writer: StreamingEmbedWriter | None = None
+        # Per-collection paths whose embed leg failed (WR-01): the BM25 leg
+        # already committed their fresh checksum, so a later burst's reindex
+        # signal alone never re-selects them — the next burst unions them back
+        # in.
+        self._pending_retry: dict[str, set[Path]] = {}
+
+    def ensure_ready(self, on_event: Callable[[str], None] | None) -> bool:
+        """Load the model once and validate its dimension (fail-soft)."""
+        if self._attempted:
+            return self._ready
+        self._attempted = True
+        try:
+            from sif.config.settings import get_settings  # noqa: PLC0415
+            from sif.embedding.manager import EmbeddingManager  # noqa: PLC0415
+            from sif.indexing.chunker import create_chunker, token_size_to_chars  # noqa: PLC0415
+            from sif.search.vector import VectorSearcher  # noqa: PLC0415
+
+            settings = get_settings()
+            manager = EmbeddingManager.from_settings(settings)
+            # Load eagerly (idempotent, cached) so backend-missing and
+            # model-load failures surface here, fail-soft.
+            manager.load_model()
+            info = manager.get_model_info()
+            model_dim = info.get("embedding_dim")
+            if not isinstance(model_dim, int):
+                raise RuntimeError(f"embedding model reported no dimension: {info!r}")
+            from sif.embedding.identity import (  # noqa: PLC0415
+                check_identity,
+                ensure_legacy_identity,
+            )
+
+            # D-04/D-05: adopt the identity at the first embed use. A legacy
+            # populated index (vectors, no identity) is assumed once with one
+            # warning; a same-dimension model swap or a width disagreement
+            # raises inside this short transaction, so the assumed row is
+            # rolled back, the outer handler emits one error event, and
+            # embedding stays disabled for the session while BM25 freshness
+            # continues.
+            schema_dim = self._schema_embedding_dim()
+            current = manager.get_identity()
+            with self._conn:
+                ensure_legacy_identity(self._conn, current)
+                check = check_identity(self._conn, current, mode="embed")
+                if check.untrusted or check.dimension_mismatch:
+                    stored = check.stored
+                    if stored is not None:
+                        stored_desc = (
+                            f"{stored.display_fingerprint()} "
+                            f"({stored.cache_model_id}, dim {stored.dimension})"
+                        )
+                    else:
+                        stored_desc = f"an index with no identity (FLOAT[{schema_dim}])"
+                    raise RuntimeError(
+                        "Embedder identity mismatch: index vectors were produced by "
+                        f"{stored_desc} but the current model is "
+                        f"{current.display_fingerprint()} "
+                        f"({current.cache_model_id}, dim {current.dimension}). "
+                        "Restore the stored model or run `sif index embed --force` "
+                        "with the matching model."
+                    )
+            self._manager = manager
+            self._searcher = VectorSearcher(self._conn, model_dim)
+            self._chunker = create_chunker(
+                "auto",
+                max_chunk_size=token_size_to_chars(settings.chunk_size),
+                overlap=token_size_to_chars(settings.chunk_overlap),
+            )  # embed_cmd's default strategy
+            # D-18: the session routes every per-path embed through the same
+            # streaming writer embed_cmd uses, so chunk completeness, batch
+            # sanity, shadow maintenance, and the first-write identity cannot
+            # diverge between the two hosts.
+            try:
+                had_vectors = (
+                    self._conn.execute("SELECT 1 FROM document_embeddings LIMIT 1").fetchone()
+                    is not None
+                )
+            except sqlite3.OperationalError:
+                had_vectors = False
+            self._writer = StreamingEmbedWriter(
+                self._conn,
+                manager,
+                self._chunker,
+                self._searcher,
+                current,
+                batch_size=settings.batch_size,
+                write_identity=not had_vectors,
+                embed_breadcrumb=settings.embed_breadcrumb,
+            )
+            self._ready = True
+        except Exception as e:
+            self._notify(on_event, f"error Embedding disabled for this watch session: {e}")
+            self._ready = False
+        return self._ready
+
+    def embed_documents(
         self,
-        collection_id: str,
-        indexer: "DocumentIndexer",
-        extensions: set[str] | None = None,
+        collection: Collection,
+        paths: Iterable[Path],
+        on_event: Callable[[str], None] | None,
     ) -> None:
-        """Initialize event handler.
+        """Embed changed documents through the shared streaming writer (D-18).
 
-        Args:
-            collection_id: Collection ID
-            indexer: Document indexer
-            extensions: File extensions to watch
+        The writer computes embeddings with NO write transaction open and
+        persists each document in one short transaction (D-15); this method
+        only selects candidates and owns the watch-session failure policy.
+        Candidates also include this collection's pending-retry paths
+        (WR-01): a path whose embed failed an earlier burst is retried here
+        even though its checksum no longer counts as changed. A per-path
+        failure emits one ``error`` event, leaves earlier candidates
+        durable, and re-queues only that path for the next burst. A systemic
+        :class:`SystemicEmbedError` instead disables embedding for the
+        session after one error event; earlier paths stay committed and BM25
+        freshness continues.
         """
-        self._collection_id = collection_id
-        self._indexer = indexer
-        self._extensions = extensions or {".md", ".markdown"}
-
-    def on_created(self, event: FileSystemEvent) -> None:
-        """Handle file creation."""
-        if event.is_directory:
+        candidates = sorted(set(paths) | self._pending_retry.pop(collection.id, set()))
+        if not candidates:
             return
-
-        src_path = _event_path(event.src_path)
-        if self._should_handle(src_path):
-            logger.info(f"File created: {src_path}")
-            # Trigger incremental index
-
-    def on_modified(self, event: FileSystemEvent) -> None:
-        """Handle file modification."""
-        if event.is_directory:
+        if not self.ensure_ready(on_event):
+            # Session-level fail-soft (embed disabled for good): retrying can
+            # never succeed, so the popped paths are dropped, matching the
+            # one-error-event contract.
             return
+        writer = self._writer
+        assert writer is not None
+        doc_repo = DocumentRepository(self._conn)
+        failed: set[Path] = set()
+        for path in candidates:
+            try:
+                doc = doc_repo.get_by_path(str(path), collection.id)
+                if doc is None:
+                    continue
+                writer.embed_document(doc)
+            except SystemicEmbedError as e:
+                # D-17/D-18: a garbage batch is systemic. One error event
+                # disables embedding for the session; every earlier path is
+                # already committed and BM25 freshness continues.
+                logger.exception("Systemic embedding failure; disabling embed for this session")
+                self._notify(
+                    on_event,
+                    f"error Embedding disabled for this watch session: {e}",
+                )
+                self._ready = False
+                break
+            except Exception as e:
+                failed.add(path)
+                logger.exception("Embedding failed for %s; re-queued for next burst", path)
+                self._notify(on_event, f"error Embedding failed for {path}: {e}")
+        if failed:
+            self._pending_retry[collection.id] = failed
 
-        src_path = _event_path(event.src_path)
-        if self._should_handle(src_path):
-            logger.info(f"File modified: {src_path}")
-            # Trigger incremental index
+    def _schema_embedding_dim(self) -> int | None:
+        """Declared FLOAT[n] of the vec0 table, or None when absent/unparsed.
 
-    def on_deleted(self, event: FileSystemEvent) -> None:
-        """Handle file deletion."""
-        if event.is_directory:
-            return
-
-        src_path = _event_path(event.src_path)
-        if self._should_handle(src_path):
-            logger.info(f"File deleted: {src_path}")
-            # Trigger removal from index
-
-    def on_moved(self, event: FileSystemEvent) -> None:
-        """Handle file move/rename."""
-        if event.is_directory:
-            return
-
-        src_path = _event_path(event.src_path)
-        if self._should_handle(src_path):
-            logger.info(f"File moved: {src_path} -> {_event_path(event.dest_path)}")
-            # Trigger update
-
-    def _should_handle(self, path: str) -> bool:
-        """Check if a path should be handled.
-
-        Args:
-            path: File path
-
-        Returns:
-            True if path should be handled
+        Delegates to the identity module's single ``FLOAT[n]`` read (D-05);
+        no inline schema regex lives here.
         """
-        return any(path.endswith(ext) for ext in self._extensions)
+        from sif.embedding.identity import schema_embedding_dim  # noqa: PLC0415
+
+        return schema_embedding_dim(self._conn)
+
+    @staticmethod
+    def _notify(on_event: Callable[[str], None] | None, event: str) -> None:
+        """Forward an event to the host's presentation callback, if any."""
+        if on_event is not None:
+            on_event(event)
 
 
 class FileWatcher:
-    """File system watcher for auto-indexing.
+    """Owns the observer/debouncer/worker pipeline for a set of collections.
 
-    Watches directories for changes and triggers incremental
-    indexing when files are created, modified, or deleted.
+    One worker thread performs all database access (sqlite connections must
+    not cross threads mid-transaction) and wraps each settled burst in the
+    per-DB flock — acquired per burst, never held for the process lifetime
+    (D-04). At embed depth the same lock window also spans the inline
+    chunk+embed leg (D-09); the core ``IncrementalIndexer`` stays BM25-only.
     """
 
     def __init__(
         self,
-        indexer: "DocumentIndexer",
-        extensions: set[str] | None = None,
+        collections: list[Collection],
+        conn: sqlite3.Connection,
+        db_path: Path,
+        config: WatchConfig | None = None,
     ) -> None:
-        """Initialize file watcher.
+        """Initialize the pipeline; nothing starts until :meth:`start`.
 
         Args:
-            indexer: Document indexer
-            extensions: File extensions to watch
+            collections: Registered collections to watch (D-01).
+            conn: Factory connection shared by every indexer run.
+            db_path: Database path used to derive the per-DB lock file.
+            config: Tunables and host callbacks.
         """
-        self._indexer = indexer
-        self._extensions = extensions or {".md", ".markdown"}
+        self._collections = list(collections)
+        self._conn = conn
+        self._db_path = Path(db_path)
+        self._config = config if config is not None else WatchConfig()
         self._observer: BaseObserver | None = None
-        self._handlers: dict[str, IndexingEventHandler] = {}
+        self._watch_states: dict[str, _WatchState] = {}
+        self._rescope_deadline: float | None = None
+        self._checkpoint_deadline: float | None = None
+        self._last_job_at: float | None = None
+        self._queue: queue.Queue[tuple[Collection, FoldResult] | None] = queue.Queue()
+        self._worker: threading.Thread | None = None
+        self._stop_event = threading.Event()
+        self._embed = _EmbedSession(conn)
 
-    def start(self, collection_id: str, paths: list[str]) -> None:
-        """Start watching paths.
+    def start(self) -> None:
+        """Arm the observer, per-collection debouncers, and the worker thread."""
+        observer = Observer()
+        for coll in self._collections:
+            root = Path(coll.path).resolve()
+            state = _WatchState(collection=coll, root=root)
+            self._watch_states[coll.name] = state
+            if not root.exists():
+                logger.warning(
+                    "Collection root %s missing; not scheduling a watch (D-11)",
+                    root,
+                )
+                # Missing from the start: still tracked so the D-12 re-stat
+                # loop picks the root up when it appears.
+                state.missing = True
+                continue
+            if not self._schedule_watch(state, observer):
+                # D-17: the schedule itself failed (e.g. inotify
+                # exhaustion) — treat like a missing root so the D-12 loop
+                # retries without warning spam.
+                state.missing = True
+
+        self._observer = observer
+        observer.start()
+        self._worker = threading.Thread(
+            target=self._worker_loop, name="sif-watch-worker", daemon=True
+        )
+        self._worker.start()
+
+    def _schedule_watch(self, state: _WatchState, observer: BaseObserver) -> bool:
+        """Arm one collection's debouncer and recursive watch on its resolved root.
+
+        Returns False — leaving the state retryable and its debouncer
+        unstarted — when ``observer.schedule`` raises OSError (the
+        inotify-exhaustion / ENOSPC class, D-17): one warning per failure
+        episode carries the cause and remedy, other roots keep watching, and
+        the caller treats the failure like a missing root so the D-12 loop
+        keeps retrying.
+        """
+        # Positional args (D-05): the first kwarg name differs across
+        # watchdog 4.x-7.x; positionally identical on all of them. The
+        # upstream annotation says int but the value only flows into
+        # Condition.wait(timeout=...), which takes floats (verified
+        # against the installed 6.0.0 source) — hence the cast.
+        debouncer = EventDebouncer(
+            cast(int, self._config.debounce_interval), self._settled_callback(state.collection)
+        )
+        try:
+            state.handle = observer.schedule(
+                IndexingEventHandler(debouncer), str(state.root), recursive=True
+            )
+        except OSError as e:
+            if not state.schedule_warned:
+                state.schedule_warned = True
+                logger.warning(
+                    "Scheduling watch for root %s (collection %s) failed: [%s] %s — "
+                    "other roots keep watching; the root stays tracked for retry. "
+                    "Remedy: %s",
+                    state.root,
+                    state.collection.name,
+                    e.errno,
+                    e.strerror or e,
+                    _INOTIFY_REMEDY,
+                )
+            return False
+        state.schedule_warned = False
+        state.debouncer = debouncer
+        debouncer.start()
+        return True
+
+    @staticmethod
+    def _unschedule_quietly(observer: BaseObserver, handle: ObservedWatch) -> None:
+        """Unschedule one watch, tolerating a registry already cleared by stop().
+
+        ``BaseObserver.unschedule`` indexes its watch->emitter map directly
+        and raises ``KeyError`` when ``observer.stop()`` (which synchronously
+        unschedules everything) cleared the registration while a tick was
+        already in flight — the worker checks the stop flag only at the loop
+        top. The watch is already gone, so the miss is a no-op for THIS root,
+        never a tick failure that would skip the tick's remaining roots.
+        """
+        with contextlib.suppress(KeyError):
+            observer.unschedule(handle)
+
+    def stop(self, *, flush: bool = True) -> None:
+        """Stop intake, drain queued work once (count-bounded), and join threads.
 
         Args:
-            collection_id: Collection ID
-            paths: Paths to watch
+            flush: When True, run every job already queued at stop time.
+
+        The flush bound is a COUNT bound — every job already queued at stop
+        time, dequeued without blocking — not a time bound: once the worker
+        join has quiesced, each flushed job runs on the stop-caller's thread
+        and at embed depth may legitimately take unbounded time there (the
+        lazy first-use ``manager.load_model()``, or a ``lock_timeout``-long
+        flock wait per job). The hosts' second-signal escapes (CLI exit 130,
+        daemon SIGKILL fallback) are the time-bounded way out of a stuck
+        flush.
         """
-        logger.info(f"Starting file watcher for collection: {collection_id}")
+        logger.info("Stopping file watcher (flush=%s)", flush)
+        # Quiesce the worker BEFORE touching worker-owned state (Pitfall 6):
+        # rescope/recovery_tick run on the worker thread and mutate
+        # ``_watch_states`` and the observer, so stopping the observer or
+        # iterating the states first races a tick in flight — a rescope
+        # del/insert mid-iteration raises RuntimeError out of stop() into
+        # the host's shutdown path, and observer.stop() clearing the
+        # registry is the KeyError trigger the unschedule sites tolerate.
+        self._stop_event.set()
+        # Wake a worker parked on its re-stat-timeout idle wait so the join
+        # below never waits out the interval (D-14 bounded stop).
+        self._queue.put(_WORKER_STOP_SENTINEL)
+        # The worker exits on the stop flag; queued work is then drained on
+        # this thread so no two threads ever share the connection mid-job.
+        # A timed-out join means a job legitimately still runs (flock wait up
+        # to lock_timeout, first-use model load) — the flush is then skipped
+        # rather than racing the live worker on the same connection (CR-01).
+        if self._worker is not None:
+            self._worker.join(timeout=_WORKER_JOIN_TIMEOUT_SECONDS)
+            if flush and self._worker.is_alive():
+                logger.warning(
+                    "watch worker still busy after %.1fs; skipping bounded flush "
+                    "(jobs stay queued)",
+                    _WORKER_JOIN_TIMEOUT_SECONDS,
+                )
+                flush = False
+        # The worker is quiet now (or, on a timed-out join, past the stop
+        # signal): stop intake from a state no tick is iterating. The
+        # snapshot also covers the timed-out case — a late worker mutation
+        # then leaves a just-armed debouncer to process exit rather than
+        # raising "dictionary changed size during iteration" here.
+        if self._observer is not None:
+            self._observer.stop()
+        for state in list(self._watch_states.values()):
+            if state.debouncer is not None:
+                state.debouncer.stop()
+        if flush:
+            self._drain_once()
+        if self._observer is not None:
+            self._observer.join(timeout=_JOIN_TIMEOUT_SECONDS)
+        for state in list(self._watch_states.values()):
+            if state.debouncer is not None:
+                state.debouncer.join(timeout=_JOIN_TIMEOUT_SECONDS)
 
-        self._observer = Observer()
+    def worker_joined(self) -> bool:
+        """Whether the worker thread is gone, so its connection is free to use.
 
-        handler = IndexingEventHandler(
-            collection_id=collection_id,
-            indexer=self._indexer,
-            extensions=self._extensions,
+        The WR-01 gate for same-connection host work (the shutdown WAL
+        checkpoint): True when no worker was ever started or the thread has
+        exited — including the bounded join inside :meth:`stop` succeeding —
+        and False while it still runs (a timed-out join means a job
+        legitimately outlasted the stop deadline). Checked live rather than
+        recorded at stop time so a worker that exits late still reports True.
+        """
+        worker = self._worker
+        return worker is None or not worker.is_alive()
+
+    def reconcile_now(
+        self,
+        collection: Collection,
+        *,
+        progress: Callable[[str], None] | None = None,
+        on_wait: Callable[[], None] | None = None,
+    ) -> IncrementalResult:
+        """Run one full reconcile on the calling thread BEFORE :meth:`start`.
+
+        The startup hosts (CLI foreground, daemon, installed service) reuse
+        the embed-aware reconcile so an embed-depth startup cannot leave the
+        documents its BM25 leg changed vector-less: the update branch purges
+        chunks and embeddings, and the core's explicit ``reindexed_paths``
+        signal feeds them back through the embed leg in the same lock window
+        (the IN-04 shape). Callable pre-start only — once :meth:`start` runs,
+        the worker owns the connection and hosts express reconcile intent
+        through :meth:`enqueue_reconcile`.
+        """
+        return self._run_reconcile(collection, progress=progress, on_wait=on_wait)
+
+    def enqueue_reconcile(self, collections: Iterable[Collection]) -> None:
+        """Queue one full reconcile per collection — the public intent API (W-3/D-06).
+
+        Hosts and the internal reconcile producers (``recovery_tick``,
+        ``_schedule_added``) express reconcile intent through this method;
+        the job representation — the ``(Collection, FoldResult)`` tuple —
+        stays private to this module, so no caller can forge burst jobs or
+        the stop sentinel. ``queue.Queue.put`` is thread-safe, so a host
+        thread may enqueue while the freshly started worker idles race-free
+        (the MCP host's serve-first startup relies on exactly that, 13-D04).
+        """
+        for collection in collections:
+            self._queue.put((collection, FoldResult(needs_reconcile=True)))
+
+    def recovery_tick(self) -> None:
+        """Run one D-12 re-stat pass over tracked roots.
+
+        Called by the worker whenever its idle wait times out (the re-stat
+        cadence), or directly from tests with zero timing. A root that
+        disappeared is marked missing — one warning per transition, its
+        watch handle unscheduled and its debouncer stopped and joined
+        (WR-02: a leaked live debouncer thread per disappear/return cycle,
+        since the return arms a fresh one), its documents never touched. A
+        root that returned is rescheduled and gets one full-reconcile job
+        enqueued.
+        """
+        observer = self._observer
+        if observer is None:
+            return
+        for state in self._watch_states.values():
+            exists = state.root.exists()
+            if not exists and not state.missing:
+                logger.warning(
+                    "Watched root %s (collection %s) disappeared — documents preserved",
+                    state.root,
+                    state.collection.name,
+                )
+                if state.handle is not None:
+                    self._unschedule_quietly(observer, state.handle)
+                    state.handle = None
+                if state.debouncer is not None:
+                    # The watch handle is gone, so no further events can
+                    # arrive: stop the debouncer now — the return branch arms
+                    # a fresh one, and an unstopped old one is a leaked live
+                    # thread per cycle (WR-02, _unschedule_removed parity).
+                    state.debouncer.stop()
+                    state.debouncer.join(timeout=_JOIN_TIMEOUT_SECONDS)
+                    state.debouncer = None
+                state.missing = True
+            elif exists and state.missing:
+                if self._schedule_watch(state, observer):
+                    # Only a successful (re)schedule clears missing and
+                    # enqueues the reconcile — a failed schedule keeps the
+                    # retry coming without repeating the transition warning.
+                    logger.warning(
+                        "Watched root %s (collection %s) returned — "
+                        "rescheduling watch and reconciling",
+                        state.root,
+                        state.collection.name,
+                    )
+                    state.missing = False
+                    self.enqueue_reconcile([state.collection])
+
+    def rescope(self, collections: list[Collection]) -> None:
+        """Diff the eligible collection set against the watched set (D-15).
+
+        Worker-thread-only, like :meth:`recovery_tick`: the only production
+        caller is the tick in :meth:`_on_tick`, and tests invoke it directly
+        with the worker quiesced — mutating ``_watch_states`` or the observer
+        from any other thread races the tick's own iteration (Pitfall 6). The
+        diff is exact: only collections present in ``collections`` end up
+        watched, so a host's provider embodies its eligible set (a ``-c``
+        filter simply withholds the excluded names).
+
+        Added collections get their debouncer armed and, when the root
+        exists, one full-reconcile job enqueued — the exact recovery-return
+        shape; a missing root is marked for the D-12 re-stat loop instead.
+        Removed collections are unscheduled and their debouncers stopped;
+        documents are never touched (stopping watching never deletes).
+        """
+        observer = self._observer
+        if observer is None:
+            return
+        wanted = {coll.name: coll for coll in collections}
+        self._unschedule_removed(wanted, observer)
+        self._schedule_added(wanted, observer)
+
+    def _unschedule_removed(self, wanted: dict[str, Collection], observer: BaseObserver) -> None:
+        """Tear down watches for collections absent from the eligible set.
+
+        Documents are never touched — stopping watching never deletes.
+        """
+        for name, state in list(self._watch_states.items()):
+            if name in wanted:
+                continue
+            if state.handle is not None:
+                self._unschedule_quietly(observer, state.handle)
+                state.handle = None
+            if state.debouncer is not None:
+                state.debouncer.stop()
+                state.debouncer.join(timeout=_JOIN_TIMEOUT_SECONDS)
+                state.debouncer = None
+            del self._watch_states[name]
+            logger.info("Unscheduled watch for collection %s (documents preserved)", name)
+
+    def _schedule_added(self, wanted: dict[str, Collection], observer: BaseObserver) -> None:
+        """Arm watches (and one reconcile job) for newly eligible collections.
+
+        A missing root or a failed schedule (D-17) keeps the state tracked
+        with ``missing`` set, so the D-12 loop adopts or retries it; only a
+        root that is actually being watched gets the reconcile job.
+        """
+        for name, coll in wanted.items():
+            if name in self._watch_states:
+                continue
+            root = Path(coll.path).resolve()
+            state = _WatchState(collection=coll, root=root)
+            self._watch_states[name] = state
+            if not root.exists():
+                logger.warning(
+                    "Collection root %s missing; not scheduling a watch (D-11)",
+                    root,
+                )
+                state.missing = True
+                continue
+            if self._schedule_watch(state, observer):
+                self.enqueue_reconcile([coll])
+            else:
+                state.missing = True
+
+    def _on_tick(self) -> None:
+        """Run one idle-tick body: the D-12 recovery pass, then due opt-ins.
+
+        Called by the worker whenever its idle wait times out, or directly
+        from tests with zero timing. Rescope (D-15) and the idle WAL
+        checkpoint (D-16) ride the same tick behind their interval guards,
+        so a default-configured watcher performs no extra work. Everything
+        here runs on the worker thread only.
+        """
+        self.recovery_tick()
+        now = self._config.now()
+        self._rescope_if_due(now)
+        self._checkpoint_if_due(now)
+
+    def _rescope_if_due(self, now: float) -> None:
+        """Consult the rescope provider once its interval has elapsed (D-15).
+
+        The deadline seeds on the first tick (one full interval of grace) and
+        resets whether or not the provider run changes anything, keeping the
+        cadence fixed even across provider failures.
+        """
+        provider = self._config.rescope_provider
+        if provider is None or self._config.rescope_interval <= 0:
+            return
+        if self._rescope_deadline is None:
+            self._rescope_deadline = now + self._config.rescope_interval
+            return
+        if now < self._rescope_deadline:
+            return
+        self._rescope_deadline = now + self._config.rescope_interval
+        try:
+            wanted = provider()
+        except Exception:
+            logger.warning("Rescope provider failed; keeping the current watch set", exc_info=True)
+            return
+        self.rescope(wanted)
+
+    def _checkpoint_if_due(self, now: float) -> None:
+        """Run the idle WAL checkpoint when its interval has elapsed (D-16).
+
+        Disabled unless ``checkpoint_interval > 0`` — a default-configured
+        watcher performs zero work here, and shutdown checkpointing (12-D14)
+        stays the final word. The deadline resets whether or not the
+        checkpoint ran: busy and recent-burst skips postpone to the next
+        interval rather than retrying inside the tick.
+        """
+        if self._config.checkpoint_interval <= 0:
+            return
+        if self._checkpoint_deadline is None:
+            self._checkpoint_deadline = now + self._config.checkpoint_interval
+            return
+        if now < self._checkpoint_deadline:
+            return
+        self._checkpoint_deadline = now + self._config.checkpoint_interval
+        self._checkpoint_if_idle(now)
+
+    def _checkpoint_if_idle(self, now: float) -> None:
+        """One TRUNCATE checkpoint on the worker's own connection, if idle.
+
+        A job that completed within the re-stat window means the writer was
+        recently active — not idle — so the checkpoint waits a full interval.
+        A busy result row means another connection holds the WAL: nothing to
+        do here — the deadline reset in :meth:`_checkpoint_if_due` is what
+        postpones the retry to the next interval, surfaced at debug only,
+        never as a per-tick warning (Pitfall 7).
+        """
+        last_job = self._last_job_at
+        if last_job is not None and (now - last_job) < self._config.restat_interval:
+            return
+        try:
+            row = self._conn.execute(WAL_CHECKPOINT_TRUNCATE).fetchone()
+        except sqlite3.Error as e:
+            logger.warning("Idle WAL checkpoint failed: %s", e)
+            return
+        if row is not None and row[0]:
+            # Busy: another connection holds the WAL. The retry is postponed
+            # by the caller's deadline reset, not by anything done here —
+            # debug only, so a busy-but-healthy watcher never spams the log.
+            logger.debug("Idle WAL checkpoint busy (WAL held elsewhere); retrying next interval")
+
+    def _settled_callback(self, collection: Collection) -> SettledCallback:
+        """Build the debouncer callback for one collection.
+
+        The callback executes while holding the debouncer's condition lock,
+        so it only folds and enqueues (Pitfall 3); the worker thread owns
+        every database access.
+        """
+        scanner = FileScanner()
+        root = Path(collection.path).resolve()
+        should_track = partial(
+            scanner.matches,
+            root,
+            pattern=collection.pattern,
+            ignore_patterns=collection.ignore_patterns,
         )
 
-        for path in paths:
-            if Path(path).exists():
-                self._observer.schedule(handler, path, recursive=True)
-                logger.info(f"Watching: {path}")
+        def _on_settled(events: list[FileSystemEvent]) -> None:
+            self._queue.put((collection, fold_events(events, should_track)))
 
-        self._observer.start()
-        self._handlers[collection_id] = handler
+        return _on_settled
 
-    def stop(self, collection_id: str | None = None) -> None:
-        """Stop watching.
+    def _worker_loop(self) -> None:
+        """Consume settled bursts until stopped; one job per queue item.
 
-        Args:
-            collection_id: Collection to stop watching (None for all)
+        The idle wait doubles as the periodic tick: when no burst arrives
+        within the re-stat interval, :meth:`_on_tick` runs the D-12 recovery
+        pass plus the due long-lived-host behaviors (rescope, checkpoint).
         """
-        if collection_id and collection_id in self._handlers:
-            del self._handlers[collection_id]
+        while not self._stop_event.is_set():
+            try:
+                job = self._queue.get(timeout=self._config.restat_interval)
+            except queue.Empty:
+                try:
+                    self._on_tick()
+                except Exception:
+                    # One tick failure must never kill the worker thread: the
+                    # host banner still says "Watching" while nothing consumes
+                    # the queue — log and keep the next interval coming.
+                    logger.exception("watch tick failed; continuing next interval")
+                continue
+            if job is None:
+                # stop() sentinel: wake immediately instead of parking for
+                # the rest of the re-stat interval; nothing follows it.
+                self._queue.task_done()
+                break
+            try:
+                self._run_job(job)
+            except Exception:
+                logger.exception("watch job failed for %s", job[0].name)
+            finally:
+                self._queue.task_done()
 
-        if not collection_id or not self._handlers:
-            if self._observer:
-                self._observer.stop()
-                self._observer.join()
-                self._observer = None
+    def _run_job(self, job: tuple[Collection, FoldResult]) -> None:
+        """Process one settled burst under the per-DB flock (D-04 per-burst).
 
-            logger.info("File watcher stopped")
-
-    def is_watching(self, collection_id: str) -> bool:
-        """Check if a collection is being watched.
-
-        Args:
-            collection_id: Collection ID
-
-        Returns:
-            True if collection is being watched
+        Cost is proportional to the burst: per-path processing, or one full
+        collection pass only when a directory move (or a returning missing
+        root) requires a reconcile. At embed depth the embed leg runs inside
+        the SAME lock window as the BM25 leg (D-09).
         """
-        return collection_id in self._handlers
+        collection, folded = job
+        paths = folded.index_candidates | folded.remove_candidates
+        if folded.needs_reconcile:
+            result = self._run_reconcile(collection)
+        elif paths:
+            with index_lock(self._db_path, self._config.lock_timeout):
+                result = self._run_burst(collection, folded)
+        else:
+            # An empty fold (pure temp-noise burst) never touches the DB.
+            return
+        # Completed worker activity: the D-16 idle checkpoint treats any job
+        # inside the recent window as "not idle" (burst postponement).
+        self._last_job_at = self._config.now()
+        if self._config.on_batch is not None:
+            self._config.on_batch(collection, result)
+
+    def _run_reconcile(
+        self,
+        collection: Collection,
+        *,
+        progress: Callable[[str], None] | None = None,
+        on_wait: Callable[[], None] | None = None,
+    ) -> IncrementalResult:
+        """One full-collection BM25 pass (directory move, returning root).
+
+        The core pass stays BM25-only, but its update branch purges chunks
+        and embeddings for every body-changed document. At embed depth that
+        purge must not strand those documents vector-less (IN-04): the core
+        now returns the explicit ``reindexed_paths`` signal — exactly the
+        documents it purged — and that set feeds the embed leg in the SAME
+        lock window (D-09). A metadata-only document is deliberately absent,
+        so the append-only embed leg can never duplicate its chunks.
+
+        ``progress``/``on_wait`` default to the configured host callbacks;
+        the startup seam (:meth:`reconcile_now`) overrides them with the
+        CLI's Rich renderer and flock waiting notice. The worker paths pass
+        neither and keep using ``self._config.on_event``.
+        """
+        cb = progress if progress is not None else self._config.on_event
+        with index_lock(self._db_path, self._config.lock_timeout, on_wait=on_wait):
+            result = IncrementalIndexer(self._conn).update_collection(collection, progress=cb)
+            if self._config.depth == "embed":
+                self._embed.embed_documents(
+                    collection,
+                    {Path(path) for path in result.reindexed_paths},
+                    cb,
+                )
+            return result
+
+    def _run_burst(self, collection: Collection, folded: FoldResult) -> IncrementalResult:
+        """BM25 leg first, then the inline embed leg for purged paths (D-09)."""
+        paths = folded.index_candidates | folded.remove_candidates
+        indexer = IncrementalIndexer(self._conn)
+        progress = self._config.on_event
+        result = indexer.update_paths(collection, paths, progress=progress)
+        if self._config.depth == "embed":
+            # The indexer's explicit signal — not a checksum diff — selects
+            # embed candidates: a metadata-only edit changed the checksum but
+            # preserved the chunks, and feeding it here would append a second
+            # chunk set (RESEARCH Pitfall 2).
+            self._embed.embed_documents(
+                collection,
+                {Path(path) for path in result.reindexed_paths},
+                progress,
+            )
+        return result
+
+    def _drain_once(self) -> None:
+        """Run every job already queued at call time (count-bounded, no waiting).
+
+        Count-bounded and non-blocking on dequeue only — NOT time-bounded:
+        at embed depth a flushed job can trigger the lazy first-use model
+        load or wait out ``lock_timeout`` on the per-DB flock, all on the
+        calling thread (the stop path's caller). A flush that outruns the
+        caller's patience is the hosts' second-signal escape hatch, not a
+        hang bug.
+        """
+        while True:
+            try:
+                job = self._queue.get_nowait()
+            except queue.Empty:
+                return
+            try:
+                if job is not None:
+                    self._run_job(job)
+            except Exception:
+                logger.exception("watch flush job failed for %s", job[0].name)
+            finally:
+                self._queue.task_done()

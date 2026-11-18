@@ -37,6 +37,15 @@ class EmbeddingConfig(BaseModel):
     api_key: str | None = Field(default=None, exclude=True, repr=False)
     api_base: str | None = None
 
+    # Role-aware embedding (EMB-02, D-07). None uses the known-model
+    # default; "" explicitly disables the role's prompt.
+    query_prompt_name: str | None = Field(
+        default=None, description="Query-role prompt name for the backend"
+    )
+    document_prompt_name: str | None = Field(
+        default=None, description="Document-role prompt name for the backend"
+    )
+
     # Caching
     cache_embeddings: bool = Field(default=True, description="Cache embeddings")
     cache_dir: str | None = None
@@ -71,3 +80,14 @@ class EmbeddingResponse(BaseModel):
     dimensions: int = Field(..., ge=1)
     total_tokens: int = Field(..., ge=0)
     processing_time_ms: float = Field(..., ge=0)
+
+
+class EmbeddingOutputError(RuntimeError):
+    """The model returned output that cannot be persisted as embeddings.
+
+    A wrong output count, width, or non-finite value is a property of the
+    model, not of the document being embedded (D-17). The manager raises this
+    dedicated type so streaming hosts can abort the run — or disable a watch
+    session — instead of recording a per-document failure and retrying the
+    same systematic defect forever.
+    """

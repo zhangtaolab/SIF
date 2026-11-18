@@ -55,7 +55,7 @@ SIF uses a layered architecture with clean separation between presentation, appl
 ```
 src/sif/
 ├── cli/                    # Click CLI entry point and commands
-├── mcp/                    # Unified MCP server (MCPServer, transports in mcp/transports/)
+├── mcp/                    # Unified MCP server (built in mcp/app.py: build_server, run_stdio, create_http_app)
 ├── core/                   # Domain models, enums, and protocols
 ├── indexing/               # Document ingestion pipeline
 ├── search/                 # Search strategies (BM25, Vector, Hybrid)
@@ -67,15 +67,15 @@ src/sif/
 
 ### Key Architectural Patterns
 
-**Repository Pattern:** All database access flows through repository classes in `src/sif/database/repositories.py`, built on the abstract `Repository` interfaces in `src/sif/database/repository.py`.
+**Repository Pattern:** Entity CRUD for collections, documents, chunks, contexts, query logs, and the LLM cache goes through standalone repository classes in `src/sif/database/repositories.py` (`CollectionRepository`, `DocumentRepository`, `DocumentChunkRepository`, `ContextRepository`, `QueryLogRepository`, `LLMCacheRepository`) that wrap a shared `sqlite3.Connection`. These concrete classes do not inherit from the abstract `Repository` interfaces in `src/sif/database/repository.py`; those interfaces are referenced only by tests (as `create_autospec` mocks). Search strategies in `src/sif/search/` and the embedding cache in `src/sif/embedding/cache.py` also execute SQL directly, so the repository layer is the convention for entity CRUD, not the sole path for all database access.
 
 **Protocol-Based Extensibility:** `src/sif/core/models.py` defines protocols like `Embedder` that decouple search and indexing from specific embedding providers. The embedding factory in `src/sif/embedding/factory.py` creates real embedders per `ModelType`: `SentenceTransformerEmbedder` (sentence-transformers), `LlamaCppEmbedder` for GGUF models (llama-cpp-python), plus OpenAI and ModelScope providers. The HuggingFace backend raises `NotImplementedError` and is rejected by `model_type` settings validation.
 
 **Factory Pattern:** `EmbeddingModelFactory` creates model instances based on `ModelType`. `Chunker` hierarchy (`FixedSizeChunker`, `MarkdownChunker`, `CodeChunker`, `AutoChunker`) uses `create_chunker()` factory in `src/sif/indexing/chunker.py`.
 
 **MCP Server:** The unified `src/sif/mcp/` package provides the MCP server:
-- `MCPServer` in `src/sif/mcp/server.py` — server core
-- Transports in `src/sif/mcp/transports/` — `StdioTransport` (`stdio.py`), `HTTPTransport` (`http.py`, FastAPI-based)
+- `MCPServer` — server core, imported from the third-party `mcp` package and constructed by `build_server()` in `src/sif/mcp/app.py`
+- Serving entry points in `src/sif/mcp/app.py` — `run_stdio()` (stdio transport) and `create_http_app()` (HTTP transport, FastAPI-based); CLI wrappers in `src/sif/mcp/cli.py`
 
 **Search Strategy Pattern:** Each search type is a class in `src/sif/search/`:
 - `BM25Searcher` — SQLite FTS5
@@ -85,7 +85,7 @@ src/sif/
 
 ### Data Flow
 
-All persistent state lives in a single SQLite database (default is `<platformdirs user_data_dir>/sif/sif.db`, e.g. `~/.local/share/sif/sif.db` on Linux or `~/Library/Application Support/sif/sif.db` on macOS, resolved via `Settings.get_db_path()`; override with `SIF_DB_PATH`). The `SchemaManager` in `src/sif/database/schema.py` creates tables, FTS5 virtual tables, and vector tables. FTS5 tables are external-content tables (`content='documents'`, `content='document_chunks'`) kept synchronized with the main tables via SQLite insert/update/delete triggers.
+Primary application state lives in a SQLite database (default is `<platformdirs user_data_dir>/sif/sif.db`, e.g. `~/.local/share/sif/sif.db` on Linux or `~/Library/Application Support/sif/sif.db` on macOS, resolved via `Settings.get_db_path()`; override with `SIF_DB_PATH`). A second SQLite database holds the embedding cache at `<cache_dir>/embeddings_cache.db` (default `<platformdirs user_cache_dir>/sif/embeddings_cache.db`, e.g. `~/.cache/sif/embeddings_cache.db` on Linux or `~/Library/Caches/sif/embeddings_cache.db` on macOS, resolved via `Settings.get_cache_dir()`; enabled by default with `cache_embeddings=True` and created by `src/sif/embedding/cache.py`); a `<db_path>.lock` file also accompanies the main database for cross-process index locking (`src/sif/database/locking.py`). The `SchemaManager` in `src/sif/database/schema.py` creates tables, FTS5 virtual tables, and vector tables. FTS5 tables are external-content tables (`content='documents'`, `content='document_chunks'`) kept synchronized with the main tables via SQLite insert/update/delete triggers.
 
 Embedding models are loaded on demand and cached in `EmbeddingManager._model`.
 
@@ -98,6 +98,7 @@ Settings are defined in `src/sif/config/settings.py` using Pydantic Settings. En
 - CLI commands raise `click.ClickException(str(e))` for user-facing errors.
 - Database transactions use `Database.transaction()` context manager with automatic rollback on exception.
 - `HybridSearcher.search()` fails fast on vector errors: embedder/vector exceptions propagate uncaught. BM25-only results are returned only when vector search yields zero results (a no-results path, not failure handling).
+- The MCP `SearchBackend` boundary is the one carve-out: when the sqlite-vec extension is unavailable (`VectorSearcher` construction raises `RuntimeError`), `hybrid_search` degrades to BM25-only with a one-time warning, consistent with its embedder-failure degradation at init; the core `HybridSearcher.search()` remains fail-fast.
 
 ### Code Style
 

@@ -1,0 +1,112 @@
+{
+  "arm": "breadcrumb-512-128",
+  "baseline_source": "saved-run",
+  "chunk_overlap": 128,
+  "chunk_size": 512,
+  "confirmation": {
+    "baseline_mean": 0.9120271849681022,
+    "ci_high": 0.035547964819587614,
+    "ci_low": -0.0056635168814433,
+    "current_mean": 0.9261314051817343,
+    "diagnostic": false,
+    "helped": 11,
+    "hurt": 7,
+    "mean_delta": 0.014104231958762887,
+    "n": 194,
+    "noise_floor": 0.005154639175257732,
+    "regression": false,
+    "sufficient": true,
+    "unchanged": 176,
+    "winner": false
+  },
+  "corpus_fingerprint": "9ccbf4eea9263ed4",
+  "corpus_label": "books-markdown-papers-2026-11",
+  "decision": "keep-breadcrumb-off",
+  "decision_record": {
+    "body_sufficient": true,
+    "body_winner": false,
+    "confirmation_mean_delta": 0.014104231958762887,
+    "confirmation_n": 194,
+    "confirmation_sufficient": true,
+    "confirmation_winner": false,
+    "decision": "keep-breadcrumb-off",
+    "duplicate_summary": {
+      "chunks": 21886,
+      "documents": 610,
+      "in_content_share": 0.622955,
+      "subchunk_share": 0.387919,
+      "title_equals_heading_share": 0.026364,
+      "title_share": 1.0
+    },
+    "min_heldout_for_epsilon_win": 101,
+    "reasons": [
+      "overall held-out gate winner is false"
+    ],
+    "title_winner": true
+  },
+  "duplicates": {
+    "chunks": 21886,
+    "documents": 610,
+    "in_content_share": 0.622955,
+    "subchunk_share": 0.387919,
+    "title_equals_heading_share": 0.026364,
+    "title_share": 1.0
+  },
+  "embed_breadcrumb": true,
+  "embedding_dim": 1024,
+  "identity": {
+    "cache_model_id": "modelscope:Qwen/Qwen3-Embedding-0.6B",
+    "check_identity_status": "ok",
+    "dimension": 1024,
+    "document_prompt": null,
+    "query_prompt": null,
+    "source": "verified"
+  },
+  "legs": {
+    "body": {
+      "baseline_mean": 0.9052921323126787,
+      "ci_high": 0.021192363693467334,
+      "ci_low": -0.0076149530150753765,
+      "current_mean": 0.911534846718579,
+      "helped": 9,
+      "hurt": 5,
+      "mean_delta": 0.006242718592964824,
+      "n": 199,
+      "noise_floor": 0.005025125628140704,
+      "regression": false,
+      "sufficient": true,
+      "unchanged": 185,
+      "winner": false
+    },
+    "title": {
+      "baseline_mean": 0.8826988497877339,
+      "ci_high": 0.07560889368686867,
+      "ci_low": 0.022741598863636362,
+      "current_mean": 0.9312201414688965,
+      "helped": 21,
+      "hurt": 5,
+      "mean_delta": 0.04852130808080808,
+      "n": 198,
+      "noise_floor": 0.005050505050505051,
+      "regression": false,
+      "sufficient": true,
+      "unchanged": 172,
+      "winner": true
+    }
+  },
+  "limitation": "The books-markdown-papers-2026-11 corpus has 194 held-out queries, at or above the 101 needed for a 0.01 mean-delta win.",
+  "max_tokens": 512,
+  "min_heldout_for_epsilon_win": 101,
+  "model_name": "Qwen/Qwen3-Embedding-0.6B",
+  "model_type": "modelscope",
+  "replay": {
+    "available": false,
+    "baseline_available": false,
+    "jaccard_at_10": 0.0,
+    "note": "No saved replay snapshot; stability is unavailable for this comparison.",
+    "num_queries": 0,
+    "top1_stability": 0.0
+  },
+  "schema_version": 1,
+  "selection_rule": "overall-heldout-plus-body-leg-veto"
+}

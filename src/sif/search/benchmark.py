@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+import math
+import time
+from collections.abc import Callable, Iterator, Sequence
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
 
 from sif.core.models import SearchResult
 from sif.utils.logging import get_logger
@@ -10,19 +15,50 @@ from sif.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
+# Fixed reporting categories and splits (Phase 16, D-03/D-06): every report
+# carries all four category keys in this declared order so the per-category
+# breakdown is byte-identical across runs and consumers can diff it directly.
+CATEGORIES: tuple[str, ...] = ("keyword", "synonym", "multilingual", "rival")
+SPLITS: tuple[str, ...] = ("tuning", "heldout")
+LEGACY_K_VALUES: tuple[int, ...] = (1, 5, 10)
+GRADE_MIN = 0
+GRADE_MAX = 3
+DEFAULT_K = 10
+# Sweep grid (Phase 16, D-07): the fixed declared grid of 45 configurations —
+# rrf_k x bm25_weight x vector_weight. The shipped baseline (60, 1.0, 1.0) is
+# a grid point, and the declared enumeration order is the tie-break order for
+# rank_sweep, so repeated runs over the same fixture produce identical output.
+GRID_RRF_K: tuple[int, ...] = (20, 40, 60, 80, 100)
+GRID_WEIGHTS: tuple[float, ...] = (0.5, 1.0, 2.0)
+EPSILON = 0.01
+
+
+def _mean(values: Sequence[float]) -> float:
+    """Arithmetic mean; empty input yields 0.0 (house style)."""
+    return sum(values) / len(values) if values else 0.0
+
 
 def precision_at_k(relevance: Sequence[int], k: int) -> float:
-    """Precision@K: relevant items in top-K / K."""
+    """Precision@K: relevant items in top-K / K.
+
+    Relevance is binarized (grade > 0) so graded 0-3 fixtures can never push
+    precision above 1.0 while legacy 0/1 fixtures are unchanged (Pitfall 8).
+    """
     if k == 0:
         return 0.0
-    return sum(relevance[:k]) / k
+    binary = [1 if grade > 0 else 0 for grade in relevance[:k]]
+    return sum(binary) / k
 
 
 def recall_at_k(relevance: Sequence[int], total_relevant: int, k: int) -> float:
-    """Recall@K: relevant items retrieved / total relevant."""
+    """Recall@K: relevant items retrieved / total relevant.
+
+    Relevance is binarized (grade > 0), matching precision's semantics.
+    """
     if total_relevant == 0:
         return 0.0
-    return sum(relevance[:k]) / total_relevant
+    binary = [1 if grade > 0 else 0 for grade in relevance[:k]]
+    return sum(binary) / total_relevant
 
 
 def reciprocal_rank(relevance: Sequence[int]) -> float:
@@ -39,28 +75,506 @@ def mean_reciprocal_rank(all_relevance: list[Sequence[int]]) -> float:
     return sum(rr_scores) / len(rr_scores) if rr_scores else 0.0
 
 
+def dcg_at_k(grades: Sequence[int], k: int) -> float:
+    """Discounted cumulative gain with exponential gain (2^rel - 1).
+
+    Position i starts at 1, so the discount is log2(i + 1) over grades[:k].
+    """
+    return sum((2**grade - 1) / math.log2(i + 1) for i, grade in enumerate(grades[:k], 1))
+
+
+def ndcg_at_k(retrieved: Sequence[int], ideal: Sequence[int], k: int) -> float:
+    """Normalized DCG@K: DCG of the retrieved ranking over the ideal DCG.
+
+    The ideal DCG is computed from the FULL judgment set for the query
+    (``ideal`` sorted descending), not the retrieved subset; a query whose
+    ideal DCG is 0 scores 0.0 instead of dividing by zero.
+    """
+    ideal_dcg = dcg_at_k(sorted(ideal, reverse=True), k)
+    if ideal_dcg == 0.0:
+        return 0.0
+    return dcg_at_k(retrieved, k) / ideal_dcg
+
+
+def hit_at_k(retrieved: Sequence[int], k: int) -> float:
+    """Hit@K: 1.0 iff any of the top-K retrieved grades is positive."""
+    return 1.0 if any(grade > 0 for grade in retrieved[:k]) else 0.0
+
+
+def percentile(values: Sequence[float], p: float) -> float:
+    """Percentile via linear interpolation between closest ranks; p in [0, 100]."""
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    pos = (len(ordered) - 1) * (p / 100.0)
+    lo = math.floor(pos)
+    hi = min(lo + 1, len(ordered) - 1)
+    return ordered[lo] + (ordered[hi] - ordered[lo]) * (pos - lo)
+
+
+def measure_query_times(
+    search_fn: Callable[[str], list[SearchResult]],
+    queries: Sequence[str],
+    clock: Callable[[], float] = time.perf_counter,
+) -> tuple[list[float], list[list[SearchResult]]]:
+    """Warmed per-query latency: discard one warm-up pass, then time each query.
+
+    The warm-up pass (model load, caches hot) is fully discarded so it never
+    enters the percentile samples (D-05); each timed sample is one search
+    call's wall-clock duration in milliseconds, with the results retained.
+    """
+    for query in queries:  # warm-up: results discarded
+        search_fn(query)
+    samples: list[float] = []
+    outputs: list[list[SearchResult]] = []
+    for query in queries:
+        start = clock()
+        outputs.append(search_fn(query))
+        samples.append((clock() - start) * 1000.0)
+    return samples, outputs
+
+
+def _cold_start_wrapper(
+    search_fn: Callable[[str], list[SearchResult]],
+    clock: Callable[[], float],
+) -> tuple[Callable[[str], list[SearchResult]], list[float]]:
+    """Wrap search_fn so the very first call's duration is captured separately.
+
+    The captured sample is the cold start (first warm-up call) and never
+    joins the warmed p50/p95 samples.
+    """
+    samples: list[float] = []
+
+    def wrapped(query: str) -> list[SearchResult]:
+        if not samples:
+            start = clock()
+            results = search_fn(query)
+            samples.append((clock() - start) * 1000.0)
+            return results
+        return search_fn(query)
+
+    return wrapped, samples
+
+
+def resolve_corpus_root(fixture: dict, fixture_path: Path | None) -> Path | None:
+    """Resolve the fixture's corpus root — the single corpus-root rule.
+
+    - Nothing declared, no fixture_path: None (docid-keyed fixtures need none).
+    - Absolute declared ``corpus_root``: resolved as-is.
+    - Relative declared ``corpus_root``: joined onto the fixture file's
+      directory and resolved (never the fixture's parent alone).
+    - No declared root but a fixture_path: the fixture's directory.
+
+    Never opens a relevance key or result path; resolution is read-only.
+    """
+    declared = fixture.get("corpus_root")
+    if declared is None:
+        if fixture_path is None:
+            return None
+        return fixture_path.parent.resolve()
+    declared_path = Path(declared)
+    if declared_path.is_absolute():
+        return declared_path.resolve()
+    if fixture_path is None:
+        raise ValueError(
+            "Fixture declares a relative 'corpus_root' but no fixture_path was "
+            "provided to resolve it against"
+        )
+    return (fixture_path.parent / declared_path).resolve()
+
+
+def result_key(result: SearchResult, mode: str, corpus_root: Path) -> str:
+    """Compute the fixture-comparison key for one search result.
+
+    ``docid`` mode returns the document id; any other mode is path-keyed: the
+    result path resolved relative to ``corpus_root`` as a POSIX string, falling
+    back to the plain POSIX path when the result lies outside the root. Never
+    opens the result path.
+    """
+    if mode == "docid":
+        return result.document_id
+    try:
+        return Path(result.path).resolve().relative_to(corpus_root).as_posix()
+    except ValueError:
+        return Path(result.path).as_posix()
+
+
+@dataclass
+class QueryItem:
+    """One benchmark query and its relevance judgments.
+
+    ``grades`` maps fixture keys (document ids for legacy fixtures, corpus-
+    relative POSIX paths for graded fixtures) to grades; legacy items map each
+    relevant docid to grade 1 and leave category/split as None.
+    """
+
+    query: str
+    category: str | None = None
+    split: str | None = None
+    grades: dict[str, int] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class QueryEvaluation:
+    """One query's evaluated ranking (Phase 18, EVAL-01, additive).
+
+    Carries the fixture-comparison keys in rank order, their grades, and the
+    per-query metric pair. ``report()``/``BenchReport.to_dict()`` stay
+    byte-identical; this record is the per-query surface personal-bench
+    grouping and paired comparisons consume. ``retrieved_paths`` holds the
+    result paths exactly as the searcher returned them (saved-run substrate);
+    it never contains document content.
+    """
+
+    query: str
+    retrieved_keys: list[str]
+    retrieved_paths: list[str]
+    grades: list[int]
+    ndcg_at_10: float
+    hit_at_10: float
+
+
+@dataclass
+class CategoryMetrics:
+    """Aggregated graded metrics for one reporting category."""
+
+    ndcg_at_10: float
+    hit_at_10: float
+    count: int
+
+
+@dataclass
+class BenchReport:
+    """Graded benchmark report: nDCG/Hit plus the legacy flat metrics.
+
+    ``legacy_metrics`` carries the pre-change flat keys (``mrr``,
+    ``precision@<k>``, ``recall@<k>``) so table and ``--json`` output stay
+    backward compatible; ``to_dict`` merges them at the top level.
+    """
+
+    ndcg_at_10: float
+    hit_at_10: float
+    num_queries: int
+    categories: dict[str, CategoryMetrics]
+    cold_start_ms: float | None = None
+    p50_ms: float = 0.0
+    p95_ms: float = 0.0
+    legacy_metrics: dict[str, float] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize with categories in CATEGORIES order and legacy keys merged."""
+        categories: dict[str, Any] = {}
+        for category in CATEGORIES:
+            metrics = self.categories.get(category)
+            if metrics is None:
+                continue
+            categories[category] = {
+                "ndcg_at_10": metrics.ndcg_at_10,
+                "hit_at_10": metrics.hit_at_10,
+                "count": metrics.count,
+            }
+        data: dict[str, Any] = {
+            "ndcg_at_10": self.ndcg_at_10,
+            "hit_at_10": self.hit_at_10,
+            "num_queries": self.num_queries,
+            "cold_start_ms": self.cold_start_ms,
+            "p50_ms": self.p50_ms,
+            "p95_ms": self.p95_ms,
+            "categories": categories,
+        }
+        data.update(self.legacy_metrics)
+        return data
+
+
+@dataclass(frozen=True)
+class ConfigResult:
+    """One measured sweep configuration (D-06/D-07).
+
+    ``categories`` carries the fixed four-category breakdown — all four
+    CATEGORIES keys in declared order, nDCG@10 and Hit@10 each — so a tuning
+    win that quietly regresses one category is visible on every swept
+    configuration, the baseline included.
+    """
+
+    rrf_k: int
+    bm25_weight: float
+    vector_weight: float
+    ndcg_at_10: float
+    hit_at_10: float
+    p50_ms: float = 0.0
+    p95_ms: float = 0.0
+    categories: dict[str, CategoryMetrics] = field(
+        default_factory=lambda: {category: CategoryMetrics(0.0, 0.0, 0) for category in CATEGORIES}
+    )
+    # Rerank off/on states (D-12), serialized only when measured: None on the
+    # off-only path (the flat fields ARE the off state), {"off": ..., "on": ...}
+    # when the sweep also measured a rerank-on pipeline per configuration.
+    states: dict[str, dict[str, float]] | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize with categories in CATEGORIES order (all four keys present)."""
+        categories: dict[str, Any] = {
+            category: {
+                "ndcg_at_10": self.categories[category].ndcg_at_10,
+                "hit_at_10": self.categories[category].hit_at_10,
+                "count": self.categories[category].count,
+            }
+            for category in CATEGORIES
+        }
+        data: dict[str, Any] = {
+            "rrf_k": self.rrf_k,
+            "bm25_weight": self.bm25_weight,
+            "vector_weight": self.vector_weight,
+            "ndcg_at_10": self.ndcg_at_10,
+            "hit_at_10": self.hit_at_10,
+            "p50_ms": self.p50_ms,
+            "p95_ms": self.p95_ms,
+            "categories": categories,
+        }
+        if self.states is not None:
+            data["states"] = self.states
+        return data
+
+
+@dataclass
+class SweepRanking:
+    """Ranked sweep with its explicit tie group (D-08 honesty rule).
+
+    ``winner_declared`` is False whenever the tie group holds more than one
+    configuration: differences within ``epsilon`` of the best are noise-sized
+    and never produce a single winner.
+    """
+
+    ranked: list[ConfigResult]
+    tie_group: list[ConfigResult]
+    winner_declared: bool
+    epsilon: float
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize the ranking: every config, the tie group, winner honesty."""
+        return {
+            "configs": [result.to_dict() for result in self.ranked],
+            "tie_group": [result.to_dict() for result in self.tie_group],
+            "winner_declared": self.winner_declared,
+            "epsilon": self.epsilon,
+        }
+
+
+def iter_grid() -> Iterator[ConfigResult]:
+    """Yield the 45 declared configurations in grid order (D-07).
+
+    Order is rrf_k ascending, then bm25_weight ascending, then vector_weight
+    ascending — the declared order rank_sweep uses as its tie-break.
+    """
+    for rrf_k in GRID_RRF_K:
+        for bm25_weight in GRID_WEIGHTS:
+            for vector_weight in GRID_WEIGHTS:
+                yield ConfigResult(
+                    rrf_k=rrf_k,
+                    bm25_weight=bm25_weight,
+                    vector_weight=vector_weight,
+                    ndcg_at_10=0.0,
+                    hit_at_10=0.0,
+                )
+
+
+def rank_sweep(results: Sequence[ConfigResult], epsilon: float = EPSILON) -> SweepRanking:
+    """Rank configurations by mean tuning nDCG@10 with the strict tie rule.
+
+    Ordering is deterministic: nDCG@10 descending, ties broken by declared
+    grid order (rrf_k, then bm25_weight, then vector_weight, ascending). The
+    tie boundary is strict ``<`` evaluated on the delta rounded to 6 decimal
+    places — ``round(best - result.ndcg_at_10, 6) < epsilon`` — so a nominal
+    0.01 difference whose raw IEEE-754 subtraction yields 0.009999... counts
+    as exactly 0.01 and is NOT a tie, independent of float representation
+    (D-08). Ranking reads tuning-split results only; the caller guarantees
+    the split (T-16-06).
+    """
+    if not results:
+        raise ValueError("rank_sweep requires at least one ConfigResult")
+    ranked = sorted(
+        results,
+        key=lambda result: (
+            -result.ndcg_at_10,
+            result.rrf_k,
+            result.bm25_weight,
+            result.vector_weight,
+        ),
+    )
+    best = ranked[0].ndcg_at_10
+    tie_group = [result for result in ranked if round(best - result.ndcg_at_10, 6) < epsilon]
+    return SweepRanking(
+        ranked=ranked,
+        tie_group=tie_group,
+        winner_declared=len(tie_group) == 1,
+        epsilon=epsilon,
+    )
+
+
+def warrants_default_change(
+    baseline_ndcg: float,
+    candidate_ndcg: float,
+    delta: float = EPSILON,
+) -> bool:
+    """Held-out evidence rule (EVAL-04): does a candidate justify new defaults?
+
+    Inclusive at exactly ``delta`` under the same rounded-delta arithmetic
+    rank_sweep uses — ``round(candidate - baseline, 6) >= delta`` — so a
+    nominal 0.01 whose raw IEEE-754 subtraction yields 0.009999... still
+    warrants, while sub-delta noise (0.0099) never does. Tuning-set results
+    alone can never satisfy this; the caller passes HELD-OUT nDCG@10 values.
+    """
+    return round(candidate_ndcg - baseline_ndcg, 6) >= delta
+
+
 class SearchEvaluator:
     """Evaluate search quality against a benchmark fixture."""
 
-    def __init__(self, fixture: dict) -> None:
+    def __init__(
+        self,
+        fixture: dict,
+        fixture_path: Path | None = None,
+        corpus_root: Path | None = None,
+    ) -> None:
         """Initialize with fixture data.
 
         Args:
             fixture: Dictionary with keys:
-                - queries: list of {query: str, relevant_docids: list[str], collections?: list[str]}
+                - queries: list of {query, relevant_docids, collections?} (legacy)
+                  or {query, category, split, relevance} (graded, Phase 16)
+                - relevance_key: "docid" (default) or "path"
+                - corpus_root: root for path-keyed relevance
+            fixture_path: Path to the fixture file; a relative declared
+                corpus_root is resolved against its directory.
+            corpus_root: Explicit corpus root; wins over the declared value.
+
+        The root is resolved exactly once here and stored on ``corpus_root``.
         """
         self.fixture = fixture
+        self.relevance_key = str(fixture.get("relevance_key", "docid"))
+        if self.relevance_key not in ("docid", "path"):
+            raise ValueError(
+                f"Fixture 'relevance_key' must be 'docid' or 'path', got {self.relevance_key!r}"
+            )
+        # Explicit corpus_root argument wins; else the fixture-declared rule.
+        self.corpus_root = (
+            Path(corpus_root).resolve()
+            if corpus_root is not None
+            else resolve_corpus_root(fixture, fixture_path)
+        )
+        if self.relevance_key == "path" and self.corpus_root is None:
+            raise ValueError(
+                "Fixture declares path-keyed relevance but no corpus_root could "
+                "be resolved; declare 'corpus_root' or pass fixture_path"
+            )
+        self.query_items: list[QueryItem] = []
         self._validate_fixture()
 
     def _validate_fixture(self) -> None:
-        """Validate fixture format."""
+        """Validate fixture format and parse query items."""
         if "queries" not in self.fixture:
             raise ValueError("Fixture must contain 'queries' key")
-        for i, item in enumerate(self.fixture["queries"]):
+        queries = self.fixture["queries"]
+        if not queries:
+            raise ValueError("Fixture must contain a non-empty 'queries' list")
+        schema: str | None = None
+        for i, item in enumerate(queries):
             if "query" not in item:
                 raise ValueError(f"Query {i} missing 'query' field")
-            if "relevant_docids" not in item:
-                raise ValueError(f"Query {i} missing 'relevant_docids' field")
+            has_legacy = "relevant_docids" in item
+            has_graded = "relevance" in item
+            if has_legacy and has_graded:
+                raise ValueError(f"Query {i} carries both 'relevant_docids' and 'relevance'")
+            if not has_legacy and not has_graded:
+                raise ValueError(f"Query {i} missing 'relevant_docids' or 'relevance' field")
+            kind = "legacy" if has_legacy else "graded"
+            if schema is None:
+                schema = kind
+            elif schema != kind:
+                raise ValueError(
+                    f"Query {i} uses the {kind!r} schema but earlier queries "
+                    f"used the {schema!r} schema; a fixture must pick one"
+                )
+            if kind == "graded":
+                self.query_items.append(self._parse_graded_item(i, item))
+            else:
+                # Legacy items: relevance maps docid -> grade 1; no category
+                # or split, so they never feed the per-category breakdown.
+                grades = {str(docid): 1 for docid in item["relevant_docids"]}
+                self.query_items.append(QueryItem(query=str(item["query"]), grades=grades))
+
+    def _parse_graded_item(self, index: int, item: dict[str, Any]) -> QueryItem:
+        """Validate one graded query item and build its QueryItem."""
+        category = item.get("category")
+        if category not in CATEGORIES:
+            raise ValueError(
+                f"Query {index} has invalid 'category' {category!r}; "
+                f"expected one of: {', '.join(CATEGORIES)}"
+            )
+        split = item.get("split")
+        if split not in SPLITS:
+            raise ValueError(
+                f"Query {index} has invalid 'split' {split!r}; expected one of: {', '.join(SPLITS)}"
+            )
+        relevance = item.get("relevance")
+        if not isinstance(relevance, dict):
+            raise ValueError(f"Query {index} 'relevance' must map keys to grades")
+        grades: dict[str, int] = {}
+        for key, grade in relevance.items():
+            if (
+                not isinstance(grade, int)
+                or isinstance(grade, bool)
+                or not GRADE_MIN <= grade <= GRADE_MAX
+            ):
+                raise ValueError(
+                    f"Query {index} 'relevance' grade for {key!r} must be an "
+                    f"integer in {GRADE_MIN}..{GRADE_MAX}"
+                )
+            grades[str(key)] = grade
+        return QueryItem(
+            query=str(item["query"]),
+            category=category,
+            split=split,
+            grades=grades,
+        )
+
+    def _grades_for(self, item: QueryItem, results: list[SearchResult]) -> list[int]:
+        """Retrieved grades in rank order for one query's results."""
+        root = self.corpus_root if self.corpus_root is not None else Path()
+        keys = [result_key(result, self.relevance_key, root) for result in results]
+        return [item.grades.get(key, 0) for key in keys]
+
+    def evaluate_per_query(
+        self,
+        search_fn: Callable[[str], list[SearchResult]],
+        k: int = DEFAULT_K,
+    ) -> list[QueryEvaluation]:
+        """Run exactly one search per fixture query, returning per-query records.
+
+        Additive surface (Phase 18, EVAL-01): the metric math is the same
+        ``result_key``/``_grades_for``/``ndcg_at_k``/``hit_at_k`` path
+        ``report()`` uses, so a group-level report can be assembled after the
+        fact without reimplementing a single metric. Records follow fixture
+        order; no clock parameter (personal runs measure quality, not latency).
+        """
+        root = self.corpus_root if self.corpus_root is not None else Path()
+        evaluations: list[QueryEvaluation] = []
+        for item in self.query_items:
+            results = search_fn(item.query)
+            keys = [result_key(result, self.relevance_key, root) for result in results]
+            retrieved = self._grades_for(item, results)
+            ideal = list(item.grades.values())
+            evaluations.append(
+                QueryEvaluation(
+                    query=item.query,
+                    retrieved_keys=keys,
+                    retrieved_paths=[result.path for result in results],
+                    grades=retrieved,
+                    ndcg_at_10=ndcg_at_k(retrieved, ideal, k),
+                    hit_at_10=hit_at_k(retrieved, k),
+                )
+            )
+        return evaluations
 
     def evaluate(
         self,
@@ -69,34 +583,36 @@ class SearchEvaluator:
     ) -> dict[str, float]:
         """Evaluate search quality.
 
+        Works for both fixture schemas: graded fixtures resolve retrieved
+        relevance through ``result_key`` and the item's grade map, legacy
+        fixtures through ``relevant_docids`` — both mapped to 1/0 for the
+        flat binary metrics.
+
         Args:
             search_fn: Function that takes a query string and returns SearchResult list
             k_values: List of k values for precision/recall@k. Default: [1, 5, 10]
 
         Returns:
-            Dictionary of averaged metrics
+            Dictionary of averaged metrics (same flat keys and shapes as
+            before this change)
         """
         k_values = k_values or [1, 5, 10]
         metrics: dict[str, list[float]] = {}
         all_relevance: list[Sequence[int]] = []
 
-        for query_item in self.fixture["queries"]:
-            query = query_item["query"]
-            relevant_ids = set(query_item["relevant_docids"])
-
+        for item in self.query_items:
             # Run search
-            results = search_fn(query)
-            result_ids = [r.document_id for r in results]
-
-            # Build relevance vector
-            relevance = [1 if rid in relevant_ids else 0 for rid in result_ids]
+            results = search_fn(item.query)
+            retrieved = self._grades_for(item, results)
+            relevance = [1 if grade > 0 else 0 for grade in retrieved]
             all_relevance.append(relevance)
+            total_relevant = sum(1 for grade in item.grades.values() if grade > 0)
 
             # Compute metrics for each k
             for k in k_values:
                 metrics.setdefault(f"precision@{k}", []).append(precision_at_k(relevance, k))
                 metrics.setdefault(f"recall@{k}", []).append(
-                    recall_at_k(relevance, len(relevant_ids), k),
+                    recall_at_k(relevance, total_relevant, k),
                 )
 
         # Average across queries
@@ -104,6 +620,90 @@ class SearchEvaluator:
         for key, values in metrics.items():
             averaged[key] = sum(values) / len(values) if values else 0.0
         averaged["mrr"] = mean_reciprocal_rank(all_relevance)
-        averaged["num_queries"] = float(len(self.fixture["queries"]))
+        averaged["num_queries"] = float(len(self.query_items))
 
         return averaged
+
+    def report(
+        self,
+        search_fn: Callable[[str], list[SearchResult]],
+        k: int = DEFAULT_K,
+        k_values: Sequence[int] = LEGACY_K_VALUES,
+        clock: Callable[[], float] | None = None,
+    ) -> BenchReport:
+        """Run every fixture query and produce a graded BenchReport.
+
+        Exactly one ``search_fn`` result list per query supplies both the
+        graded metrics (nDCG@k / Hit@k) and the legacy flat metrics. Global
+        metrics include every query; the category breakdown aggregates only
+        items whose category is one of CATEGORIES, with all four keys always
+        present in declared order (legacy items leave every count at 0).
+
+        With a ``clock``, latency is warmed: one discarded warm-up pass runs
+        first (its first call is reported separately as the cold start and
+        never enters the p50/p95 samples, D-05), then the timed pass supplies
+        both the metrics and the percentile samples. Without a clock the
+        latency fields keep their defaults.
+        """
+        queries = [item.query for item in self.query_items]
+        times: list[float] = []
+        cold_start_ms: float | None = None
+        if clock is not None:
+            timed_fn, cold_samples = _cold_start_wrapper(search_fn, clock)
+            times, results_by_query = measure_query_times(timed_fn, queries, clock)
+            cold_start_ms = cold_samples[0] if cold_samples else None
+        else:
+            results_by_query = [search_fn(query) for query in queries]
+
+        ndcgs: list[float] = []
+        hits: list[float] = []
+        all_binary: list[Sequence[int]] = []
+        legacy: dict[str, list[float]] = {}
+        category_values: dict[str, tuple[list[float], list[float]]] = {
+            category: ([], []) for category in CATEGORIES
+        }
+
+        for item, results in zip(self.query_items, results_by_query, strict=True):
+            retrieved = self._grades_for(item, results)
+            ideal = list(item.grades.values())
+            # Legacy metrics stay binary (grade > 0) so graded fixtures can
+            # never push precision/recall above 1.0 (research Pitfall 8).
+            binary = [1 if grade > 0 else 0 for grade in retrieved]
+            total_relevant = sum(1 for grade in item.grades.values() if grade > 0)
+            query_ndcg = ndcg_at_k(retrieved, ideal, k)
+            query_hit = hit_at_k(retrieved, k)
+            ndcgs.append(query_ndcg)
+            hits.append(query_hit)
+            all_binary.append(binary)
+            for legacy_k in k_values:
+                legacy.setdefault(f"precision@{legacy_k}", []).append(
+                    precision_at_k(binary, legacy_k),
+                )
+                legacy.setdefault(f"recall@{legacy_k}", []).append(
+                    recall_at_k(binary, total_relevant, legacy_k),
+                )
+            if item.category in category_values:
+                category_ndcg, category_hit = category_values[item.category]
+                category_ndcg.append(query_ndcg)
+                category_hit.append(query_hit)
+
+        legacy_metrics = {key: _mean(values) for key, values in legacy.items()}
+        legacy_metrics["mrr"] = mean_reciprocal_rank(all_binary)
+        categories = {
+            category: CategoryMetrics(
+                ndcg_at_10=_mean(values[0]),
+                hit_at_10=_mean(values[1]),
+                count=len(values[0]),
+            )
+            for category, values in category_values.items()
+        }
+        return BenchReport(
+            ndcg_at_10=_mean(ndcgs),
+            hit_at_10=_mean(hits),
+            num_queries=len(self.query_items),
+            categories=categories,
+            cold_start_ms=cold_start_ms,
+            p50_ms=percentile(times, 50),
+            p95_ms=percentile(times, 95),
+            legacy_metrics=legacy_metrics,
+        )

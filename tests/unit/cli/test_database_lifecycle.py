@@ -35,6 +35,7 @@ from sif.config.settings import get_settings
 from sif.core.models import Collection
 from sif.database.database import Database
 from sif.database.repositories import CollectionRepository
+from sif.search.benchmark import CATEGORIES, BenchReport, CategoryMetrics
 
 
 class TrackingDatabase(Database):
@@ -171,8 +172,17 @@ class TestSuccessClosure:
         )
         mock_manager_cls = MagicMock()
         mock_manager_cls.from_settings.return_value.embed_single.return_value = [0.0] * 8
+        # bench consumes the graded report; numeric fields must be real
+        # numbers so the table formats. The test's subject is Database
+        # ownership, not the metric shape.
         mock_evaluator_cls = MagicMock()
-        mock_evaluator_cls.return_value.evaluate.return_value = {"num_queries": 1, "mrr": 1.0}
+        mock_evaluator_cls.return_value.report.return_value = BenchReport(
+            ndcg_at_10=1.0,
+            hit_at_10=1.0,
+            num_queries=1,
+            categories={c: CategoryMetrics(0.0, 0.0, 0) for c in CATEGORIES},
+            legacy_metrics={"mrr": 1.0},
+        )
         monkeypatch.setattr(bench_mod, "EmbeddingManager", mock_manager_cls)
         monkeypatch.setattr(bench_mod, "SearchEvaluator", mock_evaluator_cls)
         monkeypatch.setattr(bench_mod, "Database", tracking)

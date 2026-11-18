@@ -1,0 +1,529 @@
+"""SuggestionEngine battery: vocabulary, prefix completions, degradation.
+
+Phase 15 QUAL-02/04 core (D-06): the engine reads the FTS5 vocab shadow table
+(``documents_fts_v`` — fts5vocab row mode, porter STEMS). Every completion is
+a vocab term, so running it back through a real BM25 query must return at
+least one hit — SC2's structural guarantee, pinned here against the real
+searcher on a real DB built from the production DDL.
+"""
+
+from __future__ import annotations
+
+import sqlite3
+import time
+from datetime import datetime, timedelta, timezone
+
+import pytest
+from rapidfuzz import fuzz, process
+
+from sif.config.settings import Settings
+from sif.core.models import QueryLogEntry, SearchOptions
+from sif.database.repositories import QueryLogRepository
+from sif.database.schema import SchemaManager
+from sif.search.bm25 import BM25Searcher
+from sif.search.suggest import SuggestionEngine
+
+
+def _fixture_db(*docs: tuple[str, str]) -> sqlite3.Connection:
+    """Real in-memory DB from the production DDL with one collection + docs.
+
+    Each doc is ``(doc_id, content)``; inserting into ``documents`` fires the
+    external-content sync triggers so ``documents_fts`` (and therefore the
+    vocab shadow) reflects the corpus without manual FTS writes.
+    """
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    SchemaManager(conn, embedding_dim=8).create_all()
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        "INSERT INTO collections (id, name, path, created_at, updated_at) "
+        "VALUES ('c1', 'notes', '/vault', ?, ?)",
+        (now, now),
+    )
+    conn.executemany(
+        "INSERT INTO documents (id, collection_id, path, filename, title, content, "
+        "checksum, mtime, created_at, updated_at) "
+        "VALUES (?, 'c1', ?, ?, ?, ?, ?, 1.0, ?, ?)",
+        [
+            (
+                doc_id,
+                f"/vault/{doc_id}.md",
+                f"{doc_id}.md",
+                doc_id,
+                content,
+                f"ck-{doc_id}",
+                now,
+                now,
+            )
+            for doc_id, content in docs
+        ],
+    )
+    conn.commit()
+    return conn
+
+
+@pytest.fixture
+def vocab_db():
+    """Corpus whose porter stems anchor the prefix/DYM assertions below."""
+    conn = _fixture_db(
+        ("d1", "quantum machine learning algorithms"),
+        ("d2", "quantum computing quick quantifiers"),
+        ("d3", "studies of machine learning contexts"),
+        ("d4", "dreaming machines study patterns"),
+    )
+    yield conn
+    conn.close()
+
+
+class _ReadOnlyVocabConnection:
+    """Adapter failing DDL as a read-only SQLite database would (degrade edge)."""
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self._conn = conn
+
+    def execute(self, sql: str, parameters: tuple = ()) -> sqlite3.Cursor:
+        if sql.lstrip().upper().startswith("CREATE"):
+            raise sqlite3.OperationalError("attempt to write a readonly database")
+        return self._conn.execute(sql, parameters)
+
+
+class TestPrefixCompletions:
+    """D-06 tracer: prefix completions are real, queryable vocab stems."""
+
+    def test_completions_are_real_queryable_stems(self, vocab_db):
+        """Every 'quant' completion starts with the prefix and hits as a query (SC2)."""
+        engine = SuggestionEngine(vocab_db)
+        completions = engine.prefix_completions("quant", 5)
+
+        assert completions, "expected at least one completion for prefix 'quant'"
+        searcher = BM25Searcher(vocab_db)
+        for term in completions:
+            assert term.startswith("quant")
+            results = searcher.search(term, SearchOptions(limit=1))
+            assert results, f"completion {term!r} returned zero hits (SC2 violation)"
+
+    def test_completions_rank_by_doc_frequency_then_lexical(self, vocab_db):
+        """df desc first, lexical ascending for equal df; ``n`` bounds the section."""
+        engine = SuggestionEngine(vocab_db)
+
+        # 'qu' matches quantifi (df 1), quantum (df 2), quick (df 1)
+        assert engine.prefix_completions("qu", 3) == ["quantum", "quantifi", "quick"]
+        # n=2 collects the first two lexically, then ranks them
+        assert engine.prefix_completions("qu", 2) == ["quantum", "quantifi"]
+
+    def test_prefix_matching_is_case_insensitive(self, vocab_db):
+        """The prefix lowercases before the scan; vocab terms are lowercase stems."""
+        engine = SuggestionEngine(vocab_db)
+        assert engine.prefix_completions("QUANT", 5) == engine.prefix_completions("quant", 5)
+
+    def test_prefix_shorter_than_two_returns_empty(self, vocab_db):
+        """Min prefix length 2 (pinned discretion): 'q' and '' yield nothing."""
+        engine = SuggestionEngine(vocab_db)
+        assert engine.prefix_completions("q", 5) == []
+        assert engine.prefix_completions("", 5) == []
+
+    def test_no_vocab_match_returns_empty(self, vocab_db):
+        """A prefix hitting nothing in the vocab degrades to an empty section."""
+        engine = SuggestionEngine(vocab_db)
+        assert engine.prefix_completions("zzzz", 5) == []
+
+
+class TestDidYouMean:
+    """D-07: per-word replacement into full rewritten queries; SC2 pinned.
+
+    The vocab stores porter STEMS, so replacements display stems (accepted,
+    RESEARCH A1); in-vocab words are kept as typed. The in-vocab predicate
+    probes the index with the searcher's own quoted-prefix MATCH form (WR-01),
+    so porter stemming and prefix matching behave exactly as they will when
+    the user re-runs the suggestion.
+    """
+
+    def test_rewrites_full_query_per_out_of_vocab_word(self, vocab_db):
+        """D-07 shape: typo replaced by its close stem; in-vocab word kept as typed."""
+        engine = SuggestionEngine(vocab_db)
+        # 'machien' is out-of-vocab; 'quantum' retrieves (kept as typed). The
+        # replacement is the vocab stem 'machin' (stem display accepted).
+        assert engine.did_you_mean("quantum machien") == ["quantum machin"]
+
+    def test_variant_depth_follows_close_match_order(self):
+        """A token with two equal-ratio matches yields two variants, best-first."""
+        conn = _fixture_db(
+            ("v1", "corner store"),
+            ("v2", "cornet music"),
+        )
+        try:
+            engine = SuggestionEngine(conn)
+            # corner/cornet tie at ratio 10/12 >= 0.75; the sorted bucket
+            # resolves the tie stably (corner before cornet)
+            assert engine.did_you_mean("cornex") == ["corner", "cornet"]
+        finally:
+            conn.close()
+
+    def test_no_dym_when_every_word_retrieves(self, vocab_db):
+        """D-07: an all-retrievable query yields [] — never a forced suggestion."""
+        engine = SuggestionEngine(vocab_db)
+        # 'machines' retrieves: porter matches it to stem 'machin' through the
+        # quoted-prefix form, and 'machines' starts with the vocab term
+        # 'machin' (prefix-range membership, Pitfall 4)
+        assert engine.did_you_mean("quantum machines") == []
+
+    def test_every_suggestion_hits_as_query(self, vocab_db):
+        """SC2 pin: every DYM suggestion returns >= 1 result via a real BM25 query."""
+        engine = SuggestionEngine(vocab_db)
+        searcher = BM25Searcher(vocab_db)
+        for query in ("machien", "machien quantom"):
+            suggestions = engine.did_you_mean(query)
+            assert suggestions, f"expected suggestions for {query!r}"
+            for suggestion in suggestions:
+                results = searcher.search(suggestion, SearchOptions(limit=1))
+                assert results, f"suggestion {suggestion!r} returned zero hits (SC2)"
+
+    def test_cross_document_terms_drop_zero_hit_suggestions(self):
+        """CR-01/SC2: a conjunction whose terms live in different docs is not emitted.
+
+        "beta" retrieves on its own, so the per-token substitution looks
+        plausible; only the AND probe catches that "alpha beta" hits nothing.
+        The old co-occurring ``machien quantom`` fixture could not.
+        """
+        conn = _fixture_db(("d1", "alpha"), ("d2", "beta"))
+        try:
+            engine = SuggestionEngine(conn)
+            searcher = BM25Searcher(conn)
+            suggestions = engine.did_you_mean("alphx beta")
+            assert suggestions == []
+            for suggestion in suggestions:  # pragma: no cover - empty after fix
+                assert searcher.search(suggestion, SearchOptions(limit=1))
+        finally:
+            conn.close()
+
+    def test_co_occurring_rewrite_is_still_emitted(self):
+        """CR-01 positive: a validated co-occurring rewrite survives the probe."""
+        conn = _fixture_db(("d1", "alpha beta"))
+        try:
+            engine = SuggestionEngine(conn)
+            searcher = BM25Searcher(conn)
+            suggestions = engine.did_you_mean("alphx beta")
+            assert suggestions == ["alpha beta"]
+            assert searcher.search(suggestions[0], SearchOptions(limit=1))
+        finally:
+            conn.close()
+
+    def test_short_stem_prefix_does_not_suppress_correction(self):
+        """WR-01a: 'resturant' retrieves nothing, so it must be corrected.
+
+        The old prefix-substring predicate judged it retrievable because
+        ``"resturant".startswith("rest")`` — even though the searcher returns
+        zero rows for it.
+        """
+        conn = _fixture_db(("r1", "rest"), ("r2", "restaurant"))
+        try:
+            engine = SuggestionEngine(conn)
+            searcher = BM25Searcher(conn)
+            assert not searcher.search("resturant", SearchOptions(limit=1))
+            assert engine.did_you_mean("resturant") == ["restaur"]
+        finally:
+            conn.close()
+
+    def test_valid_inflected_word_is_not_corrected(self):
+        """WR-01b: 'happy' matches the porter stem 'happi', so it is not rewritten.
+
+        The old predicate compared surface strings against stems and rewrote
+        the valid word to ``happi``; ``"happy"*`` actually matches.
+        """
+        conn = _fixture_db(("h1", "happy day"), ("h2", "doggy bone"))
+        try:
+            engine = SuggestionEngine(conn)
+            searcher = BM25Searcher(conn)
+            assert searcher.search("happy", SearchOptions(limit=1))
+            assert engine.did_you_mean("happy dog") == []
+        finally:
+            conn.close()
+
+    def test_uncorrectable_token_yields_no_suggestion(self, vocab_db):
+        """An out-of-vocab word with no close match yields [] (never fabricated)."""
+        engine = SuggestionEngine(vocab_db)
+        assert engine.did_you_mean("quantum xqzjw") == []
+        # One uncorrectable candidate poisons the whole rewrite: the emitted
+        # query must have every word retrievable (SC2 by construction)
+        assert engine.did_you_mean("machien xqzjw") == []
+
+    def test_repeated_calls_are_deterministic(self, vocab_db):
+        """Same vocab + query produce identical suggestion lists (tie stability)."""
+        engine = SuggestionEngine(vocab_db)
+        first = engine.did_you_mean("machien quantom")
+        assert first
+        for _ in range(3):
+            assert engine.did_you_mean("machien quantom") == first
+
+    def test_first_letter_typo_is_recalled(self, vocab_db):
+        """QUAL-01: the full scan reaches first-letter typos the bucket missed.
+
+        ``xuantum`` differs from the stem ``quantum`` only in its first letter
+        (``x`` vs ``q``, seven codepoints apart), so the old +/-1-letter bucket
+        never handed ``quantum`` to difflib; the full-vocabulary Indel scan
+        scores it 85.7 and recalls it at the pinned 75.0 cutoff.
+        """
+        engine = SuggestionEngine(vocab_db)
+        assert engine.did_you_mean("xuantum") == ["quantum"]
+
+    def test_cutoff_boundary_includes_exactly_75(self):
+        """D-14 edge: a score of exactly 75.0 is included (``>=``, no epsilon)."""
+        conn = _fixture_db(("r1", "rest"), ("r2", "restaurant"))
+        try:
+            engine = SuggestionEngine(conn)
+            engine._ensure_loaded()
+            # Indel math, identical on rapidfuzz 3.14.5 and 3.14.6.
+            assert fuzz.ratio("resturant", "restaur") == pytest.approx(75.0)
+            assert engine._close_matches("resturant") == ["restaur"]
+            assert engine.did_you_mean("resturant") == ["restaur"]
+        finally:
+            conn.close()
+
+    def test_cutoff_boundary_excludes_below_75(self):
+        """D-14 edge: a sub-cutoff candidate is excluded; no epsilon widening."""
+        conn = _fixture_db(("x1", "abcxy"))
+        try:
+            engine = SuggestionEngine(conn)
+            engine._ensure_loaded()
+            assert fuzz.ratio("abcde", "abcxy") == pytest.approx(60.0)
+            assert engine._close_matches("abcde") == []
+            assert engine.did_you_mean("abcde") == []
+        finally:
+            conn.close()
+
+    def test_equal_scores_order_by_term_and_are_stable(self):
+        """D-15: equal scores sort term ascending; repeated scans are identical."""
+        conn = _fixture_db(("v1", "corner store"), ("v2", "cornet music"))
+        try:
+            engine = SuggestionEngine(conn)
+            engine._ensure_loaded()
+            assert engine._close_matches("cornex", n=10) == ["corner", "cornet"]
+            assert engine._close_matches("cornex", n=10) == ["corner", "cornet"]
+        finally:
+            conn.close()
+
+    def test_empty_token_and_empty_vocab_return_no_matches(self):
+        """AGREED EDGE: an empty token or vocabulary returns [] instead of raising."""
+        conn = _fixture_db()
+        try:
+            engine = SuggestionEngine(conn)
+            engine._ensure_loaded()
+            assert engine._close_matches("") == []
+            assert engine._close_matches("quant") == []
+        finally:
+            conn.close()
+        conn = _fixture_db(("q1", "quantum"))
+        try:
+            engine = SuggestionEngine(conn)
+            engine._ensure_loaded()
+            assert engine._close_matches("") == []
+        finally:
+            conn.close()
+
+    def test_empty_and_metachar_only_queries_return_empty(self, vocab_db):
+        """No usable tokens -> no suggestions, no crash."""
+        engine = SuggestionEngine(vocab_db)
+        assert engine.did_you_mean("") == []
+        assert engine.did_you_mean('""" (( )) ^^') == []
+
+
+_CHARSET = "0123456789abcdefghijklmnopqrstuvwxyz"
+
+
+def _big_vocab_conn() -> sqlite3.Connection:
+    """Synthetic >= 60k-distinct-term vocab (research A2 recipe).
+
+    300 docs x 220 unique words (66k terms), first characters spread over
+    ``0-9a-z`` so the first-letter+-1 bucket is a small, measurable fraction
+    of the vocabulary.
+    """
+    return _fixture_db(*_big_vocab_docs())
+
+
+def _big_vocab_docs() -> list[tuple[str, str]]:
+    docs: list[tuple[str, str]] = []
+    for doc in range(300):
+        words = []
+        for i in range(220):
+            idx = doc * 220 + i
+            words.append(f"{_CHARSET[idx % 36]}{idx:05d}")
+        docs.append((f"d{doc:03d}", " ".join(words)))
+    return docs
+
+
+class TestCoreBudget:
+    """QUAL-01: full-vocabulary scan proven deterministically; generous wall bound."""
+
+    def test_full_vocab_dym_under_budget_on_60k_vocab(self, monkeypatch):
+        """The whole sorted vocabulary is scanned; core DYM < 1.0 s.
+
+        The choice-count assertion is deterministic — it catches a return to
+        the first-letter bucket without timing races (plan Task 3).
+        """
+        conn = _big_vocab_conn()
+        try:
+            vocab_size = conn.execute("SELECT COUNT(*) FROM documents_fts_v").fetchone()[0]
+            assert vocab_size >= 60_000
+
+            calls: list[int] = []
+            real_extract = process.extract
+
+            def spy(query, choices, **kwargs):  # type: ignore[no-untyped-def]
+                calls.append(len(choices))
+                return real_extract(query, choices, **kwargs)
+
+            monkeypatch.setattr(process, "extract", spy)
+
+            engine = SuggestionEngine(conn)
+            start = time.perf_counter()
+            completions = engine.prefix_completions("m0", 5)
+            engine.did_you_mean("mzzzzz9 xzzzzz9")
+            elapsed = time.perf_counter() - start
+
+            assert completions, "expected 'm0' completions in the synthetic vocab"
+            assert calls, "DYM never consulted rapidfuzz.process.extract"
+            assert max(calls) == vocab_size
+            assert elapsed < 1.0
+        finally:
+            conn.close()
+
+
+class TestVocabDegradation:
+    """Engine edges: empty vocab, missing vocab, read-only DB — never raise."""
+
+    def test_empty_vocab_returns_empty(self):
+        """A schema-complete DB with zero documents has an empty vocab."""
+        conn = _fixture_db()
+        try:
+            engine = SuggestionEngine(conn)
+            assert engine.prefix_completions("quant", 5) == []
+        finally:
+            conn.close()
+
+    def test_missing_vocab_table_degrades_to_empty(self):
+        """A bare connection without the FTS schema yields [], not OperationalError."""
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            engine = SuggestionEngine(conn)
+            assert engine.prefix_completions("quant", 5) == []
+        finally:
+            conn.close()
+
+    def test_read_only_db_degrades_to_empty(self, vocab_db):
+        """Vocab creation failing (read-only DB) degrades to empty, never raises."""
+        engine = SuggestionEngine(_ReadOnlyVocabConnection(vocab_db))
+        assert engine.prefix_completions("quant", 5) == []
+
+
+def _entry(
+    query: str,
+    created_at: datetime | None = None,
+    collections: list[str] | None = None,
+) -> QueryLogEntry:
+    return QueryLogEntry(
+        query=query,
+        result_count=0,
+        collections=collections if collections is not None else ["notes"],
+        created_at=created_at or datetime.now(timezone.utc),
+    )
+
+
+def _add_history(conn: sqlite3.Connection, *entries: QueryLogEntry) -> None:
+    repo = QueryLogRepository(conn)
+    for entry in entries:
+        repo.add(entry, keep=500)
+    conn.commit()
+
+
+class TestHistory:
+    """D-13/D-10: frequency x recency ranking, prefix filter, read gate."""
+
+    def test_history_ranks_frequency_times_recency(self, vocab_db, monkeypatch):
+        """count x 2^(-age_days/14): fresh repeated use beats a stale burst."""
+        monkeypatch.setattr("sif.search.suggest.get_settings", lambda: Settings(_env_file=None))
+        now = datetime.now(timezone.utc)
+        stale = now - timedelta(days=100)
+        _add_history(
+            vocab_db,
+            *[_entry("quantum notes", created_at=now) for _ in range(3)],
+            _entry("machine learning", created_at=now),
+            *[_entry("old query", created_at=stale) for _ in range(10)],
+        )
+
+        engine = SuggestionEngine(vocab_db)
+
+        assert engine.history_suggestions() == [
+            "quantum notes",
+            "machine learning",
+            "old query",
+        ]
+
+    def test_history_prefix_filter_is_case_insensitive(self, vocab_db, monkeypatch):
+        """A non-empty prefix filters queries case-insensitively."""
+        monkeypatch.setattr("sif.search.suggest.get_settings", lambda: Settings(_env_file=None))
+        now = datetime.now(timezone.utc)
+        _add_history(
+            vocab_db,
+            _entry("quantum notes", created_at=now),
+            _entry("quantum notes", created_at=now),
+            _entry("Quantum Field", created_at=now),
+            _entry("machine learning", created_at=now),
+        )
+
+        engine = SuggestionEngine(vocab_db)
+
+        assert engine.history_suggestions(prefix="QUANT") == ["quantum notes", "Quantum Field"]
+
+    def test_history_tie_breaks_last_used_then_lexical(self, vocab_db, monkeypatch):
+        """Recency scores first; fully tied entries fall back to lexical asc."""
+        monkeypatch.setattr("sif.search.suggest.get_settings", lambda: Settings(_env_file=None))
+        now = datetime.now(timezone.utc)
+        _add_history(
+            vocab_db,
+            _entry("beta query", created_at=now - timedelta(hours=2)),
+            _entry("alpha query", created_at=now),
+            _entry("gamma query", created_at=now - timedelta(hours=2)),
+        )
+
+        engine = SuggestionEngine(vocab_db)
+
+        assert engine.history_suggestions() == ["alpha query", "beta query", "gamma query"]
+
+    def test_history_cold_start_is_empty(self, vocab_db, monkeypatch):
+        """D-13: an empty query_log leaves the section empty."""
+        monkeypatch.setattr("sif.search.suggest.get_settings", lambda: Settings(_env_file=None))
+        engine = SuggestionEngine(vocab_db)
+        assert engine.history_suggestions() == []
+
+    def test_history_read_gate_disabled_returns_empty(self, vocab_db, monkeypatch):
+        """D-10: SIF_QUERY_HISTORY_ENABLED=0 empties the history read."""
+        monkeypatch.setattr(
+            "sif.search.suggest.get_settings",
+            lambda: Settings(_env_file=None, query_history_enabled=False),
+        )
+        _add_history(vocab_db, _entry("quantum notes"))
+        engine = SuggestionEngine(vocab_db)
+        assert engine.history_suggestions() == []
+
+    def test_history_settings_failure_returns_empty(self, vocab_db, monkeypatch):
+        """A settings-construction failure is fail-soft, never a crash."""
+
+        def _boom() -> Settings:
+            raise RuntimeError("bad config")
+
+        monkeypatch.setattr("sif.search.suggest.get_settings", _boom)
+        _add_history(vocab_db, _entry("quantum notes"))
+        engine = SuggestionEngine(vocab_db)
+        assert engine.history_suggestions() == []
+
+    def test_history_missing_table_degrades_to_empty(self, monkeypatch):
+        """An old DB without query_log degrades to [], never OperationalError."""
+        monkeypatch.setattr("sif.search.suggest.get_settings", lambda: Settings(_env_file=None))
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            engine = SuggestionEngine(conn)
+            assert engine.history_suggestions() == []
+        finally:
+            conn.close()

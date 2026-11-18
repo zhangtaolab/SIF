@@ -7,10 +7,12 @@ This module tests the RRF fusion implementation including:
 - Edge cases and boundary conditions
 """
 
+import copy
+
 import pytest
 
 from sif.core.models import SearchResult
-from sif.search.rrf import RRFFusion
+from sif.search.rrf import RRFFusion, chunk_key, fuse_key_for
 
 
 # =============================================================================
@@ -345,7 +347,7 @@ class TestRRFWeightedFusion:
         """Test fusion with equal weights.
 
         Arrange: Create result lists with equal weights
-        Act: Call fuse_with_weights with equal weights
+        Act: Call fuse with equal weights
         Assert: Results ordered by combined score
         """
         # Arrange
@@ -353,7 +355,7 @@ class TestRRFWeightedFusion:
         weights = [1.0, 1.0]
 
         # Act
-        fused = rrf_fusion.fuse_with_weights(result_lists, weights=weights)
+        fused = rrf_fusion.fuse(result_lists, weights=weights)
 
         # Assert
         assert len(fused) == 4
@@ -369,7 +371,7 @@ class TestRRFWeightedFusion:
         """Test fusion with unequal weights.
 
         Arrange: Create result lists with different weights
-        Act: Call fuse_with_weights with weighted scores
+        Act: Call fuse with weighted scores
         Assert: Higher weighted list has more influence
         """
         # Arrange
@@ -378,7 +380,7 @@ class TestRRFWeightedFusion:
         weights = [10.0, 1.0]
 
         # Act
-        fused = rrf_fusion.fuse_with_weights(result_lists, weights=weights)
+        fused = rrf_fusion.fuse(result_lists, weights=weights)
 
         # Assert
         # With high BM25 weight, BM25 ranking should dominate
@@ -401,7 +403,7 @@ class TestRRFWeightedFusion:
         """Test fusion with zero weight for one list.
 
         Arrange: Create result lists, one with zero weight
-        Act: Call fuse_with_weights with zero weight
+        Act: Call fuse with zero weight
         Assert: Zero-weighted list has no effect on scores
         """
         # Arrange
@@ -409,7 +411,7 @@ class TestRRFWeightedFusion:
         weights = [1.0, 0.0]
 
         # Act
-        fused = rrf_fusion.fuse_with_weights(result_lists, weights=weights)
+        fused = rrf_fusion.fuse(result_lists, weights=weights)
 
         # Assert
         # With zero weight for vector, vector-only docs (doc-D) get 0 score from vector list
@@ -435,7 +437,7 @@ class TestRRFWeightedFusion:
         """Test fusion with mismatched weights length.
 
         Arrange: Create result lists with fewer weights than lists
-        Act: Call fuse_with_weights
+        Act: Call fuse
         Assert: Raises ValueError
         """
         # Arrange
@@ -445,7 +447,216 @@ class TestRRFWeightedFusion:
 
         # Act & Assert
         with pytest.raises(ValueError, match="weights"):
-            rrf_fusion.fuse_with_weights(result_lists, weights=weights)
+            rrf_fusion.fuse(result_lists, weights=weights)
+
+
+# =============================================================================
+# SC1 Golden Tests (Phase 15 — byte-identical default fusion)
+# =============================================================================
+
+
+def _fresh_lists(
+    bm25_results: list[SearchResult],
+    vector_results: list[SearchResult],
+) -> list[list[SearchResult]]:
+    """Deep-copy fixture lists so one fuse call never feeds on another's mutations.
+
+    fuse() mutates its inputs (score/rank reassignment, scores-dict merges),
+    so golden comparisons need independent copies per call.
+    """
+    return [copy.deepcopy(bm25_results), copy.deepcopy(vector_results)]
+
+
+class TestRRFSC1Golden:
+    """SC1: explicit default weights/k must reproduce plain fuse to the last bit.
+
+    Phase 15's compat bar (D-01): unconfigured fusion is byte-identical to the
+    pre-change arithmetic. The multiply form ``weight * (1.0 / (k + rank))``
+    with weight 1.0 is IEEE-exact (``1.0 * x == x``), so repr(rrf_score)
+    equality is the pinned invariant — no normalization, ever.
+
+    CORR-02 (2026-11-15) added an optional grouping key and a chunk-metadata
+    merge to ``fuse``, but neither expression touches the score arithmetic,
+    so these golden values are unchanged and remain the post-dedup baseline.
+    """
+
+    def test_fuse_default_weights_byte_identical(
+        self,
+        rrf_fusion: RRFFusion,
+        bm25_results: list[SearchResult],
+        vector_results: list[SearchResult],
+    ) -> None:
+        """fuse(..., weights=[1.0, 1.0], k=60) == plain fuse, repr-exact.
+
+        Arrange: Two independent copies of the fixture lists
+        Act: Fuse one plainly, one with explicit default weights/k
+        Assert: document_id order, ranks, and repr of rrf_score all equal
+        """
+        # Arrange
+        plain = rrf_fusion.fuse(_fresh_lists(bm25_results, vector_results), 10)
+        weighted = rrf_fusion.fuse(
+            _fresh_lists(bm25_results, vector_results),
+            10,
+            weights=[1.0, 1.0],
+            k=60,
+        )
+
+        # Assert
+        assert [(r.document_id, r.rank, repr(r.scores["rrf_score"])) for r in plain] == [
+            (r.document_id, r.rank, repr(r.scores["rrf_score"])) for r in weighted
+        ]
+
+    def test_fuse_weights_none_matches_explicit_defaults(
+        self,
+        rrf_fusion: RRFFusion,
+        bm25_results: list[SearchResult],
+        vector_results: list[SearchResult],
+    ) -> None:
+        """weights=None (the unconfigured path) matches explicit [1.0, 1.0].
+
+        Arrange: Two independent copies of the fixture lists
+        Act: Fuse one with weights=None, one with weights=[1.0, 1.0]
+        Assert: Fused scores are exactly equal (float ==, not approx)
+        """
+        # Arrange
+        unconfigured = rrf_fusion.fuse(_fresh_lists(bm25_results, vector_results), 10)
+        explicit = rrf_fusion.fuse(
+            _fresh_lists(bm25_results, vector_results),
+            10,
+            weights=[1.0, 1.0],
+        )
+
+        # Assert
+        assert [r.score for r in unconfigured] == [r.score for r in explicit]
+        assert [r.document_id for r in unconfigured] == [r.document_id for r in explicit]
+
+
+# =============================================================================
+# Weighted / k Variant Tests (Phase 15 — knobs actually change fusion)
+# =============================================================================
+
+
+def _disagreeing_lists() -> tuple[list[SearchResult], list[SearchResult]]:
+    """Two disjoint, completely disagreeing ranked lists (no shared docs)."""
+    bm25 = [
+        SearchResult(
+            document_id=f"bm-{i}",
+            path=f"/bm/{i}.md",
+            title="T",
+            collection_name="c",
+            score=0.9 - i * 0.1,
+        )
+        for i in range(3)
+    ]
+    vector = [
+        SearchResult(
+            document_id=f"vec-{i}",
+            path=f"/vec/{i}.md",
+            title="T",
+            collection_name="c",
+            score=0.9 - i * 0.1,
+        )
+        for i in range(3)
+    ]
+    return bm25, vector
+
+
+class TestRRFWeightedVariants:
+    """Weights and k measurably change the fused output (Phase 15 knobs)."""
+
+    def test_heavy_bm25_weight_lifts_bm25_only_docs(self) -> None:
+        """weights=[5.0, 0.2] pulls every BM25-only doc above every vector doc.
+
+        Arrange: Disjoint lists (no doc in both sources)
+        Act: Fuse with equal weights, then BM25-heavy weights
+        Assert: BM25-heavy top-3 are exactly the BM25 docs in rank order
+        """
+        # Arrange
+        bm25, vector = _disagreeing_lists()
+        fusion = RRFFusion(k=60)
+
+        # Act
+        equal = fusion.fuse([copy.deepcopy(bm25), copy.deepcopy(vector)], weights=[1.0, 1.0])
+        bm25_heavy = fusion.fuse([copy.deepcopy(bm25), copy.deepcopy(vector)], weights=[5.0, 0.2])
+
+        # Assert
+        assert equal  # fused output non-empty
+        assert [r.document_id for r in bm25_heavy[:3]] == ["bm-0", "bm-1", "bm-2"]
+
+    def test_heavy_vector_weight_reorders_fused_ranking(self) -> None:
+        """weights=[0.2, 5.0] flips the ranking the other way (reorder proof).
+
+        Arrange: Same disjoint lists
+        Act: Fuse BM25-heavy, then vector-heavy
+        Assert: The two orderings differ; vector-heavy top-3 are the vector docs
+        """
+        # Arrange
+        bm25, vector = _disagreeing_lists()
+        fusion = RRFFusion(k=60)
+
+        # Act
+        bm25_heavy = fusion.fuse([copy.deepcopy(bm25), copy.deepcopy(vector)], weights=[5.0, 0.2])
+        vector_heavy = fusion.fuse([copy.deepcopy(bm25), copy.deepcopy(vector)], weights=[0.2, 5.0])
+
+        # Assert
+        assert [r.document_id for r in bm25_heavy] != [r.document_id for r in vector_heavy]
+        assert [r.document_id for r in vector_heavy[:3]] == ["vec-0", "vec-1", "vec-2"]
+
+    def test_k_parameter_changes_scores_per_formula(self) -> None:
+        """k=1 vs k=60 produce exactly 1/(k+rank) for a single-list fuse.
+
+        Arrange: Single one-document list
+        Act: Fuse with k=1 and k=60
+        Assert: Scores are exactly 1/2 and 1/61
+        """
+        # Arrange
+        single = [
+            SearchResult(
+                document_id="doc-X",
+                path="/x.md",
+                title="T",
+                collection_name="c",
+                score=0.9,
+            ),
+        ]
+        fusion = RRFFusion(k=60)
+
+        # Act
+        k1 = fusion.fuse([copy.deepcopy(single)], k=1)
+        k60 = fusion.fuse([copy.deepcopy(single)], k=60)
+
+        # Assert
+        assert k1[0].score == 1.0 / (1 + 1)
+        assert k60[0].scores["rrf_score"] == 1.0 / (60 + 1)
+
+    def test_k_none_falls_back_to_instance_k(self) -> None:
+        """k=None uses the constructor k; the per-call k never mutates it.
+
+        Arrange: RRFFusion(k=10)
+        Act: Fuse with k=None, then with k=1, then k=None again
+        Assert: Both k=None calls match the k=10 arithmetic; instance k stays 10
+        """
+        # Arrange
+        single = [
+            SearchResult(
+                document_id="doc-X",
+                path="/x.md",
+                title="T",
+                collection_name="c",
+                score=0.9,
+            ),
+        ]
+        fusion = RRFFusion(k=10)
+
+        # Act
+        first = fusion.fuse([copy.deepcopy(single)])
+        fusion.fuse([copy.deepcopy(single)], k=1)
+        second = fusion.fuse([copy.deepcopy(single)])
+
+        # Assert
+        assert first[0].score == 1.0 / (10 + 1)
+        assert second[0].score == 1.0 / (10 + 1)
+        assert fusion.k == 10
 
 
 # =============================================================================
@@ -804,19 +1015,19 @@ class TestRRFScorePreservation:
         assert doc_a.scores["vector_score"] == 0.92
         assert "rrf_score" in doc_a.scores
 
-    def test_fuse_with_weights_preserves_scores(
+    def test_fuse_weighted_preserves_scores(
         self,
         bm25_results: list[SearchResult],
         vector_results: list[SearchResult],
     ) -> None:
-        """Test that fuse_with_weights() preserves scores in scores dict."""
+        """Test that fuse(weights=...) preserves scores in scores dict."""
         # Arrange
         fusion = RRFFusion(k=60)
         result_lists = [bm25_results, vector_results]
         weights = [1.0, 1.0]
 
         # Act
-        fused = fusion.fuse_with_weights(result_lists, weights=weights)
+        fused = fusion.fuse(result_lists, weights=weights)
 
         # Assert
         doc_a = next(r for r in fused if r.document_id == "doc-A")
@@ -839,3 +1050,117 @@ class TestRRFScorePreservation:
         # Assert
         # First list is BM25, so bm25_score should be preserved
         assert fused[0].scores.get("bm25_score") == sample_search_results[0].score
+
+
+# =============================================================================
+# Per-chunk fusion key (CORR-02 — grouping without touching RRF math)
+# =============================================================================
+
+
+def _chunk_result(
+    document_id: str,
+    chunk_id: str | None,
+    sequence: int | None,
+    score: float,
+    chunk_matches: int = 0,
+) -> SearchResult:
+    """One result row with explicit chunk identity (None = document-level row)."""
+    return SearchResult(
+        document_id=document_id,
+        path=f"/{document_id}.md",
+        title="T",
+        collection_name="c",
+        score=score,
+        chunk_id=chunk_id,
+        sequence=sequence,
+        chunk_matches=chunk_matches,
+    )
+
+
+class TestRRFChunkKey:
+    """The optional fusion key groups chunk rows; scores stay byte-identical."""
+
+    def test_fuse_key_for_helpers(self) -> None:
+        """The shared helper selects chunk keying only for per-chunk mode."""
+        assert fuse_key_for(False) is None
+        assert fuse_key_for(True) is chunk_key
+        assert chunk_key(_chunk_result("d1", "c1", 0, 0.9)) == "c1"
+        assert chunk_key(_chunk_result("d1", None, None, 0.9)) == "d1"
+
+    def test_document_key_collapses_chunks_and_keeps_max_matches(self) -> None:
+        """Default keying merges one document's chunk rows and keeps max(count)."""
+        rows = [
+            _chunk_result("d1", "c1", 0, 0.9, chunk_matches=1),
+            _chunk_result("d1", "c2", 1, 0.8, chunk_matches=3),
+        ]
+
+        fused = RRFFusion(k=60).fuse([rows])
+
+        assert len(fused) == 1
+        assert fused[0].chunk_matches == 3
+
+    def test_chunk_key_keeps_chunks_of_one_document_apart(self) -> None:
+        """Per-chunk keying preserves both chunk rows of the same document."""
+        rows = [
+            _chunk_result("d1", "c1", 0, 0.9, chunk_matches=0),
+            _chunk_result("d1", "c2", 1, 0.8, chunk_matches=0),
+        ]
+
+        fused = RRFFusion(k=60).fuse([rows], key=chunk_key)
+
+        assert len(fused) == 2
+        assert {r.chunk_id for r in fused} == {"c1", "c2"}
+
+    def test_merge_adopts_later_chunk_identity_and_max_matches(self) -> None:
+        """A dual-list document keeps the vector leg's chunk and the larger count."""
+        bm25_rows = [_chunk_result("d1", None, None, 0.9, chunk_matches=0)]
+        vector_rows = [_chunk_result("d1", "c1", 2, 0.8, chunk_matches=3)]
+
+        fused = RRFFusion(k=60).fuse([bm25_rows, vector_rows])
+
+        assert len(fused) == 1
+        assert fused[0].chunk_id == "c1"
+        assert fused[0].sequence == 2
+        assert fused[0].chunk_matches == 3
+
+    def test_merge_does_not_clear_existing_chunk_identity(self) -> None:
+        """A later row without chunk identity never erases an earlier one."""
+        first = [_chunk_result("d1", "c1", 0, 0.9, chunk_matches=2)]
+        later = [_chunk_result("d1", None, None, 0.8, chunk_matches=0)]
+
+        fused = RRFFusion(k=60).fuse([first, later])
+
+        assert fused[0].chunk_id == "c1"
+        assert fused[0].sequence == 0
+        assert fused[0].chunk_matches == 2
+
+    def test_new_rows_copy_chunk_identity(self) -> None:
+        """Rows that never merge still carry their chunk identity through."""
+        fused = RRFFusion(k=60).fuse([[_chunk_result("d1", "c1", 4, 0.9, chunk_matches=0)]])
+
+        assert fused[0].chunk_id == "c1"
+        assert fused[0].sequence == 4
+        assert fused[0].chunk_matches == 0
+
+    def test_chunk_key_scores_are_byte_identical_to_document_key(self) -> None:
+        """Same inputs, same groups: the key changes no score or rank arithmetic."""
+        bm25_rows = [
+            _chunk_result("d1", "c1", 0, 0.9, chunk_matches=1),
+            _chunk_result("d2", "c2", 0, 0.7, chunk_matches=1),
+        ]
+        vector_rows = [
+            _chunk_result("d1", "c1", 0, 0.8, chunk_matches=1),
+            _chunk_result("d3", "c3", 0, 0.6, chunk_matches=1),
+        ]
+
+        fusion = RRFFusion(k=60)
+        plain = fusion.fuse([copy.deepcopy(bm25_rows), copy.deepcopy(vector_rows)], 10)
+        chunked = fusion.fuse(
+            [copy.deepcopy(bm25_rows), copy.deepcopy(vector_rows)],
+            10,
+            key=chunk_key,
+        )
+
+        assert [
+            (r.document_id, r.chunk_id, r.rank, repr(r.scores["rrf_score"])) for r in plain
+        ] == [(r.document_id, r.chunk_id, r.rank, repr(r.scores["rrf_score"])) for r in chunked]

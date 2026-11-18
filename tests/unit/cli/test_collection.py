@@ -1,6 +1,7 @@
 """Tests for collection update-cmd and index pre-update hook."""
 
 import contextlib
+import json
 import sqlite3
 import subprocess
 from collections.abc import Generator
@@ -17,10 +18,39 @@ from sif.cli.commands.collection import (
 )
 from sif.cli.commands.index import update_cmd
 from sif.cli.main import cli
-from sif.config.settings import get_settings
-from sif.core.models import Collection
+from sif.config.settings import Settings, get_settings
+from sif.core.models import Collection, Document, DocumentChunk
 from sif.database.database import Database
-from sif.database.repositories import CollectionRepository
+from sif.database.repositories import (
+    CollectionRepository,
+    DocumentChunkRepository,
+    DocumentRepository,
+)
+
+
+def _reject_json_constant(token: str) -> None:
+    """``json.loads`` parse_constant hook that refuses NaN/Infinity tokens."""
+    raise AssertionError(f"non-standard JSON token: {token}")
+
+
+def _stored_embedding_doc_ids(db_path: Path) -> set[str]:
+    """Read stored vec0 document_ids on a fresh sqlite-vec-loaded connection.
+
+    Skips only when the extension itself is absent (the same best-effort
+    contract as test_incremental's _embedding_count).
+    """
+    try:
+        import sqlite_vec
+    except ImportError:
+        pytest.skip("sqlite-vec not available")
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.enable_load_extension(True)
+        sqlite_vec.load(conn)
+        conn.enable_load_extension(False)
+        return {row[0] for row in conn.execute("SELECT document_id FROM document_embeddings")}
+    finally:
+        conn.close()
 
 
 class TestCollectionRealDatabase:
@@ -39,6 +69,16 @@ class TestCollectionRealDatabase:
         notes = tmp_path / "notes"
         (notes / "projects").mkdir(parents=True)
         (notes / "projects" / "roadmap.md").write_text("# Roadmap\n", encoding="utf-8")
+        return notes
+
+    @pytest.fixture
+    def sibling_notes_dir(self, tmp_path: Path) -> Path:
+        """A real collection root with sibling python/ and python2/ subtrees."""
+        notes = tmp_path / "notes"
+        (notes / "python").mkdir(parents=True)
+        (notes / "python2").mkdir(parents=True)
+        (notes / "python" / "a.md").write_text("# A\n", encoding="utf-8")
+        (notes / "python2" / "b.md").write_text("# B\n", encoding="utf-8")
         return notes
 
     def _invoke(self, db_path: Path, *args: str, stdin: str | None = None) -> Result:
@@ -63,6 +103,49 @@ class TestCollectionRealDatabase:
         with contextlib.closing(sqlite3.connect(db_path)) as conn:
             conn.row_factory = sqlite3.Row
             return conn.execute("SELECT * FROM collections WHERE name = ?", (name,)).fetchone()
+
+    def _seed_embedded_collection(
+        self, db_path: Path, name: str, probe_token: str, *, embed: bool = True
+    ) -> str:
+        """Seed one collection with a document, a chunk, and a real vec0 embedding.
+
+        The dim-8 settings patch must cover init_schema: the schema's
+        dimension-mismatch guard rejects a vec0 table whose FLOAT[dim]
+        disagrees with settings. The probe token lands in both the document
+        content and the chunk content so documents_fts and chunks_fts are
+        MATCH-assertable. Returns the seeded document id.
+        """
+        from sif.search.vector import VectorSearcher
+
+        content = f"# Probe\n\n{probe_token} unique probe body.\n"
+        root = db_path.parent / name
+        db = Database(db_path)
+        with patch(
+            "sif.config.settings.get_settings",
+            return_value=Settings(embedding_dim=8, model_name="test", cache_embeddings=False),
+        ):
+            db.init_schema()
+            with db.transaction() as conn:
+                coll = CollectionRepository(conn).create(Collection(name=name, path=str(root)))
+                doc = DocumentRepository(conn).create(
+                    Document(path=str(root / "probe.md"), collection_id=coll.id, content=content)
+                )
+                DocumentChunkRepository(conn).create(
+                    DocumentChunk(
+                        content=content,
+                        sequence=0,
+                        start_pos=0,
+                        end_pos=len(content),
+                        document_id=doc.id,
+                    )
+                )
+                if embed:
+                    # Real chunk_id string: vec0 v0.1.9 rejects NULL TEXT metadata.
+                    VectorSearcher(conn, embedding_dim=8).add_embedding(
+                        f"e-{doc.id}", doc.id, f"c-{doc.id}", [0.1] * 8
+                    )
+        db.close()
+        return doc.id
 
     def test_add_list_show_and_repository_state(self, tmp_path: Path, notes_dir: Path) -> None:
         """A collection added through the CLI persists and is visible to readers."""
@@ -119,6 +202,108 @@ class TestCollectionRealDatabase:
         assert self._read_collection(db_path, "notes") is None
         assert missing.exit_code != 0
         assert "Collection 'notes' not found" in missing.stderr
+
+    def test_remove_purges_embeddings_chunks_and_fts(self, tmp_path: Path) -> None:
+        """WR-01: collection remove purges vec0 embeddings; a keeper collection survives.
+
+        The vec0 virtual table cannot carry the documents FK cascade, so
+        removal must purge embeddings explicitly before deleting documents.
+        At the defect HEAD the orphaned vec0 row survives and the final
+        stored-embedding assertion fails.
+        """
+        db_path = tmp_path / "sif.db"
+        removed_doc_id = self._seed_embedded_collection(db_path, "notes", "purgeprobealpha")
+        keeper_doc_id = self._seed_embedded_collection(db_path, "keeper", "purgeprobekeeper")
+
+        with patch(
+            "sif.config.settings.get_settings",
+            return_value=Settings(embedding_dim=8, model_name="test", cache_embeddings=False),
+        ):
+            result = self._invoke(db_path, "remove", "notes", stdin="y\n")
+
+        assert result.exit_code == 0, result.output
+        assert self._read_collection(db_path, "notes") is None
+        assert self._read_collection(db_path, "keeper") is not None
+
+        conn = sqlite3.connect(db_path)
+        try:
+            doc_ids = {row[0] for row in conn.execute("SELECT id FROM documents")}
+            assert removed_doc_id not in doc_ids
+            assert keeper_doc_id in doc_ids
+            assert (
+                conn.execute(
+                    "SELECT COUNT(*) FROM document_chunks WHERE document_id = ?",
+                    (removed_doc_id,),
+                ).fetchone()[0]
+                == 0
+            )
+            assert (
+                conn.execute(
+                    "SELECT COUNT(*) FROM document_chunks WHERE document_id = ?",
+                    (keeper_doc_id,),
+                ).fetchone()[0]
+                == 1
+            )
+            assert (
+                conn.execute(
+                    "SELECT COUNT(*) FROM documents_fts WHERE documents_fts MATCH 'purgeprobealpha'"
+                ).fetchone()[0]
+                == 0
+            )
+            assert (
+                conn.execute(
+                    "SELECT COUNT(*) FROM documents_fts "
+                    "WHERE documents_fts MATCH 'purgeprobekeeper'"
+                ).fetchone()[0]
+                == 1
+            )
+            assert (
+                conn.execute(
+                    "SELECT COUNT(*) FROM chunks_fts WHERE chunks_fts MATCH 'purgeprobealpha'"
+                ).fetchone()[0]
+                == 0
+            )
+        finally:
+            conn.close()
+
+        stored = _stored_embedding_doc_ids(db_path)
+        assert removed_doc_id not in stored, "WR-01: orphaned vec0 embedding survived removal"
+        assert keeper_doc_id in stored
+        assert len(stored) == 1
+
+    def test_remove_without_sqlite_vec_still_deletes(self, tmp_path: Path) -> None:
+        """D4 fail-soft pin: BM25-only installs without sqlite-vec still remove collections."""
+        db_path = tmp_path / "sif.db"
+        doc_id = self._seed_embedded_collection(db_path, "notes", "purgeprobenovec", embed=False)
+
+        with (
+            patch(
+                "sif.config.settings.get_settings",
+                return_value=Settings(embedding_dim=8, model_name="test", cache_embeddings=False),
+            ),
+            patch(
+                "sif.search.vector.VectorSearcher",
+                side_effect=RuntimeError("sqlite-vec extension is not available."),
+            ),
+        ):
+            result = self._invoke(db_path, "remove", "notes", stdin="y\n")
+
+        assert result.exit_code == 0, result.output
+        assert self._read_collection(db_path, "notes") is None
+        conn = sqlite3.connect(db_path)
+        try:
+            assert (
+                conn.execute("SELECT COUNT(*) FROM documents WHERE id = ?", (doc_id,)).fetchone()[0]
+                == 0
+            )
+            assert (
+                conn.execute(
+                    "SELECT COUNT(*) FROM document_chunks WHERE document_id = ?", (doc_id,)
+                ).fetchone()[0]
+                == 0
+            )
+        finally:
+            conn.close()
 
     def test_rename_missing_and_duplicate(self, tmp_path: Path, notes_dir: Path) -> None:
         """Rename enforces both source existence and destination uniqueness."""
@@ -219,6 +404,70 @@ class TestCollectionRealDatabase:
         assert "projects/roadmap.md" in listed.output
         assert empty.exit_code == 0, empty.output
         assert "No files found in collection." in empty.output
+
+    def test_ls_subpath_is_segment_aligned(self, tmp_path: Path, sibling_notes_dir: Path) -> None:
+        """WR-05: a relative subpath lists its own subtree, never a sibling prefix."""
+        db_path = tmp_path / "sif.db"
+        self._seed(db_path, "notes", sibling_notes_dir)
+
+        filtered = self._invoke(db_path, "ls", "notes", "python")
+        unfiltered = self._invoke(db_path, "ls", "notes")
+
+        assert filtered.exit_code == 0, filtered.output
+        assert "python/a.md" in filtered.output
+        assert "b.md" not in filtered.output
+        assert unfiltered.exit_code == 0, unfiltered.output
+        assert "python/a.md" in unfiltered.output
+        assert "python2/b.md" in unfiltered.output
+
+    def test_ls_subpath_absolute_is_segment_aligned(
+        self, tmp_path: Path, sibling_notes_dir: Path
+    ) -> None:
+        """An absolute subpath selects the same subtree as the relative form."""
+        db_path = tmp_path / "sif.db"
+        self._seed(db_path, "notes", sibling_notes_dir)
+
+        result = self._invoke(db_path, "ls", "notes", str(sibling_notes_dir / "python"))
+
+        assert result.exit_code == 0, result.output
+        assert "python/a.md" in result.output
+        assert "b.md" not in result.output
+
+    def test_ls_subpath_exact_file(self, tmp_path: Path, sibling_notes_dir: Path) -> None:
+        """An exact-file subpath selects that single file."""
+        db_path = tmp_path / "sif.db"
+        self._seed(db_path, "notes", sibling_notes_dir)
+
+        result = self._invoke(db_path, "ls", "notes", "python/a.md")
+
+        assert result.exit_code == 0, result.output
+        assert "python/a.md" in result.output
+        assert "b.md" not in result.output
+
+    def test_ls_subpath_trailing_slash(self, tmp_path: Path, sibling_notes_dir: Path) -> None:
+        """A trailing-slash subpath selects the same file as the bare form."""
+        db_path = tmp_path / "sif.db"
+        self._seed(db_path, "notes", sibling_notes_dir)
+
+        result = self._invoke(db_path, "ls", "notes", "python/")
+
+        assert result.exit_code == 0, result.output
+        assert "python/a.md" in result.output
+        assert "b.md" not in result.output
+
+    def test_ls_subpath_no_match_reports_no_files(
+        self, tmp_path: Path, sibling_notes_dir: Path
+    ) -> None:
+        """A subpath matching nothing exits 0 with the existing no-files message."""
+        db_path = tmp_path / "sif.db"
+        self._seed(db_path, "notes", sibling_notes_dir)
+
+        result = self._invoke(db_path, "ls", "notes", "missing")
+
+        assert result.exit_code == 0, result.output
+        assert "No files found in collection." in result.output
+        assert "a.md" not in result.output
+        assert "b.md" not in result.output
 
     def test_list_missing_empty_and_verbose(self, tmp_path: Path, notes_dir: Path) -> None:
         """List handles absent and empty indexes plus verbose collection details."""
@@ -424,7 +673,7 @@ class TestCollectionIncludeExclude:
 class TestIndexPreUpdateHook:
     """Tests for index update pre-update command hook."""
 
-    def test_index_update_runs_pre_update_cmd(self):
+    def test_index_update_runs_pre_update_cmd(self, tmp_path):
         """Test that index update runs pre-update command."""
         runner = CliRunner()
         collection = Collection(name="notes", path="/tmp/notes", pre_update_cmd="echo hello")
@@ -455,7 +704,7 @@ class TestIndexPreUpdateHook:
                 "sif.cli.commands.index.DocumentRepository",
                 return_value=mock_doc_repo,
             ),
-            patch("sif.cli.commands.index.FileScanner", mock_scanner),
+            patch("sif.indexing.incremental.FileScanner", mock_scanner),
             patch(
                 "subprocess.run",
                 return_value=MagicMock(returncode=0, stderr="", stdout=""),
@@ -464,7 +713,7 @@ class TestIndexPreUpdateHook:
             result = runner.invoke(
                 update_cmd,
                 ["--collection", "notes"],
-                obj={"index_path": MagicMock()},
+                obj={"index_path": tmp_path / "sif.db"},
             )
 
         assert result.exit_code == 0
@@ -479,7 +728,7 @@ class TestIndexPreUpdateHook:
         )
         assert "Running pre-update command" in result.output
 
-    def test_index_update_times_out_hung_pre_update_cmd(self):
+    def test_index_update_times_out_hung_pre_update_cmd(self, tmp_path):
         """WR-06: a hung pre-update command exits with a ClickException, not a hang."""
         runner = CliRunner()
         collection = Collection(name="notes", path="/tmp/notes", pre_update_cmd="sleep 9999")
@@ -510,7 +759,7 @@ class TestIndexPreUpdateHook:
                 "sif.cli.commands.index.DocumentRepository",
                 return_value=mock_doc_repo,
             ),
-            patch("sif.cli.commands.index.FileScanner", mock_scanner),
+            patch("sif.indexing.incremental.FileScanner", mock_scanner),
             patch(
                 "subprocess.run",
                 side_effect=subprocess.TimeoutExpired(cmd="sleep 9999", timeout=300),
@@ -519,13 +768,13 @@ class TestIndexPreUpdateHook:
             result = runner.invoke(
                 update_cmd,
                 ["--collection", "notes"],
-                obj={"index_path": MagicMock()},
+                obj={"index_path": tmp_path / "sif.db"},
             )
 
         assert result.exit_code != 0
         assert "timed out after 300s" in result.output
 
-    def test_index_update_fails_fast_on_pre_update_cmd_error(self):
+    def test_index_update_fails_fast_on_pre_update_cmd_error(self, tmp_path):
         """Test that index update fails fast on pre-update command error."""
         runner = CliRunner()
         collection = Collection(name="notes", path="/tmp/notes", pre_update_cmd="echo hello")
@@ -554,7 +803,7 @@ class TestIndexPreUpdateHook:
                 "sif.cli.commands.index.DocumentRepository",
                 return_value=mock_doc_repo,
             ),
-            patch("sif.cli.commands.index.FileScanner", mock_scanner),
+            patch("sif.indexing.incremental.FileScanner", mock_scanner),
             patch(
                 "subprocess.run",
                 return_value=MagicMock(returncode=1, stderr="failed", stdout=""),
@@ -563,8 +812,291 @@ class TestIndexPreUpdateHook:
             result = runner.invoke(
                 update_cmd,
                 ["--collection", "notes"],
-                obj={"index_path": MagicMock()},
+                obj={"index_path": tmp_path / "sif.db"},
             )
 
         assert result.exit_code != 0
         assert "Pre-update command failed" in result.output
+
+
+class TestCollectionMetadata:
+    """``sif collection metadata`` table/JSON/options/error surface (D-14/D-15/D-20)."""
+
+    @pytest.fixture(autouse=True)
+    def isolated_settings(self) -> Generator[None, None, None]:
+        """Database initialization must not inherit another test's settings."""
+        get_settings.cache_clear()
+        yield
+        get_settings.cache_clear()
+
+    def _invoke(self, db_path: Path, *args: str) -> Result:
+        """Invoke the command through the top-level CLI with a tmp database."""
+        return CliRunner().invoke(
+            cli,
+            ["--index", str(db_path), "collection", "metadata", *args],
+            env={"COLUMNS": "200"},
+        )
+
+    def _seed(self, db_path: Path) -> None:
+        """Two collections, typed rows written through the production repository."""
+        db = Database(db_path)
+        db.init_schema()
+        with db.transaction() as conn:
+            collections = CollectionRepository(conn)
+            collections.create(Collection(id="coll-meta", name="meta", path="/notes"))
+            collections.create(Collection(id="coll-other", name="other", path="/other"))
+            documents = DocumentRepository(conn)
+            documents.create(
+                Document(
+                    id="d0",
+                    collection_id="coll-meta",
+                    path="/notes/a.md",
+                    content="body",
+                    mtime=100.0,
+                    # The native `path` key is reserved/shadowed (D-03).
+                    metadata={"tag": "rare", "priority": 1, "path": "native"},
+                )
+            )
+            documents.create(
+                Document(
+                    id="d1",
+                    collection_id="coll-meta",
+                    path="/notes/b.md",
+                    content="body",
+                    mtime=200.0,
+                    metadata={"tag": "common", "priority": 2},
+                )
+            )
+            documents.create(
+                Document(
+                    id="d2",
+                    collection_id="coll-meta",
+                    path="/notes/c.md",
+                    content="body",
+                    mtime=300.0,
+                    metadata={"tag": "common"},
+                )
+            )
+            documents.create(
+                Document(
+                    id="d3",
+                    collection_id="coll-other",
+                    path="/other/d.md",
+                    content="body",
+                    mtime=400.0,
+                    metadata={"tag": "elsewhere"},
+                )
+            )
+        db.close()
+
+    def _json(self, db_path: Path, *args: str) -> dict:
+        """Invoke with ``--json`` and parse the one envelope it prints."""
+        result = self._invoke(db_path, "--json", *args)
+        assert result.exit_code == 0, result.output
+        return json.loads(result.output)
+
+    def test_table_puts_built_ins_first_and_orders_keys_by_count(self, tmp_path: Path) -> None:
+        """Built-in rows come first; a shadowed frontmatter ``path`` adds no row."""
+        db_path = tmp_path / "sif.db"
+        self._seed(db_path)
+        result = self._invoke(db_path)
+        assert result.exit_code == 0, result.output
+        output = result.output
+        assert output.count("built-in") == 2
+        assert output.count("frontmatter") == 2
+        assert output.index("tag") < output.index("priority")
+        assert "native" not in output
+        # WR-07: no skipped keys, so the footer stays silent.
+        assert "skipped as non-indexable" not in output
+
+    def test_table_reports_skipped_keys_footer(self, tmp_path: Path) -> None:
+        """WR-07: non-indexable keys are visible on the default human surface."""
+        db_path = tmp_path / "sif.db"
+        db = Database(db_path)
+        db.init_schema()
+        with db.transaction() as conn:
+            CollectionRepository(conn).create(Collection(id="coll-skip", name="skip", path="/skip"))
+            DocumentRepository(conn).create(
+                Document(
+                    id="d-skip",
+                    collection_id="coll-skip",
+                    path="/skip/a.md",
+                    content="body",
+                    mtime=1.0,
+                    metadata={"nested": {"a": 1}, "tag": "x"},
+                )
+            )
+        db.close()
+
+        result = self._invoke(db_path)
+
+        assert result.exit_code == 0, result.output
+        assert "1 key skipped as non-indexable" in result.output
+        assert "nested" not in result.output
+
+    def test_json_envelope_carries_built_ins_and_no_shadowed_key(self, tmp_path: Path) -> None:
+        """The JSON envelope is the frozen D-15/D-20 shape, builtIns included."""
+        db_path = tmp_path / "sif.db"
+        self._seed(db_path)
+        payload = self._json(db_path)
+        assert payload["documents"] == 4
+        assert "filteredDocuments" not in payload
+        assert [entry["key"] for entry in payload["builtIns"]] == ["path", "mtime"]
+        keys = {entry["key"] for entry in payload["keys"]}
+        assert keys == {"tag", "priority"}
+        assert payload["totalKeys"] == 2
+        assert payload["remainingKeys"] == 0
+        assert payload["skippedKeys"] == 0
+
+    def test_json_output_is_strict_with_non_finite_metadata(self, tmp_path: Path) -> None:
+        """WR-06: a non-finite number never emits bare ``Infinity``/``NaN``.
+
+        The infinite ``mtime`` models the one value CR-01's derivation cannot
+        exclude (the reserved built-in reads the ``documents`` column), so it
+        asserts the serializer guard itself; the metadata value asserts the
+        canonical write-time stringification end to end.
+        """
+        db_path = tmp_path / "sif.db"
+        db = Database(db_path)
+        db.init_schema()
+        with db.transaction() as conn:
+            CollectionRepository(conn).create(Collection(id="coll-inf", name="inf", path="/inf"))
+            DocumentRepository(conn).create(
+                Document(
+                    id="d-inf",
+                    collection_id="coll-inf",
+                    path="/inf/a.md",
+                    content="body",
+                    mtime=float("inf"),
+                    metadata={"v": float("inf")},
+                )
+            )
+        db.close()
+
+        result = self._invoke(db_path, "--json")
+
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.output, parse_constant=_reject_json_constant)
+        entry = next(entry for entry in payload["keys"] if entry["key"] == "v")
+        assert entry["types"][0]["type"] == "string"
+        assert entry["types"][0]["values"][0]["value"] == "inf"
+        mtime_entry = next(entry for entry in payload["builtIns"] if entry["key"] == "mtime")
+        assert mtime_entry["types"][0]["range"] == {
+            "min": "inf",
+            "median": "inf",
+            "max": "inf",
+        }
+
+    def test_filter_narrows_counts_and_keeps_the_scope_denominator(self, tmp_path: Path) -> None:
+        """``--filter`` adds ``filteredDocuments`` and narrows every count but ``documents``."""
+        db_path = tmp_path / "sif.db"
+        self._seed(db_path)
+        payload = self._json(
+            db_path, "--filter", '{"field":"tag","operator":"eq","value":"common"}'
+        )
+        assert payload["documents"] == 4
+        assert payload["filteredDocuments"] == 2
+        tag = next(entry for entry in payload["keys"] if entry["key"] == "tag")
+        assert tag["documents"] == 2
+        priority = next(entry for entry in payload["keys"] if entry["key"] == "priority")
+        assert priority["documents"] == 1
+        assert payload["builtIns"][0]["documents"] == 2
+        assert payload["builtIns"][1]["types"][0]["range"] == {
+            "min": 200.0,
+            "median": 250.0,
+            "max": 300.0,
+        }
+
+    def test_match_narrows_keys_but_leaves_built_ins_unchanged(self, tmp_path: Path) -> None:
+        """``--match`` narrows frontmatter entries only (D-20 invariance)."""
+        db_path = tmp_path / "sif.db"
+        self._seed(db_path)
+        baseline = self._json(db_path)
+        matched = self._json(
+            db_path, "--match", '{"field":"key","operator":"prefix","value":"tag"}'
+        )
+        assert [entry["key"] for entry in matched["keys"]] == ["tag"]
+        assert matched["builtIns"] == baseline["builtIns"]
+        assert matched["documents"] == baseline["documents"]
+
+    def test_windows_sort_and_min_count_change_the_output(self, tmp_path: Path) -> None:
+        """``--limit``/``--value-limit``/``--sort``/``--min-count`` keep exact remainders."""
+        db_path = tmp_path / "sif.db"
+        self._seed(db_path)
+
+        limited = self._json(db_path, "--limit", "1")
+        assert [entry["key"] for entry in limited["keys"]] == ["tag"]
+        assert limited["remainingKeys"] == 1
+
+        windowed = self._json(db_path, "--value-limit", "1")
+        tag = next(entry for entry in windowed["keys"] if entry["key"] == "tag")
+        assert len(tag["types"][0]["values"]) == 1
+        assert tag["types"][0]["distinctValues"] == 3
+        assert tag["types"][0]["remainingValues"] == 2
+
+        ordered = self._json(db_path, "--sort", "value")
+        assert [entry["key"] for entry in ordered["keys"]] == ["priority", "tag"]
+
+        counted = self._json(db_path, "--min-count", "3")
+        tag = next(entry for entry in counted["keys"] if entry["key"] == "tag")
+        assert tag["types"][0]["values"] == []
+        assert tag["types"][0]["distinctValues"] == 0
+        assert tag["types"][0]["remainingValues"] == 0
+
+    def test_unknown_collection_name_is_a_user_error(self, tmp_path: Path) -> None:
+        """An unknown NAME uses the sibling collection error message."""
+        db_path = tmp_path / "sif.db"
+        self._seed(db_path)
+        result = self._invoke(db_path, "missing")
+        assert result.exit_code != 0
+        assert "Collection 'missing' not found" in result.output
+
+    @pytest.mark.parametrize(
+        ("payload", "operator", "field"),
+        [
+            ('{"field":"path","operator":"lt","value":5}', "lt", "path"),
+            ('{"field":"path","operator":"eq","value":5}', "eq", "path"),
+            ('{"field":"path","operator":"all","value":["a"]}', "all", "path"),
+            ('{"field":"mtime","operator":"prefix","value":"x"}', "prefix", "mtime"),
+            ('{"field":"mtime","operator":"all","value":[1]}', "all", "mtime"),
+        ],
+    )
+    def test_reserved_field_mistakes_fail_before_the_database_opens(
+        self, tmp_path: Path, payload: str, operator: str, field: str
+    ) -> None:
+        """WR-02: a rejected built-in form never reaches the DB-open block."""
+        db_path = tmp_path / "never.db"
+
+        result = self._invoke(db_path, "--filter", payload)
+
+        assert result.exit_code != 0
+        assert f"filter.{operator}:" in result.output
+        assert field in result.output
+        assert "Traceback" not in result.output
+        assert not db_path.exists()
+
+    def test_unbounded_integer_filter_is_a_user_error(self, tmp_path: Path) -> None:
+        """WR-01: a huge integer operand uses the ClickException boundary."""
+        db_path = tmp_path / "never.db"
+        payload = '{"field":"priority","operator":"gt","value":' + "9" * 400 + "}"
+
+        result = self._invoke(db_path, "--filter", payload)
+
+        assert result.exit_code != 0
+        assert "filter.gt" in result.output
+        assert "OverflowError" not in result.output
+        assert not db_path.exists()
+
+    def test_invalid_filter_and_match_fail_before_the_database_opens(self, tmp_path: Path) -> None:
+        """Validation precedes ``open_initialized_database`` (D-17)."""
+        db_path = tmp_path / "never.db"
+        for option, label in (("--filter", "filter"), ("--match", "match")):
+            result = self._invoke(db_path, option, "{not json")
+            assert result.exit_code != 0
+            assert f"{label}: invalid JSON" in result.output
+            assert not db_path.exists()
+
+        semantic = self._invoke(db_path, "--filter", '{"field":"tag","operator":"gt","value":"x"}')
+        assert semantic.exit_code != 0
+        assert "filter." in semantic.output
+        assert not db_path.exists()

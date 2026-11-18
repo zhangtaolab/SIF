@@ -5,7 +5,9 @@ A powerful CLI tool for managing document collections, indexing content,
 and performing intelligent searches using both keyword and vector-based approaches.
 """
 
-__version__ = "1.0.1"
+from sif._version import __version__
+
+
 __author__ = "SIF Team"
 
 __all__ = ["__version__", "cli"]

@@ -6,11 +6,23 @@ import re
 import sqlite3
 
 from sif.core.models import SearchOptions, SearchResult
-from sif.search.context_attach import attach_path_contexts
+from sif.search.filters import compile_filter
 from sif.search.term_match import find_first_match
 
 
 _SNIPPET_MAX_LEN = 200
+
+# CORR-04 / D-11: BM25 column weights for documents_fts(content, title).
+# The weight vector maps left-to-right by declared column order, so these two
+# constants are bound as the bm25(documents_fts, ?, ?) parameters. At 1.0/1.0
+# the weighted expression reproduces the unweighted `rank` column exactly.
+# The title weight stays an internal constant — deliberately not a setting or
+# a CLI flag. Plan 19-09's D-12 sweep measured 2.0/3.0/4.0 against B1 and
+# rejected the band: the held-out title leg was already at its 1.0 ceiling and
+# no candidate's ranks moved, so the pinned value stays 1.0. The evidence is
+# .planning/phases/19-search-correctness/bench/d12-verdict.json.
+_CONTENT_WEIGHT = 1.0
+_TITLE_WEIGHT = 1.0
 
 # Characters with special meaning in FTS5 MATCH expressions; they cannot be
 # escaped, so they are stripped from user tokens before quoting.
@@ -40,7 +52,12 @@ class BM25Searcher:
         self.db = db
 
     def search(self, query: str, options: SearchOptions | None = None) -> list[SearchResult]:
-        """Search documents using BM25."""
+        """Search documents using BM25.
+
+        ``min_score`` is applied inside the FTS scan (before LIMIT/OFFSET), so
+        pagination always slices the filtered ranking, and returned ranks are
+        global across pages (``options.offset + position``).
+        """
         if options is None:
             options = SearchOptions()
 
@@ -57,41 +74,101 @@ class BM25Searcher:
         # Build the FTS query
         fts_query = self._build_fts_query(query)
 
-        # Build collection filter
-        collection_filter = ""
-        params = [fts_query]
+        # min_score thresholding happens BEFORE LIMIT/OFFSET (CORR-03, research
+        # Pitfall 4/P15). The threshold below is the rank threshold for the
+        # same WEIGHTED bm25 expression that projects `score`, so a raised
+        # title weight moves threshold and ordering together. FTS5 rank is
+        # <= 0 and ``score = 1/(1 + |rank|) = 1/(1 - rank)``, hence
+        # ``score >= m`` (m > 0) is exactly ``rank >= 1 - 1/m``. The naive
+        # inverse ``1/m - 1`` points the wrong way.
+        content_weight = _CONTENT_WEIGHT
+        title_weight = _TITLE_WEIGHT if options.title_weight is None else options.title_weight
 
+        params = [content_weight, title_weight, fts_query]
+        collection_filter = ""
         if options.collection_ids:
             placeholders = ", ".join(["?"] * len(options.collection_ids))
-            collection_filter = f"AND d.collection_id IN ({placeholders})"
             params.extend(options.collection_ids)
+            collection_filter = f"AND d.collection_id IN ({placeholders})"
 
-        # Execute search
-        sql = f"""
-            SELECT
-                d.id as document_id,
-                d.title,
-                d.path,
-                c.name as collection_name,
-                rank as score
-            FROM documents_fts fts
-            JOIN documents d ON fts.rowid = d.rowid
-            JOIN collections c ON d.collection_id = c.id
-            WHERE documents_fts MATCH ? {collection_filter}
-            ORDER BY rank
-            LIMIT ? OFFSET ?
-        """
+        min_score_filter = ""
+        if options.min_score > 0:
+            params.append(1.0 - 1.0 / options.min_score)
+            min_score_filter = "AND m.score >= ?"
+
+        # Metadata filter (Phase 20, D-02/D-17): the compiled predicate is one
+        # more fragment in the OUTER WHERE of the materialized CTE (never
+        # inside it — the CTE exists to evaluate MATCH once). None is the only
+        # unfiltered signal, so the suffix is empty for the byte-identical
+        # default path; a non-None AST always yields a non-empty predicate.
+        # Params land after the min-score parameter and before limit/offset,
+        # matching placeholder order (T-20-01: values are always bound).
+        filter_clause, filter_params = compile_filter(options.filter, alias="d", scope="candidates")
+        params.extend(filter_params)
+        filter_suffix = f" AND {filter_clause}" if filter_clause else ""
+
+        # Keep the FTS match evaluated once for scoped searches. The scoped
+        # default CLI path always carries a non-empty collection filter; with
+        # a bare join (or a plain, flattened CTE) SQLite drives from
+        # `documents` via idx_documents_collection and re-runs the match per
+        # candidate document (`SCAN fts VIRTUAL TABLE INDEX 32:=M1`). AS
+        # MATERIALIZED computes the match once before the join; the keyword
+        # needs SQLite >= 3.35.0 (2021-03), newer than supported CPython
+        # 3.10+. The weighted expression names the real table (an FTS5 alias
+        # is rejected — Pitfall 5); weights and the min_score threshold are
+        # bound parameters, never interpolated (T-19-19). Every projection is
+        # the same weighted expression, so a raised title weight moves both
+        # ordering and thresholding together.
+        if options.collection_ids:
+            sql = f"""
+                WITH matched AS MATERIALIZED (
+                    SELECT rowid, bm25(documents_fts, ?, ?) AS score
+                    FROM documents_fts
+                    WHERE documents_fts MATCH ?
+                )
+                SELECT
+                    d.id as document_id,
+                    d.title,
+                    d.path,
+                    c.name as collection_name,
+                    m.score as score
+                FROM matched m
+                JOIN documents d ON m.rowid = d.rowid
+                JOIN collections c ON d.collection_id = c.id
+                WHERE 1 = 1 {collection_filter} {min_score_filter}{filter_suffix}
+                ORDER BY m.score
+                LIMIT ? OFFSET ?
+            """
+        else:
+            # Unfiltered (--all) SQL uses the same materialized weighted match;
+            # the min_score predicate still applies before LIMIT/OFFSET.
+            sql = f"""
+                WITH matched AS MATERIALIZED (
+                    SELECT rowid, bm25(documents_fts, ?, ?) AS score
+                    FROM documents_fts
+                    WHERE documents_fts MATCH ?
+                )
+                SELECT
+                    d.id as document_id,
+                    d.title,
+                    d.path,
+                    c.name as collection_name,
+                    m.score as score
+                FROM matched m
+                JOIN documents d ON m.rowid = d.rowid
+                JOIN collections c ON d.collection_id = c.id
+                WHERE 1 = 1 {min_score_filter}{filter_suffix}
+                ORDER BY m.score
+                LIMIT ? OFFSET ?
+            """
         params.extend([options.limit, options.offset])
 
         cursor = self.db.execute(sql, params)
         results = []
 
-        for rank, row in enumerate(cursor.fetchall(), 1):
+        for position, row in enumerate(cursor.fetchall(), 1):
             # Convert rank to score (lower rank = higher score)
             score = 1.0 / (1.0 + abs(row["score"]))
-
-            if score < options.min_score:
-                continue
 
             result = SearchResult(
                 document_id=row["document_id"],
@@ -99,7 +176,9 @@ class BM25Searcher:
                 path=row["path"],
                 collection_name=row["collection_name"],
                 score=score,
-                rank=rank,
+                # Ranks are global across pages (D-06): page 2 at offset 5
+                # carries ranks 6-10, matching overall ordering.
+                rank=options.offset + position,
             )
 
             if options.include_content:
@@ -114,11 +193,7 @@ class BM25Searcher:
 
             results.append(result)
 
-        return self._attach_contexts(results)
-
-    def _attach_contexts(self, results: list[SearchResult]) -> list[SearchResult]:
-        """Attach path context descriptions to search results via batch query."""
-        return attach_path_contexts(self.db, results)
+        return results
 
     def search_chunks(
         self,
@@ -128,6 +203,9 @@ class BM25Searcher:
         """Search document chunks using BM25.
 
         Returns list of (document_id, chunk_content, score) tuples.
+
+        Metadata filters apply to document-level search only; this chunk-level
+        helper stays filter-free and has no production caller.
         """
         if options is None:
             options = SearchOptions()

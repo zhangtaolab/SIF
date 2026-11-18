@@ -5,27 +5,95 @@ from __future__ import annotations
 import contextlib
 import re
 import sqlite3
+from typing import TYPE_CHECKING
+
+from sif.utils.logging import get_logger
+
+
+if TYPE_CHECKING:
+    from sif.embedding.identity import EmbedderIdentity
+
+
+logger = get_logger(__name__)
+
+# D-06: the typed-metadata backfill is document-derived (never per-collection),
+# so its completion contract is one global key in the existing ``index_meta``
+# kv table. The marker is written only after a complete pass.
+_METADATA_VALUES_VERSION = "1"
+_METADATA_VALUES_VERSION_KEY = "metadata_values_version"
+
+# D-10: the derived ``embedded_documents`` shadow is rebuildable from
+# ``document_embeddings`` + ``documents``, so its one-time backfill contract
+# is also one global marker. The marker is written only after a complete pass;
+# the table-absent force rule below repairs a dropped table that kept a marker.
+_EMBEDDED_DOCUMENTS_VERSION = "1"
+_EMBEDDED_DOCUMENTS_VERSION_KEY = "embedded_documents_version"
 
 
 class SchemaManager:
     """Manages database schema creation and migrations."""
 
-    def __init__(self, db: sqlite3.Connection, embedding_dim: int = 384) -> None:
-        """Initialize the schema manager."""
+    def __init__(
+        self,
+        db: sqlite3.Connection,
+        embedding_dim: int = 384,
+        initial_identity: EmbedderIdentity | None = None,
+    ) -> None:
+        """Initialize the schema manager.
+
+        ``initial_identity`` is the host's settings-only embedder identity
+        (D-04). When supplied, the vector-table width guard runs the
+        mode-aware ``check_identity(mode="init")`` and ``create_all`` writes
+        the legacy-assumed row exactly once for a populated index that
+        predates identity. ``None`` is the injected-dimension path (Phase 19
+        contract: no settings read, width-only guard).
+        """
         self.db = db
         self.embedding_dim = embedding_dim
+        self.initial_identity = initial_identity
 
     def create_all(self) -> None:
-        """Create all database tables and indexes."""
+        """Create all database tables and indexes.
+
+        CR-01 (19 REVIEW): schema writes are self-committing. pysqlite
+        auto-commits DDL but leaves DML in the connection's implicit
+        transaction, so a read-only host that opens the index, initializes
+        the schema, and closes without ever starting a command transaction
+        (``sif status``, ``sif index status``) would roll the FTS
+        ``'rebuild'`` population back while keeping the migrated DDL — the
+        detection gate would then never rebuild and BM25 search would stay
+        silently empty. ``_create_fts_tables`` commits its own migration with
+        an explicit savepoint (so a later failure here cannot roll the
+        population back either); this final commit covers every other write.
+        """
         self._create_collections_table()
         self._create_documents_table()
+        self._create_metadata_tables()
         self._create_document_chunks_table()
         self._migrate_path_contexts()
         self._create_contexts_table()
         self._create_llm_cache_table()
+        self._create_query_log_table()
+        self._create_index_meta_table()
         self._create_fts_tables()
         self._create_vector_tables()
+        # D-10: the shadow exists only beside a vec0 table. ``None`` (vec0
+        # unavailable) makes the backfill a total no-op: no shadow DDL, no
+        # marker, no statement against the absent table.
+        embedded_preexisted = self._create_embedded_documents_table()
         self._create_indexes()
+        self._backfill_metadata_values()
+        self._backfill_embedded_documents(embedded_preexisted)
+        # D-04: a legacy populated index (vectors, no identity) is assumed
+        # exactly once and warns once. A fresh/embeddings-empty index writes
+        # nothing, so its first real vector write owns the identity (D-02).
+        # The init-mode check above normally performs this write; repeating
+        # it here is an idempotent no-op and keeps the documented ordering.
+        if self.initial_identity is not None:
+            from sif.embedding.identity import ensure_legacy_identity  # noqa: PLC0415
+
+            ensure_legacy_identity(self.db, self.initial_identity)
+        self.db.commit()
 
     def _add_column_if_missing(self, table: str, column: str, dtype: str) -> None:
         """Add a column to a table if it does not already exist."""
@@ -71,6 +139,69 @@ class SchemaManager:
                 updated_at TEXT NOT NULL,
                 metadata TEXT DEFAULT '{}',
                 FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE
+            )
+        """)
+
+    def _create_metadata_tables(self) -> None:
+        """Create the typed frontmatter key-value store (Phase 20, D-05/D-07).
+
+        One row per scalar value; array elements become successive ``ordinal``
+        rows so arrays are sets without JSON1. Typed columns plus the
+        ``value_type`` CHECK give typed exact match, and the partial covering
+        indexes serve the compiler's ``(key, typed column, document_id)``
+        probes. ``document_metadata_skips`` is the D-07 sidecar: a per-key
+        record (nested/null/mixed_array) so discovery can report skipped keys
+        without polluting ``exists``/``type`` with sentinel value rows.
+
+        Both tables cascade from ``documents``; ``create_connection`` enables
+        ``PRAGMA foreign_keys = ON`` (factory.py), so document/collection
+        deletes need no extra kv cleanup. Callers create both in the same
+        transaction as the document row (D-05).
+        """
+        self.db.execute("""
+            CREATE TABLE IF NOT EXISTS document_metadata_values (
+                document_id TEXT NOT NULL,
+                key TEXT NOT NULL,
+                ordinal INTEGER NOT NULL,
+                value_type TEXT NOT NULL,
+                text_value TEXT,
+                number_value REAL,
+                boolean_value INTEGER,
+                PRIMARY KEY (document_id, key, ordinal),
+                FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE,
+                CHECK (value_type IN ('string', 'number', 'boolean')),
+                CHECK (
+                    (value_type = 'string' AND text_value IS NOT NULL
+                        AND number_value IS NULL AND boolean_value IS NULL)
+                    OR (value_type = 'number' AND number_value IS NOT NULL
+                        AND text_value IS NULL AND boolean_value IS NULL)
+                    OR (value_type = 'boolean' AND boolean_value IN (0, 1)
+                        AND text_value IS NULL AND number_value IS NULL)
+                )
+            )
+        """)
+        self.db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_metadata_text_lookup
+            ON document_metadata_values(key, text_value, document_id)
+            WHERE value_type = 'string'
+        """)
+        self.db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_metadata_number_lookup
+            ON document_metadata_values(key, number_value, document_id)
+            WHERE value_type = 'number'
+        """)
+        self.db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_metadata_boolean_lookup
+            ON document_metadata_values(key, boolean_value, document_id)
+            WHERE value_type = 'boolean'
+        """)
+        self.db.execute("""
+            CREATE TABLE IF NOT EXISTS document_metadata_skips (
+                document_id TEXT NOT NULL,
+                key TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                PRIMARY KEY (document_id, key),
+                FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
             )
         """)
 
@@ -145,6 +276,132 @@ class SchemaManager:
             )
         """)
 
+    def _create_query_log_table(self) -> None:
+        """Create the local query-history table (Phase 15, D-08/D-09).
+
+        Stores executed-search metadata only — query string, result count,
+        collections searched — never document content (T-15-04). Writers trim
+        to the most-recent ``SIF_QUERY_HISTORY_LIMIT`` rows in the same
+        transaction (trim-in-write, D-09), so the table never grows
+        unboundedly; ``created_at`` is aware-UTC ISO text.
+        """
+        self.db.execute("""
+            CREATE TABLE IF NOT EXISTS query_log (
+                id TEXT PRIMARY KEY,
+                query TEXT NOT NULL,
+                result_count INTEGER NOT NULL DEFAULT 0,
+                collections TEXT NOT NULL DEFAULT '[]',
+                created_at TEXT NOT NULL
+            )
+        """)
+        self.db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_query_log_created
+            ON query_log(created_at DESC)
+        """)
+
+    def _create_index_meta_table(self) -> None:
+        """Create the key/value index metadata table (D-09 convention marker).
+
+        Namespaced keys (``convention:<collection_id>``) let every
+        index-writing host record per-collection state — the parser/checksum
+        convention today, embedder identity in Phase 21 — without a global
+        marker that one migrated collection could strand for the others.
+        """
+        self.db.execute("""
+            CREATE TABLE IF NOT EXISTS index_meta (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+        """)
+
+    def _backfill_metadata_values(self) -> None:
+        """Derive typed metadata rows for every stored document, once (D-06).
+
+        The pass is a pure Python read over the stored canonical
+        ``documents.metadata`` blobs: no file re-parse, no checksum-convention
+        change, and no second key/value table. One short transaction per
+        document keeps earlier work durable when a later document fails, so an
+        interrupted pass resumes idempotently (delete-then-insert per
+        document). The marker is written **only after** the loop completes, so
+        a failed pass leaves it absent and filtering is never served from a
+        half-populated store. A fresh database writes the marker immediately at
+        zero cost; an already-backfilled one pays one kv read.
+
+        Exceptions are deliberately not caught: a pass failure propagates out
+        of :meth:`create_all`, aborting the host command before it can serve a
+        filtered search against partial rows.
+
+        The repositories are imported lazily to keep the schema module free of
+        a module-level repository cycle (the established pattern).
+        """
+        from sif.database.metadata_repository import MetadataValueRepository  # noqa: PLC0415
+        from sif.database.repositories import IndexMetaRepository  # noqa: PLC0415
+
+        marker = IndexMetaRepository(self.db)
+        if marker.get(_METADATA_VALUES_VERSION_KEY) == _METADATA_VALUES_VERSION:
+            return
+
+        rows = self.db.execute("SELECT id, metadata FROM documents").fetchall()
+        if rows:
+            logger.warning(
+                "Upgrading index metadata: deriving typed metadata for %d documents "
+                "(one-time pass, no file re-parse)",
+                len(rows),
+            )
+        repo = MetadataValueRepository(self.db)
+        for document_id, metadata_json in rows:
+            with self.db:
+                repo.replace_from_canonical(document_id, metadata_json or "{}")
+        with self.db:
+            marker.set(_METADATA_VALUES_VERSION_KEY, _METADATA_VALUES_VERSION)
+
+    def _backfill_embedded_documents(self, table_preexisted: bool | None) -> None:
+        """Derive the ``embedded_documents`` shadow once (D-10, CORR-06).
+
+        ``table_preexisted is None`` means sqlite-vec is unavailable, so the
+        shadow table was never created: the pass issues no SQL against it,
+        writes no marker, and returns (a pure-BM25 install must keep working).
+        A fresh database clears/derives at zero cost and writes the marker
+        immediately.
+
+        The pass is idempotent: the derived table is cleared first, then every
+        distinct document with stored embeddings is re-derived through a join
+        to ``documents``, so persisted orphan vec0 rows (a deleted document
+        whose embeddings were never purged) never enter the shadow. The marker
+        is written **only after** a complete pass; exceptions propagate out of
+        :meth:`create_all`, so a host never serves a half-populated shadow.
+
+        A table that did not exist before this call forces the pass even when
+        the marker survives — a dropped/recreated table must never stay
+        silently empty behind a stale marker.
+        """
+        if table_preexisted is None:
+            return
+
+        from sif.database.repositories import IndexMetaRepository  # noqa: PLC0415
+
+        marker = IndexMetaRepository(self.db)
+        marker_current = marker.get(_EMBEDDED_DOCUMENTS_VERSION_KEY) == _EMBEDDED_DOCUMENTS_VERSION
+        if table_preexisted and marker_current:
+            return
+
+        with self.db:
+            self.db.execute("DELETE FROM embedded_documents")
+            self.db.execute(
+                "INSERT OR IGNORE INTO embedded_documents(document_id) "
+                "SELECT de.document_id FROM document_embeddings de "
+                "JOIN documents d ON d.id = de.document_id"
+            )
+        inserted = self.db.execute("SELECT COUNT(*) FROM embedded_documents").fetchone()[0]
+        if inserted:
+            logger.warning(
+                "Upgrading index: deriving the embedded-document shadow for %d documents "
+                "(one-time pass)",
+                inserted,
+            )
+        with self.db:
+            marker.set(_EMBEDDED_DOCUMENTS_VERSION_KEY, _EMBEDDED_DOCUMENTS_VERSION)
+
     def _fts_trigger_is_legacy(self, trigger_name: str, fts_table: str) -> bool:
         """Check if an existing FTS sync trigger writes directly to the FTS table.
 
@@ -191,6 +448,31 @@ class SchemaManager:
             self.db.execute("DROP TRIGGER chunks_fts_update")
         return legacy_delete_docs, legacy_delete_chunks
 
+    def _fts_column_names(self, table_name: str) -> list[str] | None:
+        """Return an FTS5 table's indexed column names, or None when absent.
+
+        FTS5 cannot ALTER a column list and ``CREATE VIRTUAL TABLE IF NOT
+        EXISTS`` is a no-op for an existing table, so the stored
+        ``sqlite_master.sql`` is the only way to tell a one-column index from
+        the two-column (content, title) form. The indexed column list ends at
+        the first ``content=`` option clause; names are returned normalized
+        (whitespace and surrounding quotes stripped).
+        """
+        cursor = self.db.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name=?",
+            (table_name,),
+        )
+        row = cursor.fetchone()
+        if not row or not row[0]:
+            return None
+        match = re.search(r"USING\s+fts5\s*\((.*?)\)", row[0], re.IGNORECASE | re.DOTALL)
+        if not match:
+            return None
+        columns_clause = re.split(r"\bcontent\s*=", match.group(1), maxsplit=1)[0]
+        return [
+            column.strip().strip("'\"") for column in columns_clause.split(",") if column.strip()
+        ]
+
     def _create_fts_tables(self) -> None:
         """Create FTS5 virtual tables for full-text search with triggers."""
 
@@ -206,111 +488,182 @@ class SchemaManager:
             sql = row[0] or ""
             return f"content='{expected_content}'" not in sql
 
-        needs_rebuild_docs = _fts_is_misconfigured("documents_fts", "documents")
+        # CORR-04: an existing single-column documents_fts cannot gain the
+        # title column in place (Pitfall 8). Parse the stored DDL and rebuild
+        # when the column list is missing ``title``; a missing table is a
+        # fresh database and is created two-column directly below. Either
+        # condition drives the same drop/recreate path as a misconfigured
+        # content= table.
+        column_names = self._fts_column_names("documents_fts")
+        needs_title_rebuild = column_names is not None and "title" not in [
+            name.lower() for name in column_names
+        ]
+        needs_rebuild_docs = (
+            _fts_is_misconfigured("documents_fts", "documents") or needs_title_rebuild
+        )
         needs_rebuild_chunks = _fts_is_misconfigured("chunks_fts", "document_chunks")
 
-        legacy_delete_docs, legacy_delete_chunks = self._drop_legacy_fts_triggers()
+        # CR-01 (19 REVIEW): the legacy-trigger repair and the
+        # drop/recreate/rebuild sequence are one atomic unit. pysqlite
+        # auto-commits DDL but leaves the INSERT 'rebuild'/seed DML in the
+        # connection's implicit transaction, so before this savepoint a close,
+        # crash, or later create_all failure (the embedding-dimension
+        # RuntimeError) could persist the two-column DDL and roll back only
+        # the population — the detection gate then reports "already migrated"
+        # forever and BM25 search stays silently empty. Wrapping the whole
+        # sequence (trigger drops included) in a savepoint means a failure
+        # rolls the DDL back too, restoring the legacy shape so the next open
+        # re-detects and retries; a successful migration commits the
+        # population before the rest of create_all runs. SAVEPOINT nests
+        # safely when a caller already holds a transaction.
+        self.db.execute("SAVEPOINT sp_fts_tables")
+        try:
+            legacy_delete_docs, legacy_delete_chunks = self._drop_legacy_fts_triggers()
 
-        if needs_rebuild_docs:
-            self.db.execute("DROP TABLE IF EXISTS documents_fts")
-        if needs_rebuild_chunks:
-            self.db.execute("DROP TABLE IF EXISTS chunks_fts")
+            if needs_rebuild_docs:
+                # Drop the vocab shadow FIRST (Pitfall 6): dropping the parent
+                # while the vocab exists succeeds but leaves a dangling shadow
+                # that serves stale terms until it is recreated. Then drop the
+                # three document triggers explicitly — CREATE TRIGGER IF NOT
+                # EXISTS cannot replace the one-column bodies — and the table.
+                self.db.execute("DROP TABLE IF EXISTS documents_fts_v")
+                for trigger in (
+                    "documents_fts_insert",
+                    "documents_fts_update",
+                    "documents_fts_delete",
+                ):
+                    self.db.execute(f"DROP TRIGGER IF EXISTS {trigger}")
+                self.db.execute("DROP TABLE IF EXISTS documents_fts")
+            if needs_rebuild_chunks:
+                self.db.execute("DROP TABLE IF EXISTS chunks_fts")
 
-        # Documents FTS table with external content
-        self.db.execute("""
-            CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(
-                content,
-                content='documents',
-                content_rowid='rowid',
-                tokenize='porter'
-            )
-        """)
-
-        # Chunks FTS table with external content
-        self.db.execute("""
-            CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
-                content,
-                content='document_chunks',
-                content_rowid='rowid',
-                tokenize='porter'
-            )
-        """)
-
-        # Triggers for documents_fts
-        self.db.execute("""
-            CREATE TRIGGER IF NOT EXISTS documents_fts_insert
-            AFTER INSERT ON documents
-            BEGIN
-                INSERT INTO documents_fts(rowid, content) VALUES (new.rowid, new.content);
-            END
-        """)
-        self.db.execute("""
-            CREATE TRIGGER IF NOT EXISTS documents_fts_update
-            AFTER UPDATE ON documents
-            BEGIN
-                INSERT INTO documents_fts(documents_fts, rowid, content)
-                VALUES('delete', old.rowid, old.content);
-                INSERT INTO documents_fts(rowid, content) VALUES(new.rowid, new.content);
-            END
-        """)
-        self.db.execute("""
-            CREATE TRIGGER IF NOT EXISTS documents_fts_delete
-            AFTER DELETE ON documents
-            BEGIN
-                INSERT INTO documents_fts(documents_fts, rowid, content)
-                VALUES('delete', old.rowid, old.content);
-            END
-        """)
-
-        # Triggers for chunks_fts
-        self.db.execute("""
-            CREATE TRIGGER IF NOT EXISTS chunks_fts_insert
-            AFTER INSERT ON document_chunks
-            BEGIN
-                INSERT INTO chunks_fts(rowid, content) VALUES (new.rowid, new.content);
-            END
-        """)
-        self.db.execute("""
-            CREATE TRIGGER IF NOT EXISTS chunks_fts_update
-            AFTER UPDATE ON document_chunks
-            BEGIN
-                INSERT INTO chunks_fts(chunks_fts, rowid, content)
-                VALUES('delete', old.rowid, old.content);
-                INSERT INTO chunks_fts(rowid, content) VALUES(new.rowid, new.content);
-            END
-        """)
-        self.db.execute("""
-            CREATE TRIGGER IF NOT EXISTS chunks_fts_delete
-            AFTER DELETE ON document_chunks
-            BEGIN
-                INSERT INTO chunks_fts(chunks_fts, rowid, content)
-                VALUES('delete', old.rowid, old.content);
-            END
-        """)
-
-        # Seed existing data only when tables were rebuilt
-        if needs_rebuild_docs:
+            # Documents FTS table with external content. The title column is
+            # declared second; bm25() weights map left-to-right by this order.
             self.db.execute("""
-                INSERT INTO documents_fts(rowid, content)
-                SELECT rowid, content FROM documents
-            """)
-        if needs_rebuild_chunks:
-            self.db.execute("""
-                INSERT INTO chunks_fts(rowid, content)
-                SELECT rowid, content FROM document_chunks
+                CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(
+                    content,
+                    title,
+                    content='documents',
+                    content_rowid='rowid',
+                    tokenize='porter'
+                )
             """)
 
-        # CR-01: purge FTS entries orphaned by deletes that ran while a legacy
-        # direct-DELETE trigger was active — replacing the trigger repairs
-        # future deletes, not past ones. 'rebuild' re-derives the whole index
-        # from the content tables, so live entries survive. Gated on legacy
-        # detection alone (not needs_rebuild_*): a table dropped and reseeded
-        # above is already consistent, but fresh and already-migrated databases
-        # must pay nothing.
-        if legacy_delete_docs:
-            self.db.execute("INSERT INTO documents_fts(documents_fts) VALUES('rebuild')")
-        if legacy_delete_chunks:
-            self.db.execute("INSERT INTO chunks_fts(chunks_fts) VALUES('rebuild')")
+            # Chunks FTS table with external content (chunks have no title
+            # column; this table and its triggers stay byte-identical to the
+            # pre-CORR-04 form).
+            self.db.execute("""
+                CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
+                    content,
+                    content='document_chunks',
+                    content_rowid='rowid',
+                    tokenize='porter'
+                )
+            """)
+
+            # The FTS5 'rebuild' bulk command is the WHOLE documents-side
+            # population: it re-derives every row's content and title from the
+            # external-content table. A separate INSERT ... SELECT seed would run
+            # under the same gate and index every document twice — BM25 ranks
+            # shift and a deleted document stays MATCHable through its duplicate
+            # entry — while PRAGMA integrity_check and the FTS integrity-check
+            # command both still report OK. Keep exactly one population
+            # statement, gated on the rebuild or the legacy-delete repair; fresh
+            # and already-migrated databases pay nothing.
+            if needs_rebuild_docs or legacy_delete_docs:
+                self.db.execute("INSERT INTO documents_fts(documents_fts) VALUES('rebuild')")
+            if needs_rebuild_chunks:
+                self.db.execute("""
+                    INSERT INTO chunks_fts(rowid, content)
+                    SELECT rowid, content FROM document_chunks
+                """)
+
+            # CR-01: purge chunks FTS entries orphaned by deletes that ran while a
+            # legacy direct-DELETE trigger was active — replacing the trigger
+            # repairs future deletes, not past ones. 'rebuild' re-derives the
+            # whole index from the content table, so live entries survive.
+            if legacy_delete_chunks:
+                self.db.execute("INSERT INTO chunks_fts(chunks_fts) VALUES('rebuild')")
+
+            # FTS5 vocab shadow (Phase 15, D-06): row mode = one row per distinct
+            # porter-stem term with its document frequency — the suggestion
+            # engine's term source, derived from the index (no sync maintenance).
+            # MUST live in the main schema: a temp-schema vocab cannot reference a
+            # main-schema FTS table (RESEARCH Pitfall 8). Recreated AFTER the
+            # documents rebuild so no stale-terms window exists (Pitfall 6).
+            # Idempotent; the suggest engine re-ensures it for connections that
+            # never ran init_schema.
+            self.db.execute("""
+                CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts_v
+                USING fts5vocab(documents_fts, 'row')
+            """)
+
+            # Triggers for documents_fts. Every indexed column must carry its
+            # value — including old.title on the 'delete' command — or external
+            # content desynchronizes (Pitfall 7); documents.title is nullable and
+            # NULL values index/delete cleanly.
+            self.db.execute("""
+                CREATE TRIGGER IF NOT EXISTS documents_fts_insert
+                AFTER INSERT ON documents
+                BEGIN
+                    INSERT INTO documents_fts(rowid, content, title)
+                    VALUES (new.rowid, new.content, new.title);
+                END
+            """)
+            self.db.execute("""
+                CREATE TRIGGER IF NOT EXISTS documents_fts_update
+                AFTER UPDATE ON documents
+                BEGIN
+                    INSERT INTO documents_fts(documents_fts, rowid, content, title)
+                    VALUES('delete', old.rowid, old.content, old.title);
+                    INSERT INTO documents_fts(rowid, content, title)
+                    VALUES(new.rowid, new.content, new.title);
+                END
+            """)
+            self.db.execute("""
+                CREATE TRIGGER IF NOT EXISTS documents_fts_delete
+                AFTER DELETE ON documents
+                BEGIN
+                    INSERT INTO documents_fts(documents_fts, rowid, content, title)
+                    VALUES('delete', old.rowid, old.content, old.title);
+                END
+            """)
+
+            # Triggers for chunks_fts
+            self.db.execute("""
+                CREATE TRIGGER IF NOT EXISTS chunks_fts_insert
+                AFTER INSERT ON document_chunks
+                BEGIN
+                    INSERT INTO chunks_fts(rowid, content) VALUES (new.rowid, new.content);
+                END
+            """)
+            self.db.execute("""
+                CREATE TRIGGER IF NOT EXISTS chunks_fts_update
+                AFTER UPDATE ON document_chunks
+                BEGIN
+                    INSERT INTO chunks_fts(chunks_fts, rowid, content)
+                    VALUES('delete', old.rowid, old.content);
+                    INSERT INTO chunks_fts(rowid, content) VALUES(new.rowid, new.content);
+                END
+            """)
+            self.db.execute("""
+                CREATE TRIGGER IF NOT EXISTS chunks_fts_delete
+                AFTER DELETE ON document_chunks
+                BEGIN
+                    INSERT INTO chunks_fts(chunks_fts, rowid, content)
+                    VALUES('delete', old.rowid, old.content);
+                END
+            """)
+            self.db.execute("RELEASE SAVEPOINT sp_fts_tables")
+        except BaseException:
+            # Roll the DDL back with the population so the legacy shape (and
+            # its detection gate) survives a failed migration. A rollback can
+            # itself fail on a closing/broken connection; never mask the
+            # original error.
+            with contextlib.suppress(sqlite3.Error):
+                self.db.execute("ROLLBACK TO SAVEPOINT sp_fts_tables")
+                self.db.execute("RELEASE SAVEPOINT sp_fts_tables")
+            raise
 
     def _create_vector_tables(self) -> None:
         """Create vector tables using sqlite-vec."""
@@ -323,20 +676,36 @@ class SchemaManager:
         if not vec_available:
             return
 
-        cursor = self.db.execute(
-            "SELECT sql FROM sqlite_master WHERE type='table' AND name='document_embeddings'",
+        # D-05: the identity module owns the single ``FLOAT[n]`` read. With an
+        # initial identity the mode-aware init check is the guard (and may
+        # write the legacy-assumed row); the injected-dimension path keeps the
+        # pre-Phase-21 width-only comparison. Both raise the byte-identical
+        # pre-change message through ``IdentityDimensionError`` (a RuntimeError).
+        from sif.embedding.identity import (  # noqa: PLC0415
+            IdentityDimensionError,
+            check_identity,
+            schema_dimension_remedy,
+            schema_embedding_dim,
         )
-        row = cursor.fetchone()
-        if row and row[0]:
-            match = re.search(r"FLOAT\[(\d+)\]", row[0])
-            if match:
-                existing_dim = int(match.group(1))
-                if existing_dim != self.embedding_dim:
-                    raise RuntimeError(
-                        f"Embedding dimension mismatch: database has FLOAT[{existing_dim}], "
-                        f"but settings require FLOAT[{self.embedding_dim}]. "
-                        f"Rebuild the index with 'sif cleanup' or delete the database file.",
-                    )
+
+        existing_dim = schema_embedding_dim(self.db)
+        if self.initial_identity is not None:
+            check = check_identity(self.db, self.initial_identity, mode="init")
+            if check.dimension_mismatch:
+                stored_dim = (
+                    existing_dim if existing_dim is not None else self.initial_identity.dimension
+                )
+                raise IdentityDimensionError(
+                    stored_dim,
+                    self.initial_identity.dimension,
+                    schema_dimension_remedy(stored_dim),
+                )
+        elif existing_dim is not None and existing_dim != self.embedding_dim:
+            raise IdentityDimensionError(
+                existing_dim,
+                self.embedding_dim,
+                schema_dimension_remedy(existing_dim),
+            )
 
         self.db.execute(f"""
             CREATE VIRTUAL TABLE IF NOT EXISTS document_embeddings USING vec0(
@@ -346,6 +715,38 @@ class SchemaManager:
                 embedding FLOAT[{self.embedding_dim}]
             )
         """)
+
+    def _create_embedded_documents_table(self) -> bool | None:
+        """Create the derived shadow, reporting whether it already existed.
+
+        Returns ``None`` when sqlite-vec is unavailable: there is no vec0
+        table, hence no stored vectors and no shadow. That is the explicit
+        "do not touch this database" signal the backfill needs to stay total
+        on vec0-free installs. Otherwise creates the table and returns
+        whether it pre-existed — the backfill forces itself when it did not,
+        so a dropped/recreated table cannot hide behind a surviving marker.
+
+        ``PRAGMA foreign_keys = ON`` is enabled by ``create_connection``
+        (factory.py), so a document delete cascades here; raw test
+        connections may leave FK enforcement off, which the explicit
+        delete/reconcile paths cover (D-09).
+        """
+        try:
+            self.db.execute("SELECT vec_version()")
+        except sqlite3.OperationalError:
+            return None
+
+        cursor = self.db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='embedded_documents'",
+        )
+        preexisted = cursor.fetchone() is not None
+        self.db.execute("""
+            CREATE TABLE IF NOT EXISTS embedded_documents (
+                document_id TEXT PRIMARY KEY,
+                FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
+            )
+        """)
+        return preexisted
 
     def _create_indexes(self) -> None:
         """Create database indexes."""
@@ -361,6 +762,12 @@ class SchemaManager:
         self.db.execute("""
             CREATE INDEX IF NOT EXISTS idx_documents_checksum
             ON documents(checksum)
+        """)
+        # CORR-04: Phase 20's mtime filter scans this column; IF NOT EXISTS
+        # makes the create a no-op on already-migrated databases.
+        self.db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_documents_mtime
+            ON documents(mtime)
         """)
 
         # Chunks indexes
@@ -382,15 +789,26 @@ class SchemaManager:
         """)
 
     def drop_all(self) -> None:
-        """Drop all tables (for testing/reset)."""
+        """Drop all tables (for testing/reset).
+
+        The derived shadow drops before ``documents`` (it is an FK child), so
+        a populated database with FK enforcement on cannot trip a constraint
+        while the parent is removed.
+        """
         tables = [
+            "embedded_documents",
             "document_embeddings",
             "chunks_fts",
+            "documents_fts_v",
             "documents_fts",
             "document_chunks",
+            "document_metadata_values",
+            "document_metadata_skips",
             "documents",
             "contexts",
             "llm_cache",
+            "query_log",
+            "index_meta",
             "collections",
         ]
         for table in tables:

@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 
+from sif.embedding.roles import embed_queries, embed_query
 from sif.utils.logging import get_logger
 
 
 logger = get_logger(__name__)
 
 if TYPE_CHECKING:
+    from sif.core.models import Embedder
     from sif.embedding.manager import EmbeddingManager
 
 
@@ -78,8 +80,12 @@ class QueryExpansion:
             return []
 
         try:
-            # Embed the query
-            query_embedding = self._embedding_manager.embed_single(query)
+            # D-06 (EMB-02): the expansion legs are query-side embeds. The
+            # manager exposes the role surface at class level; the cast only
+            # bridges the protocol-typed helper (a double without class-level
+            # role methods keeps the documented fallback path).
+            manager = cast("Embedder", self._embedding_manager)
+            query_embedding = embed_query(manager, query)
 
             # Generate candidate terms: individual words from query + common synonyms
             words = query.split()
@@ -107,12 +113,19 @@ class QueryExpansion:
                 return []
 
             candidate_list = list(candidates)
-            candidate_embeddings = self._embedding_manager.embed(candidate_list)
+            candidate_response = embed_queries(manager, candidate_list)
+            # The manager's role method returns an EmbeddingResponse; the
+            # protocol-typed fallback returns the bare vector list.
+            candidate_embeddings = getattr(
+                candidate_response,
+                "embeddings",
+                candidate_response,
+            )
 
             # Compute cosine similarities
             query_vec = np.array(query_embedding)
             similarities = []
-            for emb in candidate_embeddings.embeddings:
+            for emb in candidate_embeddings:
                 cand_vec = np.array(emb)
                 sim = np.dot(query_vec, cand_vec) / (
                     np.linalg.norm(query_vec) * np.linalg.norm(cand_vec) + 1e-8

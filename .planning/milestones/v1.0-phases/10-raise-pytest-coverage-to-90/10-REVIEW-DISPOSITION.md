@@ -5,93 +5,93 @@ titles: json
 findings:
   - id: WR-01
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "`collection remove` orphans vec0 embeddings — vector search pollution until `sif cleanup`"
   - id: WR-02
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "`index update` runs all collections in one implicit transaction — later failure discards earlier collections' work"
   - id: WR-03
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "`multi-get --max-bytes` truncates by characters after a byte-length check — limit can be exceeded up to 4x"
   - id: WR-04
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "`ls` subpath filter matches the absolute stored path, not collection-relative paths, and is not segment-aligned"
   - id: WR-05
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "`collection ls` accepts and documents a `subpath` argument but ignores it entirely"
   - id: WR-06
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "`bench` fixture load and validation errors escape as raw tracebacks"
   - id: WR-07
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "MCP `get` tool silently ignores `max_lines` when `from_line` is absent"
   - id: WR-08
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "MCP `hybrid_search` cannot degrade to BM25 when sqlite-vec is unavailable — every `query` tool call fails"
   - id: WR-09
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "`cleanup` compares naive-local ISO timestamps against aware-UTC ISO strings lexicographically"
   - id: WR-10
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "Embedding-dimension mismatch error recommends `sif cleanup`, which cannot fix the mismatch"
   - id: IN-01
     severity: info
-    disposition: open
+    disposition: fixed
     title: "Identical if/else branches under a comment promising syntax highlighting that doesn't exist"
   - id: IN-02
     severity: info
-    disposition: open
+    disposition: fixed
     title: "`vsearch_cmd` function-local imports duplicate module-level imports of the same names"
   - id: IN-03
     severity: info
-    disposition: open
+    disposition: fixed
     title: "`manager._model` private access in two commands — `EmbeddingManager` has no public model accessor"
   - id: IN-04
     severity: info
-    disposition: open
+    disposition: fixed
     title: "`quiet` recomputed redundantly after the search completes"
   - id: IN-05
     severity: info
-    disposition: open
+    disposition: fixed
     title: "`--config` global option is accepted, documented, and never consumed"
   - id: IN-06
     severity: info
-    disposition: open
+    disposition: fixed
     title: "`status_cmd` fallback calls `get_settings()` without the ValidationError guard used elsewhere"
   - id: IN-07
     severity: info
-    disposition: open
+    disposition: fixed
     title: "Inconsistent embedding-dim resolution across commands — 384 magic fallback and per-query probe"
   - id: IN-08
     severity: info
-    disposition: open
+    disposition: fixed
     title: "Disk-fallback `read_text()` without explicit encoding"
   - id: IN-09
     severity: info
-    disposition: open
+    disposition: fixed
     title: "api-reference example uses `sqlite3.connect(\"~/...\")` — tilde is not expanded"
   - id: IN-10
     severity: info
-    disposition: open
+    disposition: fixed
     title: "Backend tests construct a real `DatabaseConnection(\"/tmp/test.db\")` outside tmp_path"
   - id: CR-01
     severity: critical
-    disposition: open
+    disposition: fixed
     title: "Legacy direct-DELETE triggers not migrated in schema.py:148-163,188-191,236-242,261-267 — deleted content remains searchable on legacy DBs"
   - id: CR-02
     severity: critical
-    disposition: open
+    disposition: fixed
     title: "XML-forbidden control characters not stripped in cli/commands/search.py:104-121 — title containing \\x0b produces non-well-formed XML"
-open: 22
+open: 0
 total: 22
 recorded: 2026-11-06T12:37:58.492Z
 ---
@@ -100,28 +100,28 @@ recorded: 2026-11-06T12:37:58.492Z
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| WR-01 | warning | open | - |
-| WR-02 | warning | open | - |
-| WR-03 | warning | open | - |
-| WR-04 | warning | open | - |
-| WR-05 | warning | open | - |
-| WR-06 | warning | open | - |
-| WR-07 | warning | open | - |
-| WR-08 | warning | open | - |
-| WR-09 | warning | open | - |
-| WR-10 | warning | open | - |
-| IN-01 | info | open | - |
-| IN-02 | info | open | - |
-| IN-03 | info | open | - |
-| IN-04 | info | open | - |
-| IN-05 | info | open | - |
-| IN-06 | info | open | - |
-| IN-07 | info | open | - |
-| IN-08 | info | open | - |
-| IN-09 | info | open | - |
-| IN-10 | info | open | - |
-| CR-01 | critical | open | - (not in the current review) |
-| CR-02 | critical | open | - (not in the current review) |
+| WR-01 | warning | fixed | quick 261111-rqs (collection remove purges vec0 embeddings before document delete via the shared create_embedding_purger helper, plus real-SQLite regression tests) |
+| WR-02 | warning | fixed | quick 261111-qlv (triage close: whole-run transaction superseded by Phase 11 IncrementalIndexer per-file BEGIN IMMEDIATE commits, D-04; staleness re-verified live with durability regression test) |
+| WR-03 | warning | fixed | quick 261111-mlj (multi-get byte-budget truncation plus regression tests) |
+| WR-04 | warning | fixed | quick 261111-nj0 (ls subpath collection-relative segment-aligned filter plus regression tests) |
+| WR-05 | warning | fixed | quick 261111-pqy (collection ls subpath collection-relative segment-aligned filter plus regression tests) |
+| WR-06 | warning | fixed | quick 261111-r2f (bench fixture load pinned to explicit UTF-8 encoding plus open-contract regression test; raw-traceback wrapping already shipped in Phase 16 T-16-02) |
+| WR-07 | warning | fixed | quick 261111-wh7 (user decided: honor max_lines alone — get_document slices from line 1 when only max_lines is sent; line_start/line_end metadata and truncation preserved; regression tests red-to-green) |
+| WR-08 | warning | fixed | quick 261111-wh8 (user decision: MCP hybrid_search degrades to BM25-only when sqlite-vec is unavailable — one-time warning at the SearchBackend boundary mirroring the embedder-failure posture; core HybridSearcher.search stays fail-fast; CLAUDE.md Error Handling carve-out recorded; regression tests red-to-green) |
+| WR-09 | warning | fixed | quick 261111-rqq (cleanup delegates to LLMCacheRepository.clear_expired with parsed-datetime comparison; cache expiry written as aware-UTC; legacy naive-local rows interpreted as system-local; regression tests) |
+| WR-10 | warning | fixed | quick 261111-l7p (dimension-mismatch remediation message plus regression test) |
+| IN-01 | info | fixed | quick 261111-tip (triage close: byte-identical markdown/else display branches collapsed to a single console.print(content, markup=False) in get.py, commit c52f489; raw-print regression tests green) |
+| IN-02 | info | fixed | quick 261111-v4y (vsearch_cmd uses the module-level Database import; all eight vsearch test patch sites unified on sif.cli.commands.search.Database; patch-target trap demonstrated red-to-green via the closure test) |
+| IN-03 | info | fixed | quick 261111-v4z (EmbeddingManager.model public read-only property replaces the two private _model reach-ins in query_cmd and bench_cmd; property unit tests red-to-green) |
+| IN-04 | info | fixed | quick 261111-v50 (deleted the three dead output-time quiet recomputations in search_cmd/vsearch_cmd/query_cmd; entry computations preserved; existing output/format tests green) |
+| IN-05 | info | fixed | quick 261111-wh9 (user-decided removal of the no-op global --config option: decorator, cli parameter, ctx.obj config_path entry, and DEFAULT_CONFIG_PATH constant deleted from main.py; cli-reference.md regenerated via make docs-generate; option-rejection regression tests red-to-green) |
+| IN-06 | info | fixed | quick 261111-tiq (status_cmd index_path-None fallback wrapped in the _get_default_db_path ValidationError-to-ClickException guard; invalid-env regression test red-to-green) |
+| IN-07 | info | fixed | quick 261111-wha (query_cmd and bench _load_embedder prefer get_model_info embedding_dim with probe fallback; bench load failure uses settings.embedding_dim; probe-avoidance regression tests red-to-green) |
+| IN-08 | info | fixed | quick 261111-rqp (disk-fallback read_text pinned to explicit UTF-8 encoding plus read_text-contract regression test) |
+| IN-09 | info | fixed | quick 261111-tis (api-reference database examples expand the tilde via pathlib before opening the DB; Complete Search Example plus the identical DatabaseConnection and SearchBackend usage patterns) |
+| IN-10 | info | fixed | quick 261111-tir (backend fixture and direct constructions use tmp_path-scoped DB paths; sentinel-verified no shared /tmp database creation) |
+| CR-01 | critical | fixed | quick 261111-tip (triage close: schema.py detects and drops legacy direct-DELETE/UPDATE FTS sync triggers, recreates delete-command forms with gated rebuild, Phase 10.1-02 commit 7622985; legacy-delete migration regression tests green) |
+| CR-02 | critical | fixed | quick 261111-tip (triage close: search.py strips XML-1.0-forbidden control characters via _XML_1_0_INVALID/_xml_sanitize on query/title/path/collection/line_numbers, Phase 10.1-03 commit f78ef4a; round-trip parse regression tests green) |
 
 Dispositions: `open` (recorded, not yet triaged), `fixed`, `skipped`, `deferred`.
 Set `deferred` by hand and put the reason in the Source cell; both are preserved. A `|` in the reason is kept as prose and escaped on the next run.

@@ -9,6 +9,7 @@ from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
 
+from sif.cli.error_handling import open_initialized_database
 from sif.core.models import PathContext
 from sif.database.database import Database
 from sif.database.repositories import CollectionRepository, ContextRepository
@@ -154,9 +155,7 @@ def context_add(
         console.print("[yellow]No index found.[/yellow]")
         return
 
-    with Database(index_path) as db:
-        db.init_schema()
-
+    with open_initialized_database(index_path, Database) as db:
         with db.transaction() as conn:
             repo = ContextRepository(conn)
 
@@ -228,9 +227,7 @@ def context_remove(ctx: click.Context, context_id: str) -> None:
         console.print("[yellow]No index found.[/yellow]")
         return
 
-    with Database(index_path) as db:
-        db.init_schema()
-
+    with open_initialized_database(index_path, Database) as db:
         with db.transaction() as conn:
             repo = ContextRepository(conn)
             deleted = repo.delete(context_id)
@@ -256,9 +253,7 @@ def context_list(ctx: click.Context, context_type: str | None) -> None:
         console.print("[yellow]No index found.[/yellow]")
         return
 
-    with Database(index_path) as db:
-        db.init_schema()
-
+    with open_initialized_database(index_path, Database) as db:
         with db.connection:
             repo = ContextRepository(db.connection)
             contexts = repo.list_by_type(context_type) if context_type else repo.list_all()
@@ -301,9 +296,7 @@ def context_prune(ctx: click.Context) -> None:
         console.print("[yellow]No index found.[/yellow]")
         return
 
-    with Database(index_path) as db:
-        db.init_schema()
-
+    with open_initialized_database(index_path, Database) as db:
         with db.transaction() as conn:
             repo = ContextRepository(conn)
             count = repo.delete_orphaned_paths()

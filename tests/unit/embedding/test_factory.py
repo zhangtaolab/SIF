@@ -225,3 +225,38 @@ class TestEmbeddingModelFactoryDispatch:
             openai_model = factory.create_model(ModelType.OPENAI, None, "inv-openai")
         assert isinstance(openai_model, OpenAIEmbedder)
         _assert_working_embedder(openai_model)
+
+
+def test_st_dispatch_forwards_max_tokens_and_batch_size() -> None:
+    """SIF_MAX_TOKENS / SIF_BATCH_SIZE reach the sentence-transformers embedder."""
+    with patch.dict("sys.modules", _sentence_transformers_modules()):
+        model = EmbeddingModelFactory().create_model(
+            ModelType.SENTENCE_TRANSFORMERS,
+            None,
+            "test-st",
+            max_tokens=64,
+            batch_size=7,
+        )
+
+    assert isinstance(model, SentenceTransformerEmbedder)
+    assert model._batch_size == 7
+    assert model.model.max_seq_length == 64
+
+
+def test_gguf_dispatch_forwards_max_tokens() -> None:
+    """SIF_MAX_TOKENS reaches the llama.cpp embedder's truncation cap."""
+    mock_llama = MagicMock()
+    mock_llama.return_value.n_embd.return_value = 512
+    llama_module = MagicMock()
+    llama_module.Llama = mock_llama
+
+    with (
+        patch.dict("sys.modules", {"llama_cpp": llama_module}),
+        patch("os.cpu_count", return_value=4),
+    ):
+        model = EmbeddingModelFactory().create_model(
+            ModelType.GGUF, "/model.gguf", "test-gguf", max_tokens=128
+        )
+
+    assert isinstance(model, LlamaCppEmbedder)
+    assert model._max_tokens == 128

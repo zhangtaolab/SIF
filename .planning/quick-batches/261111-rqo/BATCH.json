@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "batch_id": "261111-rqo",
+  "created_at": "2026-11-11T11:58:25.410Z",
+  "options": {},
+  "base_revision": "802c08c556eea041e420e28b6ac582260811f168",
+  "items": [
+    {
+      "quick_id": "261111-rqp",
+      "client_id": null,
+      "description": "Close Phase 10 IN-08: pin read_text to explicit UTF-8 encoding at the site named by the IN-08 record (read the original finding in .planning/milestones/v1.0-phases/10-raise-pytest-coverage-to-90/10-REVIEW.md; contract test red-to-green + three-edit ledger closure in 10-REVIEW-DISPOSITION.md)",
+      "status": "complete",
+      "depends_on": [],
+      "planned_files": [
+        "src/sif/cli/commands/get.py",
+        "tests/unit/cli/test_get.py",
+        ".planning/milestones/v1.0-phases/10-raise-pytest-coverage-to-90/10-REVIEW-DISPOSITION.md"
+      ],
+      "directory": null,
+      "worktree": null,
+      "dispatched_worktree": null,
+      "dispatched_branch": null,
+      "dispatched_base": null,
+      "wave": 0,
+      "commit": "7be1412",
+      "failure_reason": null
+    },
+    {
+      "quick_id": "261111-rqq",
+      "client_id": null,
+      "description": "Close Phase 10 WR-09: stale-vector handling on the read side (src/sif/cli/main.py) and write side (src/sif/database/repositories.py) per the original WR-09 finding (regression tests + three-edit ledger closure in 10-REVIEW-DISPOSITION.md)",
+      "status": "complete",
+      "depends_on": [],
+      "planned_files": [
+        "src/sif/cli/main.py",
+        "src/sif/database/repositories.py",
+        "tests/unit/cli/test_main.py",
+        "tests/unit/database/test_repositories.py",
+        ".planning/milestones/v1.0-phases/10-raise-pytest-coverage-to-90/10-REVIEW-DISPOSITION.md"
+      ],
+      "directory": null,
+      "worktree": null,
+      "dispatched_worktree": null,
+      "dispatched_branch": null,
+      "dispatched_base": null,
+      "wave": 1,
+      "commit": "8f16b1e",
+      "failure_reason": null
+    },
+    {
+      "quick_id": "261111-rqr",
+      "client_id": null,
+      "description": "Fix deferred D-1: caplog cross-test leak in tests/unit/cli/test_watch_cmd.py under .venv batch runs (bisect the batch order to isolate the leaking predecessor, reset logger state; full details in .planning/quick/261111-o6y-find-and-fix-failing-tests-run-the-quali/deferred-items.md)",
+      "status": "complete",
+      "depends_on": [],
+      "planned_files": [
+        "tests/unit/cli/test_watch_cmd.py",
+        ".planning/quick/261111-o6y-find-and-fix-failing-tests-run-the-quali/deferred-items.md"
+      ],
+      "directory": null,
+      "worktree": null,
+      "dispatched_worktree": null,
+      "dispatched_branch": null,
+      "dispatched_base": null,
+      "wave": 0,
+      "commit": "a04af92",
+      "failure_reason": null
+    },
+    {
+      "quick_id": "261111-rqs",
+      "client_id": null,
+      "description": "Close Phase 10 WR-01: share the duplicated purge helper (collection.py:75/93 and index.py) plus repositories.py purge and sqlite-vec handling per the original WR-01 finding (regression tests + three-edit ledger closure in 10-REVIEW-DISPOSITION.md)",
+      "status": "complete",
+      "depends_on": [],
+      "planned_files": [
+        "src/sif/search/vector.py",
+        "src/sif/indexing/incremental.py",
+        "src/sif/cli/commands/collection.py",
+        "tests/unit/cli/test_collection.py",
+        ".planning/milestones/v1.0-phases/10-raise-pytest-coverage-to-90/10-REVIEW-DISPOSITION.md"
+      ],
+      "directory": null,
+      "worktree": null,
+      "dispatched_worktree": null,
+      "dispatched_branch": null,
+      "dispatched_base": null,
+      "wave": 2,
+      "commit": "a43007a",
+      "failure_reason": null
+    }
+  ]
+}

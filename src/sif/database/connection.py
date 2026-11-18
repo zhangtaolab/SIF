@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-import sqlite_vec
+from sif.database.factory import create_connection
 
 
 class DatabaseConnection:
@@ -23,18 +23,7 @@ class DatabaseConnection:
 
     def _create_connection(self) -> sqlite3.Connection:
         """Create a new database connection with extensions loaded."""
-        conn = sqlite3.connect(str(self._db_path), check_same_thread=False)
-        conn.row_factory = sqlite3.Row
-
-        # Enable foreign keys
-        conn.execute("PRAGMA foreign_keys = ON")
-
-        # Load sqlite-vec extension
-        conn.enable_load_extension(True)
-        sqlite_vec.load(conn)
-        conn.enable_load_extension(False)
-
-        return conn
+        return create_connection(self._db_path)
 
     @contextmanager
     def connect(self) -> Generator[sqlite3.Connection, None, None]:
@@ -100,44 +89,3 @@ class DatabaseConnection:
         with self.connect() as conn:
             cursor = conn.execute(query, parameters or ())
             return cursor.fetchall()
-
-
-class ConnectionPool:
-    """Simple connection pool for database connections.
-
-    Note: For SQLite, this is primarily useful for read-heavy workloads.
-    Writes should use a single connection to avoid locking issues.
-    """
-
-    def __init__(
-        self,
-        db_path: Path | str,
-        max_connections: int = 5,
-    ) -> None:
-        """Initialize the connection pool."""
-        self._db_path = Path(db_path)
-        self._max_connections = max_connections
-        self._connections: list[sqlite3.Connection] = []
-
-    def get_connection(self) -> sqlite3.Connection:
-        """Get a connection from the pool or create a new one."""
-        if self._connections:
-            return self._connections.pop()
-
-        conn = sqlite3.connect(str(self._db_path), check_same_thread=False)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys = ON")
-        return conn
-
-    def release_connection(self, conn: sqlite3.Connection) -> None:
-        """Return a connection to the pool."""
-        if len(self._connections) < self._max_connections:
-            self._connections.append(conn)
-        else:
-            conn.close()
-
-    def close_all(self) -> None:
-        """Close all connections in the pool."""
-        for conn in self._connections:
-            conn.close()
-        self._connections.clear()

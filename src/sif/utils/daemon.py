@@ -1,0 +1,466 @@
+"""Detached-daemon process lifecycle utilities (Phase 13, LIVE-09 SC2).
+
+The PID file owned here is MANAGEMENT METADATA ONLY — never arbitration and
+never a startup gate (D-05). Single-writer arbitration stays with the
+per-burst kernel flock in :mod:`sif.database.locking` (kernel-released on
+process death, so two daemons may run simultaneously and a SIGKILLed one
+leaves no stale lock — SC4). The PID file is a pointer so ``--stop`` and
+``sif status`` can find the daemon; because a PID file can be stale, tampered,
+or left by a reboot, every signal decision corroborates the target process's
+identity first (Pitfall 3) and refuses — fail-closed — on any mismatch.
+
+The detach is the classic stdlib double-fork (fork -> setsid -> fork) with a
+pipe handshake: the daemon grandchild runs ``arm()`` (open the database,
+select collections, write the PID file) and only then reports its PID to the
+original parent, so the printed PID always refers to an armed daemon — never
+a silent maybe-detach (SC2). The fork happens before the caller builds any
+thread or observer (Pitfall 2); stdio redirects to ``/dev/null`` and the log
+file (D-07), and the working directory is deliberately NOT changed so
+relative ``--index`` paths keep resolving.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import json
+import os
+import select
+import shutil
+import signal
+import subprocess
+import sys
+import time
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+
+from sif.utils.logging import get_logger
+
+
+logger = get_logger(__name__)
+
+_PID_SUFFIX = ".watch.pid"
+_PID_SUFFIX_MCP = ".mcp.pid"
+_ARM_TIMEOUT_SECONDS = 30.0
+_STOP_TERM_TIMEOUT_SECONDS = 10.0
+_STOP_KILL_TIMEOUT_SECONDS = 5.0
+_POLL_INTERVAL_SECONDS = 0.05
+_PS_TIMEOUT_SECONDS = 5.0
+
+# Identity markers (Pitfall 3): a real sif watch process appears in ps in one
+# of two program shapes — the module form (`python -m sif.cli.main`) or the
+# installed console-script form (`python <prefix>/sif`, generated from
+# [project.scripts] sif = "sif.cli.main:main"). The owning subcommand must
+# also appear as its own whitespace token (a "watch.db" path fragment must
+# not corroborate), and the console-script token's basename must be exactly
+# `sif` — lookalikes such as `not-sif` and `sif-tools` never corroborate.
+# The marker is per-lifecycle (D-20/C5): the watch daemon is corroborated by
+# `watch`, the MCP daemon by `mcp`, so neither `--stop` can signal the other.
+_CLI_MARKER = "sif.cli.main"
+_CONSOLE_SCRIPT_NAME = "sif"
+
+
+@dataclass
+class DetachOutcome:
+    """Result of :func:`detach` for the original parent, or the go-ahead for the daemon.
+
+    ``daemon=True`` only ever comes back inside the daemon grandchild: the
+    caller must now run the host body on the armed resources. In the original
+    parent exactly one of ``pid`` (armed) or ``error`` (failure) is set.
+    """
+
+    daemon: bool = False
+    pid: int | None = None
+    error: str | None = None
+
+
+@dataclass
+class StopOutcome:
+    """Result of :func:`stop_daemon` for the CLI's user-facing messaging."""
+
+    status: str  # "stopped" | "not_running" | "stale" | "permission_denied"
+    pid: int | None = None
+
+
+class _SignalPermissionError(Exception):
+    """A corroborated PID could not be signalled (EPERM: another user's process)."""
+
+
+def pid_path_for(db_path: str | Path) -> Path:
+    """Derive the sibling PID file path for an index database (D-05).
+
+    Canonicalizes exactly like :func:`sif.database.locking.index_lock` does
+    for the lock file, so equivalent path spellings share one artifact.
+    """
+    resolved = Path(db_path).expanduser().resolve()
+    return resolved.with_name(resolved.name + _PID_SUFFIX)
+
+
+def pid_path_for_mcp(db_path: str | Path) -> Path:
+    """Derive the MCP daemon's sibling PID file path (D-20).
+
+    Distinct from :func:`pid_path_for` (``<db>.watch.pid``) so a watch daemon
+    and an MCP daemon can run on one index concurrently without sharing (or
+    removing) each other's lifecycle artifact.
+    """
+    resolved = Path(db_path).expanduser().resolve()
+    return resolved.with_name(resolved.name + _PID_SUFFIX_MCP)
+
+
+def write_pid_file(path: Path, *, pid: int, mode: str, depth: str) -> None:
+    """Write the one-line JSON PID payload with mode 0600 (T-13-04).
+
+    The payload carries what management needs: pid, host mode, update depth,
+    and a UTC start timestamp. Write-temp-then-rename (T-13-11 parity with
+    service._write_artifact): rename does not follow symlinks, so a
+    pre-planted ``<db>.watch.pid`` symlink is atomically replaced with the
+    real file instead of redirecting this write — and any later removal —
+    to an arbitrary path. The temp name carries the writer's PID (WR-01):
+    the module's contract lets two daemons arm on one index concurrently,
+    and a shared fixed temp name would make the loser's ``os.replace`` race
+    on the same inode — a per-process temp keeps each writer's
+    create/write/rename sequence independent.
+    """
+    payload = {
+        "pid": pid,
+        "mode": mode,
+        "depth": depth,
+        "started": datetime.now(timezone.utc).isoformat(),
+    }
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload) + "\n")
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
+def read_pid_file(path: Path) -> dict[str, object] | None:
+    """Defensively parse the PID payload; ANY defect reads back as None.
+
+    A missing file, garbage bytes, empty content, non-dict JSON, or
+    wrong-typed/missing fields all return None — a tampered artifact must
+    never crash a reader or drive a kill (T-13-04).
+    """
+    try:
+        raw = path.read_bytes()
+    except OSError:
+        return None
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    pid = payload.get("pid")
+    if isinstance(pid, bool) or not isinstance(pid, int):
+        return None
+    for key in ("mode", "depth", "started"):
+        if not isinstance(payload.get(key), str):
+            return None
+    return payload
+
+
+def remove_pid_file(path: Path) -> None:
+    """Remove the PID file if present (metadata only — safe to be wrong)."""
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        logger.warning("Could not remove PID file %s", path, exc_info=True)
+
+
+def _identifies_sif_cli(command_line: str) -> bool:
+    """True when a ps command line names the sif CLI.
+
+    Both real program shapes are accepted: the module form
+    (``python -m sif.cli.main``) and the installed console-script form
+    (``python <prefix>/sif``). The console-script token is matched by exact
+    basename only, so lookalikes (``not-sif``, ``sif-tools``, ``sif.exe``,
+    ``sif-script.py``) never corroborate. This lifecycle is POSIX-only
+    (double-fork), so no Windows script suffixes are accepted.
+    """
+    if _CLI_MARKER in command_line:
+        return True
+    return any(os.path.basename(token) == _CONSOLE_SCRIPT_NAME for token in command_line.split())
+
+
+def corroborate_pid(payload: dict[str, object], *, marker: str = "watch") -> bool:
+    """Fail-closed identity check before any signal (Pitfall 3, T-13-03).
+
+    A process is only corroborated when it is alive AND its ps command line
+    names the sif CLI — the module form (``python -m sif.cli.main``) or the
+    installed console-script form (``python <prefix>/sif``) — AND carries
+    ``marker`` (the owning subcommand: ``watch`` by default, ``mcp`` for the
+    MCP daemon) as its own whitespace token. ``ps`` is invoked with ``-ww``
+    (unlimited width) because the console-script shape places that trailing
+    token after the interpreter, script path, and ``--index`` value, where
+    default width clipping could otherwise hide it. Every other shape, a
+    wrong-typed pid, a dead process, a missing ``ps``, or a ``ps`` failure
+    returns False — an uncorroborated PID is never signalled.
+    """
+    pid = payload.get("pid")
+    if isinstance(pid, bool) or not isinstance(pid, int):
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:
+        # Alive but not probeable (e.g. another user's process): the argv
+        # check below is the identity decision, so fall through to it.
+        pass
+    ps_path = shutil.which("ps")
+    if ps_path is None:
+        return False
+    try:
+        result = subprocess.run(
+            [ps_path, "-ww", "-p", str(pid), "-o", "command="],
+            capture_output=True,
+            text=True,
+            timeout=_PS_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    if result.returncode != 0:
+        return False
+    return _identifies_sif_cli(result.stdout) and marker in result.stdout.split()
+
+
+def detach(
+    log_path: Path, arm: Callable[[], None], *, arm_timeout_s: float = _ARM_TIMEOUT_SECONDS
+) -> DetachOutcome:
+    """Double-fork into a detached daemon with a deterministic arming handshake.
+
+    The grandchild redirects stdio (/dev/null in, ``log_path`` out/err,
+    mode 0644 per the D-07/launchd log-tree contract), then calls ``arm()``,
+    which must fully prepare the daemon — database open, schema, collections
+    selected, PID file written — before the ``armed <pid>`` pipe message. An
+    ``arm()`` failure is reported through the pipe instead, and the original
+    parent surfaces it as a non-zero exit (never a silent maybe-detach).
+    A handshake TIMEOUT is likewise never a silent maybe-detach (SC2): the
+    parent SIGKILLs the detached session before reporting the failure (see
+    :func:`_kill_detached_group`).
+
+    Returns:
+        In the original parent: the arming outcome (pid or error). In the
+        daemon grandchild: ``daemon=True`` — run the host body now.
+    """
+    if not hasattr(os, "fork"):
+        # D-06/ENG-02: no os.fork (Windows) must fail with the cause and the
+        # remedy, never a raw AttributeError from os.pipe/os.fork below.
+        raise RuntimeError(
+            "detached mode requires POSIX fork (os.fork); use the foreground watch on Windows"
+        )
+    read_fd, write_fd = os.pipe()
+    pid = os.fork()
+    if pid > 0:
+        # Original parent: learn the outcome, then return it so the CLI
+        # prints the PID line and exits 0 (SC2) — or reports the failure.
+        os.close(write_fd)
+        try:
+            message = _read_pipe_message(read_fd, arm_timeout_s)
+        finally:
+            os.close(read_fd)
+        if message is None:
+            # The grandchild may still arm late (slow init_schema under a
+            # concurrent reindex, first-use model load, slow storage) and
+            # run the host forever after the CLI reports failure — kill the
+            # detached session before reporting (SC2: never a silent
+            # maybe-detach).
+            _kill_detached_group(pid)
+        # Reap the short-lived intermediate child (already-reaped cannot
+        # happen here — this is the first wait on it).
+        with contextlib.suppress(OSError):
+            os.waitpid(pid, 0)
+        return _parent_outcome(message, arm_timeout_s)
+
+    # First child: new session, then fork again so the daemon is not a
+    # session leader and can never re-acquire a controlling terminal.
+    with contextlib.suppress(OSError):  # pragma: no cover - fresh child is never a leader
+        os.setsid()
+    if os.fork() > 0:
+        os._exit(0)
+
+    # Grandchild — the daemon. Redirect stdio BEFORE arming (D-07). The
+    # working directory is deliberately NOT changed: relative --index paths
+    # must keep resolving (research recipe note).
+    os.close(read_fd)
+    sys.stdout.flush()
+    sys.stderr.flush()
+    devnull_fd = os.open(os.devnull, os.O_RDONLY)
+    log_fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+    os.dup2(devnull_fd, 0)
+    os.dup2(log_fd, 1)
+    os.dup2(log_fd, 2)
+    os.close(devnull_fd)
+    os.close(log_fd)
+    try:
+        arm()
+    except Exception as e:
+        _write_pipe_message(write_fd, f"error {type(e).__name__}: {e}")
+        os.close(write_fd)
+        os._exit(1)
+    _write_pipe_message(write_fd, f"armed {os.getpid()}")
+    os.close(write_fd)
+    return DetachOutcome(daemon=True)
+
+
+def stop_daemon(  # noqa: PLR0913 — one keyword per escalation tuning seam
+    pid_path: Path,
+    *,
+    marker: str = "watch",
+    term_timeout_s: float = _STOP_TERM_TIMEOUT_SECONDS,
+    kill_timeout_s: float = _STOP_KILL_TIMEOUT_SECONDS,
+    poll_interval_s: float = _POLL_INTERVAL_SECONDS,
+    now: Callable[[], float] = time.monotonic,
+) -> StopOutcome:
+    """Stop the daemon behind ``pid_path`` with corroborated escalation (D-05).
+
+    Read -> corroborate -> SIGTERM -> bounded poll -> SIGKILL fallback ->
+    remove the file. ``marker`` names the owning lifecycle the target's ps
+    command line must carry (``watch`` by default, ``mcp`` for the MCP
+    daemon), so a live daemon of the other kind is never treated as stale
+    and never signalled. An unreadable or uncorroborated payload is stale:
+    the file is cleaned up and NO signal is ever sent (Pitfall 3, fail-closed).
+    """
+    payload = read_pid_file(pid_path)
+    if payload is None:
+        if pid_path.exists():
+            remove_pid_file(pid_path)
+            return StopOutcome("stale")
+        return StopOutcome("not_running")
+    pid = payload.get("pid")
+    assert isinstance(pid, int)
+    assert not isinstance(pid, bool)
+    if not corroborate_pid(payload, marker=marker):
+        remove_pid_file(pid_path)
+        return StopOutcome("stale", pid=pid)
+    try:
+        _terminate_corroborated(pid, term_timeout_s, kill_timeout_s, poll_interval_s, now)
+    except _SignalPermissionError:
+        # WR-08: another user's process cannot be signalled. Keep the PID file
+        # so a later privileged stop can still find it; never crash the CLI.
+        logger.warning("Daemon PID %s belongs to another user; not signalled", pid)
+        return StopOutcome("permission_denied", pid=pid)
+    remove_pid_file(pid_path)
+    return StopOutcome("stopped", pid=pid)
+
+
+def _terminate_corroborated(
+    pid: int,
+    term_timeout_s: float,
+    kill_timeout_s: float,
+    poll_interval_s: float,
+    now: Callable[[], float],
+) -> None:
+    """SIGTERM -> bounded poll -> SIGKILL -> bounded poll for a corroborated PID."""
+    if _signal_or_confirm_gone(pid, signal.SIGTERM):
+        return
+    if _wait_gone(pid, term_timeout_s, poll_interval_s, now):
+        return
+    _signal_or_confirm_gone(pid, signal.SIGKILL)
+    if not _wait_gone(pid, kill_timeout_s, poll_interval_s, now):
+        logger.warning("Daemon PID %s still present after SIGKILL", pid)
+
+
+def _signal_or_confirm_gone(pid: int, sig: int) -> bool:
+    """Send ``sig``; True when the process had already vanished instead."""
+    try:
+        os.kill(pid, sig)
+    except ProcessLookupError:
+        return True
+    except PermissionError as exc:
+        raise _SignalPermissionError(str(pid)) from exc
+    return False
+
+
+def _wait_gone(
+    pid: int,
+    timeout_s: float,
+    poll_interval_s: float,
+    now: Callable[[], float],
+) -> bool:
+    """Deadline-bounded poll for process death; True once ProcessLookupError."""
+    deadline = now() + timeout_s
+    while True:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return True
+        except PermissionError as exc:
+            raise _SignalPermissionError(str(pid)) from exc
+        if now() >= deadline:
+            return False
+        time.sleep(poll_interval_s)
+
+
+def _kill_detached_group(pgid: int) -> None:
+    """SIGKILL the detached daemon's whole process group (SC2 timeout cleanup).
+
+    The intermediate child became a session and group leader via
+    ``setsid()`` before forking the grandchild, so the process group id IS
+    that child's pid: one ``killpg`` reaches a late-arming grandchild and
+    anything it spawned. Best-effort by design — a group that already
+    exited (ProcessLookupError) or cannot be signalled (PermissionError)
+    surfaces through the caller's failure report, never as a crash here.
+    """
+    with contextlib.suppress(OSError):
+        os.killpg(pgid, signal.SIGKILL)
+
+
+def _parent_outcome(message: str | None, timeout_s: float) -> DetachOutcome:
+    """Translate the handshake message into the parent-side outcome."""
+    if message is None:
+        return DetachOutcome(
+            error=(
+                f"daemon did not report readiness within {timeout_s:.0f}s; "
+                "terminated the daemon process group — if a daemon still "
+                "survives, stop it with 'sif watch --stop'"
+            )
+        )
+    if message.startswith("armed "):
+        try:
+            return DetachOutcome(pid=int(message[len("armed ") :]))
+        except ValueError:
+            return DetachOutcome(error=f"garbled handshake message: {message!r}")
+    if message.startswith("error "):
+        return DetachOutcome(error=message[len("error ") :])
+    return DetachOutcome(error=f"unexpected handshake message: {message!r}")
+
+
+def _read_pipe_message(read_fd: int, timeout_s: float) -> str | None:
+    """Read one pipe message under a deadline; None on timeout or error.
+
+    Returns at EOF (the daemon closes its write end after the message), so
+    the parent never blocks past ``timeout_s`` on a hung daemon.
+    """
+    deadline = time.monotonic() + timeout_s
+    chunks: list[bytes] = []
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return None
+        try:
+            ready, _, _ = select.select([read_fd], [], [], remaining)
+        except (OSError, ValueError):
+            return None
+        if not ready:
+            return None
+        try:
+            data = os.read(read_fd, 4096)
+        except OSError:
+            return None
+        if not data:
+            return b"".join(chunks).decode("utf-8", errors="replace").strip()
+        chunks.append(data)
+
+
+def _write_pipe_message(write_fd: int, message: str) -> None:
+    """Best-effort pipe write; a vanished parent has nothing to report to."""
+    with contextlib.suppress(OSError):
+        os.write(write_fd, message.encode("utf-8"))

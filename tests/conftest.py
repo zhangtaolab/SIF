@@ -1,6 +1,8 @@
 """Shared pytest fixtures for SIF tests."""
 
 import hashlib
+import logging
+import os
 
 # Add src to path for imports
 import sys
@@ -20,7 +22,87 @@ from sif.core.collection import Collection
 from sif.core.context import Context, ContextType
 from sif.core.document import Document, DocumentChunk, DocumentMetadata
 from sif.database.connection import DatabaseConnection
-from sif.models.search import SearchOptions, SearchResult
+
+
+# Scrub ambient color-forcing env vars BEFORE any test module imports sif.cli: every
+# sif.cli module builds module-level Rich Console() objects at import time, and Rich 15
+# caches _color_system at construction; scrubbing after construction cannot undo ambient
+# color forcing. The sif imports above load only core/database/model modules (no sif.cli,
+# no Console construction), so this scrub still precedes every Console construction.
+_COLOR_ENV_VARS = ("FORCE_COLOR", "CLICOLOR_FORCE", "NO_COLOR", "PY_COLORS", "TTY_COMPATIBLE")
+for name in _COLOR_ENV_VARS:
+    os.environ.pop(name, None)
+
+
+# =============================================================================
+# Environment Isolation
+# =============================================================================
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_color_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep every test's color environment at the known-green baseline.
+
+    Scrubs all five forcing vars per test so Click's call-time
+    CLICOLOR_FORCE/NO_COLOR reads and subprocess child envs copied from
+    os.environ never see ambient color forcing.
+    """
+    for var in _COLOR_ENV_VARS:
+        monkeypatch.delenv(var, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_sif_logging() -> None:
+    """Reset leaked ``sif`` logger state before every test.
+
+    The root ``cli`` callback runs ``setup_logging``, which sets
+    ``propagate = False`` on the ``sif`` logger and attaches a stderr handler.
+    pytest 9.0.x attaches caplog's capture handler to the root logger only, so
+    leaked state silently silences every later ``caplog`` assertion (the 8-cell
+    CI matrix runs the locked 9.0.3; newer pytest papers over the leak).
+    Reset the namespace root and the global disable level so test order never
+    decides whether a caplog assertion can see SIF log records.
+    """
+    sif_logger = logging.getLogger("sif")
+    sif_logger.setLevel(logging.NOTSET)
+    sif_logger.propagate = True
+    sif_logger.disabled = False
+    sif_logger.handlers = []
+    logging.Logger.manager.disable = logging.NOTSET
+
+
+@pytest.fixture(autouse=True)
+def reset_identity_state() -> None:
+    """Clear embedder-identity warning latches before every test.
+
+    Lazy module lookup on purpose: importing ``sif.embedding.identity`` from
+    the global conftest would pull the embedding package into every test
+    process. If a test module already imported it (at collection or in an
+    earlier test), its process-level latches are reset here so warn-once
+    behavior never leaks across tests.
+    """
+    identity_module = sys.modules.get("sif.embedding.identity")
+    if identity_module is not None:
+        identity_module.reset_identity_state()
+
+
+@pytest.fixture(autouse=True)
+def reset_context_cache() -> Generator[None, None, None]:
+    """Clear the per-process context-map cache around every test.
+
+    Lazy module lookup on purpose: importing ``sif.search.context_attach``
+    from the global conftest would pull the search package (and its sentinel
+    connection lifecycle) into every test process. When a test module already
+    imported it, reset before and after so no test inherits a sentinel or a
+    cached map from a previous test.
+    """
+    context_module = sys.modules.get("sif.search.context_attach")
+    if context_module is not None:
+        context_module.reset_context_cache()
+    yield
+    context_module = sys.modules.get("sif.search.context_attach")
+    if context_module is not None:
+        context_module.reset_context_cache()
 
 
 # =============================================================================
@@ -353,63 +435,6 @@ def sample_context() -> Context:
         created_at=datetime.now(timezone.utc),
         updated_at=datetime.now(timezone.utc),
     )
-
-
-# =============================================================================
-# Search Fixtures
-# =============================================================================
-
-
-@pytest.fixture
-def sample_search_options() -> SearchOptions:
-    """Return sample search options."""
-    return SearchOptions(
-        limit=10,
-        offset=0,
-        threshold=0.0,
-        include_chunks=True,
-        include_metadata=True,
-        highlight_matches=True,
-        bm25_k1=1.5,
-        bm25_b=0.75,
-        vector_weight=0.7,
-        bm25_weight=0.3,
-        rrf_k=60,
-    )
-
-
-@pytest.fixture
-def sample_search_result() -> SearchResult:
-    """Return a sample search result."""
-    return SearchResult(
-        document_id=str(uuid.uuid4()),
-        document_path="/path/to/result.md",
-        document_title="Test Result",
-        score=0.95,
-        bm25_score=0.90,
-        vector_score=0.85,
-        content_preview="This is a preview of the result...",
-        matched_chunks=[],
-        highlights=["matched term"],
-        metadata={"author": "Test"},
-    )
-
-
-@pytest.fixture
-def sample_search_results() -> list[SearchResult]:
-    """Return a list of sample search results."""
-    return [
-        SearchResult(
-            document_id=str(uuid.uuid4()),
-            document_path=f"/path/to/result_{i}.md",
-            document_title=f"Result {i}",
-            score=0.95 - (i * 0.05),
-            bm25_score=0.90 - (i * 0.03),
-            vector_score=0.85 - (i * 0.04),
-            content_preview=f"Preview of result {i}...",
-        )
-        for i in range(5)
-    ]
 
 
 # =============================================================================

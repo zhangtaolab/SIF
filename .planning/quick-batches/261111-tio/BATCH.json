@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "batch_id": "261111-tio",
+  "created_at": "2026-11-11T13:15:12.818Z",
+  "options": {},
+  "base_revision": "3a4b47bfabf1bc0e46489bcbf7c6bfb05eab1a8a",
+  "items": [
+    {
+      "quick_id": "261111-tip",
+      "client_id": null,
+      "description": "Close Phase 10 findings IN-01, CR-01, CR-02 as fixed via evidence-backed triage (NO code changes): verify live that (a) get.py's byte-identical markdown/else display branches were collapsed to a single console.print(content, markup=False), (b) schema.py detects and migrates legacy direct-DELETE FTS sync triggers (legacy-trigger drop + replacement, CR-01 comments), (c) search.py strips XML-1.0-forbidden control characters via _XML_1_0_INVALID/_xml_sanitize on query/title/path/collection/line_numbers; gather commit evidence where possible; then update .planning/milestones/v1.0-phases/10-raise-pytest-coverage-to-90/10-REVIEW-DISPOSITION.md with exactly 3 edits per finding (YAML disposition open->fixed, open count decremented by 3, markdown row Disposition fixed + Source cell naming this quick task and the evidence); open count MUST be read from execution-time git show HEAD:<ledger> and decremented dynamically (siblings may land first); byte-equality reconstruction gate vs execution-time HEAD; NO **Status:** resolved lines in this ledger",
+      "status": "complete",
+      "depends_on": [],
+      "planned_files": [
+        ".planning/milestones/v1.0-phases/10-raise-pytest-coverage-to-90/10-REVIEW-DISPOSITION.md"
+      ],
+      "directory": null,
+      "worktree": null,
+      "dispatched_worktree": null,
+      "dispatched_branch": null,
+      "dispatched_base": null,
+      "wave": 0,
+      "commit": "292bf05",
+      "failure_reason": null
+    },
+    {
+      "quick_id": "261111-tiq",
+      "client_id": null,
+      "description": "Close Phase 10 IN-06: wrap status_cmd's index_path-None fallback get_settings().get_db_path() (src/sif/cli/main.py:169) in the same try/except pydantic ValidationError -> click.ClickException guard used by _get_default_db_path (main.py:28-40), with a regression test proving invalid env config on that path yields a clean ClickException instead of a raw traceback (TDD: non-vacuous RED first); then close IN-06 in 10-REVIEW-DISPOSITION.md (exactly 3 edits: YAML, open count read from execution-time git HEAD and decremented by 1 dynamically, markdown row with Source cell; byte-equality reconstruction gate; NO **Status:** resolved lines)",
+      "status": "complete",
+      "depends_on": [],
+      "planned_files": [
+        "src/sif/cli/main.py",
+        "tests/unit/cli/test_status.py",
+        ".planning/milestones/v1.0-phases/10-raise-pytest-coverage-to-90/10-REVIEW-DISPOSITION.md"
+      ],
+      "directory": null,
+      "worktree": null,
+      "dispatched_worktree": null,
+      "dispatched_branch": null,
+      "dispatched_base": null,
+      "wave": 1,
+      "commit": "cee902a",
+      "failure_reason": null
+    },
+    {
+      "quick_id": "261111-tir",
+      "client_id": null,
+      "description": "Close Phase 10 IN-10: make tests/unit/mcp/test_backend.py stop creating a real /tmp/test.db — the fixture (line 28) and direct constructions (lines 57, 330) build SearchBackend(\"/tmp/test.db\") and the flagged tests (test_hybrid_search_mocks, test_get_document_found, test_get_document_with_line_slicing, test_get_document_not_found) patch repositories but not DatabaseConnection; point the fixture at tmp_path or patch sif.mcp.backend.DatabaseConnection, keep all existing assertions green, and verify no /tmp/test.db is created by the file's tests; then close IN-10 in 10-REVIEW-DISPOSITION.md (exactly 3 edits: YAML, open count read from execution-time git HEAD and decremented by 1 dynamically, markdown row with Source cell; byte-equality reconstruction gate; NO **Status:** resolved lines)",
+      "status": "complete",
+      "depends_on": [],
+      "planned_files": [
+        "tests/unit/mcp/test_backend.py",
+        ".planning/milestones/v1.0-phases/10-raise-pytest-coverage-to-90/10-REVIEW-DISPOSITION.md"
+      ],
+      "directory": null,
+      "worktree": null,
+      "dispatched_worktree": null,
+      "dispatched_branch": null,
+      "dispatched_base": null,
+      "wave": 2,
+      "commit": "381df0d",
+      "failure_reason": null
+    },
+    {
+      "quick_id": "261111-tis",
+      "client_id": null,
+      "description": "Close Phase 10 IN-09: fix the Complete Search Example in docs/api-reference.md:818 — sqlite3.connect(\"~/...\") does not expand tilde; use pathlib.Path(\"~/.local/share/sif/sif.db\").expanduser() and connect to str(db_path) (api-reference.md is hand-owned, NOT generator-owned — safe to edit; never touch docs/cli-reference.md or docs/configuration.md); then close IN-09 in 10-REVIEW-DISPOSITION.md (exactly 3 edits: YAML, open count read from execution-time git HEAD and decremented by 1 dynamically, markdown row with Source cell; byte-equality reconstruction gate; NO **Status:** resolved lines)",
+      "status": "complete",
+      "depends_on": [],
+      "planned_files": [
+        "docs/api-reference.md",
+        ".planning/milestones/v1.0-phases/10-raise-pytest-coverage-to-90/10-REVIEW-DISPOSITION.md"
+      ],
+      "directory": null,
+      "worktree": null,
+      "dispatched_worktree": null,
+      "dispatched_branch": null,
+      "dispatched_base": null,
+      "wave": 3,
+      "commit": "eb18aa8",
+      "failure_reason": null
+    }
+  ]
+}

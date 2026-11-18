@@ -59,7 +59,7 @@ Where:
 
 ### Parameters
 
-SIF does not expose k1/b configuration; BM25 ranking uses SQLite FTS5's built-in defaults via the `rank` column:
+SIF does not expose k1/b configuration; document search scores with the weighted `bm25(documents_fts, ?, ?)` expression, whose internal content/title weights are pinned at 1.0/1.0, while FTS5 still supplies the built-in k1/b defaults:
 
 | Parameter | Value | Description |
 |-----------|-------|-------------|
@@ -100,16 +100,18 @@ results = searcher.search("python decorators", options)
 SIF uses SQLite FTS5 for BM25 implementation:
 
 ```sql
--- Create FTS5 virtual table
+-- Create FTS5 virtual table (external content; title is indexed second —
+-- bm25() weights map left-to-right by column order: content, title)
 CREATE VIRTUAL TABLE documents_fts USING fts5(
     content,
+    title,
     content='documents',
     content_rowid='rowid',
     tokenize='porter'
 );
 
--- Search with BM25 ranking
-SELECT rowid, bm25(documents_fts) as score
+-- Search with BM25 ranking (weights bind per column: content, then title)
+SELECT rowid, bm25(documents_fts, ?, ?) as score
 FROM documents_fts
 WHERE documents_fts MATCH 'python decorators'
 ORDER BY score;
@@ -172,12 +174,11 @@ CREATE VIRTUAL TABLE document_embeddings USING vec0(
     embedding FLOAT[{dim}]  -- dimension from model (default: 1024)
 );
 
--- Search similar vectors
+-- Search similar vectors (vec0 KNN: k binds the neighbor count)
 SELECT document_id, distance
 FROM document_embeddings
-WHERE embedding MATCH ?
-ORDER BY distance
-LIMIT 10;
+WHERE embedding MATCH ? AND k = ?
+ORDER BY distance;
 ```
 
 ## Hybrid Search
@@ -235,16 +236,26 @@ results = hybrid.search("python decorators", options)
 
 ### Weighted Fusion
 
-RRF supports optional per-source weights via the Python API (`RRFFusion.fuse_with_weights`).
-Weights scale each list's reciprocal-rank contribution — they multiply `1/(k + rank)`,
-never the raw scores:
+RRF supports optional per-source weights. Weights scale each list's reciprocal-rank
+contribution — they multiply `1/(k + rank)`, never the raw scores, and are never
+normalized (normalizing would halve every score at equal weights and break the
+byte-identical default):
 
 ```
 score = Σ weight_i / (k + rank_i)
 ```
 
-There is no weighted raw-score combination, and no CLI or environment knob selects weights:
-the CLI always fuses with equal weights.
+Defaults are equal weights (`1.0`) and `k = 60`; the unconfigured path is byte-identical
+to plain RRF. Weights and `k` can be selected per query through:
+
+- CLI (`sif search query --bm25-weight 0.7 --vector-weight 0.3 --rrf-k 40`)
+- Environment: `SIF_BM25_WEIGHT`, `SIF_VECTOR_WEIGHT`, `SIF_RRF_K`
+- Python: `RRFFusion.fuse(results_lists, limit, weights=[w_bm25, w_vector], k=...)`
+- MCP `query` tool: `bm25_weight`, `vector_weight`, `rrf_k` request fields
+
+Precedence is CLI flag / request field > `SIF_` setting > default. Only `query`
+(hybrid fusion) exposes the weights; `search` (BM25) and `vsearch` (vector) are
+single-source and take no weight flags.
 
 ## Query Expansion
 
@@ -270,6 +281,28 @@ expanded = expander.expand("python decorators")
 ## Result Reranking
 
 Reranking improves result quality using a more sophisticated model.
+
+### Opt-In, Off by Default
+
+Reranking is an explicit opt-in: enable it per invocation with
+`sif search query --rerank` (or set `SIF_RERANK_ENABLED=1`). The default keeps
+the zero-cost skip-rerank fast path —
+no reranker model is constructed unless reranking is requested.
+
+### Over-Fetch and the Candidate Cap
+
+When enabled, the pipeline over-fetches to `max(limit + offset, candidate_limit)`
+candidates before fusion so the reranker sees a deeper pool than the page it
+returns. `candidate_limit` resolves through one shared clamp (5-50, default 20;
+`SIF_RERANK_CANDIDATE_LIMIT`, or `-C` on the CLI).
+
+### Normalized-Score Relative Threshold
+
+After sorting candidates by descending reranker score, only candidates scoring
+at least `top_score * alpha` are kept (`SIF_RERANK_RELATIVE_THRESHOLD`,
+default 0.5, `0 < alpha <= 1`), applied before truncation to `top_k`. The
+threshold is relative to the top score, not absolute — no per-model
+score-distribution tuning needed.
 
 ### Cross-Encoder Reranking
 
@@ -298,6 +331,9 @@ reranked = reranker.rerank(
     top_k=10,
 )
 ```
+
+See [Benchmarking](benchmarking.md) for measuring rerank off/on as two states
+with `sif bench --rerank`.
 
 ## Search Pipeline
 

@@ -1,0 +1,530 @@
+"""Shared per-file incremental indexing core (roadmap SC3).
+
+Extracted from ``update_cmd`` so every host (CLI update, the MCP index tool,
+the Phase 12-14 watch hosts) runs exactly one incremental loop. Each file's
+document + chunk-purge + FTS-trigger writes commit as one short BEGIN
+IMMEDIATE transaction (D-04): a mid-run failure keeps completed files durable
+(resumable) instead of rolling back the whole run, and short lock holds let
+searches and other writers interleave (LIVE-06).
+
+The core is presentation-free: hosts pass a ``progress`` callback and render
+events themselves — Rich/console output stays in the CLI (Pattern 5). The
+loop is BM25-only; embedding work stays in ``embed_cmd`` (Phase 03 lock).
+"""
+
+from __future__ import annotations
+
+import sqlite3
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+from sif.core.models import Collection, Document
+from sif.database.repositories import (
+    CollectionRepository,
+    DocumentChunkRepository,
+    DocumentRepository,
+    IndexMetaRepository,
+)
+from sif.indexing.parser import CONVENTION_VERSION, TextParser, create_parser
+from sif.indexing.scanner import FileScanner
+from sif.utils.logging import get_logger
+
+
+if TYPE_CHECKING:
+    from sif.search.vector import VectorSearcher
+
+
+logger = get_logger(__name__)
+
+# D-09: one namespaced key per collection; the value is CONVENTION_VERSION.
+_CONVENTION_KEY_PREFIX = "convention:"
+
+
+@dataclass
+class IncrementalResult:
+    """Counts reported by one incremental update pass over a collection.
+
+    ``failed`` counts paths whose parse or document-row write raised
+    (unreadable bytes, permission loss, an un-bindable metadata value): nothing
+    was written for them, so they stay drift-visible — the failure is reported,
+    never silently converged away (14 REVIEW WR-01).
+
+    ``reindexed_paths`` is the explicit signal for the embed leg: exactly the
+    paths whose chunks/embeddings were purged — newly added documents and
+    body-changed updates. Metadata-only paths are deliberately absent, so a
+    frontmatter edit can never make an append-only embed leg duplicate chunks
+    (D-07/D-09, RESEARCH Pitfall 2). Both new fields are ``compare=False`` so
+    the many ``IncrementalResult(...)`` equality assertions stay valid.
+    """
+
+    added: int = 0
+    updated: int = 0
+    removed: int = 0
+    unchanged: int = 0
+    failed: int = 0
+    reindexed_paths: set[str] = field(default_factory=set, compare=False)
+    metadata_only: int = field(default=0, compare=False)
+
+
+class IncrementalIndexer:
+    """The single shared incremental update loop (roadmap SC3).
+
+    Processing order is FileScanner's existing scan order, so final index
+    content is deterministic and identical to the pre-extraction CLI loop.
+    """
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        """Initialize the indexer from a factory-created connection.
+
+        Args:
+            conn: Connection whose implicit write transactions are BEGIN
+                IMMEDIATE (the Plan 01 factory recipe); per-file ``with conn:``
+                blocks are the per-file commits.
+        """
+        self._conn = conn
+        self._coll_repo = CollectionRepository(conn)
+        self._doc_repo = DocumentRepository(conn)
+        self._chunk_repo = DocumentChunkRepository(conn)
+        self._meta_repo = IndexMetaRepository(conn)
+        from sif.search.vector import create_embedding_purger  # noqa: PLC0415
+
+        self._vector_purger: VectorSearcher | None = create_embedding_purger(conn)
+
+    def update_collection(
+        self,
+        collection: Collection,
+        *,
+        force: bool = False,
+        progress: Callable[[str], None] | None = None,
+    ) -> IncrementalResult:
+        """Incrementally update one collection from its directory tree.
+
+        Args:
+            collection: The collection to scan and update.
+            force: Re-index files whose stored checksum already matches.
+            progress: Optional presentation callback. Invoked with short
+                ``"code payload"`` events (single-space separator) so hosts
+                render without the core importing any UI library:
+                ``"scan <n>"`` (scan finished with n files),
+                ``"migrate <n>"`` (one forced re-parse pass over n scanned
+                files; emitted once per collection when the stored
+                parser/checksum convention is missing or old),
+                ``"unchanged <name>"`` (checksum-skip fired),
+                ``"error <message>"`` (per-file parse or write failure;
+                counted as ``failed``),
+                ``"indexed <name>"`` (file added, updated, or metadata-only
+                refreshed).
+
+        Returns:
+            Counts of added, updated, removed, and failed documents.
+        """
+        # D-11: a missing collection root must never be read as mass
+        # deletion — rglob on a missing root yields no files, which the
+        # sweep below would otherwise treat as "every file vanished".
+        if not Path(collection.path).exists():
+            logger.warning(
+                "Collection root %s does not exist; skipping update (all documents preserved)",
+                collection.path,
+            )
+            self._notify(progress, f"missing {collection.name}")
+            return IncrementalResult()
+
+        scanner = FileScanner()
+        scan_result = scanner.scan(
+            Path(collection.path),
+            pattern=collection.pattern,
+            ignore_patterns=collection.ignore_patterns,
+        )
+        self._notify(progress, f"scan {scan_result.file_count}")
+
+        # Snapshot existing documents once per collection: with per-file
+        # commits a concurrent short CRUD writer could in principle make this
+        # stale mid-collection, but flock arbitration means only one index
+        # writer at a time, so this exposure is no worse than pre-extraction.
+        existing_docs = {d.path: d for d in self._doc_repo.list_by_collection(collection.id)}
+        scanned_paths: set[str] = set()
+
+        # D-09: a missing/old per-collection convention marker forces exactly
+        # one re-parse pass. The marker is read here but written only after a
+        # pass in which no STORED document failed, so an old-convention row
+        # stays retryable; failures on never-stored scanned files cannot block
+        # convergence (WR-01, 19 REVIEW).
+        convention_key = f"{_CONVENTION_KEY_PREFIX}{collection.id}"
+        migrating = self._meta_repo.get(convention_key) != str(CONVENTION_VERSION)
+        if migrating and existing_docs:
+            # One announcement naming the scanned file count. An empty
+            # collection has nothing to re-parse and is marked silently.
+            self._notify(progress, f"migrate {scan_result.file_count}")
+
+        added = 0
+        updated = 0
+        failed = 0
+        failed_stored = 0
+        metadata_only = 0
+        reindexed_paths: set[str] = set()
+
+        for file_path in scan_result.files:
+            scanned_paths.add(str(file_path))
+            outcome = self._process_file(
+                file_path,
+                collection=collection,
+                existing=existing_docs.get(str(file_path)),
+                force=force,
+                progress=progress,
+                migrating=migrating,
+            )
+            if outcome == "added":
+                added += 1
+                reindexed_paths.add(str(file_path))
+            elif outcome == "updated":
+                updated += 1
+                reindexed_paths.add(str(file_path))
+            elif outcome == "metadata":
+                # D-07 fast path: a row was rewritten (title/metadata), so it
+                # counts as updated, but no chunk/vector was purged.
+                updated += 1
+                metadata_only += 1
+            elif outcome == "error":
+                failed += 1
+                # WR-01 (19 REVIEW): only failures that affect already-stored
+                # data can block the convention migration. A scanned file that
+                # has never been stored (a binary/PDF picked up by a broad
+                # pattern, a legacy Latin-1 note, a permission-lost path) will
+                # fail on every run; counting it would keep the marker absent
+                # forever and make every update re-parse and rewrite every
+                # healthy document.
+                if str(file_path) in existing_docs:
+                    failed_stored += 1
+
+        removed = self._sweep_removed(existing_docs, scanned_paths)
+
+        # Marker write — after the per-file loop and removal sweep, and only
+        # when no file with a STORED document failed. Never written before the
+        # pass completes: a failure on stored data must leave it absent so
+        # old-convention data is never silently presented as migrated (D-09).
+        # Failures on never-stored scanned files stay reported in
+        # ``result.failed`` but cannot strand the migration (WR-01).
+        if migrating and failed_stored == 0:
+            with self._conn:
+                self._meta_repo.set(convention_key, str(CONVENTION_VERSION))
+
+        # Update collection stats — its own short transaction.
+        with self._conn:
+            collection.document_count = len(self._doc_repo.list_by_collection(collection.id))
+            collection.last_indexed_at = datetime.now(timezone.utc)
+            self._coll_repo.update(collection)
+
+        return IncrementalResult(
+            added=added,
+            updated=updated,
+            removed=removed,
+            failed=failed,
+            reindexed_paths=reindexed_paths,
+            metadata_only=metadata_only,
+        )
+
+    def update_paths(  # noqa: C901 - one extra outcome branch; the per-path loop stays linear
+        self,
+        collection: Collection,
+        paths: Iterable[Path],
+        *,
+        force: bool = False,
+        progress: Callable[[str], None] | None = None,
+    ) -> IncrementalResult:
+        """Targeted update: for each path, stat it — exists+changed → re-index, gone → remove.
+
+        Cost is proportional to ``len(paths)``; the collection tree is never
+        scanned (D-06). A path may arrive from both sides of a folded event
+        burst; it is processed once and disk state decides the outcome. This
+        method never starts the D-09 convention migration (that belongs to
+        :meth:`update_collection` alone), but it still uses body-vs-metadata
+        discrimination so an unchanged body never purges chunks.
+        Unchanged paths (checksum skip) count as ``unchanged``. A path whose
+        parse raises counts as ``failed`` and is deliberately left
+        mtime-unconverged — the stored content is genuinely stale, so it
+        stays drift-visible and hosts re-report the failure on every pass
+        until the file is fixed or removed (14 REVIEW WR-01; never a silent
+        eternal loop). A stored
+        document whose path now fails the shared scan predicate (e.g. a
+        later ignore-pattern setting) is removed, mirroring the
+        ``update_collection`` sweep so every writer agrees on removal
+        semantics; never-indexed paths stay harmless no-ops. A missing
+        collection root warns and returns zero counts without touching any
+        document (D-11).
+
+        Args:
+            collection: The collection the paths belong to.
+            paths: Candidate paths (index hints and remove hints unioned).
+            force: Re-index files whose stored checksum already matches.
+            progress: Optional presentation callback; same event protocol as
+                :meth:`update_collection` plus ``"missing <name>"``.
+
+        Returns:
+            Counts of added, updated, removed, unchanged, and failed documents.
+        """
+        # D-11: same missing-root guard as update_collection — a burst of
+        # delete-shaped events from a vanished root must not remove anything.
+        if not Path(collection.path).exists():
+            logger.warning(
+                "Collection root %s does not exist; skipping update (all documents preserved)",
+                collection.path,
+            )
+            self._notify(progress, f"missing {collection.name}")
+            return IncrementalResult()
+
+        scanner = FileScanner()
+        root = Path(collection.path)
+        resolved: set[Path] = {Path(p).resolve() for p in paths}
+        added = 0
+        updated = 0
+        removed = 0
+        unchanged = 0
+        failed = 0
+        metadata_only = 0
+        reindexed_paths: set[str] = set()
+
+        for path in sorted(resolved):
+            if not scanner.matches(
+                root,
+                path,
+                pattern=collection.pattern,
+                ignore_patterns=collection.ignore_patterns,
+            ):
+                # Never-indexable paths with no stored document (temp
+                # noise, fold remove-hints for never-indexed paths) are
+                # harmless no-ops. A STORED document the shared predicate
+                # now excludes (e.g. a later SIF_WATCH_IGNORE_PATTERNS
+                # entry) is removed — mirroring _sweep_removed / `sif index
+                # update` — so drift refreshes converge instead of
+                # re-detecting the path as deleted drift forever (WR-01).
+                excluded = self._doc_repo.get_by_path(str(path), collection.id)
+                if excluded is not None:
+                    self._remove_document(excluded)
+                    removed += 1
+                continue
+            existing = self._doc_repo.get_by_path(str(path), collection.id)
+            if path.exists():
+                outcome = self._process_file(
+                    path,
+                    collection=collection,
+                    existing=existing,
+                    force=force,
+                    progress=progress,
+                    # D-09: migration never starts from watch bursts or the
+                    # pre-search drift refresh — only update_collection owns it.
+                    migrating=False,
+                )
+                if outcome == "added":
+                    added += 1
+                    reindexed_paths.add(str(path))
+                elif outcome == "updated":
+                    updated += 1
+                    reindexed_paths.add(str(path))
+                elif outcome == "metadata":
+                    # D-07 fast path: row rewritten, chunks/embeddings kept.
+                    updated += 1
+                    metadata_only += 1
+                elif outcome == "error":
+                    failed += 1
+                else:
+                    # Checksum skip: nothing to write for this path.
+                    unchanged += 1
+            elif existing is not None:
+                self._remove_document(existing)
+                removed += 1
+
+        # Update collection stats — its own short transaction, mirroring
+        # update_collection's tail.
+        with self._conn:
+            collection.document_count = len(self._doc_repo.list_by_collection(collection.id))
+            collection.last_indexed_at = datetime.now(timezone.utc)
+            self._coll_repo.update(collection)
+
+        return IncrementalResult(
+            added=added,
+            updated=updated,
+            removed=removed,
+            unchanged=unchanged,
+            failed=failed,
+            reindexed_paths=reindexed_paths,
+            metadata_only=metadata_only,
+        )
+
+    @staticmethod
+    def _notify(progress: Callable[[str], None] | None, event: str) -> None:
+        """Forward an event to the presentation callback, if any."""
+        if progress is not None:
+            progress(event)
+
+    def _process_file(  # noqa: PLR0913 - force and migrating are distinct behaviors (Pitfall 15)
+        self,
+        file_path: Path,
+        *,
+        collection: Collection,
+        existing: Document | None,
+        force: bool,
+        progress: Callable[[str], None] | None,
+        migrating: bool = False,
+    ) -> str:
+        """Process one scanned file.
+
+        Returns ``"added"``, ``"updated"``, ``"metadata"``, ``"skipped"``, or
+        ``"error"``. ``"metadata"`` is the D-07 fast path: the stored body is
+        byte-identical, so only the row's title/metadata/checksum/mtime are
+        rewritten and the document's chunks and embeddings are preserved.
+
+        ``force`` and ``migrating`` are deliberately distinct (Pitfall 15):
+        ``force`` skips the checksum-skip shortcut but still takes the
+        metadata fast path when the body is unchanged; ``migrating`` is the
+        D-09 convention re-parse pass and bypasses the shortcut for the same
+        reason, so an upgrade never purges chunks for an unchanged body.
+
+        A failure while writing the document row (not just while parsing)
+        is counted as ``"error"`` for this file: D-04 requires per-file
+        isolation, so one bad document can never abort the whole pass.
+        """
+        # Parse document — per-file dispatch (CORR-01): the extension map
+        # decides the parser, and an unknown suffix falls back to TextParser
+        # (whole-file content, first-line title) rather than re-introducing
+        # frontmatter parsing on arbitrary extensions.
+        parser = create_parser(file_path) or TextParser()
+        try:
+            parsed = parser.parse(file_path)
+        except Exception as e:
+            # 14 REVIEW WR-01: report AND count — never fold into "skipped".
+            # The logger call matters most on callback-less hosts (the
+            # pre-search drift refresh passes no progress callback, so
+            # _notify alone would swallow the error entirely). The mtime is
+            # deliberately NOT converged: the stored content is genuinely
+            # stale, so the path stays drift-visible and every later pass
+            # re-reports it as a counted failure instead of a silent no-op.
+            logger.warning("Error parsing %s: %s", file_path, e)
+            self._notify(progress, f"error Error parsing {file_path}: {e}")
+            return "error"
+
+        try:
+            if existing:
+                # Check if changed. A migrating pass bypasses this shortcut so
+                # every stored document's checksum is rewritten to the current
+                # convention (D-09).
+                if existing.checksum == parsed.checksum and not force and not migrating:
+                    # Drift-compare convergence (14 REVIEW CR-01): detect_drift
+                    # is mtime-primary, so the skip must still persist a moved
+                    # mtime — a touched-but-unchanged file (git checkout of
+                    # identical content, archive extract, no-op save) would
+                    # otherwise be re-detected as drift on every subsequent
+                    # search forever. Only the mtime column: the checksum now
+                    # covers body plus canonical frontmatter (D-08), so an equal
+                    # checksum means the stored whole row is already current.
+                    if existing.mtime != parsed.mtime:
+                        with self._conn:
+                            self._conn.execute(
+                                "UPDATE documents SET mtime = ? WHERE id = ?",
+                                (parsed.mtime, existing.id),
+                            )
+                    self._notify(progress, f"unchanged {file_path.name}")
+                    return "skipped"
+
+                # D-07 metadata fast path: the stored body is byte-identical, so
+                # the chunk text (body-derived) and its vectors are still valid.
+                # Rewrite only the metadata-bearing columns and KEEP chunks and
+                # embeddings. Covers a frontmatter-only edit, a checksum-
+                # convention migration on an unchanged body, and --force with an
+                # unchanged body.
+                if parsed.content == existing.content:
+                    with self._conn:
+                        existing.title = parsed.title
+                        existing.metadata = parsed.metadata
+                        existing.checksum = parsed.checksum
+                        existing.file_size = len(parsed.content.encode("utf-8"))
+                        existing.mtime = parsed.mtime
+                        self._doc_repo.update(existing)
+                    self._notify(progress, f"indexed {file_path.name}")
+                    return "metadata"
+
+                # One short BEGIN IMMEDIATE transaction per file (D-04) so this
+                # file's writes commit atomically and earlier files stay durable
+                # when a later one fails.
+                with self._conn:
+                    # Content changed: drop stale chunks and embeddings so the
+                    # next `embed` run re-chunks the new content instead of
+                    # trusting the chunk-id-set completeness check against stale
+                    # rows (CR-01).
+                    self._chunk_repo.delete_by_document(existing.id)
+                    if self._vector_purger is not None:
+                        self._vector_purger.delete_embeddings_by_document(existing.id)
+
+                    # Update document
+                    existing.content = parsed.content
+                    existing.title = parsed.title
+                    existing.metadata = parsed.metadata
+                    existing.mtime = parsed.mtime
+                    existing.file_size = len(parsed.content.encode("utf-8"))
+                    # Persist the fresh checksum, or the next update run compares
+                    # the new content against the pre-edit hash and rewrites this
+                    # document again every run.
+                    existing.checksum = parsed.checksum
+                    self._doc_repo.update(existing)
+                outcome = "updated"
+            else:
+                # Create new document. Pass the parser's checksum so a fresh row
+                # already follows the D-08 convention instead of falling back to
+                # Document.__post_init__'s body-only hash.
+                doc = Document(
+                    path=str(file_path),
+                    collection_id=collection.id,
+                    content=parsed.content,
+                    title=parsed.title,
+                    metadata=parsed.metadata,
+                    checksum=parsed.checksum,
+                    mtime=parsed.mtime,
+                )
+                with self._conn:
+                    self._doc_repo.create(doc)
+                outcome = "added"
+        except (sqlite3.Error, TypeError, OverflowError) as e:
+            # D-04 per-file isolation: a write failure for one document must
+            # be counted as that file's failure, never abort the whole
+            # update pass. Frontmatter is arbitrary YAML, so a metadata value
+            # SQLite cannot bind must stay a per-file error even with the
+            # parser-side title coercion (19 REVIEW CR-02). OverflowError is
+            # the legacy shape of an out-of-double-range JSON number
+            # (20 REVIEW CR-01); derivation now skips those per key, and the
+            # catch is the defense-in-depth bound for any other numeric path.
+            # Each write block above owns its transaction, so nothing is left
+            # half-written.
+            logger.warning("Error indexing %s: %s", file_path, e)
+            self._notify(progress, f"error Error indexing {file_path}: {e}")
+            return "error"
+
+        self._notify(progress, f"indexed {file_path.name}")
+        return outcome
+
+    def _sweep_removed(
+        self,
+        existing_docs: dict[str, Document],
+        scanned_paths: set[str],
+    ) -> int:
+        """Remove stored documents whose files vanished."""
+        removed = 0
+        for path, doc in existing_docs.items():
+            if path not in scanned_paths:
+                self._remove_document(doc)
+                removed += 1
+        return removed
+
+    def _remove_document(self, doc: Document) -> None:
+        """Remove one document; vector purge BEFORE the row delete (WR-01).
+
+        Both the collection sweep and the per-path update path share this
+        body: vec0 rows cannot carry the FK cascade, so orphaned vectors
+        would otherwise occupy KNN top-k slots and crowd live documents out
+        of vector search results. One short BEGIN IMMEDIATE transaction.
+        """
+        with self._conn:
+            if self._vector_purger is not None:
+                self._vector_purger.delete_embeddings_by_document(doc.id)
+            self._doc_repo.delete(doc.id)

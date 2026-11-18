@@ -3,12 +3,21 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Callable
+from dataclasses import replace
 from typing import TYPE_CHECKING, cast
 
 from sif.core.models import Embedder, SearchOptions, SearchResult, SearchType
+from sif.embedding.identity import (
+    IdentityCheck,
+    IdentityDimensionError,
+    schema_embedding_dim,
+    warn_identity_mismatch_once,
+)
+from sif.embedding.roles import embed_query
 from sif.search.bm25 import BM25Searcher
-from sif.search.context_attach import attach_path_contexts
-from sif.search.rrf import RRFFusion
+from sif.search.context_attach import enrich_results
+from sif.search.rrf import RRFFusion, fuse_key_for
 from sif.search.vector import VectorSearcher
 from sif.utils.logging import get_logger
 
@@ -19,6 +28,43 @@ if TYPE_CHECKING:
     from sif.search.snippets import SmartSnippetExtractor
 
 logger = get_logger(__name__)
+
+# D-05: a search-mode width mismatch reuses the shared dimension sentence and
+# names the explicit certification path instead of the schema-open remedy.
+SEARCH_DIMENSION_REMEDY = (
+    "Restore the stored model or run `sif index embed --force` with the matching model."
+)
+
+
+def search_dimension_error(
+    check: IdentityCheck,
+    stored_dimension: int | None = None,
+) -> IdentityDimensionError:
+    """Translate a search-mode dimension mismatch into the remedy-bearing error.
+
+    ``stored_dimension`` is the schema width when no identity row exists (a
+    width-only mismatch); otherwise the stored identity's own dimension is
+    authoritative. Hosts with only the check in hand may omit it.
+    """
+    stored_dim = check.stored.dimension if check.stored is not None else stored_dimension
+    if stored_dim is None:
+        stored_dim = check.current.dimension
+    return IdentityDimensionError(stored_dim, check.current.dimension, SEARCH_DIMENSION_REMEDY)
+
+
+def _paginate(results: list[SearchResult], options: SearchOptions) -> list[SearchResult]:
+    """Apply the one offset slice and global rank numbering for a query path.
+
+    CORR-03/D-06: every path has exactly one slice owner, and ranks are global
+    across pages (``options.offset + position``) so page 2 of a 10-row page
+    carries ranks 11-20. ``max(1, limit)`` keeps the historical non-positive
+    limit clamp (one row) instead of producing an empty page.
+    """
+    page_limit = max(1, options.limit)
+    page = results[options.offset : options.offset + page_limit]
+    for position, result in enumerate(page, 1):
+        result.rank = options.offset + position
+    return page
 
 
 class HybridSearcher:
@@ -49,28 +95,65 @@ class HybridSearcher:
             options: Search options
 
         Returns:
-            Ranked list of search results
+            Ranked list of search results, raw and unenriched (the pipeline
+            exit owns the single context/staleness enrichment).
+
+        ``HybridSearcher.search`` is the single offset slice owner for direct
+        callers (CORR-03): both legs are called with ``offset=0`` and
+        ``limit+offset``, and this method slices one page afterwards. The
+        pipeline always calls it with ``offset=0`` and slices itself.
+
+        Metadata filter contract (Phase 20, D-02/D-17): every leg receives the
+        caller's ``SearchOptions.filter`` unchanged through ``fetch_options``
+        (``dataclasses.replace`` already carries the field), so filtering is
+        pre-RRF by construction — fusion never sees an unfiltered row. When one
+        leg returns nothing, the early return below paginates that leg's
+        already-filtered window at ``limit + offset``; it never widens the
+        search or re-queries the other leg with a dropped filter. In per-chunk
+        mode ``chunk_matches`` reflects filtered vector rows only.
         """
         if options is None:
             options = SearchOptions()
 
+        # Offset-free fetch window shared by both legs (research Pitfall 12):
+        # applying the caller's offset here as well as in the legs would
+        # double-apply it and under-fetch the page.
+        fetch_options = replace(
+            options,
+            limit=max(1, options.limit + options.offset),
+            offset=0,
+        )
+
         # Get BM25 results
-        bm25_results = self.bm25.search(query, options)
+        bm25_results = self.bm25.search(query, fetch_options)
 
         # Get vector results if embedder is available
         vector_results: list[SearchResult] = []
         if self.embedder is not None:
-            query_embedding = self.embedder.embed(query)
-            vector_results = self.vector.search(query_embedding, options)
+            # D-06: the query leg goes through the type-aware role helper; a
+            # protocol-only double keeps the plain ``embed`` path.
+            query_embedding = embed_query(self.embedder, query)
+            vector_results = self.vector.search(query_embedding, fetch_options)
 
-        # If only one method returned results, return those
+        # If only one method returned results, paginate that leg's window too
+        # (its searcher already fetched limit+offset rows at offset 0).
         if not vector_results:
-            return self._attach_contexts(bm25_results)
+            return _paginate(bm25_results, options)
         if not bm25_results:
-            return self._attach_contexts(vector_results)
+            return _paginate(vector_results, options)
 
-        # Fuse results using RRF
-        fused_results = self.rrf.fuse([bm25_results, vector_results], options.limit)
+        # Fuse results using RRF (Phase 15: per-query weights/k ride options —
+        # the ONLY weights call site; k also flows to the pipeline's
+        # cross-query variant fusion, weights must NOT (Pitfall 9/A7)).
+        # The grouping key follows the shared per-chunk helper: default
+        # document-keyed rows, chunk-keyed rows for the per-chunk escape hatch.
+        fused_results = self.rrf.fuse(
+            [bm25_results, vector_results],
+            fetch_options.limit,
+            weights=[options.bm25_weight, options.vector_weight],
+            k=options.rrf_k,
+            key=fuse_key_for(options.per_chunk),
+        )
 
         # Re-fetch content and highlights if needed
         if options.include_content or options.include_highlights:
@@ -84,10 +167,13 @@ class HybridSearcher:
                         options.max_highlights,
                     )
 
-        # Deduplicate by document_id, keeping highest score
-        deduped = self._deduplicate_results(fused_results)
-
-        return self._attach_contexts(deduped)
+        # Default mode keeps the post-fusion safety net (one row per
+        # document, merging chunk metadata); per-chunk mode must keep its
+        # chunk rows, so it skips the document collapse. Either way the page
+        # is sliced once with global rank numbering.
+        if options.per_chunk:
+            return _paginate(fused_results, options)
+        return _paginate(self._deduplicate_results(fused_results), options)
 
     @staticmethod
     def _deduplicate_results(results: list[SearchResult]) -> list[SearchResult]:
@@ -95,23 +181,33 @@ class HybridSearcher:
 
         Vector search operates at chunk level, so the same document may appear
         multiple times. We keep the best-scoring entry per document and
-        reassign sequential ranks.
+        reassign sequential ranks. When rows collapse, non-null chunk identity
+        is adopted from the loser and ``chunk_matches`` keeps the maximum
+        (metadata merge only — scores are untouched).
         """
         best: dict[str, SearchResult] = {}
         for result in results:
             doc_id = result.document_id
-            if doc_id not in best or result.score > best[doc_id].score:
+            existing = best.get(doc_id)
+            if existing is None:
                 best[doc_id] = result
+                continue
+
+            winner, loser = (
+                (result, existing) if result.score > existing.score else (existing, result)
+            )
+            if winner.chunk_id is None:
+                winner.chunk_id = loser.chunk_id
+            if winner.sequence is None:
+                winner.sequence = loser.sequence
+            winner.chunk_matches = max(existing.chunk_matches, result.chunk_matches)
+            best[doc_id] = winner
 
         deduped = list(best.values())
         deduped.sort(key=lambda r: r.score, reverse=True)
         for rank, result in enumerate(deduped, 1):
             result.rank = rank
         return deduped
-
-    def _attach_contexts(self, results: list[SearchResult]) -> list[SearchResult]:
-        """Attach path context descriptions to search results via batch query."""
-        return attach_path_contexts(self.db, results)
 
     def _get_document_content(self, document_id: str) -> str | None:
         """Get document content."""
@@ -140,34 +236,113 @@ class SearchPipeline:
         reranker: LlamaCppReranker | CrossEncoderReranker | Qwen3Reranker | None = None,
         snippet_extractor: SmartSnippetExtractor | None = None,
         embedding_dim: int = 768,
+        default_search_type: str = "hybrid",
+        parse_prefix: bool = True,
+        identity_check: Callable[[sqlite3.Connection], IdentityCheck] | None = None,
     ) -> None:
-        """Initialize search pipeline with optional components."""
+        """Initialize search pipeline with optional components.
+
+        ``parse_prefix=False`` makes ``search()`` treat every query as
+        literal text and route it through ``default_search_type``: the
+        personal eval uses this so a document title (or logged replay query)
+        that happens to start with ``vec:``/``hyde:``/``lex:``/``expand:`` is
+        measured as text instead of being reinterpreted as an operator.
+
+        ``identity_check`` is the host's injected search-mode identity check
+        (EMB-01). It is evaluated lazily, at most once per pipeline, and only
+        on a vector-touching route — the BM25 exit returns before any call, so
+        a BM25-only command never constructs or evaluates one.
+        """
         self.db = db
         self.hybrid = HybridSearcher(db, embedder, embedding_dim)
         self.query_expander = query_expander
         self.reranker = reranker
         self.snippet_extractor = snippet_extractor
+        self._default_search_type = default_search_type
+        self._parse_prefix = parse_prefix
+        self.identity_check = identity_check
+        self._identity_evaluated = False
+        self._identity_result: IdentityCheck | None = None
 
-    def search(  # noqa: C901, PLR0912
+    def _identity_state(self) -> IdentityCheck | None:
+        """Evaluate the injected identity check once; ``None`` means unchecked.
+
+        Caching the result keeps a pipeline to one identity read per search
+        command, while the warn-once latch in ``identity.py`` guarantees a
+        single warning per process per identity pair even across pipelines.
+        """
+        if self.identity_check is None:
+            return None
+        if not self._identity_evaluated:
+            self._identity_result = self.identity_check(self.db)
+            self._identity_evaluated = True
+        return self._identity_result
+
+    @staticmethod
+    def _mark_untrusted(check: IdentityCheck | None) -> bool:
+        """Warn once for a mismatched pair and report whether to mark results.
+
+        A dimension mismatch is translated by the caller (raise or degrade),
+        but it still warns here whenever a stored identity exists to name.
+        """
+        if check is None or not check.untrusted:
+            return False
+        if check.stored is not None:
+            warn_identity_mismatch_once(check.stored, check.current)
+        return True
+
+    def _dimension_error(self, check: IdentityCheck) -> IdentityDimensionError:
+        """Build the search-mode dimension error, reading the width if needed."""
+        stored_dim = check.stored.dimension if check.stored is not None else None
+        if stored_dim is None:
+            stored_dim = schema_embedding_dim(self.db)
+        return search_dimension_error(check, stored_dim)
+
+    def _enrich(
+        self,
+        results: list[SearchResult],
+        untrusted: bool,
+    ) -> list[SearchResult]:
+        """Apply the single enrichment, marking only when identity distrusts."""
+        if untrusted:
+            return enrich_results(self.db, results, vectors_untrusted=True)
+        return enrich_results(self.db, results)
+
+    def search(  # noqa: C901, PLR0912, PLR0915
         self,
         query: str,
         options: SearchOptions | None = None,
     ) -> list[SearchResult]:
-        """Execute full search pipeline with prefix routing.
+        """Execute full search pipeline with optional prefix routing.
 
-        1. Parse query prefix to determine search mode
+        1. Parse query prefix to determine search mode (unless literal mode)
         2. Route to appropriate search mode (BM25, vector, HyDE, hybrid)
         3. Expand query (optional, for expand: prefix or default hybrid)
         4. Search with each query variant
         5. Fuse results with RRF
         6. Apply reranking with candidate capping
         7. Extract smart snippets
+        8. Apply the single offset slice with global rank numbering
+        9. Enrich results exactly once (path contexts + derived staleness)
+
+        Metadata filter contract (Phase 20, D-02/D-17): the caller's
+        ``SearchOptions.filter`` rides ``fetch_options`` into every hybrid
+        search, so every query variant and both legs see the same AST before
+        RRF — a filter is never applied after fusion. The single offset slice
+        and the ONE ``enrich_results`` call at the exit are unchanged, and a
+        filtered page therefore slices and enriches exactly like an unfiltered
+        one. In per-chunk mode ``chunk_matches`` counts filtered vector rows
+        only.
         """
         if options is None:
             options = SearchOptions()
 
-        # Parse query prefix
-        parsed_query, search_type = self._parse_query_prefix(query)
+        # Literal mode (personal eval): never reinterpret query text as an
+        # operator prefix; use the configured default mode directly.
+        if self._parse_prefix:
+            parsed_query, search_type = self._parse_query_prefix(query)
+        else:
+            parsed_query, search_type = query, self._default_search_type_enum()
 
         # Apply intent if provided
         if options.intent:
@@ -175,24 +350,43 @@ class SearchPipeline:
 
         # Route to appropriate search mode
         if search_type == SearchType.BM25:
+            # BM25-only: the identity check is never evaluated (no vectors are
+            # touched, so there is nothing to distrust) and nothing is marked.
             results = self.hybrid.bm25.search(parsed_query, options)
-            return self._apply_snippets(results, parsed_query)
+            return enrich_results(self.db, self._apply_snippets(results, parsed_query))
         if search_type == SearchType.VECTOR:
-            if self.hybrid.embedder is None:
+            embedder = self.hybrid.embedder
+            if embedder is None:
                 raise RuntimeError("Vector search requires an embedder")
-            query_embedding = self.hybrid.embedder.embed(parsed_query)
+            check = self._identity_state()
+            if check is not None and check.dimension_mismatch:
+                raise self._dimension_error(check)
+            untrusted = self._mark_untrusted(check)
+            query_embedding = embed_query(embedder, parsed_query)
             results = self.hybrid.vector.search(query_embedding, options)
-            return self._apply_snippets(results, parsed_query)
+            return self._enrich(self._apply_snippets(results, parsed_query), untrusted)
         if search_type == SearchType.HYDE:
-            hyde_doc = self._generate_hypothetical_document(parsed_query)
-            if self.hybrid.embedder is None:
+            embedder = self.hybrid.embedder
+            if embedder is None:
                 raise RuntimeError("HyDE search requires an embedder")
-            hyde_embedding = self.hybrid.embedder.embed(hyde_doc)
+            check = self._identity_state()
+            if check is not None and check.dimension_mismatch:
+                raise self._dimension_error(check)
+            untrusted = self._mark_untrusted(check)
+            hyde_doc = self._generate_hypothetical_document(parsed_query)
+            hyde_embedding = embed_query(embedder, hyde_doc)
             results = self.hybrid.vector.search(hyde_embedding, options)
-            return self._apply_snippets(results, parsed_query)
+            return self._enrich(self._apply_snippets(results, parsed_query), untrusted)
 
         # Default: hybrid search with optional expansion
         queries = [parsed_query]
+
+        # Hybrid route: identity applies only when a vector leg exists. A
+        # same-dimension mismatch warns once and marks the page; a dimension
+        # mismatch skips the vector leg entirely and returns marked BM25 rows.
+        check = self._identity_state() if self.hybrid.embedder is not None else None
+        untrusted = self._mark_untrusted(check)
+        vector_blocked = check is not None and check.dimension_mismatch
 
         # Expand query if expander is available and prefix is expand: or default
         if self.query_expander is not None and search_type in (
@@ -212,10 +406,36 @@ class SearchPipeline:
             except Exception as e:
                 logger.warning(f"Query expansion failed: {e}")
 
-        # Search with each query
+        # Offset-0 fetch window (CORR-03 / research Pitfall 12): the pipeline
+        # owns the single offset slice for its own path, so it always calls
+        # the hybrid searcher with offset=0 and a window of at least
+        # limit+offset. With a reranker that window is raised to
+        # candidate_limit as well — and when the page reaches past the cap, to
+        # limit+offset — so the pre-rerank truncation can never starve the
+        # page. Phase 16's cap still binds: at offset=0 the window stays
+        # exactly candidate_limit (the off path stays byte-identical).
+        if self.reranker is not None:
+            fetch_options = replace(
+                options,
+                limit=max(options.limit + options.offset, options.candidate_limit),
+                offset=0,
+            )
+        else:
+            fetch_options = replace(
+                options,
+                limit=max(1, options.limit + options.offset),
+                offset=0,
+            )
+
+        # Search with each query. A dimension mismatch cannot use the vector
+        # leg: the same BM25 variant search runs instead, so page shape,
+        # fusion, reranking, and enrichment stay identical on the degraded path.
         all_results = []
         for q in queries:
-            results = self.hybrid.search(q, options)
+            if vector_blocked:
+                results = self.hybrid.bm25.search(q, fetch_options)
+            else:
+                results = self.hybrid.search(q, fetch_options)
             if results:
                 all_results.append(results)
 
@@ -223,14 +443,35 @@ class SearchPipeline:
         if len(all_results) <= 1:
             results = all_results[0] if all_results else []
         else:
-            # Fuse results from multiple queries
-            results = self.hybrid.rrf.fuse(all_results, options.limit)
+            # Fuse results from multiple queries (cross-query VARIANT fusion —
+            # not source fusion: k rides options, weights are meaningless here
+            # and must never be passed (Pitfall 9 / assumption A7)). The
+            # per-chunk key must ride here too: a document-level key would
+            # collapse the escape hatch's chunk rows across variants.
+            results = self.hybrid.rrf.fuse(
+                all_results,
+                fetch_options.limit,
+                k=options.rrf_k,
+                key=fuse_key_for(fetch_options.per_chunk),
+            )
 
-        # Apply candidate limit before reranking
+        # Apply the pre-rerank candidate window, then rerank to the window
+        # depth. offset=0 keeps exactly candidate_limit (Phase 16 cap and the
+        # byte-identical default path); a paged request widens the window to
+        # max(candidate_limit, limit+offset) so the page slice below cannot
+        # come back short or empty when that many candidates exist.
         if self.reranker is not None and len(results) > 0:
-            candidates = results[: options.candidate_limit]
+            if options.offset > 0:
+                candidate_window = max(options.candidate_limit, options.limit + options.offset)
+            else:
+                candidate_window = options.candidate_limit
+            candidates = results[:candidate_window]
             try:
-                reranked = self.reranker.rerank(parsed_query, candidates, top_k=options.limit)
+                reranked = self.reranker.rerank(
+                    parsed_query,
+                    candidates,
+                    top_k=options.limit + options.offset,
+                )
                 results = reranked
             except Exception as e:
                 raise RuntimeError(f"Reranking failed: {e}") from e
@@ -238,7 +479,9 @@ class SearchPipeline:
         # Extract smart snippets if not already present
         results = self._apply_snippets(results, parsed_query)
 
-        return self.hybrid._attach_contexts(results)  # noqa: SLF001
+        # One slice with the caller's original offset, then exactly one
+        # enrichment on the page (CORR-03 offset ownership + CORR-05).
+        return self._enrich(_paginate(results, options), untrusted)
 
     def _apply_snippets(
         self,
@@ -261,11 +504,34 @@ class SearchPipeline:
             if not text:
                 text = self.hybrid._get_document_content(result.document_id)  # noqa: SLF001
             if text:
-                result.snippet = self.snippet_extractor.extract(text, query_terms)
+                # D-11: one extractor pass yields the snippet bytes and the
+                # inclusive 1-based document line window it rendered, so the
+                # MCP citation fields cost no second content scan. The empty
+                # snippet still lands on the result (CLI bytes unchanged),
+                # while the line fields stay unset for it.
+                snippet, line_start, line_end = self.snippet_extractor.extract_with_range(
+                    text, query_terms
+                )
+                result.snippet = snippet
+                if snippet:
+                    result.line_start = line_start
+                    result.line_end = line_end
         return results
 
+    def _default_search_type_enum(self) -> SearchType:
+        """Resolve the configured default type for unprefixed/literal queries."""
+        return {
+            "bm25": SearchType.BM25,
+            "vector": SearchType.VECTOR,
+        }.get(self._default_search_type, SearchType.HYBRID)
+
     def _parse_query_prefix(self, query: str) -> tuple[str, SearchType]:
-        """Parse query prefix to determine search mode."""
+        """Parse query prefix to determine search mode.
+
+        An explicit ``lex:``/``vec:``/``hyde:``/``expand:`` prefix always
+        wins. Unprefixed queries fall back to the configured default search
+        type (``hybrid`` unless ``SIF_DEFAULT_SEARCH_TYPE`` says otherwise).
+        """
         prefix_map = {
             "lex:": SearchType.BM25,
             "vec:": SearchType.VECTOR,
@@ -275,7 +541,7 @@ class SearchPipeline:
         for prefix, search_type in prefix_map.items():
             if query.startswith(prefix):
                 return query[len(prefix) :].strip(), search_type
-        return query, SearchType.HYBRID
+        return query, self._default_search_type_enum()
 
     def _generate_hypothetical_document(self, query: str) -> str:
         """Generate a hypothetical ideal answer document for HyDE search.

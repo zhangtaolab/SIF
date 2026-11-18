@@ -3,12 +3,73 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import math
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any, Protocol
+
+from sif.core.filters import FilterNode
+
+
+def _canonicalize_metadata(value: Any) -> Any:
+    """Recursively string-coerce mapping keys so canonical JSON is total.
+
+    ``json.dumps(..., default=str)`` handles non-serializable *values* only;
+    a mixed-key mapping still raises ``TypeError`` because ``sort_keys=True``
+    compares keys before the default hook runs. Coercing keys at every
+    nesting depth makes the serializer total over anything frontmatter can
+    produce (D-08).
+
+    Non-finite floats are stringified here (``"nan"``/``"inf"``/``"-inf"``):
+    YAML's ``.nan``/``.inf`` parse to floats, and RFC 8259 has no finite
+    spelling for them, so storing them verbatim would put invalid JSON in
+    ``documents.metadata`` and every ``--json``/MCP surface (CR-01/WR-06).
+    """
+    if isinstance(value, Mapping):
+        return {str(key): _canonicalize_metadata(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_canonicalize_metadata(item) for item in value]
+    if isinstance(value, float) and not math.isfinite(value):
+        return str(value)
+    return value
+
+
+def canonical_metadata_json(metadata: Mapping[str, Any]) -> str:
+    """Serialize metadata to the one canonical JSON form (D-08).
+
+    The returned string is both the persisted ``documents.metadata`` value
+    and the frontmatter half of the change-detection checksum, so stored and
+    hashed forms can never diverge after a JSON round trip.
+    ``default=str`` keeps typed YAML values (dates, datetimes) storable
+    instead of raising ``TypeError``; ``ensure_ascii=False`` keeps Unicode
+    values byte-stable rather than escaped. ``allow_nan=False`` turns any
+    residual non-finite float into a hard error instead of the invalid
+    ``NaN``/``Infinity`` tokens RFC 8259 forbids (CR-01/WR-06).
+    """
+    return json.dumps(
+        _canonicalize_metadata(metadata),
+        sort_keys=True,
+        default=str,
+        ensure_ascii=False,
+        allow_nan=False,
+        separators=(",", ":"),
+    )
+
+
+def compute_checksum(content: str, metadata: Mapping[str, Any]) -> str:
+    """Hash the body plus the canonical full frontmatter (D-08).
+
+    A frontmatter-only edit changes this checksum, so Phase 20's metadata
+    filters can never serve a stale tag/title value from an unchanged body.
+    """
+    return hashlib.sha256(
+        content.encode() + b"\x00" + canonical_metadata_json(metadata).encode()
+    ).hexdigest()
 
 
 class ChunkStrategy(Enum):
@@ -205,6 +266,32 @@ class PathContext:
 
 
 @dataclass
+class QueryLogEntry:
+    """A logged executed search (Phase 15, D-08).
+
+    Stores the query string, its result count, and the collections searched —
+    never document content (T-15-04). ``created_at`` is aware UTC (WR-03 is
+    the cautionary naive-local finding); ranking and trim order depend on it.
+    """
+
+    query: str
+    result_count: int = 0
+    collections: list[str] = field(default_factory=list)
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "id": self.id,
+            "query": self.query,
+            "result_count": self.result_count,
+            "collections": list(self.collections),
+            "created_at": self.created_at.isoformat(),
+        }
+
+
+@dataclass
 class SearchResult:
     """A search result."""
 
@@ -219,6 +306,22 @@ class SearchResult:
     scores: dict[str, float | None] = field(default_factory=dict)
     snippet: str | None = None
     context_description: str | None = None
+    # Derived at query time (D-08): True when this result's document has no
+    # rows in document_embeddings — the tiered-depth vector lag. Defaulted so
+    # every constructor stays valid; rides to_dict() into --json output.
+    vectors_stale: bool = False
+    # Chunk identity (D-02/D-03): the matched chunk's id and sequence number,
+    # plus the count of pre-dedup vector rows collapsed into this row. All
+    # defaulted so document-level rows (BM25) and every existing constructor
+    # stay valid; they ride to_dict() into --json output and the MCP re-map.
+    chunk_id: str | None = None
+    sequence: int | None = None
+    chunk_matches: int = 0
+    # Citation line window (Phase 22 D-11): MCP-only fields assigned by the
+    # snippet stage and consumed by the MCP boundary. Deliberately NOT in
+    # to_dict() — CLI JSON output stays byte-identical.
+    line_start: int | None = None
+    line_end: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
@@ -234,6 +337,10 @@ class SearchResult:
             "scores": self.scores,
             "snippet": self.snippet,
             "context_description": self.context_description,
+            "vectors_stale": self.vectors_stale,
+            "chunk_id": self.chunk_id,
+            "sequence": self.sequence,
+            "chunk_matches": self.chunk_matches,
         }
 
 
@@ -243,9 +350,18 @@ class SearchOptions:
 
     limit: int = 10
     offset: int = 0
+    # CORR-02/D-01 escape hatch: the default False groups vector rows to one
+    # row per document (chunk_matches carries the collapsed count); True
+    # returns the ungrouped chunk rows and fuses them by chunk identity.
+    per_chunk: bool = False
     # Sentinel contract: None = no collection filter (unfiltered, incl. --all);
     # [] = exclude-all — every collection excluded, searchers return zero results.
     collection_ids: list[str] | None = None
+    # Phase 20 (D-10/D-17): None is the ONLY unfiltered signal for the metadata
+    # filter. A non-None AST is always compiled into the predicate (an empty
+    # match set returns an empty page, never "no filter"). dataclasses.replace
+    # fan-out carries the field unchanged.
+    filter: FilterNode | None = None
     min_score: float = 0.0
     include_content: bool = False
     include_highlights: bool = True
@@ -254,6 +370,18 @@ class SearchOptions:
     candidate_limit: int = 20
     intent: str | None = None
     snippet_max_length: int = 300
+    # CORR-04/D-11 internal measurement override: None resolves to the BM25
+    # module constant _TITLE_WEIGHT. Deliberately NOT a setting and NOT a CLI
+    # flag — the Plan-09 sweep drives this field directly and the accepted
+    # value is pinned back as the constant.
+    title_weight: float | None = None
+    # Fusion tunables (Phase 15, D-03): defaults equal today's hardcoded
+    # behavior (k=60, equal weights), so every existing construction site and
+    # unconfigured query stays byte-identical (SC1). CLI flags and MCP request
+    # fields resolve INTO these fields; settings never bypass SearchOptions.
+    rrf_k: int = 60
+    bm25_weight: float = 1.0
+    vector_weight: float = 1.0
 
 
 @dataclass

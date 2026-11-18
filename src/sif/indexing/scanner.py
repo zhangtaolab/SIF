@@ -45,10 +45,60 @@ class FileScanner:
         "*~",
         ".idea",
         ".vscode",
+        # Editor/atomic-save temp noise (D-08): macOS .sb-* sidecars, Vim's
+        # 4913 buffer-housekeeping file, Emacs .# lock files, and generic
+        # .tmp scratch. Shared by scan and watch so live events can never
+        # index what a scan would skip.
+        "*.sb-*",
+        "4913",
+        ".#*",
+        "*.tmp",
     )
 
     def __init__(self) -> None:
         """Initialize the file scanner."""
+
+    @staticmethod
+    def matches(
+        root_path: Path,
+        file_path: Path,
+        pattern: str = "**/*.md",
+        ignore_patterns: list[str] | None = None,
+    ) -> bool:
+        """Shared scan/watch membership predicate (D-07).
+
+        True exactly when ``file_path`` would appear in ``scan(root_path)``
+        output: under the resolved root, matching ``pattern`` with rglob
+        semantics (a ``**/`` prefix also matches zero directories), and not
+        ignored by the combined default + settings + per-call ignore list.
+        Watch-side event filtering consumes this same predicate so live
+        events can never index what a scan would skip.
+
+        Args:
+            root_path: Collection root directory
+            file_path: Candidate file path
+            pattern: Glob pattern to match (rglob semantics)
+            ignore_patterns: Per-collection ignore patterns
+
+        Returns:
+            True if the path is indexable under this root and pattern
+        """
+        root = Path(root_path).resolve()
+        candidate = Path(file_path).resolve()
+        if not candidate.is_relative_to(root):
+            return False
+
+        rel_path = str(candidate.relative_to(root))
+        # rglob semantics: "**/p" also matches zero directories, so a
+        # root-level file matches "**/*.md" exactly as rglob would.
+        pattern_forms = [pattern]
+        if pattern.startswith("**/"):
+            pattern_forms.append(pattern[3:])
+        if not any(fnmatch.fnmatch(rel_path, form) for form in pattern_forms):
+            return False
+
+        all_ignore_patterns = FileScanner._combined_ignore_patterns(ignore_patterns)
+        return not FileScanner._should_ignore(candidate, root, all_ignore_patterns)
 
     def scan(
         self,
@@ -68,10 +118,9 @@ class FileScanner:
         """
         root_path = Path(root_path).resolve()
 
-        # Combine default and custom ignore patterns
-        all_ignore_patterns = list(self.DEFAULT_IGNORE_PATTERNS)
-        if ignore_patterns:
-            all_ignore_patterns.extend(ignore_patterns)
+        # Combine default, settings-global, and custom ignore patterns so the
+        # scan and the watch predicate share one list by construction (D-07).
+        all_ignore_patterns = self._combined_ignore_patterns(ignore_patterns)
 
         result = ScanResult()
         result.scanned_dirs.add(root_path)
@@ -90,8 +139,23 @@ class FileScanner:
         result.file_count = len(result.files)
         return result
 
+    @staticmethod
+    def _combined_ignore_patterns(ignore_patterns: list[str] | None) -> list[str]:
+        """Assemble the one ignore list shared by scan() and matches() (D-07/A4).
+
+        The ``watch_ignore_patterns`` setting extends the SHARED predicate —
+        it affects scan and watch alike, so the two can never diverge.
+        """
+        from sif.config.settings import get_settings  # noqa: PLC0415
+
+        combined = list(FileScanner.DEFAULT_IGNORE_PATTERNS)
+        combined.extend(get_settings().watch_ignore_patterns)
+        if ignore_patterns:
+            combined.extend(ignore_patterns)
+        return combined
+
+    @staticmethod
     def _should_ignore(
-        self,
         file_path: Path,
         root_path: Path,
         ignore_patterns: list[str],

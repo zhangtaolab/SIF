@@ -2,32 +2,51 @@
 
 from __future__ import annotations
 
-import re
+import sqlite3
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import click
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.markup import escape
+from rich.progress import Progress, SpinnerColumn, TaskID, TextColumn
 
-from sif.core.models import Document
+from sif.cli.error_handling import open_initialized_database
+from sif.core.models import Collection
 from sif.database.database import Database
+from sif.database.locking import index_lock
+from sif.database.maintenance import (
+    MaintenanceBusyError,
+    MaintenanceTargetError,
+    backup_index,
+    vacuum_index,
+)
 from sif.database.repositories import (
     CollectionRepository,
     DocumentChunkRepository,
     DocumentRepository,
 )
-from sif.indexing.chunker import create_chunker
-from sif.indexing.parser import MarkdownParser
-from sif.indexing.scanner import FileScanner
+from sif.embedding.identity import (
+    EmbedderIdentity,
+    certify_identity,
+    check_identity,
+    ensure_legacy_identity,
+    schema_embedding_dim,
+)
+from sif.indexing.chunker import create_chunker, token_size_to_chars
+from sif.indexing.embed_writer import StreamingEmbedWriter, SystemicEmbedError
+from sif.indexing.incremental import IncrementalIndexer
+from sif.utils.progress import spinner_name
 
 
 if TYPE_CHECKING:
-    from sif.search.vector import VectorSearcher
+    from sif.embedding.manager import EmbeddingManager
 
 
 console = Console()
+console_err = Console(stderr=True)
 
 # A hung pre-update command (network stall, prompt on stdin) must not block
 # `sif index update` forever (WR-06). No per-collection timeout setting exists
@@ -45,24 +64,29 @@ def index_group() -> None:
 @click.option("--collection", "-c", help="Update specific collection only")
 @click.option("--force", "-f", is_flag=True, help="Force re-index all documents")
 @click.pass_context
-def update_cmd(ctx: click.Context, collection: str | None, force: bool) -> None:  # noqa: C901, PLR0912, PLR0915
+def update_cmd(ctx: click.Context, collection: str | None, force: bool) -> None:
     """Update the index by scanning collections."""
     index_path = ctx.obj["index_path"]
 
-    with Database(index_path) as db:
-        db.init_schema()
+    with open_initialized_database(index_path, Database) as db:
+        from sif.config.settings import get_settings  # noqa: PLC0415
 
-        with db.connection:
+        lock_timeout = get_settings().lock_wait_timeout
+        with index_lock(
+            Path(index_path),
+            lock_timeout,
+            on_wait=lambda: console.print(
+                f"[dim]Another index writer is running; waiting up to {lock_timeout:.0f}s...[/dim]"
+            ),
+        ):
             coll_repo = CollectionRepository(db.connection)
-            doc_repo = DocumentRepository(db.connection)
-            chunk_repo = DocumentChunkRepository(db.connection)
-            vector_purger = _embedding_purger(db)
 
             # Get collections to update
             if collection:
-                collections = [coll_repo.get_by_name(collection)]
-                if not collections[0]:
+                found = coll_repo.get_by_name(collection)
+                if not found:
                     raise click.ClickException(f"Collection '{collection}' not found")
+                collections = [found]
             else:
                 collections = coll_repo.list_all()
 
@@ -72,6 +96,9 @@ def update_cmd(ctx: click.Context, collection: str | None, force: bool) -> None:
                 )
                 return
 
+            # The per-file incremental loop lives in exactly one place (SC3):
+            # the CLI delegates to the shared core and renders its counts.
+            indexer = IncrementalIndexer(db.connection)
             total_added = 0
             total_updated = 0
             total_removed = 0
@@ -81,131 +108,23 @@ def update_cmd(ctx: click.Context, collection: str | None, force: bool) -> None:
                     continue
 
                 console.print(f"\n[bold]Updating collection: {coll.name}[/bold]")
-
-                if coll.pre_update_cmd:
-                    console.print(f"  Running pre-update command: {coll.pre_update_cmd}")
-                    try:
-                        result = subprocess.run(
-                            coll.pre_update_cmd,
-                            shell=True,
-                            capture_output=True,
-                            text=True,
-                            check=False,
-                            timeout=_PRE_UPDATE_TIMEOUT_SECONDS,
-                            stdin=subprocess.DEVNULL,
-                        )
-                    except subprocess.TimeoutExpired as e:
-                        raise click.ClickException(
-                            f"Pre-update command for '{coll.name}' timed out after "
-                            f"{_PRE_UPDATE_TIMEOUT_SECONDS}s: {coll.pre_update_cmd}"
-                        ) from e
-                    if result.returncode != 0:
-                        err_msg = (
-                            f"Pre-update command failed for '{coll.name}' "
-                            f"(exit {result.returncode}): "
-                            f"{result.stderr.strip() or result.stdout.strip()}"
-                        )
-                        raise click.ClickException(err_msg)
-
-                # Scan files
-                scanner = FileScanner()
-                scan_result = scanner.scan(
-                    Path(coll.path),
-                    pattern=coll.pattern,
-                    ignore_patterns=coll.ignore_patterns,
-                )
-
-                console.print(f"  Found {scan_result.file_count} files")
-
-                # Get existing documents
-                existing_docs = {d.path: d for d in doc_repo.list_by_collection(coll.id)}
-                scanned_paths = set()
-
-                # Process each file
-                parser = MarkdownParser()
+                _run_pre_update_hook(coll)
 
                 with Progress(
-                    SpinnerColumn(),
+                    SpinnerColumn(spinner_name(console)),
                     TextColumn("[progress.description]{task.description}"),
                     console=console,
                 ) as progress:
-                    task = progress.add_task(
-                        f"Indexing {coll.name}...", total=scan_result.file_count
+                    task = progress.add_task(f"Indexing {coll.name}...", total=None)
+                    result = indexer.update_collection(
+                        coll,
+                        force=force,
+                        progress=_render_index_event(console, progress, task),
                     )
 
-                    for file_path in scan_result.files:
-                        scanned_paths.add(str(file_path))
-
-                        # Parse document
-                        try:
-                            parsed = parser.parse(file_path)
-                        except Exception as e:
-                            console.print(f"  [red]Error parsing {file_path}: {e}[/red]")
-                            progress.advance(task)
-                            continue
-
-                        # Check if document exists
-                        existing = existing_docs.get(str(file_path))
-
-                        if existing:
-                            # Check if changed
-                            if existing.checksum == parsed.checksum and not force:
-                                console.print(f"  [dim]Unchanged: {file_path.name}[/dim]")
-                                progress.advance(task)
-                                continue
-
-                            # Content changed (or --force): drop stale chunks and
-                            # embeddings so the next `embed` run re-chunks the new
-                            # content instead of trusting the chunk-id-set
-                            # completeness check against stale rows (CR-01).
-                            chunk_repo.delete_by_document(existing.id)
-                            if vector_purger is not None:
-                                vector_purger.delete_embeddings_by_document(existing.id)
-
-                            # Update document
-                            existing.content = parsed.content
-                            existing.title = parsed.title
-                            existing.metadata = parsed.metadata
-                            existing.mtime = parsed.mtime
-                            # Persist the fresh checksum, or the next update run
-                            # compares the new content against the pre-edit hash
-                            # and rewrites this document again every run.
-                            existing.checksum = parsed.checksum
-                            doc_repo.update(existing)
-                            total_updated += 1
-                        else:
-                            # Create new document
-                            doc = Document(
-                                path=str(file_path),
-                                collection_id=coll.id,
-                                content=parsed.content,
-                                title=parsed.title,
-                                metadata=parsed.metadata,
-                                mtime=parsed.mtime,
-                            )
-                            doc_repo.create(doc)
-                            total_added += 1
-
-                        progress.advance(task)
-
-                # Remove documents that no longer exist
-                for path, doc in existing_docs.items():
-                    if path not in scanned_paths:
-                        # Purge embeddings before the document row (WR-01): vec0
-                        # rows cannot carry the FK cascade, so orphaned vectors
-                        # would otherwise occupy KNN top-k slots and crowd live
-                        # documents out of vector search results.
-                        if vector_purger is not None:
-                            vector_purger.delete_embeddings_by_document(doc.id)
-                        doc_repo.delete(doc.id)
-                        total_removed += 1
-
-                # Update collection stats
-                coll.document_count = len(doc_repo.list_by_collection(coll.id))
-                from datetime import datetime, timezone  # noqa: PLC0415
-
-                coll.last_indexed_at = datetime.now(timezone.utc)
-                coll_repo.update(coll)
+                total_added += result.added
+                total_updated += result.updated
+                total_removed += result.removed
 
             console.print("\n[green]Index updated:[/green]")
             console.print(f"  Added: {total_added}")
@@ -213,18 +132,69 @@ def update_cmd(ctx: click.Context, collection: str | None, force: bool) -> None:
             console.print(f"  Removed: {total_removed}")
 
 
-def _embedding_purger(db: Database) -> VectorSearcher | None:
-    """Return a VectorSearcher for purging embeddings, or None without sqlite-vec.
+def _run_pre_update_hook(coll: Collection) -> None:
+    """Run a collection's pre-update subprocess hook.
 
-    A missing sqlite-vec extension also means no vec0 table — hence no stored
-    embeddings — so callers treat None as "nothing to purge".
+    The hook is command policy/presentation, so it stays in the CLI: MCP and
+    watch hosts (Phases 12-13) decide their own pre-behavior.
     """
-    from sif.search.vector import VectorSearcher  # noqa: PLC0415
-
+    if not coll.pre_update_cmd:
+        return
+    console.print(f"  Running pre-update command: {coll.pre_update_cmd}")
     try:
-        return VectorSearcher(db.connection)
-    except RuntimeError:
-        return None
+        result = subprocess.run(
+            coll.pre_update_cmd,
+            shell=True,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=_PRE_UPDATE_TIMEOUT_SECONDS,
+            stdin=subprocess.DEVNULL,
+        )
+    except subprocess.TimeoutExpired as e:
+        raise click.ClickException(
+            f"Pre-update command for '{coll.name}' timed out after "
+            f"{_PRE_UPDATE_TIMEOUT_SECONDS}s: {coll.pre_update_cmd}"
+        ) from e
+    if result.returncode != 0:
+        err_msg = (
+            f"Pre-update command failed for '{coll.name}' "
+            f"(exit {result.returncode}): "
+            f"{result.stderr.strip() or result.stdout.strip()}"
+        )
+        raise click.ClickException(err_msg)
+
+
+def _render_index_event(
+    console: Console,
+    progress: Progress,
+    task: TaskID,
+) -> Callable[[str], None]:
+    """Render IncrementalIndexer progress events with the CLI's Rich styling.
+
+    The core emits presentation-free ``"code payload"`` events; this callback
+    is the only place they become console lines and progress advances, so MCP
+    and watch hosts reuse the core without Rich.
+    """
+
+    def _on_event(event: str) -> None:
+        code, _, payload = event.partition(" ")
+        if code == "scan":
+            progress.update(task, total=int(payload))
+            console.print(f"  Found {payload} files")
+        elif code == "migrate":
+            # D-09: one announcement per collection, naming the scanned count.
+            console.print(
+                f"  [yellow]Upgrading index format: reindexing {escape(payload)} "
+                "documents once[/yellow]"
+            )
+        elif code == "unchanged":
+            console.print(f"  [dim]Unchanged: {escape(payload)}[/dim]")
+        elif code == "error":
+            console.print(f"  [red]{escape(payload)}[/red]")
+        progress.advance(task)
+
+    return _on_event
 
 
 def _needs_embedding(live_chunk_ids: set[str], embedded_chunk_ids: set[str], force: bool) -> bool:
@@ -235,6 +205,46 @@ def _needs_embedding(live_chunk_ids: set[str], embedded_chunk_ids: set[str], for
     Chunkless, partial, or orphaned states all re-embed (self-healing).
     """
     return force or not live_chunk_ids or live_chunk_ids != embedded_chunk_ids
+
+
+class _EmbedAbortError(Exception):
+    """A systemic embed failure: stop after prior commits, then report once."""
+
+
+def _index_has_vectors(conn: sqlite3.Connection) -> bool:
+    """Whether any vector row exists; a missing vec0 table counts as none."""
+    try:
+        return conn.execute("SELECT 1 FROM document_embeddings LIMIT 1").fetchone() is not None
+    except sqlite3.OperationalError:
+        return False
+
+
+def _resolve_identity(
+    conn: sqlite3.Connection, manager: EmbeddingManager
+) -> EmbedderIdentity | None:
+    """Return the current identity when this host has enforceable index state.
+
+    Injected manager doubles return a MagicMock identity and test hosts that
+    patch ``Database`` hand over a MagicMock connection; like every Phase 21
+    host they carry no identity policy, so the streaming writer keeps the
+    pre-Phase-21 path for them. A real ``EmbeddingManager`` always returns a
+    real identity, and every production connection is a real SQLite one.
+    """
+    if not isinstance(conn, sqlite3.Connection):
+        return None
+    current = manager.get_identity()
+    return current if isinstance(current, EmbedderIdentity) else None
+
+
+def _count_collection_chunks(conn: sqlite3.Connection, collection_id: str) -> int:
+    """Count a collection's committed chunk rows with one O(N) SQL query."""
+    row = conn.execute(
+        "SELECT COUNT(*) FROM document_chunks dc "
+        "JOIN documents d ON dc.document_id = d.id "
+        "WHERE d.collection_id = ?",
+        (collection_id,),
+    ).fetchone()
+    return int(row[0]) if row is not None else 0
 
 
 @index_group.command("embed")
@@ -264,9 +274,7 @@ def embed_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     """Generate embeddings for documents."""
     index_path = ctx.obj["index_path"]
 
-    with Database(index_path) as db:
-        db.init_schema()
-
+    with open_initialized_database(index_path, Database) as db:
         # Initialize embedder
         from sif.config.settings import get_settings  # noqa: PLC0415
         from sif.embedding.manager import EmbeddingManager  # noqa: PLC0415
@@ -296,21 +304,19 @@ def embed_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
         )
 
         # Fail fast when the loaded model's dimension disagrees with the vec0
-        # table's declared dimension (WR-02): local backends validate this nowhere
-        # else, and the mismatch would otherwise surface as a raw sqlite-vec
-        # insert error only after chunks are already written.
-        schema_row = db.connection.execute(
-            "SELECT sql FROM sqlite_master WHERE type='table' AND name='document_embeddings'"
-        ).fetchone()
-        if schema_row:
-            schema_sql = schema_row[0] if isinstance(schema_row[0], str) else ""
-            dim_match = re.search(r"FLOAT\[(\d+)\]", schema_sql)
-            if dim_match and int(dim_match.group(1)) != embedding_dim:
-                raise click.ClickException(
-                    f"Model '{model or settings.model_name}' produces {embedding_dim}-dim "
-                    f"embeddings but the index stores {dim_match.group(1)}-dim vectors. "
-                    "Set SIF_EMBEDDING_DIM to the model's dimension and rebuild."
-                )
+        # table's declared dimension (WR-02/D-05): the identity module owns the
+        # single FLOAT[n] read, and the pre-change user-facing wording survives.
+        schema_dim = (
+            schema_embedding_dim(db.connection)
+            if isinstance(db.connection, sqlite3.Connection)
+            else None
+        )
+        if schema_dim is not None and schema_dim != embedding_dim:
+            raise click.ClickException(
+                f"Model '{model or settings.model_name}' produces {embedding_dim}-dim "
+                f"embeddings but the index stores {schema_dim}-dim vectors. "
+                "Set SIF_EMBEDDING_DIM to the model's dimension and rebuild."
+            )
 
         coll_repo = CollectionRepository(db.connection)
         doc_repo = DocumentRepository(db.connection)
@@ -324,45 +330,101 @@ def embed_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
         else:
             collections = coll_repo.list_all()
 
-        total_chunks = 0
-        failed_collections: list[str] = []
-
-        for coll in collections:
-            if not coll:
-                continue
-
-            console.print(f"\n[bold]Embedding collection: {coll.name}[/bold]")
-            documents = doc_repo.list_by_collection(coll.id)
-
-            if not documents:
+        # D-01: embed_cmd arbitrates with other index writers on the per-DB
+        # flock. The lock sits below the embedder load on purpose — it is
+        # never held across model loading — but the identity decision below
+        # belongs inside it: a decision taken while waiting for the lock can
+        # be stale by the time it is acted on. Every document commits in its
+        # own short transaction (D-15), so prior work stays durable on any
+        # later failure (CR-02/D-16).
+        lock_timeout = settings.lock_wait_timeout
+        with index_lock(
+            Path(index_path),
+            lock_timeout,
+            on_wait=lambda: console.print(
+                f"[dim]Another index writer is running; waiting up to {lock_timeout:.0f}s...[/dim]"
+            ),
+        ):
+            # D-02/D-03/D-04: adopt the identity before any vector write, while
+            # holding the lock that serializes every embed writer. A legacy
+            # populated index is assumed once; a same-width model swap fails
+            # fast naming both identities and the remedy. An embeddings-empty
+            # index accepts any embedder (D-02) and the first document commit
+            # overwrites a stale identity row as source="verified" — the writer
+            # re-validates that claim inside its own transaction.
+            current = _resolve_identity(db.connection, manager)
+            write_identity_on_first = False
+            if current is not None:
                 with db.connection:
-                    coll.chunk_count = 0
-                    coll_repo.update(coll)
-                continue
+                    ensure_legacy_identity(db.connection, current)
+                    check = check_identity(db.connection, current, mode="embed")
+                if check.untrusted:
+                    stored = check.stored
+                    if stored is not None:
+                        stored_desc = (
+                            f"{stored.display_fingerprint()} "
+                            f"({stored.cache_model_id}, dim {stored.dimension})"
+                        )
+                    else:
+                        stored_desc = f"an index with no identity (FLOAT[{schema_dim}])"
+                    raise click.ClickException(
+                        "Embedder identity mismatch: index vectors were produced by "
+                        f"{stored_desc} but the current model is "
+                        f"{current.display_fingerprint()} "
+                        f"({current.cache_model_id}, dim {current.dimension}). "
+                        "Restore the stored model or run `sif index embed --force` "
+                        "with the matching model."
+                    )
+                write_identity_on_first = not _index_has_vectors(db.connection)
 
-            chunker = create_chunker(chunk_strategy)
+            total_chunks = 0
+            failed_collections: list[str] = []
+            failed_documents: list[tuple[str, str, str]] = []
+            abort_message: str | None = None
+            identity_written = False
 
-            # One searcher per collection. Construction failure (sqlite-vec
-            # unavailable) is user-facing and never swallowed (D-03 fail-fast).
-            # Raised outside any open transaction so it cannot roll back work
-            # already committed by earlier collections (CR-02).
-            try:
-                vector_searcher = VectorSearcher(db.connection, embedding_dim)
-            except RuntimeError as e:
-                raise click.ClickException(f"Vector store unavailable: {e}") from e
+            for coll in collections:
+                if not coll:
+                    continue
 
-            # One transaction per collection (CR-02): a failed collection rolls
-            # back only its own work, and successful collections keep theirs.
-            # (The previous whole-run transaction discarded every successful
-            # collection when the final failure report was raised inside it.)
-            all_chunks = []  # (chunk, document_id)
-            doc_chunks_map: dict[str, list] = {}
-            try:
-                # One unindexed metadata scan per document made the completeness
-                # check quadratic; prefetch the whole map once per collection and
-                # judge each document against it.
-                embedded_by_doc = vector_searcher.get_all_embedded_chunk_ids()
-                with db.connection:
+                console.print(f"\n[bold]Embedding collection: {coll.name}[/bold]")
+                documents = doc_repo.list_by_collection(coll.id)
+
+                if not documents:
+                    with db.connection:
+                        coll.chunk_count = 0
+                        coll_repo.update(coll)
+                    continue
+
+                chunker = create_chunker(
+                    chunk_strategy,
+                    max_chunk_size=token_size_to_chars(settings.chunk_size),
+                    overlap=token_size_to_chars(settings.chunk_overlap),
+                )
+
+                # One searcher per collection. Construction failure (sqlite-vec
+                # unavailable) is user-facing and never swallowed (D-03 fail-fast).
+                # Raised outside any open transaction so it cannot roll back work
+                # already committed by earlier collections (CR-02).
+                try:
+                    vector_searcher = VectorSearcher(db.connection, embedding_dim)
+                except RuntimeError as e:
+                    raise click.ClickException(f"Vector store unavailable: {e}") from e
+
+                writer = StreamingEmbedWriter(
+                    db.connection,
+                    manager,
+                    chunker,
+                    vector_searcher,
+                    current,
+                    batch_size=settings.batch_size,
+                    write_identity=write_identity_on_first,
+                    embed_breadcrumb=settings.embed_breadcrumb,
+                )
+                try:
+                    # One unindexed metadata scan per collection; judging every
+                    # document against it keeps the completeness check linear.
+                    embedded_by_doc = vector_searcher.get_all_embedded_chunk_ids()
                     for doc in documents:
                         # Skip documents whose live chunks already have an exact,
                         # complete set of embeddings; --force bypasses the check.
@@ -371,53 +433,186 @@ def embed_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                         if not _needs_embedding({c.id for c in existing}, embedded, force):
                             console.print(f"  [dim]Already embedded: {doc.path}[/dim]")
                             continue
-                        chunk_repo.delete_by_document(doc.id)
-                        # Delete-before-insert (G-03-3): re-chunked rows get fresh
-                        # uuid4 ids that can never collide with the old embedding
-                        # rows, so the old vectors must be removed explicitly.
-                        vector_searcher.delete_embeddings_by_document(doc.id)
-                        chunks = chunker.chunk(doc.content)
-                        doc_chunks_map[doc.id] = chunks
-                        for i, chunk in enumerate(chunks):
-                            chunk.document_id = doc.id
-                            chunk.sequence = i
-                            all_chunks.append((chunk, doc.id))
+                        try:
+                            total_chunks += writer.embed_document(doc)
+                        except SystemicEmbedError as e:
+                            # D-17: a garbage batch is systemic — persist nothing
+                            # for this document and abort after prior commits.
+                            raise _EmbedAbortError(str(e)) from e
+                        except sqlite3.OperationalError as e:
+                            if "locked" in str(e).lower() or "busy" in str(e).lower():
+                                # D-16: a locked/busy database is environmental.
+                                raise _EmbedAbortError(
+                                    "database is locked or busy. Retry once the other "
+                                    f"index writer has finished ({e})."
+                                ) from e
+                            failed_documents.append((coll.name, doc.path, str(e)))
+                        except Exception as e:
+                            # D-16: document-local failures never abort the run.
+                            failed_documents.append((coll.name, doc.path, str(e)))
 
-                    # Batch embed all chunks
-                    if all_chunks:
-                        chunk_texts = [c.content for c, _ in all_chunks]
-                        embedding_response = manager.embed(chunk_texts)
-                        embeddings = embedding_response.embeddings
+                    # D-15 refinement: recompute collection stats once per
+                    # collection in a short O(N) SQL count instead of per
+                    # document. A collection that aborts mid-loop keeps its
+                    # previous counts until its next successful run.
+                    with db.connection:
+                        coll.chunk_count = _count_collection_chunks(db.connection, coll.id)
+                        coll_repo.update(coll)
+                except _EmbedAbortError as e:
+                    abort_message = str(e)
+                except Exception as e:
+                    console.print(
+                        f"  [red]Error embedding collection {escape(coll.name)}: {e}[/red]"
+                    )
+                    failed_collections.append(coll.name)
+                finally:
+                    if write_identity_on_first and not writer.identity_pending:
+                        # The first committed document already wrote the
+                        # identity; later collections and the certification
+                        # step must not rewrite it.
+                        write_identity_on_first = False
+                        identity_written = True
 
-                        # Persist chunks and embeddings
-                        batch_items: list[tuple[str, str, str | None, list[float]]] = []
-                        for (chunk, doc_id), embedding in zip(all_chunks, embeddings, strict=True):
-                            chunk_repo.create(chunk)
-                            batch_items.append((chunk.id, doc_id, chunk.id, embedding))
+                if abort_message is not None:
+                    break
 
-                        vector_searcher.add_embeddings_batch(batch_items)
-
-                    # Update collection stats
-                    documents = doc_repo.list_by_collection(coll.id)
-                    coll.chunk_count = sum(len(chunk_repo.get_by_document(d.id)) for d in documents)
-                    coll_repo.update(coll)
-                # Count only after the transaction committed — a rolled-back
-                # collection must not be reported as embedded.
-                total_chunks += len(all_chunks)
-            except Exception as e:
-                console.print(f"  [red]Error embedding collection {coll.name}: {e}[/red]")
-                failed_collections.append(coll.name)
-                continue
+            # D-04 certification: only a complete, unfiltered, zero-failure
+            # --force run certifies the stored identity as source="verified". A
+            # fresh index's first vector write already certified through the
+            # writer; a full --force on an empty index certifies vacuously (its
+            # zero vectors keep D-02's accept-any-embedder rule in force). Kept
+            # inside the lock window so a concurrent writer cannot claim or
+            # replace the identity between the run and its certification.
+            if (
+                abort_message is None
+                and not failed_collections
+                and not failed_documents
+                and force
+                and collection is None
+                and current is not None
+                and not identity_written
+            ):
+                with db.connection:
+                    certify_identity(db.connection, current)
 
         console.print(f"\n[green]Embedding complete: {total_chunks} chunks embedded[/green]")
-
-        # Raised outside any db transaction (CR-02): the successful collections'
-        # commits above must survive this non-zero exit.
-        if failed_collections:
-            raise click.ClickException(
-                f"Embedding failed for {len(failed_collections)} collection(s): "
-                + ", ".join(failed_collections)
+        for coll_name, doc_path, message in failed_documents:
+            console_err.print(
+                f"[red]Embedding failed for {escape(doc_path)} "
+                f"(collection {escape(coll_name)}): {escape(message)}[/red]"
             )
+
+        # D-16/CR-02: ONE final report, raised outside any db transaction, so
+        # every prior per-document/per-collection commit survives the non-zero
+        # exit. Systemic aborts win over per-document/collection summaries.
+        if abort_message is not None:
+            raise click.ClickException(f"Embedding aborted: {abort_message}")
+        if failed_collections or failed_documents:
+            parts: list[str] = []
+            if failed_collections:
+                parts.append(
+                    f"Embedding failed for {len(failed_collections)} collection(s): "
+                    + ", ".join(failed_collections)
+                )
+            if failed_documents:
+                parts.append(f"Embedding failed for {len(failed_documents)} document(s)")
+            raise click.ClickException(". ".join(parts))
+
+
+def _format_bytes(size: int) -> str:
+    """Render a byte count with its MiB equivalent for maintenance output."""
+    return f"{size} bytes ({size / (1024 * 1024):.2f} MiB)"
+
+
+@index_group.command("vacuum")
+@click.pass_context
+def vacuum_cmd(ctx: click.Context) -> None:
+    """Reclaim unused space in the index database."""
+    index_path = ctx.obj["index_path"]
+
+    # Refuse a missing index BEFORE opening it: Database.__init__/create_all
+    # would otherwise create an empty schema and report a clean vacuum of
+    # nothing, defeating the helper's own "database does not exist" contract.
+    if not Path(index_path).exists():
+        raise click.ClickException(f"No index found at {index_path}. Run 'sif index update' first.")
+
+    # Run schema migrations/backfills first, then close the handle: VACUUM runs
+    # on the maintenance helper's own connection outside every transaction.
+    with open_initialized_database(index_path, Database):
+        pass
+
+    from sif.config.settings import get_settings  # noqa: PLC0415
+
+    settings = get_settings()
+    lock_timeout = settings.lock_wait_timeout
+    with index_lock(
+        Path(index_path),
+        lock_timeout,
+        on_wait=lambda: console.print(
+            f"[dim]Another index writer is running; waiting up to {lock_timeout:.0f}s...[/dim]"
+        ),
+    ):
+        try:
+            result = vacuum_index(Path(index_path), settings)
+        except MaintenanceBusyError as e:
+            # Retryable by design (D-14): never a traceback, never partial success.
+            raise click.ClickException(str(e)) from e
+        except (MaintenanceTargetError, sqlite3.Error, OSError) as e:
+            raise click.ClickException(
+                f"Vacuum failed: {e}. Check free disk space and file permissions, then retry."
+            ) from e
+
+    console.print("[green]Vacuum complete:[/green]")
+    console.print(f"  Before: {_format_bytes(result.before_bytes)}")
+    console.print(f"  After: {_format_bytes(result.after_bytes)}")
+    console.print(f"  Reclaimed: {_format_bytes(result.reclaimed_bytes)}")
+
+
+@index_group.command("backup")
+@click.option(
+    "--output",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Destination file for the verified backup copy",
+)
+@click.pass_context
+def backup_cmd(ctx: click.Context, output: Path | None) -> None:
+    """Create a verified backup copy of the index database."""
+    index_path = ctx.obj["index_path"]
+
+    # Refuse a missing index BEFORE opening it (see vacuum_cmd): creating a
+    # fresh empty database would make a typo'd --index look like a successful
+    # backup of nothing and could be relied on before destructive work.
+    if not Path(index_path).exists():
+        raise click.ClickException(f"No index found at {index_path}. Run 'sif index update' first.")
+
+    # Run schema migrations/backfills first; the copy itself is taken by the
+    # maintenance helper under the index lock, outside Database.transaction().
+    with open_initialized_database(index_path, Database):
+        pass
+
+    from sif.config.settings import get_settings  # noqa: PLC0415
+
+    settings = get_settings()
+    lock_timeout = settings.lock_wait_timeout
+    with index_lock(
+        Path(index_path),
+        lock_timeout,
+        on_wait=lambda: console.print(
+            f"[dim]Another index writer is running; waiting up to {lock_timeout:.0f}s...[/dim]"
+        ),
+    ):
+        try:
+            result = backup_index(Path(index_path), output, settings)
+        except MaintenanceBusyError as e:
+            # Retryable by design (D-14): never a traceback, never partial success.
+            raise click.ClickException(str(e)) from e
+        except (MaintenanceTargetError, sqlite3.Error, OSError) as e:
+            raise click.ClickException(str(e)) from e
+
+    console.print("[green]Backup complete:[/green]")
+    console.print(f"  Output: {result.output}")
+    console.print(f"  Size: {_format_bytes(result.bytes_written)}")
 
 
 @index_group.command("status")

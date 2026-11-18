@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 6
-waived_count: 0
-fixed_count: 2
-total_count: 8
-last_updated: 2026-11-06T00:59:43.130Z
+open_count: 0
+waived_count: 3
+fixed_count: 9
+total_count: 12
+last_updated: 2026-11-14T09:32:00.124Z
 ---
 
 # Broken Windows Ledger
@@ -15,14 +15,18 @@ last_updated: 2026-11-06T00:59:43.130Z
 
 | id | phase | kind | file | line | description | status | reason | recorded_at | resolved_at |
 |----|-------|------|------|------|-------------|--------|--------|-------------|-------------|
-| 1 | 03 | stub | src/sif/embedding/factory.py | 82 | HuggingFace factory stub raises NotImplementedError — pre-existing, out of scope per plan 03-07 / 03-VERIFICATION anti-pattern table; not a VEC-01 backend | open |  | 2026-09-03T03:40:20.270Z |  |
-| 2 | 03 | unrun-verify | .planning/phases/03-embedding-vector-search/03-07-SUMMARY.md |  | Live OpenAI-compatible endpoint check (plan verification item 5) requires user API key — automated tests mock the endpoint | open |  | 2026-09-03T03:40:20.351Z |  |
-| 3 | quick-260905-tax | unmet-truth | tests/unit/embedding/test_openai_embedder.py | 195 | Full-suite green truth unmet: 2 pre-existing caplog failures (test_docs.py triggers setup_logging which sets sif logger propagate=False); proven unrelated to G-04-4 fix, documented in quick/260905-tax.../deferred-items.md | open |  | 2026-09-05T13:30:50.522Z |  |
-| 4 | quick-260914-g63 | unmet-truth | tests/unit/embedding/test_openai_embedder.py |  | Full-suite pytest gate not green on this machine: 2 caplog-pollution failures (test_import_error_logs_install_hint, test_corrupt_cache_treated_as_miss) — pre-existing setup_logging propagate=False pollution, proven identical with quick-260914-g63 changes reverted; already tracked as 04-UAT deferred follow-up | open |  | 2026-09-14T04:11:18.859Z |  |
-| 5 | 261105-g1u | deviation | src/sif/cli/main.py | 71 | Group callback unconditionally mkdirs index parent dir for every command; guarded context add/list create no DB file but do create the empty parent dir (pre-existing, logged to quick-task deferred-items.md) | open |  | 2026-11-05T03:54:46.185Z |  |
+| 1 | 03 | stub | src/sif/embedding/factory.py | 82 | HuggingFace factory stub raises NotImplementedError — pre-existing, out of scope per plan 03-07 / 03-VERIFICATION anti-pattern table; not a VEC-01 backend | waived | Deliberate design boundary re-validated at HEAD: the HuggingFace branch in the embedding factory (src/sif/embedding/factory.py:86-92) is an intentional NotImplementedError stub documented in CLAUDE.md and rejected by ModelType/settings validation; it is not a supported backend, so no fix is planned. | 2026-09-03T03:40:20.270Z | 2026-11-12T11:54:14.119Z |
+| 2 | 03 | unrun-verify | .planning/phases/03-embedding-vector-search/03-07-SUMMARY.md |  | Live OpenAI-compatible endpoint check (plan verification item 5) requires user API key — automated tests mock the endpoint | waived | Manual-only verification re-validated: a live OpenAI-compatible endpoint check requires a user-supplied API key and an external endpoint, so it cannot run in this repo or CI; automated tests mock the endpoint and exercise the request/response path. Structurally unautomatable, hence waived. | 2026-09-03T03:40:20.351Z | 2026-11-12T11:54:14.217Z |
+| 3 | quick-260905-tax | unmet-truth | tests/unit/embedding/test_openai_embedder.py | 195 | Full-suite green truth unmet: 2 pre-existing caplog failures (test_docs.py triggers setup_logging which sets sif logger propagate=False); proven unrelated to G-04-4 fix, documented in quick/260905-tax.../deferred-items.md | fixed |  | 2026-09-05T13:30:50.522Z | 2026-11-12T11:54:03.558Z |
+| 4 | quick-260914-g63 | unmet-truth | tests/unit/embedding/test_openai_embedder.py |  | Full-suite pytest gate not green on this machine: 2 caplog-pollution failures (test_import_error_logs_install_hint, test_corrupt_cache_treated_as_miss) — pre-existing setup_logging propagate=False pollution, proven identical with quick-260914-g63 changes reverted; already tracked as 04-UAT deferred follow-up | fixed |  | 2026-09-14T04:11:18.859Z | 2026-11-12T11:54:03.646Z |
+| 5 | 261105-g1u | deviation | src/sif/cli/main.py | 71 | Group callback unconditionally mkdirs index parent dir for every command; guarded context add/list create no DB file but do create the empty parent dir (pre-existing, logged to quick-task deferred-items.md) | fixed |  | 2026-11-05T03:54:46.185Z | 2026-11-12T11:54:03.734Z |
 | 6 | 10 | deviation | src/sif/utils/logging.py | 122 | Applied computed formatter to caller-provided logging handlers (Rule 1 bug found by 10-05 tests) | fixed |  | 2026-11-05T19:46:51.982Z | 2026-11-05T19:47:02.697Z |
 | 7 | 10 | deviation | src/sif/utils/progress.py | 44 | Omitted Rich bar and percentage columns for indeterminate progress (Rule 1 bug found by 10-05 tests) | fixed |  | 2026-11-05T19:46:52.058Z | 2026-11-05T19:47:02.774Z |
-| 8 | 10.1 | deviation | .planning/phases/10.1-address-tech-debt-path-normalization-review-findings-cr-01-c/10.1-01-PLAN.md |  | Plan verify command 'pytest <2 files> -q' structurally cannot exit 0 under the 10-07 fail_under=90 gate (scoped run ~38% total); test signal verified via --no-cov plus full-suite 968-pass at 96.22% | open |  | 2026-11-06T00:59:43.130Z |  |
+| 8 | 10.1 | deviation | .planning/phases/10.1-address-tech-debt-path-normalization-review-findings-cr-01-c/10.1-01-PLAN.md |  | Plan verify command 'pytest <2 files> -q' structurally cannot exit 0 under the 10-07 fail_under=90 gate (scoped run ~38% total); test signal verified via --no-cov plus full-suite 968-pass at 96.22% | waived | Historical plan artifact re-validated: the 10.1-01-PLAN.md verify command scoped two test files under the repo-wide coverage gate (fail_under=90 in pyproject.toml), which structurally cannot exit 0 from a scoped run (~38% total); the test signal was verified via --no-cov plus a full-suite 968-pass at 96.22%, and phase 10.1 is complete with the plan archived under .planning/milestones/v1.0-phases/, so the command is not re-runnable as written. Waived as a past planning-constraint record, not a live defect. | 2026-11-06T00:59:43.130Z | 2026-11-12T11:54:14.304Z |
+| 9 | 12 | deviation | docs/cli-reference.md |  | Full-suite docs gate test_docs.py::test_cli_reference_has_all_commands red until 12-03 runs make docs-generate (docs regen is assigned to the final plan; hand-editing prohibited) | fixed |  | 2026-11-07T09:42:25.792Z | 2026-11-07T10:58:23.037Z |
+| 10 | 16 | unrun-verify | docs/benchmarking.md |  | Manual real-model held-out evidence row is 'not yet measured' (plan-mandated label; deterministic snapshot is committed) — record model/hardware/date/nDCG per 16-VALIDATION.md Manual-Only Verifications | fixed |  | 2026-11-08T15:41:08.355Z | 2026-11-12T10:33:55.806Z |
+| 11 | 17 | unmet-truth | .planning/phases/17-engineering-foundation-ci-matrix-hygiene-pypi/17-07-PLAN.md |  | Publish run 43562577065 is not green: Publish to TestPyPI returns invalid-publisher at OIDC token exchange on attempts 1-3, including after the pending publisher was deleted and re-created with exact fields; PyPI job skipped; release not shipped | fixed |  | 2026-11-14T05:50:50.007Z | 2026-11-14T09:32:00.013Z |
+| 12 | 17 | unrun-verify | .planning/phases/17-engineering-foundation-ci-matrix-hygiene-pypi/17-07-PLAN.md |  | Task 2 unrun pending publish: pypi-attestations verify, fresh-venv PyPI install proof, fresh-venv TestPyPI install proof | fixed |  | 2026-11-14T05:50:50.115Z | 2026-11-14T09:32:00.124Z |
 
 ````json
 [
@@ -33,10 +37,10 @@ last_updated: 2026-11-06T00:59:43.130Z
     "file": "src/sif/embedding/factory.py",
     "line": 82,
     "description": "HuggingFace factory stub raises NotImplementedError — pre-existing, out of scope per plan 03-07 / 03-VERIFICATION anti-pattern table; not a VEC-01 backend",
-    "status": "open",
-    "reason": "",
+    "status": "waived",
+    "reason": "Deliberate design boundary re-validated at HEAD: the HuggingFace branch in the embedding factory (src/sif/embedding/factory.py:86-92) is an intentional NotImplementedError stub documented in CLAUDE.md and rejected by ModelType/settings validation; it is not a supported backend, so no fix is planned.",
     "recorded_at": "2026-09-03T03:40:20.270Z",
-    "resolved_at": null
+    "resolved_at": "2026-11-12T11:54:14.119Z"
   },
   {
     "id": 2,
@@ -45,10 +49,10 @@ last_updated: 2026-11-06T00:59:43.130Z
     "file": ".planning/phases/03-embedding-vector-search/03-07-SUMMARY.md",
     "line": null,
     "description": "Live OpenAI-compatible endpoint check (plan verification item 5) requires user API key — automated tests mock the endpoint",
-    "status": "open",
-    "reason": "",
+    "status": "waived",
+    "reason": "Manual-only verification re-validated: a live OpenAI-compatible endpoint check requires a user-supplied API key and an external endpoint, so it cannot run in this repo or CI; automated tests mock the endpoint and exercise the request/response path. Structurally unautomatable, hence waived.",
     "recorded_at": "2026-09-03T03:40:20.351Z",
-    "resolved_at": null
+    "resolved_at": "2026-11-12T11:54:14.217Z"
   },
   {
     "id": 3,
@@ -57,10 +61,10 @@ last_updated: 2026-11-06T00:59:43.130Z
     "file": "tests/unit/embedding/test_openai_embedder.py",
     "line": 195,
     "description": "Full-suite green truth unmet: 2 pre-existing caplog failures (test_docs.py triggers setup_logging which sets sif logger propagate=False); proven unrelated to G-04-4 fix, documented in quick/260905-tax.../deferred-items.md",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-09-05T13:30:50.522Z",
-    "resolved_at": null
+    "resolved_at": "2026-11-12T11:54:03.558Z"
   },
   {
     "id": 4,
@@ -69,10 +73,10 @@ last_updated: 2026-11-06T00:59:43.130Z
     "file": "tests/unit/embedding/test_openai_embedder.py",
     "line": null,
     "description": "Full-suite pytest gate not green on this machine: 2 caplog-pollution failures (test_import_error_logs_install_hint, test_corrupt_cache_treated_as_miss) — pre-existing setup_logging propagate=False pollution, proven identical with quick-260914-g63 changes reverted; already tracked as 04-UAT deferred follow-up",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-09-14T04:11:18.859Z",
-    "resolved_at": null
+    "resolved_at": "2026-11-12T11:54:03.646Z"
   },
   {
     "id": 5,
@@ -81,10 +85,10 @@ last_updated: 2026-11-06T00:59:43.130Z
     "file": "src/sif/cli/main.py",
     "line": 71,
     "description": "Group callback unconditionally mkdirs index parent dir for every command; guarded context add/list create no DB file but do create the empty parent dir (pre-existing, logged to quick-task deferred-items.md)",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-11-05T03:54:46.185Z",
-    "resolved_at": null,
+    "resolved_at": "2026-11-12T11:54:03.734Z",
     "milestone": "v1.0"
   },
   {
@@ -120,11 +124,63 @@ last_updated: 2026-11-06T00:59:43.130Z
     "file": ".planning/phases/10.1-address-tech-debt-path-normalization-review-findings-cr-01-c/10.1-01-PLAN.md",
     "line": null,
     "description": "Plan verify command 'pytest <2 files> -q' structurally cannot exit 0 under the 10-07 fail_under=90 gate (scoped run ~38% total); test signal verified via --no-cov plus full-suite 968-pass at 96.22%",
-    "status": "open",
-    "reason": "",
+    "status": "waived",
+    "reason": "Historical plan artifact re-validated: the 10.1-01-PLAN.md verify command scoped two test files under the repo-wide coverage gate (fail_under=90 in pyproject.toml), which structurally cannot exit 0 from a scoped run (~38% total); the test signal was verified via --no-cov plus a full-suite 968-pass at 96.22%, and phase 10.1 is complete with the plan archived under .planning/milestones/v1.0-phases/, so the command is not re-runnable as written. Waived as a past planning-constraint record, not a live defect.",
     "recorded_at": "2026-11-06T00:59:43.130Z",
-    "resolved_at": null,
+    "resolved_at": "2026-11-12T11:54:14.304Z",
     "milestone": "v1.0"
+  },
+  {
+    "id": 9,
+    "kind": "deviation",
+    "phase": "12",
+    "file": "docs/cli-reference.md",
+    "line": null,
+    "description": "Full-suite docs gate test_docs.py::test_cli_reference_has_all_commands red until 12-03 runs make docs-generate (docs regen is assigned to the final plan; hand-editing prohibited)",
+    "status": "fixed",
+    "reason": "",
+    "recorded_at": "2026-11-07T09:42:25.792Z",
+    "resolved_at": "2026-11-07T10:58:23.037Z",
+    "milestone": "v1.1"
+  },
+  {
+    "id": 10,
+    "kind": "unrun-verify",
+    "phase": "16",
+    "file": "docs/benchmarking.md",
+    "line": null,
+    "description": "Manual real-model held-out evidence row is 'not yet measured' (plan-mandated label; deterministic snapshot is committed) — record model/hardware/date/nDCG per 16-VALIDATION.md Manual-Only Verifications",
+    "status": "fixed",
+    "reason": "",
+    "recorded_at": "2026-11-08T15:41:08.355Z",
+    "resolved_at": "2026-11-12T10:33:55.806Z",
+    "milestone": "v1.1"
+  },
+  {
+    "id": 11,
+    "kind": "unmet-truth",
+    "phase": "17",
+    "file": ".planning/phases/17-engineering-foundation-ci-matrix-hygiene-pypi/17-07-PLAN.md",
+    "line": null,
+    "description": "Publish run 43562577065 is not green: Publish to TestPyPI returns invalid-publisher at OIDC token exchange on attempts 1-3, including after the pending publisher was deleted and re-created with exact fields; PyPI job skipped; release not shipped",
+    "status": "fixed",
+    "reason": "",
+    "recorded_at": "2026-11-14T05:50:50.007Z",
+    "resolved_at": "2026-11-14T09:32:00.013Z",
+    "milestone": "v1.2"
+  },
+  {
+    "id": 12,
+    "kind": "unrun-verify",
+    "phase": "17",
+    "file": ".planning/phases/17-engineering-foundation-ci-matrix-hygiene-pypi/17-07-PLAN.md",
+    "line": null,
+    "description": "Task 2 unrun pending publish: pypi-attestations verify, fresh-venv PyPI install proof, fresh-venv TestPyPI install proof",
+    "status": "fixed",
+    "reason": "",
+    "recorded_at": "2026-11-14T05:50:50.115Z",
+    "resolved_at": "2026-11-14T09:32:00.124Z",
+    "milestone": "v1.2"
   }
 ]
 ````

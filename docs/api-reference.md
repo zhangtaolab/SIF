@@ -224,110 +224,45 @@ class Context:
 
 ## Models Module
 
-### Search Models
-
-```python
-from sif.models.search import SearchQuery, SearchResult, SearchOptions, SearchType
-```
-
-#### Enum: `SearchType`
-
-```python
-class SearchType(str, Enum):
-    BM25 = "bm25"
-    VECTOR = "vector"
-    HYBRID = "hybrid"
-```
+### Search Options
 
 #### Class: `SearchOptions`
 
 ```python
-class SearchOptions(BaseModel):
-    limit: int = Field(10, ge=1, le=100)
-    offset: int = Field(0, ge=0)
-    threshold: float = Field(0.0, ge=0, le=1)
-    include_chunks: bool = True
-    include_metadata: bool = True
-    highlight_matches: bool = True
-    
-    # BM25 options
-    bm25_k1: float = Field(1.5, ge=0.1, le=3.0)
-    bm25_b: float = Field(0.75, ge=0.1, le=1.0)
-    
-    # Vector options
-    vector_weight: float = Field(0.7, ge=0, le=1)
-    
-    # Hybrid options
-    bm25_weight: float = Field(0.3, ge=0, le=1)
-    rrf_k: int = Field(60, ge=1)
-    
-    # Query expansion
-    expand_query: bool = False
-    expansion_factor: int = Field(3, ge=1, le=10)
-    
-    # Reranking
-    rerank: bool = False
-    rerank_top_k: int = Field(20, ge=1, le=100)
-```
+from sif.core.models import SearchOptions
+from dataclasses import dataclass
 
-**Usage:**
-```python
-options = SearchOptions(
-    limit=20,
-    threshold=0.5,
-    expand_query=True,
-    rerank=True
-)
-```
-
-#### Class: `SearchQuery`
-
-```python
-class SearchQuery(BaseModel):
-    query: str = Field(..., min_length=1)
+@dataclass
+class SearchOptions:
+    limit: int = 10
+    offset: int = 0
+    # None = no collection filter; [] = exclude all collections
     collection_ids: list[str] | None = None
-    search_type: SearchType = SearchType.HYBRID
-    options: SearchOptions = Field(default_factory=SearchOptions)
-    filters: dict[str, Any] = Field(default_factory=dict)
+    min_score: float = 0.0
+    include_content: bool = False
+    include_highlights: bool = True
+    max_highlights: int = 3
+    explain: bool = False
+    # Reranker candidate pool (over-fetch target, clamped 5-50; default 20)
+    candidate_limit: int = 20
+    intent: str | None = None
+    snippet_max_length: int = 300
+    # Hybrid fusion tunables (Phase 15): settings/flags resolve INTO these
+    rrf_k: int = 60
+    bm25_weight: float = 1.0
+    vector_weight: float = 1.0
 ```
 
 **Usage:**
 ```python
-query = SearchQuery(
-    query="python decorators",
-    collection_ids=["collection-uuid"],
-    search_type=SearchType.HYBRID,
-    options=SearchOptions(limit=15)
-)
-```
+# Equal weights and k=60 reproduce the unweighted default (byte-identical)
+options = SearchOptions(limit=10, include_highlights=False)
 
-#### Class: `SearchResult`
+# Weighted fusion, resolved from SIF_ settings or per-query flags
+options = SearchOptions(limit=10, rrf_k=40, bm25_weight=0.7, vector_weight=0.3)
 
-```python
-class SearchResult(BaseModel):
-    document_id: str
-    document_path: str
-    document_title: str | None = None
-    score: float
-    bm25_score: float | None = None
-    vector_score: float | None = None
-    content_preview: str | None = None
-    matched_chunks: list[dict[str, Any]] = Field(default_factory=list)
-    highlights: list[str] = Field(default_factory=list)
-    metadata: dict[str, Any] = Field(default_factory=dict)
-```
-
-#### Class: `SearchResponse`
-
-```python
-class SearchResponse(BaseModel):
-    query: str
-    search_type: SearchType
-    total: int
-    results: list[SearchResult]
-    search_time_ms: float
-    expanded_query: str | None = None
-    expansion_terms: list[str] = Field(default_factory=list)
+# Reranker over-fetch pool (used only on the enabled --rerank path)
+options = SearchOptions(limit=10, candidate_limit=30)
 ```
 
 ### Collection Models
@@ -339,7 +274,7 @@ from sif.models.collection import CollectionCreate, CollectionUpdate, Collection
 #### Class: `CollectionCreate`
 
 ```python
-class CollectionCreate(BaseModel):
+class CollectionCreate(CollectionBase):
     name: str = Field(..., min_length=1, max_length=255)
     description: str | None = Field(None)
     paths: list[str] = Field(default_factory=list)
@@ -359,7 +294,7 @@ class CollectionUpdate(BaseModel):
 #### Class: `CollectionResponse`
 
 ```python
-class CollectionResponse(BaseModel):
+class CollectionResponse(CollectionBase):
     id: str
     name: str
     description: str | None
@@ -377,42 +312,9 @@ class CollectionResponse(BaseModel):
 ### Search Strategies
 
 ```python
-from sif.search.strategy import SearchStrategy, SearchContext
 from sif.search.bm25 import BM25Searcher
 from sif.search.vector import VectorSearcher
 from sif.search.hybrid import HybridSearcher
-```
-
-#### Class: `SearchContext`
-
-```python
-@dataclass
-class SearchContext:
-    query: str
-    query_embedding: list[float] | None = None
-    expanded_query: str | None = None
-    collection_ids: list[str] | None = None
-    context_string: str = ""
-    filters: dict[str, Any] | None = None
-```
-
-#### Class: `SearchStrategy` (Abstract)
-
-```python
-class SearchStrategy(ABC):
-    @abstractmethod
-    def search(
-        self,
-        context: SearchContext,
-        options: SearchOptions,
-    ) -> list[SearchResult]: ...
-    
-    @abstractmethod
-    def search_batch(
-        self,
-        contexts: list[SearchContext],
-        options: SearchOptions,
-    ) -> list[list[SearchResult]]: ...
 ```
 
 #### Class: `BM25Searcher`
@@ -453,7 +355,7 @@ results = searcher.search("python decorators", options)
 ### RRF (Reciprocal Rank Fusion)
 
 ```python
-from sif.search.rrf import RRFFusion, compute_rrf_score
+from sif.search.rrf import RRFFusion
 ```
 
 #### Class: `RRFFusion`
@@ -466,30 +368,104 @@ class RRFFusion:
         self,
         results_lists: list[list[SearchResult]],
         limit: int = 10,
-    ) -> list[SearchResult]: ...
-
-    def fuse_with_weights(
-        self,
-        results_lists: list[list[SearchResult]],
-        weights: list[float],
-        limit: int = 10,
+        weights: list[float] | None = None,
+        k: int | None = None,
     ) -> list[SearchResult]: ...
 ```
 
-#### Function: `compute_rrf_score`
-
-```python
-def compute_rrf_score(rank: int, k: int = 60) -> float:
-    """Compute the RRF score 1 / (k + rank) for a single 1-indexed rank."""
-```
+`weights` is a per-list multiplier in multiply form — `weight * 1/(k + rank)`
+— and is never normalized. `weights=None` means `1.0` for every list (the
+byte-identical default). `k=None` falls back to the constructor `k`; a
+per-call `k` overrides it without mutating the instance.
 
 **Usage:**
 ```python
 from sif.search.rrf import RRFFusion
 
 rrf = RRFFusion(k=60)
+# Default: equal weights, k=60 — byte-identical to plain RRF
 fused = rrf.fuse([bm25_results, vector_results], limit=10)
+# Weighted fusion (multiply form, never normalized)
+fused = rrf.fuse(
+    [bm25_results, vector_results],
+    limit=10,
+    weights=[0.7, 0.3],
+    k=40,
+)
 ```
+
+## Benchmark Module
+
+```python
+from sif.search.benchmark import (
+    BenchReport, ConfigResult, QueryItem, SearchEvaluator, SweepRanking,
+    dcg_at_k, hit_at_k, iter_grid, ndcg_at_k, percentile, rank_sweep,
+    warrants_default_change,
+)
+```
+
+Graded metric helpers (pure functions):
+
+```python
+# Exponential-gain DCG/nDCG; the ideal comes from the FULL judgment set
+dcg_at_k([3, 0, 2], 10)          # 8.5
+ndcg_at_k([3, 0, 2], [3, 2], 10)  # 0.95583058934618
+
+# Hit@k: 1.0 iff any of the top-k grades is positive
+hit_at_k([0, 3], 10)             # 1.0
+
+# Linear-interpolation percentile; p in [0, 100]
+percentile([10.0, 20.0, 30.0, 40.0], 50)  # 25.0
+```
+
+The held-out defaults rule (inclusive at exactly 0.01 on the delta rounded to
+6 decimals — the same arithmetic the sweep tie rule uses):
+
+```python
+warrants_default_change(0.500, 0.510)    # True  (delta exactly 0.01)
+warrants_default_change(0.500, 0.5099)   # False (sub-delta noise)
+```
+
+#### Class: `SearchEvaluator`
+
+```python
+evaluator = SearchEvaluator(fixture, fixture_path=Path("tests/fixtures/bench/queries.json"))
+report = evaluator.report(lambda query: pipeline.search(query, options), k=10)
+# report.ndcg_at_10 / report.hit_at_10 / report.num_queries
+# report.categories["keyword"].ndcg_at_10  (per-category breakdown)
+# report.p50_ms / report.p95_ms warmed; report.cold_start_ms separate
+```
+
+`fixture_path` (never a bare corpus root) lets `resolve_corpus_root` join the
+fixture's declared `corpus_root` so path-keyed relevance joins result paths.
+
+#### Dataclasses: `QueryItem`, `BenchReport`, `ConfigResult`, `SweepRanking`
+
+- `QueryItem` — one query with category, split, and its grade map
+- `BenchReport` — graded report with per-category `CategoryMetrics` and legacy
+  flat metrics merged by `to_dict()`
+- `ConfigResult` — one measured sweep configuration (four-category breakdown,
+  optional rerank `states`); `to_dict()` serializes all four category keys
+- `SweepRanking` — ranked configs plus the explicit tie group and
+  `winner_declared` honesty flag
+
+#### Sweep Engine
+
+```python
+results = [...]  # list[ConfigResult], measured on the tuning split only
+ranking = rank_sweep(results)   # strict < 0.01 tie rule on round(delta, 6)
+ranking.ranked[0]               # best: declared grid order breaks ties
+ranking.tie_group               # configs within 0.01 of the best
+ranking.winner_declared         # False whenever the tie group is plural
+
+list(iter_grid())               # the 45 declared configurations, grid order
+```
+
+CLI surfaces: `sif bench FIXTURE --json` (current-settings baseline),
+`sif bench FIXTURE --sweep --json` (tuning-only grid ranking), and
+`sif bench FIXTURE --sweep --rerank --json` (off/on rerank states per
+configuration). See [Benchmarking](benchmarking.md) for the measurement
+contract and the committed evidence snapshot.
 
 ## Database Module
 
@@ -566,9 +542,11 @@ class DatabaseConnection:
 
 **Usage:**
 ```python
+from pathlib import Path
+
 from sif.database.connection import DatabaseConnection
 
-conn = DatabaseConnection("~/.local/share/sif/sif.db")
+conn = DatabaseConnection(Path("~/.local/share/sif/sif.db").expanduser())
 
 with conn.connect() as db:
     cursor = db.execute("SELECT * FROM collections WHERE name = ?", ("my-notes",))
@@ -678,43 +656,99 @@ class EmbeddingManager:
 
 ## MCP Server Module
 
-### MCPServer
+The MCP server runs on the official MCP Python SDK (`mcp>=2.3.0,<3`). The
+SIF-owned surface is the composition root, the tool registration, and the
+backend; the SDK owns protocol negotiation, sessions, and era routing.
+
+### Composition root (`sif.mcp.app`)
 
 ```python
-from sif.mcp.server import MCPServer
-from sif.mcp.transports.stdio import StdioTransport
-from sif.mcp.transports.http import HTTPTransport
+from collections.abc import Sequence
+
+from fastapi import FastAPI
+from mcp.server import MCPServer
+
+from sif.config.settings import Settings
+
+
+def build_server(
+    db_path: str,
+    settings: Settings | None = None,
+    *,
+    allowed_hosts: Sequence[str] | None = None,
+    cors_origins: Sequence[str] | None = None,
+) -> MCPServer: ...
+
+
+def create_http_app(
+    db_path: str,
+    settings: Settings | None = None,
+    *,
+    cors_origins: Sequence[str] | None = None,
+    allowed_hosts: Sequence[str] | None = None,
+    server: MCPServer | None = None,
+) -> FastAPI: ...
+
+
+def run_stdio(db_path: str, settings: Settings | None = None) -> None: ...
+
+
+def run_http(
+    db_path: str,
+    host: str = "127.0.0.1",
+    port: int = 8080,
+    cors_origins: Sequence[str] | None = None,
+    allowed_hosts: Sequence[str] | None = None,
+    settings: Settings | None = None,
+) -> None: ...
 ```
 
-#### Class: `MCPServer`
+`build_server` constructs the one `MCPServer` for the process and records its
+resolved `TransportSecuritySettings`. `SearchBackend`, the seven tools, and the
+`docs://` resource are created inside the server lifespan, never at import
+time. `create_http_app` mounts the SDK Streamable HTTP app at `/mcp` on a
+FastAPI parent and adds `/health` with a narrow Host guard. Calls to
+`streamable_http_app()` are made exactly once per server.
+
+### Tool registration (`sif.mcp.tools`)
 
 ```python
-class MCPServer:
-    def __init__(self, backend: SearchBackend) -> None: ...
+from mcp.server import MCPServer
 
-    def register_tools(self, tools: list[ToolHandler]) -> None: ...
+from sif.mcp.backend import SearchBackend
 
-    async def handle_request(self, request: JsonRpcRequest) -> JsonRpcResponse: ...
 
-    async def handle_notification(self, notification: JsonRpcNotification) -> None: ...
+def register_tools(mcp: MCPServer, backend: SearchBackend) -> None: ...
+
+
+def register_resource(mcp: MCPServer, backend: SearchBackend) -> None: ...
 ```
 
-Transports wrap a server: `StdioTransport(server, stdin=None, stdout=None)` runs a stdin/stdout loop via `await transport.run()`, and `HTTPTransport(server, host="127.0.0.1", port=3000, cors_origins=None)` serves it with FastAPI via `transport.run()`.
+`register_tools` registers `query`, `get`, `multi_get`, `status`, `metadata`,
+`lex_search`, and `vec_search` — every one annotated `read_only_hint=True`
+and `open_world_hint=False`. Each tool returns a `CallToolResult` with the
+compact JSON text payload and `structured_content`, so legacy clients and
+structured-output clients share one backend model. Expected input failures
+raise `ToolError` with a correctable message.
 
 **Usage:**
+
 ```python
-from sif.mcp.backend import SearchBackend
-from sif.mcp.handlers import create_default_tools
-from sif.mcp.server import MCPServer
-from sif.mcp.transports.stdio import StdioTransport
+from sif.mcp.app import build_server, create_http_app, run_stdio
+from sif.mcp.tools import register_tools
 
-server = MCPServer(SearchBackend("~/.local/share/sif/sif.db"))
-server.register_tools(create_default_tools())
+# stdio host: model-free until the first vector query
+run_stdio("/path/to/sif.db")
 
-transport = StdioTransport(server)
+# HTTP host: /mcp plus /health
+app = create_http_app("/path/to/sif.db")
+
+# The server object for tests or hosted apps; tools register in its lifespan
+server = build_server("/path/to/sif.db")
 ```
 
-Module-level runners wire everything together: `run_stdio_server_sync(db_path)` (also `run_stdio_server`) and `run_http_server(db_path, host, port, cors_origins)`.
+The CLI commands `sif mcp stdio`, `sif mcp http`, and `sif mcp daemon` use
+these entry points; see [MCP Server](mcp-server.md).
 
 ## Examples
 
@@ -722,6 +756,7 @@ Module-level runners wire everything together: `run_stdio_server_sync(db_path)` 
 
 ```python
 import sqlite3
+from pathlib import Path
 
 from sif.core.models import SearchOptions
 from sif.embedding.factory import EmbeddingModelFactory
@@ -736,7 +771,8 @@ embedder = factory.create_model(
     model_name="all-MiniLM-L6-v2",
 )
 
-with sqlite3.connect("~/.local/share/sif/sif.db") as db:
+db_path = Path("~/.local/share/sif/sif.db").expanduser()
+with sqlite3.connect(str(db_path)) as db:
     # HybridSearcher builds BM25Searcher + VectorSearcher and fuses via RRF
     searcher = HybridSearcher(db, embedder=embedder, embedding_dim=384)
 
@@ -784,46 +820,16 @@ manager.add_path(collection.id, "~/Documents/ideas")
 manager.delete_collection(collection.id)
 ```
 
-### Custom Search Strategy Example
-
-```python
-from sif.search.strategy import SearchStrategy, SearchContext
-from sif.models.search import SearchOptions, SearchResult
-
-class CustomSearchStrategy(SearchStrategy):
-    """Custom search strategy example."""
-    
-    def __init__(self, repository):
-        self._repository = repository
-    
-    def search(
-        self,
-        context: SearchContext,
-        options: SearchOptions,
-    ) -> list[SearchResult]:
-        # Custom search logic
-        results = []
-        
-        # ... implement custom search ...
-        
-        return results
-    
-    def search_batch(
-        self,
-        contexts: list[SearchContext],
-        options: SearchOptions,
-    ) -> list[list[SearchResult]]:
-        return [self.search(ctx, options) for ctx in contexts]
-```
-
 ## Type Hints
 
 SIF uses full type hints throughout. Entity IDs are plain `str` values, embeddings are `list[float]`, and search methods return `list[SearchResult]`; the codebase defines no type aliases for these. Extensibility is provided by `Protocol` types such as `Embedder`, `Reranker`, and `QueryExpander` in `sif.core.models`.
 
 ## Error Handling
 
-SIF defines no custom exception hierarchy; it raises built-in exceptions:
+SIF defines a small custom exception hierarchy for service management in `sif.utils.service`, targeted exception types in other modules — `EmbeddingOutputError` (`sif.models.embedding`), `IdentityDimensionError` (`sif.embedding.identity`), `FilterValidationError` (`sif.core.filters`), `MaintenanceBusyError` and `MaintenanceTargetError` (`sif.database.maintenance`), `HeldoutFloorError` (`sif.search.personal_bench`), and `SystemicEmbedError` (`sif.indexing.embed_writer`) — and otherwise raises built-in exceptions:
 
+- `ServiceManagerMissing` (subclass of `RuntimeError`, `sif.utils.service`) is raised when the platform's service-manager binary (`launchctl` on macOS or `systemctl` on Linux) is not on `PATH`.
+- `ServiceCommandError` (subclass of `RuntimeError`, `sif.utils.service`) is raised when a service-manager invocation fails or times out; it carries the failing `argv` and the manager's failure detail.
 - `CollectionManager.create_collection` raises `ValueError` when a collection name already exists.
 - `CollectionManager.update_collection`, `add_path`, and `remove_path` raise `ValueError` when the collection ID is not found; `get_collection` returns `None` instead of raising.
 - `VectorSearcher.__init__` raises `RuntimeError` when the sqlite-vec extension is unavailable.

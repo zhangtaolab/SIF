@@ -2,7 +2,7 @@
 
 from unittest.mock import MagicMock, patch
 
-from click.testing import CliRunner
+from click.testing import CliRunner, Result
 
 from sif.cli.commands.ls import ls_cmd
 
@@ -125,12 +125,13 @@ class TestLsCommand:
         mock_coll = MagicMock()
         mock_coll.id = "coll-notes"
         mock_coll.name = "notes"
+        mock_coll.path = "/data/notes"
 
         mock_doc_x = MagicMock()
-        mock_doc_x.path = "ideas/x.md"
+        mock_doc_x.path = "/data/notes/ideas/x.md"
 
         mock_doc_y = MagicMock()
-        mock_doc_y.path = "done/y.md"
+        mock_doc_y.path = "/data/notes/done/y.md"
 
         mock_index_path = MagicMock()
         mock_index_path.exists.return_value = True
@@ -183,3 +184,101 @@ class TestLsCommand:
 
         assert result.exit_code != 0
         assert "not found" in result.output
+
+    def _invoke_ls(self, root: str, doc_paths: list[str], args: list[str]) -> Result:
+        """Invoke ls with one mocked collection rooted at root and absolute doc paths."""
+        runner = CliRunner()
+
+        mock_coll = MagicMock()
+        mock_coll.id = "coll-notes"
+        mock_coll.name = "notes"
+        mock_coll.path = root
+
+        mock_docs = []
+        for path in doc_paths:
+            mock_doc = MagicMock()
+            mock_doc.path = path
+            mock_docs.append(mock_doc)
+
+        mock_index_path = MagicMock()
+        mock_index_path.exists.return_value = True
+
+        with (
+            patch("sif.cli.commands.ls.Database") as mock_db_cls,
+            patch("sif.cli.commands.ls.DocumentRepository") as mock_doc_repo_cls,
+            patch("sif.cli.commands.ls.CollectionRepository") as mock_coll_repo_cls,
+        ):
+            mock_db = MagicMock()
+            mock_db.connection.__enter__ = MagicMock(return_value=mock_db.connection)
+            mock_db.connection.__exit__ = MagicMock(return_value=False)
+            mock_db_cls.return_value = mock_db
+
+            mock_coll_repo = MagicMock()
+            mock_coll_repo.get_by_name.return_value = mock_coll
+            mock_coll_repo_cls.return_value = mock_coll_repo
+
+            mock_doc_repo = MagicMock()
+            mock_doc_repo.list_by_collection.return_value = mock_docs
+            mock_doc_repo_cls.return_value = mock_doc_repo
+
+            return runner.invoke(ls_cmd, args, obj={"index_path": mock_index_path})
+
+    def test_ls_subpath_is_segment_aligned(self) -> None:
+        """Relative subpath resolves against the collection root, whole segments only."""
+        result = self._invoke_ls(
+            "/data/notes",
+            ["/data/notes/python/a.md", "/data/notes/python2/b.md"],
+            ["notes", "python"],
+        )
+
+        assert result.exit_code == 0
+        assert "a.md" in result.output
+        assert "b.md" not in result.output
+
+    def test_ls_subpath_absolute_is_segment_aligned(self) -> None:
+        """Absolute subpath matches whole segments, never a sibling prefix like python2."""
+        result = self._invoke_ls(
+            "/data/notes",
+            ["/data/notes/python/a.md", "/data/notes/python2/b.md"],
+            ["notes", "/data/notes/python"],
+        )
+
+        assert result.exit_code == 0
+        assert "a.md" in result.output
+        assert "b.md" not in result.output
+
+    def test_ls_subpath_exact_file(self) -> None:
+        """An exact-file subpath selects that document only."""
+        result = self._invoke_ls(
+            "/data/notes",
+            ["/data/notes/python/a.md", "/data/notes/python2/b.md"],
+            ["notes", "python/a.md"],
+        )
+
+        assert result.exit_code == 0
+        assert "a.md" in result.output
+        assert "b.md" not in result.output
+
+    def test_ls_subpath_trailing_slash(self) -> None:
+        """A trailing-slash subpath selects the same documents as the bare form."""
+        result = self._invoke_ls(
+            "/data/notes",
+            ["/data/notes/python/a.md", "/data/notes/python2/b.md"],
+            ["notes", "python/"],
+        )
+
+        assert result.exit_code == 0
+        assert "a.md" in result.output
+        assert "b.md" not in result.output
+
+    def test_ls_subpath_no_match_lists_nothing(self) -> None:
+        """A subpath matching nothing exits 0 and lists no documents."""
+        result = self._invoke_ls(
+            "/data/notes",
+            ["/data/notes/python/a.md", "/data/notes/python2/b.md"],
+            ["notes", "missing"],
+        )
+
+        assert result.exit_code == 0
+        assert "a.md" not in result.output
+        assert "b.md" not in result.output

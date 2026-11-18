@@ -1,7 +1,11 @@
 # Makefile for SIF project
 # Provides convenient commands for common development tasks
 
-.PHONY: help install install-dev install-all test test-verbose test-fast docs-test docs-generate lint lint-fix format format-check typecheck coverage clean clean-all build docs pre-commit security all ci dev-setup dev-check update-deps info
+.PHONY: help install install-dev install-all test test-verbose test-fast docs-test docs-generate windows-smoke lint lint-fix format format-check typecheck coverage clean clean-all build docs security all ci dev-setup dev-check update-deps info
+
+# Windows degradation smoke (ENG-02): on-demand run on the hc remote yoga.
+YOGA_DIR ?= D:\Github\SIF
+YOGA_PYTHON ?= 3.12
 
 # Default target
 help:
@@ -19,6 +23,7 @@ help:
 	@echo "  make test-fast    - Run tests without coverage (faster)"
 	@echo "  make docs-test    - Run docs validation tests"
 	@echo "  make docs-generate - Regenerate CLI and config reference docs"
+	@echo "  make windows-smoke - Run the Windows degradation smoke on hc yoga"
 	@echo ""
 	@echo "Code Quality:"
 	@echo "  make lint         - Run linting (ruff check)"
@@ -26,7 +31,6 @@ help:
 	@echo "  make typecheck    - Run type checking (ty)"
 	@echo "  make coverage     - Generate coverage report"
 	@echo "  make security     - Run security scan (bandit)"
-	@echo "  make pre-commit   - Run pre-commit hooks on all files"
 	@echo ""
 	@echo "Build & Release:"
 	@echo "  make build        - Build package distribution"
@@ -44,12 +48,10 @@ install:
 install-dev:
 	@echo "Installing SIF with development dependencies..."
 	pip install -e ".[dev]"
-	pre-commit install
 
 install-all:
 	@echo "Installing SIF with all dependencies..."
 	pip install -e ".[dev,all]"
-	pre-commit install
 
 # Testing targets
 test:
@@ -72,6 +74,17 @@ docs-generate:
 	@echo "Regenerating CLI and configuration reference docs..."
 	python scripts/generate_cli_ref.py
 	python scripts/generate_config_ref.py
+
+# Windows degradation smoke (ENG-02, D-05/D-06/D-07): manual/on-demand only.
+# The yoga checkout sync is a human step; the script prints HEAD and refuses
+# a dirty tree. Fixed argv, fixed host, no shell, no model-loading command.
+windows-smoke:
+	@echo "Running the Windows degradation smoke on hc yoga ($(YOGA_DIR))..."
+	hc exec --on yoga --timeout 120 --cwd '$(YOGA_DIR)' git rev-parse HEAD
+	hc exec --on yoga --timeout 120 --cwd '$(YOGA_DIR)' git status --porcelain
+	hc exec --on yoga --timeout 600 --cwd '$(YOGA_DIR)' uv python install $(YOGA_PYTHON)
+	hc exec --on yoga --timeout 600 --cwd '$(YOGA_DIR)' uv sync --frozen --extra dev
+	hc exec --on yoga --timeout 600 --cwd '$(YOGA_DIR)' uv run --frozen python scripts/windows_smoke.py
 
 # Linting and formatting targets
 lint:
@@ -105,11 +118,6 @@ coverage:
 security:
 	@echo "Running security scan with bandit..."
 	bandit -r src/sif -c pyproject.toml
-
-# Pre-commit hooks target
-pre-commit:
-	@echo "Running pre-commit hooks on all files..."
-	pre-commit run --all-files
 
 # Build target
 build:
@@ -168,7 +176,6 @@ update-deps:
 	@echo "Updating dependencies..."
 	pip install --upgrade pip
 	pip install --upgrade -e ".[dev,all]"
-	pre-commit autoupdate
 
 # Show project info
 info:
@@ -176,4 +183,4 @@ info:
 	@echo "==========================="
 	@echo "Python version: $$(python --version)"
 	@echo "Installed packages:"
-	@pip list | grep -E "(sif|ruff|^ty|pytest|black|bandit)" || true
+	@pip list | grep -E "(sif|ruff|^ty|pytest|bandit)" || true

@@ -54,6 +54,8 @@ class EmbeddingModelFactory:
             n_threads=kwargs.get("n_threads"),
             n_gpu_layers=kwargs.get("n_gpu_layers", 0),
             verbose=kwargs.get("verbose", False),
+            max_tokens=kwargs.get("max_tokens"),
+            batch_size=kwargs.get("batch_size"),
         )
 
     def _create_sentence_transformers_model(
@@ -66,6 +68,10 @@ class EmbeddingModelFactory:
             model_name=model_name,
             device=kwargs.get("device"),
             cache_dir=kwargs.get("cache_dir"),
+            max_tokens=kwargs.get("max_tokens"),
+            batch_size=kwargs.get("batch_size"),
+            query_prompt_name=kwargs.get("query_prompt_name"),
+            document_prompt_name=kwargs.get("document_prompt_name"),
         )
 
     def _create_openai_model(
@@ -101,4 +107,8 @@ class EmbeddingModelFactory:
             model_id=model_name,
             device=kwargs.get("device"),
             cache_dir=kwargs.get("cache_dir"),
+            max_tokens=kwargs.get("max_tokens"),
+            batch_size=kwargs.get("batch_size"),
+            query_prompt_name=kwargs.get("query_prompt_name"),
+            document_prompt_name=kwargs.get("document_prompt_name"),
         )

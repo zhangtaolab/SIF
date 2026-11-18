@@ -1,13 +1,18 @@
-"""Real-file behavior tests for document parsers and their factory."""
+"""Real-file behavior tests for document parsers and their factory.
+
+Checksums follow the D-08 convention (body + canonical full frontmatter, see
+``sif.core.models.compute_checksum``); the old body-only convention is
+intentionally retired. The Markdown body path itself stays byte-identical.
+"""
 
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
+from sif.core.models import compute_checksum
 from sif.indexing.parser import CodeParser, MarkdownParser, TextParser, create_parser
 
 
@@ -29,13 +34,13 @@ class TestDocumentParsers:
         assert result.path == str(file_path.resolve())
         assert result.title == "本地知识库"
         assert result.metadata == {"title": "本地知识库", "author": "测试"}
-        # Checksum covers the parsed body (frontmatter stripped, trailing
-        # whitespace rstripped), matching the storage convention in
-        # core.models.Document.__post_init__ — hashing the whole raw file would
-        # make every stored checksum disagree with the create path and force a
-        # full-library rewrite on every `index update`.
-        assert not result.content.startswith("---")
-        assert result.checksum == hashlib.sha256(result.content.encode("utf-8")).hexdigest()
+        # D-08: change detection hashes the body plus the full canonical
+        # frontmatter dict (sif.core.models.compute_checksum), so a
+        # frontmatter-only edit is visible to the incremental loop. The
+        # body path itself is unchanged: frontmatter is still stripped,
+        # byte for byte, exactly as before the convention change.
+        assert result.content == "# 搜索 🔍\n\n你好世界 Café é"
+        assert result.checksum == compute_checksum(result.content, result.metadata)
         assert result.mtime == file_path.stat().st_mtime
 
     @pytest.mark.parametrize(
@@ -74,6 +79,36 @@ class TestDocumentParsers:
         assert result.metadata == {}
         assert result.title == "Visible title"
 
+    @pytest.mark.parametrize(
+        "frontmatter_title",
+        ["[not, a, string]", "{a: b}", "42"],
+    )
+    def test_non_string_frontmatter_title_falls_back_to_heading(
+        self, tmp_path: Path, frontmatter_title: str
+    ) -> None:
+        """CR-02: only a string frontmatter title is a title; the H1 wins otherwise."""
+        file_path = tmp_path / "typed.md"
+        file_path.write_text(
+            f"---\ntitle: {frontmatter_title}\n---\n# Heading From Body\n\ntext\n",
+            encoding="utf-8",
+        )
+
+        result = MarkdownParser().parse(file_path)
+
+        assert result.title == "Heading From Body"
+        # The raw metadata value stays intact (checksum/storage contract);
+        # only the title projection is coerced.
+        assert not isinstance(result.metadata["title"], str)
+
+    def test_non_string_frontmatter_title_without_heading_uses_stem(self, tmp_path: Path) -> None:
+        """A list/mapping title with no H1 still yields a string title (the stem)."""
+        file_path = tmp_path / "typed-note.md"
+        file_path.write_text("---\ntitle: [a, b]\n---\nbody only\n", encoding="utf-8")
+
+        result = MarkdownParser().parse(file_path)
+
+        assert result.title == "typed-note"
+
     def test_text_uses_first_suitable_nonempty_line(self, tmp_path: Path) -> None:
         """Text parsing skips blank and overlong title candidates."""
         file_path = tmp_path / "notes.txt"
@@ -85,7 +120,7 @@ class TestDocumentParsers:
         assert result.content == content
         assert result.title == "Suitable title"
         assert result.metadata == {}
-        assert result.checksum == hashlib.sha256(content.encode()).hexdigest()
+        assert result.checksum == compute_checksum(content, {})
 
     @pytest.mark.parametrize("content", ["", " \n\t\n", "x" * 100])
     def test_text_without_suitable_title_uses_stem(self, tmp_path: Path, content: str) -> None:
@@ -134,6 +169,76 @@ class TestDocumentParsers:
         assert result.title == "extension"
         assert result.metadata == {"language": "text"}
 
+    def test_factory_dispatches_python_docstring_title_fixture(self, tmp_path: Path) -> None:
+        """`.py` dispatches to CodeParser, which titles from the module docstring."""
+        file_path = tmp_path / "tool.py"
+        content = '"""Command line helpers."""\n\nprint("ok")\n'
+        file_path.write_text(content, encoding="utf-8")
+
+        parser = create_parser(file_path)
+        assert isinstance(parser, CodeParser)
+        result = parser.parse(file_path)
+
+        assert result.title == "Command line helpers."
+        assert result.content == content
+        assert result.metadata == {"language": "python"}
+
+    def test_factory_dispatches_text_first_line_title_fixture(self, tmp_path: Path) -> None:
+        """`.txt` dispatches to TextParser, which titles from the first suitable line."""
+        file_path = tmp_path / "notes.txt"
+        content = "\nMeeting notes\nAgenda item one\n"
+        file_path.write_text(content, encoding="utf-8")
+
+        parser = create_parser(file_path)
+        assert isinstance(parser, TextParser)
+        result = parser.parse(file_path)
+
+        assert result.title == "Meeting notes"
+        assert result.content == content
+        assert result.metadata == {}
+
+    def test_factory_dispatches_markdown_frontmatter_stripped_fixture(self, tmp_path: Path) -> None:
+        """`.md` keeps the pre-D-08 byte-identical body path (frontmatter stripped)."""
+        file_path = tmp_path / "note.md"
+        original = "---\ntitle: Kept\n---\n# Heading\n\nBody text.\n"
+        file_path.write_text(original, encoding="utf-8")
+
+        parser = create_parser(file_path)
+        assert isinstance(parser, MarkdownParser)
+        result = parser.parse(file_path)
+
+        assert result.title == "Kept"
+        assert result.content == "# Heading\n\nBody text."
+        assert result.metadata == {"title": "Kept"}
+
+    @pytest.mark.parametrize(
+        ("name", "content"),
+        [
+            ("frontmatter_only.yaml", "---\na: 1\n---\n"),
+            ("two_blocks.yaml", "---\nfirst: doc\n---\nsecond: doc\n"),
+            ("no_close.yml", "---\na: 1\nb: 2\n"),
+        ],
+    )
+    def test_yaml_leading_separator_is_parsed_as_whole_file(
+        self, tmp_path: Path, name: str, content: str
+    ) -> None:
+        """A `.yaml` starting with `---` is code, never Markdown frontmatter.
+
+        `frontmatter.loads` would swallow the first block or truncate the file
+        after the closing delimiter (Pitfall 9); `create_parser` routes
+        `.yaml/.yml` to CodeParser, which stores the whole file.
+        """
+        file_path = tmp_path / name
+        file_path.write_text(content, encoding="utf-8")
+
+        parser = create_parser(file_path)
+        assert isinstance(parser, CodeParser)
+        result = parser.parse(file_path)
+
+        assert result.content == content
+        assert result.content.strip()  # non-empty body for every form
+        assert result.metadata == {"language": "yaml"}
+
     @pytest.mark.parametrize(
         ("suffix", "parser_type"),
         [
@@ -141,6 +246,8 @@ class TestDocumentParsers:
             (".markdown", MarkdownParser),
             (".mdx", MarkdownParser),
             (".js", CodeParser),
+            (".yaml", CodeParser),
+            (".yml", CodeParser),
             (".txt", TextParser),
             (".rst", TextParser),
             (".adoc", TextParser),

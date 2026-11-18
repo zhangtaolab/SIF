@@ -12,17 +12,24 @@ from rich.console import Console
 from rich.table import Table
 
 from sif import __version__
+from sif.cli.error_handling import open_initialized_database
 from sif.config.settings import get_settings
 from sif.database.database import Database
+from sif.database.maintenance import reconcile_embedded_documents
+from sif.database.repositories import LLMCacheRepository
+from sif.search.staleness import embedded_document_ids
+from sif.utils import daemon
 from sif.utils.logging import get_logger, setup_logging
 
 
 logger = get_logger(__name__)
 console = Console()
+# stderr console: startup notices that must never reach the stdio JSON-RPC
+# protocol channel (D-16, 22-RESEARCH.md Pitfall 8).
+console_err = Console(stderr=True)
 
 # Default paths
 DEFAULT_INDEX_PATH = Path.home() / ".local" / "share" / "sif" / "sif.db"
-DEFAULT_CONFIG_PATH = Path.home() / ".config" / "sif"
 
 
 def _get_default_db_path() -> str:
@@ -39,6 +46,17 @@ def _get_default_db_path() -> str:
         raise click.ClickException(str(e)) from e
 
 
+def _settings_log_level() -> str:
+    """Resolve the configured log level, falling back to INFO on bad config."""
+    try:
+        settings = get_settings()
+    except ValidationError:
+        return "INFO"
+    if settings.debug:
+        return "DEBUG"
+    return settings.log_level
+
+
 @click.group()
 @click.version_option(version=__version__, prog_name="sif")
 @click.option(
@@ -48,24 +66,17 @@ def _get_default_db_path() -> str:
     default=_get_default_db_path,
     help="Path to the index database",
 )
-@click.option(
-    "--config",
-    "-c",
-    type=click.Path(),
-    default=str(DEFAULT_CONFIG_PATH),
-    help="Path to the configuration file",
-)
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose output")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress non-error output")
 @click.pass_context
-def cli(ctx: click.Context, index: str, config: str, verbose: bool, quiet: bool) -> None:
+def cli(ctx: click.Context, index: str, verbose: bool, quiet: bool) -> None:
     """SIF - Search / Index / Find - Local document search engine.
 
     SIF indexes your documents and enables fast, intelligent search
     using BM25, vector similarity, and hybrid approaches.
     """
-    # Setup logging
-    log_level = "DEBUG" if verbose else ("WARNING" if quiet else "INFO")
+    # Setup logging: explicit flags win, then SIF_DEBUG / SIF_LOG_LEVEL.
+    log_level = "DEBUG" if verbose else ("WARNING" if quiet else _settings_log_level())
     setup_logging(log_level)
 
     # Ensure context object exists
@@ -73,26 +84,30 @@ def cli(ctx: click.Context, index: str, config: str, verbose: bool, quiet: bool)
 
     # Store options in context
     ctx.obj["index_path"] = Path(index).expanduser()
-    ctx.obj["config_path"] = Path(config).expanduser()
     ctx.obj["verbose"] = verbose
     ctx.obj["quiet"] = quiet
 
-    # Create index directory if needed
-    ctx.obj["index_path"].parent.mkdir(parents=True, exist_ok=True)
+    # Index-parent creation belongs to Database.__init__ inside the shared
+    # DB-open boundary, so guarded read-only commands create nothing.
 
 
 # Import and register subcommands after cli group to avoid circular imports
 from sif.cli.commands.bench import bench_cmd  # noqa: E402
 from sif.cli.commands.collection import collection_group  # noqa: E402
 from sif.cli.commands.context import context_group  # noqa: E402
+from sif.cli.commands.eval import eval_group  # noqa: E402
 from sif.cli.commands.get import get_group  # noqa: E402
 from sif.cli.commands.index import index_group  # noqa: E402
 from sif.cli.commands.ls import ls_cmd  # noqa: E402
 from sif.cli.commands.mcp import mcp_group  # noqa: E402
+from sif.cli.commands.models import models_group  # noqa: E402
 from sif.cli.commands.pull import pull_cmd  # noqa: E402
 from sif.cli.commands.search import search_group  # noqa: E402
+from sif.cli.commands.suggest import suggest_cmd  # noqa: E402
+from sif.cli.commands.watch import watch_cmd  # noqa: E402
 
 
+cli.add_command(models_group)
 cli.add_command(collection_group)
 cli.add_command(context_group)
 cli.add_command(index_group)
@@ -102,6 +117,58 @@ cli.add_command(mcp_group)
 cli.add_command(ls_cmd)
 cli.add_command(pull_cmd)
 cli.add_command(bench_cmd)
+cli.add_command(eval_group)
+cli.add_command(suggest_cmd)
+cli.add_command(watch_cmd)
+
+
+def _watch_status_text(index_path: Path) -> str:
+    """Watch-section value for the status table (D-08).
+
+    Sourced from the daemon PID file payload plus an identity-corroborated
+    liveness probe. Foreground watch and MCP hosts are deliberately
+    untracked (they own their terminals / are client-spawned and plural) —
+    status honestly reports what it knows. A stale or garbage payload
+    reports not-running and cleans the file up (metadata only — safe).
+    """
+    pid_path = daemon.pid_path_for(index_path)
+    payload = daemon.read_pid_file(pid_path)
+    if payload is None:
+        if pid_path.exists():
+            daemon.remove_pid_file(pid_path)
+            return "not running (stale PID file removed)"
+        return "not running"
+    if not daemon.corroborate_pid(payload):
+        daemon.remove_pid_file(pid_path)
+        return "not running (stale PID file removed)"
+    return f"running — {payload['mode']} · PID {payload['pid']} · {payload['depth']}"
+
+
+def _vector_lag_text(conn: sqlite3.Connection) -> str:
+    """Vector-lag value for the status table (D-10, CORR-06).
+
+    Same derived signal as the result marker (D-08): a document lags the
+    vector index when it has no row in the derived ``embedded_documents``
+    shadow (a shadow row means at least one stored embedding). ``None``
+    (vec0 or shadow table missing) renders ``n/a``; an embeddings-free index
+    renders the no-vectors state so pure-BM25 users are not nagged. The
+    lagging count is one indexed anti-join over ``documents`` — replacing the
+    old per-document iteration, so status no longer scans
+    ``document_embeddings``.
+    """
+    embedded = embedded_document_ids(conn)
+    if embedded is None:
+        return "n/a"
+    if not embedded:
+        return "none (no vectors indexed)"
+    row = conn.execute(
+        "SELECT COUNT(*) FROM documents d WHERE NOT EXISTS ("
+        "SELECT 1 FROM embedded_documents ed WHERE ed.document_id = d.id)"
+    ).fetchone()
+    lagging = row[0]
+    if lagging == 1:
+        return "1 document"
+    return f"{lagging} documents"
 
 
 @cli.command("status")
@@ -111,15 +178,18 @@ def status_cmd(ctx: click.Context) -> None:
     ctx.ensure_object(dict)
     index_path = ctx.obj.get("index_path")
     if index_path is None:
-        index_path = get_settings().get_db_path()
+        # IN-06: same ValidationError-to-ClickException guard as _get_default_db_path.
+        try:
+            index_path = get_settings().get_db_path()
+        except ValidationError as e:
+            raise click.ClickException(str(e)) from e
 
     if not index_path.exists():
         console.print("[yellow]No index found. Run 'sif index update' to create one.[/yellow]")
         return
 
     try:
-        with Database(index_path) as db:
-            db.init_schema()
+        with open_initialized_database(index_path, Database) as db:
             stats = db.get_stats()
 
             table = Table(title="Index Status")
@@ -137,10 +207,29 @@ def status_cmd(ctx: click.Context) -> None:
                 size_mb = total_size / (1024 * 1024)
                 table.add_row("Total Size", f"{size_mb:.2f} MB")
 
+            # Watch section (D-08): one row sourced from the daemon PID file.
+            # Metadata display must never take the status command down, so
+            # any unexpected failure renders as not-running instead.
+            try:
+                watch_text = _watch_status_text(Path(index_path))
+            except Exception:
+                logger.debug("Watch status probe failed", exc_info=True)
+                watch_text = "not running"
+            table.add_row("Watch", watch_text)
+
+            # Vector lag (D-10): index-level vector lag at a glance, derived
+            # from the same embedding scan as the result marker. Same
+            # degrade-never-fail contract as the Watch row above.
+            try:
+                vector_lag_text = _vector_lag_text(db.connection)
+            except Exception:
+                logger.debug("Vector lag probe failed", exc_info=True)
+                vector_lag_text = "n/a"
+            table.add_row("Vector lag", vector_lag_text)
+
             console.print(table)
 
-    except Exception as e:
-        console.print(f"[red]Error reading index: {e}[/red]")
+    except (sqlite3.Error, OSError) as e:
         raise click.ClickException(str(e)) from e
 
 
@@ -156,9 +245,7 @@ def cleanup_cmd(ctx: click.Context) -> None:
         return
 
     try:
-        with Database(index_path) as db:
-            db.init_schema()
-
+        with open_initialized_database(index_path, Database) as db:
             with db.transaction() as conn:
                 # Clean up orphaned chunks
                 cursor = conn.execute("""
@@ -177,25 +264,25 @@ def cleanup_cmd(ctx: click.Context) -> None:
                 except sqlite3.OperationalError:
                     embeddings_removed = 0
 
-                # Clean up expired LLM cache
-                from datetime import datetime, timezone  # noqa: PLC0415
+                # D-10: repair the derived shadow in the SAME transaction so a
+                # raw vector delete or a document delete without a purge can
+                # never leave a stale or missing marker after cleanup. The
+                # helper is a no-op when the shadow table does not exist.
+                shadow_deleted, shadow_inserted = reconcile_embedded_documents(conn)
 
-                cursor = conn.execute(
-                    """
-                    DELETE FROM llm_cache
-                    WHERE expires_at IS NOT NULL AND expires_at <= ?
-                """,
-                    (datetime.now(timezone.utc).isoformat(),),
-                )
-                cache_removed = cursor.rowcount
+                # Clean up expired LLM cache (WR-09: datetime comparison in the repository)
+                cache_removed = LLMCacheRepository(conn).clear_expired()
 
             console.print("[green]Cleanup complete:[/green]")
             console.print(f"  - Removed {chunks_removed} orphaned chunks")
             console.print(f"  - Removed {embeddings_removed} orphaned embeddings")
+            console.print(
+                "  - Reconciled embedded-document markers: "
+                f"{shadow_deleted} removed, {shadow_inserted} added"
+            )
             console.print(f"  - Removed {cache_removed} expired cache entries")
 
-    except Exception as e:
-        console.print(f"[red]Error during cleanup: {e}[/red]")
+    except (sqlite3.Error, OSError) as e:
         raise click.ClickException(str(e)) from e
 
 
@@ -207,7 +294,9 @@ def main() -> None:
     if old_model_dir.exists() and not new_model_dir.exists():
         new_model_dir.parent.mkdir(parents=True, exist_ok=True)
         old_model_dir.rename(new_model_dir)
-        console.print("[green]Migrated: ~/.local/share/docsift -> ~/.local/share/sif[/green]")
+        # stderr: this runs before ``sif mcp stdio`` diverts fd 1, so a stdout
+        # print here would be parsed as a JSON-RPC frame by the client.
+        console_err.print("[green]Migrated: ~/.local/share/docsift -> ~/.local/share/sif[/green]")
 
     cli()
 

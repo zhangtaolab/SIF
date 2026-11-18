@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "docsif"
-version = "1.0.1"
+dynamic = ["version"]
 description = "DocSIF - Local hybrid search engine for personal knowledge bases"
 readme = "README.md"
 license = {text = "MIT"}
@@ -21,6 +21,7 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Utilities",
 ]
@@ -35,8 +36,10 @@ dependencies = [
     "pydantic-settings>=2.0.0",
     "fastapi>=0.100.0",
     "uvicorn>=0.20.0",
-    "watchdog>=3.0.0",
+    "watchdog>=4.0.0,<7.0.0",
     "numpy>=1.24.0",
+    "rapidfuzz>=3.14.5,<4",
+    "mcp>=2.3.0,<3",
 ]
 
 [project.optional-dependencies]
@@ -44,18 +47,21 @@ dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
     "pytest-asyncio>=0.23.0",
-    "black>=23.0.0",
     "ruff>=0.1.0",
     "ty>=0.0.1",
 ]
 embed = [
-    "sentence-transformers>=2.2.0",
+    "sentence-transformers>=5.4.1",
+    "torch",
     "modelscope>=1.36.0",
     "numpy>=1.24.0",
 ]
 openai = [
     "openai>=2.0.0",
 ]
+# Deprecated compatibility aliases: `mcp` is a core dependency now and the
+# SDK shell ships with it. Both extras stay installable (uvicorn only) so
+# existing `pip install docsif[mcp]` / `docsif[http]` commands keep working.
 mcp = [
     "uvicorn>=0.20.0",
 ]
@@ -63,8 +69,9 @@ http = [
     "uvicorn>=0.20.0",
 ]
 all = [
-    "sentence-transformers>=2.2.0",
-    "llama-cpp-python>=0.2.0",
+    "sentence-transformers>=5.4.1",
+    "torch",
+    "llama-cpp-python>=0.3.35",
     "modelscope>=1.36.0",
     "numpy>=1.24.0",
     "openai>=2.0.0",
@@ -78,12 +85,21 @@ Homepage = "https://github.com/zhangtaolab/sif"
 Documentation = "https://sif.readthedocs.io"
 Repository = "https://github.com/zhangtaolab/sif"
 
+[tool.hatch.version]
+path = "src/sif/_version.py"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/sif"]
 
-[tool.black]
-line-length = 100
-target-version = ["py310", "py311", "py312"]
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [
+  { index = "pytorch-cpu", marker = "sys_platform == 'linux'" },
+]
 
 [tool.ruff]
 target-version = "py310"
@@ -113,6 +129,7 @@ exclude = [
     ".pytest_cache",
     ".coverage",
     "htmlcov",
+    ".planning",
 ]
 
 [tool.ruff.lint]
@@ -180,6 +197,7 @@ docstring-quotes = "double"
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*" = ["D", "S101", "PLR2004", "SLF001", "T201", "PLC0415", "SIM117", "PLR0913"]
 "src/sif/cli/*.py" = ["T20"]
+"examples/**/*" = ["T20", "PLC0415"]
 "__init__.py" = ["D104"]
 
 [tool.ruff.format]

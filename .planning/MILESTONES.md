@@ -1,5 +1,39 @@
 # Milestones
 
+## v1.1 Live Index and Search Quality (Shipped: 2026-11-12)
+
+**Phases completed:** 7 phases, 27 plans, 67 tasks
+
+**Key accomplishments:**
+- One shared SQLite connection factory (busy_timeout→WAL→synchronous + implicit BEGIN IMMEDIATE) for both CLI and MCP paths, plus kernel-flock per-DB single-writer arbitration proven end-to-end with deterministic two-writer subprocess tests
+- Per-file incremental indexing core (IncrementalIndexer) extracted from update_cmd into one shared presentation-free loop with per-file BEGIN IMMEDIATE transactions (D-04), proven golden-equivalent on index state and CLI output (SC3)
+- Dead third copy of the indexing loop retired (DocumentIndexer module + ConnectionPool + duplicate DatabaseConnection, D-07) and embed_cmd brought under the same per-DB flock as update_cmd (D-01), closing the phase with the full quality gate green (SC4)
+- End-to-end `sif watch` slice: observer -> EventDebouncer -> fold -> worker -> per-burst flock -> update_paths, proven by a real-subprocess e2e test plus the shared-predicate, missing-root-guard, and watchdog-cap landings
+- Complete foreground host around the 12-01 pipeline: tiered --embed depth with embedding computed outside any write transaction, signal-driven shutdown with WAL truncate checkpoint, repeatable -c filtering, and missing-root recovery — all unit-proven with machine-verified TDD gates
+- Real-FS e2e battery proving every Phase 12 SC against the real CLI subprocess (edit/delete, os.replace atomic save, temp-noise exclusion, missing-root recovery, SIGINT/SIGTERM exit 0 with a demonstrated 0-byte WAL), plus generator-only docs regeneration that turns the full quality gate green with nothing deselected
+- FileWatcher grown into the long-lived-host substrate: live rescope of the watched collection set (exact-set diff, reconcile-on-add, documents preserved on removal), idle PRAGMA wal_checkpoint(TRUNCATE) riding the tick with busy/recent-burst skips, and ENOSPC schedule failures that warn once with the inotify remedy — plus the mcp_watch/rescope/checkpoint settings fields.
+- `sif watch --detach` backgrounds the proven Phase 12 host through a stdlib double-fork with a deterministic pipe handshake (PID reported only once armed), `--stop` corroborates identity via ps argv markers before SIGTERM→bounded-wait→SIGKILL escalation, and `sif status` gains a Watch row — with the SC4 SIGKILL/re-detach proof that kernel-released flock leaves no stale lock.
+- The proven FileWatcher now lives inside the MCP server under SIF_MCP_WATCH=1 — one shared watch host (BM25-only depth, logger-only output, serve-first queued reconcile, rescope) wired around the stdio serve loop and into the HTTP transport via a FastAPI lifespan, proven by a real stdio subprocess e2e that answers queries while indexing a live burst with a 100% JSON-clean stdout.
+- `sif watch --install-service/--uninstall-service` generates a launchd LaunchAgent or systemd user unit that runs the FOREGROUND watcher under the OS supervisor with the install-time `-c/--embed` flags baked into an absolute-interpreter argv (SC3, never forks), installs it with explicit-argv manager calls (bootstrap/bootout-retry or daemon-reload/enable --now, verified, friendly missing-binary errors), and the generator-owned docs are regenerated to tell the whole LIVE-09 story — with a real launchd round-trip proven live twice on this machine.
+- Stat-walk drift detection (mtime vs documents) + capped BM25-only refresh in the search trio's command layer — `sif search` now finds post-index edits with no watch running, and a clean index pays zero writes, zero locks, zero notices.
+- Derived vector-staleness marking on every search surface: a corrected "no embeddings" D-08 signal computed in the shared searcher enrichment path, forwarded through MCP metadata, plus a `sif status` Vector lag row — zero schema change, zero new dependencies.
+- The staleness marker renders on all five CLI output surfaces — dim `(stale vectors)` table annotation (no new column), CSV `vectors_stale` column, Markdown annotation, XML boolean attribute, JSON via `to_dict()` — plus the one-line stderr `sif index embed` remedy hint, so no format silently drops the signal (D-12/D-13, SC3).
+- Weighted RRF fusion (weights/k in multiply form, byte-identical at defaults) plumbed end-to-end: `sif query` flags, SIF_ settings, and MCP query params all resolve into SearchOptions and reach RRFFusion.fuse — with golden tests pinning repr-exact default output on a real-DB fixture.
+- FTS5 vocab shadow + SuggestionEngine (prefix completions, per-word DYM rewrites with an SC2 pin, frequency×recency history) + capped aware-UTC query_log storage — the one engine three hosts wire in 15-03.
+- `sif suggest`'s three-section table/JSON surface, zero-result did-you-mean across all three CLI searches and the MCP query tool (stdout-pure, conditional JSON object), and fail-soft query-history writes with opt-out and a single clear path — phase gate green at 94.85% coverage.
+- nDCG@10/Hit@10 with per-category breakdown, warmed p50/p95 latency, and a settings-resolved baseline layered onto `SearchEvaluator`/`sif bench` — legacy flat metrics byte-compatible
+- SIF_RERANK_ENABLED (default false) + --rerank make rerank explicit; SIF_RERANK_CANDIDATE_LIMIT (5-50) and SIF_RERANK_RELATIVE_THRESHOLD ((0,1]) are Pydantic-validated; the shipped -C flag resolves through the shared `resolve_candidate_limit` clamp
+- Deterministic ConceptEmbedder + direct-DB builder, and a committed 150-doc synthetic corpus with 56 graded queries (36 tuning / 20 held-out) regenerated byte-identically by a seeded drift-gated generator — proven retrievable and CLI-joined with non-zero nDCG@10
+- 45-config declared-grid sweep with the rounded-delta 0.01 tie rule (tuning-only, embedding-once, settings baseline with exact-zero deltas) plus bench rerank off/on states strictly additive to the pinned flat --json contract
+- Shipped defaults locked to a committed held-out snapshot (nDCG@10 0.8120 reproducing exactly, sweep winner's +0.0066 delta honestly below the 0.01 bar -> verdict "unchanged") with the full measurement system documented in docs-validated docs/benchmarking.md
+- Class-injected `open_initialized_database` boundary converts foreseeable DB failures to remedy-bearing Click errors end-to-end on index update/embed, plus constructor-only sqlite-vec guards on vsearch/query and suggest opener adoption — 7 of 30 convention sites, tracer-proven before Plan 02's sweep.
+- All 30 CLI DB open/schema sites now route through the Plan 01 shared boundary — 23 converted here (collection/context/get/ls/bench/watch/main), the daemon arm() site via the unmanaged variant, status/cleanup handlers narrowed to D-04 known classes with pure stdout, and an AST inventory gate that structurally forbids future direct init_schema in CLI code.
+- LLM cache get() now compares parsed aware-UTC instants through one shared expiry parser (legacy naive-local rows read correctly east AND west of UTC), and every embedding-cache connection comes from the Phase 11 factory — 14-WR-03 read side and W-1 closed with zero migration and byte-identical fail-soft fallbacks.
+- FileWatcher.enqueue_reconcile(collections: Iterable[Collection]) — narrow public reconcile-intent API replacing the MCP host's private-queue reach-in, with all three reconcile producers routed and serve-first ordering pinned at unit and protocol level
+- Closed 11-WR-03 and 14-WR-02/03/04 with plan-and-test Source evidence, preserved 15-IN-06 as an explicit partial closure, and re-proved the entire phase with 1586 passing tests, 95.17% coverage, clean static gates, and byte-identical generated docs.
+
+---
+
 ## v1.0 MVP — qmd 功能对等的本地混合搜索引擎 (Shipped: 2026-11-07)
 
 **Phases completed:** 11 phases, 68 plans, 112 tasks

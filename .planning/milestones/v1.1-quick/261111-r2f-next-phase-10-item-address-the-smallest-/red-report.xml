@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="0.071" timestamp="2026-11-11T19:45:34.246254+08:00" hostname="Mac-Studio.local"><testcase classname="tests.unit.cli.test_bench.TestBenchCommand" name="test_bench_fixture_open_pins_utf8_encoding" time="0.006"><failure message="AssertionError: assert None == 'utf-8'&#10; +  where None = &lt;built-in method get of dict object at 0x1159aca40&gt;('encoding')&#10; +    where &lt;built-in method get of dict object at 0x1159aca40&gt; = {}.get">self = &lt;tests.unit.cli.test_bench.TestBenchCommand object at 0x1159d9010&gt;
+tmp_path = PosixPath('/private/var/folders/1q/2qhztsp1673fnqgrpblxnpd40000gn/T/pytest-of-forrest/pytest-346/test_bench_fixture_open_pins_u0')
+
+    def test_bench_fixture_open_pins_utf8_encoding(self, tmp_path: Path) -&gt; None:
+        """Pin the WR-06 encoding sub-item via a locale-independent open contract.
+    
+        A functional non-ASCII fixture test would be vacuous on UTF-8 locales
+        (the locale default already decodes UTF-8), so this spies on
+        builtins.open and asserts the fixture open carries encoding="utf-8".
+        """
+        runner = CliRunner()
+    
+        fixture = {
+            "queries": [
+                {"query": "test", "relevant_docids": ["doc-1"]},
+            ],
+        }
+        fixture_path = tmp_path / "fixture.json"
+        fixture_path.write_text(json.dumps(fixture), encoding="utf-8")
+    
+        real_open = builtins.open
+        fixture_opens: list[dict] = []
+    
+        def spy_open(file: object, *args: object, **kwargs: object) -&gt; object:
+            """Record the fixture open's kwargs; delegate every call unchanged."""
+            if isinstance(file, (str, os.PathLike)) and os.fspath(file) == str(fixture_path):
+                fixture_opens.append(kwargs)
+            return real_open(file, *args, **kwargs)
+    
+        mock_pipeline = MagicMock()
+        mock_pipeline.search.return_value = [
+            MagicMock(document_id="doc-1"),
+        ]
+    
+        mock_db = MagicMock()
+        mock_manager = MagicMock()
+        mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager._model = MagicMock()
+    
+        with (
+            patch("sif.cli.commands.bench.Database", return_value=mock_db),
+            patch(
+                "sif.cli.commands.bench.EmbeddingManager.from_settings",
+                return_value=mock_manager,
+            ),
+            patch("sif.cli.commands.bench.SearchPipeline", return_value=mock_pipeline),
+            patch("sif.cli.commands.bench.get_settings", return_value=_settings_mock()),
+            patch("builtins.open", spy_open),
+        ):
+            result = runner.invoke(
+                bench_cmd,
+                [str(fixture_path)],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+    
+        assert result.exit_code == 0
+        assert len(fixture_opens) == 1
+&gt;       assert fixture_opens[0].get("encoding") == "utf-8"
+E       AssertionError: assert None == 'utf-8'
+E        +  where None = &lt;built-in method get of dict object at 0x1159aca40&gt;('encoding')
+E        +    where &lt;built-in method get of dict object at 0x1159aca40&gt; = {}.get
+
+tests/unit/cli/test_bench.py:586: AssertionError</failure></testcase></testsuite></testsuites>

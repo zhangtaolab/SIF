@@ -9,6 +9,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from sif.config.constants import APP_NAME, DEFAULT_CHUNK_OVERLAP, DEFAULT_CHUNK_SIZE
 
 
+# Reranker candidate cap bounds (Phase 16, D-10). The Settings field and
+# every CLI resolution path clamp into this range, so no rerank invocation
+# can exceed the 50-candidate maximum (the shipped -C Click range is wider).
+RERANK_CANDIDATE_LIMIT_MIN: int = 5
+RERANK_CANDIDATE_LIMIT_MAX: int = 50
+
+
 class Settings(BaseSettings):
     """Application settings using Pydantic Settings.
 
@@ -32,6 +39,72 @@ class Settings(BaseSettings):
     db_path: Path | None = Field(
         default=None,
         description="Path to SQLite database file",
+    )
+    lock_wait_timeout: float = Field(
+        default=30.0,
+        ge=0,
+        description="Seconds an index writer waits for a competing writer's "
+        "lock before proceeding with its own pass anyway",
+    )
+
+    # Watch settings (Phase 12 live index)
+    watch_debounce_interval: float = Field(
+        default=0.5,
+        gt=0,
+        description="Quiet window in seconds a filesystem event burst must "
+        "settle for before `sif watch` runs one incremental update",
+    )
+    watch_ignore_patterns: list[str] = Field(
+        default_factory=list,
+        description="Global ignore-pattern additions applied to the shared "
+        "scan/watch predicate (extends the scanner defaults for both)",
+    )
+    watch_update_depth: str = Field(
+        default="bm25",
+        description="Default update depth for `sif watch`: 'bm25' (FTS only) or "
+        "'embed' (also write vectors for changed documents); the --embed / "
+        "--no-embed flags override it",
+    )
+    watch_restat_interval: float = Field(
+        default=5.0,
+        ge=0.1,
+        description="Seconds between re-stat checks for watched collection roots "
+        "that went missing while `sif watch` runs",
+    )
+    mcp_watch: bool = Field(
+        default=False,
+        description="Run the index watcher inside the MCP server so assistant "
+        "queries hit a fresh index (opt-in via SIF_MCP_WATCH=1; both "
+        "transports, BM25-only by design)",
+    )
+    watch_rescope_interval: float = Field(
+        default=60.0,
+        ge=1,
+        description="Seconds between collections-table rescope polls riding the "
+        "watch tick in long-lived hosts; added collections start watching, "
+        "removed ones stop",
+    )
+    watch_checkpoint_interval: float = Field(
+        default=300.0,
+        ge=0,
+        description="Seconds between idle WAL checkpoint attempts in long-lived "
+        "hosts; 0 disables (shutdown checkpointing stays the final word)",
+    )
+
+    # Pre-search drift refresh (Phase 14 freshness floor, LIVE-10)
+    search_refresh_enabled: bool = Field(
+        default=True,
+        description="Stat-walk the searched collections before `sif search`/"
+        "`vsearch`/`query` and BM25-refresh drifted files (never embeddings); "
+        "disable to search the index exactly as stored",
+    )
+    search_refresh_max_files: int = Field(
+        default=100,
+        ge=1,
+        description="Upper bound on drifted files one pre-search refresh may "
+        "re-index; above it nothing is refreshed and search proceeds on the "
+        "current index with a warning (so a branch switch never becomes a "
+        "hidden full reindex)",
     )
 
     # Model settings
@@ -77,8 +150,46 @@ class Settings(BaseSettings):
         default=None,
         description="Base URL for remote embedding API",
     )
+    query_prompt_name: str | None = Field(
+        default=None,
+        description="Query-role prompt name passed to the embedding backend; "
+        "unset uses the known-model default, an empty string disables it",
+    )
+    document_prompt_name: str | None = Field(
+        default=None,
+        description="Document-role prompt name passed to the embedding backend; "
+        "unset uses the known-model default, an empty string disables it",
+    )
 
     # Reranker settings
+    # D-12 (Phase 16): rerank is opt-in. The False default keeps `sif search
+    # query` on the zero-cost skip-rerank fast path — no reranker model is
+    # constructed unless --rerank or SIF_RERANK_ENABLED=1 requests it.
+    rerank_enabled: bool = Field(
+        default=False,
+        # Phrasing note: "sif search query" must be followed by whitespace or
+        # the docs gate's bare-command regex (tests/test_docs.py) trips on the
+        # generated configuration.md row.
+        description="Enable reranking on the sif search query command "
+        "(the default keeps the zero-cost skip-rerank fast path; "
+        "pass --rerank or set 1 to enable)",
+    )
+    # D-10 (Phase 16): candidate cap for the enabled rerank path.
+    rerank_candidate_limit: int = Field(
+        default=20,
+        ge=RERANK_CANDIDATE_LIMIT_MIN,
+        le=RERANK_CANDIDATE_LIMIT_MAX,
+        description="Maximum candidates passed to the reranker when reranking is "
+        "enabled; the pipeline over-fetches to this size before capping",
+    )
+    # D-11 (Phase 16): relative score threshold for the enabled rerank path.
+    rerank_relative_threshold: float = Field(
+        default=0.5,
+        gt=0,
+        le=1,
+        description="Keep reranker candidates scoring at least top_score * alpha "
+        "(0 < alpha <= 1); applied after score normalization",
+    )
     reranker_model_name: str = Field(
         default="Qwen/Qwen3-Reranker-0.6B",
         description="Reranker model name",
@@ -101,12 +212,19 @@ class Settings(BaseSettings):
     chunk_size: int = Field(
         default=DEFAULT_CHUNK_SIZE,
         ge=100,
-        description="Default chunk size in tokens",
+        description="Default chunk size in tokens (converted to ~4 characters "
+        "per token for the character-based chunkers)",
     )
     chunk_overlap: int = Field(
         default=DEFAULT_CHUNK_OVERLAP,
         ge=0,
-        description="Default chunk overlap in tokens",
+        description="Default chunk overlap in tokens (converted to ~4 characters "
+        "per token for the character-based chunkers)",
+    )
+    embed_breadcrumb: bool = Field(
+        default=False,
+        description="Prepend the document title and current heading path to each "
+        "chunk's embedding text; stored content and full-text search stay unchanged",
     )
 
     # Search settings
@@ -119,6 +237,44 @@ class Settings(BaseSettings):
         ge=1,
         le=100,
         description="Default search result limit",
+    )
+    # Hybrid fusion tunables (Phase 15, D-03): SIF_ settings are the global
+    # layer; per-query CLI flags / MCP request fields override them, and the
+    # field defaults equal the pre-change hardcoded behavior (SC1). NO upper
+    # bound on the weights — the Phase 16 sweep grid must not be capped.
+    rrf_k: int = Field(
+        default=60,
+        ge=1,
+        description="RRF constant k for hybrid fusion (1/(k + rank)); smaller "
+        "values differentiate top ranks more aggressively",
+    )
+    bm25_weight: float = Field(
+        default=1.0,
+        gt=0,
+        description="BM25 source weight in hybrid RRF fusion; 1.0 with an "
+        "equal vector weight reproduces the unweighted default",
+    )
+    vector_weight: float = Field(
+        default=1.0,
+        gt=0,
+        description="Vector source weight in hybrid RRF fusion; 1.0 with an "
+        "equal BM25 weight reproduces the unweighted default",
+    )
+    # Query history (Phase 15, D-09/D-10): executed searches are logged
+    # locally to power history suggestions. SIF_QUERY_HISTORY_ENABLED=0
+    # disables both the write and the read side globally (a single opt-out);
+    # the limit caps the table via trim-in-write so it never grows unbounded.
+    query_history_enabled: bool = Field(
+        default=True,
+        description="Log executed searches (query, result count, collections) "
+        "locally to power history suggestions; 0 disables both the write and "
+        "the read side globally",
+    )
+    query_history_limit: int = Field(
+        default=500,
+        ge=1,
+        description="Most-recent query_log rows kept; on insert overflow the "
+        "oldest rows are deleted in the same write (trim-in-write)",
     )
 
     # MCP server settings
@@ -146,6 +302,22 @@ class Settings(BaseSettings):
         default=True,
         description="Whether to cache embeddings",
     )
+
+    @field_validator("watch_update_depth")
+    @classmethod
+    def validate_watch_update_depth(cls, v: str) -> str:
+        """Validate watch_update_depth is one of the supported depths.
+
+        Fails at settings-validation time so an invalid SIF_WATCH_UPDATE_DEPTH
+        surfaces as a config error naming the field, not as a silently
+        BM25-only watch deep inside the run loop (LIVE-05 invariant).
+        """
+        valid_depths = {"bm25", "embed"}
+        if v not in valid_depths:
+            raise ValueError(
+                f"Invalid watch_update_depth: {v}. Must be one of {sorted(valid_depths)}"
+            )
+        return v
 
     @field_validator("model_type")
     @classmethod
@@ -209,6 +381,28 @@ class Settings(BaseSettings):
             raise ValueError(f"Invalid log level: {v}. Must be one of {valid_levels}")
         return v_upper
 
+    @field_validator("default_search_type")
+    @classmethod
+    def validate_default_search_type(cls, v: str) -> str:
+        """Validate default_search_type is bm25, vector, or hybrid."""
+        valid_types = {"bm25", "vector", "hybrid"}
+        if v not in valid_types:
+            raise ValueError(
+                f"Invalid default_search_type: {v}. Must be one of {sorted(valid_types)}"
+            )
+        return v
+
+    @field_validator("mcp_transport")
+    @classmethod
+    def validate_mcp_transport(cls, v: str) -> str:
+        """Validate mcp_transport is stdio or http."""
+        valid_transports = {"stdio", "http"}
+        if v not in valid_transports:
+            raise ValueError(
+                f"Invalid mcp_transport: {v}. Must be one of {sorted(valid_transports)}"
+            )
+        return v
+
     def get_db_path(self) -> Path:
         """Get the database path, creating default if not set."""
         if self.db_path:
@@ -239,3 +433,22 @@ def get_settings() -> Settings:
     Uses lru_cache to ensure settings are loaded only once.
     """
     return Settings()
+
+
+def resolve_candidate_limit(explicit: int | None, settings: object) -> int:
+    """Resolve the reranker candidate cap: an explicit flag wins, else the setting.
+
+    The value is clamped into ``RERANK_CANDIDATE_LIMIT_MIN..MAX`` where it
+    becomes a request — the shipped ``-C`` Click range is 1..200 and must not
+    put 200 candidates into ``SearchOptions`` — so the bound lives here, not
+    only in the flag declaration. For a real ``Settings`` the clamp is a no-op
+    (Pydantic already enforces 5..50); for anything else a non-int value
+    (e.g. a MagicMock cap, research Pitfall 10) resolves to the default 20
+    instead of leaking into the plain dataclass.
+    """
+    value: object = (
+        explicit if explicit is not None else getattr(settings, "rerank_candidate_limit", 20)
+    )
+    if not isinstance(value, int):
+        value = 20
+    return min(max(value, RERANK_CANDIDATE_LIMIT_MIN), RERANK_CANDIDATE_LIMIT_MAX)

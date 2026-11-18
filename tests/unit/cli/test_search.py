@@ -3,16 +3,21 @@
 import csv
 import io
 import json
+import logging
+import os
+import re
+import sqlite3
 import xml.etree.ElementTree as ET
 from collections.abc import Generator
 from contextlib import ExitStack
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from typing import ClassVar
 from unittest.mock import MagicMock, patch
 
 import pytest
-from click.testing import CliRunner
+from click.testing import CliRunner, Result
 from pydantic import ValidationError
 
 from sif.cli.commands.search import (
@@ -23,9 +28,32 @@ from sif.cli.commands.search import (
     search_cmd,
     vsearch_cmd,
 )
-from sif.config.settings import get_settings
+from sif.config.settings import Settings, get_settings
 from sif.core.models import Collection, SearchResult
 from sif.database.database import Database
+from sif.database.repositories import CollectionRepository
+from sif.indexing.incremental import IncrementalIndexer
+
+
+def _query_settings_mock(**overrides: object) -> MagicMock:
+    """Explicit settings mock enumerating every field query_cmd reads.
+
+    Pitfall 10 (Phase 16) guard: an unset attribute on a wide-open MagicMock
+    is truthy, so a mock without ``rerank_enabled=False`` would silently flip
+    the D-12 gate onto the enabled path and construct a reranker. Tests whose
+    subject IS the enabled path override ``rerank_enabled=True`` explicitly.
+    """
+    fields: dict[str, object] = {
+        "model_name": "all-MiniLM-L6-v2",
+        "reranker_model_name": None,
+        "reranker_model_path": None,
+        "rerank_enabled": False,
+        "rerank_candidate_limit": 20,
+        "rerank_relative_threshold": 0.5,
+        "model_dump": lambda: {"model_name": "all-MiniLM-L6-v2"},
+    }
+    fields.update(overrides)
+    return MagicMock(**fields)
 
 
 class TestSearchFiltering:
@@ -125,6 +153,7 @@ class TestSearchFiltering:
 
         mock_manager = MagicMock()
         mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager.embed_query.return_value = [0.0] * 384
         mock_manager._model = MagicMock()
 
         mock_db = MagicMock()
@@ -145,12 +174,7 @@ class TestSearchFiltering:
             ),
             patch(
                 "sif.config.settings.get_settings",
-                return_value=MagicMock(
-                    model_name="all-MiniLM-L6-v2",
-                    reranker_model_name=None,
-                    reranker_model_path=None,
-                    model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"},
-                ),
+                return_value=_query_settings_mock(),
             ),
         ):
             result = runner.invoke(
@@ -183,14 +207,15 @@ class TestSearchFiltering:
 
         mock_manager = MagicMock()
         mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager.embed_query.return_value = [0.0] * 384
         mock_manager._model = MagicMock()
 
         mock_db = MagicMock()
 
         with (
-            patch("sif.database.database.Database", return_value=mock_db),
+            patch("sif.cli.commands.search.Database", return_value=mock_db),
             patch(
-                "sif.database.repositories.CollectionRepository",
+                "sif.cli.commands.search.CollectionRepository",
                 return_value=mock_repo,
             ),
             patch(
@@ -344,9 +369,10 @@ class TestSearchLineNumbers:
 
         assert result.exit_code == 0
         lines = result.output.splitlines()
-        assert lines[0] == "rank,score,title,path,collection"
         # One line per result: dict rows must render identically to object rows
-        assert lines[1:] == ['"1","0.9500","Test Doc","/notes/test.md","notes"'] * 2
+        # (vectors_stale column added by 14-03 D-12; False is the field default).
+        assert lines[0] == "rank,score,title,path,collection,vectors_stale"
+        assert lines[1:] == ['"1","0.9500","Test Doc","/notes/test.md","notes","false"'] * 2
 
     def test_search_line_numbers_md(self):
         """CR-02 regression: --line-numbers --md exits 0.
@@ -423,7 +449,7 @@ class TestSearchLineNumbers:
             )
 
         assert result.exit_code == 0
-        assert '  <result rank="1" score="0.9500">' in result.output
+        assert '  <result rank="1" score="0.9500" vectors_stale="false">' in result.output
         assert "<title>Test Doc</title>" in result.output
         assert "<path>/notes/test.md</path>" in result.output
         assert "<collection>notes</collection>" in result.output
@@ -440,6 +466,7 @@ class TestSearchLineNumbers:
 
         mock_manager = MagicMock()
         mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager.embed_query.return_value = [0.0] * 384
         mock_manager._model = MagicMock()
 
         mock_db = MagicMock()
@@ -460,12 +487,7 @@ class TestSearchLineNumbers:
             ),
             patch(
                 "sif.config.settings.get_settings",
-                return_value=MagicMock(
-                    model_name="all-MiniLM-L6-v2",
-                    reranker_model_name=None,
-                    reranker_model_path=None,
-                    model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"},
-                ),
+                return_value=_query_settings_mock(),
             ),
         ):
             result = runner.invoke(
@@ -490,14 +512,15 @@ class TestSearchLineNumbers:
 
         mock_manager = MagicMock()
         mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager.embed_query.return_value = [0.0] * 384
         mock_manager._model = MagicMock()
 
         mock_db = MagicMock()
 
         with (
-            patch("sif.database.database.Database", return_value=mock_db),
+            patch("sif.cli.commands.search.Database", return_value=mock_db),
             patch(
-                "sif.database.repositories.CollectionRepository",
+                "sif.cli.commands.search.CollectionRepository",
                 return_value=mock_repo,
             ),
             patch(
@@ -557,6 +580,7 @@ class TestQueryNewFlags:
 
         mock_manager = MagicMock()
         mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager.embed_query.return_value = [0.0] * 384
         mock_manager._model = MagicMock()
 
         mock_db = MagicMock()
@@ -577,12 +601,7 @@ class TestQueryNewFlags:
             ),
             patch(
                 "sif.config.settings.get_settings",
-                return_value=MagicMock(
-                    model_name="all-MiniLM-L6-v2",
-                    reranker_model_name=None,
-                    reranker_model_path=None,
-                    model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"},
-                ),
+                return_value=_query_settings_mock(),
             ),
         ):
             result = runner.invoke(
@@ -603,6 +622,7 @@ class TestQueryNewFlags:
 
         mock_manager = MagicMock()
         mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager.embed_query.return_value = [0.0] * 384
         mock_manager._model = MagicMock()
 
         mock_db = MagicMock()
@@ -625,12 +645,7 @@ class TestQueryNewFlags:
             ),
             patch(
                 "sif.config.settings.get_settings",
-                return_value=MagicMock(
-                    model_name="all-MiniLM-L6-v2",
-                    reranker_model_name=None,
-                    reranker_model_path=None,
-                    model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"},
-                ),
+                return_value=_query_settings_mock(),
             ),
         ):
             result = runner.invoke(
@@ -653,6 +668,7 @@ class TestQueryNewFlags:
 
         mock_manager = MagicMock()
         mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager.embed_query.return_value = [0.0] * 384
         mock_manager._model = MagicMock()
 
         mock_db = MagicMock()
@@ -675,12 +691,7 @@ class TestQueryNewFlags:
             ),
             patch(
                 "sif.config.settings.get_settings",
-                return_value=MagicMock(
-                    model_name="all-MiniLM-L6-v2",
-                    reranker_model_name=None,
-                    reranker_model_path=None,
-                    model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"},
-                ),
+                return_value=_query_settings_mock(),
             ),
         ):
             result = runner.invoke(
@@ -723,14 +734,15 @@ class TestVsearchNewFlags:
 
         mock_manager = MagicMock()
         mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager.embed_query.return_value = [0.0] * 384
         mock_manager._model = MagicMock()
 
         mock_db = MagicMock()
 
         with (
-            patch("sif.database.database.Database", return_value=mock_db),
+            patch("sif.cli.commands.search.Database", return_value=mock_db),
             patch(
-                "sif.database.repositories.CollectionRepository",
+                "sif.cli.commands.search.CollectionRepository",
                 return_value=mock_repo,
             ),
             patch(
@@ -772,14 +784,15 @@ class TestVsearchNewFlags:
 
         mock_manager = MagicMock()
         mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager.embed_query.return_value = [0.0] * 384
         mock_manager._model = MagicMock()
 
         mock_db = MagicMock()
 
         with (
-            patch("sif.database.database.Database", return_value=mock_db),
+            patch("sif.cli.commands.search.Database", return_value=mock_db),
             patch(
-                "sif.database.repositories.CollectionRepository",
+                "sif.cli.commands.search.CollectionRepository",
                 return_value=mock_repo,
             ),
             patch(
@@ -839,6 +852,7 @@ class TestSnippetDisplay:
 
         mock_manager = MagicMock()
         mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager.embed_query.return_value = [0.0] * 384
         mock_manager._model = MagicMock()
 
         mock_db = MagicMock()
@@ -859,12 +873,7 @@ class TestSnippetDisplay:
             ),
             patch(
                 "sif.config.settings.get_settings",
-                return_value=MagicMock(
-                    model_name="all-MiniLM-L6-v2",
-                    reranker_model_name=None,
-                    reranker_model_path=None,
-                    model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"},
-                ),
+                return_value=_query_settings_mock(),
             ),
         ):
             return runner.invoke(
@@ -960,6 +969,7 @@ class TestQueryPipelineErrorHandling:
 
         mock_manager = MagicMock()
         mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager.embed_query.return_value = [0.0] * 384
         mock_manager._model = MagicMock()
 
         mock_db = MagicMock()
@@ -980,12 +990,7 @@ class TestQueryPipelineErrorHandling:
             ),
             patch(
                 "sif.config.settings.get_settings",
-                return_value=MagicMock(
-                    model_name="all-MiniLM-L6-v2",
-                    reranker_model_name=None,
-                    reranker_model_path=None,
-                    model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"},
-                ),
+                return_value=_query_settings_mock(),
             ),
         ):
             return runner.invoke(
@@ -1016,6 +1021,213 @@ class TestQueryPipelineErrorHandling:
         assert isinstance(result.exception, ValueError)
 
 
+class TestVectorConstructorErrorHandling:
+    """14-WR-02/04: searcher construction failures render the sqlite-vec remedy.
+
+    The constructor-only guards translate the sqlite-vec RuntimeError into a
+    clean Click error with an install hint; execution-stage handling (the
+    TestQueryPipelineErrorHandling pair above) stays byte-identical.
+    """
+
+    _VEC_ERROR = "sqlite-vec extension is not available. Install sqlite-vec to use vector search."
+
+    def _invoke_query(self, args: list[str] | None = None) -> Result:
+        """query_cmd with SearchPipeline construction raising the sqlite-vec error."""
+        runner = CliRunner()
+
+        mock_repo = MagicMock()
+        mock_repo.list_enabled.return_value = []
+
+        mock_manager = MagicMock()
+        mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager.embed_query.return_value = [0.0] * 384
+        mock_manager._model = MagicMock()
+
+        mock_db = MagicMock()
+
+        with (
+            patch("sif.cli.commands.search.Database", return_value=mock_db),
+            patch(
+                "sif.cli.commands.search.CollectionRepository",
+                return_value=mock_repo,
+            ),
+            patch(
+                "sif.cli.commands.search.SearchPipeline",
+                side_effect=RuntimeError(self._VEC_ERROR),
+            ),
+            patch(
+                "sif.embedding.manager.EmbeddingManager.from_settings",
+                return_value=mock_manager,
+            ),
+            patch(
+                "sif.config.settings.get_settings",
+                return_value=_query_settings_mock(),
+            ),
+        ):
+            return runner.invoke(
+                query_cmd,
+                args if args is not None else ["query"],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+    def _invoke_vsearch(self, args: list[str] | None = None) -> Result:
+        """vsearch_cmd with VectorSearcher construction raising the sqlite-vec error.
+
+        VectorSearcher is imported inside vsearch_cmd, so the patch seam is
+        sif.search.vector.VectorSearcher (function-local import).
+        """
+        runner = CliRunner()
+
+        mock_repo = MagicMock()
+        mock_repo.list_enabled.return_value = []
+
+        mock_manager = MagicMock()
+        mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager.embed_query.return_value = [0.0] * 384
+        mock_manager._model = MagicMock()
+
+        mock_db = MagicMock()
+
+        with (
+            patch("sif.cli.commands.search.Database", return_value=mock_db),
+            patch(
+                "sif.cli.commands.search.CollectionRepository",
+                return_value=mock_repo,
+            ),
+            patch(
+                "sif.search.vector.VectorSearcher",
+                side_effect=RuntimeError(self._VEC_ERROR),
+            ),
+            patch(
+                "sif.embedding.manager.EmbeddingManager.from_settings",
+                return_value=mock_manager,
+            ),
+            patch(
+                "sif.config.settings.get_settings",
+                return_value=_query_settings_mock(),
+            ),
+        ):
+            return runner.invoke(
+                vsearch_cmd,
+                args if args is not None else ["query"],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+    def test_vsearch_constructor_runtime_error_becomes_click_exception(self):
+        """vsearch: missing sqlite-vec at construction exits 1 with the install remedy."""
+        result = self._invoke_vsearch()
+
+        assert result.exit_code == 1
+        assert "Error:" in result.output
+        assert "sqlite-vec" in result.output
+        assert "pip install" in result.output
+        assert "Traceback" not in result.output
+        assert not isinstance(result.exception, RuntimeError)
+
+    def test_query_constructor_runtime_error_becomes_click_exception(self):
+        """query: the same construction failure gets the identical clean presentation."""
+        result = self._invoke_query()
+
+        assert result.exit_code == 1
+        assert "Error:" in result.output
+        assert "sqlite-vec" in result.output
+        assert "pip install" in result.output
+        assert "Traceback" not in result.output
+        assert not isinstance(result.exception, RuntimeError)
+
+    def test_vsearch_json_failure_stdout_is_pure(self):
+        """--json failure keeps stdout empty: ClickException renders to stderr only."""
+        result = self._invoke_vsearch(args=["query", "--json"])
+
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        assert "Error:" in result.output
+
+    def test_query_json_failure_stdout_is_pure(self):
+        """--json failure keeps stdout empty for the hybrid path too."""
+        result = self._invoke_query(args=["query", "--json"])
+
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        assert "Error:" in result.output
+
+
+class TestQueryEmbeddingDimension:
+    """IN-07: query_cmd prefers the model-metadata dimension over a billed probe."""
+
+    def _invoke(self, tmp_path: Path, manager: MagicMock) -> tuple[Result, MagicMock]:
+        """Run query_cmd --json on the standard scaffold; return result + pipeline class."""
+        index_path = tmp_path / "sif.db"
+        index_path.touch()
+
+        mock_repo = MagicMock()
+        mock_repo.list_enabled.return_value = []
+
+        # One real result keeps the zero-result suggestion path out of scope.
+        search_result = SearchResult(
+            document_id="doc1",
+            rank=1,
+            score=0.95,
+            title="Test Doc",
+            path="/notes/test.md",
+            collection_name="notes",
+            content="test content",
+        )
+        mock_pipeline = MagicMock()
+        mock_pipeline.search.return_value = [search_result]
+        pipeline_cls = MagicMock(return_value=mock_pipeline)
+
+        with (
+            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+            patch(
+                "sif.cli.commands.search.CollectionRepository",
+                return_value=mock_repo,
+            ),
+            patch("sif.cli.commands.search.SearchPipeline", pipeline_cls),
+            patch(
+                "sif.embedding.manager.EmbeddingManager.from_settings",
+                return_value=manager,
+            ),
+            patch(
+                "sif.config.settings.get_settings",
+                return_value=_query_settings_mock(),
+            ),
+        ):
+            run_result = CliRunner().invoke(
+                query_cmd,
+                ["query", "--json"],
+                obj={"index_path": index_path},
+            )
+        return run_result, pipeline_cls
+
+    def test_model_info_dimension_skips_probe(self, tmp_path: Path) -> None:
+        """The metadata dimension reaches SearchPipeline with zero probe embeddings."""
+        manager = MagicMock()
+        manager.get_model_info.return_value = {"loaded": True, "embedding_dim": 7}
+        manager.embed_single.side_effect = AssertionError("probe ran despite metadata dimension")
+        manager.model = MagicMock()
+
+        result, pipeline_cls = self._invoke(tmp_path, manager)
+
+        assert result.exit_code == 0, result.output
+        manager.embed_single.assert_not_called()
+        assert pipeline_cls.call_args.kwargs["embedding_dim"] == 7
+
+    def test_missing_model_info_dimension_uses_probe(self, tmp_path: Path) -> None:
+        """Characterization: metadata without a dimension keeps the single probe fallback."""
+        manager = MagicMock()
+        manager.get_model_info.return_value = {"loaded": True}
+        manager.embed_single.return_value = [0.0] * 5
+        manager.embed_query.return_value = [0.0] * 5
+        manager.model = MagicMock()
+
+        result, pipeline_cls = self._invoke(tmp_path, manager)
+
+        assert result.exit_code == 0, result.output
+        manager.embed_single.assert_called_once_with("probe")
+        assert pipeline_cls.call_args.kwargs["embedding_dim"] == 5
+
+
 class TestQueryRerankerConfigError:
     """WR-09: invalid reranker config surfaces as a clean ClickException."""
 
@@ -1025,6 +1237,7 @@ class TestQueryRerankerConfigError:
         mock_repo.list_enabled.return_value = []
         mock_manager = MagicMock()
         mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager.embed_query.return_value = [0.0] * 384
         mock_manager._model = MagicMock()
         mock_db = MagicMock()
         return [
@@ -1092,10 +1305,11 @@ class TestQueryRerankerConfigError:
     def test_factory_value_error_becomes_click_exception(self):
         """Defense in depth: a create_reranker ValueError renders as a clean error."""
         runner = CliRunner()
-        mock_settings = MagicMock(
-            model_name="all-MiniLM-L6-v2",
+        # rerank_enabled=True: with the D-12 default the gate would skip
+        # create_reranker entirely and this side_effect would be unreachable.
+        mock_settings = _query_settings_mock(
             reranker_model_name="q-reranker",
-            reranker_model_path=None,
+            rerank_enabled=True,
         )
         # create_reranker is imported inside query_cmd's body, so patch the
         # module attribute — the function-local import resolves it at call time.
@@ -1121,6 +1335,213 @@ class TestQueryRerankerConfigError:
         assert "Error:" in result.output
         assert "Unknown reranker model_type" in result.output
         assert not isinstance(result.exception, ValueError)
+
+
+class TestRerankOptIn:
+    """D-12 (Phase 16): `sif search query` constructs a reranker only on request.
+
+    The off path must be zero-cost by construction — create_reranker is never
+    called, so no model is loaded and no optional backend is imported — and
+    SearchPipeline receives reranker=None. --rerank or SIF_RERANK_ENABLED=1
+    each open the gate exactly once.
+    """
+
+    @staticmethod
+    def _result() -> SearchResult:
+        return SearchResult(
+            document_id="doc-1",
+            rank=1,
+            score=0.5,
+            title="T",
+            path="/notes/t.md",
+            collection_name="c",
+        )
+
+    def _invoke(
+        self,
+        tmp_path: Path,
+        args: list[str],
+        settings: object = None,
+    ) -> tuple[object, MagicMock, MagicMock]:
+        """Invoke query_cmd; return (result, SearchPipeline class, create_reranker)."""
+        repo = MagicMock()
+        repo.list_enabled.return_value = []
+        manager = MagicMock()
+        manager.embed_single.return_value = [0.0] * 4
+        manager.embed_query.return_value = [0.0] * 4
+        manager._model = MagicMock()
+        pipeline = MagicMock()
+        pipeline.search.return_value = [self._result()]
+        create_reranker = MagicMock(return_value=MagicMock(name="reranker"))
+        index = tmp_path / "index.db"
+        index.touch()
+        with (
+            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
+            patch("sif.cli.commands.search.SearchPipeline", return_value=pipeline) as pipeline_cls,
+            patch("sif.embedding.manager.EmbeddingManager.from_settings", return_value=manager),
+            patch(
+                "sif.config.settings.get_settings",
+                return_value=settings if settings is not None else _query_settings_mock(),
+            ),
+            patch("sif.search.rerank.create_reranker", new=create_reranker),
+        ):
+            result = CliRunner().invoke(query_cmd, args, obj={"index_path": index})
+        return result, pipeline_cls, create_reranker
+
+    def test_off_by_default_constructs_no_reranker(self, tmp_path: Path) -> None:
+        """No flag + rerank_enabled=False: create_reranker never runs, pipeline gets None."""
+        result, pipeline_cls, create_reranker = self._invoke(tmp_path, ["query"])
+
+        assert result.exit_code == 0, result.output
+        create_reranker.assert_not_called()
+        assert pipeline_cls.call_args.kwargs["reranker"] is None
+
+    def test_rerank_flag_constructs_reranker_once(self, tmp_path: Path) -> None:
+        """--rerank opens the D-12 gate: exactly one construction, wired to the pipeline."""
+        settings = _query_settings_mock()
+        result, pipeline_cls, create_reranker = self._invoke(
+            tmp_path, ["query", "--rerank"], settings=settings
+        )
+
+        assert result.exit_code == 0, result.output
+        create_reranker.assert_called_once_with(settings)
+        assert pipeline_cls.call_args.kwargs["reranker"] is create_reranker.return_value
+
+    def test_enabled_setting_constructs_without_flag(self, tmp_path: Path) -> None:
+        """SIF_RERANK_ENABLED surfaced via settings.rerank_enabled: same single call."""
+        result, pipeline_cls, create_reranker = self._invoke(
+            tmp_path, ["query"], settings=_query_settings_mock(rerank_enabled=True)
+        )
+
+        assert result.exit_code == 0, result.output
+        create_reranker.assert_called_once()
+        assert pipeline_cls.call_args.kwargs["reranker"] is create_reranker.return_value
+
+    def test_env_setting_enables_rerank(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """SIF_RERANK_ENABLED=1 through the real Settings channel opens the gate."""
+        monkeypatch.setenv("SIF_RERANK_ENABLED", "1")
+        repo = MagicMock()
+        repo.list_enabled.return_value = []
+        manager = MagicMock()
+        manager.embed_single.return_value = [0.0] * 4
+        manager.embed_query.return_value = [0.0] * 4
+        manager._model = MagicMock()
+        pipeline = MagicMock()
+        pipeline.search.return_value = [self._result()]
+        index = tmp_path / "index.db"
+        index.touch()
+        try:
+            get_settings.cache_clear()
+            with (
+                patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+                patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
+                patch("sif.cli.commands.search.SearchPipeline", return_value=pipeline),
+                patch(
+                    "sif.embedding.manager.EmbeddingManager.from_settings",
+                    return_value=manager,
+                ),
+                patch("sif.search.rerank.create_reranker") as create_reranker,
+            ):
+                result = CliRunner().invoke(query_cmd, ["query"], obj={"index_path": index})
+        finally:
+            get_settings.cache_clear()
+
+        assert result.exit_code == 0, result.output
+        create_reranker.assert_called_once()
+
+
+class TestCandidateLimitResolution:
+    """D-10 (Phase 16): -C resolves flag > SIF_RERANK_CANDIDATE_LIMIT, clamped to 5..50.
+
+    The shipped Click range stays 1..200 (no user-visible narrowing); the
+    bound is enforced where the value becomes a request — resolve_candidate_limit.
+    """
+
+    @staticmethod
+    def _result() -> SearchResult:
+        return SearchResult(
+            document_id="doc-1",
+            rank=1,
+            score=0.5,
+            title="T",
+            path="/notes/t.md",
+            collection_name="c",
+        )
+
+    def _invoke(
+        self,
+        tmp_path: Path,
+        args: list[str],
+        settings: object = None,
+    ) -> tuple[object, MagicMock]:
+        """Invoke query_cmd; return (result, pipeline) for SearchOptions asserts."""
+        repo = MagicMock()
+        repo.list_enabled.return_value = []
+        manager = MagicMock()
+        manager.embed_single.return_value = [0.0] * 4
+        manager.embed_query.return_value = [0.0] * 4
+        manager._model = MagicMock()
+        pipeline = MagicMock()
+        pipeline.search.return_value = [self._result()]
+        index = tmp_path / "index.db"
+        index.touch()
+        with (
+            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
+            patch("sif.cli.commands.search.SearchPipeline", return_value=pipeline),
+            patch("sif.embedding.manager.EmbeddingManager.from_settings", return_value=manager),
+            # rerank stays off unless a test opens it via the settings mock.
+            patch("sif.search.rerank.create_reranker"),
+            patch(
+                "sif.config.settings.get_settings",
+                return_value=settings
+                if settings is not None
+                else _query_settings_mock(rerank_candidate_limit=33),
+            ),
+        ):
+            result = CliRunner().invoke(query_cmd, args, obj={"index_path": index})
+        return result, pipeline
+
+    def test_omitted_flag_resolves_from_setting(self, tmp_path: Path) -> None:
+        """No -C: SearchOptions.candidate_limit comes from SIF_RERANK_CANDIDATE_LIMIT."""
+        result, pipeline = self._invoke(tmp_path, ["query"])
+
+        assert result.exit_code == 0, result.output
+        # 33 is non-default so the assertion cannot pass via a literal flag default.
+        assert pipeline.search.call_args.args[1].candidate_limit == 33
+
+    def test_explicit_flag_beats_setting(self, tmp_path: Path) -> None:
+        """An explicit -C inside the bounds wins over the setting (D-10 precedence)."""
+        result, pipeline = self._invoke(tmp_path, ["query", "-C", "7"])
+
+        assert result.exit_code == 0, result.output
+        assert pipeline.search.call_args.args[1].candidate_limit == 7
+
+    def test_flag_range_stays_wide_but_resolution_clamps(self, tmp_path: Path) -> None:
+        """-C 200 and -C 1 are accepted by Click (range 1..200) but resolve to 50 and 5."""
+        wide, pipeline_wide = self._invoke(tmp_path, ["query", "-C", "200"])
+        assert wide.exit_code == 0, wide.output
+        assert pipeline_wide.search.call_args.args[1].candidate_limit == 50
+
+        narrow, pipeline_narrow = self._invoke(tmp_path, ["query", "-C", "1"])
+        assert narrow.exit_code == 0, narrow.output
+        assert pipeline_narrow.search.call_args.args[1].candidate_limit == 5
+
+    def test_wide_open_mock_settings_keeps_candidate_limit_int(self, tmp_path: Path) -> None:
+        """Pitfall 10: a MagicMock cap can never leak into the plain SearchOptions dataclass.
+
+        A wide-open MagicMock is truthy, so rerank_enabled opens the gate too —
+        create_reranker is patched; the assertion is the int-ness of the cap.
+        """
+        result, pipeline = self._invoke(tmp_path, ["query"], settings=MagicMock())
+
+        assert result.exit_code == 0, result.output
+        options = pipeline.search.call_args.args[1]
+        assert options.candidate_limit == 20
+        assert isinstance(options.candidate_limit, int)
 
 
 class TestMachineOutputNoWrap:
@@ -1161,6 +1582,7 @@ class TestMachineOutputNoWrap:
 
         mock_manager = MagicMock()
         mock_manager.embed_single.return_value = [0.0] * 384
+        mock_manager.embed_query.return_value = [0.0] * 384
         mock_manager._model = MagicMock()
 
         mock_db = MagicMock()
@@ -1181,12 +1603,7 @@ class TestMachineOutputNoWrap:
             ),
             patch(
                 "sif.config.settings.get_settings",
-                return_value=MagicMock(
-                    model_name="all-MiniLM-L6-v2",
-                    reranker_model_name=None,
-                    reranker_model_path=None,
-                    model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"},
-                ),
+                return_value=_query_settings_mock(),
             ),
         ):
             return runner.invoke(
@@ -1313,8 +1730,8 @@ class TestMachineOutputNoWrap:
 
         assert result.exit_code == 0
         lines = result.output.splitlines()
-        assert lines[0] == "rank,score,title,path,collection"
-        assert lines[1:] == [f'"1","0.9500","{long_title}","{long_path}","notes"']
+        assert lines[0] == "rank,score,title,path,collection,vectors_stale"
+        assert lines[1:] == [f'"1","0.9500","{long_title}","{long_path}","notes","false"']
 
 
 class TestSearchOutputBranches:
@@ -1397,16 +1814,14 @@ class TestSearchOutputBranches:
         repo.list_enabled.return_value = []
         manager = manager or MagicMock()
         manager.embed_single.return_value = [0.0] * 4
+        manager.embed_query.return_value = [0.0] * 4
         manager._model = MagicMock()
         pipeline = pipeline or MagicMock()
         if results is not None:
             pipeline.search.return_value = results
         elif not pipeline.search.side_effect:
             pipeline.search.return_value = [self._result()]
-        settings = settings or MagicMock(
-            reranker_model_name=None,
-            reranker_model_path=None,
-        )
+        settings = settings or _query_settings_mock()
         patches = [
             patch("sif.cli.commands.search.Database", return_value=MagicMock()),
             patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
@@ -1447,10 +1862,11 @@ class TestSearchOutputBranches:
         repo.list_enabled.return_value = []
         manager = manager or MagicMock()
         manager.embed_single.return_value = [0.0] * 4
+        manager.embed_query.return_value = [0.0] * 4
         settings = settings or MagicMock()
         with (
-            patch("sif.database.database.Database", return_value=MagicMock()),
-            patch("sif.database.repositories.CollectionRepository", return_value=repo),
+            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
             patch("sif.search.vector.VectorSearcher", return_value=searcher),
             patch("sif.embedding.manager.EmbeddingManager.from_settings", return_value=manager),
             patch(
@@ -1492,6 +1908,8 @@ class TestSearchOutputBranches:
                 "title": "知识 <笔记> & notes",
                 "path": "/notes/知识 & more.md",
                 "collection": "研究 & notes",
+                # D-12 (14-03): the staleness column; fixture rows default False.
+                "vectors_stale": "false",
             },
         ]
 
@@ -1722,7 +2140,7 @@ class TestSearchOutputBranches:
         assert result.output == ""
 
     def test_query_explicit_collection_and_model_override(self, tmp_path: Path) -> None:
-        settings = MagicMock(reranker_model_name=None, reranker_model_path=None)
+        settings = _query_settings_mock()
         settings.model_copy.return_value = settings
         repo = MagicMock()
         repo.get_by_name.side_effect = [Collection(id="c1", name="known", path="notes"), None]
@@ -1730,6 +2148,7 @@ class TestSearchOutputBranches:
         pipeline.search.return_value = []
         manager = MagicMock()
         manager.embed_single.return_value = [0.0] * 4
+        manager.embed_query.return_value = [0.0] * 4
         with (
             patch("sif.cli.commands.search.Database", return_value=MagicMock()),
             patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
@@ -1756,7 +2175,9 @@ class TestSearchOutputBranches:
         settings.model_copy.assert_called_once_with(update={"model_type": "openai"})
 
     def test_query_optional_reranker_import_error_warns(self, tmp_path: Path) -> None:
-        settings = MagicMock(reranker_model_name="reranker", reranker_model_path=None)
+        # rerank_enabled=True opens the D-12 gate so the patched ImportError
+        # from create_reranker is actually raised on this enabled path.
+        settings = _query_settings_mock(reranker_model_name="reranker", rerank_enabled=True)
 
         result, _ = self._invoke_query(
             tmp_path,
@@ -1805,7 +2226,7 @@ class TestSearchOutputBranches:
         tmp_path: Path,
     ) -> None:
         manager = MagicMock()
-        manager.embed_single.side_effect = error
+        manager.embed_query.side_effect = error
 
         result, _ = self._invoke_vsearch(tmp_path, ["query"], manager=manager)
 
@@ -1838,9 +2259,10 @@ class TestSearchOutputBranches:
         searcher.search.return_value = [self._result()]
         manager = MagicMock()
         manager.embed_single.return_value = [0.0] * 4
+        manager.embed_query.return_value = [0.0] * 4
         with (
-            patch("sif.database.database.Database", return_value=MagicMock()),
-            patch("sif.database.repositories.CollectionRepository", return_value=repo),
+            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
             patch("sif.search.vector.VectorSearcher", return_value=searcher),
             patch("sif.embedding.manager.EmbeddingManager.from_settings", return_value=manager),
             patch("sif.config.settings.get_settings", return_value=settings),
@@ -1945,6 +2367,340 @@ class TestSearchOutputBranches:
         assert "Query: [/3]-notes" in plain.output
 
 
+class TestStalenessFormatMarker:
+    """D-12 (SC3): one crafted stale result is visibly marked in every output format.
+
+    A vector-stale doc surfaces only via the BM25/hybrid legs (its vector
+    was purged — a real vsearch hit cannot be stale), so the battery crafts
+    SearchResults carrying ``vectors_stale`` through the mock scaffolds;
+    vsearch's shared --json surface is covered by the same formatter code.
+    """
+
+    @staticmethod
+    def _result(stale: bool, **overrides: object) -> SearchResult:
+        """Craft one result; the stale flag and identity fields stay paired."""
+        fields: dict[str, object] = {
+            "document_id": "doc-stale" if stale else "doc-fresh",
+            "rank": 1 if stale else 2,
+            "score": 0.9 if stale else 0.8,
+            "title": "Stale Doc" if stale else "Fresh Doc",
+            "path": "/notes/stale.md" if stale else "/notes/fresh.md",
+            "collection_name": "notes",
+            "content": "line one\nline two",
+            "vectors_stale": stale,
+        }
+        fields.update(overrides)
+        return SearchResult(**fields)  # type: ignore[arg-type]
+
+    @staticmethod
+    def _rows() -> list[SearchResult]:
+        cls = TestStalenessFormatMarker
+        return [cls._result(stale=True), cls._result(stale=False)]
+
+    @staticmethod
+    def _index(tmp_path: Path) -> Path:
+        index = tmp_path / "index.db"
+        index.touch()
+        return index
+
+    @staticmethod
+    def _empty_shadow_db() -> MagicMock:
+        """Database double with an empty derived shadow.
+
+        The staleness display gate then leaves the crafted ``vectors_stale``
+        flags untouched: this battery exercises formatters, not staleness
+        (a pure-BM25 index carries no markers).
+        """
+        db = MagicMock()
+        db.connection.execute.return_value.fetchone.return_value = None
+        return db
+
+    def _invoke_bm25(self, tmp_path: Path, args: list[str]) -> object:
+        """Invoke search_cmd over the mock scaffold with the crafted rows."""
+        searcher = MagicMock()
+        searcher.search.return_value = self._rows()
+        repo = MagicMock()
+        repo.list_enabled.return_value = []
+        with (
+            patch("sif.cli.commands.search.Database", return_value=self._empty_shadow_db()),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
+            patch("sif.cli.commands.search.BM25Searcher", return_value=searcher),
+        ):
+            return CliRunner().invoke(
+                search_cmd,
+                args,
+                env={"COLUMNS": "80"},
+                obj={"index_path": self._index(tmp_path)},
+            )
+
+    def _invoke_query(self, tmp_path: Path, args: list[str]) -> object:
+        """Invoke query_cmd over the pipeline mock scaffold with the crafted rows."""
+        repo = MagicMock()
+        repo.list_enabled.return_value = []
+        manager = MagicMock()
+        manager.embed_single.return_value = [0.0] * 4
+        manager.embed_query.return_value = [0.0] * 4
+        manager._model = MagicMock()
+        pipeline = MagicMock()
+        pipeline.search.return_value = self._rows()
+        settings = _query_settings_mock()
+        with (
+            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
+            patch("sif.cli.commands.search.SearchPipeline", return_value=pipeline),
+            patch("sif.embedding.manager.EmbeddingManager.from_settings", return_value=manager),
+            patch("sif.config.settings.get_settings", return_value=settings),
+        ):
+            return CliRunner().invoke(
+                query_cmd,
+                args,
+                env={"COLUMNS": "80"},
+                obj={"index_path": self._index(tmp_path)},
+            )
+
+    # ------------------------------------------------------------------
+    # Rich table (search_cmd + query_cmd bodies; vsearch shares the cell)
+    # ------------------------------------------------------------------
+
+    def test_table_marks_stale_result_not_fresh(self, tmp_path: Path) -> None:
+        """The stale result's Title cell carries the dim annotation; fresh does not."""
+        result = self._invoke_bm25(tmp_path, ["query"])
+
+        assert result.exit_code == 0
+        # stdout: the D-13 hint rides stderr (mixed into .output by click >=8.2).
+        assert "(stale vectors)" in result.stdout
+        # Exactly one annotation for one stale row; the fresh row stays clean.
+        assert result.stdout.count("(stale vectors)") == 1
+        assert "Fresh Doc" in result.stdout
+        # D-12: no new column — the header row gains nothing.
+        assert "vectors_stale" not in result.stdout
+
+    def test_query_table_marks_stale_result(self, tmp_path: Path) -> None:
+        """The hybrid query table renders the same annotation on the stale title."""
+        result = self._invoke_query(tmp_path, ["query"])
+
+        assert result.exit_code == 0
+        assert "(stale vectors)" in result.stdout
+        assert result.stdout.count("(stale vectors)") == 1
+
+    # ------------------------------------------------------------------
+    # JSON (no formatter change — to_dict() carries the key since 14-02)
+    # ------------------------------------------------------------------
+
+    def test_json_carries_vectors_stale(self, tmp_path: Path) -> None:
+        """--json serializes the stale boolean for both rows."""
+        result = self._invoke_bm25(tmp_path, ["query", "--json"])
+
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert payload[0]["vectors_stale"] is True
+        assert payload[1]["vectors_stale"] is False
+
+    def test_json_line_numbers_dict_shape_preserves_key(self, tmp_path: Path) -> None:
+        """--line-numbers dict rows still carry vectors_stale (dual-shape reader)."""
+        result = self._invoke_bm25(tmp_path, ["query", "--line-numbers", "--json"])
+
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert payload[0]["line_numbers"] != ""
+        assert payload[0]["vectors_stale"] is True
+        assert payload[1]["vectors_stale"] is False
+
+    # ------------------------------------------------------------------
+    # CSV (one extra column)
+    # ------------------------------------------------------------------
+
+    def test_csv_column_carries_true_and_false(self, tmp_path: Path) -> None:
+        """The header gains a vectors_stale column; rows emit true/false."""
+        result = self._invoke_bm25(tmp_path, ["query", "--csv"])
+
+        assert result.exit_code == 0
+        # result.stdout: crafted stale rows also trigger the D-13 stderr hint,
+        # which click >=8.2 mixes into .output (14-01 JSON-purity precedent).
+        lines = result.stdout.splitlines()
+        assert lines[0] == "rank,score,title,path,collection,vectors_stale"
+        assert lines[1:] == [
+            '"1","0.9000","Stale Doc","/notes/stale.md","notes","true"',
+            '"2","0.8000","Fresh Doc","/notes/fresh.md","notes","false"',
+        ]
+
+    def test_csv_line_numbers_dict_shape_renders_marker(self, tmp_path: Path) -> None:
+        """Dict rows (--line-numbers path) render the same true/false column."""
+        result = self._invoke_bm25(tmp_path, ["query", "--line-numbers", "--csv"])
+
+        assert result.exit_code == 0
+        lines = result.stdout.splitlines()
+        assert lines[0].endswith(",vectors_stale")
+        assert lines[1].endswith(',"true"')
+        assert lines[2].endswith(',"false"')
+
+    # ------------------------------------------------------------------
+    # Markdown (inline annotation on the per-result title line)
+    # ------------------------------------------------------------------
+
+    def test_md_annotation_on_stale_title_only(self, tmp_path: Path) -> None:
+        """The stale block's title line carries '(stale vectors)'; fresh does not."""
+        result = self._invoke_bm25(tmp_path, ["query", "--md"])
+
+        assert result.exit_code == 0
+        assert "## 1. Stale Doc (stale vectors)" in result.stdout
+        assert "## 2. Fresh Doc" in result.stdout
+        assert result.stdout.count("(stale vectors)") == 1
+
+    def test_md_line_numbers_dict_shape_renders_marker(self, tmp_path: Path) -> None:
+        """Dict rows (--line-numbers path) render the same annotation."""
+        result = self._invoke_bm25(tmp_path, ["query", "--line-numbers", "--md"])
+
+        assert result.exit_code == 0
+        assert "## 1. Stale Doc (stale vectors)" in result.stdout
+        assert result.stdout.count("(stale vectors)") == 1
+
+    # ------------------------------------------------------------------
+    # XML (fixed boolean attribute on the result element)
+    # ------------------------------------------------------------------
+
+    def test_xml_attribute_true_false_and_parseable(self, tmp_path: Path) -> None:
+        """The stale element carries vectors_stale="true"; output stays parseable."""
+        result = self._invoke_bm25(tmp_path, ["query", "--xml"])
+
+        assert result.exit_code == 0
+        assert 'vectors_stale="true"' in result.stdout
+        assert 'vectors_stale="false"' in result.stdout
+        root = ET.fromstring(result.stdout)
+        elements = root.findall("result")
+        assert [e.get("vectors_stale") for e in elements] == ["true", "false"]
+
+    def test_xml_line_numbers_dict_shape_renders_marker(self, tmp_path: Path) -> None:
+        """Dict rows (--line-numbers path) render the same attribute."""
+        result = self._invoke_bm25(tmp_path, ["query", "--line-numbers", "--xml"])
+
+        assert result.exit_code == 0
+        root = ET.fromstring(result.stdout)
+        elements = root.findall("result")
+        assert [e.get("vectors_stale") for e in elements] == ["true", "false"]
+
+    # ------------------------------------------------------------------
+    # D-13: the post-results stderr remedy hint
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _hint_in_stderr(result: object) -> bool:
+        """Whitespace-normalized containment (Rich wraps at console width)."""
+        return "have stale vectors" in re.sub(r"\s+", " ", result.stderr)  # type: ignore[attr-defined]
+
+    def test_remedy_hint_one_stderr_line_names_count(self, tmp_path: Path) -> None:
+        """>=1 stale result -> exactly one stderr line naming the count + remedy."""
+        rows = [
+            self._result(stale=True),
+            self._result(stale=True, rank=2, title="Also Stale", path="/notes/stale2.md"),
+            self._result(stale=False),
+        ]
+        searcher = MagicMock()
+        searcher.search.return_value = rows
+        repo = MagicMock()
+        repo.list_enabled.return_value = []
+        with (
+            patch("sif.cli.commands.search.Database", return_value=self._empty_shadow_db()),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
+            patch("sif.cli.commands.search.BM25Searcher", return_value=searcher),
+        ):
+            result = CliRunner().invoke(
+                search_cmd,
+                ["query"],
+                env={"COLUMNS": "80"},
+                obj={"index_path": self._index(tmp_path)},
+            )
+
+        assert result.exit_code == 0
+        normalized = re.sub(r"\s+", " ", result.stderr)
+        assert "2 results have stale vectors — run 'sif index embed' to refresh" in normalized
+        # Exactly one hint line — never one per result.
+        assert result.stderr.count("have stale vectors") == 1
+        # D-13: the hint never appears on stdout (the table's own D-12
+        # annotation legitimately contains 'stale vectors' there — the
+        # hint-specific fragments must not).
+        assert "have stale vectors" not in result.stdout
+        assert "run 'sif index embed'" not in result.stdout
+
+    def test_remedy_hint_json_stdout_stays_clean(self, tmp_path: Path) -> None:
+        """Under --json the hint rides stderr only; stdout parses as pure JSON."""
+        result = self._invoke_bm25(tmp_path, ["query", "--json"])
+
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert len(payload) == 2
+        assert self._hint_in_stderr(result)
+        assert "stale vectors" not in result.stdout
+
+    def test_quiet_suppresses_hint_but_json_renders(self, tmp_path: Path) -> None:
+        """-q suppresses the hint while the --json results still render."""
+        result = self._invoke_bm25(tmp_path, ["query", "--json", "-q"])
+
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert len(payload) == 2
+        assert payload[0]["vectors_stale"] is True
+        assert not self._hint_in_stderr(result)
+
+    def test_zero_stale_results_no_hint(self, tmp_path: Path) -> None:
+        """No stale results -> no hint line (and clean stderr)."""
+        rows = [self._result(stale=False)]
+        searcher = MagicMock()
+        searcher.search.return_value = rows
+        repo = MagicMock()
+        repo.list_enabled.return_value = []
+        with (
+            patch("sif.cli.commands.search.Database", return_value=self._empty_shadow_db()),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
+            patch("sif.cli.commands.search.BM25Searcher", return_value=searcher),
+        ):
+            result = CliRunner().invoke(
+                search_cmd,
+                ["query"],
+                env={"COLUMNS": "80"},
+                obj={"index_path": self._index(tmp_path)},
+            )
+
+        assert result.exit_code == 0
+        assert result.stderr == ""
+
+    def test_remedy_hint_fires_for_query_cmd(self, tmp_path: Path) -> None:
+        """The hybrid query command emits the same hint after its results."""
+        result = self._invoke_query(tmp_path, ["query"])
+
+        assert result.exit_code == 0
+        assert self._hint_in_stderr(result)
+        assert "have stale vectors" not in result.stdout
+
+    def test_remedy_hint_fires_for_vsearch_cmd(self, tmp_path: Path) -> None:
+        """The vsearch command body carries the same hint wiring (mocked hits)."""
+        searcher = MagicMock()
+        searcher.search.return_value = self._rows()
+        repo = MagicMock()
+        repo.list_enabled.return_value = []
+        manager = MagicMock()
+        manager.embed_single.return_value = [0.0] * 4
+        manager.embed_query.return_value = [0.0] * 4
+        settings = MagicMock()
+        with (
+            patch("sif.cli.commands.search.Database", return_value=self._empty_shadow_db()),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
+            patch("sif.search.vector.VectorSearcher", return_value=searcher),
+            patch("sif.embedding.manager.EmbeddingManager.from_settings", return_value=manager),
+            patch("sif.config.settings.get_settings", return_value=settings),
+        ):
+            result = CliRunner().invoke(
+                vsearch_cmd,
+                ["query"],
+                env={"COLUMNS": "80"},
+                obj={"index_path": self._index(tmp_path)},
+            )
+
+        assert result.exit_code == 0
+        assert self._hint_in_stderr(result)
+        assert "have stale vectors" not in result.stdout
+
+
 class TrackingDatabase(Database):
     """Database double recording constructed instances for closure assertions."""
 
@@ -2007,14 +2763,11 @@ class TestDatabaseClosure:
         repo.list_enabled.return_value = []
         manager = MagicMock()
         manager.embed_single.return_value = [0.0] * 4
+        manager.embed_query.return_value = [0.0] * 4
         manager._model = MagicMock()
         # embedding_dim must be a real int: init_schema() resolves get_settings
         # lazily per call, so this mock feeds the real SchemaManager's vec0 DDL.
-        settings = MagicMock(
-            reranker_model_name=None,
-            reranker_model_path=None,
-            embedding_dim=4,
-        )
+        settings = _query_settings_mock(embedding_dim=4)
         with (
             patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
             patch("sif.cli.commands.search.SearchPipeline", return_value=pipeline),
@@ -2036,24 +2789,25 @@ class TestDatabaseClosure:
     ) -> None:
         """Every Database constructed by vsearch is closed after a successful run.
 
-        vsearch_cmd imports Database inside its function body, so the double
-        must be installed on sif.database.database (the import source), not
-        on the sif.cli.commands.search namespace the other closure tests patch.
+        vsearch_cmd uses the module-level Database import, so the double is
+        installed on sif.cli.commands.search — the same namespace the other
+        closure tests patch.
         """
         index = tmp_path / "index.db"
         index.touch()
         TrackingDatabase.created.clear()
-        monkeypatch.setattr("sif.database.database.Database", TrackingDatabase)
+        monkeypatch.setattr("sif.cli.commands.search.Database", TrackingDatabase)
         searcher = MagicMock()
         searcher.search.return_value = []
         repo = MagicMock()
         repo.list_enabled.return_value = []
         manager = MagicMock()
         manager.embed_single.return_value = [0.0] * 4
+        manager.embed_query.return_value = [0.0] * 4
         # embedding_dim must be a real int (see query closure test note).
         settings = MagicMock(embedding_dim=4)
         with (
-            patch("sif.database.repositories.CollectionRepository", return_value=repo),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
             patch("sif.search.vector.VectorSearcher", return_value=searcher),
             patch("sif.embedding.manager.EmbeddingManager.from_settings", return_value=manager),
             patch("sif.config.settings.get_settings", return_value=settings),
@@ -2064,3 +2818,1960 @@ class TestDatabaseClosure:
         assert TrackingDatabase.created, "vsearch must construct its Database"
         for instance in TrackingDatabase.created:
             assert instance._connection is None
+
+
+class TestPreSearchRefresh:
+    """SC1/SC2: search_cmd's pre-command drift refresh (LIVE-10, D-01..D-07).
+
+    Real-DB CliRunner end-to-end: index a tmp_path collection, drift it
+    deterministically (content writes / unlink — never sleep), and prove the
+    search finds refreshed content with the notice on stderr and stdout
+    clean. A clean index pays nothing: no lock file, no notice, no writes.
+    """
+
+    @pytest.fixture(autouse=True)
+    def isolated_settings(self) -> Generator[None, None, None]:
+        """Real Settings must not leak a cached instance between invocations."""
+        get_settings.cache_clear()
+        yield
+        get_settings.cache_clear()
+
+    @staticmethod
+    def _seed_index(
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        files: dict[str, str] | None = None,
+    ) -> tuple[Path, Path, Settings]:
+        """Create a real indexed collection; default one alpha-term document.
+
+        Returns (db_path, notes, settings); every invoke must run under
+        ``patch("sif.config.settings.get_settings", return_value=settings)``
+        so the schema's vec0 dimension check and the drift check share the
+        same hermetic settings (embedding_dim=8, TestDatabaseClosure culture)
+        — unless the test drives the real env-var path instead.
+        """
+        for var in (
+            "SIF_EMBEDDING_DIM",
+            "SIF_MODEL_TYPE",
+            "SIF_MODEL_NAME",
+            "SIF_SEARCH_REFRESH_ENABLED",
+            "SIF_SEARCH_REFRESH_MAX_FILES",
+        ):
+            monkeypatch.delenv(var, raising=False)
+        settings = Settings(embedding_dim=8, model_name="test", cache_embeddings=False)
+        db_path = tmp_path / "search.db"
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        if files is None:
+            files = {
+                "a.md": "# Heading One\n\nAlpha paragraph text for search. " * 10,
+            }
+        for name, body in files.items():
+            (notes / name).write_text(body, encoding="utf-8")
+        db = Database(db_path)
+        with patch("sif.config.settings.get_settings", return_value=settings):
+            db.init_schema()
+            with db.connection:
+                CollectionRepository(db.connection).create(
+                    Collection(name="notes", path=str(notes))
+                )
+            coll = CollectionRepository(db.connection).get_by_name("notes")
+            assert coll is not None
+            IncrementalIndexer(db.connection).update_collection(coll)
+        db.close()
+        return db_path, notes, settings
+
+    def test_search_finds_modified_content_and_notifies_on_stderr(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """SC1: a post-index edit is BM25-refreshed before searching; notice on stderr."""
+        db_path, notes, settings = self._seed_index(tmp_path, monkeypatch)
+        (notes / "a.md").write_text(
+            "# Heading Two\n\nZanzibar unique new term body. " * 10, encoding="utf-8"
+        )
+
+        with patch("sif.config.settings.get_settings", return_value=settings):
+            result = CliRunner().invoke(search_cmd, ["zanzibar"], obj={"index_path": db_path})
+
+        assert result.exit_code == 0
+        assert "refreshed 1 files (bm25) before search" in result.stderr
+        assert "Heading Two" in result.output
+
+        # Stat-decides no-op: the second identical search is silent, still finds it.
+        with patch("sif.config.settings.get_settings", return_value=settings):
+            second = CliRunner().invoke(search_cmd, ["zanzibar"], obj={"index_path": db_path})
+        assert second.exit_code == 0
+        assert second.stderr == ""
+        assert "Heading Two" in second.output
+
+    def test_refresh_failure_warns_and_search_proceeds(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """D-05 failure leg: a refresh exception warns on stderr, exit 0, stale results.
+
+        The over-cap leg of the same prohibition is test-enforced elsewhere;
+        this exercises the ``except`` branch itself — a refresh failure must
+        never fail the search (exit 0, results from the current index).
+        """
+
+        def _boom(*_args: object, **_kwargs: object) -> None:
+            raise RuntimeError("simulated refresh failure")
+
+        db_path, notes, settings = self._seed_index(tmp_path, monkeypatch)
+        (notes / "a.md").write_text(
+            "# Heading Three\n\nZanzibar unique new term body. " * 10, encoding="utf-8"
+        )
+
+        with (
+            patch("sif.config.settings.get_settings", return_value=settings),
+            patch("sif.cli.commands.search.refresh_drifted", side_effect=_boom),
+        ):
+            result = CliRunner().invoke(search_cmd, ["heading"], obj={"index_path": db_path})
+
+        assert result.exit_code == 0
+        assert "Pre-search refresh failed; searching the current index" in result.stderr
+        # The search proceeded on the STALE index: the pre-edit document is
+        # still served (the new term exists only in the drifted content).
+        assert "Heading One" in result.output
+        assert "Heading Three" not in result.output
+
+        # Recovery: with the failure gone, the next search refreshes normally.
+        with patch("sif.config.settings.get_settings", return_value=settings):
+            recovered = CliRunner().invoke(search_cmd, ["zanzibar"], obj={"index_path": db_path})
+        assert recovered.exit_code == 0
+        assert "refreshed 1 files (bm25) before search" in recovered.stderr
+        assert "Heading Three" in recovered.output
+
+    def test_touch_only_drift_converges_across_searches(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """CR-01 regression: a same-content touch refreshes once, then stays clean.
+
+        A ``git checkout`` of identical content (or archive extract / no-op
+        save) moves mtimes without changing bytes. The first search
+        converges the stored mtime; the second must pay nothing — no
+        refresh burst (the ONLY lock acquirer), no notice, no drift.
+        """
+        db_path, notes, settings = self._seed_index(tmp_path, monkeypatch)
+        doc = notes / "a.md"
+        os.utime(doc, (1_700_000_000, 1_700_000_000))
+
+        with patch("sif.config.settings.get_settings", return_value=settings):
+            first = CliRunner().invoke(search_cmd, ["alpha"], obj={"index_path": db_path})
+
+        assert first.exit_code == 0
+        # Nothing was refreshed (checksum skip; only the mtime converged).
+        assert "refreshed 0 files (bm25) before search" in first.stderr
+        # The fresh mtime was persisted on the checksum-skip path.
+        assert self._document_snapshot(db_path)[str(doc.resolve())][1] == 1_700_000_000.0
+
+        with (
+            patch("sif.config.settings.get_settings", return_value=settings),
+            patch("sif.cli.commands.search.refresh_drifted") as spy,
+        ):
+            second = CliRunner().invoke(search_cmd, ["alpha"], obj={"index_path": db_path})
+
+        assert second.exit_code == 0
+        assert "Heading One" in second.output
+        assert second.stderr == ""
+        # No refresh burst → no index_lock window on the clean second search.
+        spy.assert_not_called()
+
+    def test_search_finds_new_file_and_drops_deleted_file(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """SC1: a new file becomes searchable and a deleted file stops hitting."""
+        db_path, notes, settings = self._seed_index(tmp_path, monkeypatch)
+        (notes / "b.md").write_text(
+            "# Brand New\n\nFreshnote unique new file term. " * 10, encoding="utf-8"
+        )
+        (notes / "a.md").unlink()
+
+        with patch("sif.config.settings.get_settings", return_value=settings):
+            result = CliRunner().invoke(search_cmd, ["freshnote"], obj={"index_path": db_path})
+            gone = CliRunner().invoke(search_cmd, ["alpha"], obj={"index_path": db_path})
+
+        assert result.exit_code == 0
+        # WR-02: the notice names the actual outcome — the new file was
+        # refreshed, the deleted one removed — not the raw drift count.
+        assert "refreshed 1 files, removed 1 (bm25) before search" in result.stderr
+        assert "Brand New" in result.output
+        assert gone.exit_code == 0
+        assert "No results found" in gone.output
+
+    def test_clean_search_is_lockless_silent_and_writeless(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """SC2: a clean index costs a read-only walk — no lock file, no notice, no writes."""
+        db_path, _notes, settings = self._seed_index(tmp_path, monkeypatch)
+
+        def snapshot() -> dict[str, tuple[str, float]]:
+            conn = sqlite3.connect(str(db_path))
+            try:
+                return {
+                    row[0]: (row[1], row[2])
+                    for row in conn.execute("SELECT path, checksum, mtime FROM documents")
+                }
+            finally:
+                conn.close()
+
+        before = snapshot()
+        with patch("sif.config.settings.get_settings", return_value=settings):
+            result = CliRunner().invoke(search_cmd, ["alpha"], obj={"index_path": db_path})
+
+        assert result.exit_code == 0
+        assert "Heading One" in result.output
+        assert result.stderr == ""
+        assert "refreshed" not in result.output
+        assert not Path(str(db_path) + ".lock").exists()
+        assert snapshot() == before
+
+    def test_json_stdout_stays_clean_with_refresh_notice_on_stderr(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """D-07: under --json the notice rides stderr; stdout parses as pure JSON."""
+        db_path, notes, settings = self._seed_index(tmp_path, monkeypatch)
+        (notes / "a.md").write_text(
+            "# Heading Two\n\nZanzibar unique new term body. " * 10, encoding="utf-8"
+        )
+
+        with patch("sif.config.settings.get_settings", return_value=settings):
+            result = CliRunner().invoke(
+                search_cmd, ["zanzibar", "--json"], obj={"index_path": db_path}
+            )
+
+        assert result.exit_code == 0
+        # result.stdout is the pure stdout stream (click >=8.2 mixes both in
+        # .output); it must parse as JSON untouched by the stderr notice.
+        payload = json.loads(result.stdout)
+        assert len(payload) == 1
+        assert payload[0]["title"] == "Heading Two"
+        assert "refreshed 1 files (bm25) before search" in result.stderr
+
+    # ------------------------------------------------------------------
+    # Task 2: cap boundary, opt-outs, and the rest of the trio
+    # ------------------------------------------------------------------
+
+    THREE_FILES: ClassVar[dict[str, str]] = {
+        "a.md": "# Doc A\n\nAlpha paragraph text for search. " * 10,
+        "b.md": "# Doc B\n\nBravo paragraph text for search. " * 10,
+        "c.md": "# Doc C\n\nCharlie paragraph text for search. " * 10,
+    }
+
+    @classmethod
+    def _drift_three(cls, notes: Path) -> None:
+        """Rewrite all three files so every stored mtime goes stale."""
+        for name, body in cls.THREE_FILES.items():
+            (notes / name).write_text(
+                body.replace("paragraph text", "zanzibar drifted text"),
+                encoding="utf-8",
+            )
+
+    @staticmethod
+    def _stored_content(db_path: Path, doc: Path) -> str:
+        """Read one document's stored content through a fresh connection."""
+        conn = sqlite3.connect(str(db_path))
+        try:
+            row = conn.execute(
+                "SELECT content FROM documents WHERE path = ?", (str(doc.resolve()),)
+            ).fetchone()
+            assert row is not None, f"no stored document for {doc}"
+            return row[0]
+        finally:
+            conn.close()
+
+    def _document_snapshot(self, db_path: Path) -> dict[str, tuple[str, float]]:
+        """Snapshot {path: (checksum, mtime)} via a fresh connection."""
+        conn = sqlite3.connect(str(db_path))
+        try:
+            return {
+                row[0]: (row[1], row[2])
+                for row in conn.execute("SELECT path, checksum, mtime FROM documents")
+            }
+        finally:
+            conn.close()
+
+    def test_ignored_stored_doc_converges_across_searches(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """WR-01 regression: a later ignore pattern converges instead of looping.
+
+        A stored document that ``SIF_WATCH_IGNORE_PATTERNS`` retroactively
+        excludes is deleted-shaped drift; the refresh must remove it the
+        way ``sif index update`` would, so the SECOND search is clean —
+        not an eternal drift/lock/notice loop.
+        """
+        db_path, notes, _settings = self._seed_index(
+            tmp_path,
+            monkeypatch,
+            files={
+                "a.md": "# Heading One\n\nAlpha paragraph text for search. " * 10,
+                "secret.md": "# Secret Doc\n\nSeekrit hidden body text. " * 10,
+            },
+        )
+        ignoring = Settings(
+            embedding_dim=8,
+            model_name="test",
+            cache_embeddings=False,
+            watch_ignore_patterns=["secret*"],
+        )
+
+        with patch("sif.config.settings.get_settings", return_value=ignoring):
+            first = CliRunner().invoke(search_cmd, ["seekrit"], obj={"index_path": db_path})
+
+        assert first.exit_code == 0
+        # WR-02: nothing was refreshed — the excluded doc was REMOVED.
+        assert "refreshed 0 files, removed 1 (bm25) before search" in first.stderr
+        # ...and it REMOVED the excluded doc, mirroring `sif index update`.
+        conn = sqlite3.connect(str(db_path))
+        try:
+            stored = {row[0] for row in conn.execute("SELECT path FROM documents")}
+        finally:
+            conn.close()
+        assert stored == {str((notes / "a.md").resolve())}
+        assert "No results found" in first.output
+
+        with (
+            patch("sif.config.settings.get_settings", return_value=ignoring),
+            patch("sif.cli.commands.search.refresh_drifted") as spy,
+        ):
+            second = CliRunner().invoke(search_cmd, ["alpha"], obj={"index_path": db_path})
+
+        assert second.exit_code == 0
+        assert "Heading One" in second.output
+        assert second.stderr == ""
+        # No refresh burst → no index_lock window on the clean second search.
+        spy.assert_not_called()
+
+    def test_unparseable_drift_warns_each_search_and_never_converges(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """WR-01 regression: invalid-UTF-8 drift warns with a count, exit 0, results served.
+
+        The mtime decision, made explicit: a parse-failed file deliberately
+        never converges — the stored content is genuinely stale — so it
+        re-warns on EVERY search until the file is fixed or removed. The fix
+        makes that loop visible (a counted "failed to parse" warning) and
+        honest (no "refreshed 0 files" masquerading as a clean refresh).
+        """
+        db_path, notes, settings = self._seed_index(tmp_path, monkeypatch)
+        doc = notes / "a.md"
+        # Deterministic, content-based unreadability: invalid UTF-8 bytes
+        # plus a forced distinct mtime (no chmod platform flakiness).
+        doc.write_bytes(b"\xff\xfe\x00 not utf-8 \xff\xfe")
+        os.utime(doc, (1_700_000_000, 1_700_000_000))
+
+        with patch("sif.config.settings.get_settings", return_value=settings):
+            first = CliRunner().invoke(search_cmd, ["alpha"], obj={"index_path": db_path})
+
+        assert first.exit_code == 0
+        # The failure is named and counted in the notice — not a silent
+        # "refreshed 0 files" that reads as a clean refresh.
+        assert "refreshed 0 files, 1 failed to parse (bm25) before search" in first.stderr
+        # The search proceeded on the current (stale) index: still served.
+        assert "Heading One" in first.output
+
+        # Deliberate non-convergence: the SECOND search re-drifts and warns
+        # again — the loop is now visible instead of silent.
+        with patch("sif.config.settings.get_settings", return_value=settings):
+            second = CliRunner().invoke(search_cmd, ["alpha"], obj={"index_path": db_path})
+
+        assert second.exit_code == 0
+        assert "1 failed to parse" in second.stderr
+        assert "Heading One" in second.output
+
+        # The stored row was untouched: stale content, unconverged mtime.
+        assert self._document_snapshot(db_path)[str(doc.resolve())][1] != 1_700_000_000.0
+        assert "Alpha" in self._stored_content(db_path, doc)
+
+        # D-07: -q suppresses the notice/warning line (the underlying
+        # logger.warning may still ride stderr — logging is error output).
+        with patch("sif.config.settings.get_settings", return_value=settings):
+            quiet = CliRunner().invoke(
+                search_cmd, ["alpha", "--quiet"], obj={"index_path": db_path}
+            )
+
+        assert quiet.exit_code == 0
+        assert "failed to parse" not in quiet.stderr
+        assert "(bm25) before search" not in quiet.stderr
+
+    def test_over_cap_drift_skips_refresh_and_warns(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """D-05/D-06: 3 drifted files over cap=2 — no refresh, no lock, warn + stale hits."""
+        db_path, notes, _settings = self._seed_index(
+            tmp_path, monkeypatch, files=dict(self.THREE_FILES)
+        )
+        self._drift_three(notes)
+        # Real env-var settings path: cap 2, dim 8 matching the seeded vec0.
+        monkeypatch.setenv("SIF_EMBEDDING_DIM", "8")
+        monkeypatch.setenv("SIF_SEARCH_REFRESH_MAX_FILES", "2")
+
+        before = self._document_snapshot(db_path)
+        result = CliRunner().invoke(search_cmd, ["alpha"], obj={"index_path": db_path})
+
+        assert result.exit_code == 0
+        # Normalize whitespace: Rich soft-wraps the warning at console width.
+        flat_stderr = " ".join(result.stderr.split())
+        assert "index drift: 3 changed files exceeds the pre-search refresh cap (2)" in flat_stderr
+        assert "run 'sif index update' to refresh" in flat_stderr
+        # Nothing was refreshed and the lock file was never created.
+        assert self._document_snapshot(db_path) == before
+        assert not Path(str(db_path) + ".lock").exists()
+        # The stale index still answers: old content remains searchable.
+        assert "Doc A" in result.output
+
+    def test_cap_boundary_count_equal_to_cap_refreshes(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """D-06 exact boundary: count == cap still refreshes (only count > cap skips)."""
+        db_path, notes, _settings = self._seed_index(
+            tmp_path, monkeypatch, files=dict(self.THREE_FILES)
+        )
+        self._drift_three(notes)
+        monkeypatch.setenv("SIF_EMBEDDING_DIM", "8")
+        monkeypatch.setenv("SIF_SEARCH_REFRESH_MAX_FILES", "3")
+
+        result = CliRunner().invoke(search_cmd, ["zanzibar"], obj={"index_path": db_path})
+
+        assert result.exit_code == 0
+        assert "refreshed 3 files (bm25) before search" in result.stderr
+        assert "Doc A" in result.output
+
+    def test_over_cap_never_parses_candidates(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """D-05 count-first: the over-cap decision precedes any candidate parsing."""
+        db_path, notes, _settings = self._seed_index(
+            tmp_path, monkeypatch, files=dict(self.THREE_FILES)
+        )
+        self._drift_three(notes)
+        capped = Settings(
+            embedding_dim=8,
+            model_name="test",
+            cache_embeddings=False,
+            search_refresh_max_files=2,
+        )
+
+        with (
+            patch("sif.config.settings.get_settings", return_value=capped),
+            patch("sif.indexing.drift.IncrementalIndexer") as mock_indexer,
+        ):
+            result = CliRunner().invoke(search_cmd, ["alpha"], obj={"index_path": db_path})
+
+        assert result.exit_code == 0
+        mock_indexer.assert_not_called()
+
+    def test_setting_disabled_skips_detection_entirely(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """SIF_SEARCH_REFRESH_ENABLED=0: detect_drift is never invoked; search proceeds."""
+        db_path, notes, _settings = self._seed_index(tmp_path, monkeypatch)
+        (notes / "a.md").write_text(
+            "# Heading Two\n\nZanzibar unique new term body. " * 10, encoding="utf-8"
+        )
+        monkeypatch.setenv("SIF_EMBEDDING_DIM", "8")
+        monkeypatch.setenv("SIF_SEARCH_REFRESH_ENABLED", "0")
+
+        with patch("sif.cli.commands.search.detect_drift") as spy:
+            result = CliRunner().invoke(search_cmd, ["alpha"], obj={"index_path": db_path})
+
+        assert result.exit_code == 0
+        spy.assert_not_called()
+        assert result.stderr == ""
+        # No refresh: the stale index still serves the old content.
+        assert "Heading One" in result.output
+
+    @pytest.mark.parametrize("command_name", ["search", "vsearch", "query"])
+    def test_no_refresh_flag_skips_check_on_all_trio_commands(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        command_name: str,
+    ) -> None:
+        """--no-refresh on each trio command skips the drift check entirely."""
+        db_path, notes, settings = self._seed_index(tmp_path, monkeypatch)
+        (notes / "a.md").write_text(
+            "# Heading Two\n\nZanzibar unique new term body. " * 10, encoding="utf-8"
+        )
+        command = {"search": search_cmd, "vsearch": vsearch_cmd, "query": query_cmd}[command_name]
+        manager = MagicMock()
+        manager.embed_single.return_value = [0.0] * 8
+        manager.embed_query.return_value = [0.0] * 8
+        manager._model = MagicMock()
+        downstream = {
+            "search": [],
+            "vsearch": [
+                patch(
+                    "sif.search.vector.VectorSearcher",
+                    return_value=MagicMock(search=MagicMock(return_value=[])),
+                ),
+            ],
+            "query": [
+                patch(
+                    "sif.cli.commands.search.SearchPipeline",
+                    return_value=MagicMock(search=MagicMock(return_value=[])),
+                ),
+                patch("sif.search.rerank.create_reranker", side_effect=ImportError("x")),
+            ],
+        }[command_name]
+
+        with (
+            patch("sif.config.settings.get_settings", return_value=settings),
+            patch("sif.embedding.manager.EmbeddingManager.from_settings", return_value=manager),
+            patch("sif.cli.commands.search.detect_drift") as spy,
+            ExitStack() as stack,
+        ):
+            for patcher in downstream:
+                stack.enter_context(patcher)
+            result = CliRunner().invoke(
+                command, ["alpha", "--no-refresh"], obj={"index_path": db_path}
+            )
+
+        assert result.exit_code == 0, result.output
+        spy.assert_not_called()
+        assert result.stderr == ""
+
+    def test_quiet_suppresses_notice_but_refresh_still_happens(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """D-07: -q silences the notice while the under-cap refresh still runs."""
+        db_path, notes, settings = self._seed_index(tmp_path, monkeypatch)
+        (notes / "a.md").write_text(
+            "# Heading Two\n\nZanzibar unique new term body. " * 10, encoding="utf-8"
+        )
+
+        with patch("sif.config.settings.get_settings", return_value=settings):
+            result = CliRunner().invoke(
+                search_cmd, ["zanzibar", "--quiet"], obj={"index_path": db_path}
+            )
+
+        assert result.exit_code == 0
+        assert result.stderr == ""
+        assert "Zanzibar" in self._stored_content(db_path, notes / "a.md")
+
+    def test_quiet_suppresses_over_cap_warning(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """D-07: -q silences the over-cap warning too; nothing is refreshed."""
+        db_path, notes, _settings = self._seed_index(
+            tmp_path, monkeypatch, files=dict(self.THREE_FILES)
+        )
+        self._drift_three(notes)
+        monkeypatch.setenv("SIF_EMBEDDING_DIM", "8")
+        monkeypatch.setenv("SIF_SEARCH_REFRESH_MAX_FILES", "2")
+
+        before = self._document_snapshot(db_path)
+        result = CliRunner().invoke(search_cmd, ["alpha", "--quiet"], obj={"index_path": db_path})
+
+        assert result.exit_code == 0
+        assert result.stderr == ""
+        assert self._document_snapshot(db_path) == before
+
+    def test_vsearch_refreshes_drifted_file_before_search(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """D-01 trio: vsearch runs the same drift check before its searcher."""
+        db_path, notes, settings = self._seed_index(tmp_path, monkeypatch)
+        (notes / "a.md").write_text(
+            "# Heading Two\n\nZanzibar unique new term body. " * 10, encoding="utf-8"
+        )
+        manager = MagicMock()
+        manager.embed_single.return_value = [0.0] * 8
+        manager.embed_query.return_value = [0.0] * 8
+        searcher = MagicMock()
+        searcher.search.return_value = []
+
+        with (
+            patch("sif.config.settings.get_settings", return_value=settings),
+            patch("sif.embedding.manager.EmbeddingManager.from_settings", return_value=manager),
+            patch("sif.search.vector.VectorSearcher", return_value=searcher),
+        ):
+            result = CliRunner().invoke(vsearch_cmd, ["zanzibar"], obj={"index_path": db_path})
+
+        assert result.exit_code == 0, result.output
+        assert "refreshed 1 files (bm25) before search" in result.stderr
+        assert "Zanzibar" in self._stored_content(db_path, notes / "a.md")
+
+    def test_query_refreshes_drifted_file_before_search(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """D-01 trio: query runs the same drift check before pipeline construction."""
+        db_path, notes, settings = self._seed_index(tmp_path, monkeypatch)
+        (notes / "a.md").write_text(
+            "# Heading Two\n\nZanzibar unique new term body. " * 10, encoding="utf-8"
+        )
+        manager = MagicMock()
+        manager.embed_single.return_value = [0.0] * 8
+        manager.embed_query.return_value = [0.0] * 8
+        manager._model = MagicMock()
+        pipeline = MagicMock()
+        pipeline.search.return_value = []
+
+        with (
+            patch("sif.config.settings.get_settings", return_value=settings),
+            patch("sif.embedding.manager.EmbeddingManager.from_settings", return_value=manager),
+            patch("sif.cli.commands.search.SearchPipeline", return_value=pipeline),
+            patch("sif.search.rerank.create_reranker", side_effect=ImportError("x")),
+        ):
+            result = CliRunner().invoke(query_cmd, ["zanzibar"], obj={"index_path": db_path})
+
+        assert result.exit_code == 0, result.output
+        assert "refreshed 1 files (bm25) before search" in result.stderr
+        assert "Zanzibar" in self._stored_content(db_path, notes / "a.md")
+
+
+class TestQueryFusionWeightFlags:
+    """--rrf-k/--bm25-weight/--vector-weight plumbing (Phase 15, D-02/D-03).
+
+    Precedence per knob: CLI flag > SIF_ setting > default. Flags exist on
+    query_cmd ONLY (hybrid fusion is the only place weights mean anything).
+    """
+
+    @staticmethod
+    def _result() -> SearchResult:
+        return SearchResult(
+            document_id="doc-1",
+            rank=1,
+            score=0.5,
+            title="T",
+            path="/notes/t.md",
+            collection_name="c",
+        )
+
+    @staticmethod
+    def _index(tmp_path: Path) -> Path:
+        index = tmp_path / "index.db"
+        index.touch()
+        return index
+
+    def _invoke(
+        self,
+        tmp_path: Path,
+        args: list[str],
+        settings: object = None,
+    ) -> tuple[object, MagicMock]:
+        """Invoke query_cmd with everything mocked except (optionally) settings."""
+        repo = MagicMock()
+        repo.list_enabled.return_value = []
+        manager = MagicMock()
+        manager.embed_single.return_value = [0.0] * 4
+        manager.embed_query.return_value = [0.0] * 4
+        manager._model = MagicMock()
+        pipeline = MagicMock()
+        pipeline.search.return_value = [self._result()]
+        patches = [
+            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
+            patch("sif.cli.commands.search.SearchPipeline", return_value=pipeline),
+            patch("sif.embedding.manager.EmbeddingManager.from_settings", return_value=manager),
+        ]
+        if settings is not None:
+            patches.append(
+                patch("sif.config.settings.get_settings", return_value=settings),
+            )
+        with ExitStack() as stack:
+            for patcher in patches:
+                stack.enter_context(patcher)
+            result = CliRunner().invoke(
+                query_cmd,
+                args,
+                obj={"index_path": self._index(tmp_path)},
+            )
+        return result, pipeline
+
+    def test_flags_fill_search_options(self, tmp_path: Path) -> None:
+        """Explicit flags flow verbatim into the SearchOptions the pipeline gets."""
+        settings = _query_settings_mock(rrf_k=99, bm25_weight=9.0, vector_weight=9.0)
+
+        result, pipeline = self._invoke(
+            tmp_path,
+            [
+                "query",
+                "--rrf-k",
+                "5",
+                "--bm25-weight",
+                "3.0",
+                "--vector-weight",
+                "0.5",
+            ],
+            settings=settings,
+        )
+
+        assert result.exit_code == 0, result.output
+        options = pipeline.search.call_args[0][1]
+        assert options.rrf_k == 5
+        assert options.bm25_weight == 3.0
+        assert options.vector_weight == 0.5
+
+    def test_settings_fill_when_no_flag(self, tmp_path: Path) -> None:
+        """Absent flags fall back to the SIF_ settings layer (patched here)."""
+        settings = _query_settings_mock(rrf_k=7, bm25_weight=2.0, vector_weight=0.5)
+
+        result, pipeline = self._invoke(tmp_path, ["query"], settings=settings)
+
+        assert result.exit_code == 0, result.output
+        options = pipeline.search.call_args[0][1]
+        assert options.rrf_k == 7
+        assert options.bm25_weight == 2.0
+        assert options.vector_weight == 0.5
+
+    def test_env_setting_reaches_options_with_real_settings(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """SIF_RRF_K=7 with no flag yields options.rrf_k == 7 (real Settings)."""
+        monkeypatch.setenv("SIF_RRF_K", "7")
+        # Keep the real settings off the reranker path (default name is truthy).
+        monkeypatch.setenv("SIF_RERANKER_MODEL_NAME", "")
+        monkeypatch.setenv("SIF_RERANKER_MODEL_PATH", "")
+        repo = MagicMock()
+        repo.list_enabled.return_value = []
+        manager = MagicMock()
+        manager.embed_single.return_value = [0.0] * 4
+        manager.embed_query.return_value = [0.0] * 4
+        manager._model = MagicMock()
+        pipeline = MagicMock()
+        pipeline.search.return_value = [self._result()]
+
+        try:
+            get_settings.cache_clear()
+            with (
+                patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+                patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
+                patch("sif.cli.commands.search.SearchPipeline", return_value=pipeline),
+                patch(
+                    "sif.embedding.manager.EmbeddingManager.from_settings",
+                    return_value=manager,
+                ),
+                patch("sif.search.rerank.create_reranker", side_effect=ImportError("x")),
+            ):
+                result = CliRunner().invoke(
+                    query_cmd,
+                    ["query"],
+                    obj={"index_path": self._index(tmp_path)},
+                )
+        finally:
+            get_settings.cache_clear()
+
+        assert result.exit_code == 0, result.output
+        options = pipeline.search.call_args[0][1]
+        assert options.rrf_k == 7
+        assert options.bm25_weight == 1.0
+        assert options.vector_weight == 1.0
+
+    def test_flag_beats_env_setting(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """--rrf-k 5 overrides SIF_RRF_K=7 (flag > SIF_ > default, D-03)."""
+        monkeypatch.setenv("SIF_RRF_K", "7")
+        monkeypatch.setenv("SIF_RERANKER_MODEL_NAME", "")
+        monkeypatch.setenv("SIF_RERANKER_MODEL_PATH", "")
+        repo = MagicMock()
+        repo.list_enabled.return_value = []
+        manager = MagicMock()
+        manager.embed_single.return_value = [0.0] * 4
+        manager.embed_query.return_value = [0.0] * 4
+        manager._model = MagicMock()
+        pipeline = MagicMock()
+        pipeline.search.return_value = [self._result()]
+
+        try:
+            get_settings.cache_clear()
+            with (
+                patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+                patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
+                patch("sif.cli.commands.search.SearchPipeline", return_value=pipeline),
+                patch(
+                    "sif.embedding.manager.EmbeddingManager.from_settings",
+                    return_value=manager,
+                ),
+                patch("sif.search.rerank.create_reranker", side_effect=ImportError("x")),
+            ):
+                result = CliRunner().invoke(
+                    query_cmd,
+                    ["query", "--rrf-k", "5", "--bm25-weight", "3.0"],
+                    obj={"index_path": self._index(tmp_path)},
+                )
+        finally:
+            get_settings.cache_clear()
+
+        assert result.exit_code == 0, result.output
+        options = pipeline.search.call_args[0][1]
+        assert options.rrf_k == 5
+        assert options.bm25_weight == 3.0
+        assert options.vector_weight == 1.0  # untouched knob keeps the SIF_/default value
+
+    @pytest.mark.parametrize(
+        "flag",
+        [
+            ["--rrf-k", "0"],
+            ["--bm25-weight", "0"],
+            ["--bm25-weight", "-1"],
+            ["--vector-weight", "0"],
+            ["--vector-weight", "-0.5"],
+        ],
+    )
+    def test_invalid_flag_values_rejected(self, tmp_path: Path, flag: list[str]) -> None:
+        """Out-of-range flags die as Click usage errors (non-zero exit)."""
+        settings = _query_settings_mock(rrf_k=60, bm25_weight=1.0, vector_weight=1.0)
+
+        result, pipeline = self._invoke(tmp_path, ["query", *flag], settings=settings)
+
+        assert result.exit_code != 0
+        pipeline.search.assert_not_called()
+
+    def test_invalid_env_rrf_k_surfaces_clean_error(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """SIF_RRF_K=0 fails Pydantic validation naming rrf_k, as a ClickException."""
+        monkeypatch.setenv("SIF_RRF_K", "0")
+        monkeypatch.setenv("SIF_RERANKER_MODEL_NAME", "")
+        monkeypatch.setenv("SIF_RERANKER_MODEL_PATH", "")
+        repo = MagicMock()
+        repo.list_enabled.return_value = []
+        manager = MagicMock()
+        manager.embed_single.return_value = [0.0] * 4
+        manager.embed_query.return_value = [0.0] * 4
+        manager._model = MagicMock()
+        pipeline = MagicMock()
+        pipeline.search.return_value = [self._result()]
+
+        try:
+            get_settings.cache_clear()
+            with (
+                patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+                patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
+                patch("sif.cli.commands.search.SearchPipeline", return_value=pipeline),
+                patch(
+                    "sif.embedding.manager.EmbeddingManager.from_settings",
+                    return_value=manager,
+                ),
+            ):
+                result = CliRunner().invoke(
+                    query_cmd,
+                    ["query"],
+                    obj={"index_path": self._index(tmp_path)},
+                )
+        finally:
+            get_settings.cache_clear()
+
+        assert result.exit_code == 1
+        assert "rrf_k" in result.stderr or "rrf_k" in result.output
+        assert "Traceback" not in result.output
+
+    @pytest.mark.parametrize("command", ["search", "vsearch"])
+    def test_single_source_commands_have_no_weight_flags(self, command: str) -> None:
+        """search/vsearch reject the weight flags (D-02 — no-op flags mislead)."""
+        from sif.cli.commands.search import search_cmd as bm25_cmd, vsearch_cmd as vec_cmd
+
+        cmd = bm25_cmd if command == "search" else vec_cmd
+        for flag in ("--rrf-k", "--bm25-weight", "--vector-weight"):
+            result = CliRunner().invoke(cmd, ["foo", flag, "1.0"])
+            assert result.exit_code != 0, f"{command} accepted {flag}"
+
+
+_SUGGEST_DOCS = [
+    ("d1", "quantum machine learning algorithms"),
+    ("d2", "quantum computing quick quantifiers"),
+    ("d3", "studies of machine learning contexts"),
+]
+
+
+def _seed_suggestion_index(tmp_path: Path) -> tuple[Path, Settings]:
+    """Real index DB whose porter vocabulary anchors the zero-result battery.
+
+    ``quantm machin`` is a DYM case (quantm has no prefix hit; machin is a
+    porter stem); ``quantum studi`` returns nothing while both tokens are
+    retrievable — the no-forced-DYM case (D-07).
+    """
+    settings = Settings(_env_file=None, embedding_dim=8, model_name="test", cache_embeddings=False)
+    db_path = tmp_path / "search-suggest.db"
+    with patch("sif.config.settings.get_settings", return_value=settings):
+        db = Database(db_path)
+        db.init_schema()
+        now = datetime.now(timezone.utc).isoformat()
+        with db.connection:
+            conn = db.connection
+            conn.execute(
+                "INSERT INTO collections (id, name, path, created_at, updated_at)"
+                " VALUES ('c1', 'notes', '/vault', ?, ?)",
+                (now, now),
+            )
+            conn.executemany(
+                "INSERT INTO documents (id, collection_id, path, filename, title,"
+                " content, checksum, mtime, created_at, updated_at)"
+                " VALUES (?, 'c1', ?, ?, ?, ?, ?, 1.0, ?, ?)",
+                [
+                    (
+                        doc_id,
+                        f"/vault/{doc_id}.md",
+                        f"{doc_id}.md",
+                        doc_id,
+                        body,
+                        f"ck-{doc_id}",
+                        now,
+                        now,
+                    )
+                    for doc_id, body in _SUGGEST_DOCS
+                ],
+            )
+        db.close()
+    return db_path, settings
+
+
+def _query_log_rows(db_path: Path) -> list[sqlite3.Row]:
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        return conn.execute(
+            "SELECT query, result_count, collections FROM query_log ORDER BY created_at"
+        ).fetchall()
+    finally:
+        conn.close()
+
+
+class TestZeroResultSuggestions:
+    """SC2/D-05: zero-result DYM on all three commands, stdout stays pure."""
+
+    @pytest.fixture(autouse=True)
+    def isolate_quiet_state(self) -> Generator[None, None, None]:
+        """Do not leak process-global quiet/settings state between tests."""
+        from sif.utils.logging import set_quiet
+
+        set_quiet(False)
+        get_settings.cache_clear()
+        yield
+        set_quiet(False)
+        get_settings.cache_clear()
+
+    @staticmethod
+    def _invoke_bm25(
+        db_path: Path,
+        settings: Settings,
+        args: list[str],
+        *,
+        env: dict[str, str] | None = None,
+    ) -> object:
+        with patch("sif.config.settings.get_settings", return_value=settings):
+            return CliRunner().invoke(search_cmd, args, obj={"index_path": db_path}, env=env)
+
+    @staticmethod
+    def _invoke_vsearch(db_path: Path, settings: Settings, args: list[str]) -> object:
+        manager = MagicMock()
+        manager.embed_single.return_value = [0.0] * 8
+        manager.embed_query.return_value = [0.0] * 8
+        manager._model = MagicMock()
+        searcher = MagicMock()
+        searcher.search.return_value = []
+        with (
+            patch("sif.config.settings.get_settings", return_value=settings),
+            patch("sif.embedding.manager.EmbeddingManager.from_settings", return_value=manager),
+            patch("sif.search.vector.VectorSearcher", return_value=searcher),
+        ):
+            return CliRunner().invoke(vsearch_cmd, args, obj={"index_path": db_path})
+
+    @staticmethod
+    def _invoke_query(db_path: Path, settings: Settings, args: list[str]) -> object:
+        manager = MagicMock()
+        manager.embed_single.return_value = [0.0] * 8
+        manager.embed_query.return_value = [0.0] * 8
+        manager._model = MagicMock()
+        pipeline = MagicMock()
+        pipeline.search.return_value = []
+        with (
+            patch("sif.config.settings.get_settings", return_value=settings),
+            patch("sif.embedding.manager.EmbeddingManager.from_settings", return_value=manager),
+            patch("sif.cli.commands.search.SearchPipeline", return_value=pipeline),
+        ):
+            return CliRunner().invoke(query_cmd, args, obj={"index_path": db_path})
+
+    def test_table_mode_shows_dym_after_no_results(self, tmp_path: Path) -> None:
+        """sif search: 'No results found.' then 'Did you mean: quantum machin'."""
+        db_path, settings = _seed_suggestion_index(tmp_path)
+
+        result = self._invoke_bm25(db_path, settings, ["quantm machin", "--no-refresh"])
+
+        assert result.exit_code == 0, result.output
+        assert "No results found." in result.stdout
+        assert "Did you mean: quantum machin" in result.stdout
+
+    def test_vsearch_table_mode_shows_dym(self, tmp_path: Path) -> None:
+        """vsearch shares the zero-result hook (vocab source, no embedder needed)."""
+        db_path, settings = _seed_suggestion_index(tmp_path)
+
+        result = self._invoke_vsearch(db_path, settings, ["quantm machin", "--no-refresh"])
+
+        assert result.exit_code == 0, result.output
+        assert "Did you mean: quantum machin" in result.stdout
+
+    def test_query_table_mode_shows_dym(self, tmp_path: Path) -> None:
+        """query shares the zero-result hook after the pipeline returns nothing."""
+        db_path, settings = _seed_suggestion_index(tmp_path)
+
+        result = self._invoke_query(db_path, settings, ["quantm machin", "--no-refresh"])
+
+        assert result.exit_code == 0, result.output
+        assert "Did you mean: quantum machin" in result.stdout
+
+    @pytest.mark.parametrize("flag", ["--csv", "--md", "--xml", "--files"])
+    def test_machine_modes_keep_suggestions_off_stdout(self, tmp_path: Path, flag: str) -> None:
+        """CSV/MD/XML/files route the suggestion to stderr only (stdout purity)."""
+        db_path, settings = _seed_suggestion_index(tmp_path)
+
+        result = self._invoke_bm25(db_path, settings, ["quantm machin", "--no-refresh", flag])
+
+        assert result.exit_code == 0, result.output
+        assert "Did you mean" not in result.stdout
+        assert "Did you mean" in result.stderr
+
+    def test_zero_result_json_wraps_suggestions_or_keeps_plain_array(self, tmp_path: Path) -> None:
+        """Conditional object with suggestions; plain [] when no DYM (Pitfall 5)."""
+        db_path, settings = _seed_suggestion_index(tmp_path)
+
+        with_suggestions = self._invoke_bm25(
+            db_path, settings, ["quantm machin", "--json", "--no-refresh"]
+        )
+        without_suggestions = self._invoke_bm25(
+            db_path, settings, ["quantum studi", "--json", "--no-refresh"]
+        )
+
+        assert with_suggestions.exit_code == 0, with_suggestions.output
+        payload = json.loads(with_suggestions.stdout)
+        assert payload["query"] == "quantm machin"
+        assert payload["results"] == []
+        assert payload["suggestions"] == ["quantum machin"]
+
+        assert without_suggestions.exit_code == 0, without_suggestions.output
+        assert json.loads(without_suggestions.stdout) == []
+
+    def test_quiet_zero_result_prints_no_dym(self, tmp_path: Path) -> None:
+        """-q gates the DYM line exactly like 'No results found.'."""
+        db_path, settings = _seed_suggestion_index(tmp_path)
+
+        result = self._invoke_bm25(db_path, settings, ["quantm machin", "-q", "--no-refresh"])
+
+        assert result.exit_code == 0
+        assert "Did you mean" not in result.output
+
+
+class TestQueryHistoryWrite:
+    """D-08/D-09: executed CLI searches log one row; opt-out and failures are safe."""
+
+    @pytest.fixture(autouse=True)
+    def isolate_quiet_state(self) -> Generator[None, None, None]:
+        from sif.utils.logging import set_quiet
+
+        set_quiet(False)
+        get_settings.cache_clear()
+        yield
+        set_quiet(False)
+        get_settings.cache_clear()
+
+    def test_search_writes_one_row_with_results_and_collections(self, tmp_path: Path) -> None:
+        """sif search 'quantum' logs (query, result count, collections)."""
+        db_path, settings = _seed_suggestion_index(tmp_path)
+
+        result = TestZeroResultSuggestions._invoke_bm25(
+            db_path, settings, ["quantum", "--no-refresh"]
+        )
+
+        assert result.exit_code == 0, result.output
+        rows = _query_log_rows(db_path)
+        assert len(rows) == 1
+        assert rows[0]["query"] == "quantum"
+        assert rows[0]["result_count"] == 2
+        assert json.loads(rows[0]["collections"]) == ["notes"]
+
+    @pytest.mark.parametrize("command", ["vsearch", "query"])
+    def test_vsearch_and_query_write_a_row(self, tmp_path: Path, command: str) -> None:
+        """The other two executed searches log exactly one row as well."""
+        db_path, settings = _seed_suggestion_index(tmp_path)
+        invoke = (
+            TestZeroResultSuggestions._invoke_vsearch
+            if command == "vsearch"
+            else TestZeroResultSuggestions._invoke_query
+        )
+
+        result = invoke(db_path, settings, ["quantum", "--no-refresh"])
+
+        assert result.exit_code == 0, result.output
+        rows = _query_log_rows(db_path)
+        assert len(rows) == 1
+        assert rows[0]["query"] == "quantum"
+        assert json.loads(rows[0]["collections"]) == ["notes"]
+
+    def test_quiet_search_still_writes(self, tmp_path: Path) -> None:
+        """-q only silences display; the search executed, so history logs."""
+        db_path, settings = _seed_suggestion_index(tmp_path)
+
+        result = TestZeroResultSuggestions._invoke_bm25(
+            db_path, settings, ["quantum", "-q", "--no-refresh"]
+        )
+
+        assert result.exit_code == 0
+        assert len(_query_log_rows(db_path)) == 1
+
+    def test_history_disabled_writes_nothing(self, tmp_path: Path) -> None:
+        """SIF_QUERY_HISTORY_ENABLED=0 skips the write entirely (D-10)."""
+        db_path, _settings = _seed_suggestion_index(tmp_path)
+        env = {
+            "SIF_EMBEDDING_DIM": "8",
+            "SIF_MODEL_NAME": "test",
+            "SIF_QUERY_HISTORY_ENABLED": "0",
+        }
+        try:
+            get_settings.cache_clear()
+            result = CliRunner().invoke(
+                search_cmd,
+                ["quantum", "--no-refresh"],
+                obj={"index_path": db_path},
+                env=env,
+            )
+        finally:
+            get_settings.cache_clear()
+
+        assert result.exit_code == 0, result.output
+        assert _query_log_rows(db_path) == []
+
+    def test_history_write_failure_never_fails_search(self, tmp_path: Path) -> None:
+        """A raising QueryLogRepository is fail-soft (Pitfall 10)."""
+        db_path, settings = _seed_suggestion_index(tmp_path)
+        broken = MagicMock()
+        broken.return_value.add.side_effect = RuntimeError("history unavailable")
+
+        with patch("sif.cli.commands.search.QueryLogRepository", broken):
+            result = TestZeroResultSuggestions._invoke_bm25(
+                db_path, settings, ["quantum", "--no-refresh"]
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "quantum" in result.stdout
+
+    def test_suggestion_failure_never_fails_zero_result_search(self, tmp_path: Path) -> None:
+        """An exploding engine degrades to no DYM; the notice still prints."""
+        db_path, settings = _seed_suggestion_index(tmp_path)
+
+        with patch("sif.cli.commands.search.SuggestionEngine", side_effect=RuntimeError("boom")):
+            result = TestZeroResultSuggestions._invoke_bm25(
+                db_path, settings, ["quantm machin", "--no-refresh"]
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "No results found." in result.stdout
+        assert "Did you mean" not in result.stdout
+
+
+def test_default_limit_reads_settings(monkeypatch) -> None:
+    """SIF_DEFAULT_LIMIT is the --limit default for the search trio."""
+    from types import SimpleNamespace
+
+    from sif.cli.commands import search as search_mod
+
+    monkeypatch.setattr(search_mod, "get_settings", lambda: SimpleNamespace(default_limit=7))
+
+    assert search_mod._default_limit() == 7
+
+
+def test_default_limit_falls_back_on_invalid_settings(monkeypatch) -> None:
+    """Invalid settings leave the historical default of 10 in place."""
+    from sif.cli.commands import search as search_mod
+    from sif.config.settings import Settings
+
+    def broken_settings():
+        return Settings(_env_file=None, default_limit=0)
+
+    monkeypatch.setattr(search_mod, "get_settings", broken_settings)
+
+    assert search_mod._default_limit() == 10
+
+
+class TestSingleEnrichmentOwner:
+    """CORR-05 (Plan 19-04): each direct CLI exit enriches exactly once.
+
+    Searchers return raw results (Plan 19-03); ``search_cmd`` and
+    ``vsearch_cmd`` add the single ``enrich_results`` composition call after
+    their direct searcher returns, so every renderer (table/JSON/CSV/XML)
+    sees context descriptions and derived staleness markers.
+    """
+
+    @staticmethod
+    def _result() -> SearchResult:
+        return SearchResult(
+            document_id="doc-1",
+            rank=1,
+            score=0.9,
+            title="Doc",
+            path="/notes/doc.md",
+            collection_name="notes",
+            content="body",
+            highlights=["body"],
+        )
+
+    @classmethod
+    def _spy(cls, calls: list[list[SearchResult]]):
+        """Record each enrichment call and set both enriched fields."""
+
+        def _enrich(_conn: object, results: list[SearchResult]) -> list[SearchResult]:
+            calls.append(results)
+            for result in results:
+                result.context_description = "chosen context"
+                result.vectors_stale = True
+            return results
+
+        return _enrich
+
+    def _invoke_search(
+        self,
+        tmp_path: Path,
+        calls: list[list[SearchResult]],
+        args: list[str],
+    ) -> Result:
+        searcher = MagicMock()
+        searcher.search.return_value = [self._result()]
+        repo = MagicMock()
+        repo.list_enabled.return_value = []
+        index = tmp_path / "index.db"
+        index.touch()
+        with (
+            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
+            patch("sif.cli.commands.search.BM25Searcher", return_value=searcher),
+            patch("sif.cli.commands.search.enrich_results", side_effect=self._spy(calls)),
+        ):
+            return CliRunner().invoke(
+                search_cmd,
+                args,
+                env={"COLUMNS": "80"},
+                obj={"index_path": index},
+            )
+
+    def _invoke_vsearch(
+        self,
+        tmp_path: Path,
+        calls: list[list[SearchResult]],
+        args: list[str],
+    ) -> Result:
+        searcher = MagicMock()
+        searcher.search.return_value = [self._result()]
+        repo = MagicMock()
+        repo.list_enabled.return_value = []
+        manager = MagicMock()
+        manager.embed_single.return_value = [0.0] * 4
+        manager.embed_query.return_value = [0.0] * 4
+        manager._model = MagicMock()
+        settings = MagicMock(
+            default_limit=10,
+            search_refresh_enabled=False,
+            query_history_enabled=False,
+            model_name="all-MiniLM-L6-v2",
+            model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"},
+        )
+        index = tmp_path / "index.db"
+        index.touch()
+        with (
+            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
+            patch(
+                "sif.embedding.manager.EmbeddingManager.from_settings",
+                return_value=manager,
+            ),
+            patch("sif.search.vector.VectorSearcher", return_value=searcher),
+            patch("sif.config.settings.get_settings", return_value=settings),
+            patch("sif.cli.commands.search.enrich_results", side_effect=self._spy(calls)),
+        ):
+            return CliRunner().invoke(
+                vsearch_cmd,
+                args,
+                env={"COLUMNS": "80"},
+                obj={"index_path": index},
+            )
+
+    def test_bm25_search_enriches_exactly_once(self, tmp_path: Path) -> None:
+        """search_cmd calls enrich_results once and JSON carries both fields."""
+        calls: list[list[SearchResult]] = []
+
+        result = self._invoke_search(tmp_path, calls, ["query", "--no-refresh", "--json"])
+
+        assert result.exit_code == 0, result.output
+        assert len(calls) == 1
+        payload = json.loads(result.stdout)
+        assert payload[0]["vectors_stale"] is True
+        assert payload[0]["context_description"] == "chosen context"
+
+    def test_vsearch_enriches_exactly_once(self, tmp_path: Path) -> None:
+        """vsearch_cmd calls enrich_results once and JSON carries both fields."""
+        calls: list[list[SearchResult]] = []
+
+        result = self._invoke_vsearch(tmp_path, calls, ["query", "--no-refresh", "--json"])
+
+        assert result.exit_code == 0, result.output
+        assert len(calls) == 1
+        payload = json.loads(result.stdout)
+        assert payload[0]["vectors_stale"] is True
+        assert payload[0]["context_description"] == "chosen context"
+
+    def test_empty_results_are_handed_to_the_single_owner(self, tmp_path: Path) -> None:
+        """An empty result set is enriched once and never becomes an error."""
+        calls: list[list[SearchResult]] = []
+        searcher = MagicMock()
+        searcher.search.return_value = []
+        repo = MagicMock()
+        repo.list_enabled.return_value = []
+        index = tmp_path / "index.db"
+        index.touch()
+
+        with (
+            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
+            patch("sif.cli.commands.search.BM25Searcher", return_value=searcher),
+            patch("sif.cli.commands.search.enrich_results", side_effect=self._spy(calls)),
+        ):
+            result = CliRunner().invoke(
+                search_cmd,
+                ["query", "--no-refresh", "--json"],
+                obj={"index_path": index},
+            )
+
+        assert result.exit_code == 0, result.output
+        assert len(calls) == 1
+        assert calls[0] == []
+        assert json.loads(result.stdout) == []
+
+
+class TestPerChunkSurfaces:
+    """CORR-02 (D-01/D-02/D-03): per-chunk escape hatch and chunk identity.
+
+    The searcher/pipeline is mocked here; the dedup and per-chunk fusion
+    semantics are covered by the search suites (19-06). These tests pin the
+    public CLI contract: the flag exists only on the two chunk-capable
+    commands, it threads into SearchOptions, and chunk fields reach JSON and
+    the Rich table.
+    """
+
+    @staticmethod
+    def _chunk_rows(count: int = 3, chunk_matches: int = 0) -> list[SearchResult]:
+        """Rows shaped like VectorSearcher's per-chunk output."""
+        return [
+            SearchResult(
+                document_id="doc1",
+                title="Chunky Doc",
+                path="/notes/chunky.md",
+                collection_name="notes",
+                score=0.9 - index * 0.01,
+                rank=index + 1,
+                chunk_id=f"chunk-{index}",
+                sequence=index,
+                chunk_matches=chunk_matches,
+            )
+            for index in range(count)
+        ]
+
+    @staticmethod
+    def _vsearch_settings() -> MagicMock:
+        return MagicMock(
+            model_name="all-MiniLM-L6-v2",
+            model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"},
+        )
+
+    def _invoke_vsearch(self, rows: list[SearchResult], args: list[str]):
+        searcher = MagicMock()
+        searcher.search.return_value = rows
+        repo = MagicMock()
+        repo.list_enabled.return_value = []
+        manager = MagicMock()
+        manager.embed_single.return_value = [0.0] * 8
+        manager.embed_query.return_value = [0.0] * 8
+        with (
+            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
+            patch(
+                "sif.embedding.manager.EmbeddingManager.from_settings",
+                return_value=manager,
+            ),
+            patch("sif.search.vector.VectorSearcher", return_value=searcher),
+            patch("sif.config.settings.get_settings", return_value=self._vsearch_settings()),
+        ):
+            result = CliRunner().invoke(
+                vsearch_cmd,
+                args,
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+        return result, searcher
+
+    def _invoke_query(self, rows: list[SearchResult], args: list[str]):
+        pipeline = MagicMock()
+        pipeline.search.return_value = rows
+        repo = MagicMock()
+        repo.list_enabled.return_value = []
+        manager = MagicMock()
+        manager.embed_single.return_value = [0.0] * 8
+        manager.embed_query.return_value = [0.0] * 8
+        manager.get_model_info.return_value = {"embedding_dim": 8}
+        settings = MagicMock(
+            model_name="all-MiniLM-L6-v2",
+            model_dump=lambda: {"model_name": "all-MiniLM-L6-v2"},
+            rerank_enabled=False,
+            rerank_candidate_limit=20,
+            default_search_type="hybrid",
+            rrf_k=60,
+            bm25_weight=1.0,
+            vector_weight=1.0,
+            query_history_enabled=False,
+        )
+        with (
+            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
+            patch("sif.cli.commands.search.SearchPipeline", return_value=pipeline),
+            patch(
+                "sif.embedding.manager.EmbeddingManager.from_settings",
+                return_value=manager,
+            ),
+            patch("sif.config.settings.get_settings", return_value=settings),
+        ):
+            result = CliRunner().invoke(
+                query_cmd,
+                args,
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+        return result, pipeline
+
+    def test_search_command_does_not_accept_per_chunk(self) -> None:
+        """D-01: sif search is document-level and rejects --per-chunk."""
+        result = CliRunner().invoke(
+            search_cmd,
+            ["query", "--per-chunk"],
+            obj={"index_path": MagicMock(exists=lambda: True)},
+        )
+
+        assert result.exit_code == 2
+        assert "No such option" in result.output
+
+    def test_vsearch_per_chunk_threads_and_counts_chunk_rows(self) -> None:
+        """--per-chunk reaches SearchOptions and the JSON page is chunk rows."""
+        result, searcher = self._invoke_vsearch(
+            self._chunk_rows(3),
+            ["query", "--per-chunk", "--json", "--no-refresh"],
+        )
+
+        assert result.exit_code == 0, result.output
+        options = searcher.search.call_args[0][1]
+        assert options.per_chunk is True
+        payload = json.loads(result.output)
+        # Page size counts chunk rows, not documents: one document, three rows.
+        assert len(payload) == 3
+        assert [row["chunk_id"] for row in payload] == ["chunk-0", "chunk-1", "chunk-2"]
+        assert [row["sequence"] for row in payload] == [0, 1, 2]
+        assert all(row["chunk_matches"] == 0 for row in payload)
+
+    def test_query_per_chunk_threads_and_emits_chunk_fields(self) -> None:
+        """The hybrid per-chunk flag rides SearchOptions and JSON carries identity."""
+        result, pipeline = self._invoke_query(
+            self._chunk_rows(2),
+            ["query", "--per-chunk", "--json", "--no-refresh"],
+        )
+
+        assert result.exit_code == 0, result.output
+        options = pipeline.search.call_args[0][1]
+        assert options.per_chunk is True
+        payload = json.loads(result.output)
+        assert [row["chunk_id"] for row in payload] == ["chunk-0", "chunk-1"]
+        assert [row["sequence"] for row in payload] == [0, 1]
+
+    def test_per_chunk_table_renders_path_sequence(self) -> None:
+        """D-03: per-chunk table rows display path#sequence."""
+        result, _ = self._invoke_vsearch(
+            self._chunk_rows(1),
+            ["query", "--per-chunk", "--no-refresh"],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "/notes/chunky.md#0" in result.output
+
+    def test_default_json_rows_carry_chunk_matches(self) -> None:
+        """D-02: the default (deduped) JSON row carries the collapsed count."""
+        result, _ = self._invoke_vsearch(
+            self._chunk_rows(1, chunk_matches=4),
+            ["query", "--json", "--no-refresh"],
+        )
+
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.output)
+        assert payload[0]["chunk_matches"] == 4
+        assert payload[0]["chunk_id"] == "chunk-0"
+        assert payload[0]["sequence"] == 0
+
+    def test_default_table_annotates_multi_chunk_matches(self) -> None:
+        """D-02: the deduped table title cell shows (N chunk matches)."""
+        result, _ = self._invoke_vsearch(
+            self._chunk_rows(1, chunk_matches=4),
+            ["query", "--no-refresh"],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "(4 chunk matches)" in result.output
+
+    def test_default_table_omits_annotation_for_single_match(self) -> None:
+        """A one-chunk document shows no collapsed-match annotation."""
+        result, _ = self._invoke_vsearch(
+            self._chunk_rows(1, chunk_matches=1),
+            ["query", "--no-refresh"],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "chunk matches" not in result.output
+
+
+class TestNoFilterRegression:
+    """T-20-16: with no ``--filter``, SearchOptions.filter stays None (D-17)."""
+
+    def test_search_options_filter_is_none_without_the_flag(self):
+        """sif search passes filter=None when --filter is absent."""
+        runner = CliRunner()
+        mock_repo = MagicMock()
+        mock_repo.list_enabled.return_value = []
+        mock_searcher = MagicMock()
+        mock_searcher.search.return_value = []
+
+        with (
+            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=mock_repo),
+            patch("sif.cli.commands.search.BM25Searcher", return_value=mock_searcher),
+            patch("sif.cli.commands.search._pre_search_refresh"),
+        ):
+            result = runner.invoke(
+                search_cmd,
+                ["needle"],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code == 0, result.output
+        options = mock_searcher.search.call_args[0][1]
+        assert options.filter is None
+
+    def test_vsearch_options_filter_is_none_without_the_flag(self):
+        """sif vsearch passes filter=None when --filter is absent."""
+        runner = CliRunner()
+        mock_repo = MagicMock()
+        mock_repo.list_enabled.return_value = []
+        mock_searcher = MagicMock()
+        mock_searcher.search.return_value = []
+
+        with (
+            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=mock_repo),
+            patch(
+                "sif.embedding.manager.EmbeddingManager.from_settings",
+                return_value=MagicMock(),
+            ),
+            patch("sif.search.vector.VectorSearcher", return_value=mock_searcher),
+            patch("sif.config.settings.get_settings", return_value=_query_settings_mock()),
+            patch("sif.cli.commands.search._pre_search_refresh"),
+        ):
+            result = runner.invoke(
+                vsearch_cmd,
+                ["needle"],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code == 0, result.output
+        options = mock_searcher.search.call_args[0][1]
+        assert options.filter is None
+
+    def test_query_options_filter_is_none_without_the_flag(self):
+        """sif query passes filter=None when --filter is absent."""
+        runner = CliRunner()
+        mock_repo = MagicMock()
+        mock_repo.list_enabled.return_value = []
+        mock_pipeline = MagicMock()
+        mock_pipeline.search.return_value = []
+
+        with (
+            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=mock_repo),
+            patch("sif.cli.commands.search.SearchPipeline", return_value=mock_pipeline),
+            patch(
+                "sif.embedding.manager.EmbeddingManager.from_settings",
+                return_value=MagicMock(),
+            ),
+            patch("sif.config.settings.get_settings", return_value=_query_settings_mock()),
+            patch("sif.cli.commands.search._pre_search_refresh"),
+        ):
+            result = runner.invoke(
+                query_cmd,
+                ["needle"],
+                obj={"index_path": MagicMock(exists=lambda: True)},
+            )
+
+        assert result.exit_code == 0, result.output
+        options = mock_pipeline.search.call_args[0][1]
+        assert options.filter is None
+
+
+class TestSearchIdentityPolicy:
+    """EMB-01: every vector-touching CLI exit warns, marks, or refuses."""
+
+    @staticmethod
+    def _identity(model_name: str = "model-a", *, dimension: int = 2):
+        from sif.embedding.identity import EmbedderIdentity
+
+        return EmbedderIdentity(
+            schema_version=1,
+            cache_model_id=f"sentence_transformers:{model_name}",
+            model_name=model_name,
+            model_type="sentence_transformers",
+            api_base=None,
+            dimension=dimension,
+            pooling="mean",
+            normalized=True,
+            query_prompt=None,
+            document_prompt=None,
+            prompt_supported=False,
+            revision=None,
+            source="verified",
+        )
+
+    @staticmethod
+    def _check(status: str, stored, current):
+        from sif.embedding.identity import IdentityCheck
+
+        return IdentityCheck(status=status, stored=stored, current=current)
+
+    @staticmethod
+    def _seed_identity_index(tmp_path: Path) -> Path:
+        """Real index with stored vectors and a ``model-a`` identity row."""
+        import sqlite_vec
+
+        from sif.database.schema import SchemaManager
+        from sif.embedding.identity import write_identity
+        from sif.search.vector import VectorSearcher
+
+        db_path = tmp_path / "identity.db"
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        try:
+            conn.enable_load_extension(True)
+            sqlite_vec.load(conn)
+            conn.enable_load_extension(False)
+        except Exception:
+            conn.close()
+            pytest.skip("sqlite-vec not available")
+
+        now = "2026-11-16T00:00:00+00:00"
+        try:
+            SchemaManager(conn, embedding_dim=2).create_all()
+            conn.execute(
+                "INSERT INTO collections (id, name, path, created_at, updated_at)"
+                " VALUES ('c1', 'notes', '/notes', ?, ?)",
+                (now, now),
+            )
+            for doc_id, title, path, content in [
+                ("d1", "Apple Pie", "/notes/apple-pie.md", "apple pie recipe sweet dessert"),
+                ("d2", "Quantum Physics", "/notes/quantum.md", "quantum physics computing"),
+            ]:
+                conn.execute(
+                    "INSERT INTO documents (id, collection_id, path, filename, title,"
+                    " content, checksum, mtime, created_at, updated_at)"
+                    " VALUES (?, 'c1', ?, ?, ?, ?, 'x', 1.0, ?, ?)",
+                    (doc_id, path, path.split("/")[-1], title, content, now, now),
+                )
+                conn.execute(
+                    "INSERT INTO document_chunks (id, document_id, sequence, content,"
+                    " created_at) VALUES (?, ?, 0, ?, ?)",
+                    (f"chunk-{doc_id}", doc_id, content, now),
+                )
+            searcher = VectorSearcher(conn, embedding_dim=2)
+            searcher.add_embeddings_batch(
+                [
+                    ("e-d1", "d1", "chunk-d1", [0.2, 0.9]),
+                    ("e-d2", "d2", "chunk-d2", [0.95, 0.1]),
+                ]
+            )
+            with conn:
+                write_identity(conn, TestSearchIdentityPolicy._identity("model-a"))
+        finally:
+            conn.close()
+        return db_path
+
+    def _invoke_vsearch(
+        self,
+        tmp_path: Path,
+        *,
+        manager: MagicMock,
+        check=None,
+        results: list[SearchResult] | None = None,
+        args: list[str] | None = None,
+    ) -> tuple[Result, MagicMock, MagicMock]:
+        """vsearch_cmd scaffold with patched identity check and enrichment."""
+        repo = MagicMock()
+        repo.list_enabled.return_value = []
+        searcher = MagicMock()
+        searcher.search.return_value = results if results is not None else []
+
+        def _enrich(
+            _conn: object,
+            rows: list[SearchResult],
+            **_kwargs: object,
+        ) -> list[SearchResult]:
+            return rows
+
+        enrich = MagicMock(side_effect=_enrich)
+        warn = MagicMock()
+        index = tmp_path / "index.db"
+        index.touch()
+        with (
+            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
+            patch(
+                "sif.embedding.manager.EmbeddingManager.from_settings",
+                return_value=manager,
+            ),
+            patch("sif.search.vector.VectorSearcher", return_value=searcher) as vector_cls,
+            patch("sif.config.settings.get_settings", return_value=_query_settings_mock()),
+            patch("sif.cli.commands.search.check_identity", side_effect=check),
+            patch("sif.cli.commands.search.warn_identity_mismatch_once", warn),
+            patch("sif.cli.commands.search.enrich_results", enrich),
+        ):
+            run_result = CliRunner().invoke(
+                vsearch_cmd,
+                args if args is not None else ["query", "--no-refresh", "--json"],
+                obj={"index_path": index},
+            )
+        return run_result, vector_cls, enrich
+
+    def test_vsearch_embeds_the_query_through_the_query_role(self, tmp_path: Path) -> None:
+        """The vsearch query leg calls embed_query, never embed_single."""
+        manager = MagicMock()
+        manager.embed_query.return_value = [0.0] * 4
+        manager.embed_single.return_value = [0.0] * 4
+        manager.get_identity.return_value = MagicMock()
+
+        result, _, _ = self._invoke_vsearch(tmp_path, manager=manager)
+
+        assert result.exit_code == 0, result.output
+        manager.embed_query.assert_called_once_with("query")
+        manager.embed_single.assert_not_called()
+
+    def test_vsearch_same_dimension_mismatch_warns_once_and_marks(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """A same-dimension swap warns once and enriches with vectors_untrusted."""
+        stored = self._identity("model-a")
+        current = self._identity("model-b")
+        manager = MagicMock()
+        manager.get_identity.return_value = current
+        row = SearchResult(
+            document_id="doc-1",
+            rank=1,
+            score=0.9,
+            title="Doc",
+            path="/notes/doc.md",
+            collection_name="notes",
+        )
+        check = MagicMock(return_value=self._check("mismatch", stored, current))
+
+        result, _, enrich = self._invoke_vsearch(
+            tmp_path,
+            manager=manager,
+            check=check,
+            results=[row],
+        )
+
+        assert result.exit_code == 0, result.output
+        check.assert_called_once()
+        assert enrich.call_args.kwargs["vectors_untrusted"] is True
+
+    def test_vsearch_dimension_mismatch_refuses_with_the_remedy(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """A width disagreement names both widths and the force-rebuild remedy."""
+        stored = self._identity("model-a", dimension=2)
+        current = self._identity("model-a", dimension=3)
+        manager = MagicMock()
+        manager.get_identity.return_value = current
+        check = MagicMock(
+            return_value=self._check("dimension_mismatch", stored, current),
+        )
+
+        result, vector_cls, _ = self._invoke_vsearch(
+            tmp_path,
+            manager=manager,
+            check=check,
+        )
+
+        assert result.exit_code == 1
+        assert "FLOAT[2]" in result.output
+        assert "FLOAT[3]" in result.output
+        assert "sif index embed --force" in result.output
+        vector_cls.assert_not_called()
+        # WR-05: the refusal happens before the query embedding, so a remote
+        # backend never receives a query that cannot be vector-searched.
+        manager.embed_query.assert_not_called()
+
+    def test_vsearch_matching_identity_is_silent_and_unmarked(self, tmp_path: Path) -> None:
+        """ok/absent leave the existing two-argument enrichment untouched."""
+        current = self._identity("model-a")
+        manager = MagicMock()
+        manager.get_identity.return_value = current
+        check = MagicMock(return_value=self._check("ok", current, current))
+
+        result, _, enrich = self._invoke_vsearch(
+            tmp_path,
+            manager=manager,
+            check=check,
+            results=[],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "vectors_untrusted" not in enrich.call_args.kwargs
+
+    def test_query_pipeline_receives_the_identity_closure(self, tmp_path: Path) -> None:
+        """query_cmd binds the loaded-model identity into the pipeline lazily."""
+        index_path = tmp_path / "sif.db"
+        index_path.touch()
+        repo = MagicMock()
+        repo.list_enabled.return_value = []
+        manager = MagicMock()
+        manager.get_model_info.return_value = {"loaded": True, "embedding_dim": 2}
+        manager.get_identity.return_value = self._identity("model-a")
+        manager.model = MagicMock()
+        pipeline = MagicMock()
+        pipeline.search.return_value = []
+        pipeline_cls = MagicMock(return_value=pipeline)
+        settings = _query_settings_mock()
+        settings.query_history_enabled = False
+        settings.rerank_enabled = False
+
+        with (
+            patch("sif.cli.commands.search.Database", return_value=MagicMock()),
+            patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
+            patch("sif.cli.commands.search.SearchPipeline", pipeline_cls),
+            patch(
+                "sif.embedding.manager.EmbeddingManager.from_settings",
+                return_value=manager,
+            ),
+            patch("sif.config.settings.get_settings", return_value=settings),
+            patch("sif.cli.commands.search.get_settings", return_value=settings),
+        ):
+            result = CliRunner().invoke(
+                query_cmd,
+                ["query", "--no-refresh"],
+                obj={"index_path": index_path},
+            )
+
+        assert result.exit_code == 0, result.output
+        identity_check = pipeline_cls.call_args.kwargs["identity_check"]
+        assert callable(identity_check)
+
+    def test_query_hybrid_swap_warns_once_marks_every_row_and_repeats_silently(
+        self,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """End-to-end: one warning, all rows stale, no second warning on repeat."""
+        db_path = self._seed_identity_index(tmp_path)
+
+        class _FixedEmbedder:
+            def embed(self, _text: str) -> list[float]:
+                return [1.0, 0.0]
+
+            def embed_batch(self, texts: list[str]) -> list[list[float]]:
+                return [self.embed(text) for text in texts]
+
+            @property
+            def dimension(self) -> int:
+                return 2
+
+        settings = Settings(
+            _env_file=None,
+            embedding_dim=2,
+            model_name="model-b",
+            model_type="sentence_transformers",
+            cache_embeddings=False,
+            query_history_enabled=False,
+        )
+        manager = MagicMock()
+        manager.model = _FixedEmbedder()
+        manager.get_model_info.return_value = {"loaded": True, "embedding_dim": 2}
+        manager.get_identity.return_value = self._identity("model-b")
+
+        def _invoke() -> Result:
+            with (
+                patch(
+                    "sif.embedding.manager.EmbeddingManager.from_settings",
+                    return_value=manager,
+                ),
+                patch("sif.cli.commands.search.get_settings", return_value=settings),
+                patch("sif.config.settings.get_settings", return_value=settings),
+            ):
+                return CliRunner().invoke(
+                    query_cmd,
+                    ["apple", "--no-refresh", "--json"],
+                    obj={"index_path": db_path},
+                )
+
+        with caplog.at_level(logging.WARNING, logger="sif.embedding.identity"):
+            first = _invoke()
+            second = _invoke()
+
+        assert first.exit_code == 0, first.output
+        assert second.exit_code == 0, second.output
+        rows = json.loads(first.stdout)
+        assert rows
+        assert all(row["vectors_stale"] is True for row in rows)
+        warnings = [
+            record
+            for record in caplog.records
+            if "identity mismatch" in record.getMessage().lower()
+        ]
+        assert len(warnings) == 1
+
+    def test_search_cmd_stays_identity_silent(
+        self,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """BM25-only ``sif search`` never warns or marks on a same-dimension swap."""
+        db_path = self._seed_identity_index(tmp_path)
+        settings = Settings(
+            _env_file=None,
+            embedding_dim=2,
+            model_name="model-b",
+            model_type="sentence_transformers",
+            cache_embeddings=False,
+            query_history_enabled=False,
+        )
+        manager = MagicMock()
+        manager.get_identity.return_value = self._identity("model-b")
+
+        with (
+            patch(
+                "sif.embedding.manager.EmbeddingManager.from_settings",
+                return_value=manager,
+            ),
+            patch("sif.cli.commands.search.get_settings", return_value=settings),
+            patch("sif.config.settings.get_settings", return_value=settings),
+            caplog.at_level(logging.WARNING),
+        ):
+            result = CliRunner().invoke(
+                search_cmd,
+                ["apple", "--no-refresh", "--json"],
+                obj={"index_path": db_path},
+            )
+
+        assert result.exit_code == 0, result.output
+        rows = json.loads(result.stdout)
+        assert rows
+        assert all(row["vectors_stale"] is False for row in rows)
+        assert [
+            record
+            for record in caplog.records
+            if "identity mismatch" in record.getMessage().lower()
+        ] == []

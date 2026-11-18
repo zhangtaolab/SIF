@@ -1,0 +1,210 @@
+{
+  "arms": [
+    {
+      "cache_hits": 7565,
+      "cache_rows_after": 64510,
+      "cache_rows_before": 50189,
+      "chunk_overlap": 128,
+      "chunk_size": 512,
+      "chunks": 21886,
+      "documents": 610,
+      "embed_wall_seconds": 1776.077,
+      "embedded_documents": 610,
+      "heldout_mean_delta": null,
+      "heldout_sufficient": null,
+      "heldout_winner": null,
+      "identity": {
+        "cache_model_id": "modelscope:Qwen/Qwen3-Embedding-0.6B",
+        "check_identity_status": "ok",
+        "dimension": 1024,
+        "document_prompt": null,
+        "query_prompt": null,
+        "source": "verified"
+      },
+      "name": "baseline-512-128",
+      "tuning_mean_delta": null
+    },
+    {
+      "cache_hits": 13506,
+      "cache_rows_after": 71984,
+      "cache_rows_before": 64510,
+      "chunk_overlap": 64,
+      "chunk_size": 512,
+      "chunks": 20980,
+      "documents": 610,
+      "embed_wall_seconds": 707.09,
+      "embedded_documents": 610,
+      "heldout_mean_delta": -0.0013502319587628865,
+      "heldout_sufficient": true,
+      "heldout_winner": false,
+      "identity": {
+        "cache_model_id": "modelscope:Qwen/Qwen3-Embedding-0.6B",
+        "check_identity_status": "ok",
+        "dimension": 1024,
+        "document_prompt": null,
+        "query_prompt": null,
+        "source": "verified"
+      },
+      "name": "overlap-64",
+      "tuning_mean_delta": -0.003332674876847291
+    },
+    {
+      "cache_hits": 13517,
+      "cache_rows_after": 78742,
+      "cache_rows_before": 71984,
+      "chunk_overlap": 0,
+      "chunk_size": 512,
+      "chunks": 20275,
+      "documents": 610,
+      "embed_wall_seconds": 571.078,
+      "embedded_documents": 610,
+      "heldout_mean_delta": -0.008605036082474227,
+      "heldout_sufficient": true,
+      "heldout_winner": false,
+      "identity": {
+        "cache_model_id": "modelscope:Qwen/Qwen3-Embedding-0.6B",
+        "check_identity_status": "ok",
+        "dimension": 1024,
+        "document_prompt": null,
+        "query_prompt": null,
+        "source": "verified"
+      },
+      "name": "overlap-0",
+      "tuning_mean_delta": 0.000737014778325123
+    },
+    {
+      "cache_hits": 10377,
+      "cache_rows_after": 91815,
+      "cache_rows_before": 78742,
+      "chunk_overlap": 112,
+      "chunk_size": 448,
+      "chunks": 23450,
+      "documents": 610,
+      "embed_wall_seconds": 1002.355,
+      "embedded_documents": 610,
+      "heldout_mean_delta": -0.0021724536082474225,
+      "heldout_sufficient": true,
+      "heldout_winner": false,
+      "identity": {
+        "cache_model_id": "modelscope:Qwen/Qwen3-Embedding-0.6B",
+        "check_identity_status": "ok",
+        "dimension": 1024,
+        "document_prompt": null,
+        "query_prompt": null,
+        "source": "verified"
+      },
+      "name": "near-default-448-112",
+      "tuning_mean_delta": -0.002687699507389163
+    },
+    {
+      "cache_hits": 10003,
+      "cache_rows_after": 107423,
+      "cache_rows_before": 91815,
+      "chunk_overlap": 96,
+      "chunk_size": 384,
+      "chunks": 25611,
+      "documents": 610,
+      "embed_wall_seconds": 1244.596,
+      "embedded_documents": 610,
+      "heldout_mean_delta": -0.003904041237113402,
+      "heldout_sufficient": true,
+      "heldout_winner": false,
+      "identity": {
+        "cache_model_id": "modelscope:Qwen/Qwen3-Embedding-0.6B",
+        "check_identity_status": "ok",
+        "dimension": 1024,
+        "document_prompt": null,
+        "query_prompt": null,
+        "source": "verified"
+      },
+      "name": "smaller-384-96",
+      "tuning_mean_delta": -0.0021595714285714287
+    },
+    {
+      "cache_hits": 8918,
+      "cache_rows_after": 131665,
+      "cache_rows_before": 107423,
+      "chunk_overlap": 64,
+      "chunk_size": 256,
+      "chunks": 33160,
+      "documents": 610,
+      "embed_wall_seconds": 2040.043,
+      "embedded_documents": 610,
+      "heldout_mean_delta": -0.0037175412371134023,
+      "heldout_sufficient": true,
+      "heldout_winner": false,
+      "identity": {
+        "cache_model_id": "modelscope:Qwen/Qwen3-Embedding-0.6B",
+        "check_identity_status": "ok",
+        "dimension": 1024,
+        "document_prompt": null,
+        "query_prompt": null,
+        "source": "verified"
+      },
+      "name": "smallest-256-64",
+      "tuning_mean_delta": -0.004721660098522168
+    }
+  ],
+  "baseline_source": "fresh-baseline (no-saved-run)",
+  "confirmation": {
+    "baseline_mean": 0.9120271849681022,
+    "ci_high": 0.003093820231958763,
+    "ci_low": -0.021559239561855667,
+    "current_mean": 0.9034221416705697,
+    "diagnostic": false,
+    "helped": 2,
+    "hurt": 9,
+    "mean_delta": -0.008605036082474227,
+    "n": 194,
+    "noise_floor": 0.005154639175257732,
+    "regression": false,
+    "sufficient": true,
+    "unchanged": 183,
+    "winner": false
+  },
+  "corpus_fingerprint": "9ccbf4eea9263ed4",
+  "corpus_label": "books-markdown-papers-2026-11",
+  "decision": "keep-default",
+  "embedding_dim": 1024,
+  "grid": [
+    {
+      "chunk_overlap": 128,
+      "chunk_size": 512,
+      "name": "baseline-512-128"
+    },
+    {
+      "chunk_overlap": 64,
+      "chunk_size": 512,
+      "name": "overlap-64"
+    },
+    {
+      "chunk_overlap": 0,
+      "chunk_size": 512,
+      "name": "overlap-0"
+    },
+    {
+      "chunk_overlap": 112,
+      "chunk_size": 448,
+      "name": "near-default-448-112"
+    },
+    {
+      "chunk_overlap": 96,
+      "chunk_size": 384,
+      "name": "smaller-384-96"
+    },
+    {
+      "chunk_overlap": 64,
+      "chunk_size": 256,
+      "name": "smallest-256-64"
+    }
+  ],
+  "limitation": "The books-markdown-papers-2026-11 corpus has 194 held-out queries, at or above the 101 needed for a 0.01 mean-delta win.",
+  "max_tokens": 512,
+  "min_heldout_for_epsilon_win": 101,
+  "model_name": "Qwen/Qwen3-Embedding-0.6B",
+  "model_type": "modelscope",
+  "schema_version": 1,
+  "selected_arm": "overlap-0",
+  "selection_rule": "tuning-select-then-heldout-confirm",
+  "tuning_mean_delta": 0.000737014778325123
+}

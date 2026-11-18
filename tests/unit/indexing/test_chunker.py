@@ -11,6 +11,7 @@ from sif.indexing.chunker import (
     FixedSizeChunker,
     MarkdownChunker,
     create_chunker,
+    token_size_to_chars,
 )
 
 
@@ -233,3 +234,17 @@ class TestChunkerStrategies:
         """Unknown strategy names fail with an explanatory ValueError."""
         with pytest.raises(ValueError, match="Unknown chunking strategy: semantic"):
             create_chunker("semantic")
+
+
+def test_create_chunker_forwards_overlap_to_every_strategy() -> None:
+    """SIF_CHUNK_OVERLAP reaches fixed, markdown, code, and auto chunkers."""
+    assert create_chunker("fixed", chunk_size=12, overlap=3).overlap == 3
+    assert create_chunker("markdown", max_chunk_size=20, overlap=4).overlap == 4
+    assert create_chunker("code", max_chunk_size=20, overlap=5).overlap == 5
+    assert create_chunker("auto", max_chunk_size=20, overlap=6).overlap == 6
+
+
+def test_token_size_to_chars_converts_token_budget() -> None:
+    """The settings' token budgets convert to character budgets at 4 chars/token."""
+    assert token_size_to_chars(512) == 2048
+    assert token_size_to_chars(0) == 1

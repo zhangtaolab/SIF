@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "batch_id": "261111-v4x",
+  "created_at": "2026-11-11T14:25:06.881Z",
+  "options": {},
+  "base_revision": "f06d4dcf6648f360cd8b024dd66f7048fb3dc0de",
+  "items": [
+    {
+      "quick_id": "261111-v4y",
+      "client_id": null,
+      "description": "Close Phase 10 IN-02: delete the redundant function-local `from sif.database.database import Database  # noqa: PLC0415` inside vsearch_cmd (src/sif/cli/commands/search.py:630) — it duplicates the module-level import at line 20. Keep the other genuinely-local imports in that block (ValidationError, get_settings, EmbeddingManager, VectorSearcher are NOT imported at module level and must stay). Then fix the test patch-target trap in tests/unit/cli/test_search.py: vsearch tests currently patch sif.database.database.Database (because of the local import) while search/query tests patch sif.cli.commands.search.Database — after removing the local import, repoint every vsearch patch site to sif.cli.commands.search.Database so all tests stay green (TDD: demonstrate the trap non-vacuously first). Then close IN-02 in .planning/milestones/v1.0-phases/10-raise-pytest-coverage-to-90/10-REVIEW-DISPOSITION.md (exactly 3 edits: YAML disposition open->fixed, open count read from execution-time git show HEAD:<ledger> and decremented by 1 dynamically, markdown row Disposition fixed + Source cell naming this quick task; byte-equality reconstruction gate vs execution-time HEAD; NO **Status:** resolved lines in this ledger)",
+      "status": "complete",
+      "depends_on": [],
+      "planned_files": [
+        "src/sif/cli/commands/search.py",
+        "tests/unit/cli/test_search.py",
+        ".planning/milestones/v1.0-phases/10-raise-pytest-coverage-to-90/10-REVIEW-DISPOSITION.md"
+      ],
+      "directory": null,
+      "worktree": null,
+      "dispatched_worktree": null,
+      "dispatched_branch": null,
+      "dispatched_base": null,
+      "wave": 0,
+      "commit": "aec241d",
+      "failure_reason": null
+    },
+    {
+      "quick_id": "261111-v4z",
+      "client_id": null,
+      "description": "Close Phase 10 IN-03: add a public read-only `model` property to EmbeddingManager (src/sif/embedding/manager.py) — `@property def model(self) -> Embedder | None: return self._model` — then replace the two private reach-ins: src/sif/cli/commands/search.py:934 (`embedder=manager._model,  # noqa: SLF001`) and src/sif/cli/commands/bench.py:648 (`inner_embedder = manager._model if manager else None  # noqa: SLF001`), dropping the noqa: SLF001 comments now that access is public. Add a unit test for the new property (None before load_model, the embedder after) (TDD: non-vacuous RED first). Then close IN-03 in .planning/milestones/v1.0-phases/10-raise-pytest-coverage-to-90/10-REVIEW-DISPOSITION.md (exactly 3 edits: YAML disposition open->fixed, open count read from execution-time git show HEAD:<ledger> and decremented by 1 dynamically, markdown row Disposition fixed + Source cell naming this quick task; byte-equality reconstruction gate vs execution-time HEAD; NO **Status:** resolved lines in this ledger)",
+      "status": "complete",
+      "depends_on": [],
+      "planned_files": [
+        "src/sif/embedding/manager.py",
+        "src/sif/cli/commands/search.py",
+        "src/sif/cli/commands/bench.py",
+        "tests/unit/embedding/test_manager.py",
+        "tests/unit/cli/test_bench.py",
+        ".planning/milestones/v1.0-phases/10-raise-pytest-coverage-to-90/10-REVIEW-DISPOSITION.md"
+      ],
+      "directory": null,
+      "worktree": null,
+      "dispatched_worktree": null,
+      "dispatched_branch": null,
+      "dispatched_base": null,
+      "wave": 1,
+      "commit": "bc396e9",
+      "failure_reason": null
+    },
+    {
+      "quick_id": "261111-v50",
+      "client_id": null,
+      "description": "Close Phase 10 IN-04: delete the three dead `quiet = quiet or ctx.obj.get(\"quiet\", False)` recomputations in src/sif/cli/commands/search.py (live lines 496, 687, 951 — right before output in search_cmd/vsearch_cmd/query_cmd). The entry computations (live lines 450, 615, 826) stay; nothing reassigns quiet in between, so the second read is dead. Verify no behavior change (existing output/format tests stay green; add a regression test only if it adds non-vacuous value). Then close IN-04 in .planning/milestones/v1.0-phases/10-raise-pytest-coverage-to-90/10-REVIEW-DISPOSITION.md (exactly 3 edits: YAML disposition open->fixed, open count read from execution-time git show HEAD:<ledger> and decremented by 1 dynamically, markdown row Disposition fixed + Source cell naming this quick task; byte-equality reconstruction gate vs execution-time HEAD; NO **Status:** resolved lines in this ledger)",
+      "status": "complete",
+      "depends_on": [],
+      "planned_files": [
+        "src/sif/cli/commands/search.py",
+        ".planning/milestones/v1.0-phases/10-raise-pytest-coverage-to-90/10-REVIEW-DISPOSITION.md"
+      ],
+      "directory": null,
+      "worktree": null,
+      "dispatched_worktree": null,
+      "dispatched_branch": null,
+      "dispatched_base": null,
+      "wave": 2,
+      "commit": "2dc584d",
+      "failure_reason": null
+    }
+  ]
+}

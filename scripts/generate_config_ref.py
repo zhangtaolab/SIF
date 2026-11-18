@@ -14,6 +14,8 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
+from pydantic.fields import PydanticUndefined  # noqa: E402
+
 from sif.config.settings import Settings  # noqa: E402
 
 
@@ -49,21 +51,34 @@ def get_type_name(annotation: object) -> str:
 
 
 def get_validators() -> dict[str, str]:
-    """Extract field_validator methods and map them to field names."""
+    """Extract field_validator methods and map them to field names.
+
+    A decorator naming several fields (e.g. ``@field_validator("db_path",
+    "cache_dir", mode="before")``) registers EVERY field it names — splitting
+    on commas — so each row in docs/configuration.md carries its validator
+    annotation, not just the first field of the decorator (IN-01). Keyword
+    arguments such as ``mode="before"`` are skipped: they are not fields.
+    """
     validators: dict[str, str] = {}
     # Scan source for field_validator decorators
     source_lines = inspect.getsource(Settings).splitlines()
-    current_field: str | None = None
+    current_fields: list[str] = []
     for line in source_lines:
         stripped = line.strip()
         if stripped.startswith("@field_validator("):
             inner = stripped[len("@field_validator(") : stripped.rfind(")")]
-            inner = inner.strip().strip("\"'").strip()
-            current_field = inner.split(",")[0].strip().strip("\"'")
-        elif current_field and stripped.startswith("def "):
+            current_fields = []
+            for part in inner.split(","):
+                if "=" in part:
+                    continue  # keyword argument, not a field name
+                name = part.strip().strip("\"'")
+                if name:
+                    current_fields.append(name)
+        elif current_fields and stripped.startswith("def "):
             method_name = stripped[4 : stripped.find("(")]
-            validators[current_field] = method_name
-            current_field = None
+            for field_name in current_fields:
+                validators[field_name] = method_name
+            current_fields = []
     return validators
 
 
@@ -95,18 +110,53 @@ def get_valid_model_types() -> list[str]:
     return sorted(entries)
 
 
+def get_validator_choices() -> dict[str, list[str]]:
+    """Map each membership-set validator's field to its allowed values.
+
+    Scans every ``field_validator`` method's live source for its
+    ``valid_* = {...}`` set literal (model_type, reranker_model_type,
+    watch_update_depth), so the Validation Rules table is derived from the
+    validators actually enforced and cannot drift as new ones are added
+    (IN-03). Validators without such a set (api_base, log_level, the path
+    expander) are skipped and keep their handwritten rows.
+    """
+    choices: dict[str, list[str]] = {}
+    for field_name, method_name in get_validators().items():
+        method = getattr(Settings, method_name, None)
+        if method is None:
+            continue
+        match = re.search(
+            r"valid_\w+\s*=\s*\{(.*?)\}",
+            inspect.getsource(method.__func__),
+            re.DOTALL,
+        )
+        if match is None:
+            continue
+        entries = re.findall(r"[\"']([^\"']+)[\"']", match.group(1))
+        if entries:
+            choices[field_name] = sorted(entries)
+    return choices
+
+
 def get_computed_default(field_name: str) -> str | None:
     """Return computed default description for Path fields that default to None."""
     computed = {
-        "db_path": "~/.local/share/sif/sif.db (computed)",
-        "cache_dir": "~/.cache/sif (computed)",
+        "db_path": (
+            "platformdirs user_data_dir('sif')/sif.db (computed; "
+            "e.g. ~/.local/share/sif/sif.db on Linux, "
+            "~/Library/Application Support/sif/sif.db on macOS)"
+        ),
+        "cache_dir": (
+            "platformdirs user_cache_dir('sif') (computed; "
+            "e.g. ~/.cache/sif on Linux, ~/Library/Caches/sif on macOS)"
+        ),
     }
     return computed.get(field_name)
 
 
 SECTIONS: list[tuple[str, list[str]]] = [
     ("Application Settings", ["app_name", "debug", "log_level"]),
-    ("Database Settings", ["db_path"]),
+    ("Database Settings", ["db_path", "lock_wait_timeout"]),
     (
         "Embedding Model Settings",
         [
@@ -117,6 +167,8 @@ SECTIONS: list[tuple[str, list[str]]] = [
             "batch_size",
             "model_type",
             "n_gpu_layers",
+            "query_prompt_name",
+            "document_prompt_name",
         ],
     ),
     ("API Settings", ["api_key", "api_base"]),
@@ -127,11 +179,38 @@ SECTIONS: list[tuple[str, list[str]]] = [
             "reranker_model_path",
             "reranker_model_type",
             "reranker_batch_size",
+            "rerank_enabled",
+            "rerank_candidate_limit",
+            "rerank_relative_threshold",
         ],
     ),
-    ("Chunking Settings", ["chunk_size", "chunk_overlap"]),
-    ("Search Settings", ["default_search_type", "default_limit"]),
-    ("MCP Server Settings", ["mcp_host", "mcp_port", "mcp_transport"]),
+    ("Chunking Settings", ["chunk_size", "chunk_overlap", "embed_breadcrumb"]),
+    (
+        "Search Settings",
+        [
+            "default_search_type",
+            "default_limit",
+            "rrf_k",
+            "bm25_weight",
+            "vector_weight",
+            "query_history_enabled",
+            "query_history_limit",
+            "search_refresh_enabled",
+            "search_refresh_max_files",
+        ],
+    ),
+    (
+        "Watch Settings",
+        [
+            "watch_debounce_interval",
+            "watch_ignore_patterns",
+            "watch_update_depth",
+            "watch_restat_interval",
+            "watch_rescope_interval",
+            "watch_checkpoint_interval",
+        ],
+    ),
+    ("MCP Server Settings", ["mcp_watch", "mcp_host", "mcp_port", "mcp_transport"]),
     ("Cache Settings", ["cache_dir", "cache_embeddings"]),
 ]
 
@@ -175,6 +254,12 @@ def _append_header(lines: list[str]) -> None:
     lines.append("")
     lines.append("## Configuration Options")
     lines.append("")
+    lines.append(
+        "Each environment variable maps to a lowercase Settings field: "
+        "`SIF_CHUNK_SIZE` sets `chunk_size`, `SIF_EMBED_BREADCRUMB` sets "
+        "`embed_breadcrumb`, and so on."
+    )
+    lines.append("")
 
 
 def _append_device_selection_note(lines: list[str]) -> None:
@@ -207,7 +292,7 @@ def _append_device_selection_note(lines: list[str]) -> None:
     lines.append(
         "BM25/FTS5 keyword search and sqlite-vec vector search always run on CPU "
         "regardless of backend. MPS support ships in the torch wheel installed "
-        'by the `embed` extra (`pip install "sif[embed]"`); Apple\'s Neural '
+        'by the `embed` extra (`pip install "docsif[embed]"`); Apple\'s Neural '
         "Engine (ANE/NPU) is not used by any backend."
     )
 
@@ -232,6 +317,11 @@ def _append_options_tables(lines: list[str]) -> None:
             # A `|` inside a type (union) would add a phantom column to the table row.
             type_cell = type_name.replace("|", "\\|")
             default = field_info.default
+            if default is PydanticUndefined:
+                # default_factory fields (e.g. watch_ignore_patterns) carry no
+                # static default; render the factory's product instead of the
+                # PydanticUndefined sentinel repr.
+                default = field_info.default_factory() if field_info.default_factory else None
             if default is None:
                 default = get_computed_default(field_name) or "None"
             default_str = f"`{default}`" if default != "" else '`""`'
@@ -246,17 +336,23 @@ def _append_options_tables(lines: list[str]) -> None:
         lines.append("")
 
 
-def _append_validation_rules(lines: list[str], valid_model_types: list[str]) -> None:
-    """Append validation rules section."""
+def _append_validation_rules(lines: list[str], validator_choices: dict[str, list[str]]) -> None:
+    """Append validation rules section.
+
+    Membership-set rules are DERIVED from the live validators
+    (``get_validator_choices``, IN-03) so the table tracks what is
+    actually enforced; format and range rules stay handwritten.
+    """
     lines.append("## Validation Rules")
     lines.append("")
     lines.append("SIF validates configuration on startup. Invalid values will raise errors:")
     lines.append("")
     lines.append("| Field | Rule | Error Example |")
     lines.append("|-------|------|---------------|")
-    choices = ", ".join(f"`{t}`" for t in valid_model_types)
-    error = f"Invalid model_type: xyz. Must be one of {valid_model_types}"
-    lines.append(f"| `model_type` | Must be one of: {choices} | `{error}` |")
+    for field_name, values in validator_choices.items():
+        choices = ", ".join(f"`{t}`" for t in values)
+        error = f"Invalid {field_name}: xyz. Must be one of {values}"
+        lines.append(f"| `{field_name}` | Must be one of: {choices} | `{error}` |")
     lines.append(
         "| `api_base` | Must start with `http://` or `https://` | "
         "`api_base must be an HTTP or HTTPS URL` |"
@@ -265,16 +361,17 @@ def _append_validation_rules(lines: list[str], valid_model_types: list[str]) -> 
         "| `log_level` | Must be one of: `DEBUG`, `INFO`, `WARNING`, "
         "`ERROR`, `CRITICAL` | `Invalid log level: TRACE` |"
     )
+    lines.append("| `chunk_size` | Minimum 100 | `Input should be greater than or equal to 100` |")
+    lines.append("| `chunk_overlap` | Minimum 0 | `Input should be greater than or equal to 0` |")
+    lines.append("| `default_limit` | 1 to 100 | `Input should be less than or equal to 100` |")
     lines.append(
-        "| `chunk_size` | Minimum 100 | `ensure this value is greater than or equal to 100` |"
+        "| `rerank_candidate_limit` | 5 to 50 | `Input should be less than or equal to 50` |"
     )
     lines.append(
-        "| `chunk_overlap` | Minimum 0 | `ensure this value is greater than or equal to 0` |"
+        "| `rerank_relative_threshold` | Greater than 0 and at most 1 | "
+        "`Input should be less than or equal to 1` |"
     )
-    lines.append(
-        "| `default_limit` | 1 to 100 | `ensure this value is less than or equal to 100` |"
-    )
-    lines.append("| `mcp_port` | 1 to 65535 | `ensure this value is less than or equal to 65535` |")
+    lines.append("| `mcp_port` | 1 to 65535 | `Input should be less than or equal to 65535` |")
     lines.append("")
 
 
@@ -298,6 +395,9 @@ def _append_env_example(lines: list[str]) -> None:
     lines.append("SIF_RERANKER_MODEL_NAME=Qwen/Qwen3-Reranker-0.6B")
     lines.append(f"SIF_RERANKER_MODEL_TYPE={reranker_type_default}")
     lines.append("SIF_RERANKER_BATCH_SIZE=32")
+    lines.append("SIF_RERANK_ENABLED=false")
+    lines.append("SIF_RERANK_CANDIDATE_LIMIT=20")
+    lines.append("SIF_RERANK_RELATIVE_THRESHOLD=0.5")
     lines.append("")
     lines.append("# API (for OpenAI-compatible backends)")
     lines.append("# SIF_API_KEY=your-api-key")
@@ -345,12 +445,13 @@ def _append_viewing_config(lines: list[str]) -> None:
     """Append viewing current configuration section."""
     lines.append("## Viewing Current Configuration")
     lines.append("")
-    lines.append("To see your current configuration:")
-    lines.append("")
-    lines.append("```bash")
-    lines.append("# View effective configuration")
-    lines.append("sif status")
-    lines.append("```")
+    lines.append(
+        "`sif status` shows index state (path, collections, documents, watch, and "
+        "vector lag) rather than configuration values. Configuration comes from "
+        "`SIF_*` environment variables and a `.env` file in the current working "
+        "directory. To see the resolved model settings (`model_name`, `model_type`, "
+        "`api_base`, `dimension`, `cache_dir`), run `sif models status`."
+    )
     lines.append("")
 
 
@@ -412,10 +513,11 @@ def _append_related_docs(lines: list[str]) -> None:
 def generate_markdown() -> str:
     """Generate the full configuration reference markdown."""
     valid_model_types = get_valid_model_types()
+    validator_choices = get_validator_choices()
     lines: list[str] = []
     _append_header(lines)
     _append_options_tables(lines)
-    _append_validation_rules(lines, valid_model_types)
+    _append_validation_rules(lines, validator_choices)
     _append_env_example(lines)
     _append_validation_example(lines, valid_model_types)
     _append_viewing_config(lines)

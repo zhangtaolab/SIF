@@ -1,0 +1,12 @@
+{
+  "name": "sif",
+  "version": "1.2.0",
+  "description": "Local hybrid search over Markdown notes and documents through an MCP server",
+  "author": {
+    "name": "ZhangTao Lab"
+  },
+  "homepage": "https://github.com/zhangtaolab/sif",
+  "repository": "https://github.com/zhangtaolab/sif",
+  "license": "MIT",
+  "keywords": ["search", "mcp", "rag", "markdown", "sqlite"]
+}

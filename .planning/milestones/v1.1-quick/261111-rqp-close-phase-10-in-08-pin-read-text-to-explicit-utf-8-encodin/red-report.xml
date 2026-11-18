@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="0.638" timestamp="2026-11-11T20:24:32.632721+08:00" hostname="Mac-Studio.local"><testcase classname="tests.unit.cli.test_get.TestGetRetrieval" name="test_disk_fallback_read_text_pins_utf8_encoding" time="0.014"><failure message="AssertionError: assert None == 'utf-8'&#10; +  where None = &lt;built-in method get of dict object at 0x11c496dc0&gt;('encoding')&#10; +    where &lt;built-in method get of dict object at 0x11c496dc0&gt; = {}.get">self = &lt;tests.unit.cli.test_get.TestGetRetrieval object at 0x11c55bbd0&gt;
+indexed_documents = (PosixPath('/private/var/folders/1q/2qhztsp1673fnqgrpblxnpd40000gn/T/pytest-of-forrest/pytest-393/test_disk_fallback_r...updated_at=datetime.datetime(2026, 11, 11, 12, 24, 33, 251227, tzinfo=datetime.timezone.utc), chunks=[], metadata={})])
+tmp_path = PosixPath('/private/var/folders/1q/2qhztsp1673fnqgrpblxnpd40000gn/T/pytest-of-forrest/pytest-393/test_disk_fallback_read_text_p0')
+
+    def test_disk_fallback_read_text_pins_utf8_encoding(
+        self, indexed_documents: tuple[Path, list[Document]], tmp_path: Path
+    ) -&gt; None:
+        """Pin IN-08 via a locale-independent read_text contract.
+    
+        A functional non-ASCII test would be vacuous on UTF-8 locales (the
+        locale default already decodes UTF-8), so this spies on Path.read_text
+        and asserts the disk-fallback read carries encoding="utf-8".
+        """
+        db_path, _ = indexed_documents
+        local_file = tmp_path / "local.md"
+        local_file.write_text("café 中文 😀\nsecond line", encoding="utf-8")
+    
+        real_read_text = Path.read_text
+        recorded: list[dict] = []
+    
+        def spy_read_text(self: Path, *args: object, **kwargs: object) -&gt; str:
+            """Record the fallback read's kwargs; delegate every call unchanged."""
+            if os.fspath(self) == str(local_file):
+                recorded.append(dict(kwargs))
+            return real_read_text(self, *args, **kwargs)
+    
+        with patch.object(Path, "read_text", spy_read_text):
+            result = self._invoke(db_path, "get", str(local_file))
+    
+        assert result.exit_code == 0, result.output
+        assert "café 中文 😀" in result.output
+        assert len(recorded) == 1
+&gt;       assert recorded[0].get("encoding") == "utf-8"
+E       AssertionError: assert None == 'utf-8'
+E        +  where None = &lt;built-in method get of dict object at 0x11c496dc0&gt;('encoding')
+E        +    where &lt;built-in method get of dict object at 0x11c496dc0&gt; = {}.get
+
+_          = [Document(path='/private/var/folders/1q/2qhztsp1673fnqgrpblxnpd40000gn/T/pytest-of-forrest/pytest-393/test_disk_fallba... updated_at=datetime.datetime(2026, 11, 11, 12, 24, 33, 251227, tzinfo=datetime.timezone.utc), chunks=[], metadata={})]
+db_path    = PosixPath('/private/var/folders/1q/2qhztsp1673fnqgrpblxnpd40000gn/T/pytest-of-forrest/pytest-393/test_disk_fallback_read_text_p0/sif.db')
+indexed_documents = (PosixPath('/private/var/folders/1q/2qhztsp1673fnqgrpblxnpd40000gn/T/pytest-of-forrest/pytest-393/test_disk_fallback_r...updated_at=datetime.datetime(2026, 11, 11, 12, 24, 33, 251227, tzinfo=datetime.timezone.utc), chunks=[], metadata={})])
+local_file = PosixPath('/private/var/folders/1q/2qhztsp1673fnqgrpblxnpd40000gn/T/pytest-of-forrest/pytest-393/test_disk_fallback_read_text_p0/local.md')
+real_read_text = &lt;function Path.read_text at 0x1018e71a0&gt;
+recorded   = [{}]
+result     = &lt;Result okay&gt;
+self       = &lt;tests.unit.cli.test_get.TestGetRetrieval object at 0x11c55bbd0&gt;
+spy_read_text = &lt;function TestGetRetrieval.test_disk_fallback_read_text_pins_utf8_encoding.&lt;locals&gt;.spy_read_text at 0x1071a1620&gt;
+tmp_path   = PosixPath('/private/var/folders/1q/2qhztsp1673fnqgrpblxnpd40000gn/T/pytest-of-forrest/pytest-393/test_disk_fallback_read_text_p0')
+
+tests/unit/cli/test_get.py:268: AssertionError</failure></testcase></testsuite></testsuites>

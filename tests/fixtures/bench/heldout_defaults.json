@@ -1,0 +1,46 @@
+{
+  "candidate": {
+    "bm25_weight": 1.0,
+    "hit_at_10": 0.85,
+    "ndcg_at_10": 0.8186413102772627,
+    "rrf_k": 20,
+    "vector_weight": 0.5
+  },
+  "defaults": {
+    "bm25_weight": 1.0,
+    "rrf_k": 60,
+    "vector_weight": 1.0
+  },
+  "generated": "2026-11-15",
+  "heldout": {
+    "hit_at_10": 0.85,
+    "ndcg_at_10": 0.8120158986791898,
+    "num_queries": 20,
+    "per_category": {
+      "keyword": {
+        "count": 5,
+        "hit_at_10": 1.0,
+        "ndcg_at_10": 0.9734983536077081
+      },
+      "multilingual": {
+        "count": 5,
+        "hit_at_10": 1.0,
+        "ndcg_at_10": 1.0
+      },
+      "rival": {
+        "count": 5,
+        "hit_at_10": 1.0,
+        "ndcg_at_10": 1.0
+      },
+      "synonym": {
+        "count": 5,
+        "hit_at_10": 0.4,
+        "ndcg_at_10": 0.2745652411090509
+      }
+    }
+  },
+  "heldout_delta": 0.00662541159807295,
+  "rationale": "Regenerated 2026-11-15 for CORR-02 (per-document dedup). The default ranking contract changed from pre-dedup chunk-level fusion to one result row per document: VectorSearcher groups duplicate chunk rows by document before fusion (best-distance chunk wins) and carries chunk_id/sequence/chunk_matches into the result contract. Pre-dedup held-out (defaults rrf_k=60, bm25_weight=1.0, vector_weight=1.0): nDCG@10=0.8120158986791898, Hit@10=0.85; per_category nDCG/Hit: keyword 0.9734983536077081/1.0, multilingual 1.0/1.0, rival 1.0/1.0, synonym 0.2745652411090509/0.4. Post-dedup held-out: nDCG@10=0.8120158986791898, Hit@10=0.85; per_category: keyword 0.9734983536077081/1.0, multilingual 1.0/1.0, rival 1.0/1.0, synonym 0.2745652411090509/0.4 — identical because this deterministic fixture corpus has one chunk per document, so there are no duplicate chunk rows to collapse. The tuning-sweep candidate (rrf_k=20, bm25_weight=1.0, vector_weight=0.5) is likewise unchanged: pre-dedup nDCG@10=0.8186413102772627, Hit@10=0.85 (keyword 1.0/1.0); post-dedup nDCG@10=0.8186413102772627, Hit@10=0.85 (keyword 1.0/1.0), heldout_delta=0.00662541159807295, verdict unchanged. Granular ranking evidence is the regenerated SC1 hybrid golden (tests/unit/search/test_hybrid.py::TestHybridSC1PipelineGolden): its old→new bm25_score/rrf_score values are byte-identical (d3 0.9999989753435158 / 0.03252247488101534; d1 0.9999990673325406 / 0.031754032258064516), proving the vector/hybrid scoring path did not move while the result contract gained chunk identity; the dedup contract itself is exercised by the chunky-document integration regression in tests/integration/test_search_correctness.py. The --bm25-only B0/B1 saved runs are the BM25 no-drift check, not dedup evidence: dedup lives in the vector leg, which --bm25-only never constructs. Title-column refresh (CORR-04, 2026-11-15): documents_fts gained a title column and BM25 now binds equal 1.0/1.0 content/title weights, so title terms participate in lexical matching at the same weight as body terms. Held-out metrics were recomputed through this same deterministic harness and are unchanged: nDCG@10=0.8120158986791898, Hit@10=0.85; per_category: keyword 0.9734983536077081/1.0, multilingual 1.0/1.0, rival 1.0/1.0, synonym 0.2745652411090509/0.4. The tuning-sweep candidate values (rrf_k=20, bm25_weight=1.0, vector_weight=0.5: nDCG@10=0.8186413102772627, Hit@10=0.85), heldout_delta=0.00662541159807295, and verdict unchanged are likewise unchanged. Caveat (research Pitfall 16): all 150 documents in this fixture corpus have an H1 identical to their title, so title text is indexed in both the content and title columns (double weighting); that duplication did not reorder the top-10 on this pack, but Phase 24 QUAL-03 owns the title-breadcrumb experiment. The ranking-level title-column evidence is the SC1 hybrid golden, whose two BM25-bearing rows moved while its ordering and RRF scores did not. D-12 title-weight verdict (19-09, 2026-11-15): the 2.0/3.0/4.0 candidates were graded against B1's exact saved query set through compare_saved_run and the strict per-leg gate rejected all of them — the held-out title leg was already at its 1.0 ceiling (n=23, baseline_mean=1.0, current_mean=1.0, mean_delta=0.0, no winner) and the body held-out leg stayed flat (n=26, baseline_mean=0.900634933653854, mean_delta=0.0, not a regression) — so _TITLE_WEIGHT remains pinned at 1.0 and this snapshot's metrics are unchanged. Evidence: .planning/phases/19-search-correctness/bench/d12-verdict.json.",
+  "verdict": "unchanged",
+  "version": 1
+}

@@ -32,6 +32,8 @@ SIF_LOG_LEVEL=INFO
 
 ## Configuration Options
 
+Each environment variable maps to a lowercase Settings field: `SIF_CHUNK_SIZE` sets `chunk_size`, `SIF_EMBED_BREADCRUMB` sets `embed_breadcrumb`, and so on.
+
 ### Application Settings
 
 | Variable | Type | Default | Description |
@@ -44,7 +46,8 @@ SIF_LOG_LEVEL=INFO
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
-| `SIF_DB_PATH` | Path \| None | `~/.local/share/sif/sif.db (computed)` | Path to SQLite database file (validated by `expand_path`) |
+| `SIF_DB_PATH` | Path \| None | `platformdirs user_data_dir('sif')/sif.db (computed; e.g. ~/.local/share/sif/sif.db on Linux, ~/Library/Application Support/sif/sif.db on macOS)` | Path to SQLite database file (validated by `expand_path`) |
+| `SIF_LOCK_WAIT_TIMEOUT` | float | `30.0` | Seconds an index writer waits for a competing writer's lock before proceeding with its own pass anyway |
 
 ### Embedding Model Settings
 
@@ -57,6 +60,8 @@ SIF_LOG_LEVEL=INFO
 | `SIF_BATCH_SIZE` | int | `32` | Batch size for inference |
 | `SIF_MODEL_TYPE` | str | `modelscope` | Embedding model type (gguf, sentence_transformers, openai, modelscope) (validated by `validate_model_type`) |
 | `SIF_N_GPU_LAYERS` | int | `0` | Number of GPU layers for GGUF models |
+| `SIF_QUERY_PROMPT_NAME` | str \| None | `None` | Query-role prompt name passed to the embedding backend; unset uses the known-model default, an empty string disables it |
+| `SIF_DOCUMENT_PROMPT_NAME` | str \| None | `None` | Document-role prompt name passed to the embedding backend; unset uses the known-model default, an empty string disables it |
 
 #### Device Selection (CPU / GPU / MPS)
 
@@ -68,7 +73,7 @@ SIF exposes no device setting — each embedding backend picks its compute devic
 | `gguf` | CPU only by default. `SIF_N_GPU_LAYERS` defaults to `0` (all layers on CPU); values greater than `0` offload that many layers via llama.cpp's GPU support (Metal on Apple Silicon — llama.cpp's own path, not torch MPS). |
 | `openai` | Embeddings are computed by the remote API; local hardware is unused. |
 
-BM25/FTS5 keyword search and sqlite-vec vector search always run on CPU regardless of backend. MPS support ships in the torch wheel installed by the `embed` extra (`pip install "sif[embed]"`); Apple's Neural Engine (ANE/NPU) is not used by any backend.
+BM25/FTS5 keyword search and sqlite-vec vector search always run on CPU regardless of backend. MPS support ships in the torch wheel installed by the `embed` extra (`pip install "docsif[embed]"`); Apple's Neural Engine (ANE/NPU) is not used by any backend.
 
 ### API Settings
 
@@ -85,34 +90,57 @@ BM25/FTS5 keyword search and sqlite-vec vector search always run on CPU regardle
 | `SIF_RERANKER_MODEL_PATH` | Path \| None | `None` | Path to local reranker model file |
 | `SIF_RERANKER_MODEL_TYPE` | str | `sentence_transformers` | Reranker model type (gguf, sentence_transformers) (validated by `validate_reranker_model_type`) |
 | `SIF_RERANKER_BATCH_SIZE` | int | `32` | Batch size for reranker inference |
+| `SIF_RERANK_ENABLED` | bool | `False` | Enable reranking on the sif search query command (the default keeps the zero-cost skip-rerank fast path; pass --rerank or set 1 to enable) |
+| `SIF_RERANK_CANDIDATE_LIMIT` | int | `20` | Maximum candidates passed to the reranker when reranking is enabled; the pipeline over-fetches to this size before capping |
+| `SIF_RERANK_RELATIVE_THRESHOLD` | float | `0.5` | Keep reranker candidates scoring at least top_score * alpha (0 < alpha <= 1); applied after score normalization |
 
 ### Chunking Settings
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
-| `SIF_CHUNK_SIZE` | int | `512` | Default chunk size in tokens |
-| `SIF_CHUNK_OVERLAP` | int | `128` | Default chunk overlap in tokens |
+| `SIF_CHUNK_SIZE` | int | `512` | Default chunk size in tokens (converted to ~4 characters per token for the character-based chunkers) |
+| `SIF_CHUNK_OVERLAP` | int | `128` | Default chunk overlap in tokens (converted to ~4 characters per token for the character-based chunkers) |
+| `SIF_EMBED_BREADCRUMB` | bool | `False` | Prepend the document title and current heading path to each chunk's embedding text; stored content and full-text search stay unchanged |
 
 ### Search Settings
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
-| `SIF_DEFAULT_SEARCH_TYPE` | str | `hybrid` | Default search type (bm25, vector, hybrid) |
+| `SIF_DEFAULT_SEARCH_TYPE` | str | `hybrid` | Default search type (bm25, vector, hybrid) (validated by `validate_default_search_type`) |
 | `SIF_DEFAULT_LIMIT` | int | `10` | Default search result limit |
+| `SIF_RRF_K` | int | `60` | RRF constant k for hybrid fusion (1/(k + rank)); smaller values differentiate top ranks more aggressively |
+| `SIF_BM25_WEIGHT` | float | `1.0` | BM25 source weight in hybrid RRF fusion; 1.0 with an equal vector weight reproduces the unweighted default |
+| `SIF_VECTOR_WEIGHT` | float | `1.0` | Vector source weight in hybrid RRF fusion; 1.0 with an equal BM25 weight reproduces the unweighted default |
+| `SIF_QUERY_HISTORY_ENABLED` | bool | `True` | Log executed searches (query, result count, collections) locally to power history suggestions; 0 disables both the write and the read side globally |
+| `SIF_QUERY_HISTORY_LIMIT` | int | `500` | Most-recent query_log rows kept; on insert overflow the oldest rows are deleted in the same write (trim-in-write) |
+| `SIF_SEARCH_REFRESH_ENABLED` | bool | `True` | Stat-walk the searched collections before `sif search`/`vsearch`/`query` and BM25-refresh drifted files (never embeddings); disable to search the index exactly as stored |
+| `SIF_SEARCH_REFRESH_MAX_FILES` | int | `100` | Upper bound on drifted files one pre-search refresh may re-index; above it nothing is refreshed and search proceeds on the current index with a warning (so a branch switch never becomes a hidden full reindex) |
+
+### Watch Settings
+
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `SIF_WATCH_DEBOUNCE_INTERVAL` | float | `0.5` | Quiet window in seconds a filesystem event burst must settle for before `sif watch` runs one incremental update |
+| `SIF_WATCH_IGNORE_PATTERNS` | list | `[]` | Global ignore-pattern additions applied to the shared scan/watch predicate (extends the scanner defaults for both) |
+| `SIF_WATCH_UPDATE_DEPTH` | str | `bm25` | Default update depth for `sif watch`: 'bm25' (FTS only) or 'embed' (also write vectors for changed documents); the --embed / --no-embed flags override it (validated by `validate_watch_update_depth`) |
+| `SIF_WATCH_RESTAT_INTERVAL` | float | `5.0` | Seconds between re-stat checks for watched collection roots that went missing while `sif watch` runs |
+| `SIF_WATCH_RESCOPE_INTERVAL` | float | `60.0` | Seconds between collections-table rescope polls riding the watch tick in long-lived hosts; added collections start watching, removed ones stop |
+| `SIF_WATCH_CHECKPOINT_INTERVAL` | float | `300.0` | Seconds between idle WAL checkpoint attempts in long-lived hosts; 0 disables (shutdown checkpointing stays the final word) |
 
 ### MCP Server Settings
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
+| `SIF_MCP_WATCH` | bool | `False` | Run the index watcher inside the MCP server so assistant queries hit a fresh index (opt-in via SIF_MCP_WATCH=1; both transports, BM25-only by design) |
 | `SIF_MCP_HOST` | str | `127.0.0.1` | MCP HTTP server host |
 | `SIF_MCP_PORT` | int | `8080` | MCP HTTP server port |
-| `SIF_MCP_TRANSPORT` | str | `stdio` | MCP transport type (stdio, http) |
+| `SIF_MCP_TRANSPORT` | str | `stdio` | MCP transport type (stdio, http) (validated by `validate_mcp_transport`) |
 
 ### Cache Settings
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
-| `SIF_CACHE_DIR` | Path \| None | `~/.cache/sif (computed)` | Cache directory path |
+| `SIF_CACHE_DIR` | Path \| None | `platformdirs user_cache_dir('sif') (computed; e.g. ~/.cache/sif on Linux, ~/Library/Caches/sif on macOS)` | Cache directory path (validated by `expand_path`) |
 | `SIF_CACHE_EMBEDDINGS` | bool | `True` | Whether to cache embeddings |
 
 ## Validation Rules
@@ -121,13 +149,19 @@ SIF validates configuration on startup. Invalid values will raise errors:
 
 | Field | Rule | Error Example |
 |-------|------|---------------|
+| `watch_update_depth` | Must be one of: `bm25`, `embed` | `Invalid watch_update_depth: xyz. Must be one of ['bm25', 'embed']` |
 | `model_type` | Must be one of: `gguf`, `modelscope`, `openai`, `sentence_transformers` | `Invalid model_type: xyz. Must be one of ['gguf', 'modelscope', 'openai', 'sentence_transformers']` |
+| `reranker_model_type` | Must be one of: `gguf`, `sentence_transformers` | `Invalid reranker_model_type: xyz. Must be one of ['gguf', 'sentence_transformers']` |
+| `default_search_type` | Must be one of: `bm25`, `hybrid`, `vector` | `Invalid default_search_type: xyz. Must be one of ['bm25', 'hybrid', 'vector']` |
+| `mcp_transport` | Must be one of: `http`, `stdio` | `Invalid mcp_transport: xyz. Must be one of ['http', 'stdio']` |
 | `api_base` | Must start with `http://` or `https://` | `api_base must be an HTTP or HTTPS URL` |
 | `log_level` | Must be one of: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` | `Invalid log level: TRACE` |
-| `chunk_size` | Minimum 100 | `ensure this value is greater than or equal to 100` |
-| `chunk_overlap` | Minimum 0 | `ensure this value is greater than or equal to 0` |
-| `default_limit` | 1 to 100 | `ensure this value is less than or equal to 100` |
-| `mcp_port` | 1 to 65535 | `ensure this value is less than or equal to 65535` |
+| `chunk_size` | Minimum 100 | `Input should be greater than or equal to 100` |
+| `chunk_overlap` | Minimum 0 | `Input should be greater than or equal to 0` |
+| `default_limit` | 1 to 100 | `Input should be less than or equal to 100` |
+| `rerank_candidate_limit` | 5 to 50 | `Input should be less than or equal to 50` |
+| `rerank_relative_threshold` | Greater than 0 and at most 1 | `Input should be less than or equal to 1` |
+| `mcp_port` | 1 to 65535 | `Input should be less than or equal to 65535` |
 
 ## Complete .env Example
 
@@ -145,6 +179,9 @@ SIF_BATCH_SIZE=32
 SIF_RERANKER_MODEL_NAME=Qwen/Qwen3-Reranker-0.6B
 SIF_RERANKER_MODEL_TYPE=sentence_transformers
 SIF_RERANKER_BATCH_SIZE=32
+SIF_RERANK_ENABLED=false
+SIF_RERANK_CANDIDATE_LIMIT=20
+SIF_RERANK_RELATIVE_THRESHOLD=0.5
 
 # API (for OpenAI-compatible backends)
 # SIF_API_KEY=your-api-key
@@ -182,12 +219,7 @@ Error: Invalid model_type: invalid. Must be one of ['gguf', 'modelscope', 'opena
 
 ## Viewing Current Configuration
 
-To see your current configuration:
-
-```bash
-# View effective configuration
-sif status
-```
+`sif status` shows index state (path, collections, documents, watch, and vector lag) rather than configuration values. Configuration comes from `SIF_*` environment variables and a `.env` file in the current working directory. To see the resolved model settings (`model_name`, `model_type`, `api_base`, `dimension`, `cache_dir`), run `sif models status`.
 
 ## Best Practices
 

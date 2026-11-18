@@ -91,10 +91,18 @@ def traverse_commands(
     cmd: click.Command,
     path: str = "",
 ) -> list[tuple[str, click.Command]]:
-    """Recursively traverse the Click command tree."""
+    """Recursively traverse the Click command tree.
+
+    A group with no subcommands is itself a leaf (``sif eval`` is a command
+    group whose default action lives on the group): recursing into it would
+    contribute zero entries and the generated reference would silently omit
+    the command.
+    """
     results: list[tuple[str, click.Command]] = []
-    if isinstance(cmd, click.Group):
+    if isinstance(cmd, click.Group) and cmd.commands:
         for name, subcmd in cmd.commands.items():
+            if getattr(subcmd, "hidden", False):
+                continue
             new_path = f"{path} {name}".strip()
             results.extend(traverse_commands(subcmd, new_path))
     else:
@@ -106,7 +114,11 @@ def _build_tree_lines(cmd: click.Command, prefix: str = "") -> list[str]:
     """Build ASCII tree lines for command overview."""
     tree_lines: list[str] = []
     if isinstance(cmd, click.Group):
-        items = list(cmd.commands.items())
+        items = [
+            (name, subcmd)
+            for name, subcmd in cmd.commands.items()
+            if not getattr(subcmd, "hidden", False)
+        ]
         for i, (name, subcmd) in enumerate(items):
             is_last = i == len(items) - 1
             connector = "└──" if is_last else "├──"
@@ -171,7 +183,9 @@ GROUP_ORDER: list[tuple[str, str]] = [
     ("index", "Index Commands"),
     ("search", "Search Commands"),
     ("mcp", "MCP Commands"),
+    ("models", "Model Commands"),
     ("bench", "Other Commands"),
+    ("eval", "Other Commands"),
     ("pull", "Other Commands"),
     ("ls", "Other Commands"),
     ("status", "Other Commands"),
@@ -263,7 +277,7 @@ def _append_output_formats(lines: list[str]) -> None:
     lines.append("| Table (default) | — | Rich formatted table |")
     lines.append("| JSON | `--json` | Machine-readable JSON |")
     lines.append("| CSV | `--csv` | Comma-separated values |")
-    lines.append("| Markdown | `--md` | Markdown table format |")
+    lines.append("| Markdown | `--md` | Markdown headings and lists |")
     lines.append("| XML | `--xml` | XML format |")
     lines.append("| Files | `--files` | Plain file paths, one per line |")
     lines.append("")
@@ -278,6 +292,10 @@ def _append_exit_codes(lines: list[str]) -> None:
     lines.append("| 0 | Success |")
     lines.append("| 1 | General error |")
     lines.append("| 2 | Invalid arguments |")
+    lines.append(
+        "| 130 | `sif watch`: second SIGINT/SIGTERM during shutdown — "
+        "immediate exit without the final flush |"
+    )
     lines.append("")
 
 

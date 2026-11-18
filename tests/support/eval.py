@@ -1,0 +1,226 @@
+"""Deterministic personal-eval DB support (Phase 18, EVAL-01).
+
+``build_personal_db`` raises a real file-backed index with the production
+schema (FTS triggers + vec0 embeddings) from curated deterministic documents
+so the CLI can be exercised against a genuine 60-document corpus. It reuses
+``ConceptEmbedder`` from the bench support instead of duplicating it, and
+skips when ``sqlite-vec`` is unavailable (same discipline as
+``build_bench_db``).
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import sqlite3
+from collections.abc import Callable
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+import pytest
+
+from sif.core.models import QueryLogEntry
+from sif.database.repositories import QueryLogRepository
+from sif.database.schema import SchemaManager
+from sif.search.vector import VectorSearcher
+from tests.support.bench import EMBEDDING_DIM, ConceptEmbedder
+
+
+COLLECTION_ID = "personal"
+_NOW = "2026-11-14T00:00:00+00:00"
+
+
+def _default_titles(count: int) -> list[str]:
+    """One distinct, query-safe title per document."""
+    return [f"Personal note {index:03d} about topic {index}" for index in range(count)]
+
+
+def _body(title: str, index: int) -> str:
+    """A deterministic body whose candidate sentence starts beyond 200 chars.
+
+    The opening window (title + introductory context) is deliberately longer
+    than 200 characters so the body leg picks the later "Document body"
+    sentence instead of echoing the title (research Open Question 9).
+    """
+    return (
+        f"{title}. Introductory context for note {index:03d} spans a range of "
+        "personal knowledge management topics, local retrieval workflows, and "
+        "evaluation methodology in enough detail to push the candidate prose "
+        f"past the opening window. Document body {index:03d} discusses local "
+        "search quality, retrieval metrics, deterministic sampling, and "
+        "evaluation on a personal corpus."
+    )
+
+
+# Deterministic Chinese characters for unique body candidates. Base-34
+# encoding of the document index keeps every candidate distinct (and the
+# normalized CJK run is truncated to the first 10 ideographs by the body leg).
+_ZH_POOL = "检索评测文档知识管理本地质量指标采样方法个性笔记语料排序混合向量"
+
+_ZH_INTRO = (
+    "介绍性内容覆盖个人知识管理、本地检索流程与评测方法的多个方面、并且刻意写得足够长、"
+    "以便把候选句子推到开头窗口之外。"
+)
+
+
+def _zh_candidate(index: int) -> str:
+    """A unique Chinese body-sentence candidate for ``index``."""
+    digits: list[str] = []
+    value = index
+    for _offset in range(3):
+        digits.append(_ZH_POOL[value % len(_ZH_POOL)])
+        value //= len(_ZH_POOL)
+    return "".join(digits) + "讨论本地检索质量与评测方法"
+
+
+def _zh_body(title: str, index: int) -> str:
+    """A Chinese body whose candidate sentence starts beyond 200 characters."""
+    return f"{title}。{_ZH_INTRO * 4}{_zh_candidate(index)}。"
+
+
+def bilingual_titles_and_bodies(
+    count: int,
+    zh_count: int,
+) -> tuple[list[str], list[str]]:
+    """Deterministic EN+ZH fixture titles and bodies, Chinese block last.
+
+    The first ``count - zh_count`` documents reuse the default English
+    shapes; the trailing ``zh_count`` documents are Chinese with enough CJK
+    ideographs for ``classify_language`` to return ``zh``. Each Chinese body
+    candidate is unique, so the body leg never dedupes them into one query.
+    ``build_personal_db``'s defaults are untouched.
+    """
+    if count < 0:
+        raise ValueError("count must be non-negative")
+    if not 0 <= zh_count <= count:
+        raise ValueError("zh_count must be between 0 and count")
+    en_count = count - zh_count
+    titles = _default_titles(en_count)
+    bodies = [_body(title, index) for index, title in enumerate(titles)]
+    for index in range(zh_count):
+        title = f"中文笔记第{index}篇关于本地检索"
+        titles.append(title)
+        bodies.append(_zh_body(title, index))
+    return titles, bodies
+
+
+def build_personal_db(
+    db_path: Path,
+    *,
+    documents: int = 60,
+    titles: list[str] | None = None,
+    bodies: list[str] | None = None,
+    embedder: ConceptEmbedder | None = None,
+    embedding_dim: int = EMBEDDING_DIM,
+) -> Path:
+    """Build a real on-disk personal index with ``documents`` curated docs.
+
+    One collection (enabled by default), unique titles by default, bodies
+    long enough for the body leg (or explicit ``bodies`` for split-control
+    fixtures), sha256 checksums, one chunk per document, and one vec0
+    embedding per chunk through ``ConceptEmbedder``. The on-disk vec0
+    dimension matters: ``Database.init_schema`` (called by
+    ``open_initialized_database``) validates it against
+    ``get_settings().embedding_dim``, so tests must patch settings with the
+    same ``embedding_dim`` used here.
+    """
+    if titles is not None and len(titles) != documents:
+        raise ValueError("titles must have exactly one entry per document")
+    if bodies is not None and len(bodies) != documents:
+        raise ValueError("bodies must have exactly one entry per document")
+    resolved_titles = titles if titles is not None else _default_titles(documents)
+    model = embedder or ConceptEmbedder()
+    db_path = Path(db_path)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    try:
+        conn.enable_load_extension(True)
+        import sqlite_vec
+
+        sqlite_vec.load(conn)
+        conn.enable_load_extension(False)
+    except Exception:
+        conn.close()
+        pytest.skip("sqlite-vec not available")
+
+    corpus_dir = db_path.parent / "corpus"
+    try:
+        SchemaManager(conn, embedding_dim=embedding_dim).create_all()
+        conn.execute(
+            "INSERT INTO collections (id, name, path, include_by_default, created_at, updated_at)"
+            " VALUES (?, ?, ?, 1, ?, ?)",
+            (COLLECTION_ID, COLLECTION_ID, str(corpus_dir), _NOW, _NOW),
+        )
+        embeddings: list[tuple[str, str, str, list[float]]] = []
+        for index in range(documents):
+            title = resolved_titles[index]
+            body = bodies[index] if bodies is not None else _body(title, index)
+            doc_id = f"doc-{index:03d}"
+            chunk_id = f"chunk-{index:03d}"
+            path = corpus_dir / f"{index:03d}.md"
+            conn.execute(
+                "INSERT INTO documents (id, collection_id, path, filename, title, content,"
+                " checksum, file_size, mtime, created_at, updated_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1.0, ?, ?)",
+                (
+                    doc_id,
+                    COLLECTION_ID,
+                    str(path),
+                    path.name,
+                    title,
+                    body,
+                    hashlib.sha256(body.encode()).hexdigest(),
+                    len(body.encode()),
+                    _NOW,
+                    _NOW,
+                ),
+            )
+            conn.execute(
+                "INSERT INTO document_chunks (id, document_id, sequence, content, created_at)"
+                " VALUES (?, ?, 0, ?, ?)",
+                (chunk_id, doc_id, body, _NOW),
+            )
+            embeddings.append((f"embed-{index:03d}", doc_id, chunk_id, model.embed(body)))
+        VectorSearcher(conn, embedding_dim=embedding_dim).add_embeddings_batch(embeddings)
+        conn.commit()
+    finally:
+        conn.close()
+    return db_path
+
+
+def seed_query_log(conn: sqlite3.Connection, queries: list[str]) -> None:
+    """Seed ``query_log`` rows through the repository's capped write path.
+
+    ``keep=500`` matches the production trim-in-write cap; timestamps rise
+    monotonically so ``history()`` ordering is deterministic. Never stores
+    document content (query text only).
+    """
+    repo = QueryLogRepository(conn)
+    base = datetime(2026, 11, 14, tzinfo=timezone.utc)
+    for index, query in enumerate(queries):
+        repo.add(
+            QueryLogEntry(
+                id=f"log-{index:03d}",
+                query=query,
+                result_count=index,
+                collections=[],
+                created_at=base + timedelta(minutes=index),
+            ),
+            keep=500,
+        )
+    conn.commit()
+
+
+def rewrite_saved_run(path: Path, mutate: Callable[[dict], None]) -> Path:
+    """Apply a mutation to an auto-saved run file and write it back.
+
+    Comparison tests use this to simulate a tampered/malformed saved run
+    without hand-writing an entire envelope: the mutation edits the parsed
+    JSON in place, then the file is rewritten deterministically.
+    """
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    mutate(data)
+    Path(path).write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    return Path(path)

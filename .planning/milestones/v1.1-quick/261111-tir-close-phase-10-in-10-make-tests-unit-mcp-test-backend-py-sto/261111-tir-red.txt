@@ -1,0 +1,16 @@
+# RED evidence - quick 261111-tir (Phase 10 IN-10)
+Captured: 2026-11-11T13:53:32Z
+HEAD: cee902a (unmodified tests/unit/mcp/test_backend.py)
+Sentinel state before protocol: -rw-r--r--@ 1 forrest  wheel  4096 11月 11 21:38 /tmp/test.db
+
+$ rm -f /tmp/test.db
+sentinel removed: yes
+
+$ python -m pytest tests/unit/mcp/test_backend.py --no-cov -q
+...........................                                              [100%]
+27 passed in 0.16s
+pytest exit code: 0
+
+$ test -e /tmp/test.db && ls -la /tmp/test.db
+-rw-r--r--@ 1 forrest  wheel  4096 11月 11 21:53 /tmp/test.db
+RESULT: SENTINEL RECREATED - RED confirmed (pollution live)

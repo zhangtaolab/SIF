@@ -40,6 +40,9 @@ class SmartSnippetExtractor:
     def extract(self, text: str, query_terms: list[str]) -> str:
         """Extract the best snippet from text matching query terms.
 
+        Thin wrapper over :meth:`extract_with_range` so existing callers
+        (CLI output) keep byte-identical snippet text (D-11).
+
         Args:
             text: Full chunk or document text
             query_terms: Lowercase query terms to score by
@@ -47,22 +50,47 @@ class SmartSnippetExtractor:
         Returns:
             Best snippet string (may be truncated with ellipsis)
         """
+        return self.extract_with_range(text, query_terms)[0]
+
+    def extract_with_range(
+        self,
+        text: str,
+        query_terms: list[str],
+    ) -> tuple[str, int, int]:
+        r"""Extract a snippet plus its inclusive 1-based document line window.
+
+        D-11: the line range is the window the extractor already selected, so
+        citation fields cost no second content scan. Every path reports a
+        range: a normal window is its rendered line span, a long-line cut is
+        that single line, and a fallback window is the first non-skippable
+        line through the last line rendered (or the single truncated line).
+        Empty text (and a text with nothing renderable) reports ``(1, 1)`` so
+        callers can leave the fields unset when the snippet is empty.
+
+        Args:
+            text: Full chunk or document text
+            query_terms: Lowercase query terms to score by
+
+        Returns:
+            ``(snippet, line_start, line_end)``; lines are inclusive and
+            1-based against ``text.split("\\n")``.
+        """
         if not text:
-            return ""
+            return "", 1, 1
 
         if not query_terms:
-            return self._fallback_snippet(text)
+            return self._fallback_with_range(text)
 
         lines = self._split_lines(text)
         best_idx = self._best_line_index(lines, query_terms)
         if best_idx is None:
-            return self._fallback_snippet(text)
+            return self._fallback_with_range(text)
 
         if len(lines[best_idx]) > self.max_length:
-            return self._cut_long_line(lines[best_idx], query_terms)
+            return self._cut_long_line(lines[best_idx], query_terms), best_idx + 1, best_idx + 1
 
         start, end = self._build_window(lines, best_idx)
-        return self._render_window(lines, start, end)
+        return self._render_window(lines, start, end), start + 1, end + 1
 
     def _split_lines(self, text: str) -> list[str]:
         """Split text into lines, keeping original order."""
@@ -193,17 +221,35 @@ class SmartSnippetExtractor:
             return True
         return set(stripped) <= _TABLE_SEP_CHARS and "---" in stripped
 
-    def _fallback_snippet(self, text: str) -> str:
-        """Return lead text when no query terms match.
+    def _fallback_with_range(self, text: str) -> tuple[str, int, int]:
+        """Return lead text plus the inclusive 1-based lines it rendered.
 
         Skips leading blank lines and code-fence delimiters before
-        truncating; headings are legitimate lead content and stay.
+        truncating; headings are legitimate lead content and stay. The end
+        line is the last line actually rendered: either the final source line
+        when the whole remainder fits, or the line containing the truncation
+        point (a single truncated first line when ``max_length`` cuts inside
+        it). The count comes from the rendered snippet, not the raw split, so
+        a trailing newline (or trailing blank lines removed by ``strip``) is
+        not counted as a phantom line. An all-skippable text renders nothing
+        and reports ``(1, 1)``.
         """
         lines = self._split_lines(text)
         idx = 0
         while idx < len(lines) and self._is_leading_skippable(lines[idx]):
             idx += 1
-        return self._truncate("\n".join(lines[idx:]))
+        joined = "\n".join(lines[idx:])
+        snippet = self._truncate(joined)
+        if not snippet:
+            return snippet, 1, 1
+        # ``_truncate`` only ever appends its own ellipsis; removing it (the
+        # three dots contain no newline) leaves exactly the rendered lines.
+        rendered_lines = snippet.removesuffix("...").count("\n") + 1
+        return snippet, idx + 1, idx + rendered_lines
+
+    def _fallback_snippet(self, text: str) -> str:
+        """Return lead text when no query terms match (snippet bytes only)."""
+        return self._fallback_with_range(text)[0]
 
     def _is_leading_skippable(self, line: str) -> bool:
         """Leading fallback lines to skip: blanks and fence delimiters only."""

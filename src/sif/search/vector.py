@@ -4,9 +4,43 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from math import ceil
 
 from sif.core.models import SearchOptions, SearchResult
-from sif.search.context_attach import attach_path_contexts
+from sif.search.filters import (
+    compile_filter,
+    count_documents_in_scope,
+    count_matching_documents,
+    count_vectors_in_scope,
+)
+from sif.utils.logging import get_logger
+
+
+logger = get_logger(__name__)
+
+# Hard ceiling for the KNN over-fetch depth (CORR-03 / research Open Q8): the
+# fetch window scales with limit+offset, but a huge offset must not turn into
+# unbounded brute-force work. An offset past this practical cap yields an
+# empty page rather than an ever-deeper KNN scan.
+_MAX_FETCH_K = 2048
+
+# D-09: the honest too-selective notice. Exactly three ``%d`` placeholders
+# (reached, matching total, requested page target); the argument count below
+# must match or logging raises while formatting. Emitted once per search on
+# stderr only — never into results, JSON, or MCP content.
+_TOO_SELECTIVE_MSG = (
+    "Metadata filter is highly selective earlier than the requested page: "
+    "%d of %d matching documents reached, %d requested; returning best-effort results"
+)
+
+# D-09: the derived ``embedded_documents`` shadow is maintained inside the
+# caller's vector transaction. Every insert joins ``documents`` so an orphan
+# vec0 row (a document deleted before its embeddings were purged) can never
+# resurrect the deleted document in the shadow.
+_SHADOW_INSERT_SQL = (
+    "INSERT OR IGNORE INTO embedded_documents(document_id) SELECT id FROM documents WHERE id = ?"
+)
+_SHADOW_DELETE_SQL = "DELETE FROM embedded_documents WHERE document_id = ?"
 
 
 class VectorSearcher:
@@ -21,6 +55,12 @@ class VectorSearcher:
             raise RuntimeError(
                 "sqlite-vec extension is not available. Install sqlite-vec to use vector search.",
             )
+        # D-09: detect the derived shadow once, alongside the vec0 probe. A
+        # plain Python bool: ``sqlite3.Connection`` has no ``__dict__`` and
+        # cannot carry attributes. Absent (bare vec0 fixtures, pre-Phase-21
+        # databases before create_all) every shadow statement below is a
+        # no-op, exactly like the ``_vec_available`` degradation.
+        self._shadow_available = self._check_shadow_table()
 
     def _check_vec_extension(self) -> bool:
         """Check if sqlite-vec extension is available."""
@@ -30,12 +70,27 @@ class VectorSearcher:
         except sqlite3.OperationalError:
             return False
 
+    def _check_shadow_table(self) -> bool:
+        """Check if the derived ``embedded_documents`` shadow table exists."""
+        try:
+            row = self.db.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='embedded_documents'",
+            ).fetchone()
+        except sqlite3.OperationalError:
+            return False
+        return row is not None
+
     def search(
         self,
         query_embedding: list[float],
         options: SearchOptions | None = None,
     ) -> list[SearchResult]:
-        """Search documents by vector similarity."""
+        """Search documents by vector similarity.
+
+        ``offset`` slices the ranked list exactly once (this searcher is the
+        slice owner for direct callers); returned ranks are global across
+        pages (``offset + position``).
+        """
         if options is None:
             options = SearchOptions()
 
@@ -54,7 +109,32 @@ class VectorSearcher:
         query_embedding: list[float],
         options: SearchOptions,
     ) -> list[SearchResult]:
-        """Search using sqlite-vec."""
+        """Search using sqlite-vec.
+
+        By default duplicate chunk hits collapse to one row per document
+        (CORR-02): the best-distance row wins, carries that chunk's
+        ``chunk_id``/``sequence``, and ``chunk_matches`` counts the pre-dedup
+        vector rows. ``options.per_chunk`` keeps the ungrouped chunk rows.
+
+        ``fetch_k`` starts at ``min(max(target * 4, 50), _MAX_FETCH_K)`` and
+        doubles only while the batch saturated the requested k and the
+        distinct target (``limit + offset``) is unmet — the independent
+        ceiling bounds the work a huge offset can request. One page slice
+        follows, and ranks are global across pages (``offset + position``).
+
+        Metadata/collection JOIN filters (D-08): the KNN MATCH runs before the
+        post-KNN JOIN, so ``len(rows)`` is a post-JOIN survivor count and
+        cannot signal saturation. When any JOIN filter is present the stop
+        condition instead keys on the selectivity pre-count (Pitfall 1): a
+        filtered search seeds ``fetch_k`` from ``page_target * total_in_scope /
+        pre_count``, stops once every matching document was seen (distinct
+        documents from raw rows, so ``min_score`` and duplicate chunks cannot
+        end escalation early), and returns ``[]`` before any KNN when nothing
+        matches. A metadata filter that exhausted ``_MAX_FETCH_K`` with a short
+        page logs the D-09 notice once; collection-only searches never warn.
+        The unfiltered, unscoped path is unchanged: no pre-count, no warning,
+        and the pre-Phase-20 statement bytes.
+        """
         # Convert embedding to vec format
         embedding_str = self._embedding_to_vec(query_embedding)
 
@@ -66,16 +146,20 @@ class VectorSearcher:
             placeholders = ", ".join(["?"] * len(options.collection_ids))
             collection_filter = f"AND d.collection_id IN ({placeholders})"
 
-        # Over-fetch (WR-04): k bounds the vec0 MATCH itself, which sqlite-vec
-        # resolves before the JOIN applies the collection filter — a tight k
-        # silently under-returns filtered searches. Fetch a bounded surplus,
-        # then trim to the requested limit after filtering. Score is monotone
-        # in distance (score = 1 - distance / 2), so trimming after the
-        # min_score filter returns the same rows a tight k would for
-        # unfiltered searches.
-        fetch_k = max(options.limit * 4, 50)
-        params = [embedding_str, fetch_k, *(options.collection_ids or [])]
+        # Metadata filter (Phase 20, D-02/D-17): the compiled predicate rides
+        # the post-KNN JOIN WHERE beside the collection predicate, so it is
+        # applied before any result leaves this leg (never after fusion).
+        # Params land after the embedding/k/collection binds, matching
+        # placeholder order; None renders the byte-identical default path.
+        filter_clause, filter_params = compile_filter(options.filter, alias="d", scope="candidates")
+        filter_suffix = f" AND {filter_clause}" if filter_clause else ""
 
+        # The KNN MATCH runs before the JOIN applies the collection filter, so
+        # a tight k silently under-returns filtered searches (WR-04); the
+        # window therefore starts at a bounded surplus and only grows while
+        # the batch is demonstrably saturated. The LEFT JOIN supplies chunk
+        # identity; legacy rows with a chunk_id that has no document_chunks
+        # row (or NULL) yield None/None.
         # Audit note (261105-wwz, 2026-11-05): this KNN MATCH is the only
         # vec0 access in the search path and no WHERE filters a vec0 metadata
         # column; EXPLAIN QUERY PLAN shows the single vec0 SCAN outermost with
@@ -89,49 +173,169 @@ class VectorSearcher:
                 d.title,
                 d.path,
                 c.name as collection_name,
-                distance as score
+                distance as score,
+                de.chunk_id as chunk_id,
+                dc.sequence as sequence
             FROM document_embeddings de
             JOIN documents d ON de.document_id = d.id
             JOIN collections c ON d.collection_id = c.id
-            WHERE embedding MATCH ? AND k = ? {collection_filter}
+            LEFT JOIN document_chunks dc ON dc.id = de.chunk_id
+            WHERE embedding MATCH ? AND k = ? {collection_filter}{filter_suffix}
             ORDER BY distance
         """
 
-        cursor = self.db.execute(sql, params)
-        results = []
+        page_target = max(1, options.limit + options.offset)
+        is_metadata_filtered = options.filter is not None
+        # A collection-only search has the same post-JOIN saturation problem
+        # as a metadata filter (the measured bug reproduces with just
+        # collection_ids), so both take the pre-count branch. Only a metadata
+        # filter can produce the D-09 notice.
+        has_join_filter = is_metadata_filtered or bool(options.collection_ids)
+        pre_count = 0
+        total_vectors = 0
+        found = 0
+        fetch_k = min(max(page_target * 4, 50), _MAX_FETCH_K)
+        if has_join_filter:
+            pre_count, total_vectors, fetch_k = self._filtered_fetch_window(options, page_target)
+            if pre_count == 0:
+                # Empty-match sentinel: never degrade to the unfiltered set.
+                return []
 
-        for row in cursor.fetchall():
-            # Convert distance to score (lower distance = higher score)
-            # Cosine distance is 0-2, convert to 0-1 score
-            score = 1.0 - (row["score"] / 2.0)
+        while True:
+            params = [embedding_str, fetch_k, *(options.collection_ids or []), *filter_params]
+            rows = self.db.execute(sql, params).fetchall()
+            candidates = self._candidates(rows, options)
 
-            if score < options.min_score:
-                continue
+            if has_join_filter:
+                # Distinct documents from the RAW rows: _candidates drops
+                # min_score rows and collapses chunks, both of which would
+                # otherwise end escalation before every match was seen
+                # (Pitfall 14).
+                found = len({row["document_id"] for row in rows})
+                exhausted = (
+                    fetch_k >= _MAX_FETCH_K
+                    or found >= pre_count  # every matching document seen
+                    or fetch_k >= total_vectors  # KNN returned the whole table
+                )
+                stop = len(candidates) >= page_target or exhausted
+            else:
+                # Escalate only while the batch may have been truncated (it
+                # returned exactly k rows) and the target is unmet. The module
+                # constant is an independent ceiling (T-19-13): a huge offset
+                # degrades to an empty page instead of unbounded KNN work.
+                stop = (
+                    len(candidates) >= page_target or len(rows) < fetch_k or fetch_k >= _MAX_FETCH_K
+                )
+            if stop:
+                break
+            fetch_k = min(fetch_k * 2, _MAX_FETCH_K)
 
-            result = SearchResult(
-                document_id=row["document_id"],
-                title=row["title"] or "",
-                path=row["path"],
-                collection_name=row["collection_name"],
-                score=score,
-            )
+        # D-09: recall is provably incomplete only when the filter admits at
+        # least the requested page but the independent ceiling was exhausted
+        # with a short page. A filter matching fewer documents than requested
+        # yields an honest short page with no notice.
+        if (
+            is_metadata_filtered
+            and pre_count >= page_target
+            and fetch_k >= _MAX_FETCH_K
+            and len(candidates) < page_target
+        ):
+            logger.warning(_TOO_SELECTIVE_MSG, found, pre_count, page_target)
 
+        # Take the requested page once, then number ranks globally (D-06):
+        # rank = offset + position. The window trim keeps the WR-03 clamp:
+        # limit <= 0 still yields one row instead of an empty/raw-KNN result.
+        page_limit = max(1, options.limit)
+        page = candidates[options.offset : options.offset + page_limit]
+        for position, result in enumerate(page, 1):
+            result.rank = options.offset + position
             if options.include_content:
-                result.content = self._get_document_content(row["document_id"])
+                result.content = self._get_document_content(result.document_id)
 
-            results.append(result)
+        return page
 
-        # Trim to the requested limit, then rank sequentially so ranks stay
-        # contiguous after min_score filtering.
-        results = results[: max(1, options.limit)]
-        for rank, result in enumerate(results, 1):
-            result.rank = rank
+    def _filtered_fetch_window(
+        self,
+        options: SearchOptions,
+        page_target: int,
+    ) -> tuple[int, int, int]:
+        """Pre-count and seed the fetch window for a JOIN-filtered search (D-08).
 
-        return self._attach_contexts(results)
+        Returns ``(pre_count, total_vectors, fetch_k)``. ``pre_count`` is the
+        number of documents the filter admits inside the collection scope (or
+        the whole scope for a collection-only search, where the scope count IS
+        the all-matches target); the seeded window is the document-ratio
+        approximation of how deep the KNN must look, floored at the historical
+        surplus and bounded by the independent ceiling.
 
-    def _attach_contexts(self, results: list[SearchResult]) -> list[SearchResult]:
-        """Attach path context descriptions to search results via batch query."""
-        return attach_path_contexts(self.db, results)
+        ``total_vectors`` is the **global** stored-vector count, not the
+        scoped one: it answers "has the KNN already returned every vector in
+        the table?", and the KNN scans the whole table before the post-KNN
+        JOIN applies any predicate. A scoped count would be far below the KNN
+        depth needed to reach a selective collection's rows in global
+        distance order and would end escalation on batch one — the very
+        under-return this loop exists to fix.
+        """
+        is_metadata_filtered = options.filter is not None
+        if is_metadata_filtered:
+            pre_count = count_matching_documents(self.db, options.filter, options.collection_ids)
+            total_in_scope = count_documents_in_scope(self.db, options.collection_ids)
+        else:
+            # A collection-only search: the scope count is both the admitted
+            # document count and the all-matches target.
+            total_in_scope = count_documents_in_scope(self.db, options.collection_ids)
+            pre_count = total_in_scope
+        if pre_count == 0:
+            return 0, 0, 0
+
+        total_vectors = count_vectors_in_scope(self.db, None)
+        seeded = ceil(page_target * total_in_scope / pre_count)
+        fetch_k = min(max(seeded, min(page_target * 4, 50)), _MAX_FETCH_K)
+        return pre_count, total_vectors, fetch_k
+
+    def _candidates(self, rows: list[sqlite3.Row], options: SearchOptions) -> list[SearchResult]:
+        """Build result rows from KNN output, deduped per document by default.
+
+        ``min_score`` filters on converted scores before grouping. In the
+        default mode a document's rows collapse onto its best-distance
+        (first-seen) row, with ``chunk_matches`` counting the group; per-chunk
+        mode keeps every row and leaves ``chunk_matches`` at 0 (D-01/D-02).
+        """
+        if options.per_chunk:
+            results: list[SearchResult] = []
+            for row in rows:
+                result = self._row_to_result(row)
+                if result.score >= options.min_score:
+                    results.append(result)
+            return results
+
+        grouped: dict[str, SearchResult] = {}
+        for row in rows:
+            result = self._row_to_result(row)
+            if result.score < options.min_score:
+                continue
+            existing = grouped.get(result.document_id)
+            if existing is None:
+                result.chunk_matches = 1
+                grouped[result.document_id] = result
+            else:
+                existing.chunk_matches += 1
+        return list(grouped.values())
+
+    @staticmethod
+    def _row_to_result(row: sqlite3.Row) -> SearchResult:
+        """Convert one KNN row to a SearchResult carrying chunk identity."""
+        keys = row.keys()
+        return SearchResult(
+            document_id=row["document_id"],
+            title=row["title"] or "",
+            path=row["path"],
+            collection_name=row["collection_name"],
+            # Cosine distance is 0-2, convert to 0-1 score
+            score=1.0 - (row["score"] / 2.0),
+            chunk_id=row["chunk_id"] if "chunk_id" in keys else None,
+            sequence=row["sequence"] if "sequence" in keys else None,
+        )
 
     def _embedding_to_vec(self, embedding: list[float]) -> str:
         """Convert embedding to sqlite-vec format."""
@@ -160,7 +364,12 @@ class VectorSearcher:
         chunk_id: str | None,
         embedding: list[float],
     ) -> None:
-        """Add embedding using sqlite-vec."""
+        """Add embedding using sqlite-vec.
+
+        D-09: the derived shadow row is written in this same transaction; the
+        insert joins ``documents``, so an orphan vector row never creates a
+        shadow row. No commit — the caller owns the transaction.
+        """
         embedding_str = self._embedding_to_vec(embedding)
 
         self.db.execute(
@@ -171,6 +380,8 @@ class VectorSearcher:
             """,
             (embedding_id, document_id, chunk_id, embedding_str),
         )
+        if self._shadow_available:
+            self.db.execute(_SHADOW_INSERT_SQL, (document_id,))
 
     def add_embeddings_batch(
         self,
@@ -179,6 +390,9 @@ class VectorSearcher:
         """Add multiple embeddings in a single batch operation.
 
         Each item is a tuple of (embedding_id, document_id, chunk_id, embedding_vector).
+        D-09: the derived shadow gains one row per distinct **existing**
+        document in the batch (the same join-to-documents insert as the
+        single-row path) in the caller's transaction.
         """
         if not items:
             return
@@ -191,17 +405,24 @@ class VectorSearcher:
             """,
             rows,
         )
+        if self._shadow_available:
+            document_ids = sorted({item[1] for item in items})
+            self.db.executemany(_SHADOW_INSERT_SQL, [(doc_id,) for doc_id in document_ids])
 
     def delete_embeddings_by_document(self, document_id: str) -> int:
         """Delete all stored embeddings for a document.
 
         Returns the number of rows removed. Plain parameterized SQL is correct
         here: sqlite-vec supports DELETE on vec0 tables by non-key columns.
+        D-09: the derived shadow row is removed in the same transaction; the
+        vec0 rowcount is returned unchanged.
         """
         cursor = self.db.execute(
             "DELETE FROM document_embeddings WHERE document_id = ?",
             (document_id,),
         )
+        if self._shadow_available:
+            self.db.execute(_SHADOW_DELETE_SQL, (document_id,))
         return cursor.rowcount
 
     def get_embedded_chunk_ids(self, document_id: str) -> set[str]:
@@ -236,3 +457,18 @@ class VectorSearcher:
                 continue
             result.setdefault(document_id, set()).add(chunk_id)
         return result
+
+
+def create_embedding_purger(conn: sqlite3.Connection) -> VectorSearcher | None:
+    """Return a VectorSearcher for purging embeddings, or None without sqlite-vec.
+
+    A missing sqlite-vec extension also means no vec0 table — hence no stored
+    embeddings — so callers treat None as "nothing to purge".
+
+    Single shared construction point for embedding purgers (WR-01): both
+    IncrementalIndexer and ``collection remove`` build their purger here.
+    """
+    try:
+        return VectorSearcher(conn)
+    except RuntimeError:
+        return None

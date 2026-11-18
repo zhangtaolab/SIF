@@ -1,0 +1,105 @@
+{
+  "decision": "rejected",
+  "pinned_title_weight": 1.0,
+  "candidates": [
+    {
+      "title_weight": 2.0,
+      "title_heldout": {
+        "n": 23,
+        "baseline_mean": 1.0,
+        "current_mean": 1.0,
+        "mean_delta": 0.0,
+        "ci_low": 0.0,
+        "ci_high": 0.0,
+        "helped": 0,
+        "hurt": 0,
+        "unchanged": 23,
+        "noise_floor": 0.043478260869565216,
+        "winner": false,
+        "regression": false,
+        "sufficient": true
+      },
+      "body_heldout": {
+        "n": 26,
+        "baseline_mean": 0.900634933653854,
+        "current_mean": 0.900634933653854,
+        "mean_delta": 0.0,
+        "ci_low": 0.0,
+        "ci_high": 0.0,
+        "helped": 0,
+        "hurt": 0,
+        "unchanged": 26,
+        "noise_floor": 0.038461538461538464,
+        "winner": false,
+        "regression": false,
+        "sufficient": true
+      }
+    },
+    {
+      "title_weight": 3.0,
+      "title_heldout": {
+        "n": 23,
+        "baseline_mean": 1.0,
+        "current_mean": 1.0,
+        "mean_delta": 0.0,
+        "ci_low": 0.0,
+        "ci_high": 0.0,
+        "helped": 0,
+        "hurt": 0,
+        "unchanged": 23,
+        "noise_floor": 0.043478260869565216,
+        "winner": false,
+        "regression": false,
+        "sufficient": true
+      },
+      "body_heldout": {
+        "n": 26,
+        "baseline_mean": 0.900634933653854,
+        "current_mean": 0.900634933653854,
+        "mean_delta": 0.0,
+        "ci_low": 0.0,
+        "ci_high": 0.0,
+        "helped": 0,
+        "hurt": 0,
+        "unchanged": 26,
+        "noise_floor": 0.038461538461538464,
+        "winner": false,
+        "regression": false,
+        "sufficient": true
+      }
+    },
+    {
+      "title_weight": 4.0,
+      "title_heldout": {
+        "n": 23,
+        "baseline_mean": 1.0,
+        "current_mean": 1.0,
+        "mean_delta": 0.0,
+        "ci_low": 0.0,
+        "ci_high": 0.0,
+        "helped": 0,
+        "hurt": 0,
+        "unchanged": 23,
+        "noise_floor": 0.043478260869565216,
+        "winner": false,
+        "regression": false,
+        "sufficient": true
+      },
+      "body_heldout": {
+        "n": 26,
+        "baseline_mean": 0.900634933653854,
+        "current_mean": 0.900634933653854,
+        "mean_delta": 0.0,
+        "ci_low": 0.0,
+        "ci_high": 0.0,
+        "helped": 0,
+        "hurt": 0,
+        "unchanged": 26,
+        "noise_floor": 0.038461538461538464,
+        "winner": false,
+        "regression": false,
+        "sufficient": true
+      }
+    }
+  ]
+}

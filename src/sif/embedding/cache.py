@@ -7,6 +7,7 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 
+from sif.database.factory import create_connection
 from sif.utils.logging import get_logger
 
 
@@ -15,8 +16,13 @@ logger = get_logger(__name__)
 
 @contextmanager
 def _connection(db_path: Path) -> Generator[sqlite3.Connection, None, None]:
-    """Open a real SQLite connection and always close it after use."""
-    conn = sqlite3.connect(db_path)
+    """Open a factory-configured SQLite connection and always close it after use.
+
+    W-1: the Phase 11 factory is the single owner of the pragma recipe
+    (busy_timeout → WAL → synchronous); the cache only supplies its separate
+    path and closes the returned connection.
+    """
+    conn = create_connection(db_path)
     try:
         yield conn
     finally:

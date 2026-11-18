@@ -1,3 +1,4 @@
+<!-- generated-by: gsd-doc-writer -->
 # Development Guide
 
 Guide for contributing to SIF development.
@@ -6,9 +7,12 @@ Guide for contributing to SIF development.
 
 ### Prerequisites
 
-- Python 3.10+
+- Python 3.10+ (`requires-python = ">=3.10"` in `pyproject.toml`)
 - Git
 - Virtual environment tool (venv, conda, or pyenv)
+- `uv` (optional) — CI installs the committed `uv.lock` with `uv sync --frozen`
+
+The distribution is published as `docsif`; the installed command is `sif`.
 
 ### Clone Repository
 
@@ -32,14 +36,26 @@ conda activate sif
 ### Install Dependencies
 
 ```bash
-# Install in development mode with all dependencies
+# Install in development mode with the dev toolchain
+pip install -e ".[dev]"
+
+# Install every optional embedding backend as well
 pip install -e ".[dev,all]"
 
 # Or install specific groups
-pip install -e ".[dev]"      # Development only
-pip install -e ".[embed]"    # Embedding support
-pip install -e ".[all]"      # Everything
+pip install -e ".[dev]"      # Development only (pytest, ruff, ty, ...)
+pip install -e ".[embed]"    # sentence-transformers, ModelScope
+pip install -e ".[all]"      # Every embedding backend, including llama-cpp-python and OpenAI
 ```
+
+CI installs the committed `uv.lock` and runs pytest inside that frozen environment. To mirror CI locally:
+
+```bash
+uv sync --frozen --extra dev --extra embed
+uv run --frozen pytest
+```
+
+The `dev` extra provides pytest, pytest-cov, pytest-asyncio, ruff, and ty. `bandit`, `build`, `check-wheel-contents`, and `twine` are not included; the [Build Commands](#build-commands) section explains when they are needed.
 
 ### Verify Installation
 
@@ -58,22 +74,38 @@ ruff check .
 
 ```
 sif/
-├── src/sif/           # Source code
-│   ├── core/              # Domain entities
-│   ├── models/            # Pydantic models
-│   ├── database/          # Data access
-│   ├── search/            # Search algorithms
-│   ├── indexing/          # Document indexing
-│   ├── embedding/         # Embedding models
-│   ├── mcp/               # MCP server
-│   ├── cli/               # Command-line interface
-│   └── utils/             # Utilities
-├── tests/                 # Test suite
-│   ├── unit/              # Unit tests
-│   ├── integration/       # Integration tests
-│   └── conftest.py        # Test fixtures
-├── docs/                  # Documentation
+├── src/sif/
+│   ├── cli/               # Click CLI (main.py entry; commands/ holds one module per group)
+│   ├── mcp/               # MCP server, handlers, and stdio/HTTP transports
+│   ├── core/              # Domain entities and protocol seams
+│   ├── models/            # Pydantic boundary schemas (collection, document, context, ...)
+│   ├── database/          # Connection, schema, maintenance, repositories
+│   ├── search/            # BM25, vector, hybrid pipeline, RRF, reranking
+│   ├── indexing/          # Chunkers, incremental indexer, drift detection, watcher
+│   ├── embedding/         # Embedder factory, managers, cache, providers
+│   ├── config/            # Pydantic Settings and constants
+│   └── utils/             # Logging, paths, daemon, progress helpers
+├── tests/
+│   ├── unit/              # Unit tests grouped by module area (includes scripts/)
+│   ├── integration/       # Cross-component, subprocess, and watch/MCP end-to-end tests
+│   ├── e2e/               # Placeholder — only __init__.py
+│   ├── fixtures/bench/    # Benchmark corpus and query fixtures
+│   ├── support/           # Shared bench and eval helpers
+│   ├── conftest.py        # Shared fixtures and autouse hermeticity fixtures
+│   ├── test_docs.py       # Documentation code-block validation
+│   ├── test_ci_workflows.py         # CI workflow and packaging regression guards
+│   ├── test_hygiene.py              # Removed-layer and dead-reference guards
+│   ├── test_release_metadata.py     # Version, changelog, and publish-workflow guards
+│   ├── test_sif_complete.py         # Core-module smoke checks
+│   ├── test_version_identity.py     # Single-sourced version identity guards
+│   └── test_windows_smoke_script.py # Windows smoke matcher tests
+├── scripts/               # Doc generators, benchmark/eval builders, publish registry, Windows smoke
+├── examples/              # Runnable quickstart example
+├── docs/                  # Documentation (MkDocs source)
 ├── pyproject.toml         # Project configuration
+├── uv.lock                # Frozen dependency lock used by CI
+├── Makefile               # Convenience targets for common tasks
+├── mkdocs.yml             # MkDocs site configuration
 └── README.md              # Project readme
 ```
 
@@ -97,8 +129,8 @@ Edit code following the style guidelines.
 # Run all tests
 pytest
 
-# Run with coverage
-pytest --cov=sif
+# Run with an HTML coverage report (coverage is enabled by default)
+pytest --cov-report=html
 
 # Run specific test file
 pytest tests/unit/test_collection.py
@@ -106,6 +138,8 @@ pytest tests/unit/test_collection.py
 # Run with verbose output
 pytest -v
 ```
+
+Every pytest run collects coverage because the flags live in `addopts`; add `--no-cov` when iterating on a narrow slice (see [Coverage Requirements](#coverage-requirements)).
 
 ### 4. Check Code Quality
 
@@ -134,6 +168,7 @@ Follow [Conventional Commits](https://www.conventionalcommits.org/):
 - `docs:` Documentation
 - `style:` Code style (formatting)
 - `refactor:` Code refactoring
+- `perf:` Performance improvement
 - `test:` Tests
 - `chore:` Maintenance
 
@@ -177,41 +212,50 @@ ruff check .
 ruff check --fix .
 ```
 
+The lint configuration selects pycodestyle, Pyflakes, isort, pydocstyle, pyupgrade, bugbear, simplify, mccabe, and related rule families, with `max-complexity = 10` and the Google docstring convention.
+
 ### Type Hints
 
-All code must have type hints:
+All code must have type hints, checked with ty:
 
 ```python
-def process_document(
-    document: Document,
-    options: ProcessingOptions | None = None,
-) -> ProcessedDocument:
-    """Process a document with options."""
-    ...
+from typing import Any
+
+from sif.core.collection import Collection
+
+
+class CollectionManager:
+    def create_collection(
+        self,
+        name: str,
+        description: str | None = None,
+        paths: list[str] | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> Collection:
+        """Create a new collection."""
+        ...
 ```
+
+Use `list[str] | None` union syntax (Python 3.10+), not `Optional[...]`.
 
 ### Docstrings
 
-Use Google-style docstrings:
+Use Google-style docstrings (enforced by Ruff's pydocstyle rules):
 
 ```python
 def search(
     self,
-    context: SearchContext,
-    options: SearchOptions,
+    query: str,
+    options: SearchOptions | None = None,
 ) -> list[SearchResult]:
-    """Execute search and return results.
-    
+    """Search using hybrid approach (BM25 + Vector + RRF).
+
     Args:
-        context: Search context with query and embeddings
-        options: Search options and parameters
-        
+        query: Search query
+        options: Search options
+
     Returns:
-        List of search results ordered by relevance
-        
-    Raises:
-        ValueError: If query is empty
-        SearchError: If search fails
+        Ranked list of search results
     """
 ```
 
@@ -221,22 +265,53 @@ def search(
 
 ```
 tests/
-├── conftest.py           # Shared fixtures
-├── unit/                 # Unit tests
+├── conftest.py           # Shared fixtures and autouse hermeticity fixtures
+├── unit/                 # Unit tests grouped by module area
 │   ├── test_collection.py
-│   ├── test_search.py
-│   └── ...               # Per-module subpackages (cli/, search/, database/, ...)
-├── integration/          # Integration tests
+│   ├── cli/
+│   ├── config/
+│   ├── core/
+│   ├── database/
+│   ├── db/
+│   ├── embedding/
+│   ├── indexing/
+│   ├── inference/
+│   ├── mcp/
+│   ├── models/
+│   ├── scripts/
+│   ├── search/
+│   └── utils/
+├── integration/          # Cross-component and subprocess tests
+│   ├── test_concurrency.py
 │   ├── test_embed_idempotency.py
-│   └── test_search_pipeline.py
-└── e2e/                  # End-to-end tests (placeholder — only __init__.py)
+│   ├── test_incremental_equivalence.py
+│   ├── test_search_correctness.py
+│   ├── test_search_pipeline.py
+│   └── ...               # Maintenance, metadata-filtering, watch, MCP, service, and two-writer subprocess tests
+├── e2e/                  # End-to-end tests (placeholder — only __init__.py)
+├── fixtures/bench/       # Benchmark corpus and query fixtures
+├── support/              # Shared bench and eval helpers
+├── test_docs.py          # Documentation code-block validation
+├── test_ci_workflows.py         # CI workflow and packaging regression guards
+├── test_hygiene.py              # Removed-layer and dead-reference guards
+├── test_release_metadata.py     # Version, changelog, and publish-workflow guards
+├── test_sif_complete.py         # Core-module smoke checks
+├── test_version_identity.py     # Single-sourced version identity guards
+└── test_windows_smoke_script.py # Windows smoke matcher tests
 ```
+
+The suite currently holds 120 `test_*.py` modules: 101 under `tests/unit/`, 12 under
+`tests/integration/`, and 7 at the `tests/` root. `pytest --collect-only -q --no-cov`
+reports the current collection total (3,234 tests at the time of writing); see
+[Testing](testing.md) for the tier-by-tier breakdown. There is no shared factories module;
+build related objects with the shared `sample_*` fixtures or a fixture local to the test module.
 
 ### Writing Tests
 
 ```python
 # tests/unit/test_collection.py
 import pytest
+
 from sif.core.collection import Collection, CollectionManager
 
 # MockCollectionRepository is defined inline in the real
@@ -247,10 +322,10 @@ class TestCollection:
     def test_create_collection(self):
         collection = Collection(
             id="test-id",
-            name="test-collection"
+            name="test-collection",
         )
         assert collection.name == "test-collection"
-    
+
     def test_add_path(self):
         collection = Collection(id="test-id", name="test")
         collection.add_path("/path/to/docs")
@@ -258,48 +333,41 @@ class TestCollection:
 
 
 class TestCollectionManager:
-    def test_create_collection(self):
-        repo = MockCollectionRepository()
-        manager = CollectionManager(repo)
-        
-        collection = manager.create_collection("my-collection")
-        
+    @pytest.fixture
+    def manager(self):
+        return CollectionManager(MockCollectionRepository())
+
+    def test_create_collection(self, manager):
+        collection = manager.create_collection(name="my-collection")
+
         assert collection.name == "my-collection"
-        assert repo.exists("my-collection")
-    
-    def test_create_duplicate_raises(self):
-        repo = MockCollectionRepository()
-        manager = CollectionManager(repo)
-        
-        manager.create_collection("my-collection")
-        
+
+    def test_create_duplicate_raises(self, manager):
+        manager.create_collection(name="my-collection")
+
         with pytest.raises(ValueError, match="already exists"):
-            manager.create_collection("my-collection")
+            manager.create_collection(name="my-collection")
 ```
+
+When the collaborator is a protocol, prefer a spec'd mock over a hand-written fake — for example `MagicMock(spec=CollectionRepository)` in `tests/unit/core/test_collection_entity.py`.
 
 ### Fixtures
 
-```python
-# tests/conftest.py
-import pytest
-from sif.core.collection import Collection
+`tests/conftest.py` provides the shared fixtures used across the suite:
 
+- Autouse hermeticity fixtures: `_hermetic_color_env`, `_hermetic_sif_logging`, `reset_identity_state`, `reset_context_cache` — scrub color-forcing environment variables, reset `sif` logger state, and clear embedder-identity/context-cache latches around every test.
+- Path and file fixtures: `temp_dir`, `sample_markdown_file`, `sample_markdown_content`
+- Database fixtures: `temp_db_path`, `db_connection`, `temp_db`
+- Domain fixtures: `sample_collection_id`, `sample_document_id`, `sample_chunk_id`, `sample_collection`, `sample_collections`, `sample_document_metadata`, `sample_document`, `sample_documents`, `sample_chunk`, `sample_chunks`, `sample_context`
+- Mock fixtures: `mock_embedder`, `mock_repository`, `mock_search_repository`, `mock_embedding_manager`
+- Async fixture: `event_loop`
+- Docs fixtures: `docs_test_db`, `docs_runner` (used by `test_docs.py`)
 
-@pytest.fixture
-def sample_collection():
-    return Collection(
-        id="test-id",
-        name="test-collection",
-        description="Test description",
-        paths=["/path/to/docs"]
-    )
-
-
-@pytest.fixture
-def mock_repository():
-    from tests.unit.test_collection import MockCollectionRepository
-    return MockCollectionRepository()
-```
+The module also exposes two plain helper functions, `create_test_document()` and
+`create_test_collection()`, for constructing entities. Search-specific fixtures such as
+`sample_search_options` (in `tests/unit/search/test_hybrid.py`) and `sample_search_results`
+(in `tests/unit/search/test_rrf.py`) are local to the test modules that use them,
+not part of `conftest.py`. See [Testing](testing.md) for the fixture catalogue.
 
 ### Running Tests
 
@@ -307,8 +375,8 @@ def mock_repository():
 # Run all tests
 pytest
 
-# Run with coverage report
-pytest --cov=sif --cov-report=html
+# Run with an HTML coverage report
+pytest --cov-report=html
 
 # Run specific test
 pytest tests/unit/test_collection.py::TestCollectionManager::test_create_collection
@@ -316,6 +384,12 @@ pytest tests/unit/test_collection.py::TestCollectionManager::test_create_collect
 # Run a subset by directory
 pytest tests/unit/
 pytest tests/integration/
+```
+
+Because coverage flags are in `addopts`, every invocation collects coverage and enforces the 90% gate. Add `--no-cov` when running a narrow slice:
+
+```bash
+pytest tests/unit/test_collection.py --no-cov
 ```
 
 ### Test Selection
@@ -345,25 +419,31 @@ def test_future_feature():
 
 ### Logging
 
-Enable debug logging:
-
-```python
-import logging
-logging.basicConfig(level=logging.DEBUG)
-```
-
-Or via environment variable:
+The CLI derives its log level from its own flags in `src/sif/cli/main.py`; `--verbose` maps to DEBUG and `--quiet` to WARNING:
 
 ```bash
-export SIF_LOG_LEVEL=DEBUG
-sif search search "query"
+# DEBUG logging
+sif --verbose search search "query"
+
+# WARNING logging
+sif --quiet search search "query"
 ```
+
+From Python code, call the same helper:
+
+```python
+from sif.utils.logging import setup_logging
+
+setup_logging("DEBUG")
+```
+
+`SIF_LOG_LEVEL` is read by the CLI when neither `--verbose` nor `--quiet` is given; `SIF_DEBUG` takes precedence over it, and the CLI flags win over both.
 
 ### IDE Setup
 
 #### VS Code
 
-`.vscode/launch.json`:
+Create `.vscode/launch.json` with:
 
 ```json
 {
@@ -374,7 +454,7 @@ sif search search "query"
       "type": "python",
       "request": "launch",
       "module": "sif.cli.main",
-      "args": ["search", "python decorators"],
+      "args": ["search", "search", "python decorators"],
       "console": "integratedTerminal"
     },
     {
@@ -404,33 +484,28 @@ import pstats
 profiler = cProfile.Profile()
 profiler.enable()
 
-# Your code here
-results = search_service.search(query)
+# `pipeline` is a SearchPipeline built against an initialized Database
+results = pipeline.search(query)
 
 profiler.disable()
 stats = pstats.Stats(profiler)
-stats.sort_stats('cumulative')
+stats.sort_stats("cumulative")
 stats.print_stats(20)
 ```
+
+`SearchPipeline` lives in `src/sif/search/hybrid.py` and is what both the CLI and the MCP backend use for query routing, expansion, RRF, reranking, and snippets.
 
 ## Database Development
 
 ### Schema Changes
 
-1. Create migration in `sif/database/migrations.py`:
+Runtime schema creation lives in `SchemaManager.create_all()` in `src/sif/database/schema.py`, which `Database.init_schema()` calls on first use. Add tables, indexes, FTS/vector DDL, or additive columns there:
 
-```python
-def migrate_v2_to_v3(conn: sqlite3.Connection) -> None:
-    """Add new column to collections table."""
-    conn.execute("""
-        ALTER TABLE collections
-        ADD COLUMN new_field TEXT
-    """)
-```
+- For a new column, follow `_add_column_if_missing` (see `collections.pre_update_cmd` at `src/sif/database/schema.py`), which checks `PRAGMA table_info` before altering the table so existing databases pick the column up in place.
+- For data rewrites, follow `_migrate_path_contexts()`, which moves `path_contexts` rows into `contexts` inside a SAVEPOINT.
+- Update the schema tests under `tests/unit/database/` (`test_schema.py`).
 
-2. Update schema version
-
-3. Test migration on sample data
+`Database.reset()` drops and recreates the schema when you need a clean local index.
 
 ### Testing with Real Data
 
@@ -451,41 +526,40 @@ sif search search "test query"
 
 ### New Search Strategy
 
-1. Create file in `src/sif/search/`:
+1. Add a searcher module under `src/sif/search/` that takes a `sqlite3.Connection` (plus any embedder it needs) and exposes a `search` method returning `list[SearchResult]`. Use the `SearchOptions` and `SearchResult` dataclasses from `sif.core.models` — they are the types the live searchers accept and return:
 
 ```python
 # src/sif/search/custom.py
-from sif.search.strategy import SearchStrategy, SearchContext
-from sif.models.search import SearchOptions, SearchResult
+import sqlite3
 
-class CustomSearchStrategy(SearchStrategy):
+from sif.core.models import SearchOptions, SearchResult
+
+
+class CustomSearcher:
+    def __init__(self, db: sqlite3.Connection) -> None:
+        self.db = db
+
     def search(
         self,
-        context: SearchContext,
-        options: SearchOptions,
+        query: str,
+        options: SearchOptions | None = None,
     ) -> list[SearchResult]:
-        # Implementation
-        pass
-    
-    def search_batch(
-        self,
-        contexts: list[SearchContext],
-        options: SearchOptions,
-    ) -> list[list[SearchResult]]:
-        pass
+        """Execute the custom search and return ranked results."""
+        ...
 ```
 
-2. Add tests in `tests/unit/search/test_custom.py`
+2. Add tests in `tests/unit/search/`.
 
-3. Register in search service
+3. Wire it into the live search path in `src/sif/search/hybrid.py`: construct it in `HybridSearcher` and fuse its results, or route a new query prefix from `SearchPipeline.search()`. The CLI (`src/sif/cli/commands/search.py`) and MCP backend (`src/sif/mcp/backend.py`) both construct `SearchPipeline`, so wiring it there covers both front ends.
 
 ### New CLI Command
 
-1. Create command in `src/sif/cli/commands/`:
+1. Create the command in `src/sif/cli/commands/`:
 
 ```python
 # src/sif/cli/commands/custom.py
 import click
+
 
 @click.command(name="custom")
 @click.argument("input")
@@ -494,63 +568,69 @@ def custom_command(input: str) -> None:
     click.echo(f"Processing: {input}")
 ```
 
-2. Register in `src/sif/cli/main.py`:
+2. Add the import alongside the other deferred imports in `src/sif/cli/main.py` (the import block sits directly after the `cli` group definition to avoid circular imports) and register it:
 
 ```python
-from sif.cli.commands.custom import custom_command
+from sif.cli.commands.custom import custom_command  # noqa: E402
 
-cli.add_command(custom_command, name="custom")
+cli.add_command(custom_command)
 ```
 
-3. Add tests and documentation
+3. Add tests under `tests/unit/cli/` and regenerate `docs/cli-reference.md` with `make docs-generate`.
 
 ### New Model
 
-1. Create Pydantic model in `src/sif/models/`:
+Pydantic boundary schemas live in `src/sif/models/`; domain entities and protocols live in `src/sif/core/`.
+
+1. Create the Pydantic model in `src/sif/models/`:
 
 ```python
 # src/sif/models/custom.py
 from pydantic import BaseModel, Field
+
 
 class CustomModel(BaseModel):
     name: str = Field(..., min_length=1)
     value: int = Field(0, ge=0)
 ```
 
-2. Add corresponding domain entity if needed
+2. Add a corresponding domain entity in `src/sif/core/` if the model needs behavior (see `Collection` and `CollectionManager` in `src/sif/core/collection.py`).
 
-3. Update database schema
+3. If the model is persisted, add the schema to `SchemaManager` (see [Database Development](#database-development)) and a repository in `src/sif/database/repositories.py`.
 
 ## Release Process
 
-### Version Bump
+1. **Bump the version.** Update `__version__` in `src/sif/_version.py` to the new version. It is the single version literal: packaging, `sif.__version__`, `sif.cli.__version__`, `APP_VERSION`, and the MCP `serverInfo` version all derive from it.
 
-1. Update version in `src/sif/_version.py`
+2. **Update the changelog.** Add the release section and its compare/release links in `docs/changelog.md`.
 
-2. Update docs/changelog.md
+3. **Run the Windows degradation smoke.** On a clean checkout of the release commit, run `make windows-smoke` against the Windows host (hc remote yoga) and record the tested HEAD that the script prints. The target prints HEAD and status (the script refuses a dirty tree), installs Python `YOGA_PYTHON` on the host, syncs the frozen `dev` environment with `uv sync --frozen --extra dev`, then runs `scripts/windows_smoke.py` over `hc exec --on yoga`; it accepts `YOGA_DIR` / `YOGA_PYTHON` overrides when the checkout path or interpreter differs. It asserts only the documented degradations (fcntl lock warning, missing-root "all documents preserved" guard, and POSIX fork/service refusals); it is not a claim of full Windows support, which remains deferred. This is an on-demand, pre-release step only — never a per-PR or scheduled job.
 
-3. Create git tag:
+4. **Commit and confirm CI.** Commit the release changes and confirm the Test Matrix is green on that commit: all eight py3.10–3.13 × ubuntu/macos cells plus the lint job.
 
-```bash
-git tag -a v0.2.0 -m "Release version 0.2.0"
-git push origin v0.2.0
-```
-
-### Build Package
+5. **Tag the release.** Create and push an annotated tag (tags use the `vX.Y[.Z]` form), for example:
 
 ```bash
-# Install build tools
-pip install build twine
-
-# Build package
-python -m build
-
-# Check package
-twine check dist/*
-
-# Upload to PyPI (maintainers only)
-twine upload dist/*
+git tag -a v1.1.2 -m "Release version 1.1.2"
+git push origin v1.1.2
 ```
+
+6. **Let the Publish workflow release it.** The `Publish` workflow is triggered by the `v*` tag. It builds the distributions once, checks the metadata, uploads the built artifact, and then publishes it to TestPyPI first and PyPI second through trusted publishing (GitHub OIDC environments `testpypi` and `pypi`) with PEP 740 attestations. There is no manual upload step and no API token. The build job fails before building if the tag does not exactly equal `v` + the `src/sif/_version.py` literal.
+
+7. **Verify the release.** Confirm the published version through the PyPI JSON API, check the attestation, and install into a scratch virtual environment:
+
+```bash
+curl -s https://pypi.org/pypi/docsif/1.1.2/json | python -c "import json, sys; print(json.load(sys.stdin)['info']['version'])"
+
+uvx pypi-attestations verify pypi \
+  --repository https://github.com/zhangtaolab/sif \
+  pypi:docsif-1.1.2-py3-none-any.whl
+
+python -m venv /tmp/sif-release-venv
+uv pip install --python /tmp/sif-release-venv/bin/python docsif==1.1.2
+```
+
+TestPyPI installs do not mirror dependencies, so add `--extra-index-url https://pypi.org/simple` when testing the TestPyPI artifact.
 
 ## Troubleshooting
 
@@ -567,15 +647,18 @@ pip install -e ".[dev]"
 # Clear pytest cache
 pytest --cache-clear
 
-# Run with fresh database
+# Run with a fresh database
 rm test.db
 pytest
 ```
 
 **Type checking errors:**
 ```bash
-# Bypass ty's cache and re-check from scratch
-ty check --no-cache src/sif
+# Re-run the type checker directly
+ty check src/sif
+
+# Point ty at the project virtual environment if imports are unresolved
+ty check --python .venv/bin/python src/sif
 ```
 
 ## Resources
@@ -593,17 +676,17 @@ ty check --no-cache src/sif
 
 ## Build Commands
 
-The [Makefile](../Makefile) defines convenience targets for every common development task. Run `make help` to see the full list from the command line.
+The [Makefile](../Makefile) defines convenience targets for every common development task. Run `make help` to see the common targets from the command line; it does not list every target. The `.PHONY` line at the top of the Makefile enumerates every declared target.
 
 ### Installation and Setup
 
 | Command | Description |
 |---------|-------------|
 | `make install` | Install the package with basic dependencies (`pip install -e .`) |
-| `make install-dev` | Install with development dependencies (`pip install -e ".[dev]"`) and pre-commit hooks |
-| `make install-all` | Install with all optional dependencies (`pip install -e ".[dev,all]"`) and pre-commit hooks |
+| `make install-dev` | Install with development dependencies (`pip install -e ".[dev]"`) |
+| `make install-all` | Install with all optional dependencies (`pip install -e ".[dev,all]"`) |
 | `make dev-setup` | Alias for `make install-dev` |
-| `make update-deps` | Upgrade pip, reinstall all dependencies, run `pre-commit autoupdate` |
+| `make update-deps` | Upgrade pip and reinstall all dependencies |
 
 ### Testing and Quality
 
@@ -619,13 +702,13 @@ The [Makefile](../Makefile) defines convenience targets for every common develop
 | `make typecheck` | Type check with ty (`ty check src/sif`) |
 | `make coverage` | Generate an HTML coverage report at `htmlcov/index.html` |
 | `make security` | Run a bandit security scan (`bandit -r src/sif -c pyproject.toml`) |
-| `make pre-commit` | Run pre-commit hooks on all files |
+| `make windows-smoke` | Run the on-demand Windows degradation smoke on the hc yoga host (`scripts/windows_smoke.py`) |
 
 ### Build and Maintenance
 
 | Command | Description |
 |---------|-------------|
-| `make build` | Build the sdist and wheel (`python -m build`), then verify them with twine |
+| `make build` | Build the sdist and wheel (`python -m build`); runs `check-wheel-contents` and `twine check` when installed, and skips them with a message otherwise |
 | `make clean` | Remove build artifacts, caches, and coverage output |
 | `make clean-all` | `make clean` plus removal of `venv/` and `.venv/` |
 | `make docs` | Placeholder — prints "Documentation build not yet configured" |
@@ -636,9 +719,23 @@ The [Makefile](../Makefile) defines convenience targets for every common develop
 | `make dev-check` | Format, lint with auto-fix, then type check |
 | `make info` | Print the Python version and installed tool versions |
 
-The pre-commit targets (`make install-dev`, `make install-all`, `make pre-commit`, `make update-deps`) require a pre-commit configuration file. <!-- VERIFY: make pre-commit / pre-commit install reference .pre-commit-config.yaml, which is not in the repository -->
+The `security` target requires `bandit`, and `make build` requires `build`; none of these are included in the `[dev]` extras, so install them separately when needed. `check-wheel-contents` and `twine` are optional — `make build` skips them with a message when they are missing.
 
-The `security` target requires `bandit`, and `make build` requires `build` and `twine`; none of these are included in the `[dev]` extras, so install them separately when needed.
+`make ci` runs the same ruff, format, type, and pytest gates as CI, plus bandit; CI does not run bandit and executes the suite through `uv run --frozen pytest`.
+
+## Continuous Integration
+
+Three GitHub Actions workflows live in `.github/workflows/`:
+
+| Workflow | File | Trigger | What it runs |
+|----------|------|---------|--------------|
+| Test Matrix | `test-matrix.yml` | Every branch push and every pull request | Eight test cells (Python 3.10–3.13 × `ubuntu-latest` / `macos-latest`) run `uv sync --frozen --extra dev --extra embed` and then `env -u FORCE_COLOR NO_COLOR=1 uv run --frozen pytest` (the suite is color-environment hermetic, so CI strips color-forcing variables before running it); a separate Python 3.12 lint job runs `ruff check src tests`, `ruff format --check src tests`, and `ty check src/sif` |
+| Docs Validation | `docs.yml` | Pull requests touching `docs/**`, `README.md`, `src/sif/cli/**`, `src/sif/config/**`, `scripts/generate_cli_ref.py`, `scripts/generate_config_ref.py`, or `tests/test_docs.py`; pushes to `main` | Runs `pytest tests/test_docs.py -v --no-cov`, regenerates `docs/cli-reference.md` and `docs/configuration.md`, and fails on any diff |
+| Publish | `publish.yml` | Pushes of `v*` tags | Verifies the tag matches `src/sif/_version.py`, builds and checks the distributions once, uploads the `dist` artifact, then publishes to TestPyPI first and PyPI second via trusted publishing (see [Release Process](#release-process)) |
+
+No Windows runner is in the matrix. Windows behavior is checked only by the on-demand
+`make windows-smoke` step before a release; full Windows support is deferred. There is also
+no scheduled workflow and no bandit job in CI.
 
 ## Branch Conventions
 
@@ -649,10 +746,10 @@ The `security` target requires `bandit`, and `make build` requires `build` and `
 ## PR Process
 
 - Push your branch and open the pull request against `main` on GitHub. There is no `.github/PULL_REQUEST_TEMPLATE.md`; follow the description template in [Contributing](contributing.md) (Description, Type of Change, Testing, Checklist).
-- Before requesting review, the [Contributing](contributing.md) checklist expects: `pytest` passes, `ruff format .` applied, `ruff check .` clean, `ty check src/sif` passes, and documentation (including docs/changelog.md) updated.
+- Before requesting review, the [Contributing](contributing.md) checklist expects: `pytest` passes, `ruff format src tests` applied, `ruff check src tests` clean, `ty check src/sif` passes, `make ci` passes (`bandit` is not in the `[dev]` extras, so install it separately), documentation updated, reference docs regenerated with `make docs-generate` when CLI commands or configuration settings changed, and `docs/changelog.md` updated.
 - Commit messages follow Conventional Commits, as described in Commit Changes above.
-- PR CI only validates documentation: the "Docs Validation" workflow (`.github/workflows/docs.yml`) runs `pytest tests/test_docs.py` and regenerates `docs/cli-reference.md` and `docs/configuration.md` whenever a PR touches `docs/**`, `README.md`, `src/sif/cli/**`, `src/sif/config/**`, the generation scripts, or `tests/test_docs.py` — it fails if the committed reference docs are stale. No workflow runs the full test suite or linters on PRs, so run `make ci` locally before pushing.
-- Maintainers aim to review pull requests within a week; respond to comments and push follow-up commits to the same branch.
+- PR CI runs the full Test Matrix on every push and pull request: the eight py3.10–3.13 × ubuntu/macos cells run the complete pytest suite (with the 90% coverage gate), and the lint job runs `ruff check src tests`, `ruff format --check src tests`, and `ty check src/sif`. The separate "Docs Validation" workflow runs `pytest tests/test_docs.py` and regenerates `docs/cli-reference.md` and `docs/configuration.md` whenever a PR touches `docs/**`, `README.md`, `src/sif/cli/**`, `src/sif/config/**`, `scripts/generate_cli_ref.py`, `scripts/generate_config_ref.py`, or `tests/test_docs.py` — it fails if the committed reference docs are stale. That workflow also runs on pushes to `main`. No CI job runs bandit, so run `make ci` locally before pushing.
+- Review turnaround is not documented; maintainers triage pull requests on GitHub. Respond to comments and push follow-up commits to the same branch.
 
 ## Coverage Requirements
 
@@ -666,8 +763,11 @@ Because the coverage flags live in `addopts`, they apply to the Makefile targets
 ```bash
 # Every test in the file passes, but the run still fails the gate:
 pytest tests/unit/test_collection.py -q
-# FAIL Required test coverage of 90.0% not reached. Total coverage: 12.96%
+# FAIL Required test coverage of 90.0% not reached.
 ```
+
+CI's Test Matrix runs the full suite in every cell, so the same gate applies on all eight
+py3.10–3.13 × ubuntu/macos combinations.
 
 Append `--no-cov` when iterating on a narrow slice of the suite:
 
@@ -679,7 +779,7 @@ pytest tests/unit/test_collection.py --no-cov
 pytest tests/unit/search/test_bm25.py::TestBM25Searcher::test_search_executes_fts_query --no-cov
 ```
 
-Before pushing, run the full suite (`pytest` or `make test`) so the 90% gate is evaluated over real totals. See [Testing](testing.md) for the suite layout, shared fixtures, and factories.
+Before pushing, run the full suite (`pytest` or `make test`) so the 90% gate is evaluated over real totals. See [Testing](testing.md) for the suite layout and shared fixtures.
 
 ## Generated Documentation
 
@@ -691,11 +791,11 @@ Some documentation files are generated from source — edit the source, then reg
 | `docs/configuration.md` | `scripts/generate_config_ref.py` (Pydantic Settings introspection) | `make docs-generate` |
 | Mermaid package diagram in `docs/architecture.md` | `scripts/generate_arch_diagram.py` (source import scan) | Run `python scripts/generate_arch_diagram.py` and replace the diagram block with the printed output |
 
-The "Docs Validation" workflow (`.github/workflows/docs.yml`) regenerates `docs/cli-reference.md` and `docs/configuration.md` on every PR that touches `docs/**`, `README.md`, `src/sif/cli/**`, `src/sif/config/**`, the generator scripts, or `tests/test_docs.py`, then fails on any diff (`git diff --exit-code`). After changing the CLI or settings, run `make docs-generate` and commit the regenerated docs together with the code change. The architecture diagram script is not wired into `make docs-generate` or CI — regenerate it manually when package-level dependencies change.
+The "Docs Validation" workflow (`.github/workflows/docs.yml`) regenerates `docs/cli-reference.md` and `docs/configuration.md` on every PR that touches `docs/**`, `README.md`, `src/sif/cli/**`, `src/sif/config/**`, `scripts/generate_cli_ref.py`, `scripts/generate_config_ref.py`, or `tests/test_docs.py` (and on pushes to `main`), then fails on any diff (`git diff --exit-code`). After changing the CLI or settings, run `make docs-generate` and commit the regenerated docs together with the code change. The architecture diagram script is not wired into `make docs-generate` or CI — regenerate it manually when package-level dependencies change.
 
 ### Documentation Tests
 
-`make docs-test` (`pytest tests/test_docs.py -v --no-cov`) validates the code blocks in `README.md`, `docs/index.md`, `docs/cli-reference.md`, `docs/configuration.md`, `docs/quickstart.md`, `docs/mcp-server.md`, `docs/search-algorithms.md`, `docs/architecture.md`, and `docs/models.md`:
+`make docs-test` (`pytest tests/test_docs.py -v --no-cov`) validates the code blocks in `README.md`, `docs/index.md`, `docs/cli-reference.md`, `docs/configuration.md`, `docs/quickstart.md`, `docs/mcp-server.md`, `docs/search-algorithms.md`, `docs/benchmarking.md`, `docs/architecture.md`, `docs/models.md`, `docs/installation.md`, and `docs/migration.md`:
 
 - JSON blocks must parse, and JSON output examples must contain the expected keys.
 - Python blocks must be syntactically valid.
@@ -711,5 +811,6 @@ Docs are wired for MkDocs with the Material theme (`mkdocs.yml`, source director
 ## Related Documentation
 
 - [Contributing](contributing.md) - Contribution guidelines
+- [Testing](testing.md) - Test suite layout, fixtures, and coverage
 - [Architecture](architecture.md) - System architecture
 - [API Reference](api-reference.md) - Python API
