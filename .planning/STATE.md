@@ -3,10 +3,10 @@ gsd_state_version: "1.0"
 milestone: v1.2
 status: Awaiting next milestone
 stopped_at: Phase 24 complete — all phases complete
-last_updated: "2026-11-18T13:28:17.369Z"
+last_updated: "2026-11-18T13:46:46.614Z"
 last_activity: 2026-11-18
 last_activity_desc: Milestone v1.2 completed and archived
-state_head: 5f9c0869034338d684e58c4908a8d2f5cf109886
+state_head: ffad91be0d6886f94f4ff1fcdf37fca61d5469a6
 milestone_name: Search Precision and Agent Experience
 current_phase: 24
 progress:
@@ -32,7 +32,7 @@ progress:
 Phase: Milestone v1.2 complete
 Plan: —
 Status: Awaiting next milestone
-Last activity: 2026-11-18 - Completed quick task 261118-ib0: Fix GitHub issues #4 (L2-norm gate abort on Qwen3-Embedding) and #5 (model cache root omits /models)
+Last activity: 2026-11-18 - Completed quick task 261118-ipu: Follow-up fixes: normalize cached embeddings on read (issue #4 stale-cache gap) and make the Qwen3 reranker CPU-load test hermetic on GPU hosts
 
 ## Performance Metrics
 
@@ -348,6 +348,7 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 |---|-------------|------|--------|-----------|
 | 261118-i0b | Update the torch dependency floor to >=2.14 (embed and all extras), regenerate uv.lock, update contract tests and install docs | 2026-11-18 | a13b134 | [261118-i0b-update-the-torch-dependency-floor-to-2-1](./quick/261118-i0b-update-the-torch-dependency-floor-to-2-1/) |
 | 261118-ib0 | Fix GitHub issues #4 (L2-norm gate abort on Qwen3-Embedding) and #5 (model cache root omits /models) | 2026-11-18 | 5f9c086 | [261118-ib0-fix-github-issues-4-l2-norm-gate-abort-o](./quick/261118-ib0-fix-github-issues-4-l2-norm-gate-abort-o/) |
+| 261118-ipu | Follow-up fixes: normalize cached embeddings on read (issue #4 stale-cache gap) and make the Qwen3 reranker CPU-load test hermetic on GPU hosts | 2026-11-18 | ffad91b | [261118-ipu-follow-up-fixes-normalize-cached-embeddi](./quick/261118-ipu-follow-up-fixes-normalize-cached-embeddi/) |
 
 ### Roadmap Evolution
 
