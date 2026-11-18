@@ -219,7 +219,7 @@ Error: Invalid model_type: invalid. Must be one of ['gguf', 'modelscope', 'opena
 
 ## Viewing Current Configuration
 
-SIF does not echo resolved settings. Configuration comes from `SIF_*` environment variables and a `.env` file in the current working directory; `sif status` shows index state (path, collections, documents, watch, and vector lag), not configuration values.
+`sif status` shows index state (path, collections, documents, watch, and vector lag) rather than configuration values. Configuration comes from `SIF_*` environment variables and a `.env` file in the current working directory. To see the resolved model settings (`model_name`, `model_type`, `api_base`, `dimension`, `cache_dir`), run `sif models status`.
 
 ## Best Practices
 

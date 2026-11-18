@@ -446,10 +446,11 @@ def _append_viewing_config(lines: list[str]) -> None:
     lines.append("## Viewing Current Configuration")
     lines.append("")
     lines.append(
-        "SIF does not echo resolved settings. Configuration comes from `SIF_*` "
-        "environment variables and a `.env` file in the current working directory; "
         "`sif status` shows index state (path, collections, documents, watch, and "
-        "vector lag), not configuration values."
+        "vector lag) rather than configuration values. Configuration comes from "
+        "`SIF_*` environment variables and a `.env` file in the current working "
+        "directory. To see the resolved model settings (`model_name`, `model_type`, "
+        "`api_base`, `dimension`, `cache_dir`), run `sif models status`."
     )
     lines.append("")
 
