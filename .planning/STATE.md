@@ -3,10 +3,10 @@ gsd_state_version: "1.0"
 milestone: v1.2
 status: Awaiting next milestone
 stopped_at: Phase 24 complete — all phases complete
-last_updated: "2026-11-18T13:15:47.494Z"
+last_updated: "2026-11-18T13:28:17.369Z"
 last_activity: 2026-11-18
 last_activity_desc: Milestone v1.2 completed and archived
-state_head: a13b134c9600929ad904898032d1f5e7254b9fd6
+state_head: 5f9c0869034338d684e58c4908a8d2f5cf109886
 milestone_name: Search Precision and Agent Experience
 current_phase: 24
 progress:
@@ -32,7 +32,7 @@ progress:
 Phase: Milestone v1.2 complete
 Plan: —
 Status: Awaiting next milestone
-Last activity: 2026-11-18 - Completed quick task 261118-i0b: Update the torch dependency floor to >=2.14 (embed and all extras), regenerate uv.lock, update contract tests and install docs
+Last activity: 2026-11-18 - Completed quick task 261118-ib0: Fix GitHub issues #4 (L2-norm gate abort on Qwen3-Embedding) and #5 (model cache root omits /models)
 
 ## Performance Metrics
 
@@ -347,6 +347,7 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 261118-i0b | Update the torch dependency floor to >=2.14 (embed and all extras), regenerate uv.lock, update contract tests and install docs | 2026-11-18 | a13b134 | [261118-i0b-update-the-torch-dependency-floor-to-2-1](./quick/261118-i0b-update-the-torch-dependency-floor-to-2-1/) |
+| 261118-ib0 | Fix GitHub issues #4 (L2-norm gate abort on Qwen3-Embedding) and #5 (model cache root omits /models) | 2026-11-18 | 5f9c086 | [261118-ib0-fix-github-issues-4-l2-norm-gate-abort-o](./quick/261118-ib0-fix-github-issues-4-l2-norm-gate-abort-o/) |
 
 ### Roadmap Evolution
 
