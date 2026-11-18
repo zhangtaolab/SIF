@@ -58,8 +58,8 @@ def _hermetic_sif_logging() -> None:
     The root ``cli`` callback runs ``setup_logging``, which sets
     ``propagate = False`` on the ``sif`` logger and attaches a stderr handler.
     pytest 9.0.x attaches caplog's capture handler to the root logger only, so
-    leaked state silently silences every later ``caplog`` assertion (the 8-cell
-    CI matrix runs the locked 9.0.3; newer pytest papers over the leak).
+    leaked state silently silences every later ``caplog`` assertion (CI runs the
+    locked 9.0.3 in every matrix cell; newer pytest papers over the leak).
     Reset the namespace root and the global disable level so test order never
     decides whether a caplog assertion can see SIF log records.
     """
