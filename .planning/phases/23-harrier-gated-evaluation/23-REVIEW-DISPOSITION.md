@@ -6,7 +6,7 @@ findings:
   - id: CR-01
     severity: critical
     disposition: fixed
-    title: "Cleanup guard accepts the home directory as a scratch root — data loss risk"
+    title: "Cleanup guard accepts the home directory as a scratch root"
   - id: CR-02
     severity: critical
     disposition: fixed
@@ -14,7 +14,7 @@ findings:
   - id: WR-01
     severity: warning
     disposition: fixed
-    title: "Non-idempotent `collection add` breaks documented resume and scope changes"
+    title: "Non-idempotent `collection add` breaks resume and scope changes"
   - id: WR-02
     severity: warning
     disposition: fixed
@@ -61,27 +61,29 @@ findings:
     title: "Cleanup leaves the Harrier saved run and comparison JSON behind"
 open: 5
 total: 14
-recorded: 2026-11-16T15:19:42Z
+unparsed: 14
+recorded: 2026-11-18T07:07:43.267Z
 ---
 
 # Phase 23: Code Review Disposition
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| CR-01 | critical | fixed | 23-REVIEW-FIX.md |
-| CR-02 | critical | fixed | 23-REVIEW-FIX.md |
-| WR-01 | warning | fixed | 23-REVIEW-FIX.md |
-| WR-02 | warning | fixed | 23-REVIEW-FIX.md |
-| WR-03 | warning | fixed | 23-REVIEW-FIX.md |
-| WR-04 | warning | fixed | 23-REVIEW-FIX.md |
-| WR-05 | warning | fixed | 23-REVIEW-FIX.md |
-| WR-06 | warning | fixed | 23-REVIEW-FIX.md |
-| IN-01 | info | open | - |
-| IN-02 | info | open | - |
-| IN-03 | info | fixed | 23-REVIEW-FIX.md |
-| IN-04 | info | open | - |
-| IN-05 | info | open | - |
-| IN-06 | info | open | - |
+| CR-01 | critical | fixed | 23-REVIEW-FIX.md (not in the current review) |
+| CR-02 | critical | fixed | 23-REVIEW-FIX.md (not in the current review) |
+| WR-01 | warning | fixed | 23-REVIEW-FIX.md (not in the current review) |
+| WR-02 | warning | fixed | 23-REVIEW-FIX.md (not in the current review) |
+| WR-03 | warning | fixed | 23-REVIEW-FIX.md (not in the current review) |
+| WR-04 | warning | fixed | 23-REVIEW-FIX.md (not in the current review) |
+| WR-05 | warning | fixed | 23-REVIEW-FIX.md (not in the current review) |
+| WR-06 | warning | fixed | 23-REVIEW-FIX.md (not in the current review) |
+| IN-01 | info | open | - (not in the current review) |
+| IN-02 | info | open | - (not in the current review) |
+| IN-03 | info | fixed | 23-REVIEW-FIX.md (not in the current review) |
+| IN-04 | info | open | - (not in the current review) |
+| IN-05 | info | open | - (not in the current review) |
+| IN-06 | info | open | - (not in the current review) |
 
 Dispositions: `open` (recorded, not yet triaged), `fixed`, `skipped`, `deferred`.
-2 Critical + 6 Warning fixed with regression tests; IN-03 (runbook ruff/format) fixed as a cleanup. IN-01/02/04/05/06 remain open Info findings.
+Set `deferred` by hand and put the reason in the Source cell; both are preserved. A `|` in the reason is kept as prose and escaped on the next run.
+Re-running the gate keeps every row it can. A row the current review no longer reports is kept and its Source cell flagged, so a finding does not leave this record silently. ONE exception: when a finding id is REUSED by a different finding, the earlier decision cannot keep a row — the id is taken — and it is dropped. A RECORDED decision (anything but `open`) is named on the console when that happens; a row still at `open` is replaced silently, because `open` records no decision to lose.
