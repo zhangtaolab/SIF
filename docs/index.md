@@ -69,10 +69,15 @@ Install SIF with uv, the recommended installer:
 
 ```bash
 # Embedding stack: hybrid and vector search (primary install)
-uv tool install 'docsif[embed]'
 
-# Linux: resolve CPU-only torch explicitly (uv 0.9.19+, no CUDA stack)
+# Linux with an NVIDIA GPU (recommended): uv selects the CUDA build for the driver
+uv tool install --torch-backend=auto 'docsif[embed]'
+
+# Linux CPU-only: CPU wheels, no CUDA stack
 uv tool install --torch-backend=cpu 'docsif[embed]'
+
+# macOS: no backend flag; the macOS wheel includes MPS
+uv tool install 'docsif[embed]'
 
 # BM25-only base install
 uv tool install docsif

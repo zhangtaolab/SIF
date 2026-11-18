@@ -51,16 +51,21 @@ it with uv, the recommended installer:
 
 ```bash
 # Embedding stack: hybrid and vector search (primary install)
-uv tool install 'docsif[embed]'
 
-# Linux: resolve CPU-only torch explicitly (uv 0.9.19+, no CUDA stack)
+# Linux with an NVIDIA GPU (recommended): uv selects the CUDA build for the driver
+uv tool install --torch-backend=auto 'docsif[embed]'
+
+# Linux CPU-only: CPU wheels, no CUDA stack
 uv tool install --torch-backend=cpu 'docsif[embed]'
+
+# macOS: no backend flag; the macOS wheel includes MPS
+uv tool install 'docsif[embed]'
 
 # BM25-only base install
 uv tool install docsif
 ```
 
-The `--torch-backend=cpu` recipe was manually verified on Linux with uv 0.13.7; it is not CI-proven.
+The backend matrix was manually verified on Linux with uv 0.13.8 and torch 2.15.0; macOS needs no backend flag. It is not CI-proven.
 
 The `all` extra adds GGUF (llama-cpp-python) and OpenAI-compatible backends.
 Use Python 3.12 for this extra: official `llama-cpp-python` wheels list Python
