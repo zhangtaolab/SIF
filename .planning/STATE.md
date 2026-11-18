@@ -9,7 +9,7 @@ status: verifying
 stopped_at: context exhaustion at 75% (2026-11-18)
 last_updated: "2026-11-18T07:22:00.755Z"
 last_activity: 2026-11-18
-last_activity_desc: 24-06 complete and platform-verified (macOS, Linux, Windows); Phase 24 verifier/code review pending
+last_activity_desc: Phases 18-23 re-verified 2026-11-18 with fresh fingerprints and marked complete
 state_head: 06562ce952ed5ea03eb070392b9044b37b246f09
 progress:
   total_phases: 8
@@ -25,7 +25,7 @@ progress:
 
 - **Name:** DocSift (package `sif`, PyPI `docsif`)
 - **Core Value:** 用户可以在自己的笔记和文档库中，用自然语言快速、准确地找到需要的信息——无论关键词是否匹配。
-- **Current Focus:** v1.2 Search Precision and Agent Experience — all 8 phases are roadmap-complete; Phase 17 was re-verified on 2026-11-18 (55/55, fresh fingerprint) and Phase 24 passed goal-backward verification. Phases 18-23 verifications are stale after later source changes; the v1.2 milestone close remains.
+- **Current Focus:** v1.2 Search Precision and Agent Experience — all 8 phases are roadmap-complete; Phase 17 was re-verified on 2026-11-18 (55/55, fresh fingerprint) and Phase 24 passed goal-backward verification. Phases 18-23 were re-verified on 2026-11-18 against the current tree (44/44, 63/63, 26/26, 63/63, 77/77, 31/31 must-haves; all fresh fingerprints; all six marked complete). The v1.2 milestone close remains.
 - **Tech Stack:** Python 3.10+, SQLite (FTS5 + sqlite-vec), Click, Pydantic, sentence-transformers 5.4.1 (locked), llama-cpp-python; v1.2 adds ONLY `mcp>=2.3.0,<3` + `rapidfuzz>=3.14.5,<4`
 - See: .planning/PROJECT.md (updated 2026-11-16)
 - Archives: v1.0/v1.1 phase artifacts, full decision logs, per-plan metrics under .planning/milestones/
@@ -35,8 +35,8 @@ progress:
 Phase: 24 (Tuning + Models UX + Install Docs) — 7/7 plans executed
 Current Plan: 7
 Total Plans in Phase: 7
-Status: Phase 24 verified and complete; Phase 17 re-verified 2026-11-18; Phases 18-23 verifications stale (covered files changed after the reports); milestone close pending
-Last activity: 2026-11-18 — Phase 17 verification regenerated (55/55 must-haves, fresh digest) and phase re-marked complete
+Status: All v1.2 phases verified and complete; Phases 17-23 re-verified 2026-11-18 with fresh fingerprints; milestone close pending
+Last activity: 2026-11-18 — Phases 18-23 re-verified and completed (44/44, 63/63, 26/26, 63/63, 77/77, 31/31); full suite 3233 passed / 1 skipped @ 95.03%
 
 Progress: [██████████] 100%
 
