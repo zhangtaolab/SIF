@@ -451,7 +451,14 @@ class TestQwen3Reranker:
         modules, transformers = self._patch_ml(tokenizer, model)
         reranker = Qwen3Reranker(model_path=str(model_dir), cache_dir=str(tmp_path / "cache"))
 
-        with modules, patch("sif.search.rerank.is_quiet", return_value=True):
+        # Pin the CUDA probe False: the constructor's auto selection must
+        # deterministically take the CPU/float32 fallback on GPU hosts while
+        # still exercising auto-detection (no explicit device override).
+        with (
+            modules,
+            patch("sif.search.rerank.is_quiet", return_value=True),
+            patch("torch.cuda.is_available", return_value=False),
+        ):
             reranker.load()
             reranker.load()
 
