@@ -6,11 +6,11 @@ current_phase: 24
 current_phase_name: Tuning + Models UX + Install Docs
 current_plan: 7
 status: verifying
-stopped_at: context exhaustion at 93% (2026-11-18)
-last_updated: "2026-11-18T07:14:24.260Z"
+stopped_at: context exhaustion at 75% (2026-11-18)
+last_updated: "2026-11-18T07:17:49.588Z"
 last_activity: 2026-11-18
 last_activity_desc: 24-06 complete and platform-verified (macOS, Linux, Windows); Phase 24 verifier/code review pending
-state_head: 64a7461845914312cdf82d9c21c997de50cd5dab
+state_head: 6c13be33c3baa20b654d498f1b1f6d8d3a1810ab
 progress:
   total_phases: 8
   completed_phases: 7
@@ -367,8 +367,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-18T03:39:25.077Z
-Stopped at: Phase 17 verification regenerated and phase re-marked complete; v1.2 all phases roadmap-complete, milestone close pending
+Last session: 2026-11-18T07:14:41.672Z
+Stopped at: context exhaustion at 75% (2026-11-18)
 Resume file: (none; the Phase 24 .continue-here.md remains as the last handoff)
 
 - **Next expected action:** refresh the stale Phase 18-23 verifications (`/gsd-execute-phase <N>` routes each to the verifier re-run gate), then close the v1.2 milestone. Note: the ROADMAP Progress table still lists Phase 24 as `In Progress` (7/8, 88%) even though its checkbox and verification are complete — the `phase.complete 24` bookkeeping was never run. Platform evidence at `256380e`: macOS 3,233 passed / 1 skipped / 95.03%; Linux 3,232 passed / 2 skipped / 95.04% with ruff/format/ty green; Windows smoke 8/8 plus 346 changed-area and 124 affected-module tests. Two audits remain recorded as debt (see Blockers/Concerns): `/gsd-secure-phase 20` and `/gsd:validate-phase 20`.
