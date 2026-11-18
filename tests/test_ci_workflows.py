@@ -251,9 +251,7 @@ def test_matrix_push_trigger_is_main_only() -> None:
     """Push CI runs on main only, and tags never trigger the matrix."""
     text = _workflow_text()
 
-    assert (
-        re.search(r"^on:\n  push:\n    branches: \[main\]\n", text, re.MULTILINE) is not None
-    ), (
+    assert re.search(r"^on:\n  push:\n    branches: \[main\]\n", text, re.MULTILINE) is not None, (
         "test-matrix.yml push trigger must be exactly 'branches: [main]' so feature branches "
         "rely on their pull request run; text: " + repr(text)
     )
