@@ -108,3 +108,11 @@ verified: "2026-11-14"
 - [x] `status: verified` set in frontmatter
 
 **Approval:** verified 2026-11-14 — 37/37 threats closed at L1; 0 open at or above `high`.
+
+## Security Audit 2026-11-18
+
+| Metric | Count |
+|---|---|
+| Threats found | 37 |
+| Closed | 37 |
+| Open | 0 |
