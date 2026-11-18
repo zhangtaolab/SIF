@@ -10,23 +10,23 @@ findings:
   - id: CR-02
     severity: critical
     disposition: fixed
-    title: "Identity decision is taken outside the index flock \u2014 concurrent writers can mix vector spaces and falsify the identity"
+    title: "Identity decision is taken outside the index flock"
   - id: CR-03
     severity: critical
     disposition: fixed
-    title: "`sif index backup` / `sif index vacuum` silently create an empty index and report success"
+    title: "backup / vacuum silently create an empty index"
   - id: WR-01
     severity: warning
     disposition: fixed
-    title: "Reconcile assumes `document_embeddings` exists whenever the shadow does; `cleanup`/`vacuum` fail on stripped environments"
+    title: "Reconcile assumes `document_embeddings` exists whenever the shadow does"
   - id: WR-02
     severity: warning
     disposition: fixed
-    title: "Systemic model-output failures are classified as document-local (and retried forever by watch)"
+    title: "Systemic model-output failures classified as document-local"
   - id: WR-03
     severity: warning
     disposition: fixed
-    title: "Backup copy is group/other-readable for the entire copy + integrity-check window"
+    title: "Backup copy is group/other-readable during copy and verification"
   - id: WR-04
     severity: warning
     disposition: fixed
@@ -34,11 +34,11 @@ findings:
   - id: WR-05
     severity: warning
     disposition: fixed
-    title: "`vsearch` runs the query embedding (and can call a remote API) before its identity check"
+    title: "`vsearch` embeds the query before its identity check"
   - id: WR-06
     severity: warning
     disposition: fixed
-    title: "`StreamingEmbedWriter` clears the identity-write flag before the transaction commits"
+    title: "Writer clears the identity-write flag before the transaction commits"
   - id: IN-01
     severity: info
     disposition: open
@@ -69,29 +69,31 @@ findings:
     title: "Unreachable branch in `QueryExpansion.expand`"
 open: 7
 total: 16
-recorded: 2026-11-15T18:26:19Z
+unparsed: 16
+recorded: 2026-11-18T07:22:42.675Z
 ---
 
 # Phase 21: Code Review Disposition
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| CR-01 | critical | fixed | 21-REVIEW-FIX.md |
-| CR-02 | critical | fixed | 21-REVIEW-FIX.md |
-| CR-03 | critical | fixed | 21-REVIEW-FIX.md |
-| WR-01 | warning | fixed | 21-REVIEW-FIX.md |
-| WR-02 | warning | fixed | 21-REVIEW-FIX.md |
-| WR-03 | warning | fixed | 21-REVIEW-FIX.md |
-| WR-04 | warning | fixed | 21-REVIEW-FIX.md |
-| WR-05 | warning | fixed | 21-REVIEW-FIX.md |
-| WR-06 | warning | fixed | 21-REVIEW-FIX.md |
-| IN-01 | info | open | - |
-| IN-02 | info | open | - |
-| IN-03 | info | open | - |
-| IN-04 | info | open | - |
-| IN-05 | info | open | - |
-| IN-06 | info | open | - |
-| IN-07 | info | open | - |
+| CR-01 | critical | fixed | 21-REVIEW-FIX.md (not in the current review) |
+| CR-02 | critical | fixed | 21-REVIEW-FIX.md (not in the current review) |
+| CR-03 | critical | fixed | 21-REVIEW-FIX.md (not in the current review) |
+| WR-01 | warning | fixed | 21-REVIEW-FIX.md (not in the current review) |
+| WR-02 | warning | fixed | 21-REVIEW-FIX.md (not in the current review) |
+| WR-03 | warning | fixed | 21-REVIEW-FIX.md (not in the current review) |
+| WR-04 | warning | fixed | 21-REVIEW-FIX.md (not in the current review) |
+| WR-05 | warning | fixed | 21-REVIEW-FIX.md (not in the current review) |
+| WR-06 | warning | fixed | 21-REVIEW-FIX.md (not in the current review) |
+| IN-01 | info | open | - (not in the current review) |
+| IN-02 | info | open | - (not in the current review) |
+| IN-03 | info | open | - (not in the current review) |
+| IN-04 | info | open | - (not in the current review) |
+| IN-05 | info | open | - (not in the current review) |
+| IN-06 | info | open | - (not in the current review) |
+| IN-07 | info | open | - (not in the current review) |
 
 Dispositions: `open` (recorded, not yet triaged), `fixed`, `skipped`, `deferred`.
-
+Set `deferred` by hand and put the reason in the Source cell; both are preserved. A `|` in the reason is kept as prose and escaped on the next run.
+Re-running the gate keeps every row it can. A row the current review no longer reports is kept and its Source cell flagged, so a finding does not leave this record silently. ONE exception: when a finding id is REUSED by a different finding, the earlier decision cannot keep a row — the id is taken — and it is dropped. A RECORDED decision (anything but `open`) is named on the console when that happens; a row still at `open` is replaced silently, because `open` records no decision to lose.
