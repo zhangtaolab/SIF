@@ -38,19 +38,25 @@ Linux and macOS are fully supported. Windows is degradation-only: foreground `si
 
 ```bash
 # Embedding stack: hybrid and vector search (primary install)
-uv tool install 'docsif[embed]'
 
-# Linux: resolve CPU-only torch explicitly (uv 0.9.19+)
+# Linux with an NVIDIA GPU (recommended): uv selects the CUDA build for the driver
+uv tool install --torch-backend=auto 'docsif[embed]'
+
+# Linux CPU-only: CPU wheels, no CUDA stack
 uv tool install --torch-backend=cpu 'docsif[embed]'
+
+# macOS: no backend flag; the macOS wheel includes MPS
+uv tool install 'docsif[embed]'
 ```
 
 `uv tool install` keeps SIF in an isolated environment and puts the `sif`
-command on PATH. The `--torch-backend=cpu` recipe is the manually verified
-Linux path for the embedding stack (verified on uv 0.13.7; not CI-proven):
-without it, the PyPI `torch` wheel pulls the CUDA stack. The flag applies to
-`uv tool` commands from uv 0.9.19 onward.
+command on PATH. `--torch-backend` is supported by `uv tool` and `uvx` from uv
+0.9.19 onward, and `UV_TORCH_BACKEND` is the equivalent environment variable.
+Without a flag, Linux resolves PyPI's CUDA-enabled `torch` wheel and pulls the
+full CUDA stack; `auto` matches the wheel to the driver, and `cpu` installs
+CPU-only wheels.
 
-<!-- VERIFY: the --torch-backend=cpu recipe was manually verified on Linux with uv 0.13.7 and is not CI-proven -->
+<!-- VERIFY: the --torch-backend auto/cpu/macOS matrix was manually verified on Linux (uv 0.13.8, torch 2.15.0) and by uv target resolution for macOS arm64; it is not CI-proven -->
 
 To upgrade or reinstall an existing tool install:
 
@@ -80,10 +86,19 @@ uvx --from 'docsif[embed]' sif --help
 
 ### With pip
 
+pip cannot auto-detect your GPU, so pick the torch index URL that matches your
+driver before installing SIF:
+
 ```bash
-# Embedding stack (hybrid and vector search); on Linux install CPU-only
-# torch from the CPU index first so no CUDA stack is pulled in
+# Linux CPU-only
 pip install torch --index-url https://download.pytorch.org/whl/cpu
+pip install "docsif[embed]"
+
+# Linux with an NVIDIA GPU (CUDA 13.2 wheels; match the tag to your driver)
+pip install torch --index-url https://download.pytorch.org/whl/cu132
+pip install "docsif[embed]"
+
+# macOS: no torch pre-install; the macOS wheel includes MPS
 pip install "docsif[embed]"
 
 # BM25-only base install
