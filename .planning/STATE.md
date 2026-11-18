@@ -25,7 +25,7 @@ progress:
 
 - **Name:** DocSift (package `sif`, PyPI `docsif`)
 - **Core Value:** 用户可以在自己的笔记和文档库中，用自然语言快速、准确地找到需要的信息——无论关键词是否匹配。
-- **Current Focus:** v1.2 Search Precision and Agent Experience — Phases 17-23 complete; Phase 24 has all 7 plans executed (24-06 recorded `keep-default` and `keep-breadcrumb-off` on the amended books_markdown corpus); Phase 24 verification and the milestone close remain.
+- **Current Focus:** v1.2 Search Precision and Agent Experience — all 8 phases are roadmap-complete; Phase 17 was re-verified on 2026-11-18 (55/55, fresh fingerprint) and Phase 24 passed goal-backward verification. Phases 18-23 verifications are stale after later source changes; the v1.2 milestone close remains.
 - **Tech Stack:** Python 3.10+, SQLite (FTS5 + sqlite-vec), Click, Pydantic, sentence-transformers 5.4.1 (locked), llama-cpp-python; v1.2 adds ONLY `mcp>=2.3.0,<3` + `rapidfuzz>=3.14.5,<4`
 - See: .planning/PROJECT.md (updated 2026-11-16)
 - Archives: v1.0/v1.1 phase artifacts, full decision logs, per-plan metrics under .planning/milestones/
@@ -35,8 +35,8 @@ progress:
 Phase: 24 (Tuning + Models UX + Install Docs) — 7/7 plans executed
 Current Plan: 7
 Total Plans in Phase: 7
-Status: Platform verification green (macOS/Linux/Windows); Phase 24 verifier/code review pending
-Last activity: 2026-11-17 — 24-06 complete; macOS/Linux full suites and Windows smoke green at 256380e
+Status: Phase 24 verified and complete; Phase 17 re-verified 2026-11-18; Phases 18-23 verifications stale (covered files changed after the reports); milestone close pending
+Last activity: 2026-11-18 — Phase 17 verification regenerated (55/55 must-haves, fresh digest) and phase re-marked complete
 
 Progress: [█████████░] 88%
 
@@ -367,8 +367,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-18T01:13:56.048Z
-Stopped at: context exhaustion at 93% (2026-11-18)
-Resume file: (none; .continue-here.md in the phase directory is current)
+Last session: 2026-11-18T03:39:25.077Z
+Stopped at: Phase 17 verification regenerated and phase re-marked complete; v1.2 all phases roadmap-complete, milestone close pending
+Resume file: (none; the Phase 24 .continue-here.md remains as the last handoff)
 
-- **Next expected action:** run Phase 24 verification (gsd-verifier, code review), then mark Phase 24 complete and close the v1.2 milestone. Platform evidence at `256380e`: macOS 3,233 passed / 1 skipped / 95.03%; Linux 3,232 passed / 2 skipped / 95.04% with ruff/format/ty green; Windows smoke 8/8 plus 346 changed-area and 124 affected-module tests. Two audits remain recorded as debt (see Blockers/Concerns): `/gsd-secure-phase 20` and `/gsd:validate-phase 20`.
+- **Next expected action:** refresh the stale Phase 18-23 verifications (`/gsd-execute-phase <N>` routes each to the verifier re-run gate), then close the v1.2 milestone. Note: the ROADMAP Progress table still lists Phase 24 as `In Progress` (7/8, 88%) even though its checkbox and verification are complete — the `phase.complete 24` bookkeeping was never run. Platform evidence at `256380e`: macOS 3,233 passed / 1 skipped / 95.03%; Linux 3,232 passed / 2 skipped / 95.04% with ruff/format/ty green; Windows smoke 8/8 plus 346 changed-area and 124 affected-module tests. Two audits remain recorded as debt (see Blockers/Concerns): `/gsd-secure-phase 20` and `/gsd:validate-phase 20`.
