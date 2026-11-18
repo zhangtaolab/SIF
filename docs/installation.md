@@ -322,7 +322,7 @@ sif --help
 
 Expected output:
 ```
-sif, version 1.1.2
+sif, version 1.2.0
 
 Usage: sif [OPTIONS] COMMAND [ARGS]...
 

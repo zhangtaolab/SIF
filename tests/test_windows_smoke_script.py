@@ -96,7 +96,7 @@ def test_traceback_is_never_accepted() -> None:
 
 def test_commands_are_argv_lists_without_model_loading(tmp_path: Path) -> None:
     """Every invocation is an argv list and none names a model-loading subcommand."""
-    invocations = build_cli_invocations("python", tmp_path, "1.1.2")
+    invocations = build_cli_invocations("python", tmp_path, "1.2.0")
 
     assert len(invocations) == 8
     for argv in invocations:

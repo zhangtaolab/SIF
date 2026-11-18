@@ -35,6 +35,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - N/A
 
+## [1.2.0] - 2026-11-18
+
+### Changed
+- The release version is now `1.2.0`, still single-sourced in `src/sif/_version.py`.
+- New runtime dependencies: `mcp>=2.3.0,<3` (official MCP SDK) and `rapidfuzz>=3.14.5,<4` (did-you-mean suggestions).
+- Install documentation is now uv-first, with the explicit Linux CPU-torch recipe (`uv tool install --torch-backend=cpu docsif[embed]`).
+- Evidence-gated defaults recorded: chunking defaults are unchanged after a tuning sweep on a real corpus, and the optional embed-text breadcrumb overlay ships default-off (`SIF_EMBED_BREADCRUMB=1` to enable).
+
+### Added
+- `sif eval` personal search-quality benchmark: held-out splits, replay-stability check, bootstrap noise gate, saved-run `--compare` A/B mode with per-language evidence, and rapidfuzz-backed did-you-mean suggestions.
+- Metadata filtering: `--filter` on `search`, `vsearch`, and `query` with the qmd-compatible operator grammar, applied before fusion with a page-escalation notice, plus metadata discovery so agents never guess keys.
+- Search correctness: metadata-content checksums with fast metadata-only re-indexing, deterministic pagination (offset) across BM25/vector/hybrid, document-level hybrid dedup with chunk-match annotations, a title-weighted FTS column, and path-context and vector-staleness enrichment on results.
+- Index maintenance and safety: `sif index vacuum|backup|cleanup`, embedder identity records that guard against dimension/prompt drift, and a streaming embed writer.
+- MCP server rebuilt on the official SDK v2: stdio + HTTP transports with transport-security validation and allowed-host controls, a seven-tool surface with structured output, a detachable `sif mcp` daemon, a Claude Code plugin + marketplace at the repo root, and an MCP Registry manifest.
+- Model management: verified model-cache manifests, `sif models pull`, and `sif models status`.
+
+### Fixed
+- The canonical metadata serializer persists YAML date values as ISO text instead of raising a latent `TypeError` during checksum hashing.
+
 ## [1.1.2] - 2026-11-14
 
 ### Changed
@@ -240,8 +259,9 @@ Thanks to all contributors who have helped shape SIF!
 
 ---
 
-[Unreleased]: https://github.com/zhangtaolab/sif/compare/v1.1.2...HEAD
+[Unreleased]: https://github.com/zhangtaolab/sif/compare/v1.2.0...HEAD
 [0.1.0]: https://github.com/zhangtaolab/sif/releases
+[1.2.0]: https://github.com/zhangtaolab/sif/releases/tag/v1.2.0
 [1.1.2]: https://github.com/zhangtaolab/sif/releases/tag/v1.1.2
 [1.1.1]: https://github.com/zhangtaolab/sif/compare/v1.0.1...v1.1.2
 [1.0.1]: https://github.com/zhangtaolab/sif/releases/tag/v1.0.1

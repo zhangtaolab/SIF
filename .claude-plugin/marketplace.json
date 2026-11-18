@@ -9,7 +9,7 @@
       "name": "sif",
       "source": "./",
       "description": "Local hybrid search over Markdown notes and documents, with citation-grade MCP tools",
-      "version": "1.1.2"
+      "version": "1.2.0"
     }
   ]
 }
