@@ -3,10 +3,11 @@ phase: "23"
 slug: "harrier-gated-evaluation"
 # status lifecycle: draft (seeded by plan-phase) → validated (set by validate-phase §6)
 # audit-milestone §5.5 distinguishes NOT-VALIDATED (draft) from PARTIAL (validated + nyquist_compliant: false) (#2117)
-status: draft
-nyquist_compliant: false
-wave_0_complete: false
+status: validated
+nyquist_compliant: true
+wave_0_complete: true
 created: "2026-11-16"
+validated: "2026-11-18"
 ---
 
 # Phase 23 — Validation Strategy
@@ -40,24 +41,24 @@ created: "2026-11-16"
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| 23-01-01 | 01 | 1 | MODEL-01 | T-23-02 | Per-language × per-leg held-out gates exist and pair correctly (counts sum to split totals; absent languages are not fabricated; declared order) | unit | `env -u FORCE_COLOR NO_COLOR=1 pytest tests/unit/search/test_personal_bench.py -x --no-cov` | Extend existing | ⬜ pending |
-| 23-01-02 | 01 | 1 | MODEL-01 | T-23-02 | Language-aware widening reaches a late Chinese doc block and raises with per-language counts at the cap | unit | `env -u FORCE_COLOR NO_COLOR=1 pytest tests/unit/search/test_personal_bench.py::TestEnsureHeldout -x --no-cov` | Extend existing | ⬜ pending |
-| 23-01-03 | 01 | 1 | MODEL-01 | T-23-01 | `--require-language` parses/validates against `LANGUAGES` and forwards to `ensure_heldout`; generated CLI docs update | cli/docs | `env -u FORCE_COLOR NO_COLOR=1 pytest tests/unit/cli/test_eval.py -x --no-cov`; `make docs-generate && git diff --exit-code docs/cli-reference.md docs/configuration.md` | Extend existing | ⬜ pending |
-| 23-02-01 | 02 | 2 | MODEL-02 | T-23-04 | Two-sided verdict rule: adopt only when overall held-out winner + both language floors + adequacy; every rejection reason named | unit | `env -u FORCE_COLOR NO_COLOR=1 pytest tests/unit/search/test_embedder_verdict.py -x --no-cov` | **Wave 0: new file** | ⬜ pending |
-| 23-02-02 | 02 | 2 | MODEL-02 | T-23-04 | Boundary: Δ=0.01 at N=100 is not a winner; N=101 is; CI including 0 never wins; a language mean −0.02 vetoes; exact −0.01 floor is inclusive | unit | same | **Wave 0: new file** | ⬜ pending |
-| 23-03-01 | 03 | 3 | MODEL-01/02 | T-23-07 | Runbook dry-run builds the exact per-arm env and argv (Harrier prompts from the table, explicit Qwen3, `-q`, `--index`) without a subprocess | unit | `env -u FORCE_COLOR NO_COLOR=1 pytest tests/unit/scripts/test_harrier_eval.py::TestDryRun -x --no-cov` | **Wave 0: new file** | ⬜ pending |
-| 23-03-02 | 03 | 3 | MODEL-01/02 | T-23-07 | Identity gate rejects swapped/prompt-free/wrong-dimension/unverified identities; probe requires `check_identity` ok; stage machine resumes | unit | `env -u FORCE_COLOR NO_COLOR=1 pytest tests/unit/scripts/test_harrier_eval.py -x --no-cov` | **Wave 0: new file** | ⬜ pending |
-| 23-03-03 | 03 | 3 | MODEL-01/02 | T-23-08 | Adequacy preflight exits 3 on insufficient evidence; artifact builder emits the documented schema; cleanup refuses paths outside the scratch root | unit | same | **Wave 0: new file** | ⬜ pending |
+| 23-01-01 | 01 | 1 | MODEL-01 | T-23-02 | Per-language × per-leg held-out gates exist and pair correctly (counts sum to split totals; absent languages are not fabricated; declared order) | unit | `env -u FORCE_COLOR NO_COLOR=1 pytest tests/unit/search/test_personal_bench.py -x --no-cov` | Extend existing | ✅ green |
+| 23-01-02 | 01 | 1 | MODEL-01 | T-23-02 | Language-aware widening reaches a late Chinese doc block and raises with per-language counts at the cap | unit | `env -u FORCE_COLOR NO_COLOR=1 pytest tests/unit/search/test_personal_bench.py::TestEnsureHeldout -x --no-cov` | Extend existing | ✅ green |
+| 23-01-03 | 01 | 1 | MODEL-01 | T-23-01 | `--require-language` parses/validates against `LANGUAGES` and forwards to `ensure_heldout`; generated CLI docs update | cli/docs | `env -u FORCE_COLOR NO_COLOR=1 pytest tests/unit/cli/test_eval.py -x --no-cov`; `make docs-generate && git diff --exit-code docs/cli-reference.md docs/configuration.md` | Extend existing | ✅ green |
+| 23-02-01 | 02 | 2 | MODEL-02 | T-23-04 | Two-sided verdict rule: adopt only when overall held-out winner + both language floors + adequacy; every rejection reason named | unit | `env -u FORCE_COLOR NO_COLOR=1 pytest tests/unit/search/test_embedder_verdict.py -x --no-cov` | **Wave 0: new file** | ✅ green |
+| 23-02-02 | 02 | 2 | MODEL-02 | T-23-04 | Boundary: Δ=0.01 at N=100 is not a winner; N=101 is; CI including 0 never wins; a language mean −0.02 vetoes; exact −0.01 floor is inclusive | unit | same | **Wave 0: new file** | ✅ green |
+| 23-03-01 | 03 | 3 | MODEL-01/02 | T-23-07 | Runbook dry-run builds the exact per-arm env and argv (Harrier prompts from the table, explicit Qwen3, `-q`, `--index`) without a subprocess | unit | `env -u FORCE_COLOR NO_COLOR=1 pytest tests/unit/scripts/test_harrier_eval.py::TestDryRun -x --no-cov` | **Wave 0: new file** | ✅ green |
+| 23-03-02 | 03 | 3 | MODEL-01/02 | T-23-07 | Identity gate rejects swapped/prompt-free/wrong-dimension/unverified identities; probe requires `check_identity` ok; stage machine resumes | unit | `env -u FORCE_COLOR NO_COLOR=1 pytest tests/unit/scripts/test_harrier_eval.py -x --no-cov` | **Wave 0: new file** | ✅ green |
+| 23-03-03 | 03 | 3 | MODEL-01/02 | T-23-08 | Adequacy preflight exits 3 on insufficient evidence; artifact builder emits the documented schema; cleanup refuses paths outside the scratch root | unit | same | **Wave 0: new file** | ✅ green |
 | 23-04-01 | 04 | 4 | MODEL-01/02 | T-23-12 | Corpus scope + EN+ZH adequacy checkpoint; no embed unless both languages reach N ≥ 10 | manual | blocking-human checkpoint; preflight JSON | n/a | ✅ green |
 | 23-04-02 | 04 | 4 | MODEL-01 | T-23-13 | Real two-arm evidence run produces the committed artifact with both identities, fingerprints, costs, and gates | manual | `python scripts/harrier_eval.py --corpus <roots> --keep-arms --json` | local | ✅ green |
 | 23-04-03 | 04 | 4 | MODEL-01/02 | T-23-13 | Artifact + `docs/benchmarking.md` Phase 23 section record the evidence with no personal data | docs/json | `python -c "import json; ..."`; grep gates | artifact new | ✅ green |
-| 23-05-01 | 05 | 5 | MODEL-02 | T-23-16 | Verdict review checkpoint: flip only on `adopt-harrier`; otherwise record not-applicable | manual | blocking-human checkpoint | n/a | ⬜ pending |
-| 23-05-02 | 05 | 5 | MODEL-02 | T-23-17 | On a pass, Settings/EmbeddingConfig default to Harrier; explicit Qwen3 stays prompt-free and selectable | unit | `env -u FORCE_COLOR NO_COLOR=1 pytest tests/unit/config/test_settings.py tests/unit/search/test_bench_snapshot.py -x --no-cov` | Existing | ⬜ pending |
-| 23-05-03 | 05 | 5 | MODEL-02 | T-23-18 | Every default-claim doc names Harrier; generated docs regenerate; artifact gains the flip block | docs | docs loop grep; `make docs-generate && git diff --exit-code ...`; artifact JSON check | Existing | ⬜ pending |
-| 23-06-01 | 06 | 6 | MODEL-02 | T-23-20 | Explicit-Qwen3 proof mode/verifier/writer rejects any non-zero or missing delta | unit | `env -u FORCE_COLOR NO_COLOR=1 pytest tests/unit/scripts/test_harrier_eval.py::TestVerifyQwen3 -x --no-cov` | **Wave 0: new file** | ⬜ pending |
-| 23-06-02 | 06 | 6 | MODEL-02 | T-23-22 | Real explicit-Qwen3 comparison reproduces the pre-flip baseline with every delta exactly 0.0 | manual | `python scripts/harrier_eval.py --verify-qwen3 --scratch-root <root> --json` | local | ⬜ pending |
-| ALL | — | — | ALL | — | Lint/format/type gates | static | `ruff check src tests && ruff format --check src tests && ty check src/sif` | Existing | ⬜ pending |
-| ALL | — | — | ALL | — | Generated docs current after `--require-language` (and after a default flip) | docs | `make docs-generate && git diff --exit-code docs/cli-reference.md docs/configuration.md` | Existing | ⬜ pending |
+| 23-05-01 | 05 | 5 | MODEL-02 | T-23-16 | Verdict review checkpoint: flip only on `adopt-harrier`; otherwise record not-applicable | manual | blocking-human checkpoint | n/a | ✅ green |
+| 23-05-02 | 05 | 5 | MODEL-02 | T-23-17 | On a pass, Settings/EmbeddingConfig default to Harrier; explicit Qwen3 stays prompt-free and selectable | unit | `env -u FORCE_COLOR NO_COLOR=1 pytest tests/unit/config/test_settings.py tests/unit/search/test_bench_snapshot.py -x --no-cov` | Existing | ✅ green |
+| 23-05-03 | 05 | 5 | MODEL-02 | T-23-18 | Every default-claim doc names Harrier; generated docs regenerate; artifact gains the flip block | docs | docs loop grep; `make docs-generate && git diff --exit-code ...`; artifact JSON check | Existing | ✅ green |
+| 23-06-01 | 06 | 6 | MODEL-02 | T-23-20 | Explicit-Qwen3 proof mode/verifier/writer rejects any non-zero or missing delta | unit | `env -u FORCE_COLOR NO_COLOR=1 pytest tests/unit/scripts/test_harrier_eval.py::TestVerifyQwen3 -x --no-cov` | **Wave 0: new file** | ✅ green |
+| 23-06-02 | 06 | 6 | MODEL-02 | T-23-22 | Real explicit-Qwen3 comparison reproduces the pre-flip baseline with every delta exactly 0.0 | manual | `python scripts/harrier_eval.py --verify-qwen3 --scratch-root <root> --json` | local | ✅ green |
+| ALL | — | — | ALL | — | Lint/format/type gates | static | `ruff check src tests && ruff format --check src tests && ty check src/sif` | Existing | ✅ green |
+| ALL | — | — | ALL | — | Generated docs current after `--require-language` (and after a default flip) | docs | `make docs-generate && git diff --exit-code docs/cli-reference.md docs/configuration.md` | Existing | ✅ green |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -65,13 +66,13 @@ created: "2026-11-16"
 
 ## Wave 0 Requirements
 
-- [ ] `tests/unit/search/test_embedder_verdict.py` — table-driven two-sided rule (new)
-- [ ] `tests/unit/scripts/__init__.py` + `tests/unit/scripts/test_harrier_eval.py` — runbook dry-run/identity/artifact/cleanup tests (new)
-- [ ] `tests/unit/search/test_personal_bench.py` — language/leg-language split gates + language-aware widening (extend)
-- [ ] `tests/unit/cli/test_eval.py` — `--require-language` parsing/forwarding + cross-model comparison (extend)
-- [ ] Bilingual fixture titles/bodies in `tests/support/eval.py` usage (no new runtime dependency)
-- [ ] `docs/cli-reference.md` regenerated for `--require-language`
-- [ ] No framework install — pytest/pytest-cov are already locked dev dependencies
+- [x] `tests/unit/search/test_embedder_verdict.py` — table-driven two-sided rule (new)
+- [x] `tests/unit/scripts/__init__.py` + `tests/unit/scripts/test_harrier_eval.py` — runbook dry-run/identity/artifact/cleanup tests (new)
+- [x] `tests/unit/search/test_personal_bench.py` — language/leg-language split gates + language-aware widening (extend)
+- [x] `tests/unit/cli/test_eval.py` — `--require-language` parsing/forwarding + cross-model comparison (extend)
+- [x] Bilingual fixture titles/bodies in `tests/support/eval.py` usage (no new runtime dependency)
+- [x] `docs/cli-reference.md` regenerated for `--require-language`
+- [x] No framework install — pytest/pytest-cov are already locked dev dependencies
 
 ---
 
@@ -102,11 +103,19 @@ created: "2026-11-16"
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 180s
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 covers all MISSING references
+- [x] No watch-mode flags
+- [x] Feedback latency < 180s
+- [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** approved 2026-11-18 — 16/16 rows green (387 targeted tests in 22.6 s; full suite 3233 passed / 1 skipped @ 95.03% coverage), 0 gaps, 0 escalated. Manual rows are recorded, not pending: 23-04 real EN+ZH two-arm run produced the committed artifact; 23-05 blocking-human checkpoint resolved to keep-qwen3 (default_flip not-applicable, defaults byte-identical); 23-06 zero-delta proof recorded not-applicable under the non-flip branch.
+
+## Validation Audit 2026-11-18
+
+| Metric | Count |
+|---|---|
+| Gaps found | 0 |
+| Resolved | 0 |
+| Escalated | 0 |
