@@ -12,6 +12,7 @@ import numpy as np
 
 from sif.core.models import Embedder
 from sif.embedding.identity import dimension_mismatch_text
+from sif.embedding.normalize import l2_normalize
 from sif.models.download import ModelDownloader
 from sif.utils.logging import get_logger, is_quiet, suppress_output
 
@@ -99,27 +100,6 @@ def _file_sha256(path: Path) -> str | None:
     except OSError:
         return None
     return f"sha256:{digest.hexdigest()}"
-
-
-def _l2_normalize(values: Any) -> np.ndarray:
-    """Renormalize encoder output to unit L2 length in float64.
-
-    sentence-transformers applies ``normalize_embeddings`` in the model's
-    compute dtype, and some models (e.g. Qwen3-Embedding on CUDA) come back
-    off unit by up to ~4e-3. The float64 recomputation here is the point:
-    that noise is what trips ``StreamingEmbedWriter.validate_batch``'s
-    ``NORM_TOLERANCE`` gate and aborts ``sif index embed``.
-
-    Works through broadcasting for both 1-D (single text) and 2-D (batch)
-    inputs. Zero and non-finite vectors are divided by 1.0 and returned
-    unchanged, so ``validate_batch``'s zero-norm and finiteness gates remain
-    reachable instead of being papered over here.
-    """
-    array = np.asarray(values, dtype=np.float64)
-    norms = np.linalg.norm(array, axis=-1, keepdims=True)
-    usable = np.isfinite(norms) & (norms > 0.0)
-    result: np.ndarray = array / np.where(usable, norms, 1.0)
-    return result
 
 
 class SentenceTransformerEmbedder(Embedder):
@@ -216,7 +196,7 @@ class SentenceTransformerEmbedder(Embedder):
             show_progress_bar=isinstance(texts, list) and len(texts) > _PROGRESS_BAR_THRESHOLD,
             **self._encode_kwargs(),
         )
-        return _l2_normalize(encoded)
+        return l2_normalize(encoded)
 
     def embed(self, text: str) -> list[float]:
         """Embed a single text.
@@ -228,7 +208,7 @@ class SentenceTransformerEmbedder(Embedder):
             Unit-length embedding vector, renormalized in float64
         """
         embedding = self.model.encode(text, **self._encode_kwargs())
-        result: list[float] = _l2_normalize(embedding).tolist()
+        result: list[float] = l2_normalize(embedding).tolist()
         return result
 
     def embed_batch(self, texts: list[str]) -> list[list[float]]:
@@ -245,7 +225,7 @@ class SentenceTransformerEmbedder(Embedder):
             show_progress_bar=len(texts) > _PROGRESS_BAR_THRESHOLD,
             **self._encode_kwargs(),
         )
-        result: list[list[float]] = _l2_normalize(embeddings).tolist()
+        result: list[list[float]] = l2_normalize(embeddings).tolist()
         return result
 
     def embed_query(self, text: str) -> list[float]:
@@ -590,12 +570,12 @@ class ModelScopeEmbedder(Embedder):
             show_progress_bar=isinstance(texts, list) and len(texts) > _PROGRESS_BAR_THRESHOLD,
             **self._encode_kwargs(),
         )
-        return _l2_normalize(encoded)
+        return l2_normalize(encoded)
 
     def embed(self, text: str) -> list[float]:
         """Embed a single text to a float64-renormalized unit vector."""
         embedding = self.model.encode(text, **self._encode_kwargs())
-        result: list[float] = _l2_normalize(embedding).tolist()
+        result: list[float] = l2_normalize(embedding).tolist()
         return result
 
     def embed_batch(self, texts: list[str]) -> list[list[float]]:
@@ -605,7 +585,7 @@ class ModelScopeEmbedder(Embedder):
             show_progress_bar=len(texts) > _PROGRESS_BAR_THRESHOLD,
             **self._encode_kwargs(),
         )
-        result: list[list[float]] = _l2_normalize(embeddings).tolist()
+        result: list[list[float]] = l2_normalize(embeddings).tolist()
         return result
 
     def embed_query(self, text: str) -> list[float]:

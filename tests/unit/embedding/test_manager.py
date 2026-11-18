@@ -1,5 +1,6 @@
 """Unit tests for EmbeddingManager."""
 
+import math
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -53,7 +54,7 @@ class TestEmbeddingManager:
 
         def make_manager(model_name: str) -> tuple[EmbeddingManager, MagicMock]:
             mock_embedder = MagicMock()
-            mock_embedder.embed_batch.return_value = [[0.1, 0.2]]
+            mock_embedder.embed_batch.return_value = [[1.0, 0.0]]
             mock_embedder.dimension = 2
             mock_factory = MagicMock()
             mock_factory.create_model.return_value = mock_embedder
@@ -71,19 +72,19 @@ class TestEmbeddingManager:
         manager_a, embedder_a = make_manager("model-a")
         response_a = manager_a.embed(["hello"])
         embedder_a.embed_batch.assert_called_once_with(["hello"])
-        assert response_a.embeddings == [[0.1, 0.2]]
+        assert response_a.embeddings == [[1.0, 0.0]]
 
         # A different model reading the same text must miss the shared bucket.
         manager_b, embedder_b = make_manager("model-b")
         response_b = manager_b.embed(["hello"])
         embedder_b.embed_batch.assert_called_once_with(["hello"])
-        assert response_b.embeddings == [[0.1, 0.2]]
+        assert response_b.embeddings == [[1.0, 0.0]]
 
         # The same model re-embedding must hit the cache (no backend call).
         manager_a2, embedder_a2 = make_manager("model-a")
         response_a2 = manager_a2.embed(["hello"])
         embedder_a2.embed_batch.assert_not_called()
-        assert response_a2.embeddings == [[0.1, 0.2]]
+        assert response_a2.embeddings == [[1.0, 0.0]]
 
     def test_load_model_uses_factory(self) -> None:
         mock_embedder = MagicMock()
@@ -498,6 +499,49 @@ class TestCacheSafety:
         assert manager._config.document_prompt_name == "d"
         assert manager._prompt_scheme.query_prompt == "q"
         assert manager._prompt_scheme.document_prompt == "d"
+
+    @pytest.mark.parametrize("norm", [1.003596, 0.9985])
+    def test_off_unit_cached_vector_is_renormalized_on_read(
+        self, tmp_path: Path, norm: float
+    ) -> None:
+        """Issue #4 follow-up: stale cache rows come back unit-length without re-encoding."""
+        cache = EmbeddingCache(tmp_path)
+        embedder = _RecordingEmbedder()
+        manager = _make_manager(tmp_path, embedder, cache=cache)
+        bucket = manager._cache_bucket("document")
+        cache.set("stale text", [0.6 * norm, 0.8 * norm], model_id=bucket)
+
+        vector = manager.embed_documents(["stale text"]).embeddings[0]
+
+        assert embedder.batch_calls == []
+        assert abs(math.sqrt(sum(v * v for v in vector)) - 1.0) <= 1e-12
+        assert vector == pytest.approx([0.6, 0.8], rel=1e-12, abs=1e-12)
+
+    def test_zero_cached_vector_passes_through_unchanged(self, tmp_path: Path) -> None:
+        """Cached zeros stay zero so validate_batch's zero-norm gate remains reachable."""
+        cache = EmbeddingCache(tmp_path)
+        embedder = _RecordingEmbedder()
+        manager = _make_manager(tmp_path, embedder, cache=cache)
+        bucket = manager._cache_bucket("document")
+        cache.set("zero text", [0.0, 0.0], model_id=bucket)
+
+        vector = manager.embed_documents(["zero text"]).embeddings[0]
+
+        assert embedder.batch_calls == []
+        assert vector == [0.0, 0.0]
+
+    def test_already_unit_cached_vector_is_unchanged(self, tmp_path: Path) -> None:
+        """Read normalization is idempotent for rows written by the fixed embedder."""
+        cache = EmbeddingCache(tmp_path)
+        embedder = _RecordingEmbedder()
+        manager = _make_manager(tmp_path, embedder, cache=cache)
+        bucket = manager._cache_bucket("document")
+        cache.set("unit text", [0.6, 0.8], model_id=bucket)
+
+        vector = manager.embed_documents(["unit text"]).embeddings[0]
+
+        assert embedder.batch_calls == []
+        assert vector == pytest.approx([0.6, 0.8], rel=1e-12, abs=1e-12)
 
 
 class TestSystemicOutputErrors:
