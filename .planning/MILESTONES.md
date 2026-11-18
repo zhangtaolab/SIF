@@ -1,5 +1,49 @@
 # Milestones
 
+## v1.2 Search Precision and Agent Experience (Shipped: 2026-11-18)
+
+**Phases completed:** 8 phases, 55 plans, 142 tasks
+
+**Key accomplishments:**
+- Deleted three verified-dead layers (search models, search strategy, MigrationManager), the orphan RRF export, and the phantom pre-commit Makefile flow, all pinned by a new 10-test hygiene guard suite.
+- uv.lock now resolves CPU-tagged torch 2.14.1+cpu/2.15.0+cpu from the explicit PyTorch CPU index on Linux with zero nvidia/triton packages, black removed from pyproject and the lock, extras floors locked, and eight text-level guards pinning the packaging state.
+- An 8-cell GitHub Actions matrix (py3.10-3.13 x ubuntu/macos) now runs the unchanged full suite with per-cell fail_under=90 on every push/PR, plus a py3.12 ruff/format/ty lint job; the phase HEAD is proven green in run 43399300651.
+- Honest Windows degradation proven on real Windows: fork/systemd refusals with cause+remedy, an 8/8 PASS yoga smoke at HEAD 48759e2, and no traceback on any refusal path
+- 1.1.2 is single-sourced end-to-end (literal -> runtime surfaces -> README mcp-name marker -> changelog -> changelog links), a tag-triggered build-once workflow publishes to TestPyPI then PyPI via job-scoped OIDC, and the 3.13 classifier landed only on green matrix run 43399300651.
+- GitHub environments `pypi`/`testpypi` exist, the maintainer confirmed both PyPI/TestPyPI publisher registrations, and Test Matrix run 43561542242 is green on the exact release HEAD `c819f67228152f2544e79a864b9a9e12dbc79f69` (8 cells + lint), whose only `src/sif` change since the recorded Windows smoke is `src/sif/_version.py`.
+- Removed every dead-layer reference from the seven hand-maintained docs, rewrote the search-extension how-to around the live searchers, deleted the phantom pre-commit guidance and its VERIFY markers, and pinned all of it with four documentation guards.
+- Removed the four tracked MagicMock SQLite blobs and the three stale docsift-era scratch scripts, then pinned their absence with a git-index guard that cannot pass vacuously.
+- `sif eval --personal` synthesizes one title/H1 known-item query per deterministically sampled document and reports nDCG@10/Hit@10 on the user's own index as a table or strict JSON, with an additive per-query evaluator API and a generator-owned CLI reference section.
+- `sif eval --personal` now synthesizes title and body-snippet known-item queries with a per-leg 0.60 Jaccard budget, splits them deterministically into 50/50 tuning/held-out (widening the sample to meet the 25 held-out floor), reports every leg x language x length group with <10 suppression, and adds a normalized query_log replay leg labeled stability-not-quality with its CLI-only bias.
+- Personal eval runs now auto-save as validated, content-free version-1 JSON; `--compare` re-evaluates exactly the saved query set over a fingerprint-matched corpus, grades both arms through document id at the saved depth, and refuses to call a winner inside noise via a seeded paired-bootstrap CI plus the 0.01 tie rule.
+- Did-you-mean now scores every out-of-vocab token against the full 73k-term FTS vocabulary with rapidfuzz's Indel ratio at an internal 75.0 cutoff (p50 1.51 ms), recalling first-letter typos the old difflib bucket never saw, with rapidfuzz locked as the v1.2 runtime dependency.
+- Per-file parser dispatch, body+canonical-frontmatter checksums, and YAML-date-safe canonical metadata storage wired through the single incremental loop
+- Frontmatter-only edits now rewrite document rows without touching chunks or vectors, one per-collection `convention:<id>` marker forces exactly one re-parse pass, and the watch embed leg consumes the indexer's explicit reindex signal instead of a checksum diff
+- Searchers now return raw results and every search-pipeline exit performs exactly one `enrich_results` composition of path contexts plus derived vector staleness
+- Direct CLI search/vsearch and the MCP BM25 fallback each perform exactly one `enrich_results` composition, and B0 is frozen as a self-comparable post-CORR-01 baseline (100 queries, zero mean delta)
+- `--offset` now paginates `search`/`vsearch`/`query` and MCP `query`, with BM25 thresholding inside the FTS scan, one offset slice per query path, and ranks that continue 11-20 across pages while offset=0 reproduces B0 exactly
+- Default vector and hybrid pages now return one row per document with vector-leg dedup before fusion, `chunk_id`/`sequence`/`chunk_matches` in the result contract, a bounded saturation-driven `fetch_k` escalation, and a chunk-keyed `per_chunk` escape hatch at both RRF fuse sites
+- `--per-chunk`/`per_chunk` now reach the four chunk-capable CLI/MCP surfaces, `chunk_matches` and `path#sequence` are visible in table/JSON/MCP output, and B1 is recorded with the B0→B1 comparison explicitly labeled the BM25 no-drift check
+- A detection-gated rebuild turns every single-column `documents_fts` into a two-column `(content, title)` index populated by exactly one FTS5 `rebuild`, with title-carrying triggers, a surviving vocab shadow, and parameter-bound BM25 column weights that are byte-identical at 1.0/1.0
+- MCP-only hosts now migrate the title-FTS schema and the mtime index on startup, `--compare` exposes per-leg and per-leg×split gates, and the measured 2–4× title-weight band is rejected with numbers (pinned `_TITLE_WEIGHT = 1.0`)
+- Persisted embedder identity with field-wise comparison, a prompt-scheme resolver, role-explicit embed methods on both ST-backed backends, and prompt/revision-aware cache buckets that leave the default Qwen3 path byte-identical.
+- The phase closes with recorded D-19 evidence: default ModelScope Qwen3 cache buckets and the SC1/bench goldens reproduce byte-for-byte, a pre-Phase-21 index upgrades through legacy-assumed to verified certification, the real-DB failure/concurrency matrix is green, and the full quality suite passes at 95.22% coverage with generator-clean docs.
+- Official MCP SDK v2 shell serving status end-to-end, with five locked era transcripts, loopback transport security, and a model-free lazy backend
+- Seven honestly annotated read-only MCP tools with CLI-parity lex/vec search and ToolError semantics, proven dual-channel and idempotent before the 623-line hand-rolled shell, its wire types, and four replaced test modules were deleted
+- SDK-backed Host/Origin defense with a narrow `/health` Host guard and repeatable `--allowed-hosts`, plus a real detached `mcp daemon` owning `<db>.mcp.pid` and a distinct corroboration marker so it coexists with the watch daemon
+- A single-attempt lazy embedder with prefix-first routing, full CLI query-pipeline parity with an opt-in soft-degrading reranker, and a cold-first-query stdio proof that a noisy model load stays off the protocol channel
+- Snippet line windows, stored content hashes, and full/ranged get citation fields added additively to the MCP boundary while CLI JSON and the frozen metadata envelope stayed byte-identical
+- Repo root shipped as a validated `sif` Claude Code plugin/marketplace with MCP-first search/get/cite skills and documentation rewritten for the seven-tool SDK v2 server
+- Scripted and preflighted MCP Registry listing (io.github.zhangtaolab/sif → PyPI docsif, stdio) with the publish deferred to a recorded blocked maintainer checkpoint, plus a green full Phase 22 gate and real Claude Code seven-tool/query smoke
+- Per-language held-out gates, language-aware widening, and the additive `--require-language` flag now give Phase 23 the evidence surface its two-sided EN+ZH verdict needs, with the Phase 18 default path unchanged.
+- A pure three-way verdict rule consumes Phase 18 gates verbatim, returning `adopt-harrier` only on an overall held-out winner plus EN+ZH floors, with every literal boolean and rejection reason recorded.
+- A stdlib-only two-arm runbook now builds both isolated scratch arms, proves each embedder identity before eval, gates EN+ZH adequacy before the embed budget, records cost/provenance, and writes a privacy-safe aggregate verdict artifact with scratch-only cleanup.
+- A real two-arm EN+ZH evaluation on 498 personal documents produced `keep-qwen3`: the overall held-out mean delta +0.009430 at N=56 includes zero and sits below both the 0.01 epsilon and the 1/N noise floor, so the Qwen3 default stayed; the aggregate verdict artifact and Phase 23 benchmarking section are committed.
+- The `keep-qwen3` verdict keeps Qwen3-Embedding-0.6B as the shipped default; the artifact now records `default_flip: not-applicable` and no code, test, or default-claim doc changed.
+- The `keep-qwen3` verdict makes the flip-conditional zero-delta proof not applicable; the artifact records `default_flip.zero_delta_proof: {status: "not-applicable"}` with no model run, no code or docs change, and no default change.
+
+---
+
 ## v1.1 Live Index and Search Quality (Shipped: 2026-11-12)
 
 **Phases completed:** 7 phases, 27 plans, 67 tasks

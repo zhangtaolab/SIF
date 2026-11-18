@@ -35,6 +35,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - N/A
 
+## [1.2.1] - 2026-11-18
+
+### Changed
+- The release version is now `1.2.1`, still single-sourced in `src/sif/_version.py`.
+- The `embed` and `all` extras now declare `torch>=2.14`; `uv.lock` was regenerated against the unchanged explicit Linux CPU index.
+
+### Fixed
+- Sentence-transformers and ModelScope embedder output is renormalized to unit L2 length, so off-unit model output (Qwen3-Embedding norms 0.9985-1.0036) no longer trips the embedding writer's L2-norm gate (#4).
+- Embedding-cache rows written by earlier versions are renormalized on read, so upgrading with a populated embeddings cache no longer aborts `sif index embed` (#4).
+- Embedders, rerankers, downloads, and `sif models status` now share `<cache>/models/<owner>/<name>`, and the pre-fix v1.2.0 `<cache>/<owner>/<name>` layout migrates automatically (#5).
+
 ## [1.2.0] - 2026-11-18
 
 ### Changed
@@ -259,8 +270,9 @@ Thanks to all contributors who have helped shape SIF!
 
 ---
 
-[Unreleased]: https://github.com/zhangtaolab/sif/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/zhangtaolab/sif/compare/v1.2.1...HEAD
 [0.1.0]: https://github.com/zhangtaolab/sif/releases
+[1.2.1]: https://github.com/zhangtaolab/sif/releases/tag/v1.2.1
 [1.2.0]: https://github.com/zhangtaolab/sif/releases/tag/v1.2.0
 [1.1.2]: https://github.com/zhangtaolab/sif/releases/tag/v1.1.2
 [1.1.1]: https://github.com/zhangtaolab/sif/compare/v1.0.1...v1.1.2

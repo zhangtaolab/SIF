@@ -12,6 +12,7 @@ import numpy as np
 
 from sif.core.models import Embedder
 from sif.embedding.identity import dimension_mismatch_text
+from sif.embedding.normalize import l2_normalize
 from sif.models.download import ModelDownloader
 from sif.utils.logging import get_logger, is_quiet, suppress_output
 
@@ -182,14 +183,20 @@ class SentenceTransformerEmbedder(Embedder):
             kwargs["batch_size"] = self._batch_size
         return kwargs
 
-    def _encode_with_prompt(self, texts: str | list[str], prompt_name: str) -> Any:
-        """Encode with an explicit prompt, preserving the batch progress rule."""
-        return self.model.encode(
+    def _encode_with_prompt(self, texts: str | list[str], prompt_name: str) -> np.ndarray:
+        """Encode with an explicit prompt, preserving the batch progress rule.
+
+        Output is renormalized to unit L2 length in float64: the encode call
+        normalizes in the model's compute dtype, and that residual off-unit
+        noise would otherwise abort the indexer's norm gate.
+        """
+        encoded = self.model.encode(
             texts,
             prompt_name=prompt_name,
             show_progress_bar=isinstance(texts, list) and len(texts) > _PROGRESS_BAR_THRESHOLD,
             **self._encode_kwargs(),
         )
+        return l2_normalize(encoded)
 
     def embed(self, text: str) -> list[float]:
         """Embed a single text.
@@ -198,10 +205,10 @@ class SentenceTransformerEmbedder(Embedder):
             text: Text to embed
 
         Returns:
-            Embedding vector
+            Unit-length embedding vector, renormalized in float64
         """
         embedding = self.model.encode(text, **self._encode_kwargs())
-        result: list[float] = embedding.tolist()
+        result: list[float] = l2_normalize(embedding).tolist()
         return result
 
     def embed_batch(self, texts: list[str]) -> list[list[float]]:
@@ -211,14 +218,14 @@ class SentenceTransformerEmbedder(Embedder):
             texts: List of texts to embed
 
         Returns:
-            List of embedding vectors
+            List of unit-length embedding vectors, renormalized in float64
         """
         embeddings = self.model.encode(
             texts,
             show_progress_bar=len(texts) > _PROGRESS_BAR_THRESHOLD,
             **self._encode_kwargs(),
         )
-        result: list[list[float]] = embeddings.tolist()
+        result: list[list[float]] = l2_normalize(embeddings).tolist()
         return result
 
     def embed_query(self, text: str) -> list[float]:
@@ -550,29 +557,35 @@ class ModelScopeEmbedder(Embedder):
             kwargs["batch_size"] = self._batch_size
         return kwargs
 
-    def _encode_with_prompt(self, texts: str | list[str], prompt_name: str) -> Any:
-        """Encode with an explicit prompt, preserving the batch progress rule."""
-        return self.model.encode(
+    def _encode_with_prompt(self, texts: str | list[str], prompt_name: str) -> np.ndarray:
+        """Encode with an explicit prompt, preserving the batch progress rule.
+
+        Output is renormalized to unit L2 length in float64: the encode call
+        normalizes in the model's compute dtype, and that residual off-unit
+        noise would otherwise abort the indexer's norm gate.
+        """
+        encoded = self.model.encode(
             texts,
             prompt_name=prompt_name,
             show_progress_bar=isinstance(texts, list) and len(texts) > _PROGRESS_BAR_THRESHOLD,
             **self._encode_kwargs(),
         )
+        return l2_normalize(encoded)
 
     def embed(self, text: str) -> list[float]:
-        """Embed a single text."""
+        """Embed a single text to a float64-renormalized unit vector."""
         embedding = self.model.encode(text, **self._encode_kwargs())
-        result: list[float] = embedding.tolist()
+        result: list[float] = l2_normalize(embedding).tolist()
         return result
 
     def embed_batch(self, texts: list[str]) -> list[list[float]]:
-        """Embed multiple texts."""
+        """Embed multiple texts to float64-renormalized unit vectors."""
         embeddings = self.model.encode(
             texts,
             show_progress_bar=len(texts) > _PROGRESS_BAR_THRESHOLD,
             **self._encode_kwargs(),
         )
-        result: list[list[float]] = embeddings.tolist()
+        result: list[list[float]] = l2_normalize(embeddings).tolist()
         return result
 
     def embed_query(self, text: str) -> list[float]:

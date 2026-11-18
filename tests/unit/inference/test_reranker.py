@@ -451,7 +451,14 @@ class TestQwen3Reranker:
         modules, transformers = self._patch_ml(tokenizer, model)
         reranker = Qwen3Reranker(model_path=str(model_dir), cache_dir=str(tmp_path / "cache"))
 
-        with modules, patch("sif.search.rerank.is_quiet", return_value=True):
+        # Pin the CUDA probe False: the constructor's auto selection must
+        # deterministically take the CPU/float32 fallback on GPU hosts while
+        # still exercising auto-detection (no explicit device override).
+        with (
+            modules,
+            patch("sif.search.rerank.is_quiet", return_value=True),
+            patch("torch.cuda.is_available", return_value=False),
+        ):
             reranker.load()
             reranker.load()
 
@@ -624,7 +631,7 @@ class TestCreateReranker:
         assert isinstance(reranker, Qwen3Reranker)
         assert reranker._model_path == str(tmp_path / "model")
         assert reranker._batch_size == 4
-        assert reranker._cache_dir == str(tmp_path / "cache")
+        assert reranker._cache_dir == str(tmp_path / "cache" / "models")
 
     def test_create_reranker_sentence_transformers_cache_dir(self, tmp_path: Path) -> None:
         settings = MagicMock()
@@ -637,7 +644,7 @@ class TestCreateReranker:
         reranker = create_reranker(settings)
 
         assert isinstance(reranker, CrossEncoderReranker)
-        assert reranker._cache_dir == str(tmp_path / "cache")
+        assert reranker._cache_dir == str(tmp_path / "cache" / "models")
 
     def test_create_reranker_without_cache_accessor(self) -> None:
         settings = SimpleNamespace(

@@ -1,21 +1,19 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.2
+status: Awaiting next milestone
+stopped_at: Phase 24 complete — all phases complete
+last_updated: "2026-11-18T14:07:58.972Z"
+last_activity: 2026-11-18
+last_activity_desc: Milestone v1.2 completed and archived
+state_head: 62c5d99361d4f0f13d1d6df022adb35289bf43d3
 milestone_name: Search Precision and Agent Experience
 current_phase: 24
-current_plan: Not started
-status: completed
-stopped_at: Phase 24 complete — all phases complete
-last_updated: "2026-11-18T10:07:01.160Z"
-last_activity: 2026-11-18
-last_activity_desc: Phase 24 complete
-state_head: 423d9582231edaaba35846be2627d2429303e7cc
 progress:
   total_phases: 8
   completed_phases: 8
   total_plans: 55
   completed_plans: 55
-  percent: 100
 ---
 
 # DocSift — Project State
@@ -24,28 +22,23 @@ progress:
 
 - **Name:** DocSift (package `sif`, PyPI `docsif`)
 - **Core Value:** 用户可以在自己的笔记和文档库中，用自然语言快速、准确地找到需要的信息——无论关键词是否匹配。
-- **Current Focus:** v1.2 Search Precision and Agent Experience — all 8 phases are roadmap-complete; Phase 17 was re-verified on 2026-11-18 (55/55, fresh fingerprint) and Phase 24 passed goal-backward verification. Phases 18-23 were re-verified on 2026-11-18 against the current tree (44/44, 63/63, 26/26, 63/63, 77/77, 31/31 must-haves; all fresh fingerprints; all six marked complete). The v1.2 milestone close remains.
-- **Tech Stack:** Python 3.10+, SQLite (FTS5 + sqlite-vec), Click, Pydantic, sentence-transformers 5.4.1 (locked), llama-cpp-python; v1.2 adds ONLY `mcp>=2.3.0,<3` + `rapidfuzz>=3.14.5,<4`
-- See: .planning/PROJECT.md (updated 2026-11-16)
-- Archives: v1.0/v1.1 phase artifacts, full decision logs, per-plan metrics under .planning/milestones/
+- **Current Focus:** v1.2 Search Precision and Agent Experience — **shipped and archived 2026-11-18**: PR #3 merged `dev` → `main` (merge commit `975cb09`), tag `v1.2.0` pushed, `docsif 1.2.0` published to TestPyPI and PyPI (Publish run 44289577210), and the milestone closed to `.planning/milestones/v1.2-*`. All 8 phases verified `passed` with fresh fingerprints (17: 55/55, 18: 44/44, 19: 63/63, 20: 26/26, 21: 63/63, 22: 77/77, 23: 31/31, 24: 43/43 truths), all `threats_open: 0`. Next milestone is not yet planned.
+- **Tech Stack:** Python 3.10+, SQLite (FTS5 + sqlite-vec), Click, Pydantic, sentence-transformers 5.4.1 (locked), llama-cpp-python; v1.2 added ONLY `mcp>=2.3.0,<3` + `rapidfuzz>=3.14.5,<4`
+- See: .planning/PROJECT.md (updated 2026-11-18)
+- Archives: v1.0/v1.1/v1.2 phase artifacts, full decision logs, per-plan metrics under .planning/milestones/
 
 ## Current Position
 
-Phase: 24
-Current Plan: Not started
-Total Plans in Phase: 7
-Status: All phases complete
-Last activity: 2026-11-18 — Phase 24 complete
-
-Progress: [██████████] 100%
-
-**v1.2 phase list:** 17 Engineering Foundation (CI + Hygiene + PyPI) · 18 Quality Instrument (Personal Bench + rapidfuzz DYM) · 19 Search Correctness · 20 Metadata Filtering + Discovery · 21 Scale, Maintenance + Embedder Identity · 22 MCP SDK v2 + Agent Packaging · 23 Harrier Gated Evaluation · 24 Tuning + Models UX + Install Docs
+Phase: Milestone v1.2 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-11-18 - Completed quick task 261118-jbj: Release v1.2.1: bump version across all parity surfaces, add changelog section, and update install docs for CUDA/MPS/CPU backends
 
 ## Performance Metrics
 
 - **Velocity:** v1.0 shipped 68 plans / 11 phases (2026-04-14 → 2026-11-07); v1.1 shipped 27 plans / 7 phases (2026-11-07 → 2026-11-12); recent plans averaged ~13-20 min
 - **Suite at v1.1 close:** 1591 passed, 1 skipped @ 95.18% coverage (fail_under=90 active); ruff/format/ty green
-- **v1.2:** 7/8 phases, 55/55 plans — suite 3233 passed / 1 skipped @ 95.03% coverage; ruff/format/ty green (Phase 24 verification pending)
+- **v1.2 shipped:** 8/8 phases, 55/55 plans — suite 3234 passed / 1 skipped @ 95.03% coverage; ruff/format/ty green; CI 8/8 matrix + Docs Validation green; `docsif` 1.2.0 on PyPI
 
 **Per-Plan Metrics:**
 
@@ -353,7 +346,10 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
-| 261118-np7 | bump version for the v1.2 milestone release | 2026-11-18 | d97838c | [261118-np7-bump-version-for-the-v1-2-milestone-rele](./quick/261118-np7-bump-version-for-the-v1-2-milestone-rele/) |
+| 261118-i0b | Update the torch dependency floor to >=2.14 (embed and all extras), regenerate uv.lock, update contract tests and install docs | 2026-11-18 | a13b134 | [261118-i0b-update-the-torch-dependency-floor-to-2-1](./quick/261118-i0b-update-the-torch-dependency-floor-to-2-1/) |
+| 261118-ib0 | Fix GitHub issues #4 (L2-norm gate abort on Qwen3-Embedding) and #5 (model cache root omits /models) | 2026-11-18 | 5f9c086 | [261118-ib0-fix-github-issues-4-l2-norm-gate-abort-o](./quick/261118-ib0-fix-github-issues-4-l2-norm-gate-abort-o/) |
+| 261118-ipu | Follow-up fixes: normalize cached embeddings on read (issue #4 stale-cache gap) and make the Qwen3 reranker CPU-load test hermetic on GPU hosts | 2026-11-18 | ffad91b | [261118-ipu-follow-up-fixes-normalize-cached-embeddi](./quick/261118-ipu-follow-up-fixes-normalize-cached-embeddi/) |
+| 261118-jbj | Release v1.2.1: bump version across all parity surfaces, add changelog section, and update install docs for CUDA/MPS/CPU backends | 2026-11-18 | 62c5d99 | [261118-jbj-release-v1-2-1-bump-version-across-all-p](./quick/261118-jbj-release-v1-2-1-bump-version-across-all-p/) |
 
 ### Roadmap Evolution
 
@@ -377,3 +373,7 @@ Stopped at: Phase 24 complete — all phases complete
 Resume file: (none; the Phase 24 .continue-here.md remains as the last handoff)
 
 - **Next expected action:** refresh the stale Phase 18-23 verifications (`/gsd-execute-phase <N>` routes each to the verifier re-run gate), then close the v1.2 milestone. Note: the ROADMAP Progress table still lists Phase 24 as `In Progress` (7/8, 88%) even though its checkbox and verification are complete — the `phase.complete 24` bookkeeping was never run. Platform evidence at `256380e`: macOS 3,233 passed / 1 skipped / 95.03%; Linux 3,232 passed / 2 skipped / 95.04% with ruff/format/ty green; Windows smoke 8/8 plus 346 changed-area and 124 affected-module tests. Two audits remain recorded as debt (see Blockers/Concerns): `/gsd-secure-phase 20` and `/gsd:validate-phase 20`.
+
+## Operator Next Steps
+
+- Start the next milestone with /gsd-new-milestone

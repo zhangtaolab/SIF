@@ -3,6 +3,7 @@
 import math
 import time
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from sif.config.settings import Settings
@@ -10,6 +11,7 @@ from sif.core.models import Embedder
 from sif.embedding.cache import EmbeddingCache
 from sif.embedding.factory import EmbeddingModelFactory
 from sif.embedding.identity import EmbedderIdentity, build_identity, format_cache_model_id
+from sif.embedding.normalize import l2_normalize
 from sif.embedding.prompts import PromptScheme, resolve_prompt_scheme
 from sif.models.embedding import EmbeddingConfig, EmbeddingOutputError, EmbeddingResponse, ModelType
 from sif.utils.logging import get_logger
@@ -101,6 +103,12 @@ class EmbeddingManager:
 
         logger.info(f"Loading embedding model: {self._config.model_name}")
 
+        # cache_dir roots the embedding cache database and the OpenAI
+        # dimension cache; model_cache_dir is the verified ModelScope manifest
+        # root and must match ModelDownloader's default and `sif models status`.
+        cache_dir = self._config.cache_dir
+        model_cache_dir = str(Path(cache_dir) / "models") if cache_dir else None
+
         self._model = self._factory.create_model(
             model_type=self._config.model_type,
             model_path=self._config.model_path,
@@ -112,7 +120,8 @@ class EmbeddingManager:
             n_ctx=self._config.n_ctx,
             api_key=self._config.api_key,
             api_base=self._config.api_base,
-            cache_dir=self._config.cache_dir,
+            cache_dir=cache_dir,
+            model_cache_dir=model_cache_dir,
             query_prompt_name=self._prompt_scheme.query_prompt,
             document_prompt_name=self._prompt_scheme.document_prompt,
         )
@@ -314,7 +323,12 @@ class EmbeddingManager:
         for i, text in enumerate(texts):
             cached = self._cache.get(text, model_id=model_id)
             if cached is not None and self._is_usable_cached(cached):
-                embeddings[i] = cached
+                # Rows cached by v1.2.0 predate embedder-side renormalization,
+                # so hits are normalized on read in float64. _is_usable_cached
+                # still runs first: non-finite and wrong-dimension rows stay
+                # misses and are recomputed, while zero vectors are not
+                # filtered and pass through unchanged for validate_batch.
+                embeddings[i] = l2_normalize(cached).tolist()
             else:
                 texts_to_embed.append((i, text))
         return texts_to_embed

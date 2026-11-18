@@ -19,19 +19,30 @@ Install methods are listed below in the recommended order.
 `uv tool install` keeps SIF in an isolated environment and puts the `sif`
 command on PATH.
 
-Install the embedding stack for hybrid and vector search:
+Install the embedding stack for hybrid and vector search with the backend that
+matches the machine:
 
 ```bash
+# Linux with an NVIDIA GPU (recommended): uv selects the CUDA build for the driver
+uv tool install --torch-backend=auto 'docsif[embed]'
+
+# Linux CPU-only: CPU wheels, no CUDA stack
+uv tool install --torch-backend=cpu 'docsif[embed]'
+
+# macOS: no backend flag; the macOS wheel includes MPS
 uv tool install 'docsif[embed]'
 ```
 
-On Linux, PyPI's `torch` wheel is CUDA-enabled. Resolve CPU-only torch
-explicitly so no CUDA stack is pulled in:
+`--torch-backend` is resolved by `uv tool install` and `uv pip` commands from
+uv 0.9.19 onward, and the `UV_TORCH_BACKEND` environment variable is
+equivalent. Without the flag, Linux resolves PyPI's CUDA-enabled `torch` wheel
+and pulls the full CUDA stack; `auto` matches the wheel to the driver, and
+`cpu` installs CPU-only wheels.
 
-```bash
-# Linux CPU-only torch (requires uv 0.9.19 or newer)
-uv tool install --torch-backend=cpu 'docsif[embed]'
-```
+Do not pass `--torch-backend=cpu` on macOS: the macOS wheel already includes MPS, and the CPU backend has no matching macOS wheel for the current torch fleet.
+
+The backend matrix is verified by hand on Linux (uv 0.13.8, torch 2.15.0) and
+by uv target resolution for macOS arm64; it is not proven in CI.
 
 Install the BM25-only base (keyword search, retrieval, status, metadata, get,
 and the MCP server) when you do not need embeddings:
@@ -47,9 +58,6 @@ uv tool upgrade docsif
 uv tool install --force 'docsif[embed]'
 ```
 
-The `--torch-backend=cpu` recipe is verified by hand on uv 0.13.7; it is not
-proven in CI. The `UV_TORCH_BACKEND=cpu` environment variable is equivalent.
-
 ### Method 2: uvx one-off
 
 Run SIF without installing it, for a single invocation:
@@ -63,11 +71,20 @@ use `uv tool install` for a persistent command.
 
 ### Method 3: pip
 
-pip works but does not isolate SIF from your active environment. On Linux,
-install CPU-only torch from the official CPU index before SIF:
+pip works but does not isolate SIF from your active environment. pip cannot
+auto-detect your GPU, so pick the torch index URL that matches your driver
+before installing SIF:
 
 ```bash
+# Linux CPU-only
 pip install torch --index-url https://download.pytorch.org/whl/cpu
+pip install "docsif[embed]"
+
+# Linux with an NVIDIA GPU (CUDA 13.2 wheels; match the tag to your driver)
+pip install torch --index-url https://download.pytorch.org/whl/cu132
+pip install "docsif[embed]"
+
+# macOS: no torch pre-install; the macOS wheel includes MPS
 pip install "docsif[embed]"
 ```
 
@@ -113,7 +130,7 @@ them; pick the extra that matches the features you need.
 
 | Extra | Installs | Enables |
 |-------|----------|---------|
-| `embed` | `sentence-transformers>=5.4.1`, `torch`, `modelscope>=1.36.0`, `numpy>=1.24.0` | Local embeddings for vector and hybrid search |
+| `embed` | `sentence-transformers>=5.4.1`, `torch>=2.14`, `modelscope>=1.36.0`, `numpy>=1.24.0` | Local embeddings for vector and hybrid search |
 | `all` | the `embed` packages plus `llama-cpp-python>=0.3.35` and `openai>=2.0.0` | GGUF (llama.cpp) and OpenAI-compatible backends as well |
 | `openai` | `openai>=2.0.0` | OpenAI-compatible API backends only |
 | `dev` | `pytest>=7.0.0`, `pytest-cov>=4.0.0`, `pytest-asyncio>=0.23.0`, `ruff>=0.1.0`, `ty>=0.0.1` | Contributing to SIF |
@@ -126,7 +143,7 @@ For vector search functionality:
 uv tool install 'docsif[embed]'
 ```
 
-This installs `sentence-transformers>=5.4.1`, `torch`, `modelscope>=1.36.0`,
+This installs `sentence-transformers>=5.4.1`, `torch>=2.14`, `modelscope>=1.36.0`,
 and `numpy>=1.24.0`.
 
 With the `embed` extra installed, the local embedding backends pick their
@@ -272,8 +289,10 @@ sudo dnf install python3-devel gcc
 sudo pacman -S python base-devel
 ```
 
-Use the [CPU torch recipe](#method-1-uv-tool-install-recommended) for the
-embedding stack so no CUDA stack is pulled in.
+For the embedding stack, `--torch-backend=auto` is the recommended Linux GPU
+path (uv selects the CUDA build for the driver), and `--torch-backend=cpu` is
+the CPU-only path; see
+[Method 1](#method-1-uv-tool-install-recommended).
 
 ### macOS
 
@@ -286,6 +305,8 @@ brew install python@3.12
 # Install SIF
 uv tool install 'docsif[embed]'
 ```
+
+Do not pass `--torch-backend=cpu` on macOS: the macOS wheel already includes MPS, and the CPU backend has no matching macOS wheel for the current torch fleet.
 
 **Hardware acceleration**: on Apple Silicon Macs the modelscope and
 sentence_transformers backends automatically use the GPU via Metal (MPS). GGUF
@@ -322,7 +343,7 @@ sif --help
 
 Expected output:
 ```
-sif, version 1.2.0
+sif, version 1.2.1
 
 Usage: sif [OPTIONS] COMMAND [ARGS]...
 

@@ -127,8 +127,8 @@ def test_pyproject_extras_floors() -> None:
         assert '"sentence-transformers>=5.4.1"' in block, (
             f"[{extra_name}] is missing the sentence-transformers>=5.4.1 floor; block: {block!r}"
         )
-        assert re.search(r'^\s*"torch",\s*$', block, re.MULTILINE) is not None, (
-            f"[{extra_name}] is missing a direct torch entry; block: {block!r}"
+        assert '"torch>=2.14"' in block, (
+            f"[{extra_name}] is missing the required torch floor; block: {block!r}"
         )
 
     assert '"llama-cpp-python>=0.3.35"' in all_block, (
@@ -160,7 +160,7 @@ def test_installation_docs_match_extras() -> None:
     """Installation docs carry the new floors and no dev black requirement."""
     text = INSTALLATION.read_text(encoding="utf-8")
 
-    for required in ("sentence-transformers>=5.4.1", "torch"):
+    for required in ("sentence-transformers>=5.4.1", "torch>=2.14"):
         assert required in text, f"docs/installation.md is missing {required!r}"
     assert BLACK_DEV_REQUIREMENT not in text, (
         f"docs/installation.md still lists the removed dev requirement {BLACK_DEV_REQUIREMENT!r}"
@@ -284,13 +284,16 @@ def test_lint_job_runs_repo_gates() -> None:
 
 UV_TOOL_INSTALL = "uv tool install"
 TORCH_BACKEND_RECIPE = "--torch-backend=cpu"
+TORCH_BACKEND_AUTO = "--torch-backend=auto"
+MACOS_NO_CPU_BACKEND = "Do not pass `--torch-backend=cpu` on macOS"
+CUDA_INDEX_PREFIX = "https://download.pytorch.org/whl/cu"
 
 
 def test_installation_docs_are_uv_first() -> None:
-    """Installation docs lead with uv tool, then uvx, then pip."""
+    """Installation docs lead with uv tool, then uvx, then pip and carry both backends."""
     text = INSTALLATION.read_text(encoding="utf-8")
 
-    for required in (UV_TOOL_INSTALL, TORCH_BACKEND_RECIPE, "uvx"):
+    for required in (UV_TOOL_INSTALL, TORCH_BACKEND_AUTO, TORCH_BACKEND_RECIPE, "uvx"):
         assert required in text, f"docs/installation.md is missing {required!r}"
 
     positions = [text.index(item) for item in (UV_TOOL_INSTALL, "uvx", "pip install")]
@@ -300,13 +303,16 @@ def test_installation_docs_are_uv_first() -> None:
 
 
 def test_installation_docs_cpu_recipe_and_pip_alternative() -> None:
-    """The CPU recipe names --torch-backend=cpu and pip keeps the CPU index URL."""
+    """The matrix keeps the CPU recipe and adds auto plus the macOS no-flag note."""
     text = INSTALLATION.read_text(encoding="utf-8")
 
     assert TORCH_BACKEND_RECIPE in text, "docs/installation.md is missing the CPU torch recipe"
     assert CPU_INDEX_URL in text, (
         f"docs/installation.md is missing the pip CPU index alternative {CPU_INDEX_URL!r}"
     )
+    assert TORCH_BACKEND_AUTO in text, "docs/installation.md is missing the auto backend recipe"
+    assert CUDA_INDEX_PREFIX in text, "docs/installation.md is missing the CUDA torch index"
+    assert MACOS_NO_CPU_BACKEND in text, "docs/installation.md is missing the macOS backend note"
     assert "uv 0.9.19" in text, "docs/installation.md is missing the uv version floor"
 
 

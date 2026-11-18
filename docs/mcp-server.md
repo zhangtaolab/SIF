@@ -259,9 +259,18 @@ SIF first — the plugin adds no runtime dependencies of its own.
 
 ### Install SIF
 
-The primary install includes the embedding stack:
+The primary install includes the embedding stack. Pick the torch backend that
+matches the machine (uv 0.9.19 or newer; the `UV_TORCH_BACKEND` environment
+variable is equivalent):
 
 ```bash
+# Linux with an NVIDIA GPU (recommended): uv selects the CUDA build for the driver
+uv tool install --torch-backend=auto 'docsif[embed]'
+
+# Linux CPU-only: CPU wheels, no CUDA stack
+uv tool install --torch-backend=cpu 'docsif[embed]'
+
+# macOS: no backend flag; the macOS wheel includes MPS
 uv tool install 'docsif[embed]'
 ```
 
@@ -272,16 +281,8 @@ and skips the torch/embedding stack:
 uv tool install docsif
 ```
 
-On Linux, PyPI's `torch` wheel is CUDA-enabled, so the plain embed install
-pulls the CUDA stack. Resolve CPU-only torch explicitly (requires uv 0.9.19 or
-newer; the `UV_TORCH_BACKEND=cpu` environment variable is equivalent):
-
-```bash
-uv tool install --torch-backend=cpu 'docsif[embed]'
-```
-
-The `--torch-backend=cpu` recipe was manually verified on Linux with uv 0.13.7;
-it is not CI-proven.
+The backend matrix was manually verified on Linux with uv 0.13.8 and torch
+2.15.0 and by uv target resolution for macOS arm64; it is not CI-proven.
 
 ### Install the plugin
 

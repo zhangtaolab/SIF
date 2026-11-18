@@ -74,6 +74,50 @@
 - Model-runtime deadlocks (MPS + joblib) are solved by batching + single-thread + explicit device, not by retrying.
 
 ### Cost Observations
-- Model mix: orchestrator on the configured profile; subagents (researcher/planner/checker/verifier/executors) in fresh contexts.
+- Model mix: orchestrator on the configured profile; subagents (researcher/planner/verifier/security/UI/executors) in fresh contexts.
 - Sessions: one long continuous session spanning discuss→plan→execute→validate→secure→re-verify→close.
 - Notable: the audit's `tech_debt` verdict drove a focused 16.1 phase plus four retroactive coverage runs; all closed before archiving.
+
+## Milestone: v1.2 — Search Precision and Agent Experience
+
+**Shipped:** 2026-11-18
+**Phases:** 8 (17–24) | **Plans:** 55 | **Quick tasks:** 1
+
+### What Was Built
+- 工程基础：py3.10–3.13 × ubuntu/macos 8 格 CI 矩阵、Windows 降级 smoke（hc yoga）、trusted-publishing 的 `docsif` 发布流水线。
+- 质量仪器：`sif eval --personal` known-item 评测（bias controls、saved run、bootstrap 噪声门、1/N 地板）、rapidfuzz did-you-mean。
+- 搜索正确性：frontmatter-only 刷新、pre-fusion 去重、确定性分页、标题 FTS、单一 enrich 路径。
+- 元数据过滤：qmd 17 操作符 AST（pre-RRF）、path/mtime 内置字段、类型化 kv + 回填、`metadata` 发现工具。
+- 规模与身份：bounded staleness/contexts、`index vacuum`/backup、streaming embed、embedder identity + role-aware embed。
+- MCP：官方 SDK v2（五 era）、七只读工具 + annotations/structuredContent、query pipeline 对等、daemon、plugin/skills、Registry manifest。
+- 质量门禁证据：Harrier keep-qwen3、chunk keep-default、breadcrumb keep-breadcrumb-off——三个 held-out 决策全部带数字记录。
+- 分发：`docsif` 1.2.0 上 TestPyPI + PyPI（tag `v1.2.0`）。
+
+### What Worked
+- Held-out 门禁 + 记录化 artifact：三次默认值决策都以 keep 收尾，没有一次靠感觉改默认。
+- 指纹失效机制自动暴露跨阶段影响：修 `personal_bench` 一处，18/19/23/24 立即 stale，不靠人记得。
+- 清单版本由 `_version.py` 单源 + 测试动态派生：bump 后 66 个 parity 测试直接证明 1.2.0 一致。
+- 并行 verifier：四阶段重验在同一轮完成，且 23 的 27 个记录 gate 逐一重算 0 不一致。
+
+### What Was Inefficient
+- 两轮全里程碑重验：先是 17–24 的陈旧报告，后是 CI 修复（3 文件）再次弄陈旧 18/19/23/24——共享模块的修复应预算一次完整重验波。
+- 版本 bump 放在收尾阶段，直接把 17/22/24 的验证打陈旧；bump 应在最终验证波之前完成。
+- 本地 Python 3.13 掩盖了 3.10/3.11 的朴素求和差异：`0.010000000000000007` 只在 CI 暴露；边界规则不能依赖求和精度。
+- 文档声称"已上架 Registry"而实际是 `blocked no-github-login`，属声明与事实漂移（已记录为 follow-up）。
+
+### Patterns Established
+- 跨版本确定性算术：`math.fsum` + 6 位 rounded 比较（`strictly_above_noise_floor`），地板平局永不胜出。
+- 版本面单源 + 派生 parity 测试（server.json / plugin / marketplace / changelog）。
+- 决策 artifact 的非适用分支：`default_flip: not-applicable` + `zero_delta_proof: not-applicable` 机器可读。
+- 验证覆盖集指纹作为跨阶段失效引擎，修复即触发重验。
+
+### Key Lessons
+1. 共享模块修复要预期 N 个阶段 stale——先修复，再一次性跑完重验波，别在收尾前反复修。
+2. 发布版本 bump 放在最后一次全量验证之前；否则 release-metadata 类阶段必然再跑一遍。
+3. 本地全绿 ≠ CI 全绿：边界/浮点规则必须要么用 `fsum`/`round`，要么在最低支持 Python 上跑一次。
+4. 声明类文档（Registry 上架、snippet 字段）要与真实状态同步，验证时应作为 must-have 检查。
+
+### Cost Observations
+- Model mix: orchestrator + parallel verifier/security/UI/code-review agents; heavy parallel re-verification near close.
+- Sessions: continued session across execution → ship → CI fix → milestone close.
+- Notable: the CI fix was a 3-file change that invalidated four phase fingerprints and required a full re-verification wave — the dominant close-out cost.

@@ -506,13 +506,26 @@ class TestInstallAndModelDocs:
     """DOCS-01 guards: uv-first install, degradation matrix, model management."""
 
     def test_installation_doc_is_uv_first(self) -> None:
-        """Installation leads with uv tool, then uvx, then pip."""
+        """Installation leads with uv tool, then uvx, then pip, with the backend matrix."""
         text = INSTALLATION_DOC.read_text(encoding="utf-8")
-        for required in ("uv tool install", "--torch-backend=cpu", "uvx", "llama-cpp-python"):
+        for required in (
+            "uv tool install",
+            "--torch-backend=auto",
+            "--torch-backend=cpu",
+            "uvx",
+            "llama-cpp-python",
+        ):
             assert required in text, f"docs/installation.md is missing {required!r}"
         positions = [text.index(item) for item in ("uv tool install", "uvx", "pip install")]
         assert positions == sorted(positions), (
             f"install methods are not ordered uv tool, uvx, pip: {positions}"
+        )
+
+    def test_installation_doc_warns_against_cpu_backend_on_macos(self) -> None:
+        """macOS must not use the CPU backend: it has no macOS wheel for the torch fleet."""
+        text = INSTALLATION_DOC.read_text(encoding="utf-8")
+        assert "Do not pass `--torch-backend=cpu` on macOS" in text, (
+            "docs/installation.md must warn against --torch-backend=cpu on macOS"
         )
 
     def test_installation_doc_degradation_matrix(self) -> None:
