@@ -63,7 +63,7 @@ Full detail: `.planning/milestones/v1.1-ROADMAP.md`
 - [x] **Phase 21: Scale, Maintenance + Embedder Identity** - Bounded staleness/context reads, `index vacuum` + backup, streaming embed, `index_meta` embedder identity + role-aware embed (completed 2026-11-16)
 - [x] **Phase 22: MCP SDK v2 Modernization + Agent Packaging** - Official SDK shell swap (dual-era), accurate annotations + structuredContent, query pipeline parity, daemon, Claude Code plugin + MCP Registry (completed 2026-11-16)
 - [x] **Phase 23: Harrier Gated Evaluation** - EN+ZH held-out A/B of Harrier native vs Qwen3-Embedding-0.6B; default switch ONLY on a proven win (completed 2026-11-16)
-- [ ] **Phase 24: Tuning + Models UX + Install Docs** - Held-out-gated chunk sweep + title-breadcrumb experiment, `models pull/status`, uv-first install docs
+- [x] **Phase 24: Tuning + Models UX + Install Docs** - Held-out-gated chunk sweep + title-breadcrumb experiment, `models pull/status`, uv-first install docs (completed 2026-11-18)
 
 ## Phase Details
 
