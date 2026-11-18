@@ -113,6 +113,45 @@ class TestEmbeddingManager:
         manager.load_model()
         assert mock_factory.create_model.call_args.kwargs["batch_size"] == 5
 
+    def test_load_model_derives_model_cache_dir(self, tmp_path: Path) -> None:
+        """cache_dir roots the embedding cache; model_cache_dir is <cache>/models."""
+        mock_embedder = MagicMock()
+        mock_embedder.dimension = 4
+        mock_factory = MagicMock()
+        mock_factory.create_model.return_value = mock_embedder
+        config = EmbeddingConfig(
+            model_type=ModelType.MODELSCOPE,
+            model_name="Qwen/Qwen3-Embedding-0.6B",
+            cache_embeddings=True,
+            cache_dir=str(tmp_path),
+        )
+        manager = EmbeddingManager(config=config, factory=mock_factory)
+
+        manager.load_model()
+
+        call_kwargs = mock_factory.create_model.call_args.kwargs
+        assert call_kwargs["cache_dir"] == str(tmp_path)
+        assert call_kwargs["model_cache_dir"] == str(tmp_path / "models")
+
+    def test_load_model_without_cache_dir_passes_none_model_cache_dir(self) -> None:
+        """No configured cache root leaves the derived manifest root unset."""
+        mock_embedder = MagicMock()
+        mock_embedder.dimension = 4
+        mock_factory = MagicMock()
+        mock_factory.create_model.return_value = mock_embedder
+        config = EmbeddingConfig(
+            model_type=ModelType.SENTENCE_TRANSFORMERS,
+            model_name="test",
+            cache_embeddings=False,
+        )
+        manager = EmbeddingManager(config=config, factory=mock_factory)
+
+        manager.load_model()
+
+        call_kwargs = mock_factory.create_model.call_args.kwargs
+        assert call_kwargs["cache_dir"] is None
+        assert call_kwargs["model_cache_dir"] is None
+
     def test_embed_uses_embed_batch(self) -> None:
         mock_embedder = MagicMock()
         mock_embedder.embed_batch.return_value = [[0.1, 0.2], [0.3, 0.4]]

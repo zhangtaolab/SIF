@@ -471,6 +471,41 @@ class TestLegacyMigration:
         assert not legacy.exists()
         modelscope_module.snapshot_download.assert_not_called()
 
+    def test_pre_fix_parent_root_layout_is_migrated(
+        self, downloader: ModelDownloader, modelscope_module: MagicMock
+    ) -> None:
+        """v1.2.0's <cache>/<owner>/<name> tree is adopted into <cache>/models."""
+        legacy = downloader.cache_dir.parent / "owner" / "legacy.model"
+        _write_model_files(legacy)
+        modelscope_module.snapshot_download.side_effect = AssertionError("network must not run")
+
+        assert inspect_cache("owner/legacy.model", downloader.cache_dir)["state"] == "legacy"
+
+        target = downloader.download("owner/legacy.model")
+
+        assert target == canonical_model_dir(downloader.cache_dir, "owner/legacy.model")
+        assert verify_manifest(target)
+        assert not legacy.exists()
+        modelscope_module.snapshot_download.assert_not_called()
+
+    def test_non_models_root_never_probes_its_parent(
+        self, tmp_path: Path, modelscope_module: MagicMock
+    ) -> None:
+        """An explicit root not named ``models`` never inspects its parent."""
+        downloader = ModelDownloader(cache_dir=tmp_path / "custom")
+        legacy = downloader.cache_dir.parent / "owner" / "parent___model"
+        _write_model_files(legacy)
+        modelscope_module.snapshot_download.side_effect = _snapshot_writing
+
+        assert inspect_cache("owner/parent.model", downloader.cache_dir)["state"] == "absent"
+
+        target = downloader.download("owner/parent.model")
+
+        assert verify_manifest(target)
+        assert legacy.exists()
+        assert (legacy / "config.json").is_file()
+        modelscope_module.snapshot_download.assert_called_once()
+
     def test_explicit_cache_root_ignores_home_legacy(
         self, downloader: ModelDownloader, isolated_home: Path
     ) -> None:

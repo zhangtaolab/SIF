@@ -278,9 +278,9 @@ class TestSentenceTransformerEmbedder:
         assert embedder.model_name == "all-MiniLM-L6-v2"
 
     def test_embed_single(self) -> None:
-        """Test embed returns normalized embedding."""
+        """Test embed returns exact unit vectors unchanged (renormalization is idempotent)."""
         mock_model = MagicMock()
-        mock_model.encode.return_value = np.array([0.1, 0.2, 0.3])
+        mock_model.encode.return_value = np.array([1.0, 0.0, 0.0])
         mock_model.get_sentence_embedding_dimension.return_value = 3
 
         modules, _mock_st = self._make_modules(mock_model)
@@ -291,12 +291,12 @@ class TestSentenceTransformerEmbedder:
 
         result = embedder.embed("hello")
         mock_model.encode.assert_called_once_with("hello", normalize_embeddings=True)
-        assert result == [0.1, 0.2, 0.3]
+        assert result == [1.0, 0.0, 0.0]
 
     def test_embed_batch(self) -> None:
-        """Test embed_batch encodes multiple texts."""
+        """Test embed_batch encodes multiple texts; unit rows pass through byte-stable."""
         mock_model = MagicMock()
-        mock_model.encode.return_value = np.array([[0.1, 0.2], [0.3, 0.4]])
+        mock_model.encode.return_value = np.array([[1.0, 0.0], [0.0, 1.0]])
         mock_model.get_sentence_embedding_dimension.return_value = 2
 
         modules, _mock_st = self._make_modules(mock_model)
@@ -311,7 +311,7 @@ class TestSentenceTransformerEmbedder:
             normalize_embeddings=True,
             show_progress_bar=False,
         )
-        assert result == [[0.1, 0.2], [0.3, 0.4]]
+        assert result == [[1.0, 0.0], [0.0, 1.0]]
 
     def test_embed_batch_with_progress_bar(self) -> None:
         """Test embed_batch shows progress bar for large batches."""
@@ -767,9 +767,9 @@ class TestModelScopeEmbedder:
         assert embedder.model_id == "iic/gte_Qwen2-7B-instruct"
 
     def test_embed_single(self) -> None:
-        """Test embed delegates to model.encode."""
+        """Test embed delegates to model.encode and returns exact unit vectors unchanged."""
         mock_model = MagicMock()
-        mock_model.encode.return_value = np.array([0.1, 0.2, 0.3])
+        mock_model.encode.return_value = np.array([1.0, 0.0, 0.0])
         mock_model.get_sentence_embedding_dimension.return_value = 3
 
         modules, mock_downloader_class = self._make_modules(mock_model)
@@ -781,7 +781,7 @@ class TestModelScopeEmbedder:
 
         result = embedder.embed("hello")
         mock_model.encode.assert_called_once_with("hello", normalize_embeddings=True)
-        assert result == [0.1, 0.2, 0.3]
+        assert result == [1.0, 0.0, 0.0]
 
     def test_embed_batch(self) -> None:
         """Test embed_batch with progress bar threshold."""
@@ -891,6 +891,70 @@ def _modelscope_embedder(model: object, **kwargs: object) -> ModelScopeEmbedder:
         with patch("sif.embedding.embedder.ModelDownloader", downloader):
             with patch("sif.embedding.embedder.is_quiet", return_value=False):
                 return ModelScopeEmbedder(model_id="test-model", **kwargs)
+
+
+class _ScaledEmbeddingModel:
+    """ST double returning caller-supplied arrays for single and batch inputs."""
+
+    def __init__(self, single: np.ndarray, batch: np.ndarray) -> None:
+        self.prompts = {"q": "q: ", "d": "d: "}
+        self._single = single
+        self._batch = batch
+        self.max_seq_length = 32
+
+    def get_sentence_embedding_dimension(self) -> int:
+        return int(self._single.shape[-1])
+
+    def encode(self, texts: object, **_kwargs: object) -> np.ndarray:
+        return self._single if isinstance(texts, str) else self._batch
+
+
+class TestUnitRenormalization:
+    """Issue #4: off-unit encoder output becomes unit length on every encode path."""
+
+    OFF_UNIT_SCALES = (0.9985, 1.0036)
+
+    @staticmethod
+    def _scaled_arrays(scale: float) -> tuple[np.ndarray, np.ndarray]:
+        base = np.array([0.2, -0.3, 0.7, 0.54])
+        unit = base / np.linalg.norm(base)
+        return unit * scale, np.stack([unit * scale, -unit * scale])
+
+    @staticmethod
+    def _assert_unit(vector: list[float], raw: np.ndarray) -> None:
+        values = np.asarray(vector, dtype=np.float64)
+        assert abs(float(np.linalg.norm(values)) - 1.0) <= 1e-12
+        np.testing.assert_allclose(values, raw / np.linalg.norm(raw), rtol=1e-12, atol=0.0)
+
+    @pytest.mark.parametrize("scale", OFF_UNIT_SCALES)
+    @pytest.mark.parametrize(
+        "build", [_st_embedder, _modelscope_embedder], ids=["st", "modelscope"]
+    )
+    def test_every_public_encode_path_returns_unit_norm(self, build, scale) -> None:
+        single, batch = self._scaled_arrays(scale)
+        embedder = build(
+            _ScaledEmbeddingModel(single, batch),
+            query_prompt_name="q",
+            document_prompt_name="d",
+        )
+
+        self._assert_unit(embedder.embed("hello"), single)
+        self._assert_unit(embedder.embed_query("hello"), single)
+
+        for path in (embedder.embed_batch, embedder.embed_queries, embedder.embed_documents):
+            vectors = path(["alpha", "beta"])
+            assert len(vectors) == 2
+            for vector, raw in zip(vectors, batch, strict=True):
+                self._assert_unit(vector, raw)
+
+    @pytest.mark.parametrize(
+        "build", [_st_embedder, _modelscope_embedder], ids=["st", "modelscope"]
+    )
+    def test_zero_vectors_pass_through_for_validate_batch(self, build) -> None:
+        embedder = build(_ScaledEmbeddingModel(np.zeros(4), np.zeros((2, 4))))
+
+        assert embedder.embed("hello") == [0.0, 0.0, 0.0, 0.0]
+        assert embedder.embed_batch(["alpha", "beta"]) == [[0.0] * 4, [0.0] * 4]
 
 
 class TestRoleAwareEmbedding:

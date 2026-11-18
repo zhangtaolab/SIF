@@ -3,6 +3,7 @@
 import math
 import time
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from sif.config.settings import Settings
@@ -101,6 +102,12 @@ class EmbeddingManager:
 
         logger.info(f"Loading embedding model: {self._config.model_name}")
 
+        # cache_dir roots the embedding cache database and the OpenAI
+        # dimension cache; model_cache_dir is the verified ModelScope manifest
+        # root and must match ModelDownloader's default and `sif models status`.
+        cache_dir = self._config.cache_dir
+        model_cache_dir = str(Path(cache_dir) / "models") if cache_dir else None
+
         self._model = self._factory.create_model(
             model_type=self._config.model_type,
             model_path=self._config.model_path,
@@ -112,7 +119,8 @@ class EmbeddingManager:
             n_ctx=self._config.n_ctx,
             api_key=self._config.api_key,
             api_base=self._config.api_base,
-            cache_dir=self._config.cache_dir,
+            cache_dir=cache_dir,
+            model_cache_dir=model_cache_dir,
             query_prompt_name=self._prompt_scheme.query_prompt,
             document_prompt_name=self._prompt_scheme.document_prompt,
         )

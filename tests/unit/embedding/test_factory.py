@@ -176,6 +176,43 @@ class TestEmbeddingModelFactoryDispatch:
         _assert_working_embedder(model)
         mock_downloader_class.return_value.download.assert_called_once_with("test-ms", force=False)
 
+    def test_modelscope_dispatch_forwards_model_cache_dir(self) -> None:
+        """model_cache_dir (not cache_dir) roots the ModelDownloader manifest cache."""
+        mock_downloader_class = MagicMock()
+        mock_downloader_class.return_value.download.return_value = Path("/tmp/model")
+
+        with (
+            patch.dict("sys.modules", _sentence_transformers_modules()),
+            patch("sif.embedding.embedder.ModelDownloader", mock_downloader_class),
+        ):
+            EmbeddingModelFactory().create_model(
+                ModelType.MODELSCOPE,
+                None,
+                "test-ms",
+                cache_dir="/cache",
+                model_cache_dir="/cache/models",
+            )
+
+        mock_downloader_class.assert_called_once_with("/cache/models")
+
+    def test_modelscope_dispatch_falls_back_to_cache_dir(self) -> None:
+        """Direct factory callers that only pass cache_dir keep the old model root."""
+        mock_downloader_class = MagicMock()
+        mock_downloader_class.return_value.download.return_value = Path("/tmp/model")
+
+        with (
+            patch.dict("sys.modules", _sentence_transformers_modules()),
+            patch("sif.embedding.embedder.ModelDownloader", mock_downloader_class),
+        ):
+            EmbeddingModelFactory().create_model(
+                ModelType.MODELSCOPE,
+                None,
+                "test-ms",
+                cache_dir="/cache",
+            )
+
+        mock_downloader_class.assert_called_once_with("/cache")
+
     def test_unknown_type_raises_value_error(self) -> None:
         with pytest.raises(ValueError, match="Unsupported model type"):
             EmbeddingModelFactory().create_model("nonsense", None, "x")  # type: ignore[arg-type]

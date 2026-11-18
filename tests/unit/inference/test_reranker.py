@@ -624,7 +624,7 @@ class TestCreateReranker:
         assert isinstance(reranker, Qwen3Reranker)
         assert reranker._model_path == str(tmp_path / "model")
         assert reranker._batch_size == 4
-        assert reranker._cache_dir == str(tmp_path / "cache")
+        assert reranker._cache_dir == str(tmp_path / "cache" / "models")
 
     def test_create_reranker_sentence_transformers_cache_dir(self, tmp_path: Path) -> None:
         settings = MagicMock()
@@ -637,7 +637,7 @@ class TestCreateReranker:
         reranker = create_reranker(settings)
 
         assert isinstance(reranker, CrossEncoderReranker)
-        assert reranker._cache_dir == str(tmp_path / "cache")
+        assert reranker._cache_dir == str(tmp_path / "cache" / "models")
 
     def test_create_reranker_without_cache_accessor(self) -> None:
         settings = SimpleNamespace(

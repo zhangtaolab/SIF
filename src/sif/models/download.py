@@ -263,13 +263,30 @@ def _is_adoptable(path: Path) -> bool:
 
 
 def _legacy_candidates(cache_root: Path, model_id: str, *, include_home: bool) -> tuple[Path, ...]:
-    """Return the recognized legacy locations in deterministic order."""
+    """Return the recognized legacy locations in deterministic order.
+
+    Recognized layouts, tried in order:
+
+    - ``<cache_root>/<owner>/<name___>`` — the ModelScope mangled tree, always.
+    - ``<cache_root>/../<owner>/<name>`` and, when it differs, the mangled
+      spelling — the pre-fix v1.2.0 embedder/reranker layout
+      ``<cache>/<owner>/<name>`` as seen from the canonical ``<cache>/models``
+      root. Probed only when the cache root itself is named ``models``, so an
+      explicit root such as ``/tmp/custom`` never inspects its parent.
+    - ``~/.sif/models/<owner>/<name___>`` — the legacy home tree, only when
+      ``include_home`` is true (the default cache root).
+    """
+    root = Path(cache_root)
     owner, name = _split_model_id(model_id)
     mangled = _mangled_name(name)
-    candidates = (Path(cache_root) / owner / mangled,)
+    candidates = [root / owner / mangled]
+    if root.name == "models":
+        candidates.append(root.parent / owner / name)
+        if mangled != name:
+            candidates.append(root.parent / owner / mangled)
     if include_home:
-        candidates = (*candidates, _home_models_root() / owner / mangled)
-    return candidates
+        candidates.append(_home_models_root() / owner / mangled)
+    return tuple(candidates)
 
 
 def _find_legacy_model_dir(cache_root: Path, model_id: str, *, include_home: bool) -> Path | None:

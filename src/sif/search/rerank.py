@@ -433,7 +433,9 @@ def create_reranker(
     """Factory: create a reranker based on settings."""
     model_type = getattr(settings, "reranker_model_type", "gguf")
     model_name = getattr(settings, "reranker_model_name", "")
-    cache_dir = str(settings.get_cache_dir()) if hasattr(settings, "get_cache_dir") else None
+    cache_dir = (
+        str(settings.get_cache_dir() / "models") if hasattr(settings, "get_cache_dir") else None
+    )
     # D-11 (Phase 16): forward SIF_RERANK_RELATIVE_THRESHOLD to every backend.
     # A non-numeric value (e.g. a wide-open MagicMock settings attribute,
     # research Pitfall 10) falls back to 0.0 instead of leaking into the

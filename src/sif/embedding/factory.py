@@ -106,7 +106,9 @@ class EmbeddingModelFactory:
         return ModelScopeEmbedder(
             model_id=model_name,
             device=kwargs.get("device"),
-            cache_dir=kwargs.get("cache_dir"),
+            # model_cache_dir is the <cache>/models manifest root; the
+            # cache_dir fallback keeps direct factory callers working.
+            cache_dir=(kwargs.get("model_cache_dir") or kwargs.get("cache_dir")),
             max_tokens=kwargs.get("max_tokens"),
             batch_size=kwargs.get("batch_size"),
             query_prompt_name=kwargs.get("query_prompt_name"),

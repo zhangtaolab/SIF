@@ -317,6 +317,8 @@ class TestModelsStatusPayload:
             "dimension",
             "cache_dir",
         }
+        # Status reports the agreed model root, not the embedding-cache root.
+        assert settings["cache_dir"] == str(tmp_path / "cache" / "models")
         cache = payload["cache"]
         assert set(cache) == {"path", "state", "revision"}
         assert payload["vector_backend"]["name"] == "sqlite_vec"
