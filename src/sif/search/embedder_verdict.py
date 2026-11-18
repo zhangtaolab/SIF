@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from sif.search.benchmark import EPSILON
-from sif.search.personal_bench import SUPPRESS_BELOW
+from sif.search.personal_bench import SUPPRESS_BELOW, strictly_above_noise_floor
 
 
 if TYPE_CHECKING:
@@ -194,7 +194,9 @@ def decide_from_gates(
     overall_winner = bool(_gate_value(heldout, "winner"))
     ci_excludes_zero = overall_ci_low > 0 or overall_ci_high < 0
     mean_delta_at_least_epsilon = round(overall_mean_delta, 6) >= EPSILON
-    above_noise_floor = abs(overall_mean_delta) > float(_gate_value(heldout, "noise_floor"))
+    above_noise_floor = strictly_above_noise_floor(
+        overall_mean_delta, float(_gate_value(heldout, "noise_floor"))
+    )
     if not adequate:
         decision = DECISION_INSUFFICIENT
     elif overall_winner and floor_ok:

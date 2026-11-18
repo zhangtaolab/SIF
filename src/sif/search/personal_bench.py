@@ -596,8 +596,25 @@ def jaccard(left: set[str], right: set[str]) -> float:
 
 
 def _mean(values: Sequence[float]) -> float:
-    """Arithmetic mean; empty input yields 0.0 (house style)."""
-    return sum(values) / len(values) if values else 0.0
+    """Arithmetic mean; empty input yields 0.0 (house style).
+
+    ``math.fsum`` (not ``sum``) keeps the mean exact on every supported
+    Python: 3.12+ compensates float summation natively, but 3.10/3.11 do
+    not, so 100 x ``0.01`` averaged naively there yields
+    ``0.010000000000000007`` and would disagree with the 3.12+ verdict.
+    """
+    return math.fsum(values) / len(values) if values else 0.0
+
+
+def strictly_above_noise_floor(mean_delta: float, noise_floor: float) -> bool:
+    """House rounded comparison: a delta at the floor is a tie, never a win.
+
+    Compares rounded values (6 places) rather than raw floats so a nominal
+    ``0.01`` win can never outrank its own ``1/N`` floor through accumulated
+    floating-point error (WR-06); e.g. ``0.010000000000000007`` vs ``0.01``
+    is a tie, not a strict win.
+    """
+    return round(abs(mean_delta), 6) > round(noise_floor, 6)
 
 
 def assign_split(query: str) -> str:
@@ -1873,7 +1890,7 @@ def paired_bootstrap(
         )
     rng = random.Random(seed)
     n = len(deltas)
-    means = [sum(deltas[rng.randrange(n)] for _ in range(n)) / n for _ in range(resamples)]
+    means = [math.fsum(deltas[rng.randrange(n)] for _ in range(n)) / n for _ in range(resamples)]
     return BootstrapResult(
         mean=_mean(deltas),
         ci_low=percentile(means, 2.5),
@@ -1931,7 +1948,7 @@ def noise_gate(
     improvement = round(mean_delta, 6) >= EPSILON
     regression = round(mean_delta, 6) <= -EPSILON
     sufficient = len(deltas) >= SUPPRESS_BELOW
-    exceeds_floor = abs(mean_delta) > noise_floor
+    exceeds_floor = strictly_above_noise_floor(mean_delta, noise_floor)
     return GateResult(
         n=len(deltas),
         baseline_mean=_mean(baseline_values),

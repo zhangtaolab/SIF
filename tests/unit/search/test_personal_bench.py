@@ -74,6 +74,7 @@ from sif.search.personal_bench import (
     sample_documents,
     saved_run_to_dict,
     split_queries,
+    strictly_above_noise_floor,
     strip_markup,
     synthesize_body_queries,
     synthesize_known_item_queries,
@@ -1744,6 +1745,18 @@ class TestNoiseGate:
         assert gate.sufficient is True
         assert gate.winner is True
         assert gate.regression is False
+
+    def test_float_accumulated_epsilon_tie_never_wins(self) -> None:
+        # Python < 3.12 summed floats naively, so 100 x 0.01 reached the gate
+        # as 0.010000000000000007 and a bare `>` let the nominal tie win on CI
+        # (py3.10/3.11 only). The floor comparison rounds, and the mean uses
+        # fsum, so the tie is a tie on every supported Python.
+        assert strictly_above_noise_floor(0.010000000000000007, 0.01) is False
+        gate = noise_gate([0.0] * 100, [0.01] * 100)
+
+        assert gate.mean_delta == 0.01
+        assert gate.noise_floor == 0.01
+        assert gate.winner is False
 
     def test_below_the_tie_rule_never_declares_a_winner(self) -> None:
         gate = noise_gate([0.0] * 10, [0.0099] * 10)
