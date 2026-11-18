@@ -3,14 +3,13 @@ gsd_state_version: "1.0"
 milestone: v1.2
 milestone_name: Search Precision and Agent Experience
 current_phase: 24
-current_phase_name: Tuning + Models UX + Install Docs
-current_plan: 7
-status: verifying
-stopped_at: context exhaustion at 75% (2026-11-18)
-last_updated: "2026-11-18T09:28:19.144Z"
+current_plan: Not started
+status: completed
+stopped_at: Phase 24 complete — all phases complete
+last_updated: "2026-11-18T10:07:01.160Z"
 last_activity: 2026-11-18
-last_activity_desc: Phases 18-23 re-verified 2026-11-18 with fresh fingerprints and marked complete
-state_head: d97838c82a3ffb1849436f40ae8fae35946cce3b
+last_activity_desc: Phase 24 complete
+state_head: 423d9582231edaaba35846be2627d2429303e7cc
 progress:
   total_phases: 8
   completed_phases: 8
@@ -32,11 +31,11 @@ progress:
 
 ## Current Position
 
-Phase: 24 (Tuning + Models UX + Install Docs) — 7/7 plans executed
-Current Plan: 7
+Phase: 24
+Current Plan: Not started
 Total Plans in Phase: 7
-Status: All v1.2 phases verified and complete; Phases 17-23 re-verified 2026-11-18 with fresh fingerprints; milestone close pending
-Last activity: 2026-11-18 - Completed quick task 261118-np7: bump version for the v1.2 milestone release
+Status: All phases complete
+Last activity: 2026-11-18 — Phase 24 complete
 
 Progress: [██████████] 100%
 
@@ -374,7 +373,7 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 ## Session Continuity
 
 Last session: 2026-11-18T07:14:41.672Z
-Stopped at: context exhaustion at 75% (2026-11-18)
+Stopped at: Phase 24 complete — all phases complete
 Resume file: (none; the Phase 24 .continue-here.md remains as the last handoff)
 
 - **Next expected action:** refresh the stale Phase 18-23 verifications (`/gsd-execute-phase <N>` routes each to the verifier re-run gate), then close the v1.2 milestone. Note: the ROADMAP Progress table still lists Phase 24 as `In Progress` (7/8, 88%) even though its checkbox and verification are complete — the `phase.complete 24` bookkeeping was never run. Platform evidence at `256380e`: macOS 3,233 passed / 1 skipped / 95.03%; Linux 3,232 passed / 2 skipped / 95.04% with ruff/format/ty green; Windows smoke 8/8 plus 346 changed-area and 124 affected-module tests. Two audits remain recorded as debt (see Blockers/Concerns): `/gsd-secure-phase 20` and `/gsd:validate-phase 20`.
