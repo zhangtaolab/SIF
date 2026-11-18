@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.2
-milestone_name: Search Precision and Agent Experience
 status: Awaiting next milestone
 stopped_at: Phase 24 complete — all phases complete
-last_updated: "2026-11-18T12:00:39.350Z"
+last_updated: "2026-11-18T13:15:47.494Z"
 last_activity: 2026-11-18
 last_activity_desc: Milestone v1.2 completed and archived
-state_head: b1c1d7ef6092b6d4726444f086d174a03a96feee
+state_head: a13b134c9600929ad904898032d1f5e7254b9fd6
+milestone_name: Search Precision and Agent Experience
+current_phase: 24
 progress:
   total_phases: 8
   completed_phases: 8
   total_plans: 55
   completed_plans: 55
-current_phase: 24
 ---
 
 # DocSift — Project State
@@ -32,7 +32,7 @@ current_phase: 24
 Phase: Milestone v1.2 complete
 Plan: —
 Status: Awaiting next milestone
-Last activity: 2026-11-18 — Milestone v1.2 completed and archived
+Last activity: 2026-11-18 - Completed quick task 261118-i0b: Update the torch dependency floor to >=2.14 (embed and all extras), regenerate uv.lock, update contract tests and install docs
 
 ## Performance Metrics
 
@@ -346,6 +346,7 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
+| 261118-i0b | Update the torch dependency floor to >=2.14 (embed and all extras), regenerate uv.lock, update contract tests and install docs | 2026-11-18 | a13b134 | [261118-i0b-update-the-torch-dependency-floor-to-2-1](./quick/261118-i0b-update-the-torch-dependency-floor-to-2-1/) |
 
 ### Roadmap Evolution
 
