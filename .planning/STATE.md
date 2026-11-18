@@ -2,20 +2,18 @@
 gsd_state_version: "1.0"
 milestone: v1.2
 milestone_name: Search Precision and Agent Experience
-current_phase: 24
-current_plan: Not started
-status: completed
+status: Awaiting next milestone
 stopped_at: Phase 24 complete — all phases complete
-last_updated: "2026-11-18T10:07:01.160Z"
+last_updated: "2026-11-18T12:00:39.350Z"
 last_activity: 2026-11-18
-last_activity_desc: Phase 24 complete
-state_head: 423d9582231edaaba35846be2627d2429303e7cc
+last_activity_desc: Milestone v1.2 completed and archived
+state_head: b1c1d7ef6092b6d4726444f086d174a03a96feee
 progress:
   total_phases: 8
   completed_phases: 8
   total_plans: 55
   completed_plans: 55
-  percent: 100
+current_phase: 24
 ---
 
 # DocSift — Project State
@@ -31,15 +29,10 @@ progress:
 
 ## Current Position
 
-Phase: 24
-Current Plan: Not started
-Total Plans in Phase: 7
-Status: All phases complete
-Last activity: 2026-11-18 — v1.2 shipped: PR #3 merged to main (`975cb09`), tag `v1.2.0`, docsif 1.2.0 live on PyPI + TestPyPI (run 44289577210)
-
-Progress: [██████████] 100%
-
-**v1.2 phase list:** 17 Engineering Foundation (CI + Hygiene + PyPI) · 18 Quality Instrument (Personal Bench + rapidfuzz DYM) · 19 Search Correctness · 20 Metadata Filtering + Discovery · 21 Scale, Maintenance + Embedder Identity · 22 MCP SDK v2 + Agent Packaging · 23 Harrier Gated Evaluation · 24 Tuning + Models UX + Install Docs
+Phase: Milestone v1.2 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-11-18 — Milestone v1.2 completed and archived
 
 ## Performance Metrics
 
@@ -353,7 +346,6 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
-| 261118-np7 | bump version for the v1.2 milestone release | 2026-11-18 | d97838c | [261118-np7-bump-version-for-the-v1-2-milestone-rele](./quick/261118-np7-bump-version-for-the-v1-2-milestone-rele/) |
 
 ### Roadmap Evolution
 
@@ -377,3 +369,7 @@ Stopped at: Phase 24 complete — all phases complete
 Resume file: (none; the Phase 24 .continue-here.md remains as the last handoff)
 
 - **Next expected action:** refresh the stale Phase 18-23 verifications (`/gsd-execute-phase <N>` routes each to the verifier re-run gate), then close the v1.2 milestone. Note: the ROADMAP Progress table still lists Phase 24 as `In Progress` (7/8, 88%) even though its checkbox and verification are complete — the `phase.complete 24` bookkeeping was never run. Platform evidence at `256380e`: macOS 3,233 passed / 1 skipped / 95.03%; Linux 3,232 passed / 2 skipped / 95.04% with ruff/format/ty green; Windows smoke 8/8 plus 346 changed-area and 124 affected-module tests. Two audits remain recorded as debt (see Blockers/Concerns): `/gsd-secure-phase 20` and `/gsd:validate-phase 20`.
+
+## Operator Next Steps
+
+- Start the next milestone with /gsd-new-milestone

@@ -8,9 +8,11 @@ DocSift 是 [qmd](https://github.com/tobi/qmd) 的 Python 重构版本，一个�
 
 用户可以在自己的笔记和文档库中，用自然语言快速、准确地找到需要的信息——无论关键词是否匹配。
 
-## Current Milestone: v1.2 Search Precision and Agent Experience
+## Milestone v1.2: Search Precision and Agent Experience（已发布 2026-11-18）
 
 **Goal:** 让搜索精准可控（元数据过滤 + 正确性修复）、让 MCP 达到 2026 生态就绪（SDK v2 + agent 包装）、让质量提升有 held-out 证据（个人语料评测 + Harrier 评估），并补齐分发与 CI 缺口。
+
+**Shipped:** 2026-11-18 — 8 phases / 55 plans 全部 goal-backward verified `passed`；tag `v1.2.0`，PyPI `docsif` 1.2.0（PR #3，Publish run 44289577210）；全量 3234 passed / 1 skipped @ 95.03%。
 
 **Target features:**
 
@@ -93,7 +95,7 @@ DocSift 是 [qmd](https://github.com/tobi/qmd) 的 Python 重构版本，一个�
 - ✓ 搜索质量：混合权重（BM25/向量/RRF k）可配置（QUAL-01，SC1 逐字节一致 + CLI/MCP/设置全链路） — Validated in Phase 15
 - ✓ 搜索质量：Query suggestions（did-you-mean，QUAL-02/03/04，`sif suggest` 三段式 + query_log + 100ms 预算实测 ≤10ms） — Validated in Phase 15（2026-11-08 重验 30/30，UAT 5/5）
 
-### Validated（v1.2 — Phases 17–23 shipped）
+### Validated（v1.2 — Phases 17–24 shipped 2026-11-18）
 
 - ✓ 工程基础：py3.10–3.13 × ubuntu/macos CI 矩阵、Windows 降级 smoke（hc yoga）、`docsif` 1.1.2 trusted publishing 发布 — Validated in Phase 17
 - ✓ 质量仪器：`sif eval --personal` known-item 评测（bias controls + 保存/对比）、rapidfuzz did-you-mean 测量替换 — Validated in Phase 18
@@ -102,18 +104,11 @@ DocSift 是 [qmd](https://github.com/tobi/qmd) 的 Python 重构版本，一个�
 - ✓ 规模与维护：bounded staleness/contexts 读取、`index vacuum`/backup、流式 embed、`index_meta` embedder identity + role-aware embed — Validated in Phase 21
 - ✓ MCP SDK v2 + agent 包装：官方 `mcp` SDK 组合根、双 era 客户端、七只读工具 + annotations/structuredContent、query pipeline 对等（懒加载 embedder、rerank opt-in）、transport security + 真实 daemon、引用级输出、Claude Code plugin/skills、MCP Registry manifest + 幂等预检脚本（公开 listing 记录 `blocked no-github-login`） — Validated in Phase 22
 - ✓ Harrier 门禁评估：Phase 18 仪器扩展出 per-language × per-leg held-out gates + 语言感知加宽 + `--require-language`；纯判定的双侧 verdict rule；隔离双臂 runbook（身份校验、adequacy preflight、scope-keyed resume、artifact、cleanup guard）；真实 EN+ZH A/B 在用户批准的 curated 双语子集（498 docs，adequacy en=42/zh=11，held-out N=56）上记录 `keep-qwen3`（整体 Δ +0.00943，CI 含 0；en +0.01385，zh −0.00487），默认值未变，Qwen3 保持 — Validated in Phase 23
+- ✓ 调优 + 模型 UX + 安装文档：held-out 门禁的 chunk sweep（记录 keep-default，N=194）与标题面包屑实验（记录 keep-breadcrumb-off，body-leg veto）；`sif models pull/status` + canonical manifest 缓存 + legacy 迁移；uv-first 安装文档（`--torch-backend=cpu` 配方）+ 降级矩阵 — Validated in Phase 24
 
 ### Active
 
-<!-- v1.2 高层目标；细化 REQ-ID 见 REQUIREMENTS.md（定义中） -->
-
-- [x] 元数据过滤（path/mtime/tag/frontmatter，RRF 前）+ metadata 发现 + 分页修复 — Phase 20
-- [x] 搜索正确性与规模（parser 接线、去重、offset、去全表扫、标题 FTS、vacuum） — Phases 19/21
-- [x] MCP SDK v2 现代化 + 注解/structuredContent + query pipeline 对等 + agent 包装 — Phase 22
-- [x] 测试 CI + Windows smoke + PyPI 发布 — Phase 17
-- [x] 个人语料评测仪器 + rapidfuzz 调优 — Phase 18
-- [x] Harrier held-out 评估 — Phase 23（记录 keep-qwen3，默认值不变）
-- [ ] chunk/title 调优 + models UX + 安装文档 — Phase 24
+（None — 下一个里程碑的范围由 `/gsd-new-milestone` 定义。）
 
 ### Out of Scope
 
@@ -164,10 +159,10 @@ DocSift 是 [qmd](https://github.com/tobi/qmd) 的 Python 重构版本，一个�
 | missing-root 防护在共享核心（D-11） | 顺带修复 update_cmd 对消失根目录的潜在全量删除 bug；两条更新路径都有回归测试 | Phase 12 Complete |
 | 文档内容永不作为 Rich markup 渲染 | get/multi-get 内容 `markup=False` 直出、表头 `escape()`——与 05-10/05-11 同类第三例；回归测试锁定（字面渲染、批次不中断、回退路径同等契约） | v1.0 Complete |
 | docs 局部套件 `--no-cov` | 全局 `addopts` 覆盖率 + `fail_under=90` 使 docs-only 运行必失败（CI 自 Phase 10 起恒红）；Makefile 与 docs.yml 双修 | v1.0 Complete |
-| v1.2 范围四决策（2026-11-13）：PDF 不做；MCP 升级 SDK v2；Harrier 纳入但 held-out 门禁；Windows 推迟 + CI smoke | 用户拍板；研究三路交叉验证（代码库差距/qmd 生态/技术选型） | — Pending |
-| Harrier 默认切换门禁：EN+ZH held-out 胜出 + embedder 身份标记（非仅宽度） | 独立证据仅英文（localGPT A/B nDCG 0.915 vs Qwen3-Embedding-4B 0.875；此前转述的 vs-0.6B 0.805 未在该精确值核实）；Harrier 与 Qwen3-0.6B 同 1024 维，宽度守护会静默接受坏切换；query 侧必须 prompt_name | — Pending |
-| Windows smoke 走 hc remote yoga（Win11 26300） | 用户指定；yoga 未装 Python（仅 Store alias），CI phase 需先 uv/Python setup | — Pending |
-| DYM 选型：rapidfuzz 测量替换 > symspellpy 推迟 > spellfix1 跳过 | 个人 KB 规模 difflib 已够用；rapidfuzz 去首字母桶是召回修复；symspellpy 仅 >200k 词表再议 | — Pending |
+| v1.2 范围四决策（2026-11-13）：PDF 不做；MCP 升级 SDK v2；Harrier 纳入但 held-out 门禁；Windows 推迟 + CI smoke | 用户拍板；研究三路交叉验证（代码库差距/qmd 生态/技术选型） | v1.2 Complete |
+| Harrier 默认切换门禁：EN+ZH held-out 胜出 + embedder 身份标记（非仅宽度） | 独立证据仅英文（localGPT A/B nDCG 0.915 vs Qwen3-Embedding-4B 0.875；此前转述的 vs-0.6B 0.805 未在该精确值核实）；Harrier 与 Qwen3-0.6B 同 1024 维，宽度守护会静默接受坏切换；query 侧必须 prompt_name | Phase 23 Complete（keep-qwen3，默认值不变） |
+| Windows smoke 走 hc remote yoga（Win11 26300） | 用户指定；yoga 未装 Python（仅 Store alias），CI phase 需先 uv/Python setup | Phase 17 Complete（8/8 PASS 记录于 48759e2） |
+| DYM 选型：rapidfuzz 测量替换 > symspellpy 推迟 > spellfix1 跳过 | 个人 KB 规模 difflib 已够用；rapidfuzz 去首字母桶是召回修复；symspellpy 仅 >200k 词表再议 | Phase 18 Complete（p50 1.78ms @ 74.9k terms） |
 | Phase 20 过滤 AST 严格对齐 qmd `[Unreleased]`（`qmd@86d2365`，2026-11-15 核实），condition 字段名用 `field` 而非旧 docs 的 `key` | 17 操作符 + `caseInsensitive` 逐字复刻；qmd 尚未发布，parity 固定到当前 era 并在 SUMMARY 记录 `abfabc5` 差异 | Phase 20 Complete |
 | 内置过滤字段只有 `path` / `mtime`；无 `tags` 别名，`title` 不保留 | FILT-02 只点名两个字段；tags 是普通 frontmatter，数组即集合，`contains`/`all` 已够用（D-03/D-04） | Phase 20 Complete |
 | 类型化 kv：单表 `document_metadata_values`（每标量/数组元素一行 + `ordinal`）+ `document_metadata_skips` 旁表；行从 `json.loads(canonical_metadata_json(...))` 派生 | 与 `documents.metadata` 同一序列化来源，YAML 日期不漂移；不引入 JSON1 依赖（D-05/D-07） | Phase 20 Complete |
@@ -186,6 +181,16 @@ DocSift 是 [qmd](https://github.com/tobi/qmd) 的 Python 重构版本，一个�
 | Phase 23：隔离双臂 + 身份校验 + adequacy preflight + scope-keyed resume + artifact writer + cleanup guard；真实 A/B 在用户批准的 curated 双语子集（7 个中文目录，498 docs）上运行 | 一表一向量空间；同宽 1024 维陷阱靠完整 identity 防；preflight 不花 embed 预算；不伪造、不手抄任何指标 | Phase 23 Complete |
 | Phase 23 verdict：`keep-qwen3`；整体 held-out Δ +0.00943（CI [−0.0296,+0.0484]，N=56，噪声地板 0.01786），en +0.01385，zh −0.00487（未破 −0.01 地板）；`default_flip` 与 `zero_delta_proof` 均记录 not-applicable | 无胜出即不切换；Qwen3 路径字节不变；curated 子集结论不外推到主库；模型下载 + 双arm re-embed 成本已记录 | Phase 23 Complete（default unchanged） |
 | Phase 23 代码评审 2 Critical + 6 Warning 修复并附回归测试；IN-03（runbook ruff/format）一并修复；5 Info 保持 open | CR-01 scratch 根可等于 home 导致误删；CR-02 不足证据路径会复用陈旧 artifact；WR-01/02 resume/scope 幂等、WR-03 held-out 表、WR-04 artifact 保留块、WR-05 ranking 设置记录、WR-06 malformed JSON 错误面 | Phase 23 Complete |
+
+## Context（v1.2 shipped 2026-11-18）
+
+- 版本 1.2.0；8 phases (17–24), 55 plans；v1.1.2 → HEAD 共 406 commits、387 files changed（+112,979/−5,766，含测试/夹具/文档）
+- 质量门禁：3234 passed, 1 skipped @ 95.03% coverage（fail_under=90 常驻）、ruff/format/ty 全绿；CI 8 格（py3.10–3.13 × ubuntu/macos）+ Docs Validation 全绿；Linux 3232/2 @ 95.04%、Windows smoke 8/8
+- 分发：`docsif` 1.2.0 发布到 TestPyPI + PyPI（trusted publishing，PR #3 + tag `v1.2.0`）；Claude Code plugin/marketplace + MCP Registry manifest（公开 listing 仍 `blocked no-github-login`）
+- 搜索：qmd-parity 过滤 AST（17 操作符）、标题 FTS、pre-fusion 去重、确定性分页、bounded staleness/contexts、streaming embed、embedder identity
+- 质量：个人语料仪器 + 三项 held-out 门禁全部记录 keep（Harrier keep-qwen3、chunk keep-default、breadcrumb keep-breadcrumb-off）
+- 遗留（非阻塞）：22/23/24 的若干 Info 级评审 findings；隐藏 `sif pull` legacy URL 路径下个版本移除；`24-VALIDATION.md` 仍为 draft（Nyquist 审计未跑）
+- CI 回归修复（618997c）：`_mean` 改 `math.fsum` + `strictly_above_noise_floor()` —— py3.10/3.11 的朴素求和让 0.01 平局误判为胜出
 
 ## Context（v1.1 shipped 2026-11-12）
 
@@ -220,4 +225,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-11-16 after Phase 23（Harrier gated evaluation：真实 EN+ZH A/B 记录 keep-qwen3，默认 embedder 不变；评审 2C+6W 修复；条件 flip/zero-delta 记录 not-applicable）*
+*Last updated: 2026-11-18 after v1.2 milestone（Search Precision and Agent Experience 已发布：docsif 1.2.0、tag v1.2.0、8 phases 全部 verified）*
