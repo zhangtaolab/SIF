@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive documentation
 
 ### Changed
-- N/A
+- The `embed` and `all` extras now declare `torch>=2.11` (minimum supported; 2.14 or newer recommended); `uv.lock` was regenerated with the same resolved torch builds.
 
 ### Deprecated
 - N/A

@@ -128,7 +128,7 @@ def test_pyproject_extras_floors() -> None:
         assert '"sentence-transformers>=5.4.1"' in block, (
             f"[{extra_name}] is missing the sentence-transformers>=5.4.1 floor; block: {block!r}"
         )
-        assert '"torch>=2.14"' in block, (
+        assert '"torch>=2.11"' in block, (
             f"[{extra_name}] is missing the required torch floor; block: {block!r}"
         )
 
@@ -161,7 +161,7 @@ def test_installation_docs_match_extras() -> None:
     """Installation docs carry the new floors and no dev black requirement."""
     text = INSTALLATION.read_text(encoding="utf-8")
 
-    for required in ("sentence-transformers>=5.4.1", "torch>=2.14"):
+    for required in ("sentence-transformers>=5.4.1", "torch>=2.11"):
         assert required in text, f"docs/installation.md is missing {required!r}"
     assert BLACK_DEV_REQUIREMENT not in text, (
         f"docs/installation.md still lists the removed dev requirement {BLACK_DEV_REQUIREMENT!r}"
