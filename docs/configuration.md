@@ -63,17 +63,17 @@ Each environment variable maps to a lowercase Settings field: `SIF_CHUNK_SIZE` s
 | `SIF_QUERY_PROMPT_NAME` | str \| None | `None` | Query-role prompt name passed to the embedding backend; unset uses the known-model default, an empty string disables it |
 | `SIF_DOCUMENT_PROMPT_NAME` | str \| None | `None` | Document-role prompt name passed to the embedding backend; unset uses the known-model default, an empty string disables it |
 
-#### Device Selection (CPU / GPU / MPS)
+#### Device Selection (CPU / GPU / XPU / MPS)
 
 SIF exposes no device setting — each embedding backend picks its compute device automatically.
 
 | Backend | Device behavior |
 |---------|-----------------|
-| `modelscope` (default), `sentence_transformers` | Device auto-detected at model load via torch: CUDA GPU if available, else Apple Metal (MPS) on arm64 macOS, else CPU. No configuration needed. |
+| `modelscope` (default), `sentence_transformers` | Device auto-detected at model load via torch: CUDA GPU if available, else Intel XPU if available, else Apple Metal (MPS) on arm64 macOS, else CPU. No configuration needed. |
 | `gguf` | CPU only by default. `SIF_N_GPU_LAYERS` defaults to `0` (all layers on CPU); values greater than `0` offload that many layers via llama.cpp's GPU support (Metal on Apple Silicon — llama.cpp's own path, not torch MPS). |
 | `openai` | Embeddings are computed by the remote API; local hardware is unused. |
 
-BM25/FTS5 keyword search and sqlite-vec vector search always run on CPU regardless of backend. MPS support ships in the torch wheel installed by the `embed` extra (`pip install "docsif[embed]"`); Apple's Neural Engine (ANE/NPU) is not used by any backend.
+BM25/FTS5 keyword search and sqlite-vec vector search always run on CPU regardless of backend. MPS support ships in the torch wheel installed by the `embed` extra (`pip install "docsif[embed]"`); Intel XPU requires an XPU-enabled torch build (the standard wheel does not provide it). Apple's Neural Engine (ANE/NPU) is not used by any backend.
 
 ### API Settings
 

@@ -17,6 +17,7 @@ from sif.embedding.embedder import (
     ModelScopeEmbedder,
     SentenceTransformerEmbedder,
     SimpleEmbedder,
+    _auto_device,
     _pooling_mode,
     create_embedder,
 )
@@ -159,6 +160,7 @@ class TestCreateEmbedder:
         mock_st = MagicMock()
         mock_torch = MagicMock()
         mock_torch.cuda.is_available.return_value = False
+        mock_torch.xpu.is_available.return_value = False
         mock_mps = MagicMock()
         mock_mps.is_available.return_value = False
         mock_torch.backends.mps = mock_mps
@@ -195,6 +197,7 @@ class TestCreateEmbedder:
 
         mock_torch = MagicMock()
         mock_torch.cuda.is_available.return_value = False
+        mock_torch.xpu.is_available.return_value = False
         mock_mps = MagicMock()
         mock_mps.is_available.return_value = False
         mock_torch.backends.mps = mock_mps
@@ -225,7 +228,11 @@ class TestCreateEmbedder:
 class TestSentenceTransformerEmbedder:
     """Tests for SentenceTransformerEmbedder with mocked dependencies."""
 
-    def _make_modules(self, mock_st_instance: MagicMock | None = None) -> tuple[dict, MagicMock]:
+    def _make_modules(
+        self,
+        mock_st_instance: MagicMock | None = None,
+        xpu_available: bool = False,
+    ) -> tuple[dict, MagicMock]:
         """Create mock modules for sentence-transformers and torch."""
         mock_st = MagicMock()
         if mock_st_instance is not None:
@@ -235,6 +242,7 @@ class TestSentenceTransformerEmbedder:
 
         mock_torch = MagicMock()
         mock_torch.cuda.is_available.return_value = False
+        mock_torch.xpu.is_available.return_value = xpu_available
         mock_mps = MagicMock()
         mock_mps.is_available.return_value = False
         mock_torch.backends.mps = mock_mps
@@ -697,6 +705,7 @@ class TestModelScopeEmbedder:
     def _make_modules(
         self,
         mock_st_instance: MagicMock | None = None,
+        xpu_available: bool = False,
     ) -> tuple[dict, MagicMock]:
         """Create mock modules for ModelScopeEmbedder dependencies."""
         mock_st = MagicMock()
@@ -707,6 +716,7 @@ class TestModelScopeEmbedder:
 
         mock_torch = MagicMock()
         mock_torch.cuda.is_available.return_value = False
+        mock_torch.xpu.is_available.return_value = xpu_available
         mock_mps = MagicMock()
         mock_mps.is_available.return_value = False
         mock_torch.backends.mps = mock_mps
@@ -864,6 +874,7 @@ def _st_embedder(model: object, **kwargs: object) -> SentenceTransformerEmbedder
     st_module.SentenceTransformer.return_value = model
     torch_module = MagicMock()
     torch_module.cuda.is_available.return_value = False
+    torch_module.xpu.is_available.return_value = False
     mps = MagicMock()
     mps.is_available.return_value = False
     torch_module.backends.mps = mps
@@ -881,6 +892,7 @@ def _modelscope_embedder(model: object, **kwargs: object) -> ModelScopeEmbedder:
     st_module.SentenceTransformer.return_value = model
     torch_module = MagicMock()
     torch_module.cuda.is_available.return_value = False
+    torch_module.xpu.is_available.return_value = False
     mps = MagicMock()
     mps.is_available.return_value = False
     torch_module.backends.mps = mps
@@ -1120,3 +1132,91 @@ class TestGgufRevision:
     def test_missing_file_has_no_revision(self, tmp_path: Path) -> None:
         embedder = self._llama_embedder(tmp_path / "absent.gguf")
         assert embedder.revision is None
+
+
+class TestAutoDevice:
+    """Model-free precedence tests for the typed device helper."""
+
+    @staticmethod
+    def _torch(*, cuda: bool = False, xpu: bool = False, mps: bool = False) -> SimpleNamespace:
+        """Build a torch double exposing cuda, xpu, and MPS availability."""
+        module = SimpleNamespace()
+        module.cuda = SimpleNamespace(is_available=lambda: cuda)
+        module.xpu = SimpleNamespace(is_available=lambda: xpu)
+        module.backends = SimpleNamespace(mps=SimpleNamespace(is_available=lambda: mps))
+        return module
+
+    def test_cuda_preferred_when_cuda_and_xpu_available(self) -> None:
+        assert _auto_device(self._torch(cuda=True, xpu=True)) == "cuda"
+
+    def test_xpu_selected_when_cuda_unavailable(self) -> None:
+        assert _auto_device(self._torch(cuda=False, xpu=True)) == "xpu"
+
+    def test_mps_selected_when_cuda_and_xpu_unavailable(self) -> None:
+        assert _auto_device(self._torch(cuda=False, xpu=False, mps=True)) == "mps"
+
+    def test_cpu_when_nothing_available(self) -> None:
+        assert _auto_device(self._torch()) == "cpu"
+
+    def test_torch_without_xpu_attribute_falls_through(self) -> None:
+        module = SimpleNamespace()
+        module.cuda = SimpleNamespace(is_available=lambda: False)
+        module.backends = SimpleNamespace(mps=SimpleNamespace(is_available=lambda: True))
+        assert _auto_device(module) == "mps"
+
+    def test_torch_without_backends_falls_through_to_cpu(self) -> None:
+        module = SimpleNamespace()
+        module.cuda = SimpleNamespace(is_available=lambda: False)
+        module.xpu = SimpleNamespace(is_available=lambda: False)
+        assert _auto_device(module) == "cpu"
+
+
+class TestXpuConstructorSelection:
+    """Constructors pass xpu to sentence-transformers and keep explicit devices."""
+
+    @staticmethod
+    def _xpu_only_torch() -> MagicMock:
+        mock_torch = MagicMock()
+        mock_torch.cuda.is_available.return_value = False
+        mock_torch.xpu.is_available.return_value = True
+        mock_mps = MagicMock()
+        mock_mps.is_available.return_value = False
+        mock_torch.backends.mps = mock_mps
+        return mock_torch
+
+    @staticmethod
+    def _st_module(dimension: int) -> tuple[MagicMock, MagicMock]:
+        mock_model = MagicMock()
+        mock_model.get_sentence_embedding_dimension.return_value = dimension
+        mock_st = MagicMock()
+        mock_st.return_value = mock_model
+        st_module = MagicMock()
+        st_module.SentenceTransformer = mock_st
+        return st_module, mock_st
+
+    def test_sentence_transformer_passes_xpu_device(self) -> None:
+        st_module, mock_st = self._st_module(384)
+        modules = {"sentence_transformers": st_module, "torch": self._xpu_only_torch()}
+        with patch.dict("sys.modules", modules):
+            with patch("sif.embedding.embedder.is_quiet", return_value=False):
+                SentenceTransformerEmbedder(model_name="test")
+        assert mock_st.call_args.kwargs["device"] == "xpu"
+
+    def test_modelscope_passes_xpu_device(self) -> None:
+        st_module, mock_st = self._st_module(1024)
+        downloader = MagicMock()
+        downloader.return_value.download.return_value = Path("/tmp/model")
+        modules = {"sentence_transformers": st_module, "torch": self._xpu_only_torch()}
+        with patch.dict("sys.modules", modules):
+            with patch("sif.embedding.embedder.ModelDownloader", downloader):
+                with patch("sif.embedding.embedder.is_quiet", return_value=False):
+                    ModelScopeEmbedder(model_id="test-model")
+        assert mock_st.call_args.kwargs["device"] == "xpu"
+
+    def test_explicit_device_bypasses_xpu_detection(self) -> None:
+        st_module, mock_st = self._st_module(384)
+        modules = {"sentence_transformers": st_module, "torch": self._xpu_only_torch()}
+        with patch.dict("sys.modules", modules):
+            with patch("sif.embedding.embedder.is_quiet", return_value=False):
+                SentenceTransformerEmbedder(model_name="test", device="cpu")
+        assert mock_st.call_args.kwargs["device"] == "cpu"

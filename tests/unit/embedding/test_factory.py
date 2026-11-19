@@ -58,6 +58,7 @@ def _sentence_transformers_modules() -> dict[str, MagicMock]:
 
     mock_torch = MagicMock()
     mock_torch.cuda.is_available.return_value = False
+    mock_torch.xpu.is_available.return_value = False
     mock_mps = MagicMock()
     mock_mps.is_available.return_value = False
     mock_torch.backends.mps = mock_mps

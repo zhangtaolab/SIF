@@ -265,7 +265,7 @@ def _append_header(lines: list[str]) -> None:
 def _append_device_selection_note(lines: list[str]) -> None:
     """Append the Device Selection note under the Embedding Model Settings table."""
     lines.append("")
-    lines.append("#### Device Selection (CPU / GPU / MPS)")
+    lines.append("#### Device Selection (CPU / GPU / XPU / MPS)")
     lines.append("")
     lines.append(
         "SIF exposes no device setting — each embedding backend picks its "
@@ -276,8 +276,9 @@ def _append_device_selection_note(lines: list[str]) -> None:
     lines.append("|---------|-----------------|")
     lines.append(
         "| `modelscope` (default), `sentence_transformers` | Device auto-detected "
-        "at model load via torch: CUDA GPU if available, else Apple Metal (MPS) "
-        "on arm64 macOS, else CPU. No configuration needed. |"
+        "at model load via torch: CUDA GPU if available, else Intel XPU if "
+        "available, else Apple Metal (MPS) on arm64 macOS, else CPU. No "
+        "configuration needed. |"
     )
     lines.append(
         "| `gguf` | CPU only by default. `SIF_N_GPU_LAYERS` defaults to `0` "
@@ -292,8 +293,9 @@ def _append_device_selection_note(lines: list[str]) -> None:
     lines.append(
         "BM25/FTS5 keyword search and sqlite-vec vector search always run on CPU "
         "regardless of backend. MPS support ships in the torch wheel installed "
-        'by the `embed` extra (`pip install "docsif[embed]"`); Apple\'s Neural '
-        "Engine (ANE/NPU) is not used by any backend."
+        'by the `embed` extra (`pip install "docsif[embed]"`); Intel XPU requires '
+        "an XPU-enabled torch build (the standard wheel does not provide it). "
+        "Apple's Neural Engine (ANE/NPU) is not used by any backend."
     )
 
 
