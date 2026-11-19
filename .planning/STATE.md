@@ -3,10 +3,10 @@ gsd_state_version: "1.0"
 milestone: v1.2
 status: Awaiting next milestone
 stopped_at: Phase 24 complete — all phases complete
-last_updated: "2026-11-18T15:48:21.620Z"
-last_activity: 2026-11-18
-last_activity_desc: Milestone v1.2 completed and archived
-state_head: f665eee153c535d51b5cbb04e103bf04a0b99b00
+last_updated: "2026-11-19T01:22:32.000Z"
+last_activity: 2026-11-19
+last_activity_desc: Quick task 261119-bl9 completed — Intel XPU auto-selection and three-env Windows verification
+state_head: 82df76b0510e62077a65a8eac2bd447154e23bf6
 milestone_name: Search Precision and Agent Experience
 current_phase: 24
 progress:
@@ -32,7 +32,7 @@ progress:
 Phase: Milestone v1.2 complete
 Plan: —
 Status: Awaiting next milestone
-Last activity: 2026-11-18 - Completed quick task 261118-lmm: Reduce the CI matrix to six cells (macOS only on py3.10/3.13) and trigger push CI only on main, updating the CI contract tests and docs
+Last activity: 2026-11-19 - Completed quick task 261119-bl9: Verify three Windows conda envs (dnallm-cpu/cuda/xpu) and add Intel XPU auto-selection (CUDA > XPU > MPS > CPU) to SIF's embedding backends with model-free tests and docs
 
 ## Performance Metrics
 
@@ -351,6 +351,7 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 | 261118-ipu | Follow-up fixes: normalize cached embeddings on read (issue #4 stale-cache gap) and make the Qwen3 reranker CPU-load test hermetic on GPU hosts | 2026-11-18 | ffad91b | [261118-ipu-follow-up-fixes-normalize-cached-embeddi](./quick/261118-ipu-follow-up-fixes-normalize-cached-embeddi/) |
 | 261118-jbj | Release v1.2.1: bump version across all parity surfaces, add changelog section, and update install docs for CUDA/MPS/CPU backends | 2026-11-18 | 62c5d99 | [261118-jbj-release-v1-2-1-bump-version-across-all-p](./quick/261118-jbj-release-v1-2-1-bump-version-across-all-p/) |
 | 261118-lmm | Reduce the CI matrix to six cells (macOS only on py3.10/3.13) and trigger push CI only on main, updating the CI contract tests and docs | 2026-11-18 | f665eee | [261118-lmm-reduce-the-ci-matrix-to-six-cells-macos-](./quick/261118-lmm-reduce-the-ci-matrix-to-six-cells-macos-/) |
+| 261119-bl9 | Verify Windows conda envs dnallm-cpu/cuda/xpu and add Intel XPU auto-selection (CUDA > XPU > MPS > CPU) with tests and docs | 2026-11-19 | 82df76b | [261119-bl9-windows-conda-env-verification-for-sif-c](./quick/261119-bl9-windows-conda-env-verification-for-sif-c/) |
 
 ### Roadmap Evolution
 
