@@ -35,6 +35,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - N/A
 
+## [1.2.2] - 2026-11-19
+
+### Added
+- Embedding device detection now auto-selects Intel XPU with CUDA > Intel XPU > Apple MPS > CPU precedence; the typed `_auto_device` helper serves both the sentence-transformers and ModelScope backends, covered by model-free tests and documented in `docs/configuration.md` and `docs/installation.md`.
+
+### Changed
+- The release version is now `1.2.2`, still single-sourced in `src/sif/_version.py`.
+- The `embed` and `all` extras now declare `torch>=2.11` (minimum supported; 2.14 or newer recommended); `uv.lock` was regenerated with the same resolved torch builds.
+
+### Fixed
+- `sif ls` and `sif collection ls` subpath filters now normalize separators on both sides, so POSIX-style subpaths match on Windows and the `collection ls` tree renders POSIX separators on every platform.
+- The test suite collects on Windows: the index-locking test guards its `fcntl` import, POSIX-only service, daemon, and signal tests skip on Windows with a stated reason, symlink-dependent tests skip only when the host forbids symlink creation, and permission-bit and Rich-width assertions are platform-honest.
+
 ## [1.2.1] - 2026-11-18
 
 ### Changed
@@ -270,8 +283,9 @@ Thanks to all contributors who have helped shape SIF!
 
 ---
 
-[Unreleased]: https://github.com/zhangtaolab/sif/compare/v1.2.1...HEAD
+[Unreleased]: https://github.com/zhangtaolab/sif/compare/v1.2.2...HEAD
 [0.1.0]: https://github.com/zhangtaolab/sif/releases
+[1.2.2]: https://github.com/zhangtaolab/sif/releases/tag/v1.2.2
 [1.2.1]: https://github.com/zhangtaolab/sif/releases/tag/v1.2.1
 [1.2.0]: https://github.com/zhangtaolab/sif/releases/tag/v1.2.0
 [1.1.2]: https://github.com/zhangtaolab/sif/releases/tag/v1.1.2

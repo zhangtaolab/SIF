@@ -24,9 +24,20 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import TypeVar
 
+import pytest
+
 from sif.core.models import Collection
 from sif.database.database import Database
 from sif.database.repositories import CollectionRepository
+
+
+pytestmark = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason=(
+        "the e2e harness stops the watcher with Popen.send_signal(SIGINT), "
+        "unsupported on Windows; foreground watch stays covered by the Windows smoke"
+    ),
+)
 
 
 _SEED_BODY = "# Seed Note\n\n" + ("Seed paragraph text. " * 30)

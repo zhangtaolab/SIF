@@ -27,6 +27,7 @@ WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 TEST_MATRIX = WORKFLOWS / "test-matrix.yml"
 SETUP_UV_SHA = "astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2"
 PYTHON_VERSION_MATRIX = "python-version: ['3.10', '3.11', '3.12', '3.13']"
+MATRIX_EXCLUSION = re.compile(r"- os: (\S+)\n +python-version: '([0-9.]+)'")
 
 
 def _section(text: str, name: str) -> str:
@@ -127,7 +128,7 @@ def test_pyproject_extras_floors() -> None:
         assert '"sentence-transformers>=5.4.1"' in block, (
             f"[{extra_name}] is missing the sentence-transformers>=5.4.1 floor; block: {block!r}"
         )
-        assert '"torch>=2.14"' in block, (
+        assert '"torch>=2.11"' in block, (
             f"[{extra_name}] is missing the required torch floor; block: {block!r}"
         )
 
@@ -160,7 +161,7 @@ def test_installation_docs_match_extras() -> None:
     """Installation docs carry the new floors and no dev black requirement."""
     text = INSTALLATION.read_text(encoding="utf-8")
 
-    for required in ("sentence-transformers>=5.4.1", "torch>=2.14"):
+    for required in ("sentence-transformers>=5.4.1", "torch>=2.11"):
         assert required in text, f"docs/installation.md is missing {required!r}"
     assert BLACK_DEV_REQUIREMENT not in text, (
         f"docs/installation.md still lists the removed dev requirement {BLACK_DEV_REQUIREMENT!r}"
@@ -178,8 +179,8 @@ def test_installation_docs_match_extras() -> None:
     assert offenders == [], f"docs still advertise {BLACK_DEV_REQUIREMENT!r}: {offenders}"
 
 
-def test_matrix_declares_eight_cells() -> None:
-    """The matrix is a fixed literal 4 Python versions x 2 operating systems."""
+def test_matrix_declares_six_cells() -> None:
+    """The matrix is 4 Python versions x 2 operating systems minus two macOS cells."""
     text = _workflow_text()
 
     missing = [
@@ -198,6 +199,12 @@ def test_matrix_declares_eight_cells() -> None:
     assert count == 1, (
         "test-matrix.yml must declare the contiguous python-version list exactly once; "
         f"found {count}: {PYTHON_VERSION_MATRIX!r}"
+    )
+    exclusions = MATRIX_EXCLUSION.findall(_job_block(text, "test"))
+    expected = [("macos-latest", "3.11"), ("macos-latest", "3.12")]
+    assert exclusions == expected, (
+        "the matrix exclusions make the matrix six cells (Linux 3.10-3.13; macOS 3.10 and "
+        f"3.13); expected {expected} but found {exclusions}"
     )
 
 
@@ -240,12 +247,13 @@ def test_setup_uv_is_sha_pinned() -> None:
     )
 
 
-def test_matrix_excludes_tag_pushes() -> None:
-    """Only branch pushes and pull requests trigger the matrix; tags never do."""
+def test_matrix_push_trigger_is_main_only() -> None:
+    """Push CI runs on main only, and tags never trigger the matrix."""
     text = _workflow_text()
 
-    assert re.search(r"^  push:\n    branches:", text, re.MULTILINE) is not None, (
-        "test-matrix.yml push trigger must declare branches:; text: " + repr(text)
+    assert re.search(r"^on:\n  push:\n    branches: \[main\]\n", text, re.MULTILINE) is not None, (
+        "test-matrix.yml push trigger must be exactly 'branches: [main]' so feature branches "
+        "rely on their pull request run; text: " + repr(text)
     )
     assert "tags:" not in text, (
         "test-matrix.yml must not trigger on tags (the release workflow owns v* tags)"

@@ -102,6 +102,31 @@ def _file_sha256(path: Path) -> str | None:
     return f"sha256:{digest.hexdigest()}"
 
 
+def _auto_device(torch_module: Any) -> str:
+    """Select the best available torch compute device.
+
+    Precedence is CUDA, then Intel XPU, then Apple MPS, then CPU. Guarded
+    ``getattr`` lookups let torch builds without an XPU or MPS backend fall
+    through instead of raising.
+
+    Args:
+        torch_module: The imported ``torch`` module (or a compatible double).
+
+    Returns:
+        One of ``"cuda"``, ``"xpu"``, ``"mps"``, or ``"cpu"``.
+    """
+    if torch_module.cuda.is_available():
+        return "cuda"
+    xpu = getattr(torch_module, "xpu", None)
+    if xpu is not None and xpu.is_available():
+        return "xpu"
+    backends = getattr(torch_module, "backends", None)
+    mps = getattr(backends, "mps", None)
+    if mps is not None and mps.is_available():
+        return "mps"
+    return "cpu"
+
+
 class SentenceTransformerEmbedder(Embedder):
     """Embedder using sentence-transformers."""
 
@@ -144,12 +169,7 @@ class SentenceTransformerEmbedder(Embedder):
         if device is None:
             import torch  # noqa: PLC0415
 
-            if torch.cuda.is_available():
-                device = "cuda"
-            elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-                device = "mps"
-            else:
-                device = "cpu"
+            device = _auto_device(torch)
 
         logger.info(f"Loading embedding model: {model_name} on {device}")
 
@@ -516,12 +536,7 @@ class ModelScopeEmbedder(Embedder):
         if device is None:
             import torch  # noqa: PLC0415
 
-            if torch.cuda.is_available():
-                device = "cuda"
-            elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-                device = "mps"
-            else:
-                device = "cpu"
+            device = _auto_device(torch)
 
         logger.info(f"Loading ModelScope model: {model_id} on {device}")
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import sys
 from contextlib import closing
 from pathlib import Path
 from types import SimpleNamespace
@@ -27,6 +28,7 @@ from sif.database.maintenance import (
     reconcile_embedded_documents,
     vacuum_index,
 )
+from tests.support import symlink_or_skip
 
 
 def _settings() -> Settings:
@@ -290,7 +292,7 @@ class TestBackupTargetRefusals:
         if kind == "exists":
             output.write_bytes(b"do not overwrite")
         elif kind == "symlink":
-            output.symlink_to(tmp_path / "elsewhere.db")
+            symlink_or_skip(output, tmp_path / "elsewhere.db")
         elif kind == "db_path":
             output = db_path
         elif kind == "wal":
@@ -333,7 +335,9 @@ class TestBackupIndex:
 
         assert result.output == output.resolve()
         assert result.bytes_written == output.stat().st_size
-        assert output.stat().st_mode & 0o777 == 0o600
+        if sys.platform != "win32":
+            # Windows reports 0666 and cannot enforce POSIX permission bits.
+            assert output.stat().st_mode & 0o777 == 0o600
         assert maintenance._verify_backup(output) == [("ok",)]
         with closing(sqlite3.connect(output)) as conn:
             assert conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
@@ -415,14 +419,18 @@ class TestBackupIndex:
         finally:
             os.umask(previous_umask)
 
-        assert source.modes == [0o600]
-        assert output.stat().st_mode & 0o777 == 0o600
+        if sys.platform != "win32":
+            # Windows reports 0666 and cannot enforce POSIX permission bits.
+            assert source.modes == [0o600]
+            assert output.stat().st_mode & 0o777 == 0o600
 
     def test_target_is_created_exclusively_without_following_symlinks(self, tmp_path: Path) -> None:
         """WR-04: creation, not a path pre-check, enforces the target contract."""
         target = tmp_path / "copy.db"
         maintenance._create_backup_target(target)
-        assert target.stat().st_mode & 0o777 == 0o600
+        if sys.platform != "win32":
+            # Windows reports 0666 and cannot enforce POSIX permission bits.
+            assert target.stat().st_mode & 0o777 == 0o600
 
         # A file that appeared after validation is refused, never overwritten.
         with pytest.raises(MaintenanceTargetError, match="already exists"):
@@ -430,7 +438,7 @@ class TestBackupIndex:
 
         elsewhere = tmp_path / "elsewhere.db"
         link = tmp_path / "link.db"
-        link.symlink_to(elsewhere)
+        symlink_or_skip(link, elsewhere)
         with pytest.raises(MaintenanceTargetError):
             maintenance._create_backup_target(link)
         assert not elsewhere.exists()

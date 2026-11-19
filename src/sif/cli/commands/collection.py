@@ -356,8 +356,12 @@ def collection_ls(ctx: click.Context, name: str, subpath: str | None) -> None:
         if subpath:
             sub = Path(subpath)
             resolved = sub if sub.is_absolute() else Path(collection.path) / sub
-            target = str(resolved).rstrip("/")
-            files = [f for f in files if str(f) == target or str(f).startswith(target + "/")]
+            # Normalize both sides to forward-slash form: on Windows a
+            # backslash path never matches a "/"-suffixed comparison.
+            target = resolved.as_posix().rstrip("/")
+            files = [
+                f for f in files if f.as_posix() == target or f.as_posix().startswith(target + "/")
+            ]
 
         if not files:
             console.print("[yellow]No files found in collection.[/yellow]")
@@ -368,7 +372,9 @@ def collection_ls(ctx: click.Context, name: str, subpath: str | None) -> None:
 
         for file_path in sorted(files):
             rel_path = file_path.relative_to(collection.path)
-            tree.add(str(rel_path))
+            # Render forward-slash relative paths on every platform so the
+            # listing is identical to the POSIX form on Windows.
+            tree.add(rel_path.as_posix())
 
         console.print(tree)
 

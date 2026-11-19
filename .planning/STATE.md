@@ -3,10 +3,10 @@ gsd_state_version: "1.0"
 milestone: v1.2
 status: Awaiting next milestone
 stopped_at: Phase 24 complete — all phases complete
-last_updated: "2026-11-18T14:07:58.972Z"
-last_activity: 2026-11-18
-last_activity_desc: Milestone v1.2 completed and archived
-state_head: 62c5d99361d4f0f13d1d6df022adb35289bf43d3
+last_updated: "2026-11-19T06:38:54.846Z"
+last_activity: 2026-11-19
+last_activity_desc: Quick task 261119-juo completed — release metadata bumped to 1.2.2
+state_head: 9f6a227793a79ae4f03272c0481d7c341a3b3b88
 milestone_name: Search Precision and Agent Experience
 current_phase: 24
 progress:
@@ -32,7 +32,7 @@ progress:
 Phase: Milestone v1.2 complete
 Plan: —
 Status: Awaiting next milestone
-Last activity: 2026-11-18 - Completed quick task 261118-jbj: Release v1.2.1: bump version across all parity surfaces, add changelog section, and update install docs for CUDA/MPS/CPU backends
+Last activity: 2026-11-19 - Completed quick task 261119-juo: bump the release version to 1.2.2 across the single version literal, server.json, plugin/marketplace manifests, changelog, install docs, and release-metadata tests
 
 ## Performance Metrics
 
@@ -350,6 +350,10 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 | 261118-ib0 | Fix GitHub issues #4 (L2-norm gate abort on Qwen3-Embedding) and #5 (model cache root omits /models) | 2026-11-18 | 5f9c086 | [261118-ib0-fix-github-issues-4-l2-norm-gate-abort-o](./quick/261118-ib0-fix-github-issues-4-l2-norm-gate-abort-o/) |
 | 261118-ipu | Follow-up fixes: normalize cached embeddings on read (issue #4 stale-cache gap) and make the Qwen3 reranker CPU-load test hermetic on GPU hosts | 2026-11-18 | ffad91b | [261118-ipu-follow-up-fixes-normalize-cached-embeddi](./quick/261118-ipu-follow-up-fixes-normalize-cached-embeddi/) |
 | 261118-jbj | Release v1.2.1: bump version across all parity surfaces, add changelog section, and update install docs for CUDA/MPS/CPU backends | 2026-11-18 | 62c5d99 | [261118-jbj-release-v1-2-1-bump-version-across-all-p](./quick/261118-jbj-release-v1-2-1-bump-version-across-all-p/) |
+| 261118-lmm | Reduce the CI matrix to six cells (macOS only on py3.10/3.13) and trigger push CI only on main, updating the CI contract tests and docs | 2026-11-18 | f665eee | [261118-lmm-reduce-the-ci-matrix-to-six-cells-macos-](./quick/261118-lmm-reduce-the-ci-matrix-to-six-cells-macos-/) |
+| 261119-bl9 | Verify Windows conda envs dnallm-cpu/cuda/xpu and add Intel XPU auto-selection (CUDA > XPU > MPS > CPU) with tests and docs | 2026-11-19 | 82df76b | [261119-bl9-windows-conda-env-verification-for-sif-c](./quick/261119-bl9-windows-conda-env-verification-for-sif-c/) |
+| 261119-fww | Windows portability follow-ups: guard fcntl test imports, mark POSIX-only tests, fix Windows subpath filters, lower torch floor to 2.11 (2.14 recommended), regenerate uv.lock | 2026-11-19 | 848e6b6 | [261119-fww-windows-portability-follow-ups-guard-fcn](./quick/261119-fww-windows-portability-follow-ups-guard-fcn/) |
+| 261119-juo | Release 1.2.2: bump the version literal and all parity surfaces (server.json, plugin/marketplace manifests, changelog, install docs, release-metadata tests) | 2026-11-19 | 9f6a227 | [261119-juo-release-version-1-2-2-bump-the-single-ve](./quick/261119-juo-release-version-1-2-2-bump-the-single-ve/) |
 
 ### Roadmap Evolution
 

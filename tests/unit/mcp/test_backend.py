@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import sqlite3
 import threading
 import time
@@ -22,6 +21,7 @@ from sif.mcp import backend as backend_module
 from sif.mcp.backend import HybridSearchResults, SearchBackend, _truncate_content
 from sif.mcp.protocol import CollectionInfo, Document, QueryInput, SearchResult
 from sif.utils.paths import normalize_path
+from tests.support import symlink_or_skip
 
 
 @pytest.fixture
@@ -378,7 +378,7 @@ async def test_get_document_alias_path_normalized(backend, tmp_path: Path):
     real_dir.mkdir()
     (real_dir / "a.md").write_text("hello", encoding="utf-8")
     alias_dir = tmp_path / "notes_alias"
-    os.symlink(real_dir, alias_dir)
+    symlink_or_skip(alias_dir, real_dir, target_is_directory=True)
     alias_arg = str(alias_dir / "a.md")
 
     mock_doc = MagicMock()
@@ -413,7 +413,7 @@ async def test_get_documents_by_pattern_alias_prefix(backend, tmp_path: Path):
     real_dir.mkdir()
     (real_dir / "a.md").write_text("hello", encoding="utf-8")
     alias_dir = tmp_path / "notes_alias"
-    os.symlink(real_dir, alias_dir)
+    symlink_or_skip(alias_dir, real_dir, target_is_directory=True)
 
     mock_doc = MagicMock()
     mock_doc.id = "doc1"

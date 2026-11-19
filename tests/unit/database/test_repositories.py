@@ -34,6 +34,7 @@ from sif.database.repositories import (
 )
 from sif.database.schema import SchemaManager
 from sif.utils.paths import normalize_path
+from tests.support import symlink_or_skip
 
 
 @pytest.fixture
@@ -112,7 +113,7 @@ def alias_pair(tmp_path):
     doc = vault / "doc.md"
     doc.write_text("# Doc\nneedle content\n", encoding="utf-8")
     alias_dir = tmp_path / "alias"
-    alias_dir.symlink_to(vault)
+    symlink_or_skip(alias_dir, vault, target_is_directory=True)
     return str(doc), str(alias_dir / "doc.md")
 
 
@@ -601,6 +602,7 @@ class TestDocumentMetadataCanonicalStorage:
 class TestLLMCacheExpiryWR09:
     """WR-09: cache expiry must compare parsed instants, not ISO string order."""
 
+    @pytest.mark.skipif(not hasattr(time, "tzset"), reason="tzset unavailable")
     @pytest.mark.usefixtures("east_of_utc")
     def test_set_stores_aware_utc_expiry(self, db):
         """set() writes an aware-UTC (+00:00) expiry at the correct instant."""

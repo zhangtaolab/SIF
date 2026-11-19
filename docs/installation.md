@@ -130,7 +130,7 @@ them; pick the extra that matches the features you need.
 
 | Extra | Installs | Enables |
 |-------|----------|---------|
-| `embed` | `sentence-transformers>=5.4.1`, `torch>=2.14`, `modelscope>=1.36.0`, `numpy>=1.24.0` | Local embeddings for vector and hybrid search |
+| `embed` | `sentence-transformers>=5.4.1`, `torch>=2.11`, `modelscope>=1.36.0`, `numpy>=1.24.0` | Local embeddings for vector and hybrid search |
 | `all` | the `embed` packages plus `llama-cpp-python>=0.3.35` and `openai>=2.0.0` | GGUF (llama.cpp) and OpenAI-compatible backends as well |
 | `openai` | `openai>=2.0.0` | OpenAI-compatible API backends only |
 | `dev` | `pytest>=7.0.0`, `pytest-cov>=4.0.0`, `pytest-asyncio>=0.23.0`, `ruff>=0.1.0`, `ty>=0.0.1` | Contributing to SIF |
@@ -143,13 +143,17 @@ For vector search functionality:
 uv tool install 'docsif[embed]'
 ```
 
-This installs `sentence-transformers>=5.4.1`, `torch>=2.14`, `modelscope>=1.36.0`,
-and `numpy>=1.24.0`.
+This installs `sentence-transformers>=5.4.1`, `torch>=2.11`, `modelscope>=1.36.0`,
+and `numpy>=1.24.0`. torch 2.14 or newer is recommended for the widest backend
+compatibility; 2.11 is the minimum supported floor (verified with the vendor cpu,
+cu130, and xpu builds).
 
 With the `embed` extra installed, the local embedding backends pick their
 compute device automatically at model load — CUDA GPU where torch has it,
-Apple Metal (MPS) on arm64 macOS, otherwise CPU. No extra setup or
-configuration is needed; see [Configuration](configuration.md) for
+Intel XPU where the installed torch is an XPU-enabled build, Apple Metal
+(MPS) on arm64 macOS, otherwise CPU. XPU auto-detection requires that
+XPU-enabled torch build; the standard wheel does not provide it. No extra
+setup or configuration is needed; see [Configuration](configuration.md) for
 per-backend details.
 
 ### llama-cpp-python (GGUF) backend
@@ -308,10 +312,12 @@ uv tool install 'docsif[embed]'
 
 Do not pass `--torch-backend=cpu` on macOS: the macOS wheel already includes MPS, and the CPU backend has no matching macOS wheel for the current torch fleet.
 
-**Hardware acceleration**: on Apple Silicon Macs the modelscope and
-sentence_transformers backends automatically use the GPU via Metal (MPS). GGUF
-(llama.cpp) models run on CPU only unless `SIF_N_GPU_LAYERS` is set above 0,
-which enables llama.cpp Metal offload (distinct from MPS). See
+**Hardware acceleration**: the modelscope and sentence_transformers backends
+auto-select CUDA, Intel XPU, Apple Metal (MPS), or CPU. On Apple Silicon Macs
+they use the GPU via Metal (MPS); on an Intel XPU host they use XPU when the
+installed torch is an XPU-enabled build (the standard wheel does not provide
+it). GGUF (llama.cpp) models run on CPU only unless `SIF_N_GPU_LAYERS` is set
+above 0, which enables llama.cpp Metal offload (distinct from MPS). See
 [Configuration](configuration.md) for the full device-selection behavior.
 
 ### Windows
@@ -343,7 +349,7 @@ sif --help
 
 Expected output:
 ```
-sif, version 1.2.1
+sif, version 1.2.2
 
 Usage: sif [OPTIONS] COMMAND [ARGS]...
 

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 import signal
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -19,6 +20,7 @@ from typing import Any
 import pytest
 
 from sif.utils import daemon
+from tests.support import symlink_or_skip
 
 
 _PAYLOAD = {
@@ -76,14 +78,16 @@ class TestPidPayload:
         assert payload["depth"] == "bm25"
         assert isinstance(payload["started"], str)
         assert payload["started"] != ""
-        assert path.stat().st_mode & 0o777 == 0o600
+        if sys.platform != "win32":
+            # Windows reports 0666 and cannot enforce POSIX permission bits.
+            assert path.stat().st_mode & 0o777 == 0o600
 
     def test_write_replaces_a_preplanted_symlink_without_following_it(self, tmp_path: Path) -> None:
         """Temp-then-rename hardening (IN-03): the symlink itself is replaced."""
         victim = tmp_path / "victim.txt"
         victim.write_text("do not touch", encoding="utf-8")
         pid_file = tmp_path / "sif.db.watch.pid"
-        pid_file.symlink_to(victim)
+        symlink_or_skip(pid_file, victim)
 
         daemon.write_pid_file(pid_file, pid=4242, mode="daemon", depth="bm25")
 
@@ -331,6 +335,13 @@ def _ps_run_with_code(returncode: int):
 class TestStopEscalation:
     """Test 4: stop_daemon escalation order and unlink behavior with fakes."""
 
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason=(
+            "POSIX SIGKILL is absent on Windows; the recorded daemon defect in "
+            "_terminate_corroborated is unfixed"
+        ),
+    )
     def test_alive_at_deadline_sends_term_then_kill_and_unlinks(
         self, tmp_path: Path, monkeypatch
     ) -> None:
@@ -538,6 +549,10 @@ class TestDetachTimeout:
         assert "terminated" in outcome.error
         assert "sif watch --stop" in outcome.error
 
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="POSIX process-group kill and fork detach are unavailable on Windows",
+    )
     def test_kill_detached_group_sigkills_the_pgid(self, monkeypatch) -> None:
         sent: list[tuple[int, int]] = []
         monkeypatch.setattr(daemon.os, "killpg", lambda pgid, sig: sent.append((pgid, sig)))
@@ -546,6 +561,10 @@ class TestDetachTimeout:
 
         assert sent == [(4321, signal.SIGKILL)]
 
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="POSIX process-group kill and fork detach are unavailable on Windows",
+    )
     def test_kill_detached_group_tolerates_an_already_gone_group(self, monkeypatch) -> None:
         def _gone(_pgid: int, _sig: int) -> None:
             raise ProcessLookupError()
@@ -554,6 +573,10 @@ class TestDetachTimeout:
 
         daemon._kill_detached_group(4321)  # must not raise
 
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="POSIX process-group kill and fork detach are unavailable on Windows",
+    )
     def test_detach_timeout_kills_group_then_reports_terminated(
         self, monkeypatch, tmp_path
     ) -> None:

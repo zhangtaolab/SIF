@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from collections.abc import Callable
 from pathlib import Path
 
@@ -67,6 +68,10 @@ class TestResolveCorpusRoot:
         )
         assert resolved == Path("/tmp/pack/corpus").resolve()
 
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="a drive-less /tmp/... root is not absolute on Windows",
+    )
     def test_absolute_declared_root_resolves_as_is(self) -> None:
         resolved = resolve_corpus_root(
             {"corpus_root": "/tmp/abs/corpus"},

@@ -13,6 +13,7 @@ executes the real contexts query against real SQLite.
 import inspect
 import logging
 import sqlite3
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -24,6 +25,7 @@ from sif.database.schema import SchemaManager
 from sif.search import context_attach
 from sif.search.context_attach import attach_path_contexts, enrich_results
 from sif.utils.paths import normalize_path
+from tests.support import symlink_or_skip
 
 
 @pytest.fixture
@@ -41,7 +43,7 @@ def alias_pair(tmp_path):
     doc = vault / "doc.md"
     doc.write_text("# Doc\nneedle content\n", encoding="utf-8")
     alias_dir = tmp_path / "alias"
-    alias_dir.symlink_to(vault)
+    symlink_or_skip(alias_dir, vault, target_is_directory=True)
     return str(doc), str(alias_dir / "doc.md")
 
 
@@ -201,6 +203,10 @@ class TestAttachPathContextsRealSQL:
         assert normalized_missing == str((tmp_path / "vault").resolve() / "missing.md")
         assert not Path(normalized_missing).exists()
 
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="ntpath maps an unknown ~user to C:\\Users\\<user> instead of failing",
+    )
     def test_normalize_path_unexpandable_tilde_degrades_to_raw_form(self):
         """REVIEW WR-01: an un-expandable ~user form returns the raw string, never raises.
 
