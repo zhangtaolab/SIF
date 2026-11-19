@@ -51,8 +51,15 @@ def ls_cmd(
             if subpath:
                 sub = Path(subpath)
                 resolved = sub if sub.is_absolute() else Path(coll.path) / sub
-                target = str(resolved).rstrip("/")
-                docs = [d for d in docs if d.path == target or d.path.startswith(target + "/")]
+                # Normalize both sides to forward-slash form: on Windows a
+                # backslash path never matches a "/"-suffixed comparison.
+                target = resolved.as_posix().rstrip("/")
+                docs = [
+                    d
+                    for d in docs
+                    if Path(d.path).as_posix() == target
+                    or Path(d.path).as_posix().startswith(target + "/")
+                ]
 
             if not docs:
                 continue

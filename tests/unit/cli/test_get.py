@@ -16,6 +16,7 @@ from sif.core.models import Collection, Document
 from sif.database.database import Database
 from sif.database.repositories import CollectionRepository, DocumentRepository
 from sif.utils.paths import normalize_path
+from tests.support import symlink_or_skip
 
 
 class TrackingDatabase(Database):
@@ -102,7 +103,7 @@ class RealDatabaseTestCase:
         for document in documents:
             Path(document.path).write_text(document.content, encoding="utf-8")
         notes_alias = tmp_path / "notes_alias"
-        os.symlink(notes_real, notes_alias)
+        symlink_or_skip(notes_alias, notes_real, target_is_directory=True)
         db_path = tmp_path / "sif.db"
         with Database(db_path) as db:
             db.init_schema()

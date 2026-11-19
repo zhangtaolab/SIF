@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import sqlite3
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -23,6 +24,7 @@ from sif.core.models import Collection, PathContext
 from sif.database.database import Database
 from sif.database.repositories import ContextRepository
 from sif.utils.paths import normalize_path
+from tests.support import symlink_or_skip
 
 
 class TestContextGroup:
@@ -246,7 +248,7 @@ class TestContextAddNormalizedPaths:
         doc = vault / "doc.md"
         doc.write_text("# Doc\n", encoding="utf-8")
         alias_dir = tmp_path / "alias"
-        alias_dir.symlink_to(vault)
+        symlink_or_skip(alias_dir, vault, target_is_directory=True)
         return str(doc), str(alias_dir / "doc.md")
 
     def test_add_path_symlink_alias_stores_resolved_form(self, mock_db, alias_pair) -> None:
@@ -308,6 +310,10 @@ class TestContextAddNormalizedPaths:
         assert "~" not in stored.path
         assert Path(stored.path).is_absolute()
 
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="ntpath maps an unknown ~user to C:\\Users\\<user> instead of failing",
+    )
     def test_add_path_unexpandable_tilde_clean_error(self, mock_db) -> None:
         """REVIEW WR-01: an un-expandable '~user' target exits with a clean error.
 
@@ -437,7 +443,7 @@ class TestContextAddNormalizedPaths:
         resolved, alias = alias_pair
         canonical = normalize_path(resolved)
         alias2_dir = tmp_path / "alias2"
-        alias2_dir.symlink_to(tmp_path / "vault")
+        symlink_or_skip(alias2_dir, tmp_path / "vault", target_is_directory=True)
         alias2 = str(alias2_dir / "doc.md")
         assert normalize_path(alias2) == canonical
         legacy_old = PathContext(
@@ -566,7 +572,7 @@ class TestContextAddMultiAliasSelfHeal:
         doc = vault / "doc.md"
         doc.write_text("# Doc\n", encoding="utf-8")
         alias_dir = tmp_path / "alias"
-        alias_dir.symlink_to(vault)
+        symlink_or_skip(alias_dir, vault, target_is_directory=True)
         alias = str(alias_dir / "doc.md")
         canonical = normalize_path(str(doc))
         assert normalize_path(alias) == canonical
@@ -593,9 +599,9 @@ class TestContextAddMultiAliasSelfHeal:
         doc = vault / "doc.md"
         doc.write_text("# Doc\n", encoding="utf-8")
         alias1_dir = tmp_path / "alias1"
-        alias1_dir.symlink_to(vault)
+        symlink_or_skip(alias1_dir, vault, target_is_directory=True)
         alias2_dir = tmp_path / "alias2"
-        alias2_dir.symlink_to(vault)
+        symlink_or_skip(alias2_dir, vault, target_is_directory=True)
         alias1 = str(alias1_dir / "doc.md")
         alias2 = str(alias2_dir / "doc.md")
         canonical = normalize_path(str(doc))
@@ -949,6 +955,10 @@ class TestContextConfirmationMarkupLiteral:
             ).fetchall()
         return [(row[0], row[1]) for row in rows]
 
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="a filename containing '/' is POSIX-only; on Windows '/' is a separator",
+    )
     def test_add_bracket_named_target_persists_and_renders_literally(self, tmp_path) -> None:
         """Create branch: a bracket-named target exits 0 with exactly one row persisted.
 
@@ -984,6 +994,10 @@ class TestContextConfirmationMarkupLiteral:
         assert "[/3]" in result.output.replace("\n", "")
         assert self._path_rows(db_path) == [(canonical, "my note")]
 
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="a filename containing '/' is POSIX-only; on Windows '/' is a separator",
+    )
     def test_readd_bracket_named_target_updates_and_renders_literally(self, tmp_path) -> None:
         """Update branch: re-adding a bracket-named canonical row refreshes content.
 

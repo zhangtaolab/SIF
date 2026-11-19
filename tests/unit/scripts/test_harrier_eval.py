@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -1486,6 +1487,10 @@ class TestArtifact:
 class TestCleanupGuard:
     """Cleanup can never delete outside the declared scratch root."""
 
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="POSIX filesystem-root semantics; Path('/') is not the Windows drive root",
+    )
     def test_refuses_the_filesystem_root(self, tmp_path: Path) -> None:
         with pytest.raises(ValueError, match="filesystem root"):
             assert_within_scratch(Path("/"), tmp_path)
@@ -1504,6 +1509,10 @@ class TestCleanupGuard:
         with pytest.raises(ValueError, match="scratch root"):
             assert_within_scratch(home / "saved-runs" / "qwen3.json", home)
 
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="POSIX filesystem-root semantics; Path('/') is not the Windows drive root",
+    )
     def test_refuses_a_nested_target_under_the_filesystem_root(self) -> None:
         with pytest.raises(ValueError, match="scratch root"):
             assert_within_scratch(Path("/qwen3.db"), Path("/"))

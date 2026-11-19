@@ -1,5 +1,6 @@
 """Behavior tests for path expansion, normalization, and directory helpers."""
 
+import sys
 from pathlib import Path
 from unittest.mock import patch
 
@@ -14,11 +15,16 @@ from sif.utils.paths import (
     is_markdown_file,
     normalize_path,
 )
+from tests.support import symlink_or_skip
 
 
 class TestPathHelpers:
     """Path helpers use real temporary directories and isolated platform overrides."""
 
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="HOME is ignored by ntpath.expanduser on Windows; Path.home() uses USERPROFILE",
+    )
     def test_expand_path_home_relative_and_dot_segments(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -36,13 +42,17 @@ class TestPathHelpers:
         real_dir = tmp_path / "real"
         real_dir.mkdir()
         alias = tmp_path / "alias"
-        alias.symlink_to(real_dir)
+        symlink_or_skip(alias, real_dir, target_is_directory=True)
 
         result = normalize_path(alias / "future.md")
 
         assert result == str(real_dir.resolve() / "future.md")
         assert Path(result).is_absolute()
 
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="ntpath maps an unknown ~user to C:\\Users\\<user> instead of failing",
+    )
     def test_normalize_unexpandable_user_degrades_to_raw_string(self) -> None:
         """An unknown ~user target is a non-throwing nonmatching raw path."""
         raw = "~sif-no-such-user-7f3a/notes.md"

@@ -45,6 +45,9 @@ def _child_env(
     env.pop("FORCE_COLOR", None)
     env["NO_COLOR"] = "1"
     env["HOME"] = str(home)
+    # Windows' ntpath.expanduser ignores HOME and reads USERPROFILE, so set it
+    # too; the migration probe must see the same temp home on every platform.
+    env["USERPROFILE"] = str(home)
     env["SIF_DB_PATH"] = str(db_path)
     env.update(overrides or {})
     return env
