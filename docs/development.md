@@ -623,7 +623,7 @@ git push origin v1.1.2
 curl -s https://pypi.org/pypi/docsif/1.1.2/json | python -c "import json, sys; print(json.load(sys.stdin)['info']['version'])"
 
 uvx pypi-attestations verify pypi \
-  --repository https://github.com/zhangtaolab/sif \
+  --repository https://github.com/zhangtaolab/SIF \
   pypi:docsif-1.1.2-py3-none-any.whl
 
 python -m venv /tmp/sif-release-venv
