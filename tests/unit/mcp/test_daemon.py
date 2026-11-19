@@ -429,6 +429,10 @@ class TestMcpDaemonEndToEnd:
                 _wait_pid_gone(pid, _STOP_DEADLINE_S)
             pid_path.unlink(missing_ok=True)
 
+    @pytest.mark.skipif(
+        not hasattr(os, "fork"),
+        reason="POSIX double-fork daemons; the CLI refuses daemon arming on Windows",
+    )
     def test_daemon_bind_failure_removes_pid_and_propagates(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

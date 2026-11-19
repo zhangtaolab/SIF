@@ -423,6 +423,10 @@ class TestServiceFlags:
         assert "--install-service" in result.output
         assert "--uninstall-service" in result.output
 
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="the watch service is refused on Windows; service install/uninstall is POSIX-only",
+    )
     def test_install_prints_artifact_log_and_verify_and_bakes_tail(
         self, tmp_path, monkeypatch
     ) -> None:
@@ -464,6 +468,10 @@ class TestServiceFlags:
         # The service must not depend on a user cwd: the db path is absolute.
         assert Path(captured["db"]).is_absolute()
 
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="the watch service is refused on Windows; service install/uninstall is POSIX-only",
+    )
     def test_install_on_linux_documents_linger(self, tmp_path, monkeypatch) -> None:
         """D-13: the systemd install output surfaces loginctl enable-linger."""
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
@@ -489,6 +497,10 @@ class TestServiceFlags:
         assert result.exit_code == 0
         assert "loginctl enable-linger" in result.output
 
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="the watch service is refused on Windows; service install/uninstall is POSIX-only",
+    )
     def test_uninstall_reports_stop_then_remove(self, tmp_path, monkeypatch) -> None:
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         plist = tmp_path / "Library" / "LaunchAgents" / "com.docsif.watch.plist"
@@ -563,6 +575,10 @@ class TestServiceFlags:
         assert embed_tail == ["-c", "notes", "--embed"]
         assert bm25_tail == ["-c", "notes", "--no-embed"]
 
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="the watch service is refused on Windows; service install/uninstall is POSIX-only",
+    )
     def test_install_bakes_no_embed_flag_under_ambient_embed_setting(
         self, tmp_path, monkeypatch
     ) -> None:
@@ -593,6 +609,10 @@ class TestServiceFlags:
         assert result.exit_code == 0
         assert captured["tail"] == ["-c", "notes", "--no-embed"]
 
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="the watch service is refused on Windows; service install/uninstall is POSIX-only",
+    )
     def test_install_plain_bm25_still_bakes_no_embed(self, tmp_path, monkeypatch) -> None:
         """CLI plumbing (IN-01): a plain BM25 install — no depth flags, ambient
         setting bm25 — still bakes --no-embed, so a service environment that
@@ -643,6 +663,10 @@ class TestServiceFlags:
         assert result.exit_code != 0
         assert "--install-service" in result.output
 
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="the watch service is refused on Windows; service install/uninstall is POSIX-only",
+    )
     def test_missing_manager_surfaces_as_click_error(self, tmp_path, monkeypatch) -> None:
         """A missing launchctl/systemctl is a friendly ClickException, never a traceback."""
         monkeypatch.setattr(Path, "home", lambda: tmp_path)

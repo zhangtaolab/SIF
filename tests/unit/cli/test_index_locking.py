@@ -14,7 +14,6 @@ the loser's wait, forced by the held lock.
 
 from __future__ import annotations
 
-import fcntl
 import os
 import sqlite3
 import time
@@ -34,6 +33,8 @@ from sif.database.database import Database
 from sif.database.repositories import CollectionRepository, DocumentRepository
 from sif.indexing.incremental import IncrementalIndexer
 
+
+fcntl = pytest.importorskip("fcntl", reason="flock arbitration is POSIX-only (A2)")
 
 DIM = 8
 

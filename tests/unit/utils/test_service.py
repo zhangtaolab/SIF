@@ -15,6 +15,7 @@ import os
 import plistlib
 import stat
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -91,6 +92,10 @@ class TestPlistGeneration:
 class TestUnitGeneration:
     """Test 2: the systemd user unit carries the locked D-13 keys (any platform)."""
 
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="systemd ExecStart quoting over a Windows drive path; systemd units are POSIX-only",
+    )
     def test_rendered_text_carries_sections_and_exec_start(self, tmp_path) -> None:
         db = tmp_path / "sif.db"
 
@@ -123,6 +128,10 @@ class TestUnitGeneration:
 class TestInstallArgvLaunchd:
     """Test 3: exact launchctl argv (bootstrap, verify) and a 0644 artifact."""
 
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="launchd domain target uses os.getuid, which Windows lacks",
+    )
     def test_bootstrap_then_print_with_domain_target_and_mode(self, tmp_path, monkeypatch) -> None:
         _fake_which(monkeypatch)
         dest_dir = tmp_path / "LaunchAgents"
@@ -179,13 +188,19 @@ class TestInstallArgvSystemd:
         assert result.artifact_path == unit_path
         assert result.log_location == "journalctl --user -u sif-watch -f"
         assert result.verify_command == "systemctl --user status sif-watch"
-        assert _mode_of(unit_path) == 0o644
+        if sys.platform != "win32":
+            # Windows reports 0666 and cannot enforce POSIX permission bits.
+            assert _mode_of(unit_path) == 0o644
         assert "Type=simple" in unit_path.read_text()
 
 
 class TestReinstallConflict:
     """Test 5 (Pitfall 5): a conflicting bootstrap is booted out, then retried."""
 
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="launchd domain target uses os.getuid, which Windows lacks",
+    )
     def test_first_bootstrap_failure_runs_bootout_then_retries(self, tmp_path, monkeypatch) -> None:
         _fake_which(monkeypatch)
         dest_dir = tmp_path / "LaunchAgents"
@@ -269,6 +284,10 @@ class TestRunTimeout:
 
         assert seen["timeout"] == service._RUN_TIMEOUT_SECONDS
 
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="launchd install reaches os.getuid, which Windows lacks",
+    )
     def test_timeout_maps_to_service_command_error(self, tmp_path, monkeypatch) -> None:
         _fake_which(monkeypatch)
 
@@ -293,6 +312,10 @@ class TestRunTimeout:
 class TestUninstallArgv:
     """Stop-then-remove semantics for both managers (D-11/D-12)."""
 
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="launchd domain target uses os.getuid, which Windows lacks",
+    )
     def test_launchd_bootout_then_unlink(self, tmp_path, monkeypatch) -> None:
         _fake_which(monkeypatch)
         dest_dir = tmp_path / "LaunchAgents"

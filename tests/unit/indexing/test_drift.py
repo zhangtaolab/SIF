@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import shutil
 import sqlite3
+import sys
 from pathlib import Path
 from unittest.mock import patch
 
@@ -413,6 +414,13 @@ class TestRefreshDrifted:
         assert _doc_stats(db_path)[str(doc.resolve())] != float(TOUCH_MTIME)
         assert _doc_content(db_path, str(doc.resolve())) == BODY_ALPHA.rstrip()
 
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason=(
+            "flock arbitration is POSIX-only; index_lock degrades without creating "
+            "a lock file on Windows"
+        ),
+    )
     def test_refresh_creates_the_lock_file_only_when_working(self, tmp_path, monkeypatch) -> None:
         """index_lock lives inside refresh_drifted: present after a real burst, absent on empty."""
         _delenv_settings_vars(monkeypatch)
