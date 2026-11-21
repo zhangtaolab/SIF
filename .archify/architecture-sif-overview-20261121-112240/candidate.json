@@ -1,0 +1,582 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "SIF 本地混合检索：组件与边界",
+    "locale": "zh-CN",
+    "output": ".archify/architecture-sif-overview-20261121-112240/sif-architecture.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/zhangtaolab/SIF",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "d6117ed1d9238cbb354903c870da5654e4011615"
+    }
+  },
+  "components": [
+    {
+      "id": "aiclient",
+      "type": "external",
+      "label": "AI 客户端",
+      "sublabel": "Claude Code / Desktop",
+      "pos": [
+        40,
+        120
+      ],
+      "size": [
+        130,
+        64
+      ]
+    },
+    {
+      "id": "users",
+      "type": "external",
+      "label": "终端用户",
+      "sublabel": "shell",
+      "pos": [
+        40,
+        250
+      ],
+      "size": [
+        130,
+        64
+      ]
+    },
+    {
+      "id": "mcp",
+      "type": "backend",
+      "label": "MCP Server",
+      "sublabel": "stdio / HTTP",
+      "pos": [
+        250,
+        110
+      ],
+      "size": [
+        150,
+        70
+      ],
+      "sources": [
+        {
+          "path": "src/sif/mcp/app.py",
+          "line": 166,
+          "end_line": 201,
+          "label": "build_server"
+        },
+        {
+          "path": "src/sif/mcp/backend.py",
+          "line": 219,
+          "end_line": 231,
+          "label": "SearchBackend"
+        }
+      ]
+    },
+    {
+      "id": "cli",
+      "type": "frontend",
+      "label": "sif CLI",
+      "sublabel": "Click + Rich",
+      "pos": [
+        250,
+        250
+      ],
+      "size": [
+        150,
+        74
+      ],
+      "sources": [
+        {
+          "path": "src/sif/cli/main.py",
+          "line": 60,
+          "end_line": 122,
+          "label": "命令组注册"
+        }
+      ]
+    },
+    {
+      "id": "pipeline",
+      "type": "backend",
+      "label": "SearchPipeline",
+      "sublabel": "前缀路由 · 融合",
+      "pos": [
+        460,
+        230
+      ],
+      "size": [
+        180,
+        140
+      ],
+      "sources": [
+        {
+          "path": "src/sif/search/hybrid.py",
+          "line": 228,
+          "end_line": 263,
+          "label": "构造与协作者"
+        },
+        {
+          "path": "src/sif/search/hybrid.py",
+          "line": 311,
+          "end_line": 336,
+          "label": "search 路由"
+        }
+      ]
+    },
+    {
+      "id": "bm25",
+      "type": "backend",
+      "label": "BM25Searcher",
+      "sublabel": "FTS5 关键词",
+      "pos": [
+        710,
+        150
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "src/sif/search/bm25.py",
+          "line": 47,
+          "end_line": 75,
+          "label": "FTS5 查询"
+        }
+      ]
+    },
+    {
+      "id": "vector",
+      "type": "backend",
+      "label": "VectorSearcher",
+      "sublabel": "sqlite-vec KNN",
+      "pos": [
+        710,
+        320
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "src/sif/search/vector.py",
+          "line": 46,
+          "end_line": 63,
+          "label": "vec0 探测"
+        }
+      ]
+    },
+    {
+      "id": "rrf",
+      "type": "backend",
+      "label": "RRFFusion",
+      "sublabel": "加权 RRF",
+      "pos": [
+        950,
+        240
+      ],
+      "size": [
+        130,
+        64
+      ],
+      "sources": [
+        {
+          "path": "src/sif/search/rrf.py",
+          "line": 50,
+          "end_line": 69,
+          "label": "fuse 签名"
+        }
+      ]
+    },
+    {
+      "id": "rerank",
+      "type": "backend",
+      "label": "Reranker",
+      "sublabel": "可选 · 交叉编码",
+      "pos": [
+        950,
+        110
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "sources": [
+        {
+          "path": "src/sif/search/rerank.py",
+          "line": 430,
+          "end_line": 448,
+          "label": "create_reranker"
+        }
+      ]
+    },
+    {
+      "id": "out",
+      "type": "frontend",
+      "label": "结果输出",
+      "sublabel": "片段 + 行号",
+      "pos": [
+        1160,
+        240
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "sources": [
+        {
+          "path": "src/sif/cli/formatters.py",
+          "line": 6,
+          "end_line": 25,
+          "label": "结果行格式化"
+        }
+      ]
+    },
+    {
+      "id": "db",
+      "type": "database",
+      "label": "sif.db",
+      "sublabel": "SQLite · FTS5 + vec0",
+      "pos": [
+        710,
+        430
+      ],
+      "size": [
+        450,
+        84
+      ],
+      "sources": [
+        {
+          "path": "src/sif/database/schema.py",
+          "line": 542,
+          "end_line": 550,
+          "label": "FTS5 外部内容表"
+        },
+        {
+          "path": "src/sif/database/schema.py",
+          "line": 711,
+          "end_line": 718,
+          "label": "vec0 向量表"
+        }
+      ]
+    },
+    {
+      "id": "writer",
+      "type": "backend",
+      "label": "StreamingEmbedWriter",
+      "sublabel": "批嵌入 · 单文档提交",
+      "pos": [
+        710,
+        600
+      ],
+      "size": [
+        200,
+        64
+      ],
+      "sources": [
+        {
+          "path": "src/sif/indexing/embed_writer.py",
+          "line": 126,
+          "end_line": 166,
+          "label": "写入协作者"
+        }
+      ]
+    },
+    {
+      "id": "model",
+      "type": "cloud",
+      "label": "Embedding 后端",
+      "sublabel": "GGUF / ST / OpenAI",
+      "pos": [
+        990,
+        600
+      ],
+      "size": [
+        160,
+        64
+      ],
+      "sources": [
+        {
+          "path": "src/sif/embedding/factory.py",
+          "line": 22,
+          "end_line": 41,
+          "label": "四种后端"
+        },
+        {
+          "path": "src/sif/embedding/manager.py",
+          "line": 27,
+          "end_line": 60,
+          "label": "加载与缓存"
+        }
+      ]
+    },
+    {
+      "id": "notes",
+      "type": "database",
+      "label": "笔记目录",
+      "sublabel": "Markdown 文件",
+      "pos": [
+        40,
+        440
+      ],
+      "size": [
+        140,
+        64
+      ],
+      "sources": [
+        {
+          "path": "src/sif/core/collection.py",
+          "line": 8,
+          "end_line": 25,
+          "label": "Collection.paths"
+        }
+      ]
+    },
+    {
+      "id": "indexer",
+      "type": "backend",
+      "label": "IncrementalIndexer",
+      "sublabel": "扫描 · 解析 · 分块",
+      "pos": [
+        250,
+        420
+      ],
+      "size": [
+        190,
+        90
+      ],
+      "sources": [
+        {
+          "path": "src/sif/indexing/incremental.py",
+          "line": 72,
+          "end_line": 94,
+          "label": "单一更新循环"
+        },
+        {
+          "path": "src/sif/indexing/incremental.py",
+          "line": 96,
+          "end_line": 142,
+          "label": "update_collection"
+        }
+      ]
+    },
+    {
+      "id": "watch",
+      "type": "backend",
+      "label": "FileWatcher",
+      "sublabel": "sif watch",
+      "pos": [
+        40,
+        570
+      ],
+      "size": [
+        160,
+        64
+      ],
+      "sources": [
+        {
+          "path": "src/sif/indexing/watcher.py",
+          "line": 377,
+          "end_line": 386,
+          "label": "观察者/worker"
+        },
+        {
+          "path": "src/sif/indexing/watcher.py",
+          "line": 416,
+          "end_line": 421,
+          "label": "start 监听根目录"
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "查询链路（单次请求内融合排序）",
+      "wraps": [
+        "pipeline",
+        "bm25",
+        "vector",
+        "rrf",
+        "rerank",
+        "out"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "users-cli",
+      "from": "users",
+      "to": "cli",
+      "label": "sif 命令",
+      "variant": "emphasis"
+    },
+    {
+      "id": "client-mcp",
+      "from": "aiclient",
+      "to": "mcp",
+      "label": "MCP 调用",
+      "variant": "emphasis"
+    },
+    {
+      "id": "cli-pipeline",
+      "from": "cli",
+      "to": "pipeline",
+      "label": "查询"
+    },
+    {
+      "id": "mcp-pipeline",
+      "from": "mcp",
+      "to": "pipeline",
+      "label": "工具调用"
+    },
+    {
+      "id": "pipeline-bm25",
+      "from": "pipeline",
+      "to": "bm25",
+      "label": "关键词"
+    },
+    {
+      "id": "pipeline-vector",
+      "from": "pipeline",
+      "to": "vector",
+      "label": "向量检索"
+    },
+    {
+      "id": "bm25-rrf",
+      "from": "bm25",
+      "to": "rrf",
+      "label": "命中列表"
+    },
+    {
+      "id": "vector-rrf",
+      "from": "vector",
+      "to": "rrf",
+      "label": "命中列表"
+    },
+    {
+      "id": "rrf-rerank",
+      "from": "rrf",
+      "to": "rerank",
+      "label": "可选重排",
+      "variant": "dashed"
+    },
+    {
+      "id": "rrf-out",
+      "from": "rrf",
+      "to": "out",
+      "label": "结果页"
+    },
+    {
+      "id": "rerank-out",
+      "from": "rerank",
+      "to": "out"
+    },
+    {
+      "id": "notes-indexer",
+      "from": "notes",
+      "to": "indexer",
+      "label": "扫描"
+    },
+    {
+      "id": "notes-watch",
+      "from": "notes",
+      "to": "watch",
+      "label": "文件变更"
+    },
+    {
+      "id": "watch-indexer",
+      "from": "watch",
+      "to": "indexer",
+      "label": "事件批"
+    },
+    {
+      "id": "cli-indexer",
+      "from": "cli",
+      "to": "indexer",
+      "label": "index update"
+    },
+    {
+      "id": "indexer-db",
+      "from": "indexer",
+      "to": "db",
+      "label": "文档 / 分块"
+    },
+    {
+      "id": "bm25-db",
+      "from": "bm25",
+      "to": "db",
+      "label": "FTS5 检索",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "vector-db",
+      "from": "vector",
+      "to": "db",
+      "label": "vec0 KNN",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "db-writer",
+      "from": "db",
+      "to": "writer",
+      "label": "读取文档",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDx": -80
+    },
+    {
+      "id": "writer-db",
+      "from": "writer",
+      "to": "db",
+      "label": "提交向量",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "labelDx": 80
+    },
+    {
+      "id": "writer-model",
+      "from": "writer",
+      "to": "model",
+      "label": "批量嵌入"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "两个入口共用一条链路",
+      "items": [
+        "CLI 与 MCP 都构造 SearchPipeline，前缀 lex: / vec: / hyde: / expand: 决定走向",
+        "MCP 每次调用新开 DatabaseConnection，在 asyncio 线程中执行",
+        "lex: 查询不加载嵌入模型"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "写入路径",
+      "items": [
+        "sif index update 与 sif watch 共用 IncrementalIndexer",
+        "每个文件一个 BEGIN IMMEDIATE 提交，失败不丢已完成文件",
+        "嵌入在事务外分批计算，再以单事务提交分块与向量"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "边界",
+      "items": [
+        "索引是单个 sif.db 文件；嵌入缓存另存 embeddings_cache.db",
+        "跨进程写入由 {db_path}.lock 上的 flock 串行",
+        "默认全部本地；只有选 OpenAI / ModelScope 后端时文本才离开本机"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "降级与开关",
+      "items": [
+        "无 sqlite-vec 时向量检索直接报错，BM25 仍可用",
+        "重排默认关闭，--rerank 或 SIF_RERANK_ENABLED=1 才启用",
+        "嵌入身份或维度不匹配：混合检索退回 BM25 并标记向量过期"
+      ]
+    }
+  ]
+}
