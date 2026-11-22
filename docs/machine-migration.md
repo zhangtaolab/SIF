@@ -17,7 +17,7 @@ process, documented in [Migration Guide: DocSift to SIF](migration.md).
 | Embedding cache | `<cache>/embeddings_cache.db`, where `<cache>` is `SIF_CACHE_DIR` if set, else the platform cache dir: `~/Library/Caches/sif` (macOS), `~/.cache/sif` (Linux) | Copy the file (optional, but recommended) |
 | Model cache | `<cache>/models/<owner>/<name>` under the same `<cache>` root | Copy the tree, or run `sif models pull` on machine B |
 | Configuration | `.env` in the directory you invoke `sif` from, plus `SIF_*` variables in your shell profile | Recreate by hand; never bulk-copy secrets |
-| MCP and watch integrations | MCP client entries, launchd/systemd service definitions | Recreate on machine B (they embed paths) |
+| MCP and watch integrations | MCP client entries, launchd/systemd service definitions | Recreate on machine B; service definitions embed absolute paths, and client entries must find the installed `sif` command |
 | Source notes | Wherever your Markdown lives | Any file transfer (rsync, scp, git) |
 
 The index database is self-contained. It holds the full document text, the
@@ -89,6 +89,9 @@ paths and revision differ):
 }
 ```
 
+The stored and current fingerprints can differ while `status` is `match`:
+identity comparison is field-wise, not fingerprint equality.
+
 Also record:
 
 - The `.env` file in the directory you invoke `sif` from (Settings reads
@@ -152,9 +155,9 @@ The command:
 
 With `--output` omitted, the snapshot lands in
 `<db_dir>/backups/<stem>-<UTC>.db`. Either way the command prints the
-`Output` path and `Size` — record them. If disk space is tight,
-`sif index vacuum` reclaims unused space first; it likewise requires no other
-writer, but it is optional and not part of the migration.
+`Output` path and `Size` — record them. If disk space is tight, run
+`sif index vacuum` when no other writer is active; it reclaims unused space.
+It is optional and not part of the migration.
 
 **There is no `sif index restore` command.** Restoring means placing the
 backup file at the target database path on machine B (see
@@ -207,7 +210,8 @@ uv tool install --torch-backend=auto 'docsif[embed]'
 
 Two storage engines are worth knowing about:
 
-- **FTS5** ships with Python's SQLite — nothing extra to install.
+- **FTS5** ships with standard Python's SQLite — nothing extra to install (if
+  a custom build lacks it, use a Python whose SQLite includes FTS5).
 - **sqlite-vec** is a core dependency. BM25 keyword search works without it,
   but the CLI vector and hybrid commands fail fast, and the MCP
   `hybrid_search` tool degrades to BM25-only with a one-time warning.
@@ -296,9 +300,11 @@ Check the resolved state at any time:
 sif models status --json
 ```
 
-The `identity.status` field reports `match`, `mismatch`, or
-`dimension-mismatch`. GPU versus CPU versus MPS does not change stored vectors
-— only the model identity matters.
+The `identity.status` field reports `match`, `mismatch`,
+`dimension-mismatch`, or `no-index`/`no-identity` before vectors exist. GPU
+versus CPU versus MPS does not require a re-embed — the stored vectors are
+copied as-is, and minor floating-point differences across backends do not
+change the vector space — only the model identity matters.
 
 ## Move or Rebuild the Caches
 
@@ -307,8 +313,13 @@ The `identity.status` field reports `match`, `mismatch`, or
 Copy `embeddings_cache.db` from the machine A cache root to the same location
 in the machine B cache root, or set `SIF_CACHE_DIR` to wherever you copied it.
 Copy it after the [quiesce step](#quiesce-every-writer); if a writer was still
-active, take a consistent copy with `sqlite3 <cache>/embeddings_cache.db
-".backup '/path/to/embeddings_cache.db'"` instead of a plain file copy.
+active, take a consistent copy with SQLite's online backup API instead of a
+plain file copy:
+
+```bash
+sqlite3 <cache>/embeddings_cache.db ".backup '/path/to/embeddings_cache.db'"
+```
+
 The cache is a SQLite database keyed by `(content_hash, model_id)`, where
 `model_id` is `model_type:model_name` — plus `@api_base` when set, and
 prompt/revision suffixes when they are in effect. It is portable when the
