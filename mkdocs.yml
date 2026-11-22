@@ -93,6 +93,7 @@ nav:
   - User Guide:
     - CLI Reference: cli-reference.md
     - Search Algorithms: search-algorithms.md
+    - Machine Migration: machine-migration.md
   - Developer Guide:
     - Architecture: architecture.md
     - API Reference: api-reference.md

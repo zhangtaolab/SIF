@@ -31,6 +31,7 @@ DOCS_FILES = [
     Path("docs/models.md"),
     Path("docs/installation.md"),
     Path("docs/migration.md"),
+    Path("docs/machine-migration.md"),
 ]
 
 # Commands that should never be executed
