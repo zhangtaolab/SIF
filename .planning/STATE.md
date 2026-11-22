@@ -3,10 +3,10 @@ gsd_state_version: "1.0"
 milestone: v1.2
 status: Awaiting next milestone
 stopped_at: Phase 24 complete — all phases complete
-last_updated: "2026-11-19T07:04:06.521Z"
+last_updated: "2026-11-22T07:58:03.382Z"
 last_activity: 2026-11-19
 last_activity_desc: Quick task 261119-juo completed — release metadata bumped to 1.2.2
-state_head: 0cdd69de36deb26f84f251a0f1c8f022146f2e86
+state_head: 6b409030b77b806827cb9625d475352e7d21b446
 milestone_name: Search Precision and Agent Experience
 current_phase: 24
 progress:
@@ -32,7 +32,7 @@ progress:
 Phase: Milestone v1.2 complete
 Plan: —
 Status: Awaiting next milestone
-Last activity: 2026-11-19 - Completed quick task 261119-juo: bump the release version to 1.2.2 across the single version literal, server.json, plugin/marketplace manifests, changelog, install docs, and release-metadata tests
+Last activity: 2026-11-22 - Completed quick task 261122-leb: add a machine-to-machine migration runbook (docs/machine-migration.md)
 
 ## Performance Metrics
 
@@ -355,6 +355,7 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 | 261119-fww | Windows portability follow-ups: guard fcntl test imports, mark POSIX-only tests, fix Windows subpath filters, lower torch floor to 2.11 (2.14 recommended), regenerate uv.lock | 2026-11-19 | 848e6b6 | [261119-fww-windows-portability-follow-ups-guard-fcn](./quick/261119-fww-windows-portability-follow-ups-guard-fcn/) |
 | 261119-juo | Release 1.2.2: bump the version literal and all parity surfaces (server.json, plugin/marketplace manifests, changelog, install docs, release-metadata tests) | 2026-11-19 | 9f6a227 | [261119-juo-release-version-1-2-2-bump-the-single-ve](./quick/261119-juo-release-version-1-2-2-bump-the-single-ve/) |
 | 9 | Fix the PyPI attestation verification example to use the canonical repository case (zhangtaolab/SIF) | 2026-11-19 | 0cdd69d | — |
+| 261122-leb | Add a machine-to-machine migration runbook: verified index export/restore, embedding and model caches, embedder identity, source paths, MCP/watch recreation | 2026-11-22 | 6b40903 | [261122-leb-write-a-machine-to-machine-migration-gui](./quick/261122-leb-write-a-machine-to-machine-migration-gui/) |
 
 ### Roadmap Evolution
 
