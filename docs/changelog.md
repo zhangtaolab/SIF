@@ -35,6 +35,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - N/A
 
+## [1.2.3] - 2026-11-23
+
+### Added
+- New machine-to-machine migration guide (`docs/machine-migration.md`) covering index export via `sif index backup`, restore placement, embedder-identity preservation, embedding and model caches, the three source-path relocation routes (same layout, moved root, same-OS prefix rewrite), configuration/MCP/watch recreation, a verification checklist, and troubleshooting; registered in the mkdocs nav and the docs code-block test suite.
+
 ## [1.2.2] - 2026-11-19
 
 ### Added
@@ -283,7 +288,8 @@ Thanks to all contributors who have helped shape SIF!
 
 ---
 
-[Unreleased]: https://github.com/zhangtaolab/sif/compare/v1.2.2...HEAD
+[Unreleased]: https://github.com/zhangtaolab/sif/compare/v1.2.3...HEAD
+[1.2.3]: https://github.com/zhangtaolab/sif/releases/tag/v1.2.3
 [0.1.0]: https://github.com/zhangtaolab/sif/releases
 [1.2.2]: https://github.com/zhangtaolab/sif/releases/tag/v1.2.2
 [1.2.1]: https://github.com/zhangtaolab/sif/releases/tag/v1.2.1
