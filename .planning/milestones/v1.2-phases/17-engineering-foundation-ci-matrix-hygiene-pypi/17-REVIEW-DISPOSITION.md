@@ -3,6 +3,10 @@ phase: 17
 review: 17-REVIEW.md
 titles: json
 findings:
+  - id: IN-12
+    severity: info
+    disposition: open
+    title: "Eight-cell guard pins the declared axes but not that the cells run on `matrix.os` and `matrix.python-version`"
   - id: WR-10
     severity: warning
     disposition: open
@@ -29,11 +33,11 @@ findings:
     title: "`docs/testing.md` reports a collected-test total that is stale at HEAD"
   - id: IN-10
     severity: info
-    disposition: open
+    disposition: fixed
     title: "The six-cell guard pins the exclusions but not the OS list or the cell count"
   - id: IN-11
     severity: info
-    disposition: open
+    disposition: fixed
     title: "Phase 17 success criterion 1 no longer holds literally at HEAD (post-phase CI reduction)"
   - id: CR-01
     severity: critical
@@ -45,7 +49,7 @@ findings:
     title: "Shared progress renderer passes user data through Rich markup unescaped — silent text loss and `MarkupError` crashes"
   - id: WR-02
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "CI documentation states the opposite of the workflow this phase added"
   - id: WR-03
     severity: warning
@@ -99,26 +103,27 @@ findings:
     severity: info
     disposition: open
     title: "`--embed` and `--no-embed` together are accepted; embed silently wins"
-open: 19
-total: 24
-recorded: 2026-11-24T02:59:49.895Z
+open: 17
+total: 25
+recorded: 2026-11-24T14:42:07.948Z
 ---
 
 # Phase 17: Code Review Disposition
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| WR-10 | warning | open | - |
-| WR-11 | warning | open | - |
-| WR-12 | warning | open | - |
-| IN-07 | info | open | - |
-| IN-08 | info | open | - |
-| IN-09 | info | open | - |
-| IN-10 | info | open | - |
-| IN-11 | info | open | - |
+| IN-12 | info | open | - |
+| WR-10 | warning | open | - (not in the current review) |
+| WR-11 | warning | open | - (not in the current review) |
+| WR-12 | warning | open | - (not in the current review) |
+| IN-07 | info | open | - (not in the current review) |
+| IN-08 | info | open | - (not in the current review) |
+| IN-09 | info | open | - (not in the current review) |
+| IN-10 | info | fixed | fix 10a9685 (guard derives the 2 x 4 product from both lists and rejects skip keys; verified by mutation at 1984c45) (not in the current review) |
+| IN-11 | info | fixed | fix 10a9685 (workflow byte-identical to the phase original; declaration half only, the runs-green half is pending in 17-VALIDATION Manual-Only row 7) (not in the current review) |
 | CR-01 | critical | fixed | fix b0d45bf (not in the current review) |
 | WR-01 | warning | fixed | fix b0d45bf (not in the current review) |
-| WR-02 | warning | open | - (not in the current review) |
+| WR-02 | warning | fixed | fix 42e1acd, e539795 (contradictory CI sentences removed 2026-11-17); a321eaa re-aligned cell and trigger wording; the suggested DOCS_FILES guard was not added (not in the current review) |
 | WR-03 | warning | open | - (not in the current review) |
 | WR-04 | warning | fixed | fix b0d45bf (not in the current review) |
 | WR-05 | warning | fixed | fix b0d45bf (not in the current review) |
