@@ -6,7 +6,7 @@ status: verified
 threats_open: 0
 asvs_level: 1
 created: "2026-11-14"
-verified: "2026-11-14"
+verified: "2026-11-24"
 ---
 
 # Phase 17 — Security
@@ -15,6 +15,9 @@ verified: "2026-11-14"
 > Verified by /gsd-secure-phase 17 on 2026-11-14 at HEAD `443b909` (ASVS L1, block_on high).
 > Register authored at plan time: all nine PLANs carry STRIDE `<threat_model>` blocks. L1
 > grep-depth verification confirmed every mitigation present; `threats_open: 0`.
+> Re-verified by /gsd-secure-phase 17 on 2026-11-24 at HEAD `e2b9fd1` (ASVS L1, block_on high)
+> against the post-audit CI/packaging tree: six-cell matrix, main-only push CI, torch>=2.11,
+> release metadata 1.2.3. All 37 threats re-confirmed; `threats_open: 0`.
 
 ---
 
@@ -39,10 +42,10 @@ verified: "2026-11-14"
 |-----------|----------|-----------|----------|-------------|------------|--------|
 | T-17-01 | Tampering | dead-layer deletion (`models/search.py`, `search/strategy.py`, `database/migrations.py`) | medium | mitigate | Modules, package exports, dependent tests, and fixtures deleted atomically in 17-01; `tests/test_hygiene.py` scans for dead import strings; full suite collects 1670 tests. | closed |
 | T-17-02 | Repudiation | Makefile divergence after deletion | low | mitigate | `test_makefile_has_no_pre_commit_target` and `test_pre_commit_config_absent`; docs sweep pinned by 17-08. | closed |
-| T-17-04 | Tampering | extra index `pytorch-cpu` (dependency confusion) | high | mitigate | `explicit = true` on the index; `[tool.uv.sources] torch` marker-scoped to Linux (`pyproject.toml:90-96`); `test_pyproject_cpu_index_is_explicit`. | closed |
+| T-17-04 | Tampering | extra index `pytorch-cpu` (dependency confusion) | high | mitigate | `explicit = true` on the index; `[tool.uv.sources] torch` marker-scoped to Linux (`pyproject.toml:94-102`); `test_pyproject_cpu_index_is_explicit`. | closed |
 | T-17-05 | Tampering | `uv.lock` integrity | medium | mitigate | Lock committed and regenerated in one commit; `uv lock --check`; guards assert no nvidia/triton/black (`test_lock_has_no_cuda_stack`, `test_lock_has_no_black`). | closed |
 | T-17-06 | Supply Chain | floor changes (sentence-transformers, llama-cpp-python, torch) | low | mitigate | Floors are pre-existing locked deps; no first-time install; package-legitimacy audit approved. | closed |
-| T-17-07 | Information Disclosure | PR-triggered workflow | high | mitigate | `pull_request` (never `pull_request_target`), workflow-level `contents: read`, no `secrets.`, no `id-token` (`test_matrix_has_least_privilege`, `test_matrix_excludes_tag_pushes`). | closed |
+| T-17-07 | Information Disclosure | PR-triggered workflow | high | mitigate | `pull_request` (never `pull_request_target`), workflow-level `contents: read`, no `secrets.`, no `id-token` (`test_matrix_has_least_privilege`, `test_matrix_push_trigger_is_main_only`). | closed |
 | T-17-08 | Elevation of Privilege | workflow token | high | mitigate | Least privilege at workflow level; no `write` permission; guards reject `id-token` and credential surfaces. | closed |
 | T-17-09 | Tampering | third-party actions (checkout, setup-uv) | medium | mitigate | `setup-uv` pinned to `68559e99…` with a version comment; `test_setup_uv_is_sha_pinned` rejects floating tags. | closed |
 | T-17-10 | Tampering | dependency install in CI | medium | mitigate | `uv sync --frozen` consumes the committed lock; `cache-dependency-glob: uv.lock`; per-version cache suffix. | closed |
@@ -97,6 +100,7 @@ verified: "2026-11-14"
 | Audit Date | Threats Total | Closed | Open | Run By |
 |------------|---------------|--------|------|--------|
 | 2026-11-14 | 37 | 37 | 0 | Claude (gsd-secure-phase, ASVS L1, block_on high) |
+| 2026-11-24 | 37 | 37 | 0 | Claude (gsd-secure-phase, ASVS L1, block_on high) |
 
 ---
 
@@ -116,3 +120,32 @@ verified: "2026-11-14"
 | Threats found | 37 |
 | Closed | 37 |
 | Open | 0 |
+
+## Security Audit 2026-11-24
+
+| Metric | Count |
+|---|---|
+| Threats found | 37 |
+| Closed | 37 |
+| Open | 0 |
+
+### Re-audit notes (2026-11-24, HEAD `e2b9fd1`)
+
+- **Scope:** re-verified the 37 registered threats against the post-2026-11-14 tree after the
+  CI/packaging changes (six-cell matrix, main-only push CI, torch>=2.11, release metadata 1.2.3).
+  Verification depth L1 (grep-level), `block_on: high`, ASVS level 1.
+- **Result:** 37/37 closed, 0 open. No threat changed status. 17-07's `## Threat Flags` remains
+  "None", and 21/26 remain documented accepted risks (AR-17-01, AR-17-02).
+- **Post-audit changes judged:** none widens a registered threat. The matrix reduction narrows
+  test coverage (macOS 3.11/3.12 dropped) but adds no attack surface, and the release-process
+  gate in `docs/development.md` now names the six cells. Main-only push CI still runs on
+  `pull_request` for feature branches and on `main`; the matrix still never triggers on tags
+  (`test_matrix_push_trigger_is_main_only`). The torch floor (`>=2.11`) resolves from the
+  explicit CPU index with no nvidia/triton/black in `uv.lock`. The version literal is
+  single-sourced at `1.2.3` and its guards were updated in lockstep.
+- **Evidence refresh:** `pyproject.toml:90-96` -> `pyproject.toml:94-102`;
+  `test_matrix_excludes_tag_pushes` -> `test_matrix_push_trigger_is_main_only`. All other
+  citations still resolve.
+- **Tests:** targeted suites (ci_workflows, release_metadata, hygiene, version_identity,
+  windows_smoke_script, docs) 79 passed; full `pytest` 3260 passed, 1 skipped, 95.12% coverage;
+  `uv lock --check` resolved 106 packages.
