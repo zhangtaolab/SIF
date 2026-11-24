@@ -3,10 +3,10 @@ gsd_state_version: "1.0"
 milestone: v1.2
 status: Awaiting next milestone
 stopped_at: Phase 24 complete — all phases complete
-last_updated: "2026-11-22T07:58:03.382Z"
-last_activity: 2026-11-19
-last_activity_desc: Quick task 261119-juo completed — release metadata bumped to 1.2.2
-state_head: 6b409030b77b806827cb9625d475352e7d21b446
+last_updated: "2026-11-24T02:28:15.000Z"
+last_activity: 2026-11-24
+last_activity_desc: Phase 24 re-verified — stale verification refreshed to passed (e64c52c); Nyquist, security, UI and code-review audits re-run
+state_head: e64c52c11b598226d9aeb33314e3faf46b2682e8
 milestone_name: Search Precision and Agent Experience
 current_phase: 24
 progress:
@@ -32,7 +32,7 @@ progress:
 Phase: Milestone v1.2 complete
 Plan: —
 Status: Awaiting next milestone
-Last activity: 2026-11-22 - Completed quick task 261122-leb: add a machine-to-machine migration runbook (docs/machine-migration.md)
+Last activity: 2026-11-24 - Phase 24 re-verified: verification refreshed to passed (fresh v4 fingerprint, 57 covered files); Nyquist, security, UI and code-review audits re-run
 
 ## Performance Metrics
 
@@ -378,7 +378,7 @@ Last session: 2026-11-18T07:14:41.672Z
 Stopped at: Phase 24 complete — all phases complete
 Resume file: (none; the Phase 24 .continue-here.md remains as the last handoff)
 
-- **Next expected action:** refresh the stale Phase 18-23 verifications (`/gsd-execute-phase <N>` routes each to the verifier re-run gate), then close the v1.2 milestone. Note: the ROADMAP Progress table still lists Phase 24 as `In Progress` (7/8, 88%) even though its checkbox and verification are complete — the `phase.complete 24` bookkeeping was never run. Platform evidence at `256380e`: macOS 3,233 passed / 1 skipped / 95.03%; Linux 3,232 passed / 2 skipped / 95.04% with ruff/format/ty green; Windows smoke 8/8 plus 346 changed-area and 124 affected-module tests. Two audits remain recorded as debt (see Blockers/Concerns): `/gsd-secure-phase 20` and `/gsd:validate-phase 20`.
+- **Next expected action:** Phase 24's verification was refreshed on 2026-11-24 (`e64c52c`, `status: passed`, fresh `v4` fingerprint over 57 covered files) and its Nyquist, security, UI and code-review audits were re-run; v1.2 itself was already shipped and archived on 2026-11-18. Phases 17-23 still carry `stale` verification after the post-ship quick tasks — `/gsd-execute-phase <N>` routes each to the verifier re-run gate. Platform evidence at `256380e`: macOS 3,233 passed / 1 skipped / 95.03%; Linux 3,232 passed / 2 skipped / 95.04% with ruff/format/ty green; Windows smoke 8/8 plus 346 changed-area and 124 affected-module tests. Two audits remain recorded as debt (see Blockers/Concerns): `/gsd-secure-phase 20` and `/gsd:validate-phase 20`.
 
 ## Operator Next Steps
 
