@@ -3,6 +3,38 @@ phase: 17
 review: 17-REVIEW.md
 titles: json
 findings:
+  - id: WR-10
+    severity: warning
+    disposition: open
+    title: "User-controlled values reach Rich markup unescaped in `sif ls` and `sif collection ls/show` — silent text loss and `MarkupError` tracebacks"
+  - id: WR-11
+    severity: warning
+    disposition: open
+    title: "`sif ls` splits raw document paths, so the tree is flat on Windows"
+  - id: WR-12
+    severity: warning
+    disposition: open
+    title: "Impossible-state guard — the `if not coll: continue` branch in `sif ls` is unreachable"
+  - id: IN-07
+    severity: info
+    disposition: open
+    title: "`symlink_or_skip` converts every `OSError` into a skip, hiding broken test setup"
+  - id: IN-08
+    severity: info
+    disposition: open
+    title: "`l2_normalize` docstring states the zero/non-finite rule twice"
+  - id: IN-09
+    severity: info
+    disposition: open
+    title: "`docs/testing.md` reports a collected-test total that is stale at HEAD"
+  - id: IN-10
+    severity: info
+    disposition: open
+    title: "The six-cell guard pins the exclusions but not the OS list or the cell count"
+  - id: IN-11
+    severity: info
+    disposition: open
+    title: "Phase 17 success criterion 1 no longer holds literally at HEAD (post-phase CI reduction)"
   - id: CR-01
     severity: critical
     disposition: fixed
@@ -67,31 +99,39 @@ findings:
     severity: info
     disposition: open
     title: "`--embed` and `--no-embed` together are accepted; embed silently wins"
-open: 11
-total: 16
-recorded: 2026-11-14T10:12:13Z
+open: 19
+total: 24
+recorded: 2026-11-24T02:59:49.895Z
 ---
 
 # Phase 17: Code Review Disposition
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| CR-01 | critical | fixed | fix b0d45bf |
-| WR-01 | warning | fixed | fix b0d45bf |
-| WR-02 | warning | open | - |
-| WR-03 | warning | open | - |
-| WR-04 | warning | fixed | fix b0d45bf |
-| WR-05 | warning | fixed | fix b0d45bf |
-| WR-06 | warning | open | - |
-| WR-07 | warning | open | - |
-| WR-08 | warning | fixed | fix b0d45bf |
-| WR-09 | warning | open | - |
-| IN-01 | info | open | - |
-| IN-02 | info | open | - |
-| IN-03 | info | open | - |
-| IN-04 | info | open | - |
-| IN-05 | info | open | - |
-| IN-06 | info | open | - |
+| WR-10 | warning | open | - |
+| WR-11 | warning | open | - |
+| WR-12 | warning | open | - |
+| IN-07 | info | open | - |
+| IN-08 | info | open | - |
+| IN-09 | info | open | - |
+| IN-10 | info | open | - |
+| IN-11 | info | open | - |
+| CR-01 | critical | fixed | fix b0d45bf (not in the current review) |
+| WR-01 | warning | fixed | fix b0d45bf (not in the current review) |
+| WR-02 | warning | open | - (not in the current review) |
+| WR-03 | warning | open | - (not in the current review) |
+| WR-04 | warning | fixed | fix b0d45bf (not in the current review) |
+| WR-05 | warning | fixed | fix b0d45bf (not in the current review) |
+| WR-06 | warning | open | - (not in the current review) |
+| WR-07 | warning | open | - (not in the current review) |
+| WR-08 | warning | fixed | fix b0d45bf (not in the current review) |
+| WR-09 | warning | open | - (not in the current review) |
+| IN-01 | info | open | - (not in the current review) |
+| IN-02 | info | open | - (not in the current review) |
+| IN-03 | info | open | - (not in the current review) |
+| IN-04 | info | open | - (not in the current review) |
+| IN-05 | info | open | - (not in the current review) |
+| IN-06 | info | open | - (not in the current review) |
 
 Dispositions: `open` (recorded, not yet triaged), `fixed`, `skipped`, `deferred`.
 Set `deferred` by hand and put the reason in the Source cell; both are preserved. A `|` in the reason is kept as prose and escaped on the next run.
