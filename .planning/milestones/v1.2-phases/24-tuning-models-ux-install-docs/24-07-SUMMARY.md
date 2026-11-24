@@ -138,7 +138,7 @@ None - plan executed as written.
 
 ## Threat Flags
 
-None. The implementation mitigates the registered threats: T-24-13 identity
+None. The implementation mitigates the registered threats: T-24-14 identity
 substitution (pinned backend, baseline model_type/model_name check, persisted
 cache-id/dimension/prompt gate before eval, identity recorded), T-24-06
 artifact disclosure (aggregate-only schema with a privacy test), and T-24-SC

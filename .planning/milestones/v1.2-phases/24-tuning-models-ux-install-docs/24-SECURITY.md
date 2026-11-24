@@ -13,9 +13,11 @@ verified: "2026-11-18"
 > Per-phase security contract: threat register, accepted risks, and audit trail.
 > Verified by /gsd-secure-phase 24 on 2026-11-18 (ASVS L1, block_on high).
 > Register authored at plan time: all seven PLANs carry STRIDE `<threat_model>` blocks.
-> 14 unique threats (T-24-01…T-24-13 + T-24-SC); all `mitigate`. T-24-13 is registered
-> twice (plans 01 and 07) for the same modelscope-Qwen3 identity gate across the sweep
-> and breadcrumb arms; it is verified once and closed once. The outcome was
+> 15 register IDs (T-24-01…T-24-14 + T-24-SC); all `mitigate`. T-24-13 (plan 01) and
+> T-24-14 (plan 07) name the same modelscope-Qwen3 identity gate across the sweep and
+> breadcrumb arms. Both plans originally registered it as T-24-13; it was verified once
+> and closed once on 2026-11-18. Plan 07's register was renumbered to T-24-14 on
+> 2026-11-24 so each plan holds a unique ID (#4683). The outcome was
 > `keep-default` + `keep-breadcrumb-off`, so the flip-conditional surface (chunking.contract
 > marker, docs migration sweep) correctly does not exist in the shipped code.
 
@@ -59,6 +61,7 @@ verified: "2026-11-18"
 | T-24-11 | Spoofing | Default-change authorization | high | mitigate | Blocking checkpoint reads both artifacts and offers adopt-* only when authorized (24-06-PLAN.md:188-228); the executable assertion compares live `DEFAULT_CHUNK_SIZE`/`OVERLAP` and `Settings.embed_breadcrumb` against the artifact decisions (24-06-PLAN.md:249); outcome keep-default/keep-breadcrumb-off; live defaults unchanged (config/constants.py:19-20; settings.py:225); no chunking.contract marker code exists in src and the conditional test asserts its absence when unflipped (test_index.py:992-1021) | closed |
 | T-24-12 | Information Disclosure | Bench artifacts and docs sections | medium | mitigate | Plan privacy assertions reject `/Users/`, `/home/`, `query_text`, `document_path` (24-06-PLAN.md:141, 174); both committed artifacts pass a fresh scan; docs/benchmarking.md quotes aggregate numbers, gates, and the corpus label/fingerprint only | closed |
 | T-24-13 | Spoofing | Backend/identity substitution (sweep + breadcrumb arms) | high | mitigate | `SIF_MODEL_TYPE=modelscope` pinned in every arm env (chunk_sweep.py:66, 161; breadcrumb_eval.py:71, 143); stage order index→embed→identity→eval (chunk_sweep.py:92); identity gate asserts cache_model_id, dimension, verified source, and null prompts with named failures (378-415); baseline requires matching model_type/model_name plus corpus fingerprint (461-488); identity recorded in both artifacts | closed |
+| T-24-14 | Spoofing | Backend/identity substitution in the breadcrumb arm (plan 07) | high | mitigate | The same modelscope-Qwen3 identity gate as T-24-13, registered separately for plan 07: `SIF_MODEL_TYPE=modelscope` pinned in the arm env (breadcrumb_eval.py:71, 143); baseline model_type/model_name must match; persisted cache-id/dimension/null-prompts identity stage before eval; identity recorded in the artifact. Covered by the T-24-13 evidence above | closed |
 | T-24-SC | Tampering | Package installs | high | mitigate | No pyproject.toml or uv.lock change anywhere in the phase 24 commit range (92818cd^..39da9e8); runbooks invoke argv-list subprocesses with no shell interpolation; `modelscope` remains an optional extra with lazy import (download.py:312-318); status probes with `find_spec` | closed |
 
 *Status: open · closed · open — below high threshold (non-blocking)*
