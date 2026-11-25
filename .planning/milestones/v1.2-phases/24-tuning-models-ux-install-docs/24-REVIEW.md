@@ -1,18 +1,22 @@
 ---
 phase: 24-tuning-models-ux-install-docs
-reviewed: 2026-11-24T02:12:44Z
+reviewed: 2026-11-25T02:09:52Z
 depth: standard
-files_reviewed: 39
+files_reviewed: 43
 files_reviewed_list:
+  - .github/workflows/test-matrix.yml
   - README.md
   - docs/benchmarking.md
   - docs/cli-reference.md
   - docs/configuration.md
+  - docs/contributing.md
+  - docs/development.md
   - docs/index.md
   - docs/installation.md
   - docs/migration.md
   - docs/models.md
   - docs/quickstart.md
+  - docs/testing.md
   - scripts/breadcrumb_eval.py
   - scripts/chunk_sweep.py
   - scripts/generate_cli_ref.py
@@ -54,9 +58,9 @@ status: issues_found
 
 # Phase 24: Code Review Report
 
-**Reviewed:** 2026-11-24T02:12:44Z
+**Reviewed:** 2026-11-25T02:09:52Z (incremental pass) and 2026-11-24T02:12:44Z (initial audit)
 **Depth:** standard
-**Files Reviewed:** 39
+**Files Reviewed:** 43 (39 in the initial audit, 4 more in the incremental pass)
 **Status:** issues_found
 
 ## Summary
@@ -88,6 +92,25 @@ Intel-XPU device selection and Windows portability guards, and the
 `<cache>/<owner>/<name>` pre-fix adoption widened by
 `fix(quick-261118-ib0)`. WR-04 is caused by the v1.2 milestone archive move, not
 by Phase 24 itself.
+
+## Incremental Re-review (2026-11-25)
+
+**Scope:** the five files that changed since the last commit touching this report (`9afcd67`). `10a9685` restored the eight-cell matrix and the every-branch push trigger in `.github/workflows/test-matrix.yml` and replaced the two matrix guards in `tests/test_ci_workflows.py`; `a321eaa` re-aligned 13 lines in `docs/contributing.md`, `docs/development.md` and `docs/testing.md`. No Phase 24 SUMMARY changed, and the resolver found no task commit of this phase among them (`status: degraded`, `source: phase-range`, `reason: no-task-commits-since`), so the scope is the phase range `9afcd67..32adc31`. The resolver still lists `24-06-SUMMARY.md` as a Task Commits section it cannot read, because that section records that no commit was made; the summary is unchanged, so it does not narrow this scope. Only `tests/test_ci_workflows.py` was in the 39-file scope above; the other four files are new to this report.
+
+**Result: no new finding.** The ten findings below keep their id, title, severity and text. None cites a file in this delta and none of the files they cite changed since `9afcd67`, so none was fixed by it and none was re-reviewed. Their rows in `24-REVIEW-DISPOSITION.md` are untouched.
+
+The pass was limited to what the delta means for Phase 24, because the same change was already reviewed under Phase 17 (`17-REVIEW.md`: one Info finding, `IN-12`, the eight-cell guard pins the declared axes but not that the cells run on them). That finding is cited here, not re-reported.
+
+Checked at HEAD `32adc31`:
+
+- **Phase 24's own guards.** The five `test_installation_docs_*` tests (`tests/test_ci_workflows.py:168-187` and `:339-386`) are byte-identical to `9afcd67`; the new module constants only moved them, by 8 lines for the first and 39 for the other four. They pass, and each still rejects its regression when `docs/installation.md` is mutated in memory: a dropped `sentence-transformers` floor, a dropped `uv tool install`, a dropped uv version floor, a removed degradation heading, a restored false CPU-index claim. `test_installation_docs_match_extras` is the only Phase 24 guard that reads the three guides this delta changed, and it still fails when the removed `black>=23.0.0` requirement is planted in each of them.
+- **Module integrity.** The removed `MATRIX_EXCLUSION` constant has no remaining reference, no new constant collides with a name the Phase 24 guards use, and nothing outside the module imports from it. `pytest --no-cov tests/test_ci_workflows.py` reports 18 passed, `tests/test_hygiene.py` and `tests/test_release_metadata.py` report 28 passed, and `ruff check` and `ruff format --check` (ruff 0.15.11) are clean.
+- **Rewritten guards are not vacuous.** Against the pre-delta workflow blob at `9afcd67`, `test_matrix_declares_eight_cells` and `test_matrix_push_trigger_covers_all_branches` both fail and the other four workflow-reading guards pass.
+- **Docs.** All 13 changed lines agree with the workflow: eight cells, a push trigger on every branch, a bare `pull_request:` trigger, no tag trigger, a 30-minute per-cell timeout. No six-cell or main-only wording about the Test Matrix remains in any tracked file outside `.planning`; the surviving `branches: [main]` describes `docs.yml`, which is correct.
+- **Workflow in practice.** Test Matrix run `45522236981` (push, commit `a25eb07`) succeeded on all eight cells and the lint job. The five files in this delta are identical between `a25eb07` and HEAD, so that run exercised the content reviewed here, including the Phase 24 guards on the two restored macOS cells.
+- **Requirements.** QUAL-02, QUAL-03, MODELS-01 and MODELS-02 do not touch CI or these guides. DOCS-01's `make docs-generate` diff gate runs in `docs.yml`, whose trigger did not change.
+
+Not checked here: whether the full suite passes locally, and the questions `17-REVIEW.md` leaves with Phase 17 (the double run for a branch with an open pull request, AR-17-03, and its other carried rows). Necessity was assessed against the rubric and yields no finding. No structural section is included because no structural pre-pass was configured. This pass was performed inline from `gsd-code-reviewer.md` by the orchestrator, because this runtime exposes no Agent tool; no external reviewer evidence was supplied.
 
 ## Warnings
 
