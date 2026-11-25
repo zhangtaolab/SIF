@@ -97,6 +97,76 @@ opened, XML/CSV/Rich output escapes user-derived text, and no hardcoded credenti
 found. No structural-findings block was provided. The necessity review (standard depth)
 found no reachable code guarding against a provably impossible state, so `necessity: 0`.
 
+## Incremental Re-review (2026-11-25)
+
+**Scope:** the five test files in this phase's domain that changed since the last commit touching this report (`b817ebb`), set through the workflow's `--files` override. `c95d2cee` (quick task 261119-fww-02, Windows portability; not Phase 19 work) changed `tests/unit/cli/test_search.py`, `tests/unit/database/test_repositories.py`, `tests/unit/mcp/test_backend.py` and `tests/unit/search/test_context_attach.py`: it routes four direct symlink calls through `tests.support.symlink_or_skip`, adds two platform `skipif` guards, and relaxes two title-cell assertions from exact lengths to ten-character prefixes. `f8ff9bea` (Phase 19's own post-archive validation-gap closure for plan 19-06, CORR-02) added `TestRebuildChunkIdentity`, three tests in `tests/unit/search/test_rerank.py`, pinning that `_sort_and_build_results` carries `chunk_id`, `sequence` and `chunk_matches` into each rebuilt result. Each is the only commit in range for its file; `test_rerank.py` also shows merge `975cb098`, which carried the phase's own earlier content onto this branch and is identical to its second parent for that file. No Phase 19 SUMMARY changed. With the workflow's default scoping the resolver found no task commit of this phase after `b817ebb` (`status: degraded`, `source: phase-range`, `reason: no-task-commits-since`) and widened to the 59 files changed since the archive commit. That scope was not reviewed: it would have filed a whole-tree review under this phase and rewritten this report. The override leaves every other gate in place. Four of the five files are in the 47-file scope above; `tests/unit/search/test_rerank.py` is new to this report.
+
+**Result: two new Info findings, IN-07 and IN-08. No Critical and no Warning.** The ten findings below keep their id, title, severity and text. None was fixed by this delta and none was re-reviewed: only IN-04, and a mention in CR-01, points into one of the five files (`tests/unit/mcp/test_backend.py:1141-1154`), at lines this delta does not touch. IN-02 is still true at HEAD, because `_sort_and_build_results` still does not copy `vectors_stale` (`src/sif/search/rerank.py:52-71`). The ten rows in `19-REVIEW-DISPOSITION.md` keep their recorded disposition; IN-07 and IN-08 are recorded `open`.
+
+Checked at HEAD `f64da50`:
+
+- **State of the five files.** `pytest --no-cov` over them reports 360 passed, 0 skipped (189, 31, 93, 29 and 18 per file); `ruff check` and `ruff format --check` (ruff 0.15.11) are clean. No direct `os.symlink` or `Path.symlink_to` call remains in them, and the `import os` dropped from `tests/unit/mcp/test_backend.py` has no remaining use.
+- **Chunk identity through the rerank rebuild (CORR-02; `f8ff9bea`).** The three tests are correct, independent and not vacuous. Each of the three copied lines in `src/sif/search/rerank.py:68-70`, deleted **one at a time** in a scratch copy, fails all three (3 failed, 15 passed), and so does deleting all three; the file's 15 earlier tests detect none of them. They are complementary: a mutant that takes identity by output position instead of by row is killed by the two reordering tests, and a mutant that carries the previous row's identity into a chunk-less row is killed only by `test_rebuild_leaves_document_level_rows_without_chunk_identity`. Every score is distinct, so no expectation rests on a tie-break, a stable sort or the input order. Two notes, neither risen to a finding: in `test_cross_encoder_rerank_keeps_chunk_identity_of_survivors` the `relative_threshold=0.5` is inert, because the asserted pair is the same at 0.0, 0.5, 0.9 and 0.995 (three rows survive the threshold and `top_k=2` keeps the first two), so only the `top_k` cut is exercised there and `TestRelativeThreshold` covers the threshold; and none of the three pins `vectors_stale`, which is IN-02.
+- **Title-cell assertions (`c95d2cee`).** The relaxation opened a hole; see IN-07. At `COLUMNS=80` on macOS the two tables render 15 `A`s and 34 `B`s, each followed by Rich's single-character `…`. The old literals were therefore the exact visible widths, which is why a column one narrower broke them. The product's own cell text is `title[:50] + "..."` (`src/sif/cli/commands/search.py:54`, applied at `:167`), which Rich then cuts to the column width; the only ASCII `...` in either table is the Content cell's (`:690-691`, `:925-926`).
+- **Symlink substitutions (`c95d2cee`).** The four `symlink_or_skip(alias_dir, <dir>, target_is_directory=True)` calls (`tests/unit/database/test_repositories.py:116`, `tests/unit/search/test_context_attach.py:46`, `tests/unit/mcp/test_backend.py:381`, `:416`) are like-for-like with what they replaced: same link and target direction, and `target_is_directory=True` is the form `os.symlink` lacked for a directory target. They skip only when creation raises, so a Windows host that can create symlinks still runs them. The helper itself is too broad; see IN-08.
+- **The two `skipif` guards (`c95d2cee`).** Neither skips where the asserted behaviour is testable, and neither masks a product failure; on this host neither skips.
+  - `skipif(not hasattr(time, "tzset"))` on `test_set_stores_aware_utc_expiry` (`tests/unit/database/test_repositories.py:605`) is required, not cosmetic: `east_of_utc` calls `time.tzset()` unconditionally (`:71`), so the test would error at setup on Windows without it. It brings the test in line with the three sibling guards already in the file (`:621`, `:755`, `:769`). The cost is that the format `set()` writes is then asserted nowhere on Windows, although its two assertions do not depend on the local zone and `test_llm_cache_hit_expiry_replacement_and_clear` (`:519`) still exercises the write end to end there. A fixture that guarded its own `tzset` call would keep the test running on Windows too.
+  - `skipif(sys.platform == "win32")` on `test_normalize_path_unexpandable_tilde_degrades_to_raw_form` (`tests/unit/search/test_context_attach.py:206-209`) is accurate: `ntpath.expanduser` builds `<profile parent>\<user>` for an unknown user instead of raising, so the raw-string fallback the test asserts is not what Windows does. The crash-safety half of that contract is still exercised on Windows by the unskipped sibling `test_malformed_tilde_row_does_not_crash_attach` (`:221`) wherever symlinks can be made.
+- **Requirements.** CORR-02 is the one requirement this delta bears on, and `f8ff9bea` pins its chunk-identity half soundly. The title-cell assertions cover display code, not CORR-04's ranking. The alias, tilde and cache-expiry guards answer earlier phases' reviews and were only made Windows-honest.
+- **CI.** Test Matrix run `45522236981` (push, `a25eb07`) succeeded on lint and all eight cells (Ubuntu and macOS, Python 3.10 to 3.13). The four `c95d2cee` files are byte-identical between `a25eb07` and HEAD, so that run exercised exactly the content reviewed here. `tests/unit/search/test_rerank.py` at `f8ff9bea` is newer than that run.
+
+Not checked here: the full suite; the Windows branches of these guards, which no CI job exercises (the matrix run above has no Windows job) and which were judged by reading, so `c95d2cee`'s "one column narrower on Windows" is consistent with the macOS widths above but is not confirmed; the ten findings above, whose files were not re-read, so no recorded disposition was re-verified and none was changed; `src/sif/cli/commands/collection.py`, `src/sif/cli/commands/ls.py` and the seven other test files `c95d2cee` touched, and the helper's other ten call sites, all outside this override. Necessity was assessed against the rubric and yields no finding. No structural section is included because no structural pre-pass was configured. This pass was performed inline from `gsd-code-reviewer.md` by the orchestrator, because this runtime exposes no Agent tool; no external reviewer evidence was supplied.
+
+### IN-07: Relaxed title assertions lost their lower bound, and the `...` check is not about the title
+
+**File:** `tests/unit/cli/test_search.py:2097-2101` (`test_search_snippet_fallback_and_truncation`), `:2313-2317` (`test_vsearch_table_line_numbers_and_truncation`)
+**Issue:** `c95d2cee` (quick task 261119-fww-02, not Phase 19 work) lowered the two prefix assertions from `"A" * 15` and `"B" * 34` to ten characters. What is still pinned: a ten-character prefix is rendered, the full 55-character title is not, and `...` occurs somewhere in the table. What the two tests exist for survives only in that weak form.
+
+The hole is the lost floor. The old literals were the exact visible widths at `COLUMNS=80` on macOS (15 and 34), which is why one narrower column broke them, and that made them a tight lower bound on the product's own truncation, `_TITLE_MAX_LEN` (`src/sif/cli/commands/search.py:54`, applied at `:167`). These two tests are its only guard: no other test references `_title_cell` or `_TITLE_MAX_LEN`. Driving the constant down in a scratch probe, any value from 10 to 33 now passes the vsearch test and any from 10 to 14 the query test, where both failed before.
+
+Two things the assertions do not establish, before or after the change. First, `assert "..." in result.output` is satisfied by the Content cell (`content[:200] + "..."`, `src/sif/cli/commands/search.py:690-691` and `:925-926`), not by the title. The title cell ends with Rich's single-character `…`, cut at the column width long before the product's own `...` at character 51. The comment `c95d2cee` added at `:2313-2314`, that the title "is truncated with an ellipsis", is true of the output but is not proved by the test. Second, the full title's absence is Rich's doing: with the product's truncation removed entirely, both the old and the new assertions still pass.
+
+**Fix:** assert the product's truncation directly, which does not depend on the console, and the rendered shape rather than an exact column width. Every line below holds at HEAD.
+
+```python
+from sif.cli.commands.search import _TITLE_MAX_LEN, _title_cell
+
+# The product truncates the title itself and marks it with "...":
+assert _title_cell(row) == "A" * _TITLE_MAX_LEN + "..."
+# ... and no shorter than 34, the floor the old vsearch literal enforced:
+assert _TITLE_MAX_LEN >= 34
+# Rich then fits the cell to a console-dependent width: assert the shape, not the count.
+assert re.search("A{10,}…", result.output)
+assert "A" * 55 not in result.output
+```
+
+The same four lines for the `B` test. The file already imports `re` and a private name from that module.
+
+### IN-08: `symlink_or_skip` turns any `OSError` into a host-capability skip, so a broken fixture is skipped, not failed
+
+**File:** `tests/support/__init__.py:26-32` (root cause; outside the five files reviewed here) and the four call sites this delta routed through it: `tests/unit/database/test_repositories.py:116`, `tests/unit/search/test_context_attach.py:46`, `tests/unit/mcp/test_backend.py:381`, `:416`
+**Issue:** The helper documents that it skips when the host forbids a symlink, but it catches every `OSError` and labels each one "Windows requires Developer Mode or elevation; WinError 1314". A link path that already exists (`EEXIST`) and a missing parent directory (`ENOENT`) are fixture mistakes, not host restrictions, and both are reported as that skip. Both were reproduced from a scratch test calling the real helper.
+
+`c95d2cee` (quick task 261119-fww-02) replaced direct `os.symlink` and `Path.symlink_to` with this helper at the four sites above. The helper itself comes from quick task 261119-fww-01 (`91a53c07`) and is one of the 59 files the default scope would have swept in. Neither quick task is Phase 19 work.
+
+Nothing is masked today. On this host all 292 tests in the eight files that use the helper pass and none skips, and at these four sites the link is always a fresh child of a per-test `tmp_path`, so neither error can arise unless a fixture is changed later. That is why this is Info and not Warning. It is filed because the hazard is latent and wide: 14 call sites in eight test files inherit it, CI runs plain `pytest` with no skip-reason report and no skip budget, and one more skip would be indistinguishable from the platform skips the same quick tasks added on purpose.
+
+**Fix:** skip only on the errors that mean the host cannot create symlinks, and let everything else fail. Checked in a scratch test: a fresh link is created, `EEXIST` and `ENOENT` raise, a permission error and the Windows privilege error still skip, and a wrong `target_is_directory` on Windows fails. `errno` is the only new import.
+
+```python
+try:
+    link.symlink_to(target, target_is_directory=target_is_directory)
+except NotImplementedError as exc:
+    pytest.skip(f"symlink creation is unsupported on this host: {exc}")
+except OSError as exc:
+    host_cannot = exc.errno in {
+        errno.EPERM, errno.EACCES, errno.ENOSYS, errno.EOPNOTSUPP,
+    } or getattr(exc, "winerror", None) == 1314
+    if not host_cannot:
+        raise  # EEXIST, ENOENT, ... is a broken fixture, not a host restriction
+    pytest.skip(f"symlink creation is unavailable on this host: {exc}")
+```
+
 ## Narrative Findings (AI reviewer)
 
 ### Critical Issues
