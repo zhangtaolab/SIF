@@ -5,7 +5,7 @@ status: verified
 threats_open: 0
 asvs_level: 1
 created: "2026-11-18"
-verified: "2026-11-24"
+verified: "2026-11-25"
 ---
 
 # Phase 24 — Security
@@ -83,6 +83,7 @@ No accepted risks.
 |------------|---------------|--------|------|--------|
 | 2026-11-18 | 14 | 14 | 0 | /gsd-secure-phase 24 (gsd-security-auditor, ASVS L1) |
 | 2026-11-24 | 15 | 15 | 0 | /gsd-secure-phase 24 (gsd-security-auditor persona, inline, ASVS L1) |
+| 2026-11-25 | 15 | 15 | 0 | /gsd-secure-phase 24 (orchestrator, ASVS L1 short-circuit — incremental) |
 
 **Auditor notes (non-blocking):** the hidden `sif pull` alias retains the legacy GGUF/URL
 path writing to `~/.sif/models` without a manifest for one release; that is the exact
@@ -112,6 +113,26 @@ runs the user-configured collection pre-update command with `shell=True` — it 
 the Phase 8 collection hook, predates Phase 24 (introduced in 76e9538, 2026-04-27), and is
 not Phase 24 attack surface, so no register row was added or changed for it.
 
+**Incremental re-audit notes (2026-11-25, non-blocking):** scoped to the delta since the last
+audit (`0a1a389`): five files outside `.planning/` changed (`10a9685`: `tests/test_ci_workflows.py`,
+`.github/workflows/test-matrix.yml`; `a321eaa`: `docs/development.md`, `docs/contributing.md`,
+`docs/testing.md`), restoring the eight-cell, every-branch CI matrix (Phase 17, plan 17-10). No
+mitigation cell cites any of the five, and every file a cell does cite is byte-identical to
+`0a1a389`, so no cited line reference moved. T-24-09 and T-24-10 were re-verified because
+plan 05 also declares `tests/test_ci_workflows.py` a DOCS-01 guard file: its five
+`test_installation_docs_*` guards are unedited but shifted (one by 8 lines, four by 39); the cited
+`tests/test_docs.py` ranges, `docs.yml`, and `docs/installation.md` are unchanged; the three
+edited guides are hand-written, not generator-owned, and not read by `tests/test_docs.py`; both
+test files pass 39/39. The docs diff gate was not re-run (its inputs and outputs are unchanged).
+The other 13 rows were not re-verified and carry their 2026-11-24 L1 evidence forward.
+Recorded, not re-triaged: code-review finding WR-02 (`_split_model_id` admits a drive-relative
+`C:` segment that resets the cache path on the Windows path flavour; `open` in
+`24-REVIEW-DISPOSITION.md`) sits inside T-24-07's scope. That row stays `closed`: an L1 closure
+means the declared mitigation is present in the cited file, not that no bypass exists. T-24-07 is
+`medium`, below the `high` block threshold, so WR-02 would not count toward `threats_open`.
+Suite evidence: Test Matrix run 45522236981 on `a25eb07` green on 8/8 cells (3259 passed,
+2 skipped each); `a25eb07..HEAD` differs only under `.planning/`.
+
 ---
 
 ## Sign-Off
@@ -124,3 +145,5 @@ not Phase 24 attack surface, so no register row was added or changed for it.
 **Approval:** verified 2026-11-18 — 14/14 threats closed at L1; 0 open at or above `high`.
 
 **Re-verification:** verified 2026-11-24 — 15/15 threats closed at L1; 0 open at or above `high`.
+
+**Incremental re-verification:** verified 2026-11-25 — 15/15 threats closed at L1; 0 open at or above `high` (delta-scoped; no register change).
