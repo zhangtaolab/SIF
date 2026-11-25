@@ -3,6 +3,14 @@ phase: 19
 review: 19-REVIEW.md
 titles: json
 findings:
+  - id: IN-07
+    severity: info
+    disposition: open
+    title: "Relaxed title assertions lost their lower bound, and the `...` check is not about the title"
+  - id: IN-08
+    severity: info
+    disposition: open
+    title: "`symlink_or_skip` turns any `OSError` into a host-capability skip, so a broken fixture is skipped, not failed"
   - id: CR-01
     severity: critical
     disposition: fixed
@@ -43,16 +51,18 @@ findings:
     severity: info
     disposition: deferred
     title: "MCP backend silently creates an empty index at a nonexistent SIF_DB_PATH"
-open: 0
-total: 10
-unparsed: 10
-recorded: 2026-11-18T06:39:07.450Z
+open: 2
+total: 12
+unparsed: 8
+recorded: 2026-11-25T09:57:14.957Z
 ---
 
 # Phase 19: Code Review Disposition
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
+| IN-07 | info | open | - |
+| IN-08 | info | open | - |
 | CR-01 | critical | fixed | 19-REVIEW-FIX.md (not in the current review) |
 | CR-02 | critical | fixed | 19-REVIEW-FIX.md (not in the current review) |
 | WR-01 | warning | fixed | 19-REVIEW-FIX.md (not in the current review) |
