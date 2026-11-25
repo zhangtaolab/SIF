@@ -1,5 +1,5 @@
 ---
-status: testing
+status: diagnosed
 phase: 19-search-correctness
 source: [19-VERIFICATION.md]
 started: 2026-11-25T10:51:26Z
