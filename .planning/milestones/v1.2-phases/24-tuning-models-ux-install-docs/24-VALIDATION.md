@@ -114,3 +114,10 @@ Both manual rows ran on the user-authorized `books-markdown-papers-2026-11` corp
 | Gaps found | 0 |
 | Resolved | 0 |
 | Escalated | 0 |
+
+**Incremental re-audit (2026-11-25, HEAD `b189aa8`).** The only Phase 24-covered input changed since the 2026-11-24 audit (`42ba408`) is `tests/test_ci_workflows.py`, at commit `10a9685` (Phase 17, plan 17-10): `test_matrix_declares_six_cells` became `test_matrix_declares_eight_cells`, `test_matrix_push_trigger_is_main_only` became `test_matrix_push_trigger_covers_all_branches`, and the same commit restored the eight-cell, every-branch `.github/workflows/test-matrix.yml` that the file reads.
+
+- **Re-verified:** row 24-04-01 exits 0 with 39 passed. The ALL gate's `tests/` legs are clean (`ruff check src tests`, `ruff format --check src tests`), and `ty check src/sif` still exits 1 locally with the same 10 diagnostics (the CI lint job runs it green on the frozen lock).
+- **Result:** no row cited the old guard names or the six-cell shape, and the four Phase 24 install-doc guards in that file are untouched, so the map above is unchanged: 0 gaps found, 0 resolved, 0 escalated. `verification.append-audit` therefore skipped a duplicate audit block.
+- **Full suite:** not re-run locally. Test Matrix run `45522236981` on `a25eb07` (source tree identical at HEAD) passed 8/8 cells with 3259 passed, 2 skipped and 95.12% coverage on each. The extra skip against the 2026-11-24 local count is `test_claude_plugin_validate_succeeds`, which skips where the `claude` CLI is absent.
+- **Carried forward, not re-run:** every other row, and the second open advisory from 2026-11-24: the `'N=56'` literal in the `24-06-PLAN.md` verify block (`:247`), which `docs/benchmarking.md` no longer carries.
