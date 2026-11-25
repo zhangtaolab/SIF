@@ -3,10 +3,10 @@ gsd_state_version: "1.0"
 milestone: v1.2
 status: Awaiting next milestone
 stopped_at: Phase 24 complete — all phases complete
-last_updated: "2026-11-24T02:28:15.000Z"
-last_activity: 2026-11-24
-last_activity_desc: Phase 24 re-verified — stale verification refreshed to passed (e64c52c); Nyquist, security, UI and code-review audits re-run
-state_head: e64c52c11b598226d9aeb33314e3faf46b2682e8
+last_updated: "2026-11-25T01:13:00.562Z"
+last_activity: 2026-11-25
+last_activity_desc: Phase 17 gap closed and re-verified passed — plan 17-10 restored the 8-cell CI matrix (10a9685); Test Matrix run 45522236981 green on 8/8 cells; UAT complete
+state_head: 0441ad7cf6d3b4509f4c048de48496267f001cd4
 milestone_name: Search Precision and Agent Experience
 current_phase: 24
 progress:
@@ -32,7 +32,7 @@ progress:
 Phase: Milestone v1.2 complete
 Plan: —
 Status: Awaiting next milestone
-Last activity: 2026-11-24 - Phase 24 re-verified: verification refreshed to passed (fresh v4 fingerprint, 57 covered files); Nyquist, security, UI and code-review audits re-run
+Last activity: 2026-11-25 - Phase 17 gap closed and re-verified: plan 17-10 restored the 8-cell CI matrix and every-branch push trigger; verification passed; Test Matrix run 45522236981 green on 8/8 cells + lint (95.12% each); UAT complete. Phase 24 was re-verified 2026-11-24.
 
 ## Performance Metrics
 
@@ -328,6 +328,9 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ### Blockers/Concerns
 
+- ⚠️ [Phase 17, follow-up] The CI guards in `tests/test_ci_workflows.py` do not examine filters nested under `push:` / `pull_request:` (seven trigger shapes, plus four more noted in `17-SECURITY.md`), so `17-VALIDATION.md` reads `nyquist_compliant: false`; the recipe `test_matrix_triggers_are_unfiltered` is in its Manual-Only row 8. Adding it and re-running `/gsd-validate-phase 17` would restore compliance.
+- ⚠️ [Phase 17, accepted risk AR-17-03] Plan 17-10 restored the 8-cell matrix on every branch push, re-exposing both causes of the 261118-lmm reduction: hosted macOS arm64 runner capacity cancelling PR jobs, and two full runs per feature-branch commit that has an open PR. The first run after the restore (`45522236981`) had no cancellation. Failure path: re-run a cancelled cell once; a renewed reduction needs a recorded decision against D-01/D-03, not a silent revert.
+
 - ℹ️ [Windows, pre-existing] 14 `tests/test_docs.py` tests fail under the GBK locale because they call `Path.read_text()` without an encoding; the same failure occurs at the untouched `48759e2` checkout. Use `PYTHONUTF8=1` for Windows runs, or make the docs tests UTF-8-explicit in a future Windows-support phase. Full Windows support remains deferred to v2.
 
 - ✅ [Phase 24, resolved 2026-11-17] 24-06 corpus amended to `/Users/forrest/Playground/books_markdown` (610 docs: 2 English books + 608 mostly-Chinese papers; sampled 200, held-out N=194, en=136/zh=244/mixed=12) after the user supplied the papers and authorized the instrument extension. Both real runs completed and recorded keep-defaults; artifacts are in `bench/`, evidence in `docs/benchmarking.md`; Phase 24 verification remains. SynologyDrive was never read or written.
@@ -378,7 +381,7 @@ Last session: 2026-11-18T07:14:41.672Z
 Stopped at: Phase 24 complete — all phases complete
 Resume file: (none; the Phase 24 .continue-here.md remains as the last handoff)
 
-- **Next expected action:** Phase 24's verification was refreshed on 2026-11-24 (`e64c52c`, `status: passed`, fresh `v4` fingerprint over 57 covered files) and its Nyquist, security, UI and code-review audits were re-run; v1.2 itself was already shipped and archived on 2026-11-18. Phases 17-23 still carry `stale` verification after the post-ship quick tasks — `/gsd-execute-phase <N>` routes each to the verifier re-run gate. Platform evidence at `256380e`: macOS 3,233 passed / 1 skipped / 95.03%; Linux 3,232 passed / 2 skipped / 95.04% with ruff/format/ty green; Windows smoke 8/8 plus 346 changed-area and 124 affected-module tests. Two audits remain recorded as debt (see Blockers/Concerns): `/gsd-secure-phase 20` and `/gsd:validate-phase 20`.
+- **Next expected action:** Phase 17's gap is closed and verified as of 2026-11-25: plan 17-10 restored the 8-cell, every-branch CI matrix (reversing quick task 261118-lmm), verification reads `passed` (59/60 truths at `5608576`, canonicalized at `0441ad7` after Test Matrix run `45522236981` ran green), and its UAT is complete. Phase 24's verification was refreshed on 2026-11-24 (`e64c52c`); v1.2 itself was already shipped and archived on 2026-11-18. Phases 18-23 still carry `stale` verification after the post-ship quick tasks — `/gsd-execute-phase <N>` routes each to the verifier re-run gate. Platform evidence at `256380e`: macOS 3,233 passed / 1 skipped / 95.03%; Linux 3,232 passed / 2 skipped / 95.04% with ruff/format/ty green; Windows smoke 8/8 plus 346 changed-area and 124 affected-module tests. Two audits remain recorded as debt (see Blockers/Concerns): `/gsd-secure-phase 20` and `/gsd:validate-phase 20`.
 
 ## Operator Next Steps
 
