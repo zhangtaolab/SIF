@@ -39,7 +39,7 @@ validated: "2026-11-25"
 
 ## Per-Task Verification Map
 
-Task IDs resolved from the executed plans; requirement-level map from `19-RESEARCH.md` §Validation Architecture, audited 2026-11-18, corrected 2026-11-25 (four rows added, two rows made to agree with their commands):
+Task IDs resolved from the executed plans; requirement-level map from `19-RESEARCH.md` §Validation Architecture, audited 2026-11-18, corrected 2026-11-25 (five rows added, two rows made to agree with their commands):
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
@@ -108,7 +108,7 @@ Task IDs resolved from the executed plans; requirement-level map from `19-RESEAR
 
 **Approval:** approved 2026-11-18 — 16/16 requirement rows covered, 748/748 targeted tests green, 0 gaps, 0 escalated.
 
-**Re-certified:** 2026-11-25 — gap 1 (19-06 T2 / CORR-02) closed by three tests; 21 map rows (17 + 4), of which all 19 pytest rows are green (1000/1000 targeted tests), the docs row is green and the static row is unchanged (`ruff` green, `ty` as in the gate note); 0 open gaps, 0 escalated.
+**Re-certified:** 2026-11-25 — gap 1 (19-06 T2 / CORR-02) closed by three tests; 21 map rows (17 + 4) at re-certification, of which all 19 pytest rows are green (1000/1000 targeted tests), the docs row is green and the static row is unchanged (`ruff` green, `ty` as in the gate note); 0 open gaps, 0 escalated. A repair later the same day added a fifth row (19-04 T1 (B0 saved run)) to trace T-19-09, so the map now has 22 rows, 20 of them pytest rows, all green.
 
 ## Validation Audit 2026-11-18
 
@@ -155,4 +155,4 @@ Task IDs resolved from the executed plans; requirement-level map from `19-RESEAR
   - **MCP startup migration (19-09 Task 1):** `TestSchemaInitializationAtStartup` (5 tests) covers it, so a row was added: "19-09 T1 (MCP startup)" (T-19-21), citing `pytest tests/unit/mcp/test_backend.py -x --no-cov` (93 passed). The existing mtime-index row is now "19-09 T1 (mtime index)" with Threat Ref "—": T-19-21 (MCP-only schema startup) and T-19-22 (D-12 verdict) are not the mtime index, and neither threat's tests run under its command, `pytest tests/unit/database/test_schema.py -x --no-cov` (46 passed).
   - **Manual-Only D-12 row:** now cites `.planning/milestones/v1.2-phases/19-search-correctness/bench/d12-verdict.json`, which exists (`rejected`, pinned 1.0, candidates 2.0/3.0/4.0).
   - No further tests were generated and no other test file was touched.
-- **Step 6 — re-certification (2026-11-25).** The map has 21 rows (17 + 4). All 19 pytest rows are green: their cited files are the 20 in the guard inventory above, 1000 passed in 21.36 s. The docs row is green (`make docs-generate` exits 0 and both generated files are byte-identical). The static row is unchanged: `ruff check src tests` and `ruff format --check src tests` pass, and `ty check src/sif` still exits 1 with the same 10 diagnostics in the same three files (`rerank.py` at lines 273, 406, 413 and 416; the gate note above explains why they are not a Phase 19 regression). Full suite with coverage on this tree: 3263 passed, 1 skipped, 95.12% coverage, 207 s. Frontmatter: `status: validated`, `nyquist_compliant: true`, `validated: "2026-11-25"`.
+- **Step 6 — re-certification (2026-11-25).** The map has 21 rows (17 + 4) at this step; a repair later the same day added a fifth (19-04 T1 (B0 saved run)) to trace T-19-09, making 22. All 19 pytest rows are green: their cited files are the 20 in the guard inventory above, 1000 passed in 21.36 s. The docs row is green (`make docs-generate` exits 0 and both generated files are byte-identical). The static row is unchanged: `ruff check src tests` and `ruff format --check src tests` pass, and `ty check src/sif` still exits 1 with the same 10 diagnostics in the same three files (`rerank.py` at lines 273, 406, 413 and 416; the gate note above explains why they are not a Phase 19 regression). Full suite with coverage on this tree: 3263 passed, 1 skipped, 95.12% coverage, 207 s. Frontmatter: `status: validated`, `nyquist_compliant: true`, `validated: "2026-11-25"`.
