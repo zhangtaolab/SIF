@@ -170,3 +170,170 @@ At 100 the new legs table still wraps its CI and ellipsizes the header; at 120 t
 - Committed evidence artifacts: `bench/b0.json`, `bench/b1.json`, `bench/d12-verdict.json` (shape and decision verified).
 - Live text captures (phase-19 tree at `763753d`): `search search|vsearch|query --help`; BM25 table at 80/100/120; `--offset 1` table and JSON (ranks 2–3); past-end table/JSON; `--offset -1`; `--per-chunk` rejection on `sif search`; vector/hybrid per-chunk tables at 80/100/120; per-chunk CSV/Markdown/XML/`--files`; default chunk-match annotation; `eval --compare` text at 80/100/120 and JSON; leg × split table with an absent split; per-leg table with an under-floor leg; migration notice over three index passes; stderr/stdout separation under `NO_COLOR`.
 - Re-audit renders at HEAD (`bd6a8d8`, rich 15.0.0, no index): the vector and hybrid per-chunk tables and the `--compare` summary, per-leg, leg × split, and groups tables, re-rendered from the shipped table code with synthetic and B1-shaped rows at 79/80, 99/100, and 119/120 columns.
+
+---
+
+## Re-audit — 2026-11-26 (gap-closure plans 19-10, 19-11, 19-12)
+
+**Audited:** 2026-11-26. Everything above is the 2026-11-18 audit as re-pinned on 2026-11-25, kept as written; its score and findings are not edited here. This section is additive. It covers what plans 19-10, 19-11 and 19-12 changed on the user-facing surface, the status of every earlier finding, seven new findings (`R2-01` to `R2-07`) and a new score.
+**Baseline:** unchanged — no `UI-SPEC.md`; abstract 6-pillar standards adapted to the Click/Rich terminal surface. The functional contract is still decisions D-01 to D-12 in `19-CONTEXT.md`, the operator's recorded decision `monotone-map` (`19-11-SUMMARY.md`, `Decision:` line) and the two human checks the orchestrator approved on 2026-11-26 (`19-10-SUMMARY.md:327-356`).
+**Scope:** only the changed surface: the per-chunk tables of `sif search query --per-chunk` and `sif search vsearch --per-chunk`, and the per-chunk `--csv`, `--md`, `--xml` and `--files` output (19-10); the `--min-score` help text of `sif search search` and the changed score values in every output format, MCP `lex_search` included (19-12). Plan 19-11 changed no behaviour and has no surface of its own. Everything else above is carried, not re-examined.
+**Screenshots:** not captured — no web UI exists (no `.tsx`, `.jsx`, `.css` or `.scss` file under `src/`, no `components.json`); ports 3000 and 5173 are closed and 8080 serves an unrelated SearXNG. No screenshot was taken, so the gitignore gate was not run.
+**Interaction captures:** off, as on 2026-11-18 (`workflow.ui_interaction_capture` is not set in `.planning/config.json`). CLI states were exercised directly; see Evidence.
+**Registry audit:** skipped — no `components.json`.
+
+### Evidence
+
+- **Tree.** Source, tests and docs at `d5382ae`. HEAD moved to `4cf172c` during the audit; the two later commits (`e822b28`, `4cf172c`) touch only `19-12-SUMMARY.md` and `.planning/WINDOWS.md`, so the code and docs read here are HEAD's. `git diff --quiet 2154b75..HEAD` (the last audit's commit) exits 0 for `eval.py`, `index.py`, `core/models.py`, `src/sif/mcp/`, `vector.py`, `hybrid.py`, `rrf.py`, `personal_bench.py`, `docs/mcp-server.md`, `README.md`, `docs/quickstart.md`, `docs/search-algorithms.md` and `docs/models.md`: every earlier finding that lives in those files is unchanged by construction.
+- **Environment.** PATH `sif`, `pytest` and `python`: Python 3.13.9, rich 14.3.3, click 8.3.2. The project interpreter `.venv` (Python 3.10.22, rich 15.0.0 as `uv.lock` pins) gave identical per-chunk renders.
+- **Live, isolated, BM25-only.** `SIF_DB_PATH` and `SIF_CACHE_DIR` in a `mktemp -d` directory, removed afterwards; no model was loaded and the cache directory was never created. Captured under `NO_COLOR=1`: `--help` of the three subcommands; the `search` table at 80, 100 and 120 columns and `--json`, `--csv`, `--md`, `--xml`, `--files` and `-q`; a 22-value `--min-score` sweep on a 20-document copy of the corpus of `tests/unit/cli/test_search_min_score.py`; the probe query and a threshold sweep over the 56 queries of `tests/fixtures/bench/queries.json` on `tests/fixtures/bench/corpus` (150 documents, indexed as `bench-fixture`).
+- **Tests at HEAD.** `pytest tests/unit/cli/test_search.py::TestPerChunkSurfaces tests/unit/cli/test_search_min_score.py -p no:cacheprovider --no-cov -q` gave 32 passed.
+- **MCP schema.** `tools/list` was read from `register_tools(server, None)` without entering the lifespan, so no backend, database or cache was constructed.
+- **Per-chunk tables — not rendered live.** I did not run `sif search vsearch` or `sif search query` against any index and did not render them live: both need an embedding model, which this audit was barred from loading, and no index was built for them. Their evidence is (1) the 32 tests above; (2) the orchestrator's recorded human checks 1 and 2 (`19-10-SUMMARY.md:327-356`), quoted as its record and not re-run; and (3) the shipped table code re-rendered without an index or a model through the mocked searchers the tests use (`Console(width=…)`, synthetic rows) at 80, 100 and 120 columns, which is the method the 2026-11-25 re-audit used. (3) shows what the code draws for those rows; it is not a capture of real search output. The per-chunk CSV, Markdown, XML and `--files` output was not re-rendered at all: what is said about it below is taken from the tests' exact assertions and from human check 2.
+- **Own slips.** Four throwaway capture scripts stopped on a syntax, attribute or value error before writing any output. They were corrected and re-run; no figure in this section comes from a failed run.
+
+### Pillar Scores (2026-11-26)
+
+| Pillar | 2026-11-18 | 2026-11-26 | What moved |
+|--------|------------|------------|------------|
+| 1. Copywriting | 2/4 | 3/4 | The `--min-score` copy no longer contradicts the behaviour; the two comparison-table warnings are carried untouched; one new minor |
+| 2. Visuals | 2/4 | 3/4 | `Score` now falls down the list and `#sequence` survives 80 columns on both tables; the comparison report is still unreadable at 80 (carried); one new warning and one new minor on the hybrid per-chunk table |
+| 3. Color | 3/4 | 3/4 | Unchanged; the self-sizing Chunk cell keeps its magenta column style |
+| 4. Typography | 3/4 | 3/4 | Unchanged |
+| 5. Spacing | 2/4 | 2/4 | Unchanged: the comparison tables and the 12-line hybrid per-chunk rows at 80 columns are as before |
+| 6. Experience Design | 2/4 | 3/4 | `--min-score` keeps the best match and chunk identity reaches every format; the band where a threshold bites is undiscoverable (new); the per-leg table warning is carried |
+
+**Overall: 17/24** (2026-11-18 and 2026-11-25: 14/24)
+
+The scores use the calibration the earlier report implies: a pillar that holds a BLOCKER, or three or more open WARNINGs, sits at 2; one or two WARNINGs without a BLOCKER sit at 3. Copywriting, Visuals and Experience Design each lost a BLOCKER or their third WARNING; Spacing kept its three. No pillar is at 4, because each keeps at least one open WARNING or three open Minors.
+
+| Severity | 2026-11-18 | Closed by 19-10 and 19-12 | Carried | New | 2026-11-26 |
+|----------|------------|---------------------------|---------|-----|------------|
+| BLOCKER | 2 | 2 | 0 | 0 | 0 |
+| WARNING | 10 | 3 | 7 | 2 | 9 |
+| Minor | 17 | 0 | 17 | 5 | 22 |
+
+### Top 3 Priority Fixes (2026-11-26, whole surface)
+
+1. **Carried — the `sif eval --compare` evidence is still unreadable at 80 columns and still renders under-floor gates like valid ones** (earlier top fix 3; `eval.py:380-564` is byte-identical to the last audit). Plans 19-10 to 19-12 did not touch it, and with the two BLOCKERs closed it is the heaviest open defect.
+2. **R2-01 — say where a BM25 threshold bites** — `--min-score` now keeps the best match, but nothing a user reads tells them that values up to about 0.85 remove nothing and that the direction is stated in one help line only — add one clause to the `search --min-score` help, the same sentence to the `lex_search` description and `docs/mcp-server.md`, and make the emptied page name the threshold (`search.py:643-646, 782-786`; `src/sif/mcp/tools.py:318`).
+3. **R2-02 — give the hybrid Chunk column its directory back** — at 80 columns the column shows a file-name tail, so two documents with the same file name print the same cell and are told apart only by wrapped Title lines — when the file name repeats on the page, spend the width on the deepest distinguishing directory plus the name, or split out a narrow `Seq` column (`search.py:207-229, 263-273, 1401`).
+
+### Status of the Earlier Findings
+
+Only the findings the three plans touched were re-examined. "Not re-examined" means the file is byte-identical to the last audit's tree (see Evidence).
+
+| Pillar | Earlier finding, as titled above | 2026-11-26 |
+|--------|----------------------------------|------------|
+| 1 | BLOCKER — `--min-score` copy contradicts the behavior | **Resolved** for `sif search search` (19-12). The same words on `vsearch` and `query` no longer contradict the behaviour; what remains is R2-03 |
+| 1 | WARNING — internal decision ID in shipped table output | Open; not re-examined |
+| 1 | WARNING — the 80-char cell cap still truncates the comparison notes | Open; not re-examined |
+| 1 | Resolved at HEAD — the benchmark section names no missing command | Still resolved (`docs/benchmarking.md:208` unchanged) |
+| 1 | Minor — plain `x` instead of `×`; Minor — schema/UI terminology drift | Open; not re-examined |
+| 1 | Minor — hand-written docs leak milestone jargon | Open, and 19-12 added one instance (see Pillar 1) |
+| 2 | WARNING — the per-chunk table's identity signal is truncated away at 80/100 columns | **Resolved** for the sequence (19-10); a lesser residual is R2-02 |
+| 2 | WARNING — the comparison report is unreadable at 80 columns | Open; not re-examined |
+| 2 | WARNING — the `Score` column is visually anti-monotonic | **Resolved** (19-12) |
+| 2 | Minor — no focal point in the comparison; Minor — the snippet duplicates the title | Open. The leading H1 is still on every row of the live 80-column capture |
+| 3 | Minor — all-cyan comparison tables; no winner emphasis; five column colours | Open; not re-examined. The Chunk cell keeps its magenta style (see Pillar 3) |
+| 4 | Minor — unwrappable header, `Tuning (diagnostic)`, NDCG spelling, lowercase enums, letter `x` | Open; not re-examined |
+| 5 | WARNING — no vertical rhythm; density; per-chunk rows wrap at 80 columns | Open. The per-chunk tables end at their right border at 80, as they did before 19-10, and their rows still wrap (see Pillar 5) |
+| 5 | Minor — CI cells break at every width | Open; not re-examined |
+| 6 | BLOCKER — `--min-score` breaks the filter's user task | **Resolved** (19-12) |
+| 6 | WARNING — per-chunk mode loses chunk identity in three output modes | **Resolved** (19-10); a residual is R2-06 |
+| 6 | WARNING — the per-leg gate table hides `Sufficient`; absent splits render as zeros | Open; not re-examined |
+| 6 | Minor — a past-the-end page looks like a zero-match query | Open. A threshold that empties the page reaches the same copy (R2-05) |
+| 6 | Minor — no progress feedback; `--per-chunk` rejection gives only `No such option` | Open. The rejection was re-run: exit 2, `No such option: --per-chunk` |
+
+The six Pass entries above still hold on their own terms; what they describe was not re-checked beyond the captures listed under Evidence.
+
+### Detailed Findings (2026-11-26)
+
+#### Pillar 1: Copywriting (3/4)
+
+**Resolved — the `--min-score` help no longer contradicts the behaviour.** `sif search search --min-score` now reads "Keep matches scoring at least this value (0-1, higher is a stronger match); 0 keeps all, 1 or more keeps none" (`search.py:643-646`), and its generated row carries the same words (`docs/cli-reference.md:538`). Live: the help's three claims each hold (see R2-01 for the first, and the sweep under Evidence for the other two: `--min-score 1`, `1.5` and `2` returned `[]`; `0` returned every row).
+
+**New, R2-03 (Minor) — `vsearch` and `query` keep "Minimum score threshold": no longer wrong, still not saying which score.** `search.py:848` and `:1084`; `docs/cli-reference.md:495` and `:573`. The text does not mislead on direction any more. Before 19-12 the BM25 leg ran the other way, so "minimum" was false for it; now both legs rise with relevance — BM25 as the magnitude over one plus itself (`src/sif/search/bm25.py:47-57`), vector as one minus half the cosine distance (`src/sif/search/vector.py:335`) — and 19-12 made the old text more true, not less. What it still omits is the referent. Each leg is filtered on its own score (`src/sif/search/hybrid.py:121-143`, `vector.py:308, 315`) and the fused `Score` column, an RRF sum (`src/sif/search/rrf.py:157`), is never compared with the threshold. The orchestrator's recorded human check for 19-12 shows the gap: `sif search query … --min-score 0.3 --json` returned a page byte-identical to the unthresholded one, while its `Score` values were near `0.03` and its `bm25_score` values `0.8873`, `0.8333` and `0.7538` (`19-12-SUMMARY.md`, Human Check). One number therefore has two strengths, and three sibling flags now carry two descriptions with nothing to say whether the `search` contract carries over. The text was kept on purpose because the filters read differently, and the gap predates the plans. One sentence closes it: "Each leg is filtered on its own score; the Score column is not compared."
+
+**Carried and extended — hand-written docs leak milestone jargon.** The new score-direction note (`docs/benchmarking.md:247`) keeps the retired values in its sentence (`0.105703 → 0.0957`) and repairs them in a dated parenthetical of about 900 characters that names "plan 19-12" and cites `.planning/milestones/v1.2-phases/19-search-correctness/bench/g19-2-min-score.json`, a path a reader of the published docs cannot open. Line `:225` points at the same note. State today's values in the sentence, keep the retired ones in the parenthetical, and drop the plan number and the path.
+
+**Pass — the new text is specific and accurate.** Both changelog entries name the flag, the formats, the formula and the migration rule ("to convert a threshold written against the old scores, subtract it from 1", `docs/changelog.md:25`). The 19-12 entry is one bullet of 1,010 characters; a reader who wants that rule must reach its last clause.
+
+#### Pillar 2: Visuals (3/4)
+
+**Resolved — the `Score` column falls down the list.** Live at 80 columns on the bench-fixture index: rank 1 `Saltiv Protocol Notes` at `0.8943`, rank 2 `Qelron Protocol Notes` at `0.8473`, where the earlier audit captured `0.1057` and `0.1527`. The order is fixed by construction (`ORDER BY m.score`, `bm25.py:176, 198`) and pinned by `tests/unit/search/test_bm25.py:560`.
+
+**Resolved — every chunk row keeps its `#sequence` at 80 columns.** Both tables end at their right border there, with and without the Content column (`tests/unit/cli/test_search.py:4441-4498`, 32 passed; re-render at 80, 100 and 120 under both interpreters; human check 1). UAT test 1's criterion, "every chunk row shows which chunk it is", is met.
+
+**New, R2-02 (WARNING) — in the hybrid layout the Chunk column shows a file-name tail, so same-named documents are indistinguishable in it.** The reported defect is closed; the price is the other half of `path#sequence`. `_fit_head` keeps the suffix and the longest tail that begins after a path separator, cutting from the left (`search.py:207-229`), and the hybrid table gives that cell 14 to 15 cells of text at 80 columns, 10 with `--full --line-numbers`, because Snippet takes the rest (`search.py:1392-1405`). Re-rendered from the shipped code with the two same-named files of human check 1 (100-character paths under `corpus/alpha` and `corpus/beta`):
+
+```
+query   80:  …ce-notes.md#0  …ce-notes.md#1  …ce-notes.md#0  …ce-notes.md#1   (alpha and beta alike)
+query  100:  …aintenance-notes.md#0 …                                       (still alike)
+query  120:  …-and-maintenance-notes.md#0 …                                  (still alike)
+vsearch 80:  …maintenance-notes.md#0 …                                       (alike; 2-line rows)
+```
+
+At 80 columns the Title cell wraps to `Zorbatic` / `Capacitor` / `Calibration` / `Notes` against `Zorbatic` / `Capacitor Field` / `Notes`, so the rows are told apart by lines two and three of the Title, not by the column that exists to address the chunk. That is what human check 1 recorded. With the test file's own three documents, all named `protocol-notes.md`, the cells are `…col-notes.md#0`, `…col-notes.md#3` and `…col-notes.md#6`: the path portion is the same and is cut mid-word. The vector layout is sound at 80 columns (23 to 37 cells of text, for example `…maintenance-notes.md#0` and `/notes/chunky/protocol-notes.md#0`). Fix: when the file name repeats on the page, spend the budget on the deepest directory that tells the rows apart plus the name (`…/beta/…-notes.md#0`), or add a narrow `Seq` column and let the Chunk cell keep the head of the path (earlier recommendation 15). `search.py:207-229, 263-273, 1401`.
+
+**New, R2-07 (Minor) — a per-chunk hybrid page mixes chunk rows with document-level rows, and only the absent `#n` says which is which.** The BM25 leg returns documents, so `sif search query --per-chunk` yields rows without a sequence (the fallback in `_chunk_cell`, `search.py:253-260`). They render `…tocol-notes.md` beside `…col-notes.md#0` and nothing marks them as document-level; the Title cell, where `(stale vectors)` and `(N chunk matches)` already have a dim home (`search.py:169-187`), says nothing. The help's "Return one row per matched chunk instead of one row per document" (`search.py:1127`, `docs/cli-reference.md:575`) promises more than the hybrid page delivers. The formats are consistent with it: an empty `sequence` cell in CSV, no `Sequence:` line in Markdown, no `<sequence>` element in XML, `null` in JSON (`tests/unit/cli/test_search.py:4573-4624`). `19-10-SUMMARY.md:361` records the behaviour as a residual observation. Fix: a dim `(document)` on such rows in per-chunk mode, and half a sentence in the help.
+
+#### Pillar 3: Color (3/4)
+
+**Unchanged.** A re-render with colour forced (truecolor) gave the same column styles as before the change: cyan rank, green score, yellow title, magenta chunk (`\x1b[35m`), blue collection, white snippet. The self-sizing Chunk cell did not lose its column style, and the table still ended at its right border. The earlier palette note (five column colours, no legend) stands; nothing here is colour-only.
+
+#### Pillar 4: Typography (3/4)
+
+**Unchanged.** The Chunk cell is still plain text; when shortened it now begins with `…` and is measured in display cells, so a CJK file name counts double width as Rich does (`tests/unit/cli/test_search.py:4544-4561`). Scores keep four decimals in every format; what that costs the threshold is R2-04, under Pillar 6.
+
+#### Pillar 5: Spacing (2/4)
+
+**Still open — hybrid per-chunk rows wrap at 80 columns.** The tables end at their right border, as they did before 19-10 (`19-10-SUMMARY.md:198`), but the hybrid layout still gives Snippet about 15 cells: 12 to 13 physical lines per row (four rows make 53 to 57 lines), and 20 to 21 with `--full --line-numbers`, where Chunk gets 10 cells, Snippet 11 and Content 10 and the Title cell renders `Document-…`. The vector table is one line per row, two when the title wraps. The column shares are the same as before the change (`19-10-SUMMARY.md:226`), so 19-10 neither caused nor eased this. The comparison-table findings are carried.
+
+#### Pillar 6: Experience Design (3/4)
+
+**Resolved — `--min-score` keeps the best BM25 matches.** Live on the probe index: four matches score `0.8803`, `0.8456`, `0.8456`, `0.8456`; `--min-score 0.85` leaves rank 1 alone, still numbered `1`. That the filter runs before the page is sliced is pinned where it can be seen, in the SQL and its parameters (`bm25.py:130-134, 175-177, 197-199`; `tests/unit/search/test_bm25.py:84, 621`). `--min-score 1` returns `[]`. Through the real CLI: `tests/unit/cli/test_search_min_score.py:108-136`. Ranking without a threshold is unchanged: B0 and B1 each report 100 unchanged, mean delta 0.0 (`bench/g19-2-min-score.json`).
+
+**Resolved — chunk identity reaches the machine formats.** Per-chunk CSV gains a last `sequence` column and carries the `path#sequence` address in `path`; Markdown gains a `Sequence:` line; XML a `<sequence>` element; `--files` and `-q` list each path once (`tests/unit/cli/test_search.py:4573-4687`, human check 2). Output without `--per-chunk` is pinned unchanged by three guards and by 19-10's 3,840-comparison differential. One cost is recorded for the operator's awareness and not counted: in per-chunk CSV, Markdown and XML the `path` field is an address on chunk rows, not a filesystem path, so a consumer that opens `path` must strip `#n` or use `--files`. That is D-03's display form and the layout the orchestrator approved on the operator's behalf (human check 2, a decision row).
+
+**New, R2-01 (WARNING) — the band where a BM25 threshold bites is not discoverable, and the direction is stated in one help line only.** The new help text is true, and it is the only place a user is told the direction. Not stated in: the table header (`Score`, `search.py:790, 1024, 1394`); the CSV, Markdown and XML `score` (`:520, 547, 576`); `--json`, where `score` is a bare number and `scores` is `{}` on BM25 rows; `sif search search --explain`, which prints only `Query:` and `Results: N` (`:814-816`); the MCP schema, where `min_score` is published as `{"default": 0.0, "minimum": 0.0, "title": "Min Score", "type": "number"}` and the result's `score` as `{"title": "Score", "type": "number"}` on all three tools (`src/sif/mcp/tools.py:140, 318, 358`; `src/sif/mcp/protocol.py:40`); `docs/mcp-server.md:134` ("Minimum score threshold (default: 0.0)"), whose `:188` and `:193` only list `min_score`; `docs/models.md:486` ("0.0-1.0 (convention, not enforced)"); and `README.md`, `docs/quickstart.md` and `docs/search-algorithms.md`, which do not mention the flag. The direction appears only in `search.py:643-646`, its generated row, `docs/changelog.md:25` and `docs/benchmarking.md:247`. The Phase 22 review recorded the behaviour this replaces as a BLOCKER on the MCP surface (`22-UI-REVIEW.md`); the behaviour is fixed for `lex_search`, the description is not.
+
+"(0-1)" also describes a scale of which most is dead. Measured on `tests/fixtures/bench/corpus` (56 queries, 42 with a match, 84 rows): every displayed score lies between `0.8473` and `0.9649`, and rank 1 scores `0.8939` to `0.9649` (median `0.9503`). `--min-score` 0.5, 0.7 and 0.80 keep 84 of 84 rows and remove nothing; 0.85 keeps 70 (83%); 0.90 keeps 56 (67%) and empties 14 of the 42 pages; 0.95 keeps 29 and empties 21; 0.99 keeps none. On the 20-document probe index nothing below 0.85 removes a row, and the whole spread is `0.8456` to `0.8803`. So the working band is the top 15% of the advertised scale, and on a query with few matches it is a few hundredths wide. A user who tries 0.5 sees no effect; one who tries 0.9 gets `No results found.` (R2-05). Both corpora are synthetic, so the exact band is theirs. The floor is not: the map gives 0.5 to any match whose bm25 magnitude is 1 (`bm25.py:47-57`), and it compresses hard — the probe's strong document repeats each query word 48 times and scores `0.8803` against `0.8456` for a single mention, so the `Score` column cannot show how much stronger the best match is. The map is the operator's recorded decision and is not re-litigated here. Fix: one more clause in the help that names the band ("BM25 matches mostly score above 0.85; lower values remove nothing"), with the measured band for the operator's own corpus if it differs; "rises with relevance" in the `lex_search` description and `docs/mcp-server.md:188`; and the emptied page of R2-05.
+
+**New, R2-04 (Minor) — a row's displayed score, passed back as `--min-score`, can drop that row.** Every human format prints four decimals (`search.py:800, 1039, 1410`; CSV `:520`; Markdown `:547`; XML `:576`), but the predicate compares the unrounded value (`bm25.py:130-134`). Live on the probe index: rank 1 prints `0.8803` and `--min-score 0.8803` returns `[]`, while `--min-score 0.8802816013881186`, the `--json` value, keeps it. Ranks 2 to 4 print `0.8456` and `--min-score 0.8456` keeps them, because their value rounds down. "Keep matches scoring at least this value" therefore holds or fails by the direction of the rounding, and the natural move of cutting at a row loses that row about half the time. `19-12-SUMMARY.md` records the last-bit boundary in its tests, not this display gap, which is up to 0.00005. Fix: round the threshold down to four decimals before binding it, one line in `bm25_rank_threshold`, or compare the displayed value.
+
+**New, R2-05 (Minor) — a threshold that removes every match looks like a query with no match, and out-of-range values pass silently.** `--min-score 0.9` on the probe's four-match query prints `No results found.`, the same text as a zero-match query (`search.py:782-786`); `--explain` prints nothing on an empty page, because its block at `:814-816` sits after that `return`; CSV, Markdown and XML emit only the header. `-0.5` and `nan` keep everything and `1.5` and `2` keep nothing, each with exit 0 and an empty stderr. The option is a bare `float` (`search.py:641-647`), so `--help` shows `FLOAT` with no range beside `--limit … [x>=1]` and `--offset … [x>=0]`, while MCP rejects a negative value (`Field(ge=0.0)`, `src/sif/mcp/protocol.py:98, 131, 159`). This is the earlier past-the-end minor reached by a second route, and 19-12 makes it the common outcome of a too-high threshold. Fix: `No results found (min score 0.9).` in the empty state, the `explain` lines above the `return`, and a `FloatRange(min=0)` on the option.
+
+**New, R2-06 (Minor) — a path-only per-chunk page is shorter than `--limit`, and nothing says so.** `--per-chunk` with `--files` or `-q` prints each path once (`search.py:276-278, 1001, 1338`) while `--limit` and `--offset` still count chunk rows. So `--per-chunk --files -n 3` printed two lines in `tests/unit/cli/test_search.py:4661-4672`, and 19-10's own live render printed six lines for a twelve-row page (`19-10-SUMMARY.md:287`). The lines are plain paths, without `#sequence`. `--files` says "Output file paths only" (`:1134`), `--limit` "Number of results" (`:1067`), `--per-chunk` "Return one row per matched chunk…" (`:1127`); only `docs/changelog.md:24` states the collapse. Adding `--per-chunk` to a `--files` pipeline therefore shortens its output. The de-duplication is what the earlier report asked for (recommendation 1) and is right for piping. Fix: one clause in the `--per-chunk` help, "with --files each path is listed once".
+
+**Pass — the changed states hold.** The threshold is bound as a parameter in the outer `WHERE` of both SQL branches, ahead of `LIMIT ? OFFSET ?` (`bm25.py:130-134, 175-177, 197-199`); `--min-score 1` returns `[]` as documented; a negative value and NaN keep every row; `sif search search` still rejects `--per-chunk` (exit 2) and `vsearch` still rejects `--csv` and `--files` (exit 2), as D-01 requires.
+
+### The Three Questions Put to This Re-audit
+
+| Question | Answer | Finding |
+|----------|--------|---------|
+| Is the score's direction stated anywhere a user sees it, other than that one help line? | No. Not in the table header, CSV, Markdown, XML, `--json`, `--explain`, the MCP schema, `docs/mcp-server.md`, `docs/models.md`, the README or the quickstart. Only in the generated `docs/cli-reference.md:538` row (the same text), the changelog and a benchmarking note. The MCP tool description says only that `lex_search` matches `sif search search`. | R2-01 |
+| Does `query --min-score` keeping "Minimum score threshold" mislead now that its two legs filter on different scales? | Not on direction: both legs now rise with relevance, so 19-12 made the old text more true. It still does not say that each leg is filtered on its own score and that the fused `Score` column is never compared. | R2-03 |
+| Is the 0.85-and-above band where a BM25 threshold bites discoverable? | No. On the bench fixture every score lies in 0.8473 to 0.9649 and thresholds up to 0.80 remove nothing; the help says only "(0-1)". | R2-01, R2-05 |
+
+### Recommended Follow-ups (not done here)
+
+1. R2-01: extend the `search --min-score` help with the band; say "rises with relevance" in the `lex_search` description and `docs/mcp-server.md:188`. Test: pin the documented band against `tests/fixtures/bench/corpus` (every displayed score above the stated floor; a threshold below it keeps every row).
+2. R2-02: make `_fit_head` prefer a directory that tells the rows of the page apart when file names repeat, or split out a `Seq` column. Test: a render test with two same-named files asserting that the Chunk cells differ at 80 columns.
+3. R2-03: one sentence on `query` and `vsearch` naming the score that is compared.
+4. R2-04: round the threshold to the displayed precision. Test: a CLI test that passes each row's printed score back and expects the row to survive.
+5. R2-05: a threshold-aware empty state, `--explain` before the `return`, `FloatRange(min=0)` on the three commands.
+6. R2-06 and R2-07: one clause each in the `--per-chunk` help; a dim `(document)` on document-level rows of a per-chunk page.
+7. `docs/benchmarking.md:247`: today's values in the sentence, no plan number, no `.planning` path.
+
+### Files Audited (2026-11-26)
+
+- `src/sif/cli/commands/search.py` (1434 lines): the three `--min-score` and two `--per-chunk` options; `Score` and `Chunk` columns; `_fit_head`, `_ChunkAddress`, `_chunk_column`, `_unique_paths`; the three formatters with `per_chunk`; the empty-state and `explain` blocks.
+- `src/sif/search/bm25.py`: `bm25_display_score`, `bm25_rank_threshold`, the predicate in both SQL branches, `ORDER BY`.
+- `src/sif/search/hybrid.py`, `vector.py`, `rrf.py` (read for the `query` and `vsearch` legs; unchanged since the last audit).
+- `src/sif/mcp/tools.py`, `protocol.py`: the published `min_score` and `score` schema entries (`tools/list` read without a backend).
+- `tests/unit/cli/test_search.py` (`TestPerChunkSurfaces`, 30 items), `tests/unit/cli/test_search_min_score.py` (2 items), `tests/unit/search/test_bm25.py` (test names only).
+- `docs/cli-reference.md` (`:495, 504, 538, 573, 575`), `docs/changelog.md` (`:24, 25`), `docs/benchmarking.md` (`:225, 247`), `docs/mcp-server.md` (`:134, 188, 193`), `docs/models.md` (`:486`), `README.md`, `docs/quickstart.md`, `docs/search-algorithms.md` (searched for the flag and for example scores).
+- `19-CONTEXT.md`, `19-10-SUMMARY.md`, `19-11-SUMMARY.md`, `19-12-SUMMARY.md` (at `4cf172c`, where its Task 3 human check is recorded as approved), `19-UAT.md`, `bench/g19-2-min-score.json` (as quoted in the 19-12 summary), `22-UI-REVIEW.md` (the `min_score` item).
+- Live captures: `sif search --help`; `search`, `vsearch` and `query` `--help`; the `search` table at 80, 100 and 120 columns; `--json`, `--csv`, `--md`, `--xml`, `--files`, `-q`; the 22-value threshold sweep; the empty state in six formats; the fixture threshold sweep (56 queries).
+- No-index re-renders of the shipped table code with synthetic rows: both per-chunk tables at 80, 100 and 120 columns, plain and with `--full --line-numbers`, with long paths, with two same-named files and with a document-level row; one colour-forced render for the column styles.
