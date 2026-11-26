@@ -19,6 +19,30 @@ from sif.search.vector import VectorSearcher
 from tests.support.bench import EMBEDDING_DIM, ConceptEmbedder
 
 
+def _assert_matches_snapshot(actual: object, expected: object) -> None:
+    """Assert two snapshot trees match, tolerating one-ULP float drift.
+
+    SQLite FTS5's ``bm25()`` calls the platform libm's ``log()``, whose last
+    bit can differ between macOS and ubuntu. A float leaf therefore gets a
+    tight relative tolerance (``rel=1e-12`` is roughly nine orders of magnitude
+    above the observed one-ULP drift yet far below a real regression), while
+    every other value — strings, ranks, document ids, and list ordering —
+    stays exact.
+    """
+    if isinstance(actual, float) and isinstance(expected, float):
+        assert actual == pytest.approx(expected, rel=1e-12)
+    elif isinstance(actual, dict) and isinstance(expected, dict):
+        assert actual.keys() == expected.keys()
+        for key in expected:
+            _assert_matches_snapshot(actual[key], expected[key])
+    elif isinstance(actual, list) and isinstance(expected, list):
+        assert len(actual) == len(expected)
+        for actual_item, expected_item in zip(actual, expected, strict=True):
+            _assert_matches_snapshot(actual_item, expected_item)
+    else:
+        assert actual == expected
+
+
 # =============================================================================
 # Fixtures
 # =============================================================================
@@ -957,13 +981,13 @@ class TestHybridSC1PipelineGolden:
 
     def test_default_options_match_prechange_snapshot(self) -> None:
         """SC1: plain SearchOptions() reproduces the captured pre-change output."""
-        assert self._search(SearchOptions()) == self.SNAPSHOT
+        _assert_matches_snapshot(self._search(SearchOptions()), self.SNAPSHOT)
 
     def test_explicit_default_weights_match_prechange_snapshot(self) -> None:
         """SC1: explicit rrf_k=60/bm25_weight=1.0/vector_weight=1.0 reproduces it too."""
         options = SearchOptions(rrf_k=60, bm25_weight=1.0, vector_weight=1.0)
 
-        assert self._search(options) == self.SNAPSHOT
+        _assert_matches_snapshot(self._search(options), self.SNAPSHOT)
 
     def test_pipeline_weights_visibly_reorder_fused_ranking(self) -> None:
         """Weights honored end-to-end: heavy BM25 lifts the bm25-only doc.
@@ -1181,7 +1205,10 @@ class TestCandidateFetch:
 
             results = pipeline.search(_FakeEmbedder.QUERY, SearchOptions())
 
-            assert [r.to_dict() for r in results] == TestHybridSC1PipelineGolden.SNAPSHOT
+            _assert_matches_snapshot(
+                [r.to_dict() for r in results],
+                TestHybridSC1PipelineGolden.SNAPSHOT,
+            )
         finally:
             conn.close()
 
@@ -2149,7 +2176,10 @@ class TestSearchPipelineIdentity:
 
         assert embedder.embed_calls == [_FakeEmbedder.QUERY]
         assert not hasattr(type(embedder), "embed_query")
-        assert [result.to_dict() for result in results] == TestHybridSC1PipelineGolden.SNAPSHOT
+        _assert_matches_snapshot(
+            [result.to_dict() for result in results],
+            TestHybridSC1PipelineGolden.SNAPSHOT,
+        )
 
     def test_default_no_prompt_query_role_reproduces_the_sc1_golden(self) -> None:
         """D-19: the query role with no prompt is the pre-phase plain path.
@@ -2169,7 +2199,10 @@ class TestSearchPipelineIdentity:
 
         assert embedder.query_calls == [_FakeEmbedder.QUERY]
         assert embedder.embed_calls == []
-        assert [result.to_dict() for result in results] == TestHybridSC1PipelineGolden.SNAPSHOT
+        _assert_matches_snapshot(
+            [result.to_dict() for result in results],
+            TestHybridSC1PipelineGolden.SNAPSHOT,
+        )
 
 
 # =============================================================================
