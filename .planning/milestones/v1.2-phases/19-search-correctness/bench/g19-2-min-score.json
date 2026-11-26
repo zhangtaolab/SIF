@@ -34,6 +34,45 @@
         ]
       ],
       "min_score_0_23": []
+    },
+    "after": {
+      "head": "37b6315f43e38cd8c9a3d4b7f8ec9d3ba606a938",
+      "rows": [
+        [
+          1,
+          "Saltiv Protocol Notes",
+          0.8942969490522424
+        ],
+        [
+          2,
+          "Qelron Protocol Notes",
+          0.8472891464061002
+        ]
+      ],
+      "min_score_0_12": [
+        [
+          1,
+          "Saltiv Protocol Notes",
+          0.8942969490522424
+        ],
+        [
+          2,
+          "Qelron Protocol Notes",
+          0.8472891464061002
+        ]
+      ],
+      "min_score_0_23": [
+        [
+          1,
+          "Saltiv Protocol Notes",
+          0.8942969490522424
+        ],
+        [
+          2,
+          "Qelron Protocol Notes",
+          0.8472891464061002
+        ]
+      ]
     }
   },
   "hybrid_bm25_leg": {
@@ -53,11 +92,57 @@
       ],
       "min_score_0_3": [],
       "min_score_0_5": []
+    },
+    "after": {
+      "rows": [
+        [
+          1,
+          "Saltiv Protocol Notes",
+          0.8942969490522424
+        ],
+        [
+          2,
+          "Qelron Protocol Notes",
+          0.8472891464061002
+        ]
+      ],
+      "min_score_0_3": [
+        [
+          1,
+          "Saltiv Protocol Notes",
+          0.8942969490522424
+        ],
+        [
+          2,
+          "Qelron Protocol Notes",
+          0.8472891464061002
+        ]
+      ],
+      "min_score_0_5": [
+        [
+          1,
+          "Saltiv Protocol Notes",
+          0.8942969490522424
+        ],
+        [
+          2,
+          "Qelron Protocol Notes",
+          0.8472891464061002
+        ]
+      ]
     }
   },
   "bench_compare": {
     "b0": {
       "before": {
+        "mean": 0.0,
+        "helped": 0,
+        "hurt": 0,
+        "unchanged": 100,
+        "n": 100,
+        "noise_floor": 0.01
+      },
+      "after": {
         "mean": 0.0,
         "helped": 0,
         "hurt": 0,
@@ -74,7 +159,25 @@
         "unchanged": 100,
         "n": 100,
         "noise_floor": 0.01
+      },
+      "after": {
+        "mean": 0.0,
+        "helped": 0,
+        "hurt": 0,
+        "unchanged": 100,
+        "n": 100,
+        "noise_floor": 0.01
       }
+    }
+  },
+  "sc1_golden_bm25_score": {
+    "d3": {
+      "before": 0.9999986250018905,
+      "after": 1.3749981093775994e-06
+    },
+    "d1": {
+      "before": 0.9999986865688892,
+      "after": 1.313431110717347e-06
     }
   }
 }

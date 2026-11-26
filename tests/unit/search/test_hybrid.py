@@ -793,6 +793,19 @@ class TestHybridSC1PipelineGolden:
     title-column values above; the verdict and per-candidate GateResult
     fields live in
     ``.planning/phases/19-search-correctness/bench/d12-verdict.json``.
+
+    Score-direction fix (19-12, 2026-11-26): on 2026-11-26 plan 19-12 changed
+    the BM25 display map for UAT gap G-19-2. The earlier map was the
+    reciprocal of one plus the magnitude of the bm25 value, under which a
+    better match showed a lower number and ``--min-score`` removed the best
+    matches first; the map is now the magnitude over one plus the magnitude,
+    which rises with relevance. Only the two ``bm25_score`` values moved (d3
+    0.9999986250018905 -> 1.3749981093775994e-06, d1
+    0.9999986865688892 -> 1.313431110717347e-06): document order, RRF scores
+    and vector scores are byte-identical, because RRF ranks by list position
+    and only copies the BM25 score. The two values were regenerated from
+    code, not derived by subtracting the old ones from 1, which loses digits
+    and does not reproduce them.
     """
 
     SNAPSHOT: ClassVar[list[dict[str, object]]] = [
