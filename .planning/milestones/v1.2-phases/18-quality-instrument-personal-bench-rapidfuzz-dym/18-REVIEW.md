@@ -1,13 +1,14 @@
 ---
 phase: 18-quality-instrument-personal-bench-rapidfuzz-dym
-reviewed: 2026-11-14T15:58:58Z
+reviewed: 2026-11-25T04:42:46Z
 depth: standard
-files_reviewed: 16
+files_reviewed: 17
 files_reviewed_list:
   - docs/architecture.md
   - docs/benchmarking.md
   - docs/cli-reference.md
   - pyproject.toml
+  - scripts/generate_config_ref.py
   - scripts/generate_cli_ref.py
   - src/sif/cli/commands/eval.py
   - src/sif/cli/main.py
@@ -31,9 +32,9 @@ status: issues_found
 
 # Phase 18: Code Review Report
 
-**Reviewed:** 2026-11-14T15:58:58Z
+**Reviewed:** 2026-11-25T04:42:46Z (incremental pass) and 2026-11-14T15:58:58Z (initial audit)
 **Depth:** standard
-**Files Reviewed:** 16
+**Files Reviewed:** 17 (16 in the initial audit, 1 more in the incremental pass)
 **Status:** issues_found
 
 ## Summary
@@ -43,6 +44,22 @@ Reviewed the Phase 18 diff (`6a12d90..4600131`): the personal benchmark instrume
 The instrument still has honesty and robustness gaps that the tests do not pin. The most consequential: synthesized/replayed queries that begin with the search pipeline's reserved `vec:`/`hyde:` prefixes abort the whole eval (CR-01); the CLI can write saved runs its own loader rejects (`-n 0`/negative, large `-n` file-size overflow, over-cap strings); replay bypasses the global query-history read opt-out; saved runs contain literal document-body phrases despite the "never contains document content" claim; and the noise gate can warrant a defaults change from a single held-out query while displaying a larger noise floor. Several failure paths also escape the CLI's `ClickException` convention as raw tracebacks.
 
 No `<structural_findings>` payload was supplied, so there is no fallow section. The necessity rubric was applied at `standard` depth; no necessity findings were warranted.
+
+## Incremental Re-review (2026-11-25)
+
+**Scope:** the four files that changed since the last commit touching this report (`b817ebb`) and bear on this phase: `pyproject.toml`, `uv.lock` and `tests/test_docs.py`, the three files of `18-VERIFICATION.md`'s `covered_files` that changed, plus `scripts/generate_config_ref.py`, which the docs-generator gate runs. `a13b134c` and `848e6b6a` changed the `torch` requirement of the `embed` and `all` extras from bare `torch` to `torch>=2.11` and regenerated the lockfile. `9d85c9cd` added `--torch-backend=auto` to the strings `test_installation_doc_is_uv_first` requires and added `test_installation_doc_warns_against_cpu_backend_on_macos`; `6b409030` registered `docs/machine-migration.md` in `DOCS_FILES`. `82df76b0` added Intel XPU to the device-selection note that `scripts/generate_config_ref.py` emits. All five are quick-task commits, not Phase 18 work, and no Phase 18 SUMMARY changed. With the workflow's default scoping the resolver found no task commit of this phase among them (`status: degraded`, `source: phase-range`, `reason: no-task-commits-since`), because every Phase 18 task commit predates `b817ebb`; it widened to all 58 non-planning files changed since the archive commit. The scope was therefore set through the workflow's `--files` override, which leaves every other gate in place. Three of the four files are in the 16-file scope above; `scripts/generate_config_ref.py` is new to this report.
+
+**Result: no new finding.** The 22 findings below keep their id, title, severity and text. None cites a file in this delta, and none of the files they cite changed since `b817ebb`, so none was fixed by it and none was re-reviewed. Their rows in `18-REVIEW-DISPOSITION.md` are untouched.
+
+Checked at HEAD `d3a7f2c`:
+
+- **rapidfuzz (QUAL-01).** `pyproject.toml:41` still declares `rapidfuzz>=3.14.5,<4`. `uv.lock:575` carries the same specifier and `uv.lock:507-508` the same fleet, 3.14.5 for Python below 3.11 and 3.14.6 for 3.11 and later. No line naming rapidfuzz appears in the `b817ebb..HEAD` diff of either file.
+- **torch floor.** `embed` and `all` carry the same requirement (`pyproject.toml:55`, `:73`), and the four `docsif` `requires-dist` rows in the lockfile carry the matching specifier (`uv.lock:581-584`). The resolved fleet did not move (2.14.1 for Python 3.10, 2.15.0 for 3.11 and later, `+cpu` builds from the explicit CPU index on Linux), so every locked install still satisfies the floor. `uv lock --check --offline` (uv 0.9.8) resolves 106 packages and exits 0. The floor's text guards (`tests/test_ci_workflows.py:139`, `:172`) and `docs/installation.md:133` and `:146` agree with it.
+- **Lockfile integrity.** The `uv.lock` diff removes 23 lines and adds 23. Four pairs are the torch specifier. The other 19 pairs are the same two `resolution-markers` strings moved within their fork lists, the same lines on both sides, which changes no resolution.
+- **Docs gate (`tests/test_docs.py`).** `pytest tests/test_docs.py` reports 21 passed: the 20 of the original audit plus the new macOS guard. `docs/machine-migration.md` exists and is in the `mkdocs.yml` nav (`:96`), so the new `DOCS_FILES` registration is live rather than skipped. The two strings the delta makes mandatory are present in `docs/installation.md` (`:27`, `:42`), and the first occurrence of each install method is still ordered uv tool, uvx, pip (`:17`, `:61`, `:80`). `ruff check` and `ruff format --check` (ruff 0.15.11) are clean on the file.
+- **Configuration generator.** `generate_markdown()` rendered in memory is identical to the committed `docs/configuration.md`, so the generator gate still reproduces the doc byte for byte. The device order the new text states (CUDA, Intel XPU, Apple MPS, CPU) and its caveat that XPU needs an XPU-enabled torch build agree with `_auto_device` (`src/sif/embedding/embedder.py:105-127`).
+
+Not checked here: whether the full suite passes locally; the fixes recorded for CR-01 and WR-01 to WR-10, whose files are unchanged since `b817ebb` and were not re-read; and whether the CPU index really has no macOS wheel for the current torch fleet, which the new guard's docstring asserts and which cannot be verified offline. Necessity was assessed against the rubric and yields no finding. No structural section is included because no structural pre-pass was configured. This pass was performed inline from `gsd-code-reviewer.md` by the orchestrator, because this runtime exposes no Agent tool; no external reviewer evidence was supplied.
 
 ## Critical Issues
 

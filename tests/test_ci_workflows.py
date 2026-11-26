@@ -27,7 +27,15 @@ WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 TEST_MATRIX = WORKFLOWS / "test-matrix.yml"
 SETUP_UV_SHA = "astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2"
 PYTHON_VERSION_MATRIX = "python-version: ['3.10', '3.11', '3.12', '3.13']"
-MATRIX_EXCLUSION = re.compile(r"- os: (\S+)\n +python-version: '([0-9.]+)'")
+MATRIX_AXIS_LIST = re.compile(r"^[ \t]*(os|python-version):[ \t]*\[([^\]]*)\][ \t]*$", re.MULTILINE)
+MATRIX_SKIP_ENTRY = re.compile(r"^[ \t]*(exclude|include|if|continue-on-error):", re.MULTILINE)
+ALL_BRANCH_PUSH_TRIGGER = re.compile(r"^on:\n  push:\n    branches: \['\*\*'\]\n", re.MULTILINE)
+PULL_REQUEST_TRIGGER = re.compile(r"^  pull_request:[ \t]*$", re.MULTILINE)
+EXPECTED_MATRIX_CELLS = sorted(
+    (os_name, version)
+    for os_name in ("ubuntu-latest", "macos-latest")
+    for version in ("3.10", "3.11", "3.12", "3.13")
+)
 
 
 def _section(text: str, name: str) -> str:
@@ -179,8 +187,8 @@ def test_installation_docs_match_extras() -> None:
     assert offenders == [], f"docs still advertise {BLACK_DEV_REQUIREMENT!r}: {offenders}"
 
 
-def test_matrix_declares_six_cells() -> None:
-    """The matrix is 4 Python versions x 2 operating systems minus two macOS cells."""
+def test_matrix_declares_eight_cells() -> None:
+    """The test job matrix is the full 4 Python versions x 2 operating systems product."""
     text = _workflow_text()
 
     missing = [
@@ -190,7 +198,7 @@ def test_matrix_declares_six_cells() -> None:
     ]
     assert missing == [], f"test-matrix.yml is missing matrix cells {missing}; text: {text!r}"
     assert "fail-fast: false" in text, (
-        "test-matrix.yml must disable fail-fast so every cell reports"
+        "test-matrix.yml must disable fail-fast so every cell reports; text: " + repr(text)
     )
     assert "cancel-in-progress: true" in text, (
         "test-matrix.yml must cancel superseded runs per ref; text: " + repr(text)
@@ -198,13 +206,39 @@ def test_matrix_declares_six_cells() -> None:
     count = text.count(PYTHON_VERSION_MATRIX)
     assert count == 1, (
         "test-matrix.yml must declare the contiguous python-version list exactly once; "
-        f"found {count}: {PYTHON_VERSION_MATRIX!r}"
+        f"found {count}: {PYTHON_VERSION_MATRIX!r}; text: {text!r}"
     )
-    exclusions = MATRIX_EXCLUSION.findall(_job_block(text, "test"))
-    expected = [("macos-latest", "3.11"), ("macos-latest", "3.12")]
-    assert exclusions == expected, (
-        "the matrix exclusions make the matrix six cells (Linux 3.10-3.13; macOS 3.10 and "
-        f"3.13); expected {expected} but found {exclusions}"
+
+    test_job = _job_block(text, "test")
+
+    def declared_cells() -> list[tuple[str, str]]:
+        """Return the sorted (os, python-version) product the test job matrix declares."""
+        axes: dict[str, list[str]] = {}
+        for key, body in MATRIX_AXIS_LIST.findall(test_job):
+            assert key not in axes, (
+                f"test-matrix.yml declares the matrix axis {key} more than once; "
+                f"test job block: {test_job!r}"
+            )
+            axes[key] = [token.strip().strip("'\"").strip() for token in body.split(",")]
+        assert sorted(axes) == ["os", "python-version"], (
+            "the test matrix must declare exactly the os and python-version axes; "
+            f"found {sorted(axes)}; test job block: {test_job!r}"
+        )
+        return sorted(
+            (os_name, version) for os_name in axes["os"] for version in axes["python-version"]
+        )
+
+    cells = declared_cells()
+    assert cells == EXPECTED_MATRIX_CELLS, (
+        "the test matrix must be the full product of ubuntu-latest and macos-latest x 3.10, "
+        f"3.11, 3.12, 3.13 (8 cells); expected {EXPECTED_MATRIX_CELLS} but found {cells}; "
+        f"test job block: {test_job!r}"
+    )
+    skip_entries = MATRIX_SKIP_ENTRY.findall(test_job)
+    assert skip_entries == [], (
+        f"the test job declares matrix skip entries {skip_entries}: exclude/include reshape the "
+        "matrix and if/continue-on-error blank a cell or mute its failure, so all 8 cells must "
+        f"run unconditionally; test job block: {test_job!r}"
     )
 
 
@@ -247,16 +281,21 @@ def test_setup_uv_is_sha_pinned() -> None:
     )
 
 
-def test_matrix_push_trigger_is_main_only() -> None:
-    """Push CI runs on main only, and tags never trigger the matrix."""
+def test_matrix_push_trigger_covers_all_branches() -> None:
+    """Every branch push and every pull request triggers the matrix; tags never do."""
     text = _workflow_text()
 
-    assert re.search(r"^on:\n  push:\n    branches: \[main\]\n", text, re.MULTILINE) is not None, (
-        "test-matrix.yml push trigger must be exactly 'branches: [main]' so feature branches "
-        "rely on their pull request run; text: " + repr(text)
+    assert ALL_BRANCH_PUSH_TRIGGER.search(text) is not None, (
+        "test-matrix.yml must trigger on the contiguous on:/push:/branches: ['**'] lines so "
+        "every branch push runs the full matrix (no PR-vs-push split); text: " + repr(text)
+    )
+    assert PULL_REQUEST_TRIGGER.search(text) is not None, (
+        "test-matrix.yml must declare a bare pull_request: trigger beside push: under on: so "
+        "every pull request runs the full matrix; text: " + repr(text)
     )
     assert "tags:" not in text, (
-        "test-matrix.yml must not trigger on tags (the release workflow owns v* tags)"
+        "test-matrix.yml must not trigger on tags (the release workflow owns v* tags); "
+        "text: " + repr(text)
     )
 
 

@@ -6,7 +6,7 @@ status: verified
 threats_open: 0
 asvs_level: 1
 created: "2026-11-14"
-verified: "2026-11-14"
+verified: "2026-11-25"
 ---
 
 # Phase 18 — Security
@@ -15,6 +15,13 @@ verified: "2026-11-14"
 > Verified by /gsd-secure-phase 18 on 2026-11-14 at HEAD `e7eebb0` (ASVS L1, block_on high).
 > Register authored at plan time: all four PLANs carry STRIDE `<threat_model>` blocks. L1
 > grep-depth verification confirmed every mitigation present; `threats_open: 0`.
+>
+> Re-verified by /gsd-secure-phase 18 on 2026-11-25 at HEAD `9927d41` (ASVS L1, block_on high,
+> orchestrator L1 short-circuit, no auditor spawn) against the tree after the v1.2 archive commit
+> `b817ebb`. All 16 register rows were re-verified at HEAD, weighted toward `T-18-11` and
+> `T-18-SC`, the rows whose mitigations cite `pyproject.toml` / `uv.lock`. No citation broke and
+> no mitigation regressed; the delta invalidates nothing. `threats_open: 0`. Detail: the
+> 2026-11-25 re-audit notes below.
 
 ---
 
@@ -72,6 +79,7 @@ No accepted risks.
 |------------|---------------|--------|------|--------|
 | 2026-11-14 | 16 | 16 | 0 | Claude (gsd-secure-phase, ASVS L1, block_on high) |
 | 2026-11-15 | 16 | 16 | 0 | Claude (post-fix reconciliation: CR-01/WR-01..WR-10 fixed) |
+| 2026-11-25 | 16 | 16 | 0 | ZCode (gsd-secure-phase, ASVS L1 short-circuit — all 16 rows re-verified at HEAD `9927d41`; no register change) |
 
 ---
 
@@ -84,6 +92,8 @@ No accepted risks.
 
 **Approval:** verified 2026-11-14 — 16/16 threats closed at L1; 0 open at or above `high`.
 
+**Re-verification:** verified 2026-11-25 — 16/16 threats closed at L1; 0 open at or above `high` (all rows re-verified at HEAD `9927d41`; no register change).
+
 ## Security Audit 2026-11-18
 
 | Metric | Count |
@@ -91,3 +101,98 @@ No accepted risks.
 | Threats found | 0 |
 | Closed | 0 |
 | Open | 0 |
+
+## Security Audit 2026-11-25
+
+| Metric | Count |
+|---|---|
+| Threats found | 16 |
+| Closed | 16 |
+| Open | 0 |
+
+### Re-audit notes (2026-11-25, HEAD `9927d41`)
+
+- **Scope.** State A re-audit of the existing register against the tree after `b817ebb`, the
+  last commit that touched this file. Depth L1, `block_on: high`, ASVS level 1. The register is
+  authored at plan time (all four PLANs carry STRIDE `<threat_model>` blocks) and
+  `threats_open` was 0, so the workflow short-circuit applied: Steps 4 and 5 were skipped and
+  `gsd-security-auditor` was not spawned. The orchestrator classified every row, and all 16 were
+  read at HEAD rather than only the delta rows. The four SUMMARY files carry
+  `## Threat Surface Scan` sections (there is no `## Threat Flags` heading); each reports no new
+  security-relevant surface, so there are no unregistered flags.
+- **Delta outside `.planning/`, `b817ebb..HEAD`: 58 files.** Of the files behind this register,
+  exactly two changed, both cited by `T-18-11` (`T-18-SC` cites the same lock):
+  - `pyproject.toml`: only the two torch extras floors, `"torch"` to `"torch>=2.11"` (`embed`,
+    `all`). Two commits produced this: `a13b134c` raised the floor to `>=2.14`, then `848e6b6a`
+    lowered it to `>=2.11`. `rapidfuzz>=3.14.5,<4` at `pyproject.toml:41` is untouched.
+  - `uv.lock`: 23 lines removed, 23 added. Four are torch `requires-dist` entries gaining
+    `specifier = ">=2.11"`; the other 19 are `resolution-markers` strings reordered inside ten
+    package blocks, the same strings on both sides. No line touching an sdist, wheel, URL, hash,
+    version or source changed, and the package set is the same 106 with an identical
+    name@version multiset. The rapidfuzz 3.14.5 / 3.14.6 split is unchanged (`uv.lock:1741`,
+    `uv.lock:1835`); both blocks are identical modulo that marker reordering.
+  - `uv lock --check` exits 0 at HEAD (uv 0.9.8). `.github/` is byte-identical to `b817ebb` and
+    to `e7eebb0`, so `uv sync --frozen` is still the test-matrix install
+    (`.github/workflows/test-matrix.yml:41`, `:65`).
+  - `docs/installation.md`, the "install" part of the `T-18-11` component, gained torch backend
+    recipes on the official `download.pytorch.org` index and the `torch>=2.11` extras row.
+    Nothing in it changes how rapidfuzz is resolved or installed.
+  - **`T-18-11` and `T-18-SC` hold.** A floor raise on an already-locked optional dependency adds
+    no package, version, source or index. The package-legitimacy gate is therefore not
+    re-triggered and "the phase's only new package is rapidfuzz" stays true. The torch floor is
+    itself a registered threat under Phase 17 (`T-17-06`, closed).
+- **Rows behind other changed files.**
+  - `T-18-15` (embedder provider boundary): `src/sif/embedding/embedder.py`, `factory.py` and
+    `manager.py` changed and `normalize.py` was added, but the delta is device auto-selection
+    (CUDA, XPU, MPS, CPU), cache-dir plumbing and float64 L2 renormalization. `ModelType` gained
+    no member and `huggingface` is still unimplemented (`src/sif/embedding/factory.py:98`), so
+    the `_REMOTE_MODEL_TYPES = {"openai", "modelscope"}` condition
+    (`src/sif/cli/commands/eval.py:82`) still covers every remote-capable type. `eval.py` is
+    byte-identical to `b817ebb`.
+  - Docs gate, cited by no mitigation cell: `scripts/generate_config_ref.py` and
+    `tests/test_docs.py` changed. Both generators exit 0 on a clean `HEAD` extract, and
+    `docs/cli-reference.md` and `docs/configuration.md` come out byte-identical to the tracked
+    files.
+- **A second window, outside the brief's delta but inside this register's.** The last
+  substantive reconciliation of this file is `58ab80dc` (2026-11-15). Between it and `b817ebb`,
+  six later-phase commits (`f3bc9e7e`, `c9386e78`, `cf6e0bed`, `2c948aec`, `ef50fcef`,
+  `618997c1`) moved `src/sif/cli/commands/eval.py` (+179/-11) and
+  `src/sif/search/personal_bench.py` (+272/-18). The rows citing those files were therefore
+  re-read at HEAD instead of carried forward:
+  - `T-18-02`: held-out widening (Phase 18, extended by Phase 23) still runs under
+    `cap=MAX_SAMPLE_DOCUMENTS` (`personal_bench.py:1123`, `:1154`), so bodies still load for at
+    most 250 documents, and `load_document_metadata` still selects metadata columns only (`:803`).
+  - `T-18-10`: the winner rule is stricter than the cell states, not weaker. `618997c1` added
+    `strictly_above_noise_floor` (`:609-617`) and a winner must now also be strictly above the
+    displayed 1/N floor (`:1951`, `:1963`). `warrants_default_change` is still the held-out
+    summary gate alone (`:2396-2397`).
+  - `T-18-01`, `T-18-06`: the `--require-language` and `--min-heldout` compare warnings print
+    only `click.Choice`-bounded language names and an integer.
+  - `src/sif/search/suggest.py`, `src/sif/search/benchmark.py`,
+    `src/sif/cli/commands/suggest.py` and both suggest test files are untouched since `58ab80dc`,
+    so `T-18-12`, `T-18-13` and `T-18-14` rest on unchanged code.
+- **Result.** 16/16 closed, 0 open, 0 open below the `high` threshold. No row changed status or
+  ID and no row was added. No mitigation cell carries a line reference, so there was none to
+  refresh. No accepted risk was added.
+- **Evidence.** `pytest` from PATH (miniconda 3.13.9, rapidfuzz 3.14.6), 302 passed and 0
+  failed: `tests/unit/cli/test_eval.py` 75, `tests/unit/search/test_personal_bench.py` 159,
+  `tests/unit/search/test_suggest.py` 32, `tests/unit/cli/test_suggest.py` 15,
+  `tests/test_docs.py` 21. That includes the pins `test_every_suggestion_hits_as_query`,
+  `test_full_vocab_dym_under_budget_on_60k_vocab`,
+  `test_load_rejects_an_oversized_file_before_decoding` and
+  `test_fingerprint_mismatch_refuses_and_names_both_values`. GitHub Actions Test Matrix run
+  `45522236981` on `a25eb07` is green on 8/8 cells plus lint, and `a25eb07..HEAD` differs only
+  under `.planning/` (8 files). The lint job's `ty check` is not counted as evidence: that job
+  syncs only `--extra dev`, so `transformers` and `torch` are absent and
+  `import-not-found = "ignore"` (`pyproject.toml:219`) hides the gap.
+- **Recorded, not re-triaged.** Two observations. Neither is introduced by this delta and
+  neither changes a row.
+  - The `## Security Audit 2026-11-18` block above reads 0 / 0 / 0, which does not describe this
+    16-row register. It is left byte-identical as history; the 16 / 16 / 0 block is the count of
+    record.
+  - "CI installs with `uv sync --frozen`" (`T-18-11`) is true of the test matrix.
+    `.github/workflows/docs.yml:33` (Docs Validation: `pull_request` on docs paths, `push` to
+    `main`, `permissions: contents: read`) installs with `pip install -e ".[dev]"`, which does
+    not consume the lock. That workflow is byte-identical back to `e7eebb0`, the HEAD of the
+    original audit, so it predates every entry here. It is CI install surface, which belongs to
+    the Phase 17 register rather than this one.

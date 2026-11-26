@@ -1,28 +1,30 @@
 ---
 phase: "24"
 slug: "tuning-models-ux-install-docs"
-verified: "2026-11-18T11:56:18Z"
-verified_at: "2026-11-18T11:56:18Z"
-verifier: "gsd-verifier (Claude)"
+verified: "2026-11-25T02:49:17Z"
+verified_at: "2026-11-25T02:49:17Z"
+verifier: "gsd-verifier (ZCode subagent)"
 status: passed
 score: "5/5 requirements; 43/43 plan must-have truths"
 covered_files:
-  - ".planning/phases/24-tuning-models-ux-install-docs/24-01-PLAN.md"
-  - ".planning/phases/24-tuning-models-ux-install-docs/24-01-SUMMARY.md"
-  - ".planning/phases/24-tuning-models-ux-install-docs/24-02-PLAN.md"
-  - ".planning/phases/24-tuning-models-ux-install-docs/24-02-SUMMARY.md"
-  - ".planning/phases/24-tuning-models-ux-install-docs/24-03-PLAN.md"
-  - ".planning/phases/24-tuning-models-ux-install-docs/24-03-SUMMARY.md"
-  - ".planning/phases/24-tuning-models-ux-install-docs/24-04-PLAN.md"
-  - ".planning/phases/24-tuning-models-ux-install-docs/24-04-SUMMARY.md"
-  - ".planning/phases/24-tuning-models-ux-install-docs/24-05-PLAN.md"
-  - ".planning/phases/24-tuning-models-ux-install-docs/24-05-SUMMARY.md"
-  - ".planning/phases/24-tuning-models-ux-install-docs/24-06-PLAN.md"
-  - ".planning/phases/24-tuning-models-ux-install-docs/24-06-SUMMARY.md"
-  - ".planning/phases/24-tuning-models-ux-install-docs/24-07-PLAN.md"
-  - ".planning/phases/24-tuning-models-ux-install-docs/24-07-SUMMARY.md"
-  - ".planning/phases/24-tuning-models-ux-install-docs/bench/breadcrumb-verdict.json"
-  - ".planning/phases/24-tuning-models-ux-install-docs/bench/chunk-sweep.json"
+  - ".github/workflows/docs.yml"
+  - ".planning/milestones/v1.2-phases/24-tuning-models-ux-install-docs/24-01-PLAN.md"
+  - ".planning/milestones/v1.2-phases/24-tuning-models-ux-install-docs/24-01-SUMMARY.md"
+  - ".planning/milestones/v1.2-phases/24-tuning-models-ux-install-docs/24-02-PLAN.md"
+  - ".planning/milestones/v1.2-phases/24-tuning-models-ux-install-docs/24-02-SUMMARY.md"
+  - ".planning/milestones/v1.2-phases/24-tuning-models-ux-install-docs/24-03-PLAN.md"
+  - ".planning/milestones/v1.2-phases/24-tuning-models-ux-install-docs/24-03-SUMMARY.md"
+  - ".planning/milestones/v1.2-phases/24-tuning-models-ux-install-docs/24-04-PLAN.md"
+  - ".planning/milestones/v1.2-phases/24-tuning-models-ux-install-docs/24-04-SUMMARY.md"
+  - ".planning/milestones/v1.2-phases/24-tuning-models-ux-install-docs/24-05-PLAN.md"
+  - ".planning/milestones/v1.2-phases/24-tuning-models-ux-install-docs/24-05-SUMMARY.md"
+  - ".planning/milestones/v1.2-phases/24-tuning-models-ux-install-docs/24-06-PLAN.md"
+  - ".planning/milestones/v1.2-phases/24-tuning-models-ux-install-docs/24-06-SUMMARY.md"
+  - ".planning/milestones/v1.2-phases/24-tuning-models-ux-install-docs/24-07-PLAN.md"
+  - ".planning/milestones/v1.2-phases/24-tuning-models-ux-install-docs/24-07-SUMMARY.md"
+  - ".planning/milestones/v1.2-phases/24-tuning-models-ux-install-docs/bench/breadcrumb-verdict.json"
+  - ".planning/milestones/v1.2-phases/24-tuning-models-ux-install-docs/bench/chunk-sweep.json"
+  - "Makefile"
   - "README.md"
   - "docs/benchmarking.md"
   - "docs/cli-reference.md"
@@ -35,6 +37,7 @@ covered_files:
   - "scripts/breadcrumb_eval.py"
   - "scripts/chunk_sweep.py"
   - "scripts/generate_cli_ref.py"
+  - "scripts/generate_config_ref.py"
   - "src/sif/cli/commands/eval.py"
   - "src/sif/cli/commands/index.py"
   - "src/sif/cli/commands/models.py"
@@ -63,14 +66,21 @@ covered_files:
   - "tests/unit/scripts/test_chunk_sweep.py"
   - "tests/unit/search/test_personal_bench.py"
   - "tests/unit/search/test_tuning_verdict.py"
-covered_digest: "v4:sha256:0a9b590675fb57578eef58813390516cf91df8458489d10b7f964b52ad1610d3"
+covered_digest: "v4:sha256:62dcaa380218a87ee9b639335669e09f2104cc08b6aa8cdd2a36e7145b89db1e"
 behavior_unverified: 0
 overrides_applied: 0
+coincidental_reliance_items:
+  - truth: "24-01 truth 4: an empty corpus yields insufficient-evidence and still writes a countable artifact"
+    reason: fixture-only
+    harden: "Declare the precondition: the countable insufficient-evidence artifact is written when the eval stages complete but yield no admissible evidence. A corpus below the instrument's 50-document adequacy floor aborts with exit 1 and no artifact."
+  - truth: "24-04 truth 2: sif models pull emits no prompts or progress bars in a non-TTY context"
+    reason: undeclared-precondition
+    harden: "Declare that library progress output on a real download is suppressed only under quiet mode (-q), or suppress it whenever stdout is not a TTY. The non-TTY output test replaces ModelDownloader, so the real library path is exercised by no test."
 gaps: []
 re_verification:
   previous_status: passed
   previous_score: "5/5 requirements; 43/43 plan must-have truths"
-  reason: "Regeneration after commit 618997c (2026-11-18) hardened the shared 1/N noise-floor gate: personal_bench._mean switched to math.fsum, a rounded strictly_above_noise_floor helper replaced the raw float comparison in both noise_gate and embedder_verdict.decide_from_gates, and one test was added. Phase 24's tuning and breadcrumb verdicts consume these gates, so the covered digest went stale. Every must-have was re-derived from the current tree (HEAD 46cb115 differs from 618997c only in .planning/STATE.md); prior claims were not carried forward."
+  reason: "Stale-input regeneration. verification.status reported stale because the covered file tests/test_ci_workflows.py changed at 10a9685 (plan 17-10 restored the 8-cell CI matrix and the every-branch push trigger). All 43 plan must-have truths and the 5 roadmap success criteria were re-derived from the seven plans and judged against HEAD be244bb on live evidence; no prior claim was carried forward. Six statements in the 2026-11-24 report were wrong or imprecise and are corrected in the delta section. Two advisory reliance items are recorded; neither changes a truth status."
   gaps_closed: []
   gaps_remaining: []
   regressions: []
@@ -80,240 +90,214 @@ re_verification:
 
 **Phase Goal:** Chunking defaults are evidence-gated, model management is reliable, and every platform has a correct install path — the milestone closes on measured defaults and generator-verified docs.
 
-**Verified:** 2026-11-18T11:56:18Z
+**Verified:** 2026-11-25T02:49:17Z (HEAD `be244bb`, branch `gsd/phase-24-reverify`)
 **Status:** passed
-**Re-verification:** Yes — regeneration after gate-hardening commit 618997c; every must-have re-derived from the current tree.
+**Re-verification:** Yes — stale-input regeneration; every must-have re-derived from the current tree.
 **Requirements:** QUAL-02, QUAL-03, MODELS-01, MODELS-02, DOCS-01
 
-Method: goal-backward. Every claim below is backed by the live file, the committed artifact, a command run during this verification, or a passing test — not by SUMMARY text or the prior report. The regression gate was re-run in full on the current tree (3234 passed, 1 skipped, 95.03% coverage), and the committed evidence was replayed through the current gate policy.
+Method: goal-backward against the archived ROADMAP success criteria (5) and the seven PLAN `must_haves` (43 truths). Every claim below rests on a live file at HEAD, a command run during this verification, or a passing test — not on SUMMARY text or the prior report. No product source, test, doc, workflow, or default was modified; nothing was fixed.
 
-## Delta Confirmation (commit 618997c)
+Scope of this run, stated plainly: the full suite was **not** run locally (CI ran it on a byte-identical tree, confirmed below); no real model download and no sweep re-run was performed; the literal `make docs-generate` target was not run (both generator `main()` functions were re-run with only the output directory redirected, then byte-compared).
 
-Commit `618997c` — "fix(search): keep the 1/N noise floor a tie on py3.10/3.11" — changed three files:
+## Post-Verification Delta (e64c52c..be244bb) and Requirement Impact
 
-| File | Change | Phase-24 impact |
-|------|--------|-----------------|
-| `src/sif/search/personal_bench.py` | `_mean` uses `math.fsum`; new `strictly_above_noise_floor(mean_delta, noise_floor)` compares `round(abs(delta), 6) > round(floor, 6)`; `noise_gate` uses it; bootstrap resample means use `fsum` | Tightens tie semantics only: a nominal 0.01 delta at its own 1/N floor is now a tie, never a win. Cannot turn a keep verdict into an adopt. |
-| `src/sif/search/embedder_verdict.py` | `decide_from_gates` uses the shared `strictly_above_noise_floor` instead of a raw `abs(...) > floor` | The Phase 23 precedent this phase's policy mirrors; same conservative direction. |
-| `tests/unit/search/test_personal_bench.py` | Added `test_float_accumulated_epsilon_tie_never_wins` | Passing (see behavioral evidence). |
+`git diff --stat e64c52c..HEAD` outside `.planning/` shows five files. Nothing under `src/`, `scripts/`, `Makefile`, `pyproject.toml`, or `uv.lock` changed.
 
-`git diff --stat 618997c..HEAD` shows only `.planning/STATE.md`; the code tree verified here is identical to the CI-verified commit. The Phase-24 artifacts and policy were replayed through the current code rather than assumed:
+| File | Change | Requirement impact |
+|------|--------|--------------------|
+| `tests/test_ci_workflows.py` | Commit `10a9685` (plan 17-10). `MATRIX_EXCLUSION` removed; five matrix/trigger constants added; `test_matrix_declares_six_cells` replaced by `test_matrix_declares_eight_cells`; `test_matrix_push_trigger_is_main_only` replaced by `test_matrix_push_trigger_covers_all_branches`. | **None adverse.** AST comparison against `e64c52c`: 22 of 24 functions identical; only those two replaced. The five `test_installation_docs_*` guards (DOCS-01) are unchanged, shifted by +8 and +39 lines. All 18 tests pass, and each guard still decides its claim: 21 of 21 complete-removal mutations turned it red. |
+| `.github/workflows/test-matrix.yml` | Same commit: push trigger `[main]` to `['**']`; the two macOS exclusions removed, restoring 8 cells. | **None.** Not a covered file; evidence only. Truth 36 cites this run's result, not the workflow text. |
+| `docs/contributing.md`, `docs/development.md`, `docs/testing.md` | `a321eaa`: eight-cell wording. | **None.** Not Phase 24 deliverables. |
 
-| Replay | Current-code result | Committed artifact |
-|--------|--------------------|--------------------|
-| `decide_chunk_default(selected_arm="overlap-0", tuning_mean_delta=0.000737…, confirmation)` | `keep-default` — reasons: held-out winner false; held-out mean delta −0.008605 is below 0.01 | `decision: keep-default` |
-| `decide_breadcrumb_default(confirmation, legs, duplicates)` | `keep-breadcrumb-off` — reason: overall held-out gate winner is false; body winner false, body sufficient true, title winner true | `decision: keep-breadcrumb-off` |
+### Corrections to the 2026-11-24 report
 
-Both committed verdicts remain exactly what the current gate policy produces. The full suite at the current tree is **3234 passed / 1 skipped / 95.03% coverage** (exit 0), and GitHub Actions at 618997c is green: Test Matrix (8 cells: py3.10–3.13 × ubuntu/macos) plus the lint job whose `uv run --frozen ty check src/sif` step succeeded. Docs Validation also succeeded.
+1. **`tests/test_ci_workflows.py` row (old line 99).** It described a six-cell matrix guard with macOS exclusions and a `[main]`-only push trigger. That was true when written and is false at HEAD: the module now pins the full 8-cell product with no skip entries, and a push on every branch plus `pull_request`. The row above replaces it.
+2. **Success criterion 5 evidence.** It cited "`.github/workflows/test-matrix.yml:79` runs the gate". That was wrong when written: `test-matrix.yml` has zero `docs-generate` references at `462266e`, `e64c52c`, and HEAD, and line 79 was the type-check step. The CI diff gate lives at **`.github/workflows/docs.yml:38-42`** (both generators, then `git diff --exit-code`), unchanged since `92e01502` (2026-11-07).
+3. **Artifact count.** "27/27 declared artifacts pass" was imprecise. The verb reports **27 of 29** at their declared path; plan 06's two bench artifacts are reported MISSING there because the plan frontmatter still names `.planning/phases/24-…`. Both exist, tracked, at the archived path — see Artifacts.
+4. **CI evidence.** "All 7 matrix cells plus lint, run 45135099379" was a wording slip: that run is 7 jobs in total (6 matrix cells plus lint) at `f9d238e` on `main`. It is superseded by run `45522236981` (8 cells plus lint, `a25eb07`).
+5. **Truth 5 evidence** omitted two literal deviations from the must-have wording (no `vectors` key; limitation states N=194, not N=56). They are disclosed below rather than passed silently.
+6. **Truth 25 evidence** did not mention that `docs/index.md` carries no `uvx` one-off command of its own. Disclosed below.
 
-## Requirement Verdicts
+## Goal Achievement
 
-### QUAL-02 — Held-out-gated chunk size/overlap sweep: PASS
+### Roadmap Success Criteria
 
-| Check | Evidence |
-|-------|----------|
-| Six-arm fixed grid including shipped 512/128, in fixed order | `src/sif/search/tuning_verdict.py` `SWEEP_GRID` = 512/128, 512/64, 512/0, 448/112, 384/96, 256/64; live `--dry-run --json` printed the same six arms in order |
-| Every arm pins modelscope Qwen3, dim 1024, max_tokens 512; only chunk knobs vary | `scripts/chunk_sweep.py:161-167` env pins; live dry run `expected_identity` = modelscope:Qwen/Qwen3-Embedding-0.6B, dimension 1024, null prompts, `max_tokens: 512` |
-| Per-arm persisted identity asserted after embed, before eval; baseline identity mismatch rejected | Stage order `STAGE_SUFFIXES = ("index", "embed", "identity", "eval")`; `test_identity_stage_uses_the_probe_mode`, `test_valid_identity_passes`, and the baseline rejection tests (`test_sentence_transformers_backend_is_rejected`, `test_different_model_name_is_rejected`, `test_fingerprint_mismatch_is_rejected`, `test_missing_saved_run_is_rejected`, `test_unreadable_saved_run_is_rejected`) pass |
-| Tuning selects, held-out confirms; deterministic tie-break; equal gate never adopts | `select_tuning_candidate` / `decide_chunk_default`; `test_n100_epsilon_tie_keeps_default`, `test_n101_two_epsilon_win_adopts`, `test_ci_including_zero_never_adopts`, `test_equal_deltas_resolve_by_wall_time_then_grid_order` pass |
-| Empty/zero-query/sub-floor evidence → insufficient, no default change, countable artifact | `test_empty_confirmation_is_insufficient`, `test_missing_candidate_is_insufficient`, `test_below_sufficiency_floor_is_insufficient`, `test_no_positive_candidate_returns_none` pass |
-| Committed artifact records per-arm costs, fingerprint, min-heldout, limitation, no query text or absolute paths | `bench/chunk-sweep.json`: 6 arms each with documents/chunks/embedded_documents/embed_wall_seconds/cache_rows_before/after/cache_hits, identity block; `corpus_fingerprint 9ccbf4eea9263ed4`, `min_heldout_for_epsilon_win: 101`, measured-N limitation; `grep -c "/Users"` = 0 |
-| Real six-arm run, decision keep-default | artifact `decision: keep-default`; confirmation mean_delta −0.008605, CI [−0.021559, +0.003094], n 194, winner false; documented at `docs/benchmarking.md:334-347` |
-| Defaults unchanged; only the gate can change them | live imports printed `DEFAULT_CHUNK_SIZE=512`, `DEFAULT_CHUNK_OVERLAP=128` (`src/sif/config/constants.py:19-20`) |
-| `--dry-run` full ordered plan, no subprocess; overwrite guard | `python3 scripts/chunk_sweep.py --dry-run --json` exit 0 with all six arm plans; `test_dry_run_json_invokes_no_subprocess`, `test_force_replaces_a_different_run` pass |
+| # | Success Criterion | Status | Evidence |
+|---|-------------------|--------|----------|
+| 1 | Held-out-gated chunk size/overlap sweep; per-arm re-chunk + re-embed on isolated arms; embed cost reported; defaults change only via the gate | ✓ VERIFIED | Live dry run: six arms, only `SIF_CHUNK_SIZE`/`SIF_CHUNK_OVERLAP` differ, each with its own `--index` DB and `index embed --force`. Committed artifact: six arms over 610 documents with per-arm embed seconds and cache deltas. Committed decision `keep-default`; replay through the current policy reproduces it. `DEFAULT_CHUNK_SIZE=512`, `DEFAULT_CHUNK_OVERLAP=128`. |
+| 2 | Title-breadcrumb experiment; per-leg ablation; title-signal duplication checked against Phase 19 title FTS; defaults change only via the gate | ✓ VERIFIED | Artifact: overall held-out +0.014104 (`winner: false`), title leg +0.048521 (`winner: true`), body leg +0.006243 (`winner: false`). The title leg is the comparison against the already-indexed title; the body-leg veto rejects a title-only gain. Decision `keep-breadcrumb-off`; `embed_breadcrumb` is `False`. |
+| 3 | `sif models pull` reliable; DEFAULT_MODELS Qwen3-0.6B family; SHA-256 cache check (no md5); deterministic ModelScope path; canonical cache dir | ✓ VERIFIED | Registry: Qwen3-Embedding-0.6B / Qwen3-Reranker-0.6B / Qwen2.5-0.5B-Instruct, all `master`, equal to the shipped Settings defaults. `verify_manifest` uses SHA-256; `md5` appears nowhere in `src/sif/models`. Canonical `<cache>/models/<owner>/<name>`. |
+| 4 | `sif models status` shows identity/backend/dims with a backend probe; no Rich output in non-TTY contexts | ✓ VERIFIED | Live plain run: five sections in declared order, zero box-drawing characters, exit 0. "Silent" is read as the plan defines it — plain `section.key: value` or JSON, Rich only on a TTY — since the command must also print its report. |
+| 5 | uv-first install docs with Linux CPU torch recipe, llama-cpp indexes, degradation matrix, client snippets; every new command/Settings field passes the `make docs-generate` CI diff gate | ✓ VERIFIED | Four entry points lead with `uv tool install`; `installation.md:30` CPU recipe; llama-cpp `:159-210`; matrix `:212-225`; snippets `:227-275`. Both generators re-run byte-identically. CI gate at `.github/workflows/docs.yml:38-42`. |
 
-### QUAL-03 — Title-breadcrumb experiment (embed-text overlay + per-leg ablation): PASS
+### Plan Must-Have Truths
 
-| Check | Evidence |
-|-------|----------|
-| Builder: title + latest heading, dedupe, title-only/content-only cases | `src/sif/indexing/breadcrumb.py` `breadcrumb_embed_texts`; 20 builder/metric tests pass (`tests/unit/indexing/test_breadcrumb.py`) |
-| Default-off Settings switch, no CLI flag | `src/sif/config/settings.py:224` (`embed_breadcrumb`, env `SIF_EMBED_BREADCRUMB`); runtime check printed `False`; the only CLI reference is the pass-through at `src/sif/cli/commands/index.py:422` — no Click option exists |
-| Changes only embedding input; stored content/FTS/BM25 unchanged | `src/sif/indexing/embed_writer.py:190` substitutes texts only at the embed call; default-off path is exactly `[chunk.content for chunk in chunks]`; `tests/unit/indexing/test_embed_writer.py` passes |
-| Wired through `index embed` and watcher | `src/sif/cli/commands/index.py:422`, `src/sif/indexing/watcher.py:296` |
-| Identity not extended; cache-key consequence covered | no identity change; embed-writer tests assert every embedded string changes with the flag |
-| Duplicate metrics per document, aggregated per chunk | `duplicate_metrics`; artifact records title_share 1.0, in_content_share 0.622955, subchunk_share 0.387919, title_equals_heading_share 0.026364 over 21,886 chunks/610 docs |
-| Body-leg veto: title-only/flat/regressing body → keep; absent body → insufficient | `decide_breadcrumb_default`; `test_overall_winner_with_a_flat_body_leg_is_title_leg_only`, `test_regressing_body_leg_is_rejected_with_numbers`, `test_absent_body_leg_is_insufficient_evidence` pass |
-| Real arm, pinned identity, baseline rejection, artifact guard | `scripts/breadcrumb_eval.py`; dry run shows one arm with `embed_breadcrumb: true`, identity modelscope Qwen3/1024/512; baseline mismatch tests pass; `bench/breadcrumb-verdict.json` identity `modelscope:Qwen/Qwen3-Embedding-0.6B`, no absolute paths |
-| Decision keep-breadcrumb-off with numbers | artifact `decision: keep-breadcrumb-off`, overall mean +0.014104 CI [−0.005664, +0.035548] winner false; title leg winner true, body leg winner false; `docs/benchmarking.md:349-363` |
-| Default unchanged | runtime `Settings().embed_breadcrumb is False`; no `chunking.contract` marker code in `src/` |
-| `--dry-run` single ordered arm, no subprocess | `python3 scripts/breadcrumb_eval.py --dry-run --json` exit 0; stages `arm:index → arm:embed → arm:identity → arm:eval` |
-
-### MODELS-01 — Reliable `sif models pull`: PASS
-
-| Check | Evidence |
-|-------|----------|
-| Canonical cache `<Settings.get_cache_dir()>/models/<owner>/<name>` | `src/sif/models/download.py` `canonical_model_dir` + default root; live `models status --json` printed `/Users/forrest/Library/Caches/sif/models/Qwen/Qwen3-Embedding-0.6B`, state `absent`, exit 0, no download |
-| Cache hit requires manifest + per-file size + SHA-256; manifestless re-downloads | `verify_manifest` + SHA-256 helpers; no md5 in the file; `test_valid_manifest_returns_without_downloading`, `test_empty_directory_is_not_a_hit`, `test_nonempty_directory_without_manifest_is_not_a_hit`, `test_size_mismatch_is_not_a_hit`, `test_hash_mismatch_is_not_a_hit` pass |
-| Atomic download: sibling temp, verify, backup/replace, cleanup | `test_success_leaves_no_temporary_or_backup_directories`, `test_replaces_unverified_target_and_removes_backup`, `test_client_failure_leaves_no_target_or_scratch_directory`, `test_missing_config_json_fails_and_cleans_up` pass |
-| DEFAULT_MODELS = Qwen3-0.6B family with explicit revision; matches Settings | live registry print: embedding `Qwen/Qwen3-Embedding-0.6B`, reranker `Qwen/Qwen3-Reranker-0.6B`, query expansion `qwen/Qwen2.5-0.5B-Instruct`, revision `master`; `Settings().model_name` equals the embedding entry; `test_registry_matches_shipped_settings_defaults`, `test_registry_pins_master_revision_for_every_entry` pass |
-| Legacy layouts recognized; source survives until target verifies | `_legacy_candidates`/`_adopt_legacy_model`; migration, explicit-root, failed-rename, and ignored-legacy tests pass |
-| `--force` bypass; missing modelscope actionable error | `test_force_redownloads_despite_valid_manifest`, `test_missing_modelscope_raises_actionable_import_error` pass |
-| `inspect_cache` five states + revision, no download | `test_reports_all_states_without_importing_modelscope`, `test_inspect_reports_legacy_then_valid` pass; live status reported `absent` without downloading |
-
-### MODELS-02 — `sif models status`: PASS
-
-| Check | Evidence |
-|-------|----------|
-| Reports model id/type/backend/dimension, cache path/state/revision, persisted identity | live `models status --json` (exit 0): sections `settings`, `cache`, `backend`, `vector_backend`, `identity`; plain run prints fixed-order `settings.model_type: modelscope`, `settings.dimension: 1024`, `cache.path`, `cache.state: absent`, `backend.available: True` |
-| Backend probe imports/downloads nothing | `importlib.util.find_spec` + `importlib.metadata.version`; `test_backend_probe_uses_find_spec_and_metadata` passes |
-| Explicit states, always exit 0 | `test_no_index_reports_no_index`, `test_index_without_identity_row_reports_no_identity`, `test_matching_identity_reports_match`, `test_model_mismatch_is_reported_exit_zero`, `test_stored_dimension_mismatch`, `test_schema_width_mismatch`, `test_corrupt_identity_row_degrades_without_traceback` pass |
-| Non-TTY plain lines / JSON; Rich only on TTY | live piped runs produced plain `section.key: value` lines and sorted JSON, no box drawing; `test_non_tty_output_is_plain_and_ordered`, `test_tty_renders_table` pass |
-| `sif pull` hidden deprecated alias delegates; stderr-only notice | live top-level `--help` omits `pull`; `pull --help` says "deprecated: use 'sif models pull'"; `src/sif/cli/commands/pull.py:125` `hidden=True`; `tests/unit/cli/test_pull.py` passes |
-| Generator and docs tests skip hidden commands | `scripts/generate_cli_ref.py:104,120`; `docs/cli-reference.md` lists `models pull`/`models status`, no `### sif pull`; docs test passes |
-
-### DOCS-01 — uv-first install + degradation + generator gate: PASS
-
-| Check | Evidence |
-|-------|----------|
-| Every install entry point is uv-first | `README.md:37-78`; `docs/installation.md:17-60` (Method 1 uv tool, Method 2 uvx, pip is Method 3); `docs/quickstart.md:31-73`; `docs/index.md:72-89` |
-| Linux CPU recipe is `--torch-backend=cpu`; pyproject-index claim gone | `docs/installation.md:33,50`; `README.md:44,48,53`; `grep pyproject docs/installation.md` = no hits |
-| llama-cpp wheel indexes, multi-index strategy, source build, py3.12 all-extra path | `docs/installation.md:138-148` CPU/CUDA 12.1/Metal index table + resolver guidance; py3.12 `docsif[all]` at `docs/quickstart.md:33` and `docs/index.md:85` |
-| Honest degradation matrix | `docs/installation.md:191-203`: BM25-only base; missing sqlite-vec → CLI vector/hybrid raise the vector-store error while MCP `hybrid_search` degrades to BM25 with one warning; Windows daemon/service refused, foreground watch/MCP run |
-| Client snippets linking canonical guide | `docs/installation.md:208` links `mcp-server.md`; Desktop stdio, Claude Code HTTP, plugin snippets follow |
-| Model management + migration documented | `docs/models.md:527` Model Management (pull/status, cache states, manifest, legacy, no ST prewarm); `docs/migration.md:52` canonical cache path, automatic legacy migration, hidden alias note |
-| `make docs-generate` clean; CI diff gate; docs guards pass | `make docs-generate` exit 0 with empty `git diff --stat -- docs/ README.md` (run this verification); gate in `.github/workflows/docs.yml`; `tests/test_docs.py` + `tests/test_ci_workflows.py` pass |
-| Expected-output banner matches shipped version | `docs/installation.md:325` says `sif, version 1.2.0`; live `python3 -m sif.cli.main --version` printed `sif, version 1.2.0` |
-| Retired model name absent from docs | `grep -E "gte_Qwen2-7B|iic/gte" docs/*.md README.md` = no hits |
-
-## Plan Must-Have Truths
-
-All 43 truths declared across the seven PLAN frontmatter files (7+3+7+7+7+6+6) are VERIFIED on the current tree. No truth is FAILED, PRESENT_BEHAVIOR_UNVERIFIED, or overridden.
+All 43 truths declared across the seven PLAN frontmatter files (7+3+7+7+7+6+6) are VERIFIED on the current tree. No truth is FAILED or PRESENT_BEHAVIOR_UNVERIFIED, and none is overridden. Two carry an advisory reliance note.
 
 | # | Plan | Truth (short) | Status | Evidence |
 |---|------|---------------|--------|----------|
-| 1 | 24-01 | Six-arm fixed grid, shipped default, Qwen3 pins, only chunk knobs vary | ✓ VERIFIED | `SWEEP_GRID`; dry-run identity/grid |
-| 2 | 24-01 | Persisted identity asserted after embed before eval; mismatched baseline rejected/regenerated | ✓ VERIFIED | `STAGE_SUFFIXES`; named tests |
-| 3 | 24-01 | Tuning-select then held-out confirm; deterministic tie-break; equal gate never adopts | ✓ VERIFIED | policy + boundary tests |
-| 4 | 24-01 | Empty/zero/sub-floor evidence → insufficient, no default change, countable artifact | ✓ VERIFIED | insufficient tests; artifact schema |
-| 5 | 24-01 | Artifact records per-arm costs, fingerprint, min-heldout, limitation, no query text/paths | ✓ VERIFIED | artifact re-inspected; privacy grep 0 (see note 1) |
-| 6 | 24-01 | `--dry-run` full ordered plan, no subprocess; scope change invalidates markers | ✓ VERIFIED | live dry run; `test_changed_scope_discards_prior_markers` |
-| 7 | 24-01 | Artifact overwrite guard refuses differing decision/fingerprint without `--force` | ✓ VERIFIED | guard code + `test_force_replaces_a_different_run` |
-| 8 | 24-02 | Builder title+heading dedupe; stored content/FTS/BM25 byte-identical | ✓ VERIFIED | 20 tests; writer overlay |
-| 9 | 24-02 | `embed_breadcrumb: bool = False` (env), no CLI flag; default-off byte-identical | ✓ VERIFIED | Settings; runtime False; no Click option |
-| 10 | 24-02 | Only embedding input changes; cache key changes; isolated DB + `--force`; identity not extended | ✓ VERIFIED | embed_writer tests; runbook arm |
-| 11 | 24-03 | Canonical cache path; explicit cache_dir honored | ✓ VERIFIED | code; live status path; tests |
-| 12 | 24-03 | Cache hit requires manifest + size + SHA-256; manifestless re-downloads | ✓ VERIFIED | `verify_manifest`; state tests |
-| 13 | 24-03 | Atomic sibling temp download, verify, replace; no partial/leftovers | ✓ VERIFIED | atomic-install tests |
-| 14 | 24-03 | DEFAULT_MODELS Qwen3 family with explicit revision; matches Settings | ✓ VERIFIED | live parity check; registry tests |
-| 15 | 24-03 | Legacy layouts recognized/migrated; source survives until target verifies | ✓ VERIFIED | legacy tests |
-| 16 | 24-03 | `--force` bypass; missing modelscope actionable error naming the embed extra | ✓ VERIFIED | `MODELSCOPE_INSTALL_HINT`; tests |
-| 17 | 24-03 | `inspect_cache` five states + revision, no download | ✓ VERIFIED | state tests; live absent status |
-| 18 | 24-04 | `models pull` with no arg / family entry / owner-name variants | ✓ VERIFIED | help + target-resolution tests |
-| 19 | 24-04 | `--force` bypass; non-interactive; failures are actionable ClickException | ✓ VERIFIED | tests `test_force_is_forwarded`, `test_missing_modelscope_becomes_click_exception` |
-| 20 | 24-04 | Status reports configured/cache/identity/backend, probe imports/downloads nothing | ✓ VERIFIED | live JSON/plain runs; probe test |
-| 21 | 24-04 | Five explicit status states, mismatch reported, exit 0 | ✓ VERIFIED | six state tests |
-| 22 | 24-04 | Non-TTY plain/JSON; Rich only on TTY | ✓ VERIFIED | live piped output; TTY test |
-| 23 | 24-04 | Hidden deprecated alias delegates; deprecation notice stderr-only | ✓ VERIFIED | live help; `hidden=True`; pull tests |
-| 24 | 24-04 | Generator/tests skip hidden commands | ✓ VERIFIED | generator source; generated CLI ref |
-| 25 | 24-05 | Every install entry point leads with uv; pip secondary | ✓ VERIFIED | README + three docs |
-| 26 | 24-05 | Linux CPU `--torch-backend=cpu` recipe; pyproject-index claim removed | ✓ VERIFIED | docs; no pyproject hits |
-| 27 | 24-05 | llama-cpp wheel indexes, multi-index, source build, py3.12 all path | ✓ VERIFIED | installation.md table; quickstart/index py3.12 |
-| 28 | 24-05 | Honest degradation matrix | ✓ VERIFIED | installation.md matrix matches behavior |
-| 29 | 24-05 | Client snippets link canonical MCP guide | ✓ VERIFIED | installation.md links mcp-server.md |
-| 30 | 24-05 | models.md Model Management; migration.md canonical cache path | ✓ VERIFIED | sections present |
-| 31 | 24-05 | docs-generate clean; docs guards | ✓ VERIFIED | live generator run; docs tests |
-| 32 | 24-06 | Real six-arm artifact with per-arm costs, selection, confirmation, measured N, limitation | ✓ VERIFIED | chunk-sweep.json re-inspected |
-| 33 | 24-06 | Real breadcrumb artifact with overall/leg gates, duplicates, measured N | ✓ VERIFIED | breadcrumb-verdict.json re-inspected |
-| 34 | 24-06 | Defaults change only when the artifact decision authorizes | ✓ VERIFIED | both decisions keep; defaults unchanged |
-| 35 | 24-06 | Marker code only on a flip; test asserts presence/absence through the real embed path | ✓ VERIFIED | no marker in `src/`; `test_embed_writes_chunking_contract_marker_iff_contract_flipped` passes |
-| 36 | 24-06 | benchmarking.md records both experiments with tables, fingerprint, adequacy, verdict numbers | ✓ VERIFIED | sections at :332-363 |
-| 37 | 24-06 | Full suite, docs gate, type check green after applied change | ✓ VERIFIED | live full suite 3234/1 @95.03%; docs-generate clean; CI type-check step green (see note 5) |
-| 38 | 24-07 | Duplicate metrics per document aggregated per chunk | ✓ VERIFIED | `duplicate_metrics`; artifact shares; tests |
-| 39 | 24-07 | Body-leg veto: title-only/flat/regressing body rejected; absent body insufficient | ✓ VERIFIED | policy tests |
-| 40 | 24-07 | Runbook pins identity, asserts after embed before eval, records model_type + identity | ✓ VERIFIED | artifact identity; stage order; identity tests |
-| 41 | 24-07 | Baseline identity mismatch rejected/regenerated on the same backend | ✓ VERIFIED | four baseline rejection tests |
-| 42 | 24-07 | Artifact aggregate-only, min-heldout 101, N limitation, overwrite guard | ✓ VERIFIED | artifact; guarded write (see note 2) |
-| 43 | 24-07 | `--dry-run` single ordered arm, no subprocess | ✓ VERIFIED | live dry run; dry-run test |
+| 1 | 24-01 | Six-arm fixed grid, shipped default first, Qwen3 pins, only chunk knobs vary | ✓ VERIFIED | `SWEEP_GRID` (`tuning_verdict.py:53-60`). Live dry run: six arms, 512/128 first; every arm `modelscope`, Qwen3-Embedding-0.6B, dim 1024, `SIF_MAX_TOKENS=512`; the only `SIF_*` keys differing across arms are `SIF_CHUNK_SIZE` and `SIF_CHUNK_OVERLAP`; `SIF_EMBED_BREADCRUMB` stripped |
+| 2 | 24-01 | Identity asserted after embed, before eval; recorded; mismatched baseline rejected/regenerated | ✓ VERIFIED | Stage order index, embed, identity, eval. The identity stage re-checks the probe and raises naming the field (`chunk_sweep.py:378-415`, `633-638`); a failure returns 1 before eval. `baseline_rejection_reason` (`:461-488`). Run state shows identity `ok` between embed and eval for all six arms. `test_wrong_backend_cache_id_fails`, `test_other_mismatches_name_the_field` (4 cases), `test_sentence_transformers_backend_is_rejected`, `test_different_model_name_is_rejected`, `test_fingerprint_mismatch_is_rejected` pass |
+| 3 | 24-01 | Tuning-select then held-out confirm; deterministic tie-break; equal gate never adopts | ✓ VERIFIED | Replay of the committed artifact gives `overlap-0` then `keep-default`. Real `noise_gate`: N=100 with +0.01 ties its floor and `winner=False`, N=101 with +0.02 wins, so the adopt branch is reachable and the gate is real. `test_n100_epsilon_tie_keeps_default`, `test_n101_two_epsilon_win_adopts`, `test_equal_deltas_resolve_by_wall_time_then_grid_order` pass |
+| 4 | 24-01 | Empty, zero-query, or sub-floor evidence gives insufficient-evidence, no default change, a countable artifact | ✓ VERIFIED (coincidental-reliance) | `finalize_sweep(results={})` exits 3 and writes a six-arm `insufficient-evidence` artifact (`test_empty_results_are_insufficient_and_countable`); `test_below_sufficiency_floor_is_insufficient` passes. Reliance: a physically empty corpus never reaches the writer — reliance item 1 |
+| 5 | 24-01 | Committed artifact: per-arm costs, fingerprint, min 101, limitation, no query text or paths | ✓ VERIFIED | Per-arm documents, chunks, embedded_documents, embed_wall_seconds, cache rows, cache hits; fingerprint `9ccbf4eea9263ed4`; `min_heldout_for_epsilon_win=101`; no `/Users/`, `/home/`, `query_text`, `document_path`. Literal deviations disclosed: no key named `vectors` (the count is `chunks`); the limitation states the measured N=194, not N=56 (observations 3 and 4) |
+| 6 | 24-01 | `--dry-run` prints the full ordered plan with no subprocess; scope change invalidates markers | ✓ VERIFIED | Live dry run with `subprocess.run`, `Popen`, `check_call`, `check_output` stubbed to raise: exit 0, zero spawns, scratch root still empty afterwards. `test_dry_run_json_invokes_no_subprocess`, `test_changed_scope_discards_prior_markers` pass |
+| 7 | 24-01 | Overwrite guard refuses a differing decision or fingerprint without `--force` | ✓ VERIFIED | `write_committed_artifact` (`:950-979`) compares `(decision, corpus_fingerprint)`. `test_different_decision_is_refused`, `test_force_replaces_a_different_run` pass |
+| 8 | 24-02 | Breadcrumb embed text; stored content, FTS, snippets, BM25 byte-identical | ✓ VERIFIED | `breadcrumb_embed_texts`; all 22 tests in `test_breadcrumb.py` pass. Direct on/off comparison over two real indexes: stored `content`, `chunks_fts` rows, raw `bm25()` scores, and `BM25Searcher` results (score, snippet, highlights) identical. An off/off control shows only per-build `id`, `document_id`, `created_at` differ between any two builds |
+| 9 | 24-02 | `embed_breadcrumb: bool = False` (env), no CLI flag | ✓ VERIFIED | `settings.py:224-228`; no Click option for it under `src/sif/cli/`; live `Settings().embed_breadcrumb is False`. `test_embed_breadcrumb_is_off_by_default`, `test_embed_breadcrumb_enabled_via_env` pass |
+| 10 | 24-02 | Only the embedding input changes; cache key changes; isolated DB plus `--force`; identity not extended | ✓ VERIFIED | Swap happens only at the embed call (`embed_writer.py:188-198`); both call sites pass the setting (`index.py:422`, `watcher.py:296`); the arm runs `index embed --force` on its own DB; `EmbedderIdentity` has no breadcrumb field. `test_breadcrumb_flag_changes_the_embedded_strings` passes |
+| 11 | 24-03 | Canonical cache path; explicit cache_dir honored | ✓ VERIFIED | `canonical_model_dir` (`download.py:97-100`). Live status reports `<cache>/models/Qwen/Qwen3-Embedding-0.6B` |
+| 12 | 24-03 | Cache hit requires manifest, size, and SHA-256; manifestless directory re-downloads | ✓ VERIFIED | `verify_manifest` (`:126-155`). `test_nonempty_directory_without_manifest_is_not_a_hit`, `test_hash_mismatch_is_not_a_hit` pass |
+| 13 | 24-03 | Atomic sibling temp download, verify, replace; no partial target or leftovers | ✓ VERIFIED | `_install_directory` (`:223-250`). `test_success_leaves_no_temporary_or_backup_directories`, `test_client_failure_leaves_no_target_or_scratch_directory`, `test_missing_config_json_fails_and_cleans_up` pass |
+| 14 | 24-03 | DEFAULT_MODELS Qwen3-0.6B family with explicit revision; matches Settings | ✓ VERIFIED | Live registry print; equals `Settings.model_name` and `Settings.reranker_model_name`. `test_registry_matches_shipped_settings_defaults` passes |
+| 15 | 24-03 | Legacy layouts recognized and migrated; source survives until the target verifies | ✓ VERIFIED | `_legacy_candidates`, `_adopt_legacy_model` with source restore on failure (`:223-326`). `test_home_sif_models_layout_is_migrated`, `test_failed_rename_falls_back_to_download_and_keeps_source`, `test_legacy_directory_without_weights_is_ignored` pass |
+| 16 | 24-03 | `--force` bypass; missing modelscope raises an actionable error naming the embed extra | ✓ VERIFIED | `MODELSCOPE_INSTALL_HINT` (`:37-40`), raised at `:475` before any directory is created. `test_force_redownloads_despite_valid_manifest`, `test_missing_modelscope_raises_actionable_import_error` pass |
+| 17 | 24-03 | `inspect_cache` reports five states and the revision without downloading | ✓ VERIFIED | `inspect_cache` (`:396-425`). `test_reports_all_states_without_importing_modelscope` passes; live `absent` on an empty root. Narrowing at the status call site: observation 7 |
+| 18 | 24-04 | `models pull` with no argument, a family name, or `owner/name` | ✓ VERIFIED | `resolve_model_target` (`models.py:60-77`); target-resolution tests pass; `sif models --help` lists `pull` and `status` |
+| 19 | 24-04 | `--force`; non-interactive; no prompts or progress bars in non-TTY; actionable ClickException | ✓ VERIFIED (coincidental-reliance) | `test_force_is_forwarded`, `test_non_tty_output_is_one_plain_line`, `test_missing_modelscope_becomes_click_exception` pass; the Rich line is TTY-gated. Reliance: the library's own output on a real un-quieted download is exercised by no test — reliance item 2 |
+| 20 | 24-04 | `models status [--json]` reports settings, cache, identity with source and fingerprints; probe imports and downloads nothing | ✓ VERIFIED | Live plain and JSON runs. In a fresh subprocess with every embeddable backend import blocked, status exited 0 with zero import attempts during the command and still reported ModelScope available. URI-encoding caveat: observation 9 |
+| 21 | 24-04 | Five explicit identity states; a mismatch is reported with exit 0 | ✓ VERIFIED | `test_no_index_reports_no_index`, `test_index_without_identity_row_reports_no_identity`, `test_matching_identity_reports_match`, `test_model_mismatch_is_reported_exit_zero`, `test_stored_dimension_mismatch`, `test_schema_width_mismatch` pass |
+| 22 | 24-04 | Non-TTY output is plain lines or JSON; Rich only on a TTY | ✓ VERIFIED | Live piped output: `section.key: value` in declared order, zero box-drawing characters; JSON sorted at every level. `test_tty_renders_table` passes |
+| 23 | 24-04 | `sif pull` stays a hidden deprecated alias; notice on stderr only | ✓ VERIFIED | `hidden=True` (`pull.py:125`), stderr-only console (`:31`). Top-level help omits `pull`; `pull --help` says deprecated. `test_pull_is_hidden`, `test_pull_registry_name_delegates`, `test_pull_modelscope_id_delegates` pass |
+| 24 | 24-04 | Generator and tests skip hidden commands | ✓ VERIFIED | `generate_cli_ref.py:104,120`; `test_docs.py:455`. Generated reference: `sif models pull` once, `sif models status` once, `### sif pull` zero times; regeneration byte-identical |
+| 25 | 24-05 | Every entry-point install doc leads with uv; pip secondary | ✓ VERIFIED | README, installation, quickstart, index: the first install command in each is `uv tool install`, with embed and BM25-only commands in all four. The `uvx` one-off appears in README, installation, and quickstart; `docs/index.md:94` routes `uvx` to the guide by pointer (observation 5) |
+| 26 | 24-05 | Linux CPU recipe and uv floor; pyproject-index claim removed | ✓ VERIFIED | `installation.md:6`, `:30`. No stale claim in any entry point. Guard turns red when the claim is removed |
+| 27 | 24-05 | llama-cpp wheel indexes, multi-index strategy, source build, Python 3.12 path | ✓ VERIFIED | `installation.md:159-210` |
+| 28 | 24-05 | Honest degradation matrix | ✓ VERIFIED | `installation.md:212-225`. The quoted error string matches `src/sif/search/vector.py:56`; the MCP degrade warning is at `src/sif/mcp/backend.py:527`. Guard turns red when any row is removed |
+| 29 | 24-05 | Client snippets link the canonical MCP guide | ✓ VERIFIED | `installation.md:227-275` links `mcp-server.md`; `sif mcp stdio` and `sif mcp http --host --port` exist; `/mcp` is the real endpoint (`src/sif/mcp/app.py:234`) |
+| 30 | 24-05 | models.md Model Management; migration.md canonical cache path | ✓ VERIFIED | `docs/models.md` has `## Model Management` before Related Documentation with every required anchor; `docs/migration.md` carries `models/`, `SIF_CACHE_DIR`, and the migration note |
+| 31 | 24-05 | `make docs-generate` clean; docs tests guard uv-first, the matrix, and the retired model name | ✓ VERIFIED | Both generators re-run byte-identically. `TestInstallAndModelDocs` (7 tests) and the five `test_ci_workflows.py` install guards pass. Old-model-name guard: `test_hand_docs_do_not_name_the_retired_7b_default` |
+| 32 | 24-06 | Real six-arm sweep with a fresh Qwen3 baseline produces a committed artifact | ✓ VERIFIED | `chunk-sweep.json` equals the on-disk run state field for field (118 compared, 0 mismatches): 24 stage markers from 06:29:37Z to 08:37:12Z on 2026-11-17, 610 documents per arm, fresh baseline |
+| 33 | 24-06 | Real breadcrumb arm on the same corpus produces a committed artifact | ✓ VERIFIED | `breadcrumb-verdict.json` equals its run state (13 compared); markers 08:37:25Z to 09:07:39Z; it reused the sweep's fresh baseline |
+| 34 | 24-06 | Defaults change only when an artifact decision authorizes it | ✓ VERIFIED | Both decisions are keep outcomes and the replay reproduces them. Live: 512/128 and `embed_breadcrumb=False` |
+| 35 | 24-06 | Marker code only on a flip; real-embed-path test asserts presence or absence | ✓ VERIFIED | Zero `chunking.contract` hits in `src/` and `scripts/`. `test_embed_writes_chunking_contract_marker_iff_contract_flipped` passes, asserting absence |
+| 36 | 24-06 | benchmarking.md records both experiments | ✓ VERIFIED | `docs/benchmarking.md:332-363`; 30 automated reconciliation checks pass against the artifacts and the title-leg row matches to six decimals on every value. The citations name the retired path (observation 6) |
+| 37 | 24-06 | Full suite, docs diff gate, and type check green | ✓ VERIFIED | CI run `45522236981` on `a25eb07`, whose non-planning tree is byte-identical to HEAD: 8 cells at 3259 passed, 2 skipped, 95.12%; lint job `ty check src/sif` printed "All checks passed!". Local `ty` differs by environment (observation 10) |
+| 38 | 24-07 | Duplicate metrics per document, aggregated per chunk | ✓ VERIFIED | `duplicate_metrics`; `aggregate_duplicate_metrics` weights by chunk count. `test_weighting_uses_chunk_counts_not_document_counts` passes |
+| 39 | 24-07 | Body-leg veto | ✓ VERIFIED | `decide_breadcrumb_default` (`:298-358`); replay gives `keep-breadcrumb-off`. Seven veto tests pass, including `test_overall_winner_with_a_flat_body_leg_is_title_leg_only` and `test_absent_body_leg_is_insufficient_evidence` |
+| 40 | 24-07 | Runbook pins the identity, asserts it after embed and before eval, records it | ✓ VERIFIED | Live dry run: one arm, `SIF_EMBED_BREADCRUMB=1`, pinned Qwen3. `test_identity_mismatch_names_the_failing_field` (3 cases) pass; the artifact carries `model_type` and the identity |
+| 41 | 24-07 | Mismatched baseline rejected and regenerated on the same backend | ✓ VERIFIED | `choose_baseline` (`breadcrumb_eval.py:339-354`). `test_backend_or_model_mismatch_regenerates_the_baseline` (2 cases), `test_fingerprint_mismatch_regenerates_the_baseline` pass |
+| 42 | 24-07 | Artifact aggregate-only, min 101, limitation, overwrite guard | ✓ VERIFIED | `breadcrumb-verdict.json`: aggregate only, `min_heldout_for_epsilon_win=101`, no paths or text; guard shared with the sweep. `test_artifact_is_aggregate_only`, `test_differing_decision_requires_force`, `test_differing_fingerprint_requires_force` pass. The limitation states N=194, not N=56 (observation 3) |
+| 43 | 24-07 | `--dry-run` prints one ordered arm with no subprocess | ✓ VERIFIED | Live dry run with subprocess stubbed: exit 0, zero spawns, no files written; stages `arm:index`, `arm:embed`, `arm:identity`, `arm:eval`. `test_dry_run_invokes_no_subprocess_and_writes_no_file` passes |
 
-Interpretive notes (unchanged from the prior pass, re-confirmed):
-1. The 24-01 artifact records the per-arm vector count through `chunks` (one vector per chunk) plus the cache-row deltas; no literal `vectors` key exists. `docs/benchmarking.md` derives its "Vectors" column from the same equality.
-2. The 24-01/24-07 "N=56 limitation" wording was explicitly superseded by the in-plan, user-authorized corpus amendment recorded at `24-06-PLAN.md:116` ("the Phase 23 `N=56` wording no longer applies"), and the runbooks now generate the limitation from the measured held-out N. The committed artifacts record N=194, which is the correct current contract; the N=56 branch remains covered by `TestLimitation`.
+### Requirement Verdicts
+
+| Requirement | Plans | Truths | Verdict |
+|-------------|-------|--------|---------|
+| QUAL-02 | 24-01, 24-06 | 13/13 | PASS — six-arm instrument, isolated arms, per-arm embed cost, held-out gate as the only route to a default change; real committed artifact with keep-default; replay reproduces it |
+| QUAL-03 | 24-02, 24-06, 24-07 | 15/15 | PASS — builder, default-off switch, writer wiring; per-leg ablation with duplicate metrics; body-leg veto; real artifact keeps the default; replay reproduces it |
+| MODELS-01 | 24-03, 24-04 | 14/14 | PASS — canonical manifest cache with SHA-256, atomic install, legacy migration, Qwen3 registry; `sif models pull` target resolution and error conversion tested |
+| MODELS-02 | 24-04 | 7/7 | PASS — status reports settings, cache, identity, backend, dimensions; exit 0 in every state; plain non-TTY output; hidden alias; generator skips hidden commands |
+| DOCS-01 | 24-05 | 7/7 | PASS — uv-first entry points, CPU recipe, llama-cpp indexes, degradation matrix, client snippets, model-management and migration sections, clean generator gate |
+
+Plans tagged with two requirements are counted under each; 43 truths are unique. Requirements traceability in `v1.2-REQUIREMENTS.md` maps exactly these five IDs to Phase 24, with none orphaned.
+
+### Advisory (New Scope, Unevidenced)
+
+None. The Step 7 scan over the 40 phase files produced no new findings: no `TBD`, `FIXME`, or `XXX`; no `TODO`, `HACK`, or `PLACEHOLDER` outside tests; the `placeholder` hits are SQL bind-parameter builders and the bare `pass` lines are a Click group body and two `with open_initialized_database(...)` blocks. Carried observations are listed under Non-Blocking Observations.
+
+### Decision Coverage
+
+12 of 12 trackable CONTEXT.md decisions are honored by shipped artifacts (`check.decision-coverage-verify`; non-blocking gate).
 
 ## Artifacts and Key Links
 
-Structured verification (`gsd-tools query verify.artifacts` / `verify.key-links`) over all seven plans: **29/29 artifacts passed, 20/20 key links verified**.
+`verify.artifacts` over all seven plans: **27 of 29 pass at the declared path.** Plans 01, 02, 03, 04, 05, and 07 pass in full. Plan 06 exits 1 because two declared paths still read `.planning/phases/24-…`.
 
-| Artifact | Expected | Status | Evidence |
-|----------|----------|--------|----------|
-| `src/sif/search/tuning_verdict.py` | pure sweep grid + gate policy | VERIFIED | `SWEEP_GRID`, `MIN_HELDOUT_FOR_EPSILON_WIN`, `select_tuning_candidate`, `decide_chunk_default`, `decide_breadcrumb_default`; imported and exercised by the runbooks |
-| `scripts/chunk_sweep.py` | isolated-arm runbook | VERIFIED | 6-arm dry run live; artifact replay |
-| `scripts/breadcrumb_eval.py` | one-arm runbook | VERIFIED | single-arm dry run live; artifact replay |
-| `src/sif/indexing/breadcrumb.py` | builder + duplicate metrics | VERIFIED | imported by `embed_writer.py`; used by the runbook |
-| `src/sif/models/download.py` | canonical cache + SHA-256 + legacy + registry | VERIFIED | tests + live status |
-| `src/sif/cli/commands/models.py` | `models pull`/`status` | VERIFIED | live commands |
-| `src/sif/cli/commands/pull.py` | hidden deprecated alias | VERIFIED | live help; delegates |
-| `scripts/generate_cli_ref.py` | hidden-command skipping | VERIFIED | generated CLI reference |
-| `bench/chunk-sweep.json` | six-arm evidence + decision | VERIFIED | keep-default, N=194, fingerprint, identity |
-| `bench/breadcrumb-verdict.json` | breadcrumb per-leg + duplicate evidence | VERIFIED | keep-breadcrumb-off, legs, duplicates |
-| `docs/benchmarking.md` | both experiment sections | VERIFIED | :332-363 |
+| Artifact | Declared path status | Resolution |
+|----------|----------------------|------------|
+| `bench/chunk-sweep.json` | MISSING at `.planning/phases/24-…` (verb) | Present and tracked at the archived path. Git records an `R100` rename at milestone archival; blob `9460046767a1` is identical before, after, and at HEAD |
+| `bench/breadcrumb-verdict.json` | MISSING at `.planning/phases/24-…` (verb) | Same: `R100` rename; blob `77177e660c80` identical at all three points |
+| Other 27 declared artifacts | VERIFIED | Pass exists, substance, and pattern checks |
 
-Key links verified: runbooks → `tuning_verdict` (`decide_*` calls); runbooks → `harrier_eval` helpers (`assert_within_scratch`, scope state, atomic writes); runbooks → `personal_bench` split gates; identity stages → `read_identity`; `models.py` → `ModelDownloader` + `inspect_cache`; `models.py` → `build_settings_identity`/`read_identity`; `pull.py` → shared models handler; `embed_writer.py` → `breadcrumb_embed_texts`; `index.py:422`/`watcher.py:296` → `settings.embed_breadcrumb`; docs → generator scripts.
+`verify.key-links` over all seven plans: **20 of 20 WIRED** (4+2+2+3+3+3+3). The three plan-06 links pass on a textual reference, and the path they reference is the retired one (observation 6).
+
+Wiring confirmed by reading and by the live runs: runbooks to `tuning_verdict` (replay); `models.py` to `ModelDownloader` and `inspect_cache`; `models.py` to `build_settings_identity` and `read_identity`; `pull.py` to the shared handler; `embed_writer.py` to `breadcrumb_embed_texts`; `index.py` and `watcher.py` to `settings.embed_breadcrumb`; `tests/test_ci_workflows.py` to `docs/installation.md` (mutation-tested).
 
 ## Data-Flow Trace (Level 4)
 
 | Artifact | Data Variable | Source | Produces Real Data | Status |
 |----------|---------------|--------|--------------------|--------|
-| `bench/chunk-sweep.json` | per-arm costs/decision | Real six-arm run over 610 documents, written through the guard | Yes | ✓ FLOWING |
-| `bench/breadcrumb-verdict.json` | overall/leg gates/duplicates | Real breadcrumb arm over the same corpus; identity asserted | Yes | ✓ FLOWING |
-| `models status` | settings/cache/identity | Live `Settings`, filesystem cache inspection, `index_meta` | Yes | ✓ FLOWING |
-| `docs/benchmarking.md` tables | verdict numbers | Committed artifacts (same values re-checked) | Yes | ✓ FLOWING |
-| `docs/cli-reference.md` / `docs/configuration.md` | command/field listings | Generator scripts from live Click/Pydantic definitions | Yes | ✓ FLOWING |
+| `bench/chunk-sweep.json` | per-arm costs, confirmation | On-disk run state of the real six-arm run; 118 fields equal | Yes | ✓ FLOWING |
+| `bench/breadcrumb-verdict.json` | gates, legs, duplicates | On-disk run state of the real arm; 13 fields equal | Yes | ✓ FLOWING |
+| `docs/benchmarking.md` tables | verdict numbers | Committed artifacts; 30 automated checks pass, the remaining row verified to six decimals | Yes | ✓ FLOWING |
+| `docs/cli-reference.md`, `docs/configuration.md` | command and field listings | Generators re-run; byte-identical to committed | Yes | ✓ FLOWING |
+| `sif models status` | settings, cache, identity | Live `Settings`, cache inspection, read-only index read | Yes | ✓ FLOWING |
 
 ## Behavioral Evidence (run during this verification)
 
 | Check | Command | Result |
 |-------|---------|--------|
-| Phase-24 targeted suites | `pytest -q --no-cov` over 14 phase test files | **589 passed in 22.44s** |
-| Delta gate regression | `pytest -q --no-cov tests/unit/search/test_personal_bench.py::TestNoiseGate::test_float_accumulated_epsilon_tie_never_wins` | **1 passed** |
-| Full quality suite | `pytest -q` (current tree, HEAD) | **3234 passed, 1 skipped, 95.03% coverage, exit 0** |
-| Ruff lint / format | `ruff check src tests` / `ruff format --check src tests` | All checks passed; 236 files already formatted |
-| Docs generator gate | `make docs-generate` + `git diff --stat -- docs/ README.md` | exit 0; empty diff |
-| Chunk-sweep dry run | `python3 scripts/chunk_sweep.py --dry-run --json` | exit 0; 6 arms in grid order; pinned identity; no subprocess |
-| Breadcrumb dry run | `python3 scripts/breadcrumb_eval.py --dry-run --json` | exit 0; one arm (`embed_breadcrumb: true`); stages index→embed→identity→eval |
-| Artifact replay | current `decide_chunk_default` / `decide_breadcrumb_default` on committed gates | `keep-default` / `keep-breadcrumb-off` |
-| Version banner | `python3 -m sif.cli.main --version` | `sif, version 1.2.0` |
-| `models` group / hidden alias | `models --help`, `models pull --help`, top-level `--help`, `pull --help` | pull+status listed; top-level omits pull; alias says deprecated |
-| Status non-TTY JSON / plain | `models status --json` / `models status` | exit 0; five sections; fixed-order plain lines, no Rich |
-| Runtime parity | Python imports of constants, `Settings`, `DEFAULT_MODELS` | chunk 512/128; `embed_breadcrumb: False`; Settings model = registry embedding entry |
-| Privacy grep | `grep -c "/Users" bench/*.json` | 0 in both artifacts |
-| CI at 618997c | `gh run view 44286606274` | Test Matrix success: 8/8 cells + lint/type-check job; Docs Validation success |
-| Decision coverage | `gsd-tools query check.decision-coverage-verify` | 12/12 trackable CONTEXT.md decisions honored (non-blocking gate) |
+| CI workflow test module | `pytest tests/test_ci_workflows.py -q --no-cov` | 18 passed |
+| Docs and CI-workflow guards | `pytest tests/test_docs.py tests/test_ci_workflows.py -q --no-cov` | 39 passed |
+| Twelve phase unit files | `pytest <12 files> -q --no-cov` | 553 passed in 21.55s, 0 skipped (592 across the 14 phase files) |
+| Named tests for behavior-dependent truths | `-k` selection over 9 files | 74 passed, 223 deselected |
+| Install-guard discrimination | Each guard against a temp copy with its claim removed | 21 of 21 went red; 5 of 5 green on the unmodified copy |
+| Artifact replay | Current `select_tuning_candidate`, `decide_chunk_default`, `decide_breadcrumb_default` on committed gates | `overlap-0` / `keep-default` and `keep-breadcrumb-off`; both match the artifacts |
+| Gate strictness | `noise_gate` at N=100 +0.01 and N=101 +0.02 | `winner=False` then `winner=True` |
+| Chunk-sweep dry run | `main(["--dry-run","--json"])`, subprocess stubbed | Exit 0, zero spawns, no files written |
+| Breadcrumb dry run | Same | Exit 0, zero spawns, no files written |
+| Breadcrumb byte-identity | Two real indexes, off and on, plus an off/off control | `content`, FTS rows, BM25 scores, snippets, highlights identical |
+| Status output | `models status` and `--json`, temp index and cache | Plain lines in declared order; JSON sorted; exit 0; nothing written |
+| Probe imports nothing | Fresh subprocess, backend imports blocked | Zero import attempts during status; exit 0 |
+| Docs generator gate | Both generator `main()` with output redirected, then `cmp` | `cli-reference.md` (29,561 bytes) and `configuration.md` (13,690 bytes) byte-identical |
+| Lint and format | `ruff check src tests`; `ruff format --check src tests` | All checks passed; 237 files already formatted |
+| CI at the tested tree | `gh run view 45522236981` and per-job logs | 8 cells: 3259 passed, 2 skipped, 95.12% each (the two 3.13 cells log 27 warnings); lint job: ruff and `ty` "All checks passed!" |
+| Source identity | `git diff --stat a25eb07..HEAD` excluding `.planning` | Empty; `a25eb07` is an ancestor of HEAD; working tree clean |
 
-## Requirements Coverage
+## Probe Execution
 
-| Requirement | Source Plans | REQUIREMENTS.md | Status | Evidence |
-|-------------|--------------|-----------------|--------|----------|
-| QUAL-02 | 24-01, 24-06 | line 28, mapped Phase 24 | SATISFIED | sweep instrument + real run + keep-default verdict |
-| QUAL-03 | 24-02, 24-06, 24-07 | line 29, mapped Phase 24 | SATISFIED | breadcrumb contract + evaluation layer + keep-breadcrumb-off verdict |
-| MODELS-01 | 24-03, 24-04 | line 78, mapped Phase 24 | SATISFIED | canonical manifest cache + `sif models pull` |
-| MODELS-02 | 24-04 | line 79, mapped Phase 24 | SATISFIED | `sif models status` + hidden alias + generator skip |
-| DOCS-01 | 24-05 | line 83, mapped Phase 24 | SATISFIED | uv-first docs + degradation matrix + generator gate at 1.2.0 |
+No probe scripts apply: `find scripts -path '*/tests/probe-*.sh'` returns nothing and no PLAN or SUMMARY declares a probe path. `--probe-identity` is a runbook CLI flag, not a probe script. Not applicable.
 
-No orphaned requirements: REQUIREMENTS.md maps exactly these five IDs to Phase 24, and the seven plans declare exactly these five IDs (24-01/06: QUAL-02; 24-02/06/07: QUAL-03; 24-03/04: MODELS-01; 24-04: MODELS-02; 24-05: DOCS-01).
+## Test Quality Audit
+
+| Check | Result |
+|-------|--------|
+| Disabled tests on requirements | None. No `skip`, `skipif`, or `xfail` markers in the 14 phase test files; the conditional `pytest.skip` calls are environment guards that did not fire (592 passed, 0 skipped) |
+| Circular patterns | None found. The generator-owned docs are produced by generators and guarded against the live CLI tree by design; the bench artifacts are real-run output, not self-generated expectations |
+| Expected-value provenance | VALID — artifact numbers come from a real run and reconcile with the on-disk run state |
+| Assertion strength | Value and behavioral level: exact strings, counts, exit codes, and filesystem residue |
 
 ## Anti-Patterns Found
 
-None. No `TBD`/`FIXME`/`XXX`/`TODO`/`HACK`/`PLACEHOLDER` markers in the phase's key files (tuning_verdict, personal_bench, embedder_verdict, breadcrumb, embed_writer, download, models, pull, chunk_sweep, breadcrumb_eval, generate_cli_ref, constants). The `placeholders` variables in `personal_bench.py` are SQL bind-parameter builders, not stub markers. The eight `return None` sites in `download.py` are legitimate not-found/optional-metadata returns in cache inspection and legacy detection, covered by tests. No hardcoded-empty rendering; artifacts contain no query text or absolute paths.
+None. See Advisory above for the scan result.
 
 ## Human Verification Required
 
-None. Every behavior-dependent truth (gate-policy boundaries, identity assertion ordering, cache-state machine, atomic install, status states, generator guards) is exercised by a passing named test in the 589-test targeted run or the 3234-test full run, and the real-run truths are evidenced by the committed artifacts and `docs/benchmarking.md`. The install recipes (`--torch-backend=cpu`, llama-cpp wheel indexes) are documented in-repo as hand-verified steps with VERIFY comments, exactly as the plan's declared assumption requires.
-
-## Gaps Summary
-
-None. All five phase requirements are delivered and verified against the current tree: the committed artifacts survive the 618997c gate hardening with their keep-default / keep-breadcrumb-off decisions unchanged, the runtime defaults remain 512/128 and `embed_breadcrumb=False`, model pull/status work and report honestly, and every install entry point is uv-first with a clean generator diff. The current-tree full suite is green (3234 passed / 1 skipped @ 95.03% coverage), and CI at 618997c passed all eight matrix cells plus the lint/type-check job.
+None. Every behavior-dependent truth is exercised by a passing named test, by a live command run during this verification, or both. The two reliance items below are advisory by rule and are not human-verification items. No PLAN carries a deferred `<human-check>` block.
 
 ## Non-Blocking Observations
 
-These do not violate a phase must-have and do not affect the verdict.
+None of these falsifies a roadmap success criterion or a must-have truth as delivered, and none affects the verdict.
 
-1. `bench/chunk-sweep.json` records the per-arm vector count implicitly as `chunks` (each chunk yields one vector); no literal `vectors` field exists. Remediation: add an explicit `vectors` field if literal schema compliance is desired.
-2. The `--dry-run --json` breadcrumb payload embeds the full inherited process environment under `env` (108 keys this run, including auth/API-token variable names). Nothing is committed, but redirecting dry-run output to a file could leak secrets. Remediation: filter the dry-run `env` payload to arm-relevant keys.
-3. `src/sif/embedding/embedder.py:468` retains a constructor default of the retired `iic/gte_Qwen2-7B-instruct`; unreachable from Settings/factory (Settings always supplies Qwen3), but the retired name survives as a default. Remediation: require an explicit model id or default to the Qwen3 id.
-4. `24-VALIDATION.md` remains `status: draft` / `nyquist_compliant: false`; the validation audit owns that status field. The `24-06-PLAN.md` assumption still carries the earlier adequacy totals (en=136/mixed=12) while the authoritative saved runs and `docs/benchmarking.md:334` record en=137/zh=244/mixed=16 (re-confirmed this run).
-5. `ty check src/sif` exits 1 in the local Python 3.10/numpy 2.2.6 environment on a pre-existing diagnostic in `src/sif/embedding/embedder.py:842` (a numpy-typed return in code untouched since before Phase 24; `git diff 77c86b8..HEAD -- embedder.py` is empty). CI's canonical lint environment (py3.12, `uv run --frozen ty check src/sif`) passed the Type check step at 618997c. Not introduced by this phase; recorded for transparency.
+**Advisory reliance (Step 3c; counted as VERIFIED, advisory only)**
+
+1. **Truth 4 (24-01) — fixture-only.** The countable `insufficient-evidence` artifact is proven by a test that hands `finalize_sweep` empty results. Through the real stage machine a physically empty corpus never reaches that writer: on a temp index built from an empty directory the baseline eval exits 1 ("Personal eval needs at least 50 indexed documents in scope; found 0", gate at `eval.py:734`, ahead of the retrieval-mode branch), and by code the `identity` stage aborts even earlier. The outcome is a loud exit 1 with `failed_stage` recorded and no artifact. No winner is fabricated and no default changes. The untested assumption is that "empty corpus" means empty evidence at the writer.
+2. **Truth 19 (24-04) — undeclared precondition.** SIF's own non-TTY output is one plain line. ModelScope's own progress output is wrapped in `suppress_output()` only when `is_quiet()` is true (`download.py:487-491`), which `-q` sets via `setup_logging`. The non-TTY test replaces `ModelDownloader`, so what a real un-quieted download prints is exercised by no test and was not observed here (it needs a network download).
+
+**Literal wording deviations (VERIFIED in substance; disclosed)**
+
+3. **N=56 versus the measured N.** Truths 5 and 42 name "the N=56 limitation". Both committed artifacts state a limitation generated from the measured held-out N (194 at or above the 101 floor). The user-authorized amendment in `24-06-PLAN.md` says the Phase 23 N=56 wording no longer applies.
+4. **No `vectors` key.** Truth 5 lists per-arm "vectors". The artifact records the count as `chunks`, with `embedded_documents` equal to `documents` (610) on every arm. The plan's own Task 2 schema and the 24-06 verify assertion enumerate keys without `vectors`.
+5. **`docs/index.md` and `uvx`.** Truth 25 names a `uvx` one-off fallback for every entry point. `index.md` carries the embed and BM25-only `uv tool install` commands and points to the guide for `uvx` rather than spelling out the command. D-10 does not list `index.md` among the hand-maintained install docs, and plan 05 Task 1 scopes `index.md` to the embed-primary, BM25-only, and CPU-recipe commands, all present.
+
+**Carried observations (pre-existing; each file unchanged since `e64c52c`)**
+
+6. **Retired paths.** `ARTIFACT_PATH` in both runbooks (`chunk_sweep.py:57-64`, `breadcrumb_eval.py:60-67`), the citations at `docs/benchmarking.md:347,363`, and plan 06's frontmatter all name `.planning/phases/24-…`, which does not exist at HEAD. This causes the two verb MISSING results and the stale key-link targets above. A re-run would write a fresh artifact under the retired tree where the overwrite guard cannot see the archived one. Recorded as WR-04 in the prior report and open in `24-REVIEW.md`.
+7. **Status never reports the home legacy tree.** `models status` always passes an explicit cache path, so `inspect_cache` sets `include_home=False` (WR-01).
+8. **Model id separator.** `_split_model_id` rejects `.`, `..`, `\`, and NUL but not `:` (WR-02).
+9. **Identity probe URI.** `file:{path}?mode=ro` is built without percent-encoding, so a path containing `?`, `#`, or `%` reports `no-identity` (WR-03).
+10. **Local type check.** `ty check src/sif` exits 1 locally with 10 diagnostics (5 in `embedding/embedder.py`, 1 at `models/download.py:545`, 4 in `search/rerank.py`). The one line in a Phase 24 file was authored 2026-04-15. The frozen-lock CI job passes on identical source, so this is an environment difference.
+11. **Evidence bookkeeping.** `docs/benchmarking.md:334` gives language totals en=137, zh=244, mixed=16 while the plan amendment records en=136, zh=244, mixed=12. The held-out N=194 agrees everywhere. Unchanged from the prior report.
+12. **Load-bearing files outside the covered set.** `scripts/harrier_eval.py` (Phase 23; supplies scope keys, atomic writes, cost capture, and scratch guards to both runbooks) and `.github/workflows/test-matrix.yml` (defines the CI jobs truth 37 cites). Neither was changed by this phase. This report adds `.github/workflows/docs.yml` and `Makefile` to the covered set because success criterion 5 rests on them.
+
+## Gaps Summary
+
+None. All five phase requirements and all 43 plan must-have truths are delivered and verified against HEAD `be244bb`. The committed artifacts equal the recorded output of the real runs and survive the current gate policy with their keep decisions unchanged; runtime defaults remain 512/128 and `embed_breadcrumb=False`; `sif models pull`/`status` and the hidden alias behave as specified on supported inputs; every install entry point is uv-first with a clean generator diff.
+
+The one covered file that changed since the prior report, `tests/test_ci_workflows.py`, affects no truth: its DOCS-01 guards are unchanged and still discriminating, and the module passes. Six statements in the prior report were corrected. The twelve non-blocking observations are recorded above; two are advisory reliance items and three are literal-wording deviations that previous reports passed without disclosing.
 
 ---
 
-_Verified: 2026-11-18T11:56:18Z_
-_Verifier: gsd-verifier (Claude)_
+_Verified: 2026-11-25T02:49:17Z_
+_Verifier: gsd-verifier (ZCode subagent)_

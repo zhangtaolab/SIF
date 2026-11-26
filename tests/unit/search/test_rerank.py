@@ -230,3 +230,79 @@ class TestRelativeThreshold:
         second = [r.document_id for r in reranker.rerank("query", build(), top_k=6)]
 
         assert first == second == [f"doc-{i}" for i in range(6)]
+
+
+class TestRebuildChunkIdentity:
+    """CORR-02 D-02/D-03: the rebuild must neither drop nor invent chunk identity."""
+
+    @staticmethod
+    def _result(
+        doc_id: str,
+        chunk_id: str | None = None,
+        sequence: int | None = None,
+        chunk_matches: int = 0,
+    ) -> SearchResult:
+        """A search result row; without chunk arguments it is a document-level row."""
+        return SearchResult(
+            document_id=doc_id,
+            path=f"/path/to/{doc_id}.md",
+            title=doc_id,
+            collection_name="notes",
+            score=0.1,
+            content=f"content of {doc_id}",
+            chunk_id=chunk_id,
+            sequence=sequence,
+            chunk_matches=chunk_matches,
+        )
+
+    def test_rebuild_keeps_each_rows_chunk_identity_after_reordering(self) -> None:
+        """A reordered row keeps the chunk id, sequence and match count it arrived with."""
+        results = [
+            self._result("low", "chunk-low", 4, 1),
+            self._result("top", "chunk-top", 0, 5),  # sequence 0 is a real chunk position
+            self._result("half", "chunk-half", 2, 3),
+        ]
+
+        ranked = _sort_and_build_results(results, [0.44, 0.9, 0.45], 10)
+
+        assert [(r.document_id, r.chunk_id, r.sequence, r.chunk_matches) for r in ranked] == [
+            ("top", "chunk-top", 0, 5),
+            ("half", "chunk-half", 2, 3),
+            ("low", "chunk-low", 4, 1),
+        ]
+
+    def test_rebuild_leaves_document_level_rows_without_chunk_identity(self) -> None:
+        """A chunk-less row stays chunk-less on both sides of a chunk row; nothing is borrowed."""
+        results = [
+            self._result("bm25-first"),
+            self._result("vector", "chunk-vector", 3, 4),
+            self._result("bm25-last"),
+        ]
+
+        ranked = _sort_and_build_results(results, [0.9, 0.8, 0.7], 10)
+
+        assert [(r.document_id, r.chunk_id, r.sequence, r.chunk_matches) for r in ranked] == [
+            ("bm25-first", None, None, 0),
+            ("vector", "chunk-vector", 3, 4),
+            ("bm25-last", None, None, 0),
+        ]
+
+    def test_cross_encoder_rerank_keeps_chunk_identity_of_survivors(self) -> None:
+        """Survivors of the threshold and the top_k cut keep their own chunk identity."""
+        model = MagicMock()
+        model.predict.return_value = [0.0, 6.0, -6.0, 5.0]  # sigmoid: 0.5, ~0.998, ~0.002, ~0.993
+        reranker = CrossEncoderReranker(relative_threshold=0.5)
+        reranker._model = model
+        results = [
+            self._result("mid", "chunk-mid", 1, 2),
+            self._result("top", "chunk-top", 0, 5),
+            self._result("low", "chunk-low", 4, 1),
+            self._result("near", "chunk-near", 7, 2),
+        ]
+
+        ranked = reranker.rerank("query", results, top_k=2)
+
+        assert [(r.document_id, r.chunk_id, r.sequence, r.chunk_matches) for r in ranked] == [
+            ("top", "chunk-top", 0, 5),
+            ("near", "chunk-near", 7, 2),
+        ]

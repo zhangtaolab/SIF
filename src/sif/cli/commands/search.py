@@ -15,9 +15,12 @@ from xml.sax.saxutils import escape as xml_escape, quoteattr
 
 import click
 from pydantic import ValidationError
-from rich.console import Console
+from rich.cells import cell_len
+from rich.console import Console, ConsoleOptions, RenderResult
 from rich.markup import escape
+from rich.measure import Measurement
 from rich.table import Table
+from rich.text import Text
 
 from sif.cli.error_handling import open_initialized_database, sqlite_vec_remedy
 from sif.cli.filter_options import parse_filter_option
@@ -53,6 +56,16 @@ logger = get_logger(__name__)
 # Display truncation constants
 _TITLE_MAX_LEN = 50
 _CONTENT_MAX_LEN = 200
+# The narrowest the Chunk column may become: an ellipsis, a file-name tail
+# and the sequence. At or above it every per-chunk layout renders inside an
+# 80-column console, because Rich restores a column to its floor after
+# sharing out the width — which is where a sequence suffix is otherwise cut
+# (G-19-1).
+_CHUNK_MIN_WIDTH = 8
+_PATH_SEPARATORS = ("/", "\\")
+_ELLIPSIS = "\u2026"
+# The default CSV header (D-12: the last column is the staleness boolean).
+_CSV_HEADER = "rank,score,title,path,collection,vectors_stale"
 
 # XML 1.0 Char production (W3C REC-xml §2.2): #x9 | #xA | #xD | [#x20-#xD7FF] |
 # [#xE000-#xFFFD] | [#x10000-#x10FFFF]. This class is its forbidden complement:
@@ -174,19 +187,95 @@ def _title_cell(r: Any) -> str:
     return cell
 
 
-def _chunk_cell(r: Any) -> str:
+def _sequence_value(r: Any) -> str:
+    """Return the row's ``sequence`` as text, or the empty string when it is ``None``."""
+    sequence = _field(r, "sequence")
+    return "" if sequence is None else str(sequence)
+
+
+def _chunk_suffix(r: Any) -> str:
+    """Return ``#`` plus the sequence for a chunk row, empty for a document-level row."""
+    sequence = _sequence_value(r)
+    return f"#{sequence}" if sequence else ""
+
+
+def chunk_address(r: Any) -> str:
+    """Return the plain-text ``path#sequence`` address (D-03 display form)."""
+    return f"{_field(r, 'path')}{_chunk_suffix(r)}"
+
+
+def _fit_head(text: str, suffix: str, budget: int) -> str:
+    """Shorten ``text`` from the left so that ``text + suffix`` fits ``budget`` cells.
+
+    The suffix is always kept whole. An over-long text becomes an ellipsis
+    followed by the longest tail that begins right after a path separator and
+    fits; when no separator-aligned tail fits, leading characters are dropped
+    one at a time, down to an empty remainder. Widths are display cells, so a
+    CJK path counts its double-width characters the way Rich does.
+    """
+    suffix_width = cell_len(suffix)
+    if cell_len(text + suffix) <= budget:
+        return text + suffix
+    for start in range(1, len(text)):
+        # Starts ascend, so the first fit is the longest separator-aligned tail.
+        if (
+            text[start - 1] in _PATH_SEPARATORS
+            and cell_len(text[start:]) + 1 + suffix_width <= budget
+        ):
+            return _ELLIPSIS + text[start:] + suffix
+    for start in range(1, len(text) + 1):
+        if cell_len(text[start:]) + 1 + suffix_width <= budget:
+            return _ELLIPSIS + text[start:] + suffix
+    return _ELLIPSIS + suffix
+
+
+class _ChunkAddress:
+    """A ``path#sequence`` cell that keeps its sequence at any column width.
+
+    Rich measures the cell at its full address and hands it the real column
+    width at render time, when the path is shortened from the left
+    (:func:`_fit_head`). The yielded ``Text`` parses no markup, so a
+    document-derived path cannot inject Rich markup.
+    """
+
+    def __init__(self, path: str, suffix: str) -> None:
+        self.path = path
+        self.suffix = suffix
+
+    def __rich_measure__(self, console: Console, options: ConsoleOptions) -> Measurement:
+        width = cell_len(self.path + self.suffix)
+        return Measurement(width, width)
+
+    def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
+        yield Text(_fit_head(self.path, self.suffix, max(options.max_width, 1)), no_wrap=True)
+
+
+def _chunk_cell(r: Any) -> _ChunkAddress:
     """Build the Chunk cell for a per-chunk table row (D-03).
 
     The display form is ``path#sequence`` when the row carries a chunk
     sequence, falling back to the document path for document-level rows
-    (hybrid per-chunk pages can mix both). The path is document-derived,
-    so it passes through escape().
+    (hybrid per-chunk pages can mix both).
     """
-    path = str(_field(r, "path"))
-    sequence = _field(r, "sequence")
-    if sequence is None or sequence == "":
-        return escape(path)
-    return escape(f"{path}#{sequence}")
+    return _ChunkAddress(str(_field(r, "path")), _chunk_suffix(r))
+
+
+def _chunk_column(results: list[Any]) -> dict[str, Any]:
+    """Return the ``add_column`` keywords for the per-chunk Chunk column.
+
+    The floor is the narrower of ``_CHUNK_MIN_WIDTH`` and the widest address
+    on the page, so the suffix is not ellipsized and the column never
+    reserves more than the page needs. Keep the floor at 8: a higher floor is
+    restored by Rich after the width is shared out and pushes the table past
+    the console, where the terminal crops the right-hand columns.
+    """
+    widest = max((cell_len(chunk_address(r)) for r in results), default=0)
+    return {"style": "magenta", "min_width": min(_CHUNK_MIN_WIDTH, widest)}
+
+
+def _unique_paths(results: list[Any]) -> list[str]:
+    """Return each result's ``path`` once, in first-occurrence order (D-03)."""
+    return list(dict.fromkeys(str(_field(r, "path")) for r in results))
 
 
 def _resolve_collections(
@@ -411,33 +500,42 @@ def _json_with_suggestions(results: list[Any], query: str, suggestions: list[str
     return format_results_json(results)
 
 
-def format_results_csv(results: list[Any]) -> str:
+def format_results_csv(results: list[Any], *, per_chunk: bool = False) -> str:
     """Format results as CSV.
 
     Accepts raw SearchResult objects and the dict rows produced by
     add_line_numbers_to_results (--line-numbers). Uses csv.writer so
-    embedded quotes and commas are escaped correctly.
+    embedded quotes and commas are escaped correctly. ``per_chunk`` adds a
+    last ``sequence`` column and writes each chunk row's ``path#sequence``
+    address in ``path``; a document-level row keeps the plain path and an
+    empty ``sequence`` (D-03).
     """
     buf = io.StringIO()
     # D-12: one extra column carries the staleness boolean (fixed literal).
-    buf.write("rank,score,title,path,collection,vectors_stale\n")
+    buf.write(f"{_CSV_HEADER},sequence\n" if per_chunk else f"{_CSV_HEADER}\n")
     writer = csv.writer(buf, quoting=csv.QUOTE_ALL, lineterminator="\n")
     for r in results:
-        writer.writerow(
-            [
-                _field(r, "rank"),
-                f"{float(_field(r, 'score')):.4f}",
-                _field(r, "title"),
-                _field(r, "path"),
-                _field(r, "collection_name"),
-                "true" if _field(r, "vectors_stale") else "false",
-            ],
-        )
+        row = [
+            _field(r, "rank"),
+            f"{float(_field(r, 'score')):.4f}",
+            _field(r, "title"),
+            chunk_address(r) if per_chunk else _field(r, "path"),
+            _field(r, "collection_name"),
+            "true" if _field(r, "vectors_stale") else "false",
+        ]
+        if per_chunk:
+            row.append(_sequence_value(r))
+        writer.writerow(row)
     return buf.getvalue().rstrip("\n")
 
 
-def format_results_md(results: list[Any], query: str) -> str:
-    """Format results as Markdown."""
+def format_results_md(results: list[Any], query: str, *, per_chunk: bool = False) -> str:
+    """Format results as Markdown.
+
+    ``per_chunk`` shows each chunk row's ``path#sequence`` address on the
+    Path line and adds a Sequence line holding the bare sequence (D-03).
+    Without it, a row that carries a sequence renders exactly as before.
+    """
     lines = [f"# Search Results: {query}", ""]
     for r in results:
         # D-12: the stale result's title line carries the inline annotation
@@ -447,7 +545,10 @@ def format_results_md(results: list[Any], query: str) -> str:
             title += " (stale vectors)"
         lines.append(title)
         lines.append(f"- **Score:** {float(_field(r, 'score')):.4f}")
-        lines.append(f"- **Path:** `{_field(r, 'path')}`")
+        lines.append(f"- **Path:** `{chunk_address(r) if per_chunk else _field(r, 'path')}`")
+        sequence = _sequence_value(r)
+        if per_chunk and sequence:
+            lines.append(f"- **Sequence:** {sequence}")
         lines.append(f"- **Collection:** {_field(r, 'collection_name')}")
         if hasattr(r, "get") and r.get("line_numbers"):
             lines.append(f"- **Line Numbers:** `{r.get('line_numbers')}`")
@@ -460,8 +561,13 @@ def format_results_md(results: list[Any], query: str) -> str:
     return "\n".join(lines)
 
 
-def format_results_xml(results: list[Any], query: str) -> str:
-    """Format results as XML."""
+def format_results_xml(results: list[Any], query: str, *, per_chunk: bool = False) -> str:
+    """Format results as XML.
+
+    ``per_chunk`` puts each chunk row's ``path#sequence`` address in the
+    ``path`` element and adds a ``sequence`` element right after it (D-03).
+    Without it, a row that carries a sequence renders exactly as before.
+    """
     lines = [
         '<?xml version="1.0" encoding="UTF-8"?>',
         f"<search query={quoteattr(_xml_sanitize(query))}>",
@@ -476,7 +582,11 @@ def format_results_xml(results: list[Any], query: str) -> str:
             f'  <result rank="{_field(r, "rank")}" score="{score}" vectors_stale="{stale_attr}">'
         )
         lines.append(f"    <title>{xml_escape(_xml_sanitize(str(_field(r, 'title'))))}</title>")
-        lines.append(f"    <path>{xml_escape(_xml_sanitize(str(_field(r, 'path'))))}</path>")
+        path = chunk_address(r) if per_chunk else _field(r, "path")
+        lines.append(f"    <path>{xml_escape(_xml_sanitize(str(path)))}</path>")
+        sequence = _sequence_value(r)
+        if per_chunk and sequence:
+            lines.append(f"    <sequence>{xml_escape(_xml_sanitize(sequence))}</sequence>")
         lines.append(
             f"    <collection>{xml_escape(_xml_sanitize(str(_field(r, 'collection_name'))))}"
             "</collection>"
@@ -527,7 +637,14 @@ def search_group() -> None:
 )
 @click.option("-c", "--collection", multiple=True, help="Collection to search")
 @click.option("--all", "search_all", is_flag=True, help="Search all collections")
-@click.option("--min-score", default=0.0, help="Minimum score threshold")
+@click.option(
+    "--min-score",
+    default=0.0,
+    help=(
+        "Keep matches scoring at least this value (0-1, higher is a stronger match); "
+        "0 keeps all, 1 or more keeps none"
+    ),
+)
 @click.option("--full", is_flag=True, help="Include full content")
 @click.option("--explain", is_flag=True, help="Show search explanation")
 @click.option("--line-numbers", is_flag=True, help="Show line numbers in content")
@@ -878,8 +995,12 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             _record_query_history(db.connection, query, results, collections, settings=settings)
 
         if quiet and not output_json:
-            for r in results:
-                click.echo(r.path)
+            # D-03: a per-chunk page lists each path once (one document can
+            # hold several rows of the page); a default page keeps one line
+            # per row.
+            paths = _unique_paths(results) if per_chunk else [r.path for r in results]
+            for path in paths:
+                click.echo(path)
             _print_dym_stderr(suggestions, quiet=quiet)
         elif output_json:
             click.echo(
@@ -905,8 +1026,9 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             if per_chunk:
                 # D-03: chunk identity must be addressable in the table;
                 # the existing layout has no path column, so per-chunk mode
-                # adds one chunk cell rather than hiding path#sequence.
-                table.add_column("Chunk", style="magenta")
+                # adds one chunk cell rather than hiding path#sequence. The
+                # cell keeps the sequence on an 80-column terminal (G-19-1).
+                table.add_column("Chunk", **_chunk_column(results))
             table.add_column("Collection", style="blue")
             if line_numbers and any(getattr(r, "content", None) for r in results):
                 table.add_column("Content", style="white")
@@ -1210,8 +1332,12 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
 
         # Output results
         if output_files or (quiet and not any([output_json, output_csv, output_md, output_xml])):
-            for r in results:
-                click.echo(r.path)
+            # D-03: a per-chunk page lists each path once (one document can
+            # hold several rows of the page); a default page keeps one line
+            # per row.
+            paths = _unique_paths(results) if per_chunk else [r.path for r in results]
+            for path in paths:
+                click.echo(path)
             _print_dym_stderr(suggestions, quiet=quiet)
         elif output_json:
             click.echo(
@@ -1229,6 +1355,7 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                     add_line_numbers_to_results([r.to_dict() for r in results])
                     if line_numbers
                     else results,
+                    per_chunk=per_chunk,
                 ),
             )
             _print_dym_stderr(suggestions, quiet=quiet)
@@ -1239,6 +1366,7 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                     if line_numbers
                     else results,
                     query,
+                    per_chunk=per_chunk,
                 ),
             )
             _print_dym_stderr(suggestions, quiet=quiet)
@@ -1249,6 +1377,7 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                     if line_numbers
                     else results,
                     query,
+                    per_chunk=per_chunk,
                 ),
             )
             _print_dym_stderr(suggestions, quiet=quiet)
@@ -1267,8 +1396,9 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             if per_chunk:
                 # D-03: per-chunk pages must expose path#sequence; the
                 # default layout has no path column, so one chunk cell is
-                # added in this mode only.
-                table.add_column("Chunk", style="magenta")
+                # added in this mode only. The cell keeps the sequence on an
+                # 80-column terminal (G-19-1).
+                table.add_column("Chunk", **_chunk_column(results))
             table.add_column("Collection", style="blue")
             table.add_column("Snippet", style="white")
             if line_numbers and any(getattr(r, "content", None) for r in results):

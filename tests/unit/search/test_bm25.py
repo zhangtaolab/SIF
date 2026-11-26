@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from sif.core.models import SearchOptions, SearchResult
-from sif.search.bm25 import _CONTENT_WEIGHT, _TITLE_WEIGHT, BM25Searcher
+from sif.search.bm25 import _CONTENT_WEIGHT, _TITLE_WEIGHT, BM25Searcher, bm25_rank_threshold
 from sif.search.context_attach import enrich_results
 
 
@@ -83,8 +83,10 @@ class TestBM25Searcher:
 
     def test_search_applies_min_score(self) -> None:
         """min_score is a bound SQL predicate, not a post-pagination Python skip."""
-        # row["score"] is the FTS rank (lower = better), converted to
-        # score = 1/(1+|rank|). The SQL — not this loop — applies min_score.
+        # row["score"] is the FTS bm25 value (negative; more negative is a
+        # better match), converted to the displayed score |bm25|/(1+|bm25|),
+        # which rises with relevance. The SQL — not this loop — applies
+        # min_score.
         mock_db = self._make_mock_db(
             [
                 {
@@ -110,13 +112,16 @@ class TestBM25Searcher:
 
         sql = mock_db.execute.call_args[0][0]
         params = mock_db.execute.call_args[0][1]
-        # FTS5: score >= m  <=>  rank >= 1 - 1/m (research Pitfall 4). The
-        # naive inverse 1/m - 1 has the wrong direction. Position 0/1 are the
-        # bound content/title weights, position 2 the MATCH query, position 3
-        # the weighted-expression threshold.
-        assert "m.score >= ?" in sql
-        assert params[3] == pytest.approx(1.0 - 1.0 / 0.3)
+        # FTS5: score >= m  <=>  bm25 <= -m/(1-m). The displayed score rises
+        # with relevance, so keeping a score at or above m is an upper bound on
+        # the non-positive bm25 value: it keeps the stronger matches. Position
+        # 0/1 are the bound content/title weights, position 2 the MATCH query,
+        # position 3 the weighted-expression threshold.
+        assert "m.score <= ?" in sql
+        assert params[3] == pytest.approx(-0.3 / 0.7)
         assert params[:2] == [_CONTENT_WEIGHT, _TITLE_WEIGHT]
+        # The bound is part of the WHERE clause, ahead of LIMIT/OFFSET.
+        assert sql.index("m.score <= ?") < sql.index("LIMIT ? OFFSET ?")
         # Both returned rows survive: the threshold travelled to SQL.
         assert [r.document_id for r in results] == ["doc-1", "doc-2"]
 
@@ -140,7 +145,90 @@ class TestBM25Searcher:
 
         sql = mock_db.execute.call_args[0][0]
         params = mock_db.execute.call_args[0][1]
-        assert "m.score >=" not in sql
+        assert "m.score <=" not in sql
+        assert params == [_CONTENT_WEIGHT, _TITLE_WEIGHT, '"test"* AND "query"*', 10, 0]
+        assert [r.document_id for r in results] == ["doc-1"]
+
+    def test_display_score_rises_with_relevance(self) -> None:
+        """A stronger match (more negative bm25 value) shows the higher score."""
+        mock_db = self._make_mock_db(
+            [
+                {
+                    "document_id": "doc-1",
+                    "title": "T1",
+                    "path": "/1.md",
+                    "collection_name": "c",
+                    "score": -1.0,
+                },
+                {
+                    "document_id": "doc-2",
+                    "title": "T2",
+                    "path": "/2.md",
+                    "collection_name": "c",
+                    "score": -5.0,
+                },
+            ],
+        )
+
+        searcher = BM25Searcher(mock_db)
+        results = searcher.search("test query", SearchOptions(include_highlights=False))
+
+        scores = [r.score for r in results]
+        assert scores[0] == 0.5
+        assert scores[1] == pytest.approx(5 / 6)
+        assert scores[1] > scores[0]
+
+    @pytest.mark.parametrize(
+        ("min_score", "expected"),
+        [
+            (0.0, None),
+            (-0.5, None),
+            (float("nan"), None),
+            (0.5, -1.0),
+            (0.8, -4.000000000000001),
+            (1.0, float("-inf")),
+            (1.5, float("-inf")),
+        ],
+    )
+    def test_rank_threshold_table(self, min_score: float, expected: float | None) -> None:
+        """-M/(1-M) for M between 0 and 1; None at or below 0; -inf from 1."""
+        assert bm25_rank_threshold(min_score) == expected
+
+    @pytest.mark.parametrize("min_score", [1.0, 2.5])
+    def test_min_score_at_or_above_one_keeps_nothing(self, min_score: float) -> None:
+        """No displayed score reaches 1, so a threshold of 1 or more keeps no row."""
+        conn = _build_real_fts_db()
+        try:
+            searcher = BM25Searcher(conn)
+            results = searcher.search(
+                "apple", SearchOptions(min_score=min_score, include_highlights=False)
+            )
+
+            assert results == []
+        finally:
+            conn.close()
+
+    def test_negative_min_score_omits_the_filter(self) -> None:
+        """A negative min_score binds no threshold, exactly like 0."""
+        mock_db = self._make_mock_db(
+            [
+                {
+                    "document_id": "doc-1",
+                    "title": "T1",
+                    "path": "/1.md",
+                    "collection_name": "c",
+                    "score": -5.0,
+                },
+            ],
+        )
+
+        searcher = BM25Searcher(mock_db)
+        options = SearchOptions(min_score=-0.5, include_highlights=False)
+        results = searcher.search("test query", options)
+
+        sql = mock_db.execute.call_args[0][0]
+        params = mock_db.execute.call_args[0][1]
+        assert "m.score <=" not in sql
         assert params == [_CONTENT_WEIGHT, _TITLE_WEIGHT, '"test"* AND "query"*', 10, 0]
         assert [r.document_id for r in results] == ["doc-1"]
 
@@ -469,21 +557,63 @@ class TestBM25OffsetPagination:
         finally:
             conn.close()
 
+    def test_scores_are_monotone_with_rank(self) -> None:
+        """The displayed score falls with rank: the best match shows the highest."""
+        conn = _build_real_fts_db()
+        try:
+            searcher = BM25Searcher(conn)
+            results = searcher.search("apple", self._options(collection_ids=["c1"]))
+
+            assert [r.document_id for r in results] == ["doc-4", "doc-3", "doc-2", "doc-1", "doc-0"]
+            scores = [r.score for r in results]
+            assert scores == sorted(scores, reverse=True)
+            assert scores[0] == pytest.approx(0.7746412854760848)
+            assert scores[-1] == pytest.approx(0.7355778480479579)
+        finally:
+            conn.close()
+
+    def test_min_score_removes_weaker_matches_and_keeps_the_best(self) -> None:
+        """A threshold removes the weaker matches and keeps the best, global ranks kept."""
+        conn = _build_real_fts_db()
+        try:
+            searcher = BM25Searcher(conn)
+            unfiltered = searcher.search("apple", self._options(collection_ids=["c1"]))
+            scores = [r.score for r in unfiltered]
+
+            # Midway between the third and fourth score: the three best survive.
+            third_fourth = (scores[2] + scores[3]) / 2
+            kept = searcher.search(
+                "apple", self._options(min_score=third_fourth, collection_ids=["c1"])
+            )
+            assert [r.document_id for r in kept] == ["doc-4", "doc-3", "doc-2"]
+            assert [r.rank for r in kept] == [1, 2, 3]
+            assert all(r.score >= third_fourth for r in kept)
+
+            # Midway between the first and second score: only the best survives.
+            first_second = (scores[0] + scores[1]) / 2
+            best_only = searcher.search(
+                "apple", self._options(min_score=first_second, collection_ids=["c1"])
+            )
+            assert [r.document_id for r in best_only] == ["doc-4"]
+            assert [r.rank for r in best_only] == [1]
+        finally:
+            conn.close()
+
     def test_mid_min_score_keeps_expected_documents_and_direction(self) -> None:
         """A mid min_score filters inside SQL: the highest-score docs survive.
 
-        The code's score convention is 1/(1+|rank|), so rank >= 1 - 1/m is
-        what keeps score >= m (not the naive 1/m - 1). FTS5 orders by rank
-        ascending, so the surviving rows are the least-repeated "apple" docs;
-        the wrong direction keeps all five, so "all" would fail here.
+        The displayed score is |bm25|/(1+|bm25|), which rises with relevance,
+        so score >= m is bm25 <= -m/(1-m). The surviving rows are therefore the
+        three most-repeated "apple" documents (G-19-2); the earlier direction
+        kept the three least-repeated ones and dropped the best match.
         """
         conn = _build_real_fts_db()
         try:
             searcher = BM25Searcher(conn)
-            results = searcher.search("apple", self._options(min_score=0.23, collection_ids=["c1"]))
+            results = searcher.search("apple", self._options(min_score=0.76, collection_ids=["c1"]))
 
-            assert [r.document_id for r in results] == ["doc-2", "doc-1", "doc-0"]
-            assert all(r.score >= 0.23 for r in results)
+            assert [r.document_id for r in results] == ["doc-4", "doc-3", "doc-2"]
+            assert all(r.score >= 0.76 for r in results)
             assert [r.rank for r in results] == [1, 2, 3]
         finally:
             conn.close()
@@ -495,11 +625,12 @@ class TestBM25OffsetPagination:
             searcher = BM25Searcher(conn)
             page = searcher.search(
                 "apple",
-                self._options(limit=1, offset=1, min_score=0.23, collection_ids=["c1"]),
+                self._options(limit=1, offset=1, min_score=0.76, collection_ids=["c1"]),
             )
 
-            # Post-pagination filtering would have returned rank 1 here.
-            assert [r.document_id for r in page] == ["doc-1"]
+            # doc-3 is the second surviving row: it keeps its global rank 2
+            # instead of being renumbered to rank 1 of the returned page.
+            assert [r.document_id for r in page] == ["doc-3"]
             assert [r.rank for r in page] == [2]
         finally:
             conn.close()
@@ -578,7 +709,8 @@ class TestWeightedBM25:
                     ('"apple"*',),
                 ).fetchall()
             ]
-            expected_scores = [1.0 / (1.0 + abs(pair["rank"])) for pair in pairs]
+            # Displayed score: the magnitude of the rank over one plus the magnitude.
+            expected_scores = [abs(pair["rank"]) / (1.0 + abs(pair["rank"])) for pair in pairs]
 
             searcher = BM25Searcher(conn)
             scoped = searcher.search(
@@ -657,10 +789,11 @@ class TestWeightedBM25:
         conn = _build_title_body_db()
         try:
             searcher = BM25Searcher(conn)
-            # rank threshold = -5.6: keeps d-body (-5.25) and drops d-title at
-            # title_weight=10 (-6.03), while both survive at weight 1.0
-            # (-5.25 / -3.59).
-            min_score = 1.0 / 6.6
+            # The bm25 bound is -4 (min_score 0.8). At title_weight=10 the
+            # title-only match reaches -6.03 and joins d-body at -5.25, both at
+            # or below the bound; at weight 1.0 d-title stays at -3.59 and drops
+            # out.
+            min_score = 0.8
             weighted = searcher.search(
                 "needle",
                 SearchOptions(
@@ -680,8 +813,8 @@ class TestWeightedBM25:
                 ),
             )
 
-            assert [r.document_id for r in weighted] == ["d-body"]
-            assert [r.document_id for r in baseline] == ["d-body", "d-title"]
+            assert [r.document_id for r in weighted] == ["d-title", "d-body"]
+            assert [r.document_id for r in baseline] == ["d-body"]
         finally:
             conn.close()
 

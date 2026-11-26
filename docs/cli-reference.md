@@ -535,7 +535,7 @@ sif search search [OPTIONS]
 | `--filter` | `—` | text | — | Metadata filter as a JSON AST (qmd-compatible). |
 | `--collection` | `-c` | text[] | — | Collection to search |
 | `--all` | `—` | flag | `false` | Search all collections |
-| `--min-score` | `—` | float | `0.0` | Minimum score threshold |
+| `--min-score` | `—` | float | `0.0` | Keep matches scoring at least this value (0-1, higher is a stronger match); 0 keeps all, 1 or more keeps none |
 | `--full` | `—` | flag | `false` | Include full content |
 | `--explain` | `—` | flag | `false` | Show search explanation |
 | `--line-numbers` | `—` | flag | `false` | Show line numbers in content |

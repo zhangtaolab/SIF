@@ -606,7 +606,7 @@ class CustomModel(BaseModel):
 
 3. **Run the Windows degradation smoke.** On a clean checkout of the release commit, run `make windows-smoke` against the Windows host (hc remote yoga) and record the tested HEAD that the script prints. The target prints HEAD and status (the script refuses a dirty tree), installs Python `YOGA_PYTHON` on the host, syncs the frozen `dev` environment with `uv sync --frozen --extra dev`, then runs `scripts/windows_smoke.py` over `hc exec --on yoga`; it accepts `YOGA_DIR` / `YOGA_PYTHON` overrides when the checkout path or interpreter differs. It asserts only the documented degradations (fcntl lock warning, missing-root "all documents preserved" guard, and POSIX fork/service refusals); it is not a claim of full Windows support, which remains deferred. This is an on-demand, pre-release step only — never a per-PR or scheduled job.
 
-4. **Commit and confirm CI.** Commit the release changes and confirm the Test Matrix is green on that commit: all six cells (py3.10–3.13 on ubuntu-latest; py3.10 and py3.13 on macos-latest) plus the lint job.
+4. **Commit and confirm CI.** Commit the release changes and confirm the Test Matrix is green on that commit: all eight py3.10–3.13 × ubuntu/macos cells plus the lint job.
 
 5. **Tag the release.** Create and push an annotated tag (tags use the `vX.Y[.Z]` form), for example:
 
@@ -729,7 +729,7 @@ Three GitHub Actions workflows live in `.github/workflows/`:
 
 | Workflow | File | Trigger | What it runs |
 |----------|------|---------|--------------|
-| Test Matrix | `test-matrix.yml` | Pushes to `main` and every pull request | Six test cells (Python 3.10–3.13 on `ubuntu-latest`; Python 3.10 and 3.13 on `macos-latest`) run `uv sync --frozen --extra dev --extra embed` and then `env -u FORCE_COLOR NO_COLOR=1 uv run --frozen pytest` (the suite is color-environment hermetic, so CI strips color-forcing variables before running it); a separate Python 3.12 lint job runs `ruff check src tests`, `ruff format --check src tests`, and `ty check src/sif` |
+| Test Matrix | `test-matrix.yml` | Every branch push and every pull request | Eight test cells (Python 3.10–3.13 × `ubuntu-latest` / `macos-latest`) run `uv sync --frozen --extra dev --extra embed` and then `env -u FORCE_COLOR NO_COLOR=1 uv run --frozen pytest` (the suite is color-environment hermetic, so CI strips color-forcing variables before running it); a separate Python 3.12 lint job runs `ruff check src tests`, `ruff format --check src tests`, and `ty check src/sif` |
 | Docs Validation | `docs.yml` | Pull requests touching `docs/**`, `README.md`, `src/sif/cli/**`, `src/sif/config/**`, `scripts/generate_cli_ref.py`, `scripts/generate_config_ref.py`, or `tests/test_docs.py`; pushes to `main` | Runs `pytest tests/test_docs.py -v --no-cov`, regenerates `docs/cli-reference.md` and `docs/configuration.md`, and fails on any diff |
 | Publish | `publish.yml` | Pushes of `v*` tags | Verifies the tag matches `src/sif/_version.py`, builds and checks the distributions once, uploads the `dist` artifact, then publishes to TestPyPI first and PyPI second via trusted publishing (see [Release Process](#release-process)) |
 
@@ -748,7 +748,7 @@ no scheduled workflow and no bandit job in CI.
 - Push your branch and open the pull request against `main` on GitHub. There is no `.github/PULL_REQUEST_TEMPLATE.md`; follow the description template in [Contributing](contributing.md) (Description, Type of Change, Testing, Checklist).
 - Before requesting review, the [Contributing](contributing.md) checklist expects: `pytest` passes, `ruff format src tests` applied, `ruff check src tests` clean, `ty check src/sif` passes, `make ci` passes (`bandit` is not in the `[dev]` extras, so install it separately), documentation updated, reference docs regenerated with `make docs-generate` when CLI commands or configuration settings changed, and `docs/changelog.md` updated.
 - Commit messages follow Conventional Commits, as described in Commit Changes above.
-- PR CI runs the full Test Matrix on every push to `main` and every pull request: the six cells (py3.10–3.13 on ubuntu-latest; 3.10 and 3.13 on macos-latest) run the complete pytest suite (with the 90% coverage gate), and the lint job runs `ruff check src tests`, `ruff format --check src tests`, and `ty check src/sif`. The separate "Docs Validation" workflow runs `pytest tests/test_docs.py` and regenerates `docs/cli-reference.md` and `docs/configuration.md` whenever a PR touches `docs/**`, `README.md`, `src/sif/cli/**`, `src/sif/config/**`, `scripts/generate_cli_ref.py`, `scripts/generate_config_ref.py`, or `tests/test_docs.py` — it fails if the committed reference docs are stale. That workflow also runs on pushes to `main`. No CI job runs bandit, so run `make ci` locally before pushing.
+- PR CI runs the full Test Matrix on every push and pull request: the eight py3.10–3.13 × ubuntu/macos cells run the complete pytest suite (with the 90% coverage gate), and the lint job runs `ruff check src tests`, `ruff format --check src tests`, and `ty check src/sif`. The separate "Docs Validation" workflow runs `pytest tests/test_docs.py` and regenerates `docs/cli-reference.md` and `docs/configuration.md` whenever a PR touches `docs/**`, `README.md`, `src/sif/cli/**`, `src/sif/config/**`, `scripts/generate_cli_ref.py`, `scripts/generate_config_ref.py`, or `tests/test_docs.py` — it fails if the committed reference docs are stale. That workflow also runs on pushes to `main`. No CI job runs bandit, so run `make ci` locally before pushing.
 - Review turnaround is not documented; maintainers triage pull requests on GitHub. Respond to comments and push follow-up commits to the same branch.
 
 ## Coverage Requirements
@@ -766,8 +766,8 @@ pytest tests/unit/test_collection.py -q
 # FAIL Required test coverage of 90.0% not reached.
 ```
 
-CI's Test Matrix runs the full suite in every cell, so the same gate applies in all six
-cells: py3.10–3.13 on ubuntu and py3.10/3.13 on macos.
+CI's Test Matrix runs the full suite in every cell, so the same gate applies on all eight
+py3.10–3.13 × ubuntu/macos combinations.
 
 Append `--no-cov` when iterating on a narrow slice of the suite:
 

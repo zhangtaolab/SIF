@@ -2,9 +2,9 @@
 schema_version: 1
 open_count: 0
 waived_count: 3
-fixed_count: 9
-total_count: 12
-last_updated: 2026-11-14T09:32:00.124Z
+fixed_count: 10
+total_count: 13
+last_updated: 2026-11-26T03:37:26.139Z
 ---
 
 # Broken Windows Ledger
@@ -27,6 +27,7 @@ last_updated: 2026-11-14T09:32:00.124Z
 | 10 | 16 | unrun-verify | docs/benchmarking.md |  | Manual real-model held-out evidence row is 'not yet measured' (plan-mandated label; deterministic snapshot is committed) — record model/hardware/date/nDCG per 16-VALIDATION.md Manual-Only Verifications | fixed |  | 2026-11-08T15:41:08.355Z | 2026-11-12T10:33:55.806Z |
 | 11 | 17 | unmet-truth | .planning/phases/17-engineering-foundation-ci-matrix-hygiene-pypi/17-07-PLAN.md |  | Publish run 43562577065 is not green: Publish to TestPyPI returns invalid-publisher at OIDC token exchange on attempts 1-3, including after the pending publisher was deleted and re-created with exact fields; PyPI job skipped; release not shipped | fixed |  | 2026-11-14T05:50:50.007Z | 2026-11-14T09:32:00.013Z |
 | 12 | 17 | unrun-verify | .planning/phases/17-engineering-foundation-ci-matrix-hygiene-pypi/17-07-PLAN.md |  | Task 2 unrun pending publish: pypi-attestations verify, fresh-venv PyPI install proof, fresh-venv TestPyPI install proof | fixed |  | 2026-11-14T05:50:50.115Z | 2026-11-14T09:32:00.124Z |
+| 13 | 19 | unrun-verify | .planning/milestones/v1.2-phases/19-search-correctness/19-12-PLAN.md |  | Task 3 <human-check> not performed by the executor of plan 19-12: sif search query QUERY --min-score 0.3 --json, with and without --min-score, on an index with embedded chunks, then vsearch --min-score 0.3. It needs an embedded index and the operator's own reading, and this run was barred from loading an embedding model. Left for the end-of-phase verifier harvest (workflow.human_verify_mode: end-of-phase); the evidence artifact and TestHybridMinScoreLeg are the automated backstop. | fixed |  | 2026-11-26T03:13:38.540Z | 2026-11-26T03:37:26.139Z |
 
 ````json
 [
@@ -180,6 +181,19 @@ last_updated: 2026-11-14T09:32:00.124Z
     "reason": "",
     "recorded_at": "2026-11-14T05:50:50.115Z",
     "resolved_at": "2026-11-14T09:32:00.124Z",
+    "milestone": "v1.2"
+  },
+  {
+    "id": 13,
+    "kind": "unrun-verify",
+    "phase": "19",
+    "file": ".planning/milestones/v1.2-phases/19-search-correctness/19-12-PLAN.md",
+    "line": null,
+    "description": "Task 3 <human-check> not performed by the executor of plan 19-12: sif search query QUERY --min-score 0.3 --json, with and without --min-score, on an index with embedded chunks, then vsearch --min-score 0.3. It needs an embedded index and the operator's own reading, and this run was barred from loading an embedding model. Left for the end-of-phase verifier harvest (workflow.human_verify_mode: end-of-phase); the evidence artifact and TestHybridMinScoreLeg are the automated backstop.",
+    "status": "fixed",
+    "reason": "",
+    "recorded_at": "2026-11-26T03:13:38.540Z",
+    "resolved_at": "2026-11-26T03:37:26.139Z",
     "milestone": "v1.2"
   }
 ]

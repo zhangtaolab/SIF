@@ -362,7 +362,7 @@ Releases are published by the tag-triggered `Publish` workflow; there is no manu
 1. **Bump the version.** Update `__version__` in `src/sif/_version.py` — it is the single version literal that packaging, `sif.__version__`, `APP_VERSION`, and the MCP server version all derive from.
 2. **Update the changelog.** Add the release section to `docs/changelog.md`.
 3. **Run the Windows degradation smoke.** On a clean checkout of the release commit, run `make windows-smoke` against the Windows host (hc remote yoga) and record the tested HEAD the script prints. This is an on-demand, pre-release step — never a per-PR or scheduled job. It requires the `hc` CLI and a synced checkout at `D:\Github\SIF` (override with `YOGA_DIR=...`); `YOGA_PYTHON` defaults to `3.12`.
-4. **Commit and confirm the Test Matrix.** Commit the release changes and confirm all six test cells (Python 3.10–3.13 on ubuntu; 3.10 and 3.13 on macos) plus the lint job are green on that commit.
+4. **Commit and confirm the Test Matrix.** Commit the release changes and confirm all eight test cells (Python 3.10–3.13 × ubuntu/macos) plus the lint job are green on that commit.
 5. **Tag the release.** Create and push an annotated tag using the `vX.Y[.Z]` form:
 
    ```bash
@@ -397,14 +397,14 @@ Three GitHub Actions workflows live in `.github/workflows/`:
 
 ### Test Matrix — `test-matrix.yml`
 
-Runs on every push to `main` and on every pull request, with two jobs:
+Runs on every push to any branch and on every pull request, with two jobs:
 
-- **Test** — six cells: Python 3.10, 3.11, 3.12, and 3.13 on `ubuntu-latest`, and Python 3.10 and 3.13 on `macos-latest` (3.11 and 3.12 are matrix `exclude` entries). Each cell installs with `uv sync --frozen --extra dev --extra embed` and runs the full suite via `env -u FORCE_COLOR NO_COLOR=1 uv run --frozen pytest`; the coverage floor applies exactly as it does locally.
+- **Test** — eight cells: Python 3.10, 3.11, 3.12, and 3.13 on both `ubuntu-latest` and `macos-latest`. Each cell installs with `uv sync --frozen --extra dev --extra embed` and runs the full suite via `env -u FORCE_COLOR NO_COLOR=1 uv run --frozen pytest`; the coverage floor applies exactly as it does locally.
 - **Lint** — Python 3.12 on `ubuntu-latest`, running `ruff check src tests`, `ruff format --check src tests`, and `ty check src/sif`.
 
-There is no Windows runner in the matrix, and `push: branches: [main]` means feature-branch commits are covered by their pull request (one matrix run, not two) and tag pushes never trigger the Test Matrix — tags go to `Publish`.
+There is no Windows runner in the matrix, and `push: branches: ['**']` means tag pushes do not trigger the Test Matrix — tags go to `Publish`.
 
-All six test cells plus the lint job must be green on the release commit before it is tagged (see [Release Process](#release-process)). The Test Matrix does not run `bandit`; run `make security` locally if your change touches code the security scan covers.
+All eight test cells plus the lint job must be green on the release commit before it is tagged (see [Release Process](#release-process)). The Test Matrix does not run `bandit`; run `make security` locally if your change touches code the security scan covers.
 
 ### Docs Validation — `docs.yml`
 
