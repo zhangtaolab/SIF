@@ -4267,8 +4267,8 @@ class TestPerChunkSurfaces:
         "any payload is encrypted, and every handshake needs a fresh nonce.",
         "Chunk identity lets a client address the passage that matched, not just the whole "
         "document, so a per-chunk row keeps its own sequence beside its path.",
-        "A token such as supercalifragilisticexpialidocious cannot break, so Rich folds it "
-        "across lines inside the Snippet cell of a narrow terminal like this one.",
+        "A token such as supercalifragilisticexpialidocious cannot break at a space, so a narrow "
+        "Snippet cell never shows it whole on a single line inside a small terminal like this.",
         "基于深度学习的中文搜索引擎相关性排序方法研究 探索了查询与文档语义匹配的关键技术与排序策略",
     )
 
