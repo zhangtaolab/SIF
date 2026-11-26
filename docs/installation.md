@@ -349,7 +349,7 @@ sif --help
 
 Expected output:
 ```
-sif, version 1.2.3
+sif, version 1.2.4
 
 Usage: sif [OPTIONS] COMMAND [ARGS]...
 

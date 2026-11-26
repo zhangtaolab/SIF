@@ -21,8 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive documentation
 
 ### Changed
-- `sif search query --per-chunk` now carries the chunk identity in `--csv`, `--md` and `--xml` output: a chunk-level row shows the `path#sequence` address in `path` and adds a `sequence` field (a new last CSV column), and `--files` and the quiet path-only output of `query` and `vsearch` list each path once per page instead of once per chunk row; output without `--per-chunk` is unchanged, and the per-chunk tables keep `#sequence` visible on an 80-column terminal.
-- `sif search search --min-score` now keeps the strongest BM25 matches instead of removing them first: the displayed BM25 score is the magnitude of the bm25 value over one plus that magnitude (between 0 and 1, rising with relevance), `|bm25|/(1+|bm25|)`, instead of the earlier reciprocal form `1/(1+|bm25|)`, which fell as relevance rose; every BM25 score in table, JSON, CSV, Markdown and XML output, in MCP `lex_search` results and in the hybrid `bm25_score` breakdown changes with it; `sif search query --min-score` and the `min_score` of MCP `query` change in their BM25 leg for the same reason, so a thresholded hybrid page keeps its stronger BM25 matches instead of silently losing them (before, at a threshold such as 0.3, the page fell back to the vector leg alone); `sif search vsearch --min-score` is unchanged; ranking without a threshold is unchanged, and for `sif search search` a threshold of 1 or more returns nothing; to convert a threshold written against the old scores, subtract it from 1.
+- N/A
 
 ### Deprecated
 - N/A
@@ -36,10 +35,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - N/A
 
-## [1.2.3] - 2026-11-23
+## [1.2.4] - 2026-11-26
 
 ### Added
 - New machine-to-machine migration guide (`docs/machine-migration.md`) covering index export via `sif index backup`, restore placement, embedder-identity preservation, embedding and model caches, the three source-path relocation routes (same layout, moved root, same-OS prefix rewrite), configuration/MCP/watch recreation, a verification checklist, and troubleshooting; registered in the mkdocs nav and the docs code-block test suite.
+
+### Changed
+- `sif search query --per-chunk` now carries the chunk identity in `--csv`, `--md` and `--xml` output: a chunk-level row shows the `path#sequence` address in `path` and adds a `sequence` field (a new last CSV column), and `--files` and the quiet path-only output of `query` and `vsearch` list each path once per page instead of once per chunk row; output without `--per-chunk` is unchanged, and the per-chunk tables keep `#sequence` visible on an 80-column terminal.
+- `sif search search --min-score` now keeps the strongest BM25 matches instead of removing them first: the displayed BM25 score is the magnitude of the bm25 value over one plus that magnitude (between 0 and 1, rising with relevance), `|bm25|/(1+|bm25|)`, instead of the earlier reciprocal form `1/(1+|bm25|)`, which fell as relevance rose; every BM25 score in table, JSON, CSV, Markdown and XML output, in MCP `lex_search` results and in the hybrid `bm25_score` breakdown changes with it; `sif search query --min-score` and the `min_score` of MCP `query` change in their BM25 leg for the same reason, so a thresholded hybrid page keeps its stronger BM25 matches instead of silently losing them (before, at a threshold such as 0.3, the page fell back to the vector leg alone); `sif search vsearch --min-score` is unchanged; ranking without a threshold is unchanged, and for `sif search search` a threshold of 1 or more returns nothing; to convert a threshold written against the old scores, subtract it from 1.
 
 ## [1.2.2] - 2026-11-19
 
@@ -289,8 +292,8 @@ Thanks to all contributors who have helped shape SIF!
 
 ---
 
-[Unreleased]: https://github.com/zhangtaolab/sif/compare/v1.2.3...HEAD
-[1.2.3]: https://github.com/zhangtaolab/sif/releases/tag/v1.2.3
+[Unreleased]: https://github.com/zhangtaolab/sif/compare/v1.2.4...HEAD
+[1.2.4]: https://github.com/zhangtaolab/sif/releases/tag/v1.2.4
 [0.1.0]: https://github.com/zhangtaolab/sif/releases
 [1.2.2]: https://github.com/zhangtaolab/sif/releases/tag/v1.2.2
 [1.2.1]: https://github.com/zhangtaolab/sif/releases/tag/v1.2.1
