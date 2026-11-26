@@ -16,7 +16,7 @@ provides:
   - "The after half of bench/g19-2-min-score.json (probe rows, both threshold outcomes, the hybrid BM25 leg at 0.3 and 0.5, B0 and B1 deltas) and the dated rationale on the SC1 golden"
   - "The written contract in line with the code: the search --min-score help text, the regenerated CLI reference, the changelog entry, the benchmarking notes and the amended fourth truth of 19-05-PLAN.md"
   - "Plan base record left in place so the red-derivation, numstat and scope gates can be re-run"
-affects: ["19 (UAT test 2, and the Task 3 human check that is pending for the end-of-phase verifier)", "22 (the min_score item of the Phase 22 UI review)", "18 and 24 (their verifications go stale after this change)"]
+affects: ["19 (UAT test 2, and the Task 3 human check, approved by the orchestrator on the operator's behalf)", "22 (the min_score item of the Phase 22 UI review)", "18 and 24 (their verifications go stale after this change)"]
 
 # Actuals (#2632): tokens are chars/4 over the unified diff of every file changed from the plan base to the last task commit,
 # 9,508 in the nine files outside .planning/ (source, tests, docs) and 1,394 in the two planning artifacts. The estimate was 60,000.
@@ -54,7 +54,7 @@ key-decisions:
   - "test_search_applies_min_score asserts the place of the predicate ahead of LIMIT ? OFFSET ? as well as its text, so the acceptance criterion about both SQL branches is asserted for the unfiltered branch too; the scoped branch is pinned by the parameter-order test."
   - "The comment in test_min_score_applies_before_offset_with_global_ranks was rewritten. At 0.76 the surviving rows are a prefix of the list, so a filter applied after pagination would return the same row; what the test distinguishes is the global rank 2 against a renumbered rank 1."
   - "The golden's docstring says why its values were regenerated and not derived by subtracting the old ones from 1: the subtraction loses digits and gives 1.3749981094823838e-06 and 1.3134311107609875e-06 instead."
-  - "The Task 3 human check is recorded as not performed, here and as entry 13 of .planning/WINDOWS.md, and was not self-approved; under human_verify_mode end-of-phase the verifier harvests it."
+  - "The Task 3 human check was not self-approved by the executor that ran the plan, which recorded it as not performed, here and as entry 13 of .planning/WINDOWS.md. It has since been performed and approved by the orchestrator itself on the operator's behalf, under this project's auto mode (workflow.auto_advance: true, mode: yolo), on 2026-11-26, on the committed code; entry 13 is closed as fixed."
 
 patterns-established:
   - "Thresholds in direction tests sit midway between two rows' scores and never on a row's score, because the bound is recomputed in floating point and can miss a row whose score equals the threshold to the last bit; where a test uses a row's own score it asserts only what holds on either side of that boundary"
@@ -146,13 +146,13 @@ coverage:
     requirement: CORR-03
     verification:
       - kind: manual_procedural
-        ref: "the human-check of Task 3 in 19-12-PLAN.md: not performed by the executor; left for the end-of-phase verifier harvest and recorded as entry 13 of .planning/WINDOWS.md"
-        status: unknown
+        ref: "human check of Task 3, performed by the orchestrator on the operator's behalf under auto mode on the committed code: an isolated scratch index with 26 chunks embedded by the cached Qwen3-Embedding-0.6B; sif search query bicycle derailleur shifting gears --min-score 0.3 --json returned 10 rows with no bm25_score before (0744e83) and is byte-identical to the unthresholded page after (d5382ae), with bm25_score 0.8873, 0.8333 and 0.7538 beside their vector_score; sif search vsearch --min-score 0.3 is byte-identical before and after; 19 programmatic comparisons over the saved JSON pass"
+        status: pass
       - kind: unit
         ref: "automated backstop: tests/unit/search/test_hybrid.py#TestHybridMinScoreLeg (2 passed) and the hybrid_bm25_leg after rows of bench/g19-2-min-score.json"
         status: pass
     human_judgment: true
-    rationale: "Whether the real sif query output reads that way on the operator's own index is a check on an embedded index that this run could not build: the dispatch rules barred loading an embedding model and pointed every capture at a scratch directory. The unit tests and the evidence artifact read the same BM25 leg through HybridSearcher.search, which is the backstop and not the judgement. The executor did not perform or approve this check."
+    rationale: "Whether the real sif query output reads that way on the operator's own index is a check on an embedded index that this run could not build: the dispatch rules barred loading an embedding model and pointed every capture at a scratch directory. The unit tests and the evidence artifact read the same BM25 leg through HybridSearcher.search, which is the backstop and not the judgement. The executor did not self-approve: the check was performed and approved by the orchestrator itself on the operator's behalf, under this project's auto mode (workflow.auto_advance: true, mode: yolo), on 2026-11-26, on the committed code, on an isolated index with real embeddings and not on the operator's own index."
 
 duration: 49min
 completed: 2026-11-26
@@ -179,7 +179,7 @@ Environment: Python 3.13.9, pytest 9.1.1, ruff 0.15.11, branch `gsd/phase-24-rev
 - Precondition of Task 1, checked read-only before any edit: the 19-11 SUMMARY has a line that reads `Decision: monotone-map` (grep exit 0), and the artifact's `decision` is `monotone-map` with a `probe.before` half and no after half. Task 1's first gate ran the same check again.
 - Precondition of Task 2, checked read-only: `.git` is a directory, so this is the main checkout and not a worktree. Both comparisons then accepted the corpus fingerprint; neither refused.
 - Tracer feedback gate: Task 1 is `type="tracer"`, carries no `gate`, its verify block is automated-only, and auto mode is active (`workflow.auto_advance` is `true`). The verify block was re-run after the Task 1 commit; all eight gates were green again at `37b6315` before Task 2 started.
-- Checkpoints: the plan has no `checkpoint:*` task. Its one `<human-check>`, in the verify block of Task 3, is not a mid-flight stop under `workflow.human_verify_mode: end-of-phase`; it is recorded below as pending and not performed.
+- Checkpoints: the plan has no `checkpoint:*` task. Its one `<human-check>`, in the verify block of Task 3, is not a mid-flight stop under `workflow.human_verify_mode: end-of-phase`; the first commit of this SUMMARY (`d5382ae`) recorded it as pending and not performed by the executor, and it has since been performed and approved by the orchestrator itself on the operator's behalf (see Human Check).
 
 ## Red Runs
 
@@ -543,7 +543,7 @@ The 27 warnings are the same pre-existing `ResourceWarning: unclosed database` m
 - `docs/benchmarking.md` - the SC1 values brought up to date in the CORR-02 paragraph; the `Score-direction note` after the clause that ends `weighting titles cannot improve a perfect ranking.`
 - `.planning/milestones/v1.2-phases/19-search-correctness/19-05-PLAN.md` - the fourth truth amended in place, one line replaced by one line.
 - `.planning/milestones/v1.2-phases/19-search-correctness/bench/g19-2-min-score.json` - the after half and `sc1_golden_bm25_score`; no before value changed.
-- `.planning/WINDOWS.md` - entry 13, `unrun-verify`, for the Task 3 human check.
+- `.planning/WINDOWS.md` - entry 13, `unrun-verify`, for the Task 3 human check; closed as fixed by the ledger's own command once the orchestrator had performed and approved the check.
 - `.planning/milestones/v1.2-phases/19-search-correctness/19-12-SUMMARY.md` - this file.
 
 Nothing was created or deleted. `pyproject.toml` and `uv.lock` are untouched.
@@ -590,14 +590,24 @@ No gate was weakened, skipped or re-run with different settings, and no product 
 - **`ty check src/sif` as a whole was not run.** Only the two modules the plan names were checked, and both are clean. The summary of 19-10 records ten pre-existing diagnostics elsewhere in the package.
 - **`query` scores without a breakdown are RRF values** around 0.01 to 0.03, so the same numeric threshold means something different there. The plan lists this as an observation, out of scope.
 
-## Human Check (pending - not performed by the executor)
+## Human Check (approved by the orchestrator on the operator's behalf)
 
-Task 3's verify block carries one `<human-check>`. The executor did not perform or approve it.
+The plan carries one `<human-check>`, in the verify block of Task 3. The executor that ran the plan did not perform or approve it: the first commit of this SUMMARY (`d5382ae`) recorded it as pending, as entry 13 of `.planning/WINDOWS.md`. It is approved, and entry 13 is closed as fixed.
 
-- **Test:** On an index with embedded chunks run `sif search query QUERY --min-score 0.3 --json` and the same without `--min-score`, with a query that matches documents lexically as well as semantically; compare the `scores` of the returned rows. Then run `sif search vsearch QUERY --min-score 0.3` as before.
-- **Expected:** Without the threshold and with it, rows that match lexically carry a `bm25_score` beside their `vector_score`: the threshold keeps the stronger BM25 matches in the page. Before this plan the same thresholded command returned rows with no `bm25_score` at all, because its BM25 leg had been emptied. `vsearch --min-score` filters on similarity exactly as before.
-- **Why a human:** The evidence artifact and the unit tests read the BM25 leg through the searcher; whether the real `sif query` output reads that way on the operator's own index is what this check confirms.
-- **Status:** open. It is recorded as entry 13 of `.planning/WINDOWS.md` and is left for the end-of-phase verifier harvest, as `workflow.human_verify_mode: end-of-phase` provides.
+- **Approved by:** the orchestrator, on the operator's behalf, under this project's auto mode (`workflow.auto_advance: true`, `mode: yolo`), on 2026-11-26. The orchestrator performed the check itself on the committed code before approving, so the approval is not a rubber stamp. It is the orchestrator's approval and does not record a run by the operator personally.
+- **Resume response:** `approved`.
+- **Provenance of the observations:** they are the orchestrator's, as it reported them. The executor that wrote this section re-ran nothing.
+- **What was checked:** the Task 3 `<human-check>` of `19-12-PLAN.md` as written: `sif search query QUERY --min-score 0.3 --json` and the same without `--min-score`, on an index with embedded chunks, with a query that matches documents lexically as well as semantically, comparing the `scores` of the returned rows; then `sif search vsearch QUERY --min-score 0.3` and the same without the threshold. The pure BM25 command `sif search search` was run alongside at thresholds 0.12, 0.3, 0.85 and 0.89.
+- **Setup:** an isolated scratch index (a temporary `SIF_DB_PATH` and `SIF_CACHE_DIR`; its model directory an APFS clone of the cached one, so nothing was read from or written to the real model cache) holding 26 short synthetic Markdown documents, 26 chunks embedded with the cached Qwen3-Embedding-0.6B (dimension 1024). Query `bicycle derailleur shifting gears`, collection `human`, `--no-refresh --json -n 10`. The before side ran the base commit `0744e83`, exported with `git archive`; the after side ran the committed `d5382ae` the same way. Both ran against the same index.
+- **Observed, `sif search query` without a threshold:** 10 rows before and after, in the same order. The three lexically matching rows carry a `bm25_score` beside their `vector_score`. Before: 0.1127, 0.1667 and 0.2462, the best match lowest. After: 0.8873, 0.8333 and 0.7538, the best match highest. `rrf_score` and `vector_score` are identical on every row (row 1: rrf 0.0328, vector 0.6573).
+- **Observed, `sif search query --min-score 0.3`:** before, 10 rows and not one of them carried a `bm25_score`; the page was the vector leg's page, in another order (`mountain-bike-drivetrain.md` moved from rank 4 to rank 3). After, the JSON is byte-identical to the unthresholded page, and the same three rows carry `bm25_score` 0.8873, 0.8333 and 0.7538 beside their `vector_score`. This is the check's `<expected>`.
+- **Observed, `sif search vsearch`:** with and without `--min-score 0.3`, the JSON is byte-identical before and after (10 rows each, similarity 0.6573 down to 0.4741), so `vsearch --min-score` filters on similarity exactly as before.
+- **Observed, `sif search search`:** 3 rows, same order. Scores before 0.1127, 0.1667, 0.2462; after 0.8873, 0.8333, 0.7538, each equal to 1 minus its earlier value. `--min-score 0.12`: 2 rows before, the best match removed; 3 rows after. `--min-score 0.3`: 0 rows before, 3 rows after. `--min-score 0.85`: 1 row after, the best match. `--min-score 0.89`: 0 rows after.
+- **Observed, comparisons:** 19 programmatic comparisons over the saved JSON all pass, among them: every `bm25_score` after equals 1 minus its value before, `vsearch` is byte-identical across the change, and after the change each kept row's score is at or above its threshold.
+- **Real model cache and default database:** 129 entries in `~/Library/Caches/sif` before the whole run and 129 after it; no path, size or type changed. Two entries differ by modification time only, the zero-byte lock file `models/.lock/cross-encoder___ms-marco-MiniLM-L-6-v2` and the empty directory `models/cross-encoder`. Those two were touched by the executor's two full-suite runs during the plan, not by this check, which ran with `SIF_CACHE_DIR` inside the scratch directory. `sif models status` still prints `cache.state: valid`. The default database directory is identical to its baseline.
+- **Scope note:** the check's text says "on the operator's own index". It ran on an isolated index with real embeddings instead, which is how every hands-on check in this phase has been run; no search was made against the operator's real index.
+- **Verdict:** approved by the orchestrator on the operator's behalf.
+- **Cleanup:** the scratch index, its cache and the two source exports sit in the system temporary directory and are removed by the orchestrator after this record is committed.
 
 ## Model Cache and Default Database
 
@@ -620,11 +630,11 @@ No threat flags: no file adds an endpoint, auth path, file-access pattern or sch
 
 ## Known Stubs
 
-None. No test is skipped by this plan and every automated `<verify>` command ran. The one item not run is the human check recorded above.
+None. No test is skipped by this plan and every automated `<verify>` command ran. The plan's one `<human-check>` has since been performed and approved by the orchestrator on the operator's behalf (see Human Check).
 
 ## Next Phase Readiness
 
-- UAT gap G-19-2 is closed in the automated sense at `38f4551`: `sif search search --min-score` keeps the best match, end to end through the real CLI, and the BM25 leg of `sif query --min-score` keeps its stronger matches through `HybridSearcher.search`. The human check of Task 3 is pending for the end-of-phase verifier.
+- UAT gap G-19-2 is closed in the automated sense at `38f4551`: `sif search search --min-score` keeps the best match, end to end through the real CLI, and the BM25 leg of `sif query --min-score` keeps its stronger matches through `HybridSearcher.search`. The human check of Task 3 is approved by the orchestrator on the operator's behalf (see Human Check).
 - The evidence a later verifier needs is committed: `bench/g19-2-min-score.json` on both sides of the change, and the red-derivation gate, which can be re-run while `.git/gsd-plan-19-12-base` exists.
 - Any script that compared BM25 scores against the old values, or selected strong matches with a low-score comparison, now reads the new map. The changelog entry says how to convert an old threshold.
 - A post-push CI confirmation is a manual follow-up and is not claimed here.
@@ -643,6 +653,8 @@ Run at `38f4551`, immediately before this SUMMARY was written:
 - Working tree clean outside `.planning/`; the only modified path is `.planning/WINDOWS.md`, which is committed with this file.
 
 Not covered by that run, because this file did not exist yet. The command that makes the commit checks them first and is refused unless every one of them passes: the frontmatter parses with `status: complete` and eight coverage entries; the fenced block under After evidence equals `git show HEAD:bench/g19-2-min-score.json` byte for byte; this file carries the plan base SHA and the summary lines of the four red runs. Their outcome is in the executor's return message.
+
+The human check was not covered by that run. It has since been performed and approved by the orchestrator on the operator's behalf (see Human Check); this update records that and re-ran neither the human check nor any test command, so the gate evidence above is the record made at `38f4551` and is unchanged. Checked for this record at `d5382ae`: `37b6315`, `d08f93c`, `38f4551` and `d5382ae` are ancestors of HEAD; the eleven files the plan changed are identical to their state at `38f4551`, in HEAD and in the working tree, so the code the orchestrator checked is the committed code; `tests/unit/cli/test_search_min_score.py` is present; `gsd-tools check evaluation-scope --plan 19-12 --commits-only` resolves the plan's commits by subject; the plan base record still reads `0744e83b5308f2c2235d81dee59b96ca02d453d3`; the fenced block under After evidence still equals `git show HEAD:bench/g19-2-min-score.json` byte for byte; the frontmatter parses with `status: complete` and eight coverage entries, D8 among them with `human_judgment: true` and a `manual_procedural` entry with `status: pass`; and the only modified paths are this file and `.planning/WINDOWS.md`.
 
 ---
 *Phase: 19-search-correctness*
