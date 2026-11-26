@@ -1,0 +1,80 @@
+{
+  "gap": "G-19-2",
+  "plans": [
+    "19-11",
+    "19-12"
+  ],
+  "decision": "pending: set by the 19-11 decision checkpoint",
+  "score_map": {
+    "before": "1/(1+|bm25|)",
+    "after": "|bm25|/(1+|bm25|)"
+  },
+  "probe": {
+    "query": "Saltiv Protocol Notes",
+    "index": "tests/fixtures/bench/corpus as collection bench-fixture (150 documents, BM25 only)",
+    "before": {
+      "head": "4ac6262d506f8441bcbb69fb207f3cabcc57f4e9",
+      "rows": [
+        [
+          1,
+          "Saltiv Protocol Notes",
+          0.10570305094775757
+        ],
+        [
+          2,
+          "Qelron Protocol Notes",
+          0.1527108535938998
+        ]
+      ],
+      "min_score_0_12": [
+        [
+          1,
+          "Qelron Protocol Notes",
+          0.1527108535938998
+        ]
+      ],
+      "min_score_0_23": []
+    }
+  },
+  "hybrid_bm25_leg": {
+    "command": "sif search query --min-score: the BM25 leg of the hybrid path, read through HybridSearcher.search without a vector leg (limit 10)",
+    "before": {
+      "rows": [
+        [
+          1,
+          "Saltiv Protocol Notes",
+          0.10570305094775757
+        ],
+        [
+          2,
+          "Qelron Protocol Notes",
+          0.1527108535938998
+        ]
+      ],
+      "min_score_0_3": [],
+      "min_score_0_5": []
+    }
+  },
+  "bench_compare": {
+    "b0": {
+      "before": {
+        "mean": 0.0,
+        "helped": 0,
+        "hurt": 0,
+        "unchanged": 100,
+        "n": 100,
+        "noise_floor": 0.01
+      }
+    },
+    "b1": {
+      "before": {
+        "mean": 0.0,
+        "helped": 0,
+        "hurt": 0,
+        "unchanged": 100,
+        "n": 100,
+        "noise_floor": 0.01
+      }
+    }
+  }
+}
