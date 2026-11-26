@@ -4,7 +4,7 @@
     "19-11",
     "19-12"
   ],
-  "decision": "pending: set by the 19-11 decision checkpoint",
+  "decision": "monotone-map",
   "score_map": {
     "before": "1/(1+|bm25|)",
     "after": "|bm25|/(1+|bm25|)"
