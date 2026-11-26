@@ -637,7 +637,14 @@ def search_group() -> None:
 )
 @click.option("-c", "--collection", multiple=True, help="Collection to search")
 @click.option("--all", "search_all", is_flag=True, help="Search all collections")
-@click.option("--min-score", default=0.0, help="Minimum score threshold")
+@click.option(
+    "--min-score",
+    default=0.0,
+    help=(
+        "Keep matches scoring at least this value (0-1, higher is a stronger match); "
+        "0 keeps all, 1 or more keeps none"
+    ),
+)
 @click.option("--full", is_flag=True, help="Include full content")
 @click.option("--explain", is_flag=True, help="Show search explanation")
 @click.option("--line-numbers", is_flag=True, help="Show line numbers in content")
