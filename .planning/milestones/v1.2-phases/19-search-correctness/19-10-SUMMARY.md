@@ -126,14 +126,20 @@ coverage:
       - kind: other
         ref: "live render on a scratch index at COLUMNS=80 (counts recorded below); this is the backstop, not the judgement"
         status: pass
+      - kind: manual_procedural
+        ref: "human check 1, performed by the orchestrator on the operator's behalf under auto mode on the committed code: scratch index rendered in an 80-column pseudo-terminal; all four layouts have a maximum line width of exactly 80 display cells and every table line ends with a right border; vsearch 12 of 12 and hybrid 10 of 10 chunk rows end with #sequence; the two same-named documents are told apart by the wrapped Title"
+        status: pass
     human_judgment: true
-    rationale: "Whether rows stay recognisable at the canonical width on a real terminal is a visual judgement. The tests force the same width through the same CLI code and pin that each row shows its own sequence and that the table fits, but they cannot see the terminal or say whether the result is readable; the UAT tester observed the defect only on a live render. Not self-approved by the executor."
+    rationale: "Whether rows stay recognisable at the canonical width on a real terminal is a visual judgement. The tests force the same width through the same CLI code and pin that each row shows its own sequence and that the table fits, but they cannot see the terminal or say whether the result is readable; the UAT tester observed the defect only on a live render. The executor did not self-approve: the check was performed and approved by the orchestrator itself on the operator's behalf, under this project's auto mode (workflow.auto_advance: true, mode: yolo), on 2026-11-26, on the committed code."
   - id: D7
     description: "The machine-format and path-only behaviour that assumption A-19-10-1 implements is the behaviour the operator wants (UAT test 3, a decision row): a seventh CSV column named sequence, a Sequence line in Markdown, a sequence element in XML, and one line per path for per-chunk pages"
     requirement: CORR-02
-    verification: []
+    verification:
+      - kind: manual_procedural
+        ref: "human check 2, performed by the orchestrator on the operator's behalf under auto mode on the committed code: --csv header rank,score,title,path,collection,vectors_stale,sequence, with path#sequence and a numeric sequence on chunk rows and the plain path and an empty cell on document-level rows; Markdown and XML chunk rows carry the address and the bare sequence; --files and vsearch --per-chunk -q print each path once; default output unchanged"
+        status: pass
     human_judgment: true
-    rationale: "UAT test 3 is a decision row, not a failed test: whether machine formats must carry chunk identity, and in which fields, is the operator's call. The plan implements the assumed behaviour and can be amended if the operator wants another field layout. Not self-approved by the executor."
+    rationale: "UAT test 3 is a decision row, not a failed test: whether machine formats must carry chunk identity, and in which fields, is the operator's call, so no test can settle it. The executor did not self-approve: the assumed field layout was confirmed by the orchestrator itself on the operator's behalf, under this project's auto mode (workflow.auto_advance: true, mode: yolo), on 2026-11-26, after it performed the check on the committed code. It can still be amended if the operator wants another field layout; that re-plans the machine-format and path-only part of Task 2."
 
 duration: 31min
 completed: 2026-11-26
@@ -318,30 +324,41 @@ No gate was weakened, skipped or re-run with different settings, and no product 
 1. `ruff check` reported `E501` on the `_fit_head` condition until `ruff format` reflowed it. The plan's validation note describes the same step.
 2. Two mistakes in my own throwaway verification scripts, both caught and re-run: a listing script indexed a border line as if it were a data row, and the first evidence-analysis script had an unmatched parenthesis in an f-string. No result recorded above comes from a faulty run.
 
-## Manual Verification Pending (not self-approved)
+## Human Checks (approved by the orchestrator on the operator's behalf)
 
-The plan carries two `<human-check>` blocks in the Task 2 verify. Neither was performed or approved by the executor. Both are the operator's.
+The plan carries two `<human-check>` blocks in the Task 2 verify. The executor did not perform or approve them: it returned them as a checkpoint, and the first commit of this SUMMARY (`7f69a13`) recorded them as pending. Both are approved.
 
-### CHECKPOINT 1: Verification Required (UAT test 1, the visual half of G-19-1)
+- **Approved by:** the orchestrator, on the operator's behalf, under this project's auto mode (`workflow.auto_advance: true`, `mode: yolo`). The orchestrator performed both checks itself on the committed code before approving, so the approval is not a rubber stamp. It is the orchestrator's approval and does not record a run by the operator personally.
+- **Resume response:** `approved`; no other field layout was named for human check 2.
+- **Provenance of the observations:** they are the orchestrator's, as it reported them. The executor that wrote this section re-ran neither check.
 
-- **Progress:** 2/2 tasks complete.
+### Human check 1: approved (UAT test 1, the visual half of G-19-1)
+
 - **Built:** both per-chunk tables keep `#sequence` at 80 columns (commits `4e258cf`, `8cf0ec9`, `5e83d6d`).
-- **How to verify:** in a real terminal 80 columns wide, on an index with embedded chunks whose paths are 30 or more characters, run `sif search query --per-chunk QUERY -n 12` and then `sif search vsearch --per-chunk QUERY -n 12`, with a query that matches several chunks of each of several documents, each also with `--full --line-numbers`.
-- **Expected:** on both tables you can tell the rows apart: for each row you can say which document it comes from and which chunk of that document it is, using the table alone. The Chunk cell ends with a number sign followed by that row's sequence, and rows of one document differ by that number. At 80 columns the hybrid table gives the Chunk column 15 cells, so different documents can show the same file-name tail (in my live render: `…col-notes.md`, `…d-secrecy.md`, `…-overview.md` for document-level rows), and the Title and Collection columns must still tell them apart. The table ends at its right border inside the terminal in every render, also with the Content column; nothing is cut off on the right, and rank, score, title and collection are still visible. A visible number that leaves two rows indistinguishable does not pass this check.
-- **YOUR ACTION:** type "approved", or describe the rows you cannot tell apart.
+- **What was checked:** in a real terminal that is 80 columns wide, on an index with embedded chunks whose paths are 30 or more characters, `sif search query --per-chunk QUERY -n 12` and then `sif search vsearch --per-chunk QUERY -n 12`, with a query that matches several chunks of each of several documents, each also with `--full --line-numbers`; whether the rows can be told apart from the table alone.
+- **Setup:** an isolated scratch index with two documents that share one file name (`zorbatic-capacitor-calibration-and-maintenance-notes.md` under `corpus/alpha` and `corpus/beta`, titles "Zorbatic Capacitor Calibration Notes" and "Zorbatic Capacitor Field Notes"), 26 chunks embedded with the cached Qwen3 model, paths 95-96 characters; rendered in an 80-column pseudo-terminal (`script -q /dev/null`, `stty cols 80`, `COLUMNS=80`).
+- **Observed, the four layouts** (`query` and `vsearch`, each plain and with `--full --line-numbers`): a maximum rendered line width of exactly 80 display cells, and every table line ends with a right border.
+- **Observed, `vsearch`:** 12 of 12 chunk rows end with `#sequence`.
+- **Observed, hybrid `query`:** 10 of 10 chunk rows end with `#sequence`; the other 2 of 12 rows are document-level rows from the BM25 leg (`sequence` null) and show the plain path, as the plan specifies.
+- **Observed, same-named documents:** at 80 columns the hybrid Chunk column is 16 cells (`…ce-notes.md#0`; 10 cells with `--full --line-numbers`), so the two documents show the same file-name tail; their rows are told apart by the wrapped Title ("Calibration" vs "Field"), which satisfies the plan's criterion that rows be distinguishable by Title or Collection.
+- **Verdict:** approved by the orchestrator on the operator's behalf.
+- **Cleanup:** the scratch index and its cache were removed afterwards; a before/after snapshot of `~/Library/Caches/sif` was identical.
 
-### CHECKPOINT 2: Decision Required (UAT test 3, assumption A-19-10-1)
+### Human check 2: approved (UAT test 3, assumption A-19-10-1)
 
 - **Built:** per-chunk CSV, Markdown, XML and path-only output carry the chunk identity (commit `8cf0ec9`).
-- **How to verify:** run `sif search query --per-chunk QUERY --csv`, then with `--md`, with `--xml` and with `--files`, on a document with several matching chunks; then the same without `--per-chunk`.
-- **Expected:** the CSV header ends with a `sequence` column and a chunk row's path is the path followed by a number sign and the sequence; Markdown and XML chunk rows carry the same address and the bare sequence; a document-level row has the plain path and no sequence. `--files` lists each path once for that page. Without `--per-chunk` the three formats and `--files` look exactly as before, including a page that lists one document twice because it is indexed in two collections.
-- **Decision:** confirm this field layout, or name the layout you want instead. A different choice re-plans the machine-format and path-only part of Task 2.
-- **YOUR ACTION:** type "confirmed", or describe the field layout to change.
+- **What was checked:** `sif search query --per-chunk QUERY --csv`, then with `--md`, with `--xml` and with `--files`, on a document with several matching chunks; then the same without `--per-chunk`.
+- **Setup:** the same scratch index as human check 1.
+- **Observed, `--csv`:** the header is `rank,score,title,path,collection,vectors_stale,sequence`; the 10 chunk rows carry `path#sequence` and a numeric `sequence`, the 2 document-level rows carry the plain path and an empty `sequence` cell.
+- **Observed, Markdown and XML:** Markdown chunk rows carry `- **Path:** …md#0` and `- **Sequence:** 0`; XML chunk rows carry `<path>…md#0</path>` and `<sequence>0</sequence>`; 10 of 12 rows in each.
+- **Observed, path-only:** `--files` and `vsearch --per-chunk -q` print each path once (2 lines for 12 rows).
+- **Observed, default mode:** it is unchanged. CSV header has the original 6 columns, and XML, Markdown and `--files` show no chunk fields.
+- **Decision:** the field layout of assumption A-19-10-1 stands as implemented, confirmed by the orchestrator on the operator's behalf; no other layout was named.
 
 ## Residual Observations (not fixed - outside this plan's scope)
 
 - **The plan's ninth truth calls the 34-character token "folded".** In Rich 14.3.3 the token is cut with an ellipsis inside the narrow Snippet cell and its row wraps to 12 physical lines. The four 80-column tests assert the Chunk cell and the table fit only, so nothing depends on the wording.
-- **Document-level rows of a hybrid per-chunk page show a file-name tail only.** They have no chunk identity, so at 80 columns their cell is the same kind of tail as before this plan (for example `…col-notes.md`). That is unchanged behaviour, but it bears on whether rows stay recognisable; CHECKPOINT 1 asks the operator exactly that.
+- **Document-level rows of a hybrid per-chunk page show a file-name tail only.** They have no chunk identity, so at 80 columns their cell is the same kind of tail as before this plan (for example `…col-notes.md`). That is unchanged behaviour, but it bears on whether rows stay recognisable; human check 1 examined exactly that and is approved (see Human Checks).
 - **`ty check src/sif` still reports the 10 pre-existing diagnostics** listed under Gate Evidence. They predate this plan and are already recorded as drift.
 
 ## Threat Model Disposition
@@ -362,8 +379,8 @@ None. No test is skipped by this plan and every automated `<verify>` command ran
 
 ## Next Phase Readiness
 
-- UAT gap G-19-1 is closed in the automated sense at `5e83d6d`: every chunk row of both per-chunk tables shows its `path#sequence` at 80 columns and each table ends at its right border there. The visual half is CHECKPOINT 1.
-- UAT test 3 is implemented as assumption A-19-10-1 states it; the operator's decision is CHECKPOINT 2.
+- UAT gap G-19-1 is closed in the automated sense at `5e83d6d`: every chunk row of both per-chunk tables shows its `path#sequence` at 80 columns and each table ends at its right border there. The visual half, human check 1, is approved by the orchestrator on the operator's behalf (see Human Checks).
+- UAT test 3 is implemented as assumption A-19-10-1 states it; human check 2 confirmed that field layout, approved by the orchestrator on the operator's behalf (see Human Checks).
 - Adding `--csv`, `--md`, `--xml` and `--files` to `vsearch` remains out of scope, as the plan records.
 - Not done by this executor, by instruction: `STATE.md`, `ROADMAP.md` and `REQUIREMENTS.md` (the CORR-02 checkbox) are untouched, and so are `19-UAT.md` and the other Phase 19 planning artifacts. The orchestrator owns those writes. Executing this plan re-stales the verifications of Phases 18 and 24.
 
@@ -378,7 +395,7 @@ Run at `5e83d6d`, immediately before this SUMMARY was written:
 - Every symbol and test name the plan's artifacts list is defined (none missing); the column declaration count is 2 and the changelog phrase count is 1.
 - Working tree clean outside `.planning/`.
 
-The two human checks are not covered by this self-check; see Manual Verification Pending.
+The two human checks were not covered by that run. Both have since been performed and approved by the orchestrator on the operator's behalf (see Human Checks); this update records that and re-ran neither. Checked for this record at `7f69a13`: `4e258cf`, `8cf0ec9`, `5e83d6d` and `7f69a13` are ancestors of HEAD; the three changed files are identical to their state at `5e83d6d`, in HEAD and in the working tree, so the code the orchestrator checked is the committed code; and the only modified path is this file.
 
 ---
 *Phase: 19-search-correctness*
