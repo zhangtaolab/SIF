@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive documentation
 
 ### Changed
-- N/A
+- `sif search query --per-chunk` now carries the chunk identity in `--csv`, `--md` and `--xml` output: a chunk-level row shows the `path#sequence` address in `path` and adds a `sequence` field (a new last CSV column), and `--files` and the quiet path-only output of `query` and `vsearch` list each path once per page instead of once per chunk row; output without `--per-chunk` is unchanged, and the per-chunk tables keep `#sequence` visible on an 80-column terminal.
 
 ### Deprecated
 - N/A

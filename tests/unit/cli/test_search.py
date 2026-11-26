@@ -10,6 +10,7 @@ import sqlite3
 import xml.etree.ElementTree as ET
 from collections.abc import Generator
 from contextlib import ExitStack
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -4568,6 +4569,122 @@ class TestPerChunkSurfaces:
         short[0].path = "/a.md"
         assert _chunk_column(short) == {"style": "magenta", "min_width": 7}
         assert _chunk_column(self._long_path_rows())["min_width"] == 8
+
+    def test_per_chunk_csv_carries_address_and_sequence(self) -> None:
+        """UAT test 3 (A-19-10-1): per-chunk CSV carries the address and the sequence."""
+        rows = self._long_path_rows()
+        result, _ = self._invoke_query(rows, ["query", "--per-chunk", "--csv", "--no-refresh"])
+
+        assert result.exit_code == 0, result.output
+        records = list(csv.DictReader(io.StringIO(result.output)))
+        assert list(records[0]) == [
+            "rank",
+            "score",
+            "title",
+            "path",
+            "collection",
+            "vectors_stale",
+            "sequence",
+        ]
+        assert [record["sequence"] for record in records] == ["0", "3", "6", "9", ""]
+        assert [record["path"] for record in records] == [
+            f"{row.path}#{row.sequence}" for row in rows[:4]
+        ] + [rows[4].path]
+
+    def test_default_csv_is_unchanged_for_rows_that_carry_a_sequence(self) -> None:
+        """Without --per-chunk the header keeps six columns and the path stays plain."""
+        rows = self._long_path_rows()[:2]
+        result, _ = self._invoke_query(rows, ["query", "--csv", "--no-refresh"])
+
+        assert result.exit_code == 0, result.output
+        records = list(csv.DictReader(io.StringIO(result.output)))
+        assert list(records[0]) == ["rank", "score", "title", "path", "collection", "vectors_stale"]
+        assert [record["path"] for record in records] == [row.path for row in rows]
+
+    def test_per_chunk_markdown_and_xml_carry_chunk_identity(self) -> None:
+        """Per-chunk Markdown and XML rows carry the address and the bare sequence."""
+        rows = self._long_path_rows()[:2]
+        result, _ = self._invoke_query(rows, ["query", "--per-chunk", "--md", "--no-refresh"])
+
+        assert result.exit_code == 0, result.output
+        lines = result.output.splitlines()
+        assert f"- **Path:** `{rows[0].path}#0`" in lines
+        assert f"- **Path:** `{rows[1].path}#3`" in lines
+        assert "- **Sequence:** 0" in lines
+        assert "- **Sequence:** 3" in lines
+
+        result, _ = self._invoke_query(rows, ["query", "--per-chunk", "--xml", "--no-refresh"])
+
+        assert result.exit_code == 0, result.output
+        root = ET.fromstring(result.output)
+        assert [element.text for element in root.iter("sequence")] == ["0", "3"]
+        assert [element.text for element in root.iter("path")] == [
+            f"{rows[0].path}#0",
+            f"{rows[1].path}#3",
+        ]
+
+    def test_default_markdown_and_xml_omit_chunk_identity(self) -> None:
+        """Without --per-chunk a row that carries a sequence gets neither field."""
+        rows = self._long_path_rows()[:2]
+        result, _ = self._invoke_query(rows, ["query", "--md", "--no-refresh"])
+
+        assert result.exit_code == 0, result.output
+        lines = result.output.splitlines()
+        assert f"- **Path:** `{rows[0].path}`" in lines
+        assert f"- **Path:** `{rows[1].path}`" in lines
+        assert not any(line.startswith("- **Sequence:") for line in lines)
+
+        result, _ = self._invoke_query(rows, ["query", "--xml", "--no-refresh"])
+
+        assert result.exit_code == 0, result.output
+        root = ET.fromstring(result.output)
+        assert list(root.iter("sequence")) == []
+        assert [element.text for element in root.iter("path")] == [row.path for row in rows]
+
+    def test_per_chunk_files_and_quiet_list_each_path_once(self) -> None:
+        """--files and -q print each path once for a per-chunk page, in page order."""
+        rows = self._long_path_rows()[:4]
+        # A second chunk of the first document, between the second and third rows.
+        rows.insert(2, replace(rows[0], score=0.85, rank=3, chunk_id="chunk-0b", sequence=7))
+        expected = [self._LONG_PATHS[index] for index in range(4)]
+
+        result, _ = self._invoke_query(rows, ["query", "--per-chunk", "--files", "--no-refresh"])
+
+        assert result.exit_code == 0, result.output
+        assert result.output.splitlines() == expected
+
+        result, _ = self._invoke_vsearch(rows, ["query", "--per-chunk", "-q", "--no-refresh"])
+
+        assert result.exit_code == 0, result.output
+        assert result.output.splitlines() == expected
+
+    def test_per_chunk_path_only_page_counts_chunk_rows(self) -> None:
+        """--limit and --offset count chunk rows; the path-only page lists each path once."""
+        first, second = self._long_path_rows()[:2]
+        page = [first, replace(first, rank=2, chunk_id="chunk-0b", sequence=7), second]
+        args = ["query", "--per-chunk", "--files", "-n", "3", "--no-refresh"]
+
+        result, pipeline = self._invoke_query(page, args)
+
+        assert result.exit_code == 0, result.output
+        # The page size of three reached the search as chunk rows, not documents.
+        assert pipeline.search.call_args[0][1].limit == 3
+        assert result.output.splitlines() == [first.path, second.path]
+
+    def test_default_files_and_quiet_output_keep_one_line_per_row(self) -> None:
+        """Without --per-chunk, a path shared by two rows (an --all page) prints twice."""
+        first, second = self._long_path_rows()[:2]
+        rows = [first, replace(second, path=first.path)]
+
+        result, _ = self._invoke_query(rows, ["query", "--files", "--no-refresh"])
+
+        assert result.exit_code == 0, result.output
+        assert result.output.splitlines() == [first.path, first.path]
+
+        result, _ = self._invoke_vsearch(rows, ["query", "-q", "--no-refresh"])
+
+        assert result.exit_code == 0, result.output
+        assert result.output.splitlines() == [first.path, first.path]
 
 
 class TestNoFilterRegression:

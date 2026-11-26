@@ -64,6 +64,8 @@ _CONTENT_MAX_LEN = 200
 _CHUNK_MIN_WIDTH = 8
 _PATH_SEPARATORS = ("/", "\\")
 _ELLIPSIS = "\u2026"
+# The default CSV header (D-12: the last column is the staleness boolean).
+_CSV_HEADER = "rank,score,title,path,collection,vectors_stale"
 
 # XML 1.0 Char production (W3C REC-xml §2.2): #x9 | #xA | #xD | [#x20-#xD7FF] |
 # [#xE000-#xFFFD] | [#x10000-#x10FFFF]. This class is its forbidden complement:
@@ -269,6 +271,11 @@ def _chunk_column(results: list[Any]) -> dict[str, Any]:
     """
     widest = max((cell_len(chunk_address(r)) for r in results), default=0)
     return {"style": "magenta", "min_width": min(_CHUNK_MIN_WIDTH, widest)}
+
+
+def _unique_paths(results: list[Any]) -> list[str]:
+    """Return each result's ``path`` once, in first-occurrence order (D-03)."""
+    return list(dict.fromkeys(str(_field(r, "path")) for r in results))
 
 
 def _resolve_collections(
@@ -493,33 +500,42 @@ def _json_with_suggestions(results: list[Any], query: str, suggestions: list[str
     return format_results_json(results)
 
 
-def format_results_csv(results: list[Any]) -> str:
+def format_results_csv(results: list[Any], *, per_chunk: bool = False) -> str:
     """Format results as CSV.
 
     Accepts raw SearchResult objects and the dict rows produced by
     add_line_numbers_to_results (--line-numbers). Uses csv.writer so
-    embedded quotes and commas are escaped correctly.
+    embedded quotes and commas are escaped correctly. ``per_chunk`` adds a
+    last ``sequence`` column and writes each chunk row's ``path#sequence``
+    address in ``path``; a document-level row keeps the plain path and an
+    empty ``sequence`` (D-03).
     """
     buf = io.StringIO()
     # D-12: one extra column carries the staleness boolean (fixed literal).
-    buf.write("rank,score,title,path,collection,vectors_stale\n")
+    buf.write(f"{_CSV_HEADER},sequence\n" if per_chunk else f"{_CSV_HEADER}\n")
     writer = csv.writer(buf, quoting=csv.QUOTE_ALL, lineterminator="\n")
     for r in results:
-        writer.writerow(
-            [
-                _field(r, "rank"),
-                f"{float(_field(r, 'score')):.4f}",
-                _field(r, "title"),
-                _field(r, "path"),
-                _field(r, "collection_name"),
-                "true" if _field(r, "vectors_stale") else "false",
-            ],
-        )
+        row = [
+            _field(r, "rank"),
+            f"{float(_field(r, 'score')):.4f}",
+            _field(r, "title"),
+            chunk_address(r) if per_chunk else _field(r, "path"),
+            _field(r, "collection_name"),
+            "true" if _field(r, "vectors_stale") else "false",
+        ]
+        if per_chunk:
+            row.append(_sequence_value(r))
+        writer.writerow(row)
     return buf.getvalue().rstrip("\n")
 
 
-def format_results_md(results: list[Any], query: str) -> str:
-    """Format results as Markdown."""
+def format_results_md(results: list[Any], query: str, *, per_chunk: bool = False) -> str:
+    """Format results as Markdown.
+
+    ``per_chunk`` shows each chunk row's ``path#sequence`` address on the
+    Path line and adds a Sequence line holding the bare sequence (D-03).
+    Without it, a row that carries a sequence renders exactly as before.
+    """
     lines = [f"# Search Results: {query}", ""]
     for r in results:
         # D-12: the stale result's title line carries the inline annotation
@@ -529,7 +545,10 @@ def format_results_md(results: list[Any], query: str) -> str:
             title += " (stale vectors)"
         lines.append(title)
         lines.append(f"- **Score:** {float(_field(r, 'score')):.4f}")
-        lines.append(f"- **Path:** `{_field(r, 'path')}`")
+        lines.append(f"- **Path:** `{chunk_address(r) if per_chunk else _field(r, 'path')}`")
+        sequence = _sequence_value(r)
+        if per_chunk and sequence:
+            lines.append(f"- **Sequence:** {sequence}")
         lines.append(f"- **Collection:** {_field(r, 'collection_name')}")
         if hasattr(r, "get") and r.get("line_numbers"):
             lines.append(f"- **Line Numbers:** `{r.get('line_numbers')}`")
@@ -542,8 +561,13 @@ def format_results_md(results: list[Any], query: str) -> str:
     return "\n".join(lines)
 
 
-def format_results_xml(results: list[Any], query: str) -> str:
-    """Format results as XML."""
+def format_results_xml(results: list[Any], query: str, *, per_chunk: bool = False) -> str:
+    """Format results as XML.
+
+    ``per_chunk`` puts each chunk row's ``path#sequence`` address in the
+    ``path`` element and adds a ``sequence`` element right after it (D-03).
+    Without it, a row that carries a sequence renders exactly as before.
+    """
     lines = [
         '<?xml version="1.0" encoding="UTF-8"?>',
         f"<search query={quoteattr(_xml_sanitize(query))}>",
@@ -558,7 +582,11 @@ def format_results_xml(results: list[Any], query: str) -> str:
             f'  <result rank="{_field(r, "rank")}" score="{score}" vectors_stale="{stale_attr}">'
         )
         lines.append(f"    <title>{xml_escape(_xml_sanitize(str(_field(r, 'title'))))}</title>")
-        lines.append(f"    <path>{xml_escape(_xml_sanitize(str(_field(r, 'path'))))}</path>")
+        path = chunk_address(r) if per_chunk else _field(r, "path")
+        lines.append(f"    <path>{xml_escape(_xml_sanitize(str(path)))}</path>")
+        sequence = _sequence_value(r)
+        if per_chunk and sequence:
+            lines.append(f"    <sequence>{xml_escape(_xml_sanitize(sequence))}</sequence>")
         lines.append(
             f"    <collection>{xml_escape(_xml_sanitize(str(_field(r, 'collection_name'))))}"
             "</collection>"
@@ -960,8 +988,12 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             _record_query_history(db.connection, query, results, collections, settings=settings)
 
         if quiet and not output_json:
-            for r in results:
-                click.echo(r.path)
+            # D-03: a per-chunk page lists each path once (one document can
+            # hold several rows of the page); a default page keeps one line
+            # per row.
+            paths = _unique_paths(results) if per_chunk else [r.path for r in results]
+            for path in paths:
+                click.echo(path)
             _print_dym_stderr(suggestions, quiet=quiet)
         elif output_json:
             click.echo(
@@ -1293,8 +1325,12 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
 
         # Output results
         if output_files or (quiet and not any([output_json, output_csv, output_md, output_xml])):
-            for r in results:
-                click.echo(r.path)
+            # D-03: a per-chunk page lists each path once (one document can
+            # hold several rows of the page); a default page keeps one line
+            # per row.
+            paths = _unique_paths(results) if per_chunk else [r.path for r in results]
+            for path in paths:
+                click.echo(path)
             _print_dym_stderr(suggestions, quiet=quiet)
         elif output_json:
             click.echo(
@@ -1312,6 +1348,7 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                     add_line_numbers_to_results([r.to_dict() for r in results])
                     if line_numbers
                     else results,
+                    per_chunk=per_chunk,
                 ),
             )
             _print_dym_stderr(suggestions, quiet=quiet)
@@ -1322,6 +1359,7 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                     if line_numbers
                     else results,
                     query,
+                    per_chunk=per_chunk,
                 ),
             )
             _print_dym_stderr(suggestions, quiet=quiet)
@@ -1332,6 +1370,7 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
                     if line_numbers
                     else results,
                     query,
+                    per_chunk=per_chunk,
                 ),
             )
             _print_dym_stderr(suggestions, quiet=quiet)
