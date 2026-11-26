@@ -19,7 +19,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 from click.testing import CliRunner, Result
 from pydantic import ValidationError
+from rich.cells import cell_len
+from rich.console import Console
 
+from sif.cli.commands import search as search_module
 from sif.cli.commands.search import (
     _xml_sanitize,
     format_results_md,
@@ -4245,6 +4248,110 @@ class TestPerChunkSurfaces:
             )
         return result, pipeline
 
+    # The four path shapes the 80-column render tests cover: 31 characters,
+    # 49 characters, 304 characters (7 + 14 * 20 + 17), and a double-width
+    # CJK file name.
+    _LONG_PATHS = (
+        "/notes/chunky/protocol-notes.md",
+        "/Users/forrest/Documents/kb/sif/protocol-notes.md",
+        "/notes/" + "deep-directory-name/" * 14 + "protocol-notes.md",
+        "/Users/forrest/Playground/books_markdown/"
+        "论文/基于深度学习的中文搜索引擎相关性排序方法研究.md",
+    )
+    # Snippet text for the same rows: two English sentences of about 140
+    # characters, a sentence with a 34-character unbreakable token, and a
+    # Chinese sentence of two space-separated runs.
+    _SNIPPETS = (
+        "The Saltiv protocol has a client negotiate a session key with the relay before "
+        "any payload is encrypted, and every handshake needs a fresh nonce.",
+        "Chunk identity lets a client address the passage that matched, not just the whole "
+        "document, so a per-chunk row keeps its own sequence beside its path.",
+        "A token such as supercalifragilisticexpialidocious cannot break, so Rich folds it "
+        "across lines inside the Snippet cell of a narrow terminal like this one.",
+        "基于深度学习的中文搜索引擎相关性排序方法研究 探索了查询与文档语义匹配的关键技术与排序策略",
+    )
+
+    @classmethod
+    def _long_path_rows(cls) -> list[SearchResult]:
+        """Four chunk rows (one per path shape) and one document-level BM25 row."""
+        rows = [
+            SearchResult(
+                document_id=f"doc{index}",
+                title=f"Document {index}",
+                path=path,
+                collection_name="notes",
+                score=0.9 - index * 0.05,
+                rank=index + 1,
+                chunk_id=f"chunk-{index}",
+                sequence=index * 3,
+                snippet=snippet,
+                content=f"# Document {index}\n\n{snippet}",
+            )
+            for index, (path, snippet) in enumerate(
+                zip(cls._LONG_PATHS, cls._SNIPPETS, strict=True)
+            )
+        ]
+        first_snippet = cls._SNIPPETS[0]
+        rows.append(
+            SearchResult(
+                document_id="doc-bm25",
+                title="Document-level BM25 row",
+                path=cls._LONG_PATHS[0],
+                collection_name="notes",
+                score=0.5,
+                rank=5,
+                snippet=first_snippet,
+                content=f"# Document-level BM25 row\n\n{first_snippet}",
+            )
+        )
+        return rows
+
+    @staticmethod
+    def _render_at(width: int):
+        """Patch the module console with one of an explicit width.
+
+        The width is set here and never through ``COLUMNS``: Rich's ``Console``
+        latches ``COLUMNS`` when it is constructed, so the module-level console
+        keeps the width the process started with and a later change of the
+        variable has no effect.
+        """
+        return patch.object(
+            search_module, "console", Console(width=width, no_color=True, legacy_windows=False)
+        )
+
+    @staticmethod
+    def _rendered_chunk_cells(output: str) -> list[str]:
+        """Chunk cell text of every data row, in order.
+
+        A data row line is one with at least six ``\u2502``-separated parts whose
+        second part is the row rank; the Chunk cell is the fifth part. Header,
+        border and wrapped-continuation lines have no rank there.
+        """
+        cells = []
+        for line in output.splitlines():
+            parts = line.split("\u2502")
+            if len(parts) >= 6 and parts[1].strip().isdigit():
+                cells.append(parts[4].strip())
+        return cells
+
+    @staticmethod
+    def _table_fits_console(output: str, width: int = 80) -> bool:
+        """True when every table line ends at its right border within ``width`` cells.
+
+        The five line shapes of Rich's default box are all table lines: the top
+        border (``\u250f``), the header row (``\u2503``), the header separator
+        (``\u2521``), the data rows (``\u2502``) and the bottom border
+        (``\u2514``). A table wider than the console is cropped by the console
+        and loses its right edge (``\u2513``, ``\u2503``, ``\u2529``,
+        ``\u2502`` or ``\u2518``).
+        """
+        edges = ("\u250f", "\u2503", "\u2521", "\u2502", "\u2514")
+        right = ("\u2513", "\u2503", "\u2529", "\u2502", "\u2518")
+        lines = [line for line in output.splitlines() if line.startswith(edges)]
+        return bool(lines) and all(
+            cell_len(line) <= width and line.endswith(right) for line in lines
+        )
+
     def test_search_command_does_not_accept_per_chunk(self) -> None:
         """D-01: sif search is document-level and rejects --per-chunk."""
         result = CliRunner().invoke(
@@ -4329,6 +4436,138 @@ class TestPerChunkSurfaces:
 
         assert result.exit_code == 0, result.output
         assert "chunk matches" not in result.output
+
+    def test_vsearch_per_chunk_keeps_sequence_at_80_columns(self) -> None:
+        """G-19-1: each vsearch chunk row ends with its own #sequence at 80 columns."""
+        rows = self._long_path_rows()[:4]
+        with self._render_at(80):
+            result, _ = self._invoke_vsearch(rows, ["query", "--per-chunk", "--no-refresh"])
+
+        assert result.exit_code == 0, result.output
+        cells = self._rendered_chunk_cells(result.output)
+        assert len(cells) == 4, result.output
+        for cell, row in zip(cells, rows, strict=True):
+            assert cell.endswith(f"#{row.sequence}"), result.output
+        assert self._table_fits_console(result.output), result.output
+
+    def test_query_per_chunk_keeps_sequence_at_80_columns(self) -> None:
+        """G-19-1: the hybrid per-chunk table keeps #sequence; BM25 rows keep the path.
+
+        This is the layout of the UAT command: every row carries snippet text.
+        """
+        rows = self._long_path_rows()
+        with self._render_at(80):
+            result, _ = self._invoke_query(rows, ["query", "--per-chunk", "--no-refresh"])
+
+        assert result.exit_code == 0, result.output
+        cells = self._rendered_chunk_cells(result.output)
+        assert len(cells) == 5, result.output
+        for cell, row in zip(cells[:4], rows[:4], strict=True):
+            assert cell.endswith(f"#{row.sequence}"), result.output
+        assert "#" not in cells[4]
+        assert self._table_fits_console(result.output), result.output
+
+    def test_vsearch_per_chunk_with_content_fits_the_console_at_80_columns(self) -> None:
+        """The vsearch per-chunk table with the Content column ends at its right border."""
+        rows = self._long_path_rows()[:4]
+        args = ["query", "--per-chunk", "--full", "--line-numbers", "--no-refresh"]
+        with self._render_at(80):
+            result, _ = self._invoke_vsearch(rows, args)
+
+        assert result.exit_code == 0, result.output
+        cells = self._rendered_chunk_cells(result.output)
+        assert len(cells) == 4, result.output
+        for cell, row in zip(cells, rows, strict=True):
+            assert cell.endswith(f"#{row.sequence}"), result.output
+        assert self._table_fits_console(result.output), result.output
+
+    def test_query_per_chunk_with_content_fits_the_console_at_80_columns(self) -> None:
+        """The hybrid per-chunk table with the Content column ends at its right border."""
+        rows = self._long_path_rows()
+        args = ["query", "--per-chunk", "--full", "--line-numbers", "--no-refresh"]
+        with self._render_at(80):
+            result, _ = self._invoke_query(rows, args)
+
+        assert result.exit_code == 0, result.output
+        cells = self._rendered_chunk_cells(result.output)
+        assert len(cells) == 5, result.output
+        for cell, row in zip(cells[:4], rows[:4], strict=True):
+            assert cell.endswith(f"#{row.sequence}"), result.output
+        assert "#" not in cells[4]
+        assert self._table_fits_console(result.output), result.output
+
+    def test_per_chunk_shows_the_full_path_on_a_wide_terminal(self) -> None:
+        """A terminal with room still shows the whole address (no shortening)."""
+        rows = self._long_path_rows()[:2]
+        with self._render_at(200):
+            result, _ = self._invoke_vsearch(rows, ["query", "--per-chunk", "--no-refresh"])
+
+        assert result.exit_code == 0, result.output
+        assert f"{rows[0].path}#0" in result.output
+        assert f"{rows[1].path}#3" in result.output
+
+    @pytest.mark.parametrize(
+        ("path", "suffix", "budget", "expected"),
+        [
+            ("/notes/a.md", "#0", 24, "/notes/a.md#0"),
+            ("/notes/chunky/protocol-notes.md", "#0", 24, "\u2026protocol-notes.md#0"),
+            ("/notes/chunky/protocol-notes.md", "#12", 28, "\u2026chunky/protocol-notes.md#12"),
+            ("/notes/chunky/protocol-notes.md", "#12", 26, "\u2026protocol-notes.md#12"),
+            ("/notes/" + "x" * 60 + ".md", "#3", 24, "\u2026" + "x" * 18 + ".md#3"),
+            ("/notes/chunky/protocol-notes.md", "", 24, "\u2026protocol-notes.md"),
+            ("/notes/chunky/protocol-notes.md", "#123456", 8, "\u2026#123456"),
+        ],
+    )
+    def test_fit_head_keeps_the_suffix_and_prefers_separator_edges(
+        self, path: str, suffix: str, budget: int, expected: str
+    ) -> None:
+        """_fit_head shortens from the left, keeps the suffix, prefers separator edges.
+
+        Scope of the Chunk-cell guarantee, stated where it is covered: a path
+        without a tab or a line break, a sequence of at most six digits at the
+        column floor of 8, and a console of at least 30 columns. Beyond that
+        the rendered cell can still be cut: a tab that stays visible is
+        expanded by Rich and the line is cut on the right, a line break splits
+        the cell so the suffix leaves the row's first line, a seventh digit
+        overflows the floor, and on a narrower console the console cuts into
+        the Chunk cell.
+        """
+        from sif.cli.commands.search import _fit_head
+
+        fitted = _fit_head(path, suffix, budget)
+
+        assert fitted == expected
+        assert cell_len(fitted) <= budget
+        assert fitted.endswith(suffix)
+
+    @pytest.mark.parametrize(
+        ("budget", "expected"),
+        [
+            (8, "\u2026究.md#7"),
+            (10, "\u2026研究.md#7"),
+            (24, "\u2026相关性排序方法研究.md#7"),
+        ],
+    )
+    def test_fit_head_counts_double_width_characters_as_rich_does(
+        self, budget: int, expected: str
+    ) -> None:
+        """A CJK path is measured in display cells; counting characters fits more."""
+        from sif.cli.commands.search import _fit_head
+
+        fitted = _fit_head(self._LONG_PATHS[3], "#7", budget)
+
+        assert fitted == expected
+        assert cell_len(fitted) <= budget
+
+    def test_chunk_column_never_reserves_more_than_the_page_needs(self) -> None:
+        """The Chunk column's floor is 8, or the widest address when that is narrower."""
+        from sif.cli.commands.search import _CHUNK_MIN_WIDTH, _chunk_column
+
+        assert _CHUNK_MIN_WIDTH == 8
+        short = self._chunk_rows(1)
+        short[0].path = "/a.md"
+        assert _chunk_column(short) == {"style": "magenta", "min_width": 7}
+        assert _chunk_column(self._long_path_rows())["min_width"] == 8
 
 
 class TestNoFilterRegression:
