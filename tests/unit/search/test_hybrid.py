@@ -806,7 +806,7 @@ class TestHybridSC1PipelineGolden:
             "highlights": ["apple quantum entangled fruit"],
             "rank": 1,
             "scores": {
-                "bm25_score": 0.9999986250018905,
+                "bm25_score": 1.3749981093775994e-06,
                 "vector_score": 0.6464466154575348,
                 "rrf_score": 0.03252247488101534,
             },
@@ -827,7 +827,7 @@ class TestHybridSC1PipelineGolden:
             "highlights": ["apple pie recipe sweet dessert"],
             "rank": 2,
             "scores": {
-                "bm25_score": 0.9999986865688892,
+                "bm25_score": 1.313431110717347e-06,
                 "vector_score": 0.39792025089263916,
                 "rrf_score": 0.031754032258064516,
             },
@@ -2157,3 +2157,94 @@ class TestSearchPipelineIdentity:
         assert embedder.query_calls == [_FakeEmbedder.QUERY]
         assert embedder.embed_calls == []
         assert [result.to_dict() for result in results] == TestHybridSC1PipelineGolden.SNAPSHOT
+
+
+# =============================================================================
+# min_score on the BM25 leg of the hybrid path (UAT gap G-19-2, plan 19-12)
+# =============================================================================
+
+
+def _build_strong_weak_fts_db() -> sqlite3.Connection:
+    """Real FTS5 corpus with one strong and one weak ``apple`` match plus fillers.
+
+    ``strong`` repeats ``apple`` twelve times; ``weak`` mentions it once inside
+    a long document; thirty fillers keep the term rare. Each document row is
+    followed by its FTS row, so the FTS rowids line up with ``documents.rowid``.
+    """
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.execute("CREATE TABLE collections (id TEXT PRIMARY KEY, name TEXT)")
+    conn.execute(
+        "CREATE TABLE documents (id TEXT PRIMARY KEY, collection_id TEXT, title TEXT, path TEXT)"
+    )
+    conn.execute("CREATE VIRTUAL TABLE documents_fts USING fts5(content, title, tokenize='porter')")
+    conn.execute("INSERT INTO collections VALUES ('c1', 'notes')")
+    weak_content = " ".join(["apple", *(f"item{i}" for i in range(120))])
+    documents = [
+        ("strong", "Fruit Basket", "/strong.md", " ".join(["apple"] * 12)),
+        ("weak", "Shopping List", "/weak.md", weak_content),
+    ]
+    documents.extend(
+        (f"fill-{i}", f"Filler {i}", f"/f{i}.md", f"banana filler document number {i}")
+        for i in range(30)
+    )
+    for doc_id, title, path, content in documents:
+        conn.execute("INSERT INTO documents VALUES (?, 'c1', ?, ?)", (doc_id, title, path))
+        conn.execute("INSERT INTO documents_fts(content, title) VALUES (?, ?)", (content, title))
+    return conn
+
+
+class TestHybridMinScoreLeg:
+    """``min_score`` on the BM25 leg of the hybrid path follows the BM25 score map.
+
+    ``HybridSearcher.search`` copies the caller's options into the fetch options
+    of both legs, so the BM25 leg applies the threshold that the BM25 searcher
+    derives from its score map (G-19-2, plan 19-12): the leg keeps the matches
+    whose displayed score is at least ``min_score``, like the vector leg, and
+    is no longer emptied at ordinary thresholds.
+    """
+
+    def test_min_score_keeps_the_stronger_match_in_the_hybrid_bm25_leg(self) -> None:
+        """Without a vector leg, the threshold keeps the stronger BM25 match."""
+        conn = _build_strong_weak_fts_db()
+        try:
+            hybrid = HybridSearcher(MagicMock(), embedder=None, embedding_dim=2)
+            hybrid.bm25 = BM25Searcher(conn)
+
+            unfiltered = hybrid.search("apple", SearchOptions(include_highlights=False))
+            assert [r.document_id for r in unfiltered] == ["strong", "weak"]
+            scores = [r.score for r in unfiltered]
+            assert scores == sorted(scores, reverse=True)
+
+            thresholded = hybrid.search(
+                "apple", SearchOptions(min_score=0.5, include_highlights=False)
+            )
+            assert [r.document_id for r in thresholded] == ["strong"]
+            assert [r.rank for r in thresholded] == [1]
+            assert thresholded[0].score >= 0.5
+        finally:
+            conn.close()
+
+    def test_min_score_keeps_the_bm25_match_fused_instead_of_dropping_the_leg(self) -> None:
+        """A lexical-only match stays on the page instead of losing its whole leg."""
+        conn = TestHybridSC1PipelineGolden._build_db()
+        try:
+            hybrid = HybridSearcher(conn, embedder=_FakeEmbedder(), embedding_dim=2)
+
+            # "gardening" matches only d4 lexically (bm25 value -1.2223313395749826).
+            unfiltered = hybrid.search("gardening", SearchOptions(include_highlights=False))
+            d4 = next(r for r in unfiltered if r.document_id == "d4")
+            assert "bm25_score" in d4.scores
+
+            thresholded = hybrid.search(
+                "gardening", SearchOptions(min_score=0.5, include_highlights=False)
+            )
+            d4 = next(r for r in thresholded if r.document_id == "d4")
+            assert "bm25_score" in d4.scores
+            assert d4.scores["bm25_score"] == pytest.approx(1.2223313395749826 / 2.2223313395749826)
+            # The vector leg keeps its own threshold: every row clears 0.5 there.
+            vector_scores = [r.scores["vector_score"] for r in thresholded]
+            assert vector_scores
+            assert all(score >= 0.5 for score in vector_scores)
+        finally:
+            conn.close()

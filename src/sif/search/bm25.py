@@ -44,6 +44,39 @@ def _sanitize_term(term: str) -> str:
     return f'"{cleaned}"*'
 
 
+def bm25_display_score(raw: float) -> float:
+    """Map an FTS5 bm25 value to the displayed BM25 score ``|bm25|/(1+|bm25|)``.
+
+    FTS5 returns the bm25 value of a matching row as a negative number whose
+    magnitude grows with relevance. Dividing that magnitude by one plus itself
+    gives a result that lies in the open interval from 0 to 1 and rises with
+    relevance, so a better match shows the higher score (UAT gap G-19-2, plan
+    19-12).
+    """
+    magnitude = abs(raw)
+    return magnitude / (1.0 + magnitude)
+
+
+def bm25_rank_threshold(min_score: float) -> float | None:
+    """Return the bound that keeps the rows whose displayed score is at least ``min_score``.
+
+    The displayed score is ``|bm25|/(1+|bm25|)`` of the non-positive bm25 value
+    ``b``, which is ``-b/(1-b)``. So ``score >= m`` is ``-b/(1-b) >= m``, and
+    because ``1-b`` is positive it is ``-b >= m - mb``, that is ``b <= -m/(1-m)``:
+    keeping a score at or above ``min_score`` is an upper bound on the bm25
+    value, which keeps the stronger matches.
+
+    Edge rules: a ``min_score`` that is not above 0 (0, a negative value, or
+    NaN) returns ``None``, so the predicate is omitted; a value of 1 or above
+    returns negative infinity, which no bm25 value can reach, so no row is kept.
+    """
+    if not min_score > 0:
+        return None
+    if min_score >= 1:
+        return float("-inf")
+    return -min_score / (1.0 - min_score)
+
+
 class BM25Searcher:
     """BM25 full-text search using SQLite FTS5."""
 
@@ -75,12 +108,15 @@ class BM25Searcher:
         fts_query = self._build_fts_query(query)
 
         # min_score thresholding happens BEFORE LIMIT/OFFSET (CORR-03, research
-        # Pitfall 4/P15). The threshold below is the rank threshold for the
-        # same WEIGHTED bm25 expression that projects `score`, so a raised
-        # title weight moves threshold and ordering together. FTS5 rank is
-        # <= 0 and ``score = 1/(1 + |rank|) = 1/(1 - rank)``, hence
-        # ``score >= m`` (m > 0) is exactly ``rank >= 1 - 1/m``. The naive
-        # inverse ``1/m - 1`` points the wrong way.
+        # Pitfall 4/P15). The threshold below is the bound on the same WEIGHTED
+        # bm25 expression that projects `score`, so a raised title weight moves
+        # threshold and ordering together. The displayed score rises with
+        # relevance (the magnitude of the bm25 value over one plus that
+        # magnitude, on the non-positive value), so keeping a score at or above
+        # min_score keeps the stronger matches and the bound is an upper bound
+        # on that value (G-19-2, plan 19-12). The earlier map was the reciprocal
+        # of one plus the magnitude, under which a better match showed a lower
+        # number and the threshold removed the best matches first.
         content_weight = _CONTENT_WEIGHT
         title_weight = _TITLE_WEIGHT if options.title_weight is None else options.title_weight
 
@@ -92,9 +128,10 @@ class BM25Searcher:
             collection_filter = f"AND d.collection_id IN ({placeholders})"
 
         min_score_filter = ""
-        if options.min_score > 0:
-            params.append(1.0 - 1.0 / options.min_score)
-            min_score_filter = "AND m.score >= ?"
+        threshold = bm25_rank_threshold(options.min_score)
+        if threshold is not None:
+            params.append(threshold)
+            min_score_filter = "AND m.score <= ?"
 
         # Metadata filter (Phase 20, D-02/D-17): the compiled predicate is one
         # more fragment in the OUTER WHERE of the materialized CTE (never
@@ -167,8 +204,9 @@ class BM25Searcher:
         results = []
 
         for position, row in enumerate(cursor.fetchall(), 1):
-            # Convert rank to score (lower rank = higher score)
-            score = 1.0 / (1.0 + abs(row["score"]))
+            # Convert the bm25 value to the displayed score, which rises with
+            # relevance (a more negative value is a better match).
+            score = bm25_display_score(row["score"])
 
             result = SearchResult(
                 document_id=row["document_id"],
@@ -228,7 +266,7 @@ class BM25Searcher:
         results = []
 
         for row in cursor.fetchall():
-            score = 1.0 / (1.0 + abs(row["score"]))
+            score = bm25_display_score(row["score"])
             if score >= options.min_score:
                 results.append((row["document_id"], row["content"], score))
 
