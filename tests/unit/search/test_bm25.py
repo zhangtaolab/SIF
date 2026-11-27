@@ -416,6 +416,35 @@ class TestBM25Searcher:
         assert results[0][1] == "chunk content"
         assert isinstance(results[0][2], float)
 
+    def test_search_chunks_scores_use_the_display_map(self) -> None:
+        """G-19-10 / V19-26-3: ``search_chunks`` maps the bm25 value as ``search`` does.
+
+        Plan 19-12 truth 1: the displayed score is ``|bm25|/(1+|bm25|)``. The
+        raw values here lie far from -1, where the earlier reciprocal map and
+        the current one give the same number.
+        """
+        conn = _build_chunk_fts_db()
+        try:
+            raw_values = [
+                row["rank"]
+                for row in conn.execute(
+                    "SELECT rank FROM chunks_fts WHERE chunks_fts MATCH ? ORDER BY rank",
+                    ('"apple"*',),
+                )
+            ]
+            assert len(raw_values) == 2
+            assert all(abs(abs(value) - 1) > 0.01 for value in raw_values)
+
+            results = BM25Searcher(conn).search_chunks("apple")
+
+            assert [document_id for document_id, _, _ in results] == ["doc-1", "doc-1"]
+            assert [content.count("apple") for _, content, _ in results] == [12, 1]
+            scores = [score for _, _, score in results]
+            assert scores == [bm25_display_score(value) for value in raw_values]
+            assert scores == sorted(scores, reverse=True)
+        finally:
+            conn.close()
+
     def test_build_fts_query_single_term(self) -> None:
         """Test FTS query building for single term."""
         searcher = BM25Searcher(MagicMock())
@@ -677,6 +706,35 @@ class TestBM25OffsetPagination:
             assert [r.rank for r in page] == [2]
         finally:
             conn.close()
+
+
+def _build_chunk_fts_db() -> sqlite3.Connection:
+    """Chunk-level FTS5 corpus whose two apple matches score far from bm25 -1.
+
+    ``chunk-a`` holds ``apple`` twelve times among twelve words and ``chunk-b``
+    holds it once among forty filler words, so their raw bm25 values fall near
+    -4.72 and -0.77: far from -1, where the earlier reciprocal map and the
+    displayed-score map agree. Thirty unrelated filler chunks keep the term
+    rare. ``document_chunks`` and ``chunks_fts`` are inserted in the same order
+    so ``search_chunks``' join on rowid lines them up.
+    """
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.execute(
+        "CREATE TABLE document_chunks (id TEXT PRIMARY KEY, document_id TEXT, content TEXT)"
+    )
+    conn.execute("CREATE VIRTUAL TABLE chunks_fts USING fts5(content)")
+    chunks = [
+        ("chunk-a", "doc-1", " ".join(["apple"] * 12)),
+        ("chunk-b", "doc-1", " ".join(["apple"] + [f"word{i}" for i in range(40)])),
+    ]
+    chunks.extend((f"fill-{i}", "doc-2", f"banana filler chunk number {i}") for i in range(30))
+    for chunk_id, document_id, content in chunks:
+        conn.execute(
+            "INSERT INTO document_chunks VALUES (?, ?, ?)", (chunk_id, document_id, content)
+        )
+        conn.execute("INSERT INTO chunks_fts(content) VALUES (?)", (content,))
+    return conn
 
 
 def _build_title_body_db() -> sqlite3.Connection:
