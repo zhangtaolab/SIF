@@ -472,27 +472,33 @@ gsd_run state record-session \
 
 **If this table were empty:** all claims would be verified or cited. It is not: A1-A6 need runtime confirmation.
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+All four questions below were answered by the recommendations the plans adopted; the reasoning is kept for review.
 
 1. **Upgrade target: 0.3.37 or 0.3.38?**
    - What we know: both are ahead of v0.8.0 (0.3.37 by 427 commits; 0.3.38 latest).
    - What's unclear: which the team wants to name as the future pin candidate.
    - Recommendation: use 0.3.37 for the evidence (first supporting release, one release of soak); record 0.3.38 as available. No pin change in Phase 25.
+   - **RESOLVED:** 0.3.37 is the upgrade target of record for the evidence (the first llama-cpp-python binding that supports `lfm3`), and 0.3.38 is recorded as available; no pin change follows from this spike (D-03).
 
 2. **Where the query-only anchor table lives.**
    - What we know: D-05 calls it "一张提交的 query-only 映射表".
    - What's unclear: committed file vs embedded in the authoritative JSON.
    - Recommendation: commit `bench/anchor-table.json` **and** record its SHA-256 in `spike-verdict.json` (satisfies both "committed table" and "JSON authoritative, same-source").
+   - **RESOLVED:** the table is the committed `bench/anchor-table.json`, and its SHA-256 is recorded in `bench/spike-verdict.json` (D-05, D-14).
 
 3. **Embed/rerank regression when no cross-version GGUF is guaranteed.**
    - What we know: `LlamaCppEmbedder` and `LlamaCppReranker` both use `Llama(..., embedding=True)`; a cross-version comparison needs a GGUF both versions support.
    - What's unclear: whether the user will supply one; `~/.cache/qmd/models/hf_Qwen_Qwen3-Embedding-0.6B-Q8_0.gguf` exists but belongs to another project.
    - Recommendation: make the regression check optional with an explicit `embed_rerank_impact: "not measured — no cross-version GGUF"` limitation; if the LFM3 GGUF loads under 0.3.37, also record its `embed()` shape under 0.3.37.
+   - **RESOLVED:** the regression check is optional; when no cross-version GGUF is available the artifact records `embed_rerank_impact: "not measured — no cross-version GGUF"`, and when the LFM3 GGUF loads under 0.3.37 its `embed()` shape is recorded too (D-04).
 
 4. **Acceptance shape of "one generation" for a reasoning model.**
    - What we know: LFM3 emits `<think>` first; `max_tokens=32` may be all reasoning.
    - What's unclear: whether the team wants the visible answer or accepts any non-empty text.
    - Recommendation: D-02 only requires non-empty; record raw output verbatim and cap at a documented `max_tokens` (e.g. 64).
+   - **RESOLVED:** D-02 requires only non-empty output; the raw text is recorded verbatim under a documented `max_tokens` cap of 64, with no visible-answer requirement.
 
 ## Environment Availability
 
