@@ -1,14 +1,15 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.2
-status: Awaiting next milestone
-stopped_at: Phase 19 gap plans refreshed and checked — ready to execute
-last_updated: "2026-11-27T09:15:32.000Z"
+current_phase: 19
+current_phase_name: search-correctness
+status: executing
+stopped_at: Completed 19-13-PLAN.md (exact --min-score threshold)
+last_updated: "2026-11-27T09:36:43.596Z"
 last_activity: 2026-11-27
-last_activity_desc: Phase 19 gap plans 19-13/14/15 refreshed in place at bb29266 and committed at 444368e; the plan-checker passed (final: 0 blockers, 0 warnings, 4 INFO); ready to execute on branch gsd/phase-19-gap-round-2
-state_head: 444368e
+last_activity_desc: Phase 19 execution started
+state_head: 0902b28715020f71dae203b33e508407e802b16b
 milestone_name: Search Precision and Agent Experience
-current_phase: 24
 progress:
   total_phases: 8
   completed_phases: 8
@@ -29,10 +30,10 @@ progress:
 
 ## Current Position
 
-Phase: Milestone v1.2 complete
-Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-11-27 - Paused before Phase 19's second gap-closure round: plans `19-13`, `19-14` and `19-15` (`c3d2db7`) are planned and not executed, and they were validated before v1.2.4 was released, so they are refreshed and re-checked against HEAD before anything runs; the handoff is in the Phase 19 `.continue-here.md` and `.planning/HANDOFF.json` (`5d1191c`). Earlier, 2026-11-26 - Completed quick task 261126-s23: Tolerate one-ULP libm drift in SC1 golden snapshots - route 5 exact == assertions in test_hybrid.py through a float-approx helper (rel=1e-12); unblocks ubuntu CI (release gate). Earlier the same day - the 1.2.4 release bump landed (`6044311`) and its Test Matrix run 45815417974 went red on all four ubuntu cells: the SC1 golden snapshots added by fix(19-12) pin `bm25_score` at full precision and SQLite's `bm25()` log() differs across platform libm in the last ULP (1.313431110717347e-06 on macOS vs 1.3134311107173473e-06 on ubuntu); macOS cells and lint stay green; quick task 261126-s23 was planned and executed to fix it (`1d3d5ba`). Earlier the same day - Phase 19's second gap-closure round planned: plans `19-13` (exact `--min-score` threshold, gap G-19-8), `19-14` (truthful text for `query --min-score`, gap G-19-9, under assumption `A-19-9-1`) and `19-15` (three unguarded behaviours, gap G-19-10) committed at `c3d2db7` and plan-checked (round 2: 0 blockers, 0 warnings, 7 advisories); the UAT record was corrected at `43b4dc3`. Earlier the same day - Phase 19 UAT completed by the orchestrator as tester at the operator's request (`f5ece6b`): 10 tests, 7 passed and 3 issues, all three diagnosed in `19-UAT.md` and not yet planned (G-19-8, the exact-threshold drop of IN-09; G-19-9, what `query --min-score` compares, IN-10; G-19-10, three unguarded behaviours). Tests 4 and 5 were accepted as the tester's verdict and can be reversed. Earlier the same day - Phase 19 gap closure executed and re-verified: plans 19-10 (chunk identity on the per-chunk surfaces), 19-11 (G-19-2 before-evidence; operator decision monotone-map) and 19-12 (monotone BM25 score, bound `-M/(1-M)`, fourth 19-05 truth amended) ran from 4e258cf to d5382ae; gates green (3303 passed, 1 skipped, 95.16%); verification re-run at `d12fc6e`: human_needed, 85/90 truths, none failed; UAT updated at `9aa5125` (tests 1, 2 and 7 pass; seven decisions pending). The round re-staled the verifications of Phases 17, 18 and 24. Earlier, 2026-11-25 - Phase 17 gap closed and re-verified: plan 17-10 restored the 8-cell CI matrix and every-branch push trigger; verification passed; Test Matrix run 45522236981 green on 8/8 cells + lint (95.12% each); UAT complete. Phase 24 was re-verified 2026-11-24 and again 2026-11-25 (10691bd, 43/43 truths) after plan 17-10 changed tests/test_ci_workflows.py. Phase 18 was re-verified 2026-11-25 (2f4fff8, 44/44 truths). Phase 19 was re-verified 2026-11-25 (b3633c9): human_needed, 61/63 truths, 2 uncertain (truths 17 and 34), five decisions pending in 19-UAT.md.
+Phase: 19 (search-correctness) — EXECUTING
+Plan: 14 of 15
+Status: Ready to execute
+Last activity: 2026-11-27 — Phase 19 execution started
 
 ## Performance Metrics
 
@@ -99,6 +100,7 @@ Last activity: 2026-11-27 - Paused before Phase 19's second gap-closure round: p
 | Phase 24 P04 | ~7 min | 3 tasks | 8 files |
 | Phase 24 P05 | 20 min | 3 tasks | 10 files |
 | Phase 24 P06 | ~3h | 3 tasks | 17 files |
+| Phase 19 P13 | 12min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -320,6 +322,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - [Phase 24]: 24-06 real evidence is complete on the amended corpus: QUAL-02 `keep-default` (tuning-selected overlap-0 +0.000737, held-out -0.008605, CI [-0.021559, +0.003094], helped 2/hurt 9/unchanged 183, N=194) and QUAL-03 `keep-breadcrumb-off` (overall +0.014104, CI [-0.005664, +0.035548], winner false; title leg +0.048521 winner, body leg +0.006243 not; duplicate metrics title_share=1.0, in_content_share=0.622955; replay unavailable). No defaults changed, no marker code, no re-embed migration.
 - [Phase 24]: Platform verification at `256380e` is green — macOS arm64: 3,233 passed / 1 skipped / 95.03%; Linux x86_64 (nv5090, Python 3.13.18): 3,232 passed / 2 skipped / 95.04% with ruff/format/ty green, using a shared torch 2.14.1+cu130 under `CUDA_VISIBLE_DEVICES=` and `-p no:platformdirs` because the CPU torch index was DNS-unreachable; Windows 11 (Yoga): `windows_smoke.py` 8/8 PASS plus 346 changed-area and 124 affected-module tests. Windows' 14 docs-test failures under GBK are pre-existing at `48759e2` and pass with `PYTHONUTF8=1`; full Windows support stays deferred to v2.
 - [Phase 24]: Breadcrumb artifact write bug fixed: `breadcrumb_eval.write_committed_artifact` now defaults to its own `ARTIFACT_PATH` instead of forwarding `None` to the chunk-sweep path; the shared guard had refused the overwrite after a 34-minute arm run. The resumed artifact write took 0.38 s and a regression test pins the default path.
+- [Phase 19]: 19-13: BM25 min_score is bound as given and the SQL predicate compares the displayed score itself, abs(m.score)/(1.0+abs(m.score)) >= ?; the converted -M/(1-M) bound and bm25_rank_threshold are removed with no public surface affected.
+- [Phase 19]: 19-13: the Task 3 human check was not performed by the executor under end-of-phase harvest; it is WINDOWS entry 14, with the two CLI tests and bench/g19-8-exact-threshold.json as the automated backstop.
 
 ### Pending Todos
 
@@ -390,9 +394,9 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-27T09:15:32.000Z (plans refreshed)
-Stopped at: Phase 19 gap plans refreshed and checked — ready to execute on `gsd/phase-19-gap-round-2`
-Resume file: none — plans committed at 444368e; next: `/gsd-execute-phase 19 --gaps-only`
+Last session: 2026-11-27T09:36:43.582Z
+Stopped at: Completed 19-13-PLAN.md (exact --min-score threshold)
+Resume file: None
 
 - **Plans refreshed 2026-11-27:** `19-13/14/15` were refreshed in place against HEAD `bb29266` (code tree byte-identical to the v1.2.4 tag `6089078`) and committed at `444368e`. The plan-checker first returned 0 blockers / 1 warning (same-wave base-anchored gate ordering) and 4 INFO; the warning was fixed by declaring the real edge (`19-15` wave 3, `depends_on: [19-13, 19-14]`), and the re-check returned `VERIFICATION PASSED`. T-19-24 is now claimed by 19-10 only; 19-15 uses T-19-46. Next: `/gsd-execute-phase 19 --gaps-only` on the branch.
 
