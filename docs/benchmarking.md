@@ -140,7 +140,7 @@ Inclusive at exactly 0.01 (same rounded-delta arithmetic as the tie rule); 0.009
 
 A `change-warranted` verdict is recorded (snapshot + this document) and names its follow-up route: update the defaults in `src/sif/config/settings.py`, update the tests pinning them, and regenerate the snapshot and generated docs. The bench itself never mutates settings.
 
-The committed snapshot `tests/fixtures/bench/heldout_defaults.json` locks the shipped defaults to measured evidence: `tests/unit/search/test_bench_snapshot.py` recomputes the held-out metrics from the deterministic index using the `Settings`-derived configuration, asserts they equal the committed values exactly, and asserts the snapshot's `defaults` object equals the live `Settings` defaults **in the same test** — so changing a default without regenerating the metrics, or editing the snapshot to mask a regression, fails CI.
+The committed snapshot `tests/fixtures/bench/heldout_defaults.json` locks the shipped defaults to measured evidence: `tests/unit/search/test_bench_snapshot.py` recomputes the held-out metrics from the deterministic index using the `Settings`-derived configuration, asserts they match the committed values within `abs=1e-9`, and asserts the snapshot's `defaults` object equals the live `Settings` defaults **in the same test** — so changing a default without regenerating the metrics, or editing the snapshot to mask a regression, fails CI.
 
 ## Personal Bench (`sif eval --personal`)
 
@@ -201,7 +201,7 @@ Replay compares each saved replay query's top-k path list with the current top-k
 
 - A fresh run is **not** comparable across an overlap-budget, sampling, or split change: the saved query set is the pairing contract, and a changed synthesizer produces a different set. Start a new baseline instead.
 - Within the same corpus fingerprint, `--compare` is the only honest way to read a delta; the fingerprint refusal is deliberate.
-- Auto-save always writes saved runs under the local cache directory; runs cited as evidence may additionally be committed deliberately (e.g. the tracked B0/B1 baselines under `.planning/phases/19-search-correctness/bench/`).
+- Auto-save always writes saved runs under the local cache directory; runs cited as evidence may additionally be committed deliberately (e.g. the tracked B0/B1 baselines under `.planning/milestones/v1.2-phases/19-search-correctness/bench/`).
 
 ## CORR-02 Per-Document Dedup
 
@@ -213,7 +213,7 @@ This is a correctness contract change, not a tuning win: no default weight, `rrf
 
 Both saved runs use `--bm25-only` on the same 150-document fixture corpus and scratch index (corpus fingerprint `8c006123784348d1`), with the same 100 auto-synthesized known-item queries at `top_k=10`. The dedup change lives in the vector leg, which `--bm25-only` never queries (it is constructed at pipeline init but never searched), so a zero delta here is the **expected** outcome and proves the CLI/MCP surface work introduced no ranking drift; it is not evidence that dedup changed ranking. B1 (`bench/b1.json`) is the post-dedup, pre-title saved run that the title work is measured against.
 
-`--compare bench/b0.json`: overall n=100, nDCG@10 `0.948330165500004 → 0.948330165500004` (delta `0.0`, 95% CI `[0.0, 0.0]`), Hit@10 `1.0 → 1.0`, 100 unchanged, 0 helped, 0 hurt. The tuning split (n=51) and held-out split (n=49) are likewise unchanged at `0.9493432995098079` and `0.9472756790816368`. The two groups that clear the N ≥ 10 floor are unchanged: title/en/medium (n=39) `1.0 → 1.0` and body/en/long (n=46) `0.8876742728260958 → 0.8876742728260958`, both deltas `0.0` with CI `[0.0, 0.0]`. Three groups stay below the floor, so they are suppressed from the table and named on stderr rather than rendered as zero rows: title/en/short, title/mixed/long, body/mixed/long. `--compare bench/b1.json` (self-comparison) reports the same n=100 and mean delta `0.0`, confirming B1 is a stable saved baseline. The B0/B1 saved-run reports are committed under `.planning/phases/19-search-correctness/bench/` (`b0.json`, `b1.json`); the scratch database and remaining raw reports stay untracked.
+`--compare bench/b0.json`: overall n=100, nDCG@10 `0.948330165500004 → 0.948330165500004` (delta `0.0`, 95% CI `[0.0, 0.0]`), Hit@10 `1.0 → 1.0`, 100 unchanged, 0 helped, 0 hurt. The tuning split (n=51) and held-out split (n=49) are likewise unchanged at `0.9493432995098079` and `0.9472756790816368`. The two groups that clear the N ≥ 10 floor are unchanged: title/en/medium (n=39) `1.0 → 1.0` and body/en/long (n=46) `0.8876742728260958 → 0.8876742728260958`, both deltas `0.0` with CI `[0.0, 0.0]`. Three groups stay below the floor, so they are suppressed from the table and named on stderr rather than rendered as zero rows: title/en/short, title/mixed/long, body/mixed/long. `--compare bench/b1.json` (self-comparison) reports the same n=100 and mean delta `0.0`, confirming B1 is a stable saved baseline. The B0/B1 saved-run reports are committed under `.planning/milestones/v1.2-phases/19-search-correctness/bench/` (`b0.json`, `b1.json`); the scratch database and remaining raw reports stay untracked.
 
 ### Where the dedup effect is recorded
 
@@ -262,7 +262,7 @@ The shipped default embedder is held to the same evidence bar as the ranking def
 
 ### Harrier gated evaluation (Phase 23)
 
-**Decision: `keep-qwen3` — the shipped default did not move.** The candidate `microsoft/harrier-oss-v1-0.6b` was compared against the `Qwen/Qwen3-Embedding-0.6B` baseline on a curated bilingual (EN+ZH) personal corpus. The committed aggregate artifact is `.planning/phases/23-harrier-gated-evaluation/bench/harrier-verdict.json`; it contains no query text, saved-run records, or absolute paths, and the corpus is recorded as basename-only scope labels.
+**Decision: `keep-qwen3` — the shipped default did not move.** The candidate `microsoft/harrier-oss-v1-0.6b` was compared against the `Qwen/Qwen3-Embedding-0.6B` baseline on a curated bilingual (EN+ZH) personal corpus. The committed aggregate artifact is `.planning/milestones/v1.2-phases/23-harrier-gated-evaluation/bench/harrier-verdict.json`; it contains no query text, saved-run records, or absolute paths, and the corpus is recorded as basename-only scope labels.
 
 **Corpus and adequacy.** Corpus fingerprint `b5d50ce0c696ab3d`; 498 in-scope documents, 50 sampled for query synthesis. The seven scope roots (basenames) are 项目申请, 实验室项目, 课程教学, 评审, 学生论文, PPT, and Book. Adequacy was checked before any embedding: `adequate: true` with held-out counts `en = 42`, `zh = 11`, and `mixed = 3`. Both required languages cleared the per-language N >= 10 floor; an inadequate result would have written `insufficient-evidence` and exited 3 without spending the embed budget.
 
@@ -344,7 +344,7 @@ Real six-arm sweep, 2026-11-17, on the authorized `books-markdown-papers-2026-11
 
 **Decision: `keep-default`.** The tuning split selected `overlap-0` with a +0.000737 mean delta, but its held-out confirmation was **-0.008605** (95% CI [-0.021559, +0.003094], helped 2 / hurt 9 / unchanged 183, N=194): no strict held-out winner, so `DEFAULT_CHUNK_SIZE=512` and `DEFAULT_CHUNK_OVERLAP=128` stay unchanged. Every non-baseline arm's held-out mean delta was negative or flat. No `chunking.contract` marker is written and no `sif index embed --force` migration is required.
 
-The measurement is hardware- and version-dependent manual evidence (macOS arm64 Apple Silicon, 2026-11-17), never a CI gate. Artifact: `.planning/phases/24-tuning-models-ux-install-docs/bench/chunk-sweep.json`. Limitation: the N=194 held-out sample clears the 101 floor; a larger or different corpus could still change the verdict.
+The measurement is hardware- and version-dependent manual evidence (macOS arm64 Apple Silicon, 2026-11-17), never a CI gate. Artifact: `.planning/milestones/v1.2-phases/24-tuning-models-ux-install-docs/bench/chunk-sweep.json`. Limitation: the N=194 held-out sample clears the 101 floor; a larger or different corpus could still change the verdict.
 
 ## Title-Breadcrumb Experiment (QUAL-03)
 
@@ -360,7 +360,7 @@ Replay stability: **unavailable** (`available=false`, no saved replay snapshot),
 
 **Decision: `keep-breadcrumb-off`.** The overall held-out gate did not win (its CI includes zero), and the title leg's win is duplicate signal: the title is already indexed by the Phase 19 title FTS, the body leg did not win, and 62.3% of chunks already contain their current section-heading text in their content. The body-leg veto rejects a title-only gain even when the overall gate wins. `embed_breadcrumb` stays `False`; no `chunking.contract` marker is written and no re-embed is required.
 
-The measurement is hardware- and version-dependent manual evidence, never a CI gate. Artifact: `.planning/phases/24-tuning-models-ux-install-docs/bench/breadcrumb-verdict.json`. Limitation: held-out N=194 ≥ 101 and 1/N ≈ 0.00515; the corpus is 2 English books plus 608 Chinese/English papers, and a different corpus could change the rejection.
+The measurement is hardware- and version-dependent manual evidence, never a CI gate. Artifact: `.planning/milestones/v1.2-phases/24-tuning-models-ux-install-docs/bench/breadcrumb-verdict.json`. Limitation: held-out N=194 ≥ 101 and 1/N ≈ 0.00515; the corpus is 2 English books plus 608 Chinese/English papers, and a different corpus could change the rejection.
 
 ## Commands and Reproduction
 

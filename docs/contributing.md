@@ -132,6 +132,11 @@ The distribution is published as `docsif`; the installed command is `sif`. CI us
 
 ## Coding Standards
 
+Three tools cover style: `ruff format` (formatting), `ruff check` (linting), and `ty` (type
+checking). All three are enforced in CI by the `lint` job of the Test Matrix workflow, which runs
+`ruff check src tests`, `ruff format --check src tests`, and `ty check src/sif` on every push and
+pull request (see [Continuous Integration](#continuous-integration)).
+
 ### Python Style
 
 - Follow PEP 8 and target Python 3.10+ (use `list[str] | None` union syntax)
@@ -424,7 +429,10 @@ Triggered by pushing a `v*` tag. It verifies that the tag equals `v` + the `src/
 
 ## Makefile Targets
 
-The `Makefile` wraps the common development commands; `make help` lists the common targets, and the `.PHONY` line at the top of the `Makefile` enumerates every declared target (the table below covers the rest):
+The `Makefile` wraps the common development commands. `make help` prints the common targets (not
+every target); the `.PHONY` line at the top of the `Makefile` enumerates every declared target.
+
+Checklist-relevant and quality targets:
 
 | Target | What it runs | Notes |
 |--------|--------------|-------|
@@ -440,6 +448,23 @@ The `Makefile` wraps the common development commands; `make help` lists the comm
 | `make security` | `bandit -r src/sif -c pyproject.toml` | bandit is not in the `[dev]` extras; install it separately |
 | `make all` | lint + typecheck + test | Quick combined check |
 | `make ci` | format-check + lint + typecheck + security + test | Full local CI-equivalent run |
+
+Setup, build, and maintenance targets:
+
+| Target | What it runs | Notes |
+|--------|--------------|-------|
+| `make help` | Prints the common targets | Default target |
+| `make install` | `pip install -e .` | Runtime dependencies only |
+| `make install-all` | `pip install -e ".[dev,all]"` | Adds every embedding backend |
+| `make dev-setup` | `install-dev` | Alias for `make install-dev` |
+| `make test-verbose` | `pytest -vvs --tb=short --cov=src/sif --cov-report=term-missing` | Verbose run with coverage |
+| `make coverage` | `pytest --cov=src/sif` with html, xml, and term-missing reports | Writes `htmlcov/index.html` |
+| `make dev-check` | format + lint-fix + typecheck | Auto-fixing counterpart to the lint checks |
+| `make build` | `python -m build`, then `check-wheel-contents` and `twine check` on `dist/*` | The latter two are skipped with a warning when not installed |
+| `make docs` | Prints "Documentation build not yet configured" | The MkDocs site has no build target yet |
+| `make update-deps` | Upgrades pip, then reinstalls `-e ".[dev,all]"` | |
+| `make clean` / `make clean-all` | Removes build artifacts, caches, coverage output / also removes `venv` and `.venv` | |
+| `make info` | Prints the Python version and installed sif/ruff/ty/pytest/bandit versions | |
 
 ## Questions?
 

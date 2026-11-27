@@ -300,9 +300,12 @@ tests/
 └── test_windows_smoke_script.py # Windows smoke matcher tests
 ```
 
-The suite currently holds 120 `test_*.py` modules: 101 under `tests/unit/`, 12 under
+The suite currently holds 122 `test_*.py` modules: 103 under `tests/unit/`, 12 under
 `tests/integration/`, and 7 at the `tests/` root. `pytest --collect-only -q --no-cov`
-reports the current collection total (3,234 tests at the time of writing); see
+reports the current collection total (3,181 tests collected in a `dev`-only virtualenv at the
+time of writing; four modules under `tests/unit/mcp/` import
+`fastapi.testclient.TestClient`, which needs `httpx`, so a full `dev` + `embed` environment
+collects slightly more); see
 [Testing](testing.md) for the tier-by-tier breakdown. There is no shared factories module;
 build related objects with the shared `sample_*` fixtures or a fixture local to the test module.
 
@@ -604,15 +607,15 @@ class CustomModel(BaseModel):
 
 2. **Update the changelog.** Add the release section and its compare/release links in `docs/changelog.md`.
 
-3. **Run the Windows degradation smoke.** On a clean checkout of the release commit, run `make windows-smoke` against the Windows host (hc remote yoga) and record the tested HEAD that the script prints. The target prints HEAD and status (the script refuses a dirty tree), installs Python `YOGA_PYTHON` on the host, syncs the frozen `dev` environment with `uv sync --frozen --extra dev`, then runs `scripts/windows_smoke.py` over `hc exec --on yoga`; it accepts `YOGA_DIR` / `YOGA_PYTHON` overrides when the checkout path or interpreter differs. It asserts only the documented degradations (fcntl lock warning, missing-root "all documents preserved" guard, and POSIX fork/service refusals); it is not a claim of full Windows support, which remains deferred. This is an on-demand, pre-release step only — never a per-PR or scheduled job.
+3. **Run the Windows degradation smoke.** On a clean checkout of the release commit, run `make windows-smoke` against the Windows host (hc remote yoga) and record the tested HEAD that the script prints. The target prints HEAD and status (the script refuses a dirty tree), installs Python `YOGA_PYTHON` on the host, syncs the frozen `dev` environment with `uv sync --frozen --extra dev`, then runs `scripts/windows_smoke.py` over `hc exec --on yoga`; it accepts `YOGA_DIR` / `YOGA_PYTHON` overrides when the checkout path or interpreter differs. It asserts only the documented degradations (fcntl lock warning, missing-root "all documents preserved" guard, and POSIX fork/service refusals); it is not a claim of full Windows support, which remains deferred. This is an on-demand, pre-release step only — never a per-PR or scheduled job. The `hc` CLI and the `yoga` remote host are configured on the maintainer's machine and are not defined in this repository; the target defaults `YOGA_DIR` to `D:\Github\SIF`.
 
 4. **Commit and confirm CI.** Commit the release changes and confirm the Test Matrix is green on that commit: all eight py3.10–3.13 × ubuntu/macos cells plus the lint job.
 
 5. **Tag the release.** Create and push an annotated tag (tags use the `vX.Y[.Z]` form), for example:
 
 ```bash
-git tag -a v1.1.2 -m "Release version 1.1.2"
-git push origin v1.1.2
+git tag -a v1.2.5 -m "Release version 1.2.5"
+git push origin v1.2.5
 ```
 
 6. **Let the Publish workflow release it.** The `Publish` workflow is triggered by the `v*` tag. It builds the distributions once, checks the metadata, uploads the built artifact, and then publishes it to TestPyPI first and PyPI second through trusted publishing (GitHub OIDC environments `testpypi` and `pypi`) with PEP 740 attestations. There is no manual upload step and no API token. The build job fails before building if the tag does not exactly equal `v` + the `src/sif/_version.py` literal.
@@ -620,14 +623,14 @@ git push origin v1.1.2
 7. **Verify the release.** Confirm the published version through the PyPI JSON API, check the attestation, and install into a scratch virtual environment:
 
 ```bash
-curl -s https://pypi.org/pypi/docsif/1.1.2/json | python -c "import json, sys; print(json.load(sys.stdin)['info']['version'])"
+curl -s https://pypi.org/pypi/docsif/1.2.5/json | python -c "import json, sys; print(json.load(sys.stdin)['info']['version'])"
 
 uvx pypi-attestations verify pypi \
   --repository https://github.com/zhangtaolab/SIF \
-  pypi:docsif-1.1.2-py3-none-any.whl
+  pypi:docsif-1.2.5-py3-none-any.whl
 
 python -m venv /tmp/sif-release-venv
-uv pip install --python /tmp/sif-release-venv/bin/python docsif==1.1.2
+uv pip install --python /tmp/sif-release-venv/bin/python docsif==1.2.5
 ```
 
 TestPyPI installs do not mirror dependencies, so add `--extra-index-url https://pypi.org/simple` when testing the TestPyPI artifact.
@@ -795,7 +798,7 @@ The "Docs Validation" workflow (`.github/workflows/docs.yml`) regenerates `docs/
 
 ### Documentation Tests
 
-`make docs-test` (`pytest tests/test_docs.py -v --no-cov`) validates the code blocks in `README.md`, `docs/index.md`, `docs/cli-reference.md`, `docs/configuration.md`, `docs/quickstart.md`, `docs/mcp-server.md`, `docs/search-algorithms.md`, `docs/benchmarking.md`, `docs/architecture.md`, `docs/models.md`, `docs/installation.md`, and `docs/migration.md`:
+`make docs-test` (`pytest tests/test_docs.py -v --no-cov`) validates the code blocks in `README.md`, `docs/index.md`, `docs/cli-reference.md`, `docs/configuration.md`, `docs/quickstart.md`, `docs/mcp-server.md`, `docs/search-algorithms.md`, `docs/benchmarking.md`, `docs/architecture.md`, `docs/models.md`, `docs/installation.md`, `docs/migration.md`, and `docs/machine-migration.md` (`DOCS_FILES` in `tests/test_docs.py`):
 
 - JSON blocks must parse, and JSON output examples must contain the expected keys.
 - Python blocks must be syntactically valid.
@@ -806,7 +809,9 @@ This file, `testing.md`, and `contributing.md` are not in the validated set.
 
 ### Documentation Site
 
-Docs are wired for MkDocs with the Material theme (`mkdocs.yml`, source directory `docs/`). When you add a page under `docs/`, also list it in the `nav` mapping in `mkdocs.yml` so it appears in the site navigation. There is no configured site build yet — `make docs` prints "Documentation build not yet configured" — and the MkDocs toolchain is not part of any dependency extras in `pyproject.toml`.
+Docs are wired for MkDocs with the Material theme (`mkdocs.yml`, source directory `docs/`), and every page under `docs/` except `benchmarking.md` and `migration.md` is already listed in the `nav` mapping. When you add a page under `docs/`, also list it in that `nav` mapping so it appears in the site navigation. There is no configured site build yet — `make docs` prints "Documentation build not yet configured" — and the MkDocs toolchain is not part of any dependency extras in `pyproject.toml` (`mkdocs`, `mkdocs-material`, the `minify` plugin, and the `mike` version provider all have to be installed separately to build the site locally).
+
+`mkdocs.yml` also points at two assets that are not in the repository — `docs/stylesheets/extra.css` and `docs/javascripts/tablesort.js` — so a local `mkdocs build` needs those files created before it will render cleanly. The published site at `sif.readthedocs.io` is built outside this repository; no CI workflow builds or deploys it.
 
 ## Related Documentation
 

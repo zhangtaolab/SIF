@@ -172,6 +172,10 @@ sif collection show my-notes
 # Rename a collection
 sif collection rename my-notes personal-notes
 
+# Set a pre-index shell command that runs before each update, or clear it
+sif collection update-cmd my-notes --cmd "git pull"
+sif collection update-cmd my-notes --clear
+
 # Delete a collection
 sif collection remove old-collection --yes
 ```
@@ -299,8 +303,14 @@ the installed `sif` command (`sif mcp stdio`). Install SIF first (see
 The server provides seven read-only tools: `query`, `get`, `multi_get`,
 `status`, `metadata`, `lex_search`, and `vec_search`, with citation-grade
 `structuredContent` (`doc_id`, path, line range, content hash, snippet, and
-staleness). The `sif-cite` skill encodes the search → `get` → cite workflow:
-never cite a snippet alone.
+staleness). Three skills ship with the plugin: `sif-search` (hybrid, BM25, or
+vector queries), `sif-get` (retrieval by path, document ID, or glob), and
+`sif-cite`, which encodes the search → `get` → cite workflow: never cite a
+snippet alone.
+
+Set `SIF_MCP_WATCH=1` to run an embedded index watcher inside the server so
+assistant queries hit a fresh index. It is BM25-only by design and applies to
+both transports.
 
 A pre-existing manual `sif` MCP entry duplicates the plugin-provided server
 until it is removed — keep one registration.
@@ -402,6 +412,7 @@ SIF_LOG_LEVEL=INFO
 # MCP server
 SIF_MCP_HOST=127.0.0.1
 SIF_MCP_PORT=8080
+SIF_MCP_WATCH=0
 ```
 
 See [Configuration](docs/configuration.md) for the full settings reference, including watch, reranker, and pre-search refresh options.
@@ -457,6 +468,7 @@ See [docs/architecture.md](docs/architecture.md) for detailed architecture docum
 - [Testing](docs/testing.md) - Test suite layout and conventions
 - [Contributing](docs/contributing.md) - Contribution guidelines
 - [Migration Guide](docs/migration.md) - Breaking changes from DocSift to SIF
+- [Machine Migration](docs/machine-migration.md) - Move an index and caches to another machine
 - [Changelog](docs/changelog.md) - Release history
 
 ## Search Algorithms

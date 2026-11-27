@@ -1,7 +1,7 @@
 <!-- generated-by: gsd-doc-writer -->
 # Testing
 
-SIF's test suite is built on [pytest](https://docs.pytest.org/) with coverage collected by pytest-cov. Tests live in `tests/` and are organized into unit, integration, and e2e tiers, plus seven root-level regression suites for documentation validation, CI workflow and packaging state, repository hygiene, release metadata, module smoke checks, version identity, and the Windows degradation smoke matchers — 3,234 tests collected in total. The most recent full run (macOS, 2026-11-18) reports **3,233 passed and 1 skipped at 95.03% coverage**, and the Linux run reports **3,232 passed and 2 skipped at 95.04% coverage** (the extra skip is environment- or platform-gated). This guide covers how to run the suite, how the tiers are laid out, and how to write new tests using the shared fixtures and support helpers.
+SIF's test suite is built on [pytest](https://docs.pytest.org/) with coverage collected by pytest-cov. Tests live in `tests/` and are organized into unit, integration, and e2e tiers, plus seven root-level regression suites that guard documentation, CI workflow and packaging state, repository hygiene, release metadata, module smoke checks, version identity, and the Windows degradation smoke matchers. A full local run collects a few thousand tests, and the exact total depends on which optional extras are installed — a missing `sqlite-vec` or embedding stack skips or de-collects tests rather than failing them — so refresh any count with `pytest --collect-only -q` instead of trusting a number written here. This guide covers how to run the suite, how the tiers are laid out, and how to write new tests using the shared fixtures and support helpers.
 
 ## Test framework and setup
 
@@ -10,6 +10,8 @@ The test toolchain is declared in the `dev` extras in `pyproject.toml`:
 - `pytest>=7.0.0` — test framework
 - `pytest-cov>=4.0.0` — coverage reporting
 - `pytest-asyncio>=0.23.0` — plugin for the async MCP tests
+
+The same `dev` extras also carry the lint and type-check tools the Makefile and CI use — `ruff>=0.1.0` and `ty>=0.0.1` — so one install covers testing, linting, and type checking.
 
 Install them together with the package:
 
@@ -29,7 +31,7 @@ Pytest is configured in the `[tool.pytest.ini_options]` section of `pyproject.to
 
 Because coverage flags are in `addopts`, they apply to every `pytest` invocation — including `make test-fast` (see below). Append `--no-cov` to any command to skip coverage.
 
-**Async tests:** the MCP tests in `tests/unit/mcp/` use `@pytest.mark.asyncio` and require the `pytest-asyncio` plugin, which is included in the `dev` extras (`pip install -e ".[dev]"` covers it).
+**Async tests:** the MCP tests in `tests/unit/mcp/` use `@pytest.mark.asyncio` and require the `pytest-asyncio` plugin, which is included in the `dev` extras (`pip install -e ".[dev]"` covers it). `pyproject.toml` sets no `asyncio_mode`, so pytest-asyncio runs in its default strict mode: every coroutine test needs the marker explicitly, and an un-marked `async def` test will not run.
 
 ## Running tests
 
@@ -83,61 +85,65 @@ The CLI tests assert on plain-text output, so the suite neutralizes color-forcin
 tests/
 ├── conftest.py                        # Shared pytest fixtures + autouse hermeticity fixtures
 ├── test_ci_workflows.py               # 18 tests — uv.lock/pyproject/workflow regression guards
-├── test_docs.py                       # 20 tests — validates code blocks in documentation
+├── test_docs.py                       # 23 tests — validates code blocks in documentation
 ├── test_hygiene.py                    # 15 tests — dead-layer, tracked-junk, and phantom-guidance guards
 ├── test_release_metadata.py           # 13 tests — version, changelog, and publish-workflow pins
 ├── test_sif_complete.py               #  9 tests — per-module smoke checks importing source modules directly
 ├── test_version_identity.py           #  4 tests — pins the single-sourced release version
 ├── test_windows_smoke_script.py       #  8 tests — pure-function battery for the Windows smoke matchers
-├── unit/                              # 3,058 tests — module-level tests with mocks/temp databases
-│   ├── cli/                           #   688 — commands, error boundary, index locking, color hermeticity, eval/bench
-│   ├── config/                        #    39 — Settings loading and validation
-│   ├── core/                          #   138 — domain entities and filter types
-│   ├── database/                      #   206 — schema, repositories, locking, maintenance, query log, metadata kv
-│   ├── db/                            #    58 — DatabaseConnection and repository tests
-│   ├── embedding/                     #   206 — embedder implementations, cache, factory, identity, manager
-│   ├── indexing/                      #   214 — chunker, parser, scanner, watcher, drift, incremental, embed writer
-│   ├── inference/                     #    92 — embedder, query expander, reranker
-│   ├── mcp/                           #   306 — MCP app, backend, tools, transports, daemon, plugin, wire transcripts
-│   ├── models/                        #    52 — model download helpers
-│   ├── scripts/                       #   165 — dry-run runbooks for eval, chunk sweep, and breadcrumb sweep
-│   ├── search/                        #   785 — BM25, vector, hybrid, RRF, rerank, snippets, filters, bench/eval verdicts
-│   ├── utils/                         #    97 — logging, paths, progress, daemon/service, text helpers
-│   └── test_collection.py             #    12 — CollectionManager
+├── unit/                              # One subdirectory per sif package; mocks or temp databases
+│   ├── cli/                           # commands, error boundary, index locking, color hermeticity, eval/bench
+│   ├── config/                        # Settings loading and validation
+│   ├── core/                          # domain entities and filter types
+│   ├── database/                      # schema, repositories, locking, maintenance, query log, metadata kv
+│   ├── db/                            # DatabaseConnection and repository tests
+│   ├── embedding/                     # embedder implementations, cache, factory, identity, manager
+│   ├── indexing/                      # chunker, parser, scanner, watcher, drift, incremental, embed writer
+│   ├── inference/                     # embedder, query expander, reranker
+│   ├── mcp/                           # MCP app, backend, tools, transports, daemon, plugin, wire transcripts
+│   ├── models/                        # model download helpers
+│   ├── scripts/                       # dry-run runbooks for eval, chunk sweep, and breadcrumb sweep
+│   ├── search/                        # BM25, vector, hybrid, RRF, rerank, snippets, filters, bench/eval verdicts
+│   ├── utils/                         # logging, paths, progress, daemon/service, text helpers
+│   └── test_collection.py             # CollectionManager
 ├── integration/                       # 89 tests — cross-component and real-subprocess pipelines
-│   ├── test_concurrency.py            #    4 — WAL reader/writer and busy-handler proofs
-│   ├── test_embed_idempotency.py      #   15 — repeated `sif index embed` runs stay idempotent
-│   ├── test_incremental_equivalence.py #   4 — golden add/modify/delete equivalence proof
-│   ├── test_maintenance.py            #    2 — vacuum/backup against a live database
-│   ├── test_mcp_watch_e2e.py          #    4 — real stdio MCP server with embedded watcher
-│   ├── test_metadata_filtering.py     #   23 — metadata-filter pipeline on a real schema
-│   ├── test_search_correctness.py     #   11 — deterministic pagination across every query path
-│   ├── test_search_pipeline.py        #   10 — FTS5 + vector + RRF fusion end to end
-│   ├── test_service_live_launchd.py   #    1 — opt-in live launchd proof (skipped by default)
-│   ├── test_two_writer_subprocess.py  #    3 — two-writer locking across subprocesses
-│   ├── test_watch_daemon_e2e.py       #    6 — detached `sif watch` daemon lifecycle
-│   └── test_watch_e2e.py              #    6 — foreground `sif watch` indexing battery
+│   ├── test_concurrency.py            #   4 — WAL reader/writer and busy-handler proofs
+│   ├── test_embed_idempotency.py      #  15 — repeated `sif index embed` runs stay idempotent
+│   ├── test_incremental_equivalence.py #  4 — golden add/modify/delete equivalence proof
+│   ├── test_maintenance.py            #   2 — vacuum/backup against a live database
+│   ├── test_mcp_watch_e2e.py          #   4 — real stdio MCP server with embedded watcher
+│   ├── test_metadata_filtering.py     #  23 — metadata-filter pipeline on a real schema
+│   ├── test_search_correctness.py     #  11 — deterministic pagination across every query path
+│   ├── test_search_pipeline.py        #  10 — FTS5 + vector + RRF fusion end to end
+│   ├── test_service_live_launchd.py   #   1 — opt-in live launchd proof (skipped by default)
+│   ├── test_two_writer_subprocess.py  #   3 — two-writer locking across subprocesses
+│   ├── test_watch_daemon_e2e.py       #   6 — detached `sif watch` daemon lifecycle
+│   └── test_watch_e2e.py              #   6 — foreground `sif watch` indexing battery
 ├── fixtures/bench/                    # Committed synthetic benchmark pack (150 docs, 56 graded queries)
 ├── support/bench.py                   # ConceptEmbedder + build_bench_db helpers for the bench tests
 ├── support/eval.py                    # Deterministic personal-eval index and query-log helpers
 └── e2e/                               # Reserved tier; currently empty
 ```
 
+Per-subdirectory totals under `unit/` are deliberately omitted: they change with every test added and shrink when optional dependencies are missing. Run `pytest --collect-only -q` for the current numbers.
+
 - **unit/** tests a single module in isolation, using mocks (`MagicMock`) or the temporary-database fixtures. `database/` mirrors the `sif.database` package (schema, repositories, locking, maintenance, query log, typed metadata store), while `db/` covers connection management (`DatabaseConnection`) and repositories. `scripts/` unit-tests the dry-run command planners for the evaluation and sweep runbooks (`breadcrumb_eval`, `chunk_sweep`, `harrier_eval`).
 - **integration/** exercises multiple layers together: WAL concurrency and two-writer locking across processes, CLI embed idempotency and incremental-index equivalence against real temporary databases, maintenance (vacuum/backup) against live readers and writers, the full search pipeline (FTS5 + vector + RRF fusion), metadata filtering on a real schema, deterministic pagination on every query path, and real-subprocess batteries for foreground `sif watch`, the detached watch daemon, and the MCP server with its embedded watcher. `test_service_live_launchd.py` is skipped unless `SIF_TEST_LIVE_LAUNCHD=1` is set on macOS with `launchctl` on `PATH`.
 - **e2e/** is a placeholder with no tests yet; add true end-to-end scenarios here.
-- **test_docs.py** extracts fenced code blocks from a hardcoded `DOCS_FILES` list (README.md plus `docs/index.md`, `cli-reference.md`, `configuration.md`, `quickstart.md`, `mcp-server.md`, `search-algorithms.md`, `benchmarking.md`, `architecture.md`, `models.md`, `installation.md`, and `migration.md`) and checks that the documented `sif` commands exist, Python and SQL blocks are valid, and JSON examples match the real output schemas. Its 20 tests also guard against removed command names (`sif collection create`, `sif mcp start`, and others), stale default model names, bare `sif search <query>` usage, positional arguments on option-only commands, phantom environment variables in `configuration.md`, drift between `cli-reference.md` and the live Click command tree, a retired 7B default, the uv-first install guidance and degradation matrix in `installation.md`, and the deprecated `sif pull` alias.
-- **test_ci_workflows.py** reads `uv.lock`, `pyproject.toml`, and the workflow files as text and pins the packaging and CI contract: CPU-only torch resolved from the explicit PyTorch CPU index (no CUDA stack or `black`), the `embed`/`all` dependency floors, the eight-cell test matrix, the frozen-lock full-suite invocation, least-privilege permissions, the SHA-pinned `setup-uv` action, tag-push exclusion, and the lint job's three repo gates.
-- **test_hygiene.py** guards the repository cleanup baseline: deleted dead layers and modules, the removed `tests/factories.py`, exactly one docs `VERIFY` marker (the bandit note below), the tracked-junk list, and no advertised tooling targets the repository does not configure.
+- **test_docs.py** extracts fenced code blocks from a hardcoded `DOCS_FILES` list (README.md plus `docs/index.md`, `cli-reference.md`, `configuration.md`, `quickstart.md`, `mcp-server.md`, `search-algorithms.md`, `benchmarking.md`, `architecture.md`, `models.md`, `installation.md`, `migration.md`, and `machine-migration.md`) and checks that the documented `sif` commands exist, Python and SQL blocks are valid, and JSON examples match the real output schemas. Its 23 tests also guard against removed command names (`sif collection create`, `sif collection delete`, `sif mcp start`, and others), stale default model names and a retired 7B default, bare `sif search <query>` usage, positional arguments on option-only commands, phantom environment variables in `configuration.md`, `model_type` validation guidance that does not match the real Settings schema, drift between `cli-reference.md` and the live Click command tree, help text that misnames the score each `--min-score` filters, the uv-first install guidance (including the macOS CPU-backend warning) and degradation matrix in `installation.md`, and the deprecated `sif pull` alias.
+- **test_ci_workflows.py** reads `uv.lock`, `pyproject.toml`, and the workflow files as text and pins the packaging and CI contract: CPU-only torch resolved from the explicit PyTorch CPU index (no CUDA stack or `black`), the `embed`/`all` dependency floors, the kept FastAPI/uvicorn core dependencies, the eight-cell test matrix, the frozen-lock full-suite invocation, least-privilege permissions, the SHA-pinned `setup-uv` action, tag-push exclusion, the lint job's three repo gates, and the installation-doc claims that back those extras.
+- **test_hygiene.py** guards the repository cleanup baseline: deleted dead layers and modules, the removed `tests/factories.py`, exactly one docs `VERIFY` marker (the bandit note below — adding another marker anywhere under `docs/` fails this test), the tracked-junk list, and no advertised tooling targets the repository does not configure.
 - **test_release_metadata.py** pins the release surfaces: the README MCP registry marker, the changelog version, the single-sourced version literal, the `pyproject.toml` readme field, the Python 3.13 classifier, and the `publish.yml` workflow's tag gate, OIDC scope, artifact handoff, TestPyPI-first ordering, and version gate.
 - **test_sif_complete.py** is a smoke suite that imports the core modules and runs basic database/collection/chunker/RRF/CLI/scanner/parser operations against temp directories.
 - **test_version_identity.py** pins the release version to a single literal in `src/sif/_version.py`: `pyproject.toml` takes its version dynamically from that module, all runtime surfaces agree, no other module assigns `__version__`, and `sif --version` prints the package version.
-- **test_windows_smoke_script.py** exercises the pure matchers behind `make windows-smoke` (`scripts/windows_smoke.py`): fcntl/missing-root warnings, detach and service refusals, traceback rejection, the fixed eight-invocation argv list, and the non-Windows refusal.
+- **test_windows_smoke_script.py** exercises the pure matchers behind `make windows-smoke` (`scripts/windows_smoke.py`): fcntl/missing-root warnings, detach and service refusals, traceback rejection, the fixed argv list without any model-loading command, rejection of an empty expected version, and the non-Windows refusal.
 - **tests/fixtures/bench/** is the committed synthetic benchmark pack for `sif bench` — 150 generated Markdown documents (40 keyword, 38 synonym, 36 multilingual, 36 rival) plus 56 graded queries (36 tuning / 20 held-out). `tests/support/bench.py` provides `ConceptEmbedder` (a deterministic 32-dimension token-bag embedder that satisfies the `Embedder` protocol without downloading a model), `build_bench_db()` (an in-memory SchemaManager index with FTS triggers and a `vec0` table built from the corpus), and `load_fixture_queries()`. `heldout_defaults.json` pins the shipped-defaults evidence, and `tests/unit/search/test_bench_snapshot.py` fails if the committed numbers drift. The pack is regenerated with `python scripts/generate_bench_fixture.py`; `python scripts/generate_bench_fixture.py --check` is the drift gate. It is synthetic by design — never commit real personal-knowledge-base content to it. The tuning/held-out contract is documented in `tests/fixtures/bench/README.md`.
 
 ## Writing new tests
 
-Follow the naming conventions enforced by `pyproject.toml`: files named `test_*.py`, classes prefixed `Test`, functions prefixed `test_`. Place module-level tests under `tests/unit/<area>/` and cross-layer tests under `tests/integration/`. Ruff applies relaxed rules to `tests/**` (docstrings, print, magic values, private-member access, imports outside the top level, and long argument lists are allowed — see the `per-file-ignores` in `pyproject.toml`).
+Follow the naming conventions enforced by `pyproject.toml`: files named `test_*.py`, classes prefixed `Test`, functions prefixed `test_`. Place module-level tests under `tests/unit/<area>/` and cross-layer tests under `tests/integration/`.
+
+Ruff applies relaxed rules to `tests/**` through the `per-file-ignores` entry in `pyproject.toml` — `D` (missing docstrings), `S101` (bare `assert`), `PLR2004` (magic values), `SLF001` (private-member access), `T201` (print), `PLC0415` (imports outside the top level), `SIM117` (nested `with` statements), and `PLR0913` (long argument lists) are all allowed in test code.
 
 There is no shared factory module: `tests/factories.py` was removed, and `tests/test_hygiene.py` pins its absence. Build entities from the `sample_*` fixtures below or construct the `sif.core` dataclasses directly inside the test body.
 
@@ -189,7 +195,7 @@ The CLI instrument itself offers `sif eval --min-heldout N` (default 25, range 2
 
 ### Updating documentation tests
 
-`tests/test_docs.py` validates only the files listed in its `DOCS_FILES` constant. If you add a new docs page containing runnable code blocks, add its path to `DOCS_FILES` so its examples are validated too. Commands that must not execute are excluded via `SKIP_COMMAND_PATTERNS` in the same file — currently `mcp http`, `mcp daemon`, `mcp stdio`, `pull `, `index embed`, `pip install`, `git clone`, `git checkout`, and `bench `. The module's 20 tests also cover the install and model docs (`installation.md`, `models.md`), including uv-first ordering and the degradation matrix.
+`tests/test_docs.py` validates only the files listed in its `DOCS_FILES` constant. If you add a new docs page containing runnable code blocks, add its path to `DOCS_FILES` so its examples are validated too — `docs/machine-migration.md` is the most recent page added to that list. Commands that must not execute are excluded via `SKIP_COMMAND_PATTERNS` in the same file — currently `mcp http`, `mcp daemon`, `mcp stdio`, `pull `, `index embed`, `pip install`, `git clone`, `git checkout`, and `bench `. The module's 23 tests also cover the install and model docs (`installation.md`, `models.md`), including uv-first ordering, the macOS CPU-backend warning, and the degradation matrix.
 
 ## Coverage
 
@@ -199,7 +205,9 @@ Coverage is measured over `src/sif` on every run (via `addopts`) and reported th
 - `htmlcov/index.html` — browsable HTML report
 - `coverage.xml` — machine-readable report
 
-A minimum threshold **is** enforced: `[tool.coverage.report]` in `pyproject.toml` sets `fail_under = 90`, so any run whose total coverage falls below 90% fails with `Required test coverage of 90.0% not reached`. This is the only threshold configured — there are no separate per-file, per-type (statements, branches, functions), or branch-coverage settings. Note that the total-coverage gate applies to partial runs too — running a single file or tier measures only that subset against the same 90% gate, so use `--no-cov` for focused work. The most recent full run (macOS, 2026-11-18) reports **95.03% coverage** (3,233 passed, 1 skipped), and the Linux run reports **95.04%** (3,232 passed, 2 skipped) out of 3,234 collected tests. Skips are environment- or platform-gated: a missing `sqlite-vec` extension (vector tests skip rather than fail), the opt-in live launchd proof, `claude` CLI availability in the plugin tests, `tzset` availability, and POSIX fork support all skip rather than fail where unavailable.
+A minimum threshold **is** enforced: `[tool.coverage.report]` in `pyproject.toml` sets `fail_under = 90`, so any run whose total coverage falls below 90% fails with `Required test coverage of 90.0% not reached`. This is the only threshold configured — there is no `[tool.coverage.run]` section, so branch coverage is off and there are no per-file, per-type (statements, branches, functions), or per-module settings. The total-coverage gate applies to partial runs too: running a single file or tier measures only that subset against the same 90% gate, so use `--no-cov` for focused work. Run `make coverage` (or `pytest --cov=src/sif --cov-report=term-missing`) for the current percentage; this guide deliberately does not quote one, because it moves with every commit and depends on which optional extras are installed locally.
+
+Skips are environment- or platform-gated rather than failures: a missing `sqlite-vec` extension (vector tests skip), the opt-in live launchd proof (`SIF_TEST_LIVE_LAUNCHD`), `claude` CLI availability in the plugin tests, `time.tzset` availability, and POSIX fork support on Windows all skip where unavailable.
 
 Artifacts are cleaned by `make clean` (removes `htmlcov/`, `.coverage`, `coverage.xml`).
 
@@ -213,9 +221,10 @@ This is the primary test workflow. It triggers on every push to any branch (`pus
 
 The `test` job runs an eight-cell matrix — Python 3.10, 3.11, 3.12, and 3.13 on both `ubuntu-latest` and `macos-latest` — with a 30-minute timeout per cell. Each cell:
 
-1. Checks out the repository and installs `uv` via the SHA-pinned `astral-sh/setup-uv` action (v10.3.3), with caching keyed on `uv.lock`
-2. Runs `uv sync --frozen --extra dev --extra embed`
-3. Runs the full suite with `env -u FORCE_COLOR NO_COLOR=1 uv run --frozen pytest`
+1. Checks out the repository and installs `uv` via the SHA-pinned `astral-sh/setup-uv` action (v10.3.3), with caching keyed on `uv.lock` and the matrix Python version
+2. Installs the matrix interpreter with `uv python install <version>`
+3. Runs `uv sync --frozen --extra dev --extra embed`
+4. Runs the full suite with `env -u FORCE_COLOR NO_COLOR=1 uv run --frozen pytest`
 
 Coverage is not disabled, so the `fail_under = 90` gate applies in every cell. The workflow grants only `contents: read`, uses no secrets, and does not expose an OIDC token.
 

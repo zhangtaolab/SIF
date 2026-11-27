@@ -57,6 +57,7 @@ src/sif/
 ├── cli/                    # Click CLI entry point and commands
 ├── mcp/                    # Unified MCP server (built in mcp/app.py: build_server, run_stdio, create_http_app)
 ├── core/                   # Domain models, enums, and protocols
+├── models/                 # Model-type enum and model registry
 ├── indexing/               # Document ingestion pipeline
 ├── search/                 # Search strategies (BM25, Vector, Hybrid)
 ├── database/               # SQLite connection, schema, repositories

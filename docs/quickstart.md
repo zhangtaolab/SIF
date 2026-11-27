@@ -9,7 +9,9 @@ Before installing SIF, make sure your system meets these requirements:
 
 - **Python `>= 3.10`** — check your version with `python3 --version`
 - **uv `>= 0.9.19`** — the recommended installer; `uv tool install` keeps SIF
-  isolated and on PATH
+  isolated and on PATH. Install uv first if you do not have it (see the
+  [uv documentation](https://docs.astral.sh/uv/)); the `--torch-backend`
+  flag used below is supported from uv 0.9.19 onward
 - **SQLite** — nothing to install separately. SIF stores all data locally in a
   SQLite database via Python's built-in `sqlite3` module; the `sqlite-vec`
   dependency for vector tables is installed automatically
@@ -286,6 +288,21 @@ search. Omit the collection name to report every collection.
 
 ```bash
 sif collection rename my-notes personal-notes
+```
+
+### Set a Pre-Update Command
+
+A collection can carry one shell command that `sif index update` runs before it
+scans that collection — handy when the indexed notes are a checkout you refresh
+first. The command runs through the shell in the directory you invoke `sif`
+from, with a 300-second timeout:
+
+```bash
+# Run "git pull" before each update of this collection
+sif collection update-cmd my-notes --cmd "git pull"
+
+# Remove the hook again
+sif collection update-cmd my-notes --clear
 ```
 
 ### Delete Collection
