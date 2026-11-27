@@ -8,6 +8,20 @@ DocSift 是 [qmd](https://github.com/tobi/qmd) 的 Python 重构版本，一个�
 
 用户可以在自己的笔记和文档库中，用自然语言快速、准确地找到需要的信息——无论关键词是否匹配。
 
+## Current Milestone: v1.3 Anchor-Augmented Retrieval Evidence
+
+**Goal:** 在不破坏 CLI / MCP / 默认检索行为与 local-first 约束的前提下，新增默认关闭、可缓存、可证伪的 `anchor:` 检索臂，并由 SIF 自己的 held-out 证据决定是否升默认。
+
+**Target features:**
+
+- 可行性 spike：`llama.cpp` 能否加载 `lfm3` 架构 + 确定性锚点是否有方向性信号；无信号即止损归档假设
+- `anchor:` 检索臂：`SearchType.ANCHOR`、冻结 prompt / greedy 生成、词表守卫、`llm_cache` 复用、失败 fail-open
+- 本地生成器：LFM3-1.7B-GGUF Q4_K_M 仅作为**用户自行下载的可选实验臂**，不打包进 wheel、不默认启用
+- 证据门禁：`lex` / `anchor` / `hybrid` / `hybrid+anchor` 四臂、`Recall@10`、配对 bootstrap、per-leg × per-language、p50/p95、调用计数
+- 契约冻结：MCP 7 工具与 5 份 wire goldens 不变；零新增 runtime 依赖；`make docs-generate`、90% coverage、8-cell CI 全绿
+
+**Scope boundary:** Web UI 推迟 v1.4；`Web UI` 与 `chat-with-notes / ask` 两条 Out of Scope 条款不改；不改默认 embedder、不改 RRF 权重、不改 `expand:` 的 embedding PRF、不做自动路由。
+
 ## Milestone v1.2: Search Precision and Agent Experience（已发布 2026-11-18）
 
 **Goal:** 让搜索精准可控（元数据过滤 + 正确性修复）、让 MCP 达到 2026 生态就绪（SDK v2 + agent 包装）、让质量提升有 held-out 证据（个人语料评测 + Harrier 评估），并补齐分发与 CI 缺口。
@@ -110,7 +124,10 @@ DocSift 是 [qmd](https://github.com/tobi/qmd) 的 Python 重构版本，一个�
 
 ### Active
 
-（None — 下一个里程碑的范围由 `/gsd-new-milestone` 定义。）
+- [ ] 用户可用 `anchor:` 前缀或 `--anchor` 触发锚点增强 BM25，不使用时零成本、零模型加载
+- [ ] 锚点生成确定性、可缓存、失败回退原查询；远程后端仅 opt-in 且披露数据外发
+- [ ] 四臂评测产出配对 delta、bootstrap CI、held-out verdict；未胜出时记录 `keep-default` 且不改默认
+- [ ] LFM3 GGUF 仅作为用户自行下载的可选后端，`lfm1.0` 许可约束写入 Key Decisions 与用户文档
 
 ### Out of Scope
 
@@ -186,6 +203,10 @@ DocSift 是 [qmd](https://github.com/tobi/qmd) 的 Python 重构版本，一个�
 | Phase 19 gap round 2：BM25 显示分 = 单调映射 `|bm25|/(1+|bm25|)`；`--min-score` 在 SQL 中对显示分做精确比较（`abs(m.score)/(1.0+abs(m.score)) >= ?`），阈值等于某行自己的显示分时保留该行 | 旧映射随匹配变好而下降，阈值会先删掉最佳匹配；操作员在 19-11 checkpoint 选择 `monotone-map`；边界舍入由 19-13 改为精确比较（UAT test 8） | Phase 19 Complete（2026-11-27） |
 | Phase 19 gap round 2：`sif search query --min-score` 是对每条 leg 自己标尺的下限，融合 RRF 分从不与之比较；`query`/`vsearch` help、CLI reference、MCP 页面与 changelog 逐处写明 | 同一数值同时作用于 BM25 与向量两种标尺，无法对融合分下定义；19-14 只改文本不改行为（UAT test 14） | Phase 19 Complete（2026-11-27） |
 | Phase 19 gap round 2：per-chunk 机器格式布局 A-19-10-1 按已交付形式确认（chunk 行 `path#sequence` + 裸 sequence；document 行纯路径无 sequence；`--files` 每页去重） | 操作员把逐项检测委托给 orchestrator，测试器按 shipped layout 接受；布局仍可随时由操作员改选（UAT test 12） | Phase 19 Complete（2026-11-27） |
+| v1.3 范围（2026-11-27，用户拍板）：只做 LLM Anchor，Web UI 推迟 v1.4；`Web UI` / `chat-with-notes` Out of Scope 条款不反转 | 两者零功能依赖；Anchor 不需改 Out of Scope 且有可证伪假设与现成 `llm_cache` / held-out 仪器，UI 需新增 HTTP 面、打包契约与静态 HTML 多方案评审 | — Pending |
+| v1.3 模型定位：LFM3-1.7B-GGUF Q4_K_M 为**用户自行下载的可选实验臂**，不打进 wheel/sdist、不默认启用；默认仍是零模型确定性锚点基线 | 技术上优于 Qwen3.5-4B（1.10 GB 官方 GGUF、ChatML chat template、强指令遵循、低幻觉、走已有 `llama-cpp-python` 路径）；但 `LFM Open License v1.0` Section 5 规定年营收 ≥ $10M 的 Legal Entity 商业使用未获许可，且再分发有附带 license/NOTICE 义务 | — Pending |
+| v1.3 止损：Phase 25 先跑 `llama.cpp` 加载 `lfm3` 兼容性 + 确定性锚点信号 spike；无方向性信号即归档假设、不投后续阶段 | 论文数值来自代码搜索、不可迁移到个人 Markdown 笔记；最坏结果是 `keep-default`，仍有实验臂与证据可交付 | — Pending |
+| v1.3 契约：不新增 MCP 请求字段、不动 7 工具与 5 份 wire goldens、不新增 runtime 依赖 | `QueryInput` 与函数签名即发布 schema；`test_packaging.py` 冻结 13 项 runtime deps；`anchor:` 前缀可直接透传现有 `query` 字符串 | — Pending |
 
 ## Context（v1.2 shipped 2026-11-18）
 
@@ -230,4 +251,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-11-27 after the Phase 19 gap round（v1.2 已发布；Phase 19 re-verified passed，UAT 18/18，validation re-certified）*
+*Last updated: 2026-11-27 after starting milestone v1.3（Anchor-Augmented Retrieval Evidence；v1.2 已发布并归档）*
