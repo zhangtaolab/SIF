@@ -3,12 +3,12 @@ gsd_state_version: "1.0"
 milestone: v1.2
 current_phase: 19
 current_phase_name: search-correctness
-status: executing
-stopped_at: Completed 19-14-PLAN.md (truthful --min-score texts)
-last_updated: "2026-11-27T09:52:53.708Z"
+status: verifying
+stopped_at: Completed 19-15-PLAN.md (three guards for UAT test 10)
+last_updated: "2026-11-27T10:06:53.730Z"
 last_activity: 2026-11-27
 last_activity_desc: Phase 19 execution started
-state_head: a6412a0e98b5c5267fab424d6e6fcf3e0dd4fc77
+state_head: f844c798906f4154eeb88d16d91aa70a01636d2f
 milestone_name: Search Precision and Agent Experience
 progress:
   total_phases: 8
@@ -32,7 +32,7 @@ progress:
 
 Phase: 19 (search-correctness) — EXECUTING
 Plan: 15 of 15
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-11-27 — Phase 19 execution started
 
 ## Performance Metrics
@@ -102,6 +102,7 @@ Last activity: 2026-11-27 — Phase 19 execution started
 | Phase 24 P06 | ~3h | 3 tasks | 17 files |
 | Phase 19 P13 | 12min | 3 tasks | 7 files |
 | Phase 19 P14 | 8min | 2 tasks | 7 files |
+| Phase 19 P15 | 7 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -327,6 +328,9 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - [Phase 19]: 19-13: the Task 3 human check was not performed by the executor under end-of-phase harvest; it is WINDOWS entry 14, with the two CLI tests and bench/g19-8-exact-threshold.json as the automated backstop.
 - [Phase 19]: Keep the per-leg floor and describe it (A-19-9-1, confirmed by the operator 2026-11-27): query --min-score keeps its behaviour, and the help texts, generated reference, MCP page and changelog now say which score each leg filters and that the fused hybrid score is never compared.
 - [Phase 19]: The released 1.2.4 changelog entry stays as released; the correction of its conversion advice lives in the new Unreleased entry, and every released section is byte-identical to the plan base.
+- [Phase 19]: The markup-bearing Chunk-cell test uses /notes/[red]evil[/red].md and /notes/[/3]-review.md, not the UAT session's r[3]eview-notes (v2).md: Rich reads a bracketed tag only when it starts with a letter, a number sign, a slash or an at sign, so a test on that name would pass on a markup-parsing mutant.
+- [Phase 19]: The score-map test reads raw bm25 values from a real FTS5 chunk index at about -4.72 and -0.77, far from -1 where the earlier reciprocal map and the displayed-score map agree; each gate mutates a mktemp -d copy and never the working tree.
+- [Phase 19]: No source file changed: the three behaviours of UAT test 10 were right and only their failing-without-them guards were missing; the base-anchored scope gate holds the tree to the two declared test files.
 
 ### Pending Todos
 
@@ -397,8 +401,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-27T09:52:53.694Z
-Stopped at: Completed 19-14-PLAN.md (truthful --min-score texts)
+Last session: 2026-11-27T10:06:53.717Z
+Stopped at: Completed 19-15-PLAN.md (three guards for UAT test 10)
 Resume file: None
 
 - **Plans refreshed 2026-11-27:** `19-13/14/15` were refreshed in place against HEAD `bb29266` (code tree byte-identical to the v1.2.4 tag `6089078`) and committed at `444368e`. The plan-checker first returned 0 blockers / 1 warning (same-wave base-anchored gate ordering) and 4 INFO; the warning was fixed by declaring the real edge (`19-15` wave 3, `depends_on: [19-13, 19-14]`), and the re-check returned `VERIFICATION PASSED`. T-19-24 is now claimed by 19-10 only; 19-15 uses T-19-46. Next: `/gsd-execute-phase 19 --gaps-only` on the branch.
