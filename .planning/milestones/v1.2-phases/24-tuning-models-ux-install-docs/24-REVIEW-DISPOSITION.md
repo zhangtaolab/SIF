@@ -17,8 +17,10 @@ findings:
     title: "The read-only identity probe builds a `file:` URI without percent-encoding, so a `?`, `#`, or `%` in the index path silently reports `no-identity`"
   - id: WR-04
     severity: warning
-    disposition: open
+    disposition: fixed
+    fixed_in: 879b106e
     title: "The committed-evidence paths still target `.planning/phases/24-…`, which no longer exists after the v1.2 milestone move"
+    note: "`scripts/chunk_sweep.py`, `scripts/breadcrumb_eval.py` and `scripts/harrier_eval.py` now default `ARTIFACT_PATH` to `.planning/milestones/v1.2-phases/…`; `docs/benchmarking.md` cites the same paths and all three files exist."
   - id: IN-01
     severity: info
     disposition: open
@@ -55,7 +57,7 @@ recorded: 2026-11-24T02:13:19.565Z
 | WR-01 | warning | open | - |
 | WR-02 | warning | open | - |
 | WR-03 | warning | open | - |
-| WR-04 | warning | open | - |
+| WR-04 | warning | fixed | 879b106e |
 | IN-01 | info | open | - |
 | IN-02 | info | open | - |
 | IN-03 | info | open | - |
