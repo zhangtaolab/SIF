@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 1
+open_count: 2
 waived_count: 3
 fixed_count: 10
-total_count: 14
-last_updated: 2026-11-27T09:35:06.706Z
+total_count: 15
+last_updated: 2026-11-27T09:51:41.417Z
 ---
 
 # Broken Windows Ledger
@@ -29,6 +29,7 @@ last_updated: 2026-11-27T09:35:06.706Z
 | 12 | 17 | unrun-verify | .planning/phases/17-engineering-foundation-ci-matrix-hygiene-pypi/17-07-PLAN.md |  | Task 2 unrun pending publish: pypi-attestations verify, fresh-venv PyPI install proof, fresh-venv TestPyPI install proof | fixed |  | 2026-11-14T05:50:50.115Z | 2026-11-14T09:32:00.124Z |
 | 13 | 19 | unrun-verify | .planning/milestones/v1.2-phases/19-search-correctness/19-12-PLAN.md |  | Task 3 <human-check> not performed by the executor of plan 19-12: sif search query QUERY --min-score 0.3 --json, with and without --min-score, on an index with embedded chunks, then vsearch --min-score 0.3. It needs an embedded index and the operator's own reading, and this run was barred from loading an embedding model. Left for the end-of-phase verifier harvest (workflow.human_verify_mode: end-of-phase); the evidence artifact and TestHybridMinScoreLeg are the automated backstop. | fixed |  | 2026-11-26T03:13:38.540Z | 2026-11-26T03:37:26.139Z |
 | 14 | 19 | unrun-verify | .planning/milestones/v1.2-phases/19-search-correctness/19-13-PLAN.md |  | Task 3 <human-check> not performed by the executor of plan 19-13: on an isolated index, sif search search QUERY --min-score set to one row's --json score keeps that row with the same score and rank. Left for the end-of-phase verifier harvest (workflow.human_verify_mode: end-of-phase); the two CLI tests and bench/g19-8-exact-threshold.json are the automated backstop. | open |  | 2026-11-27T09:35:06.706Z |  |
+| 15 | 19 | unrun-verify | docs/mcp-server.md |  | Plan 19-14 Task 2 human check: read sif search query --help and sif search vsearch --help and judge whether a reader can tell that a hybrid row's Score is not what --min-score compares; the executor did not run it under end-of-phase harvest, with the two tests/test_docs.py tests as the automated backstop | open |  | 2026-11-27T09:51:41.417Z |  |
 
 ````json
 [
@@ -207,6 +208,19 @@ last_updated: 2026-11-27T09:35:06.706Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-11-27T09:35:06.706Z",
+    "resolved_at": null,
+    "milestone": "v1.2"
+  },
+  {
+    "id": 15,
+    "kind": "unrun-verify",
+    "phase": "19",
+    "file": "docs/mcp-server.md",
+    "line": null,
+    "description": "Plan 19-14 Task 2 human check: read sif search query --help and sif search vsearch --help and judge whether a reader can tell that a hybrid row's Score is not what --min-score compares; the executor did not run it under end-of-phase harvest, with the two tests/test_docs.py tests as the automated backstop",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-11-27T09:51:41.417Z",
     "resolved_at": null,
     "milestone": "v1.2"
   }

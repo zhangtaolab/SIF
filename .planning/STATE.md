@@ -4,11 +4,11 @@ milestone: v1.2
 current_phase: 19
 current_phase_name: search-correctness
 status: executing
-stopped_at: Completed 19-13-PLAN.md (exact --min-score threshold)
-last_updated: "2026-11-27T09:36:43.596Z"
+stopped_at: Completed 19-14-PLAN.md (truthful --min-score texts)
+last_updated: "2026-11-27T09:52:53.708Z"
 last_activity: 2026-11-27
 last_activity_desc: Phase 19 execution started
-state_head: 0902b28715020f71dae203b33e508407e802b16b
+state_head: a6412a0e98b5c5267fab424d6e6fcf3e0dd4fc77
 milestone_name: Search Precision and Agent Experience
 progress:
   total_phases: 8
@@ -31,7 +31,7 @@ progress:
 ## Current Position
 
 Phase: 19 (search-correctness) — EXECUTING
-Plan: 14 of 15
+Plan: 15 of 15
 Status: Ready to execute
 Last activity: 2026-11-27 — Phase 19 execution started
 
@@ -101,6 +101,7 @@ Last activity: 2026-11-27 — Phase 19 execution started
 | Phase 24 P05 | 20 min | 3 tasks | 10 files |
 | Phase 24 P06 | ~3h | 3 tasks | 17 files |
 | Phase 19 P13 | 12min | 3 tasks | 7 files |
+| Phase 19 P14 | 8min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -324,6 +325,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - [Phase 24]: Breadcrumb artifact write bug fixed: `breadcrumb_eval.write_committed_artifact` now defaults to its own `ARTIFACT_PATH` instead of forwarding `None` to the chunk-sweep path; the shared guard had refused the overwrite after a 34-minute arm run. The resumed artifact write took 0.38 s and a regression test pins the default path.
 - [Phase 19]: 19-13: BM25 min_score is bound as given and the SQL predicate compares the displayed score itself, abs(m.score)/(1.0+abs(m.score)) >= ?; the converted -M/(1-M) bound and bm25_rank_threshold are removed with no public surface affected.
 - [Phase 19]: 19-13: the Task 3 human check was not performed by the executor under end-of-phase harvest; it is WINDOWS entry 14, with the two CLI tests and bench/g19-8-exact-threshold.json as the automated backstop.
+- [Phase 19]: Keep the per-leg floor and describe it (A-19-9-1, confirmed by the operator 2026-11-27): query --min-score keeps its behaviour, and the help texts, generated reference, MCP page and changelog now say which score each leg filters and that the fused hybrid score is never compared.
+- [Phase 19]: The released 1.2.4 changelog entry stays as released; the correction of its conversion advice lives in the new Unreleased entry, and every released section is byte-identical to the plan base.
 
 ### Pending Todos
 
@@ -394,8 +397,8 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-27T09:36:43.582Z
-Stopped at: Completed 19-13-PLAN.md (exact --min-score threshold)
+Last session: 2026-11-27T09:52:53.694Z
+Stopped at: Completed 19-14-PLAN.md (truthful --min-score texts)
 Resume file: None
 
 - **Plans refreshed 2026-11-27:** `19-13/14/15` were refreshed in place against HEAD `bb29266` (code tree byte-identical to the v1.2.4 tag `6089078`) and committed at `444368e`. The plan-checker first returned 0 blockers / 1 warning (same-wave base-anchored gate ordering) and 4 INFO; the warning was fixed by declaring the real edge (`19-15` wave 3, `depends_on: [19-13, 19-14]`), and the re-check returned `VERIFICATION PASSED`. T-19-24 is now claimed by 19-10 only; 19-15 uses T-19-46. Next: `/gsd-execute-phase 19 --gaps-only` on the branch.
