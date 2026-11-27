@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive documentation
 
 ### Changed
-- `sif search query --min-score` keeps its per-leg filtering semantics — each leg keeps the matches whose own score reaches the value (the BM25 score for lexical matches, the vector similarity for semantic ones), and the fused hybrid score of a result is never compared with it — and this release only says so in the help text; the exact-equality fix described under Fixed reaches the command's BM25 leg as well. The help text of `sif search vsearch --min-score` names the vector similarity it filters on, and `docs/mcp-server.md` says which score `min_score` filters on each MCP tool. Correction to the 1.2.4 entry below: the advice there to convert a threshold written against the old scores by subtracting it from 1 applies to `sif search search` and to routes that run the BM25 leg alone — a `lex:`-prefixed `sif search query` (or a `bm25` default search type) behaves the same way. On a hybrid `sif search query` do not convert a value that also thresholds the vector leg, because the vector similarity scale did not change.
+- N/A
 
 ### Deprecated
 - N/A
@@ -30,10 +30,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - N/A
 
 ### Fixed
-- `sif search search --min-score` now keeps a row whose displayed score equals the threshold exactly. This changes the behaviour of 1.2.4, in which the threshold was converted back into a bound on the raw bm25 value; because that conversion rounds, about half of the rows tried at their own displayed score were dropped: a row whose `--json` score was `0.8942969341194331` disappeared under `--min-score 0.8942969341194331`. The same fix reaches MCP `lex_search` and the BM25 leg of `sif search query --min-score` and of MCP `query`. Scores, ranking and the rows kept at any other threshold are unchanged. The table, CSV, Markdown and XML output still print four decimals, so a score copied from those formats can round above a row's exact score; copy it from `--json`.
+- N/A
 
 ### Security
 - N/A
+
+## [1.2.5] - 2026-11-27
+
+### Changed
+- The release version is now `1.2.5`, still single-sourced in `src/sif/_version.py`.
+- `sif search query --min-score` keeps its per-leg filtering semantics — each leg keeps the matches whose own score reaches the value (the BM25 score for lexical matches, the vector similarity for semantic ones), and the fused hybrid score of a result is never compared with it — and this release only says so in the help text; the exact-equality fix described under Fixed reaches the command's BM25 leg as well. The help text of `sif search vsearch --min-score` names the vector similarity it filters on, and `docs/mcp-server.md` says which score `min_score` filters on each MCP tool. Correction to the 1.2.4 entry below: the advice there to convert a threshold written against the old scores by subtracting it from 1 applies to `sif search search` and to routes that run the BM25 leg alone — a `lex:`-prefixed `sif search query` (or a `bm25` default search type) behaves the same way. On a hybrid `sif search query` do not convert a value that also thresholds the vector leg, because the vector similarity scale did not change.
+
+### Fixed
+- `sif search search --min-score` now keeps a row whose displayed score equals the threshold exactly. This changes the behaviour of 1.2.4, in which the threshold was converted back into a bound on the raw bm25 value; because that conversion rounds, about half of the rows tried at their own displayed score were dropped: a row whose `--json` score was `0.8942969341194331` disappeared under `--min-score 0.8942969341194331`. The same fix reaches MCP `lex_search` and the BM25 leg of `sif search query --min-score` and of MCP `query`. Scores, ranking and the rows kept at any other threshold are unchanged. The table, CSV, Markdown and XML output still print four decimals, so a score copied from those formats can round above a row's exact score; copy it from `--json`.
 
 ## [1.2.4] - 2026-11-26
 
@@ -292,7 +301,8 @@ Thanks to all contributors who have helped shape SIF!
 
 ---
 
-[Unreleased]: https://github.com/zhangtaolab/sif/compare/v1.2.4...HEAD
+[Unreleased]: https://github.com/zhangtaolab/sif/compare/v1.2.5...HEAD
+[1.2.5]: https://github.com/zhangtaolab/sif/releases/tag/v1.2.5
 [1.2.4]: https://github.com/zhangtaolab/sif/releases/tag/v1.2.4
 [0.1.0]: https://github.com/zhangtaolab/sif/releases
 [1.2.2]: https://github.com/zhangtaolab/sif/releases/tag/v1.2.2

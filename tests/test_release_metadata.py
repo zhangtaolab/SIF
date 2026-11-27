@@ -56,18 +56,18 @@ def test_readme_has_mcp_name_marker() -> None:
     assert MCP_NAME_MARKER in lines, "README is missing the exact mcp-name marker line"
 
 
-def test_changelog_has_1_2_4() -> None:
-    """The changelog records 1.2.4 and its compare/release links."""
+def test_changelog_has_1_2_5() -> None:
+    """The changelog records 1.2.5 and its compare/release links."""
     text = CHANGELOG.read_text(encoding="utf-8")
-    assert "## [1.2.4]" in text
-    assert "[1.2.4]:" in text
-    assert "compare/v1.2.4...HEAD" in text
+    assert "## [1.2.5]" in text
+    assert "[1.2.5]:" in text
+    assert "compare/v1.2.5...HEAD" in text
 
 
-def test_version_literal_is_1_2_4() -> None:
-    """The single version literal the publish tag gate reads is 1.2.4."""
+def test_version_literal_is_1_2_5() -> None:
+    """The single version literal the publish tag gate reads is 1.2.5."""
     version = runpy.run_path(str(VERSION_MODULE))["__version__"]
-    assert version == "1.2.4"
+    assert version == "1.2.5"
 
 
 def test_pyproject_readme_is_readme_md() -> None:
