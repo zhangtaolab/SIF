@@ -1,128 +1,100 @@
 ---
 phase: 19-search-correctness
-reviewed: 2026-11-27T10:21:11Z
+reviewed: 2026-11-27T12:04:20Z
 depth: standard
-files_reviewed: 10
+files_reviewed: 1
 files_reviewed_list:
   - docs/changelog.md
-  - docs/cli-reference.md
-  - docs/mcp-server.md
-  - src/sif/cli/commands/search.py
-  - src/sif/search/bm25.py
-  - tests/test_docs.py
-  - tests/unit/cli/test_search.py
-  - tests/unit/cli/test_search_exact_threshold.py
-  - tests/unit/search/test_bm25.py
-  - tests/unit/search/test_filters_sql.py
 findings:
   critical: 0
-  warning: 1
-  info: 1
-  total: 2
+  warning: 0
+  info: 0
+  total: 0
   necessity: 0
-status: issues_found
+status: clean
 ---
 
 # Phase 19: Code Review Report
 
-**Reviewed:** 2026-11-27T10:21:11Z
+**Reviewed:** 2026-11-27T12:04:20Z
 **Depth:** standard
-**Files Reviewed:** 10
-**Status:** issues_found
+**Files Reviewed:** 1
+**Status:** clean
 
 ## Summary
 
-Reviewed the Phase 19 second gap-closure round (plans 19-13, 19-14, 19-15) against
-`b86da79`: the exact `--min-score` predicate in `BM25Searcher.search` (the displayed
-score is computed in SQL from the same weighted `bm25()` expression that projects
-`score`, with `min_score` bound as given; `bm25_rank_threshold` is removed), the
-truthful `--min-score` help/reference/MCP/changelog text, and three guards.
+Incremental re-review of `docs/changelog.md` after commit `5268218`, which rewrote the
+Unreleased `Changed` bullet to fix the previous review's WR-01 (a "keeps its behaviour"
+claim that contradicted the same release's `Fixed` entry) and IN-01 (a conversion
+correction that said a `sif search query --min-score` value must never be converted,
+ignoring the supported BM25-only routes). The rest of the tree is unchanged since the
+previous review.
 
-The core change is correct. The predicate is one constant fragment feeding both SQL
-branches, the parameter is bound after the collection ids and before the metadata
-filter params (verified by `TestBm25ParamOrder`), values not above zero omit the
-predicate (the NaN/`>= NULL` trap is avoided), and values of 1 or more keep nothing
-because the displayed score is below 1 for any reachable bm25 value. Exactness is
-corroborated twice: `test_sql_score_expression_matches_the_display_map_bit_for_bit`
-checks SQLite's arithmetic against `bm25_display_score` on ~100k doubles, and
-`bench/g19-8-exact-threshold.json` records 40 of 84 bench rows dropped at their own
-displayed score before the fix and 0 after, with the one-ULP-adjacent sets unchanged.
-The new CLI test round-trips the `--json` score through Click and pins the exact
-row/set/rank, and the Markdown/XML and markup-bearing Chunk-cell guards are
-mutation-gated by their own negative controls. No injection or other security issue
-exists in the changed code: the predicate is constant and the threshold is bound.
+Both fixes are accurate, and no new issue was found.
 
-Verification run: `ruff check src tests` and `ruff format --check src tests` clean;
-`tests/test_docs.py`, `tests/unit/search/test_bm25.py`,
-`tests/unit/search/test_filters_sql.py`, `tests/unit/cli/test_search.py`,
-`tests/unit/cli/test_search_exact_threshold.py`, `tests/unit/search/test_hybrid.py`,
-`tests/unit/search/test_vector.py`, and the docs/hygiene/release-metadata tests all
-pass. `ty check src/sif` reports one diagnostic in `src/sif/embedding/embedder.py:850`
-(`embed()` returning numpy scalars), which is pre-existing and outside this diff.
+**WR-01 resolved.** The new text scopes the unchanged part — "keeps its per-leg filtering
+semantics" — defines that semantics (each leg filters on its own score; the fused hybrid
+score is never compared), limits the release's claim to documenting it in the help text,
+and then states that the exact-equality fix reaches the query command's BM25 leg as well.
+That matches the code: `HybridSearcher.search` copies the caller's `min_score` into both
+legs' fetch options (`src/sif/search/hybrid.py:121-128`, vector leg at `:136`), the fused
+score is never compared with it (no `min_score` reference exists in `hybrid.py` after the
+leg calls), and `BM25Searcher.search` keeps a row at exact equality
+(`src/sif/search/bm25.py:114-117`), so relative to 1.2.4 the query command's BM25 leg did
+change — which the entry now says. The previous contradiction is gone.
 
-No necessity findings: the NaN branch is reachable (Click's FLOAT accepts
-`--min-score nan`), and `SearchOptions` is a library API where a computed NaN
-threshold is legitimate.
+**IN-01 resolved.** The correction now says the subtract-from-1 advice applies to
+`sif search search` and to routes that run the BM25 leg alone, naming a `lex:`-prefixed
+`sif search query` and a `bm25` default search type, and separately says not to convert a
+value that also thresholds the vector leg. Each branch matches the code:
 
-The two findings below are both in the new changelog text; the code itself needs no
-change. One is a contradiction a reader of a single release's notes will hit, the
-other is an overbroad correction for a supported BM25-only route.
+- `lex:` maps to `SearchType.BM25` (`src/sif/search/hybrid.py:536,541-543`) and the
+  pipeline's BM25 route calls `BM25Searcher.search` with the caller's options
+  (`src/sif/search/hybrid.py:352-356`), so the exact predicate and the conversion apply.
+- `default_search_type="bm25"` resolves to `SearchType.BM25`
+  (`src/sif/search/hybrid.py:521-527`); the setting accepts only
+  `bm25`/`vector`/`hybrid` (`src/sif/config/settings.py:384-393`), and the CLI query
+  command passes it into `SearchPipeline` (`src/sif/cli/commands/search.py:1323-1332`).
+- The MCP routes mirror this: `_split_query_prefix` maps `lex:` and a `bm25` default to
+  BM25 (`src/sif/mcp/backend.py:131-147`) and the direct route calls `BM25Searcher`
+  (`src/sif/mcp/backend.py:486-495`).
+- The hybrid caution is correctly conditioned: on a hybrid query the same value rides
+  `fetch_options` into both legs, and the vector score map did not change (`git diff
+  v1.2.2..v1.2.4` is empty for `search/vector.py` and `search/hybrid.py`; the 1.2.4 entry
+  also records `vsearch` as unchanged).
 
-## Narrative Findings (AI reviewer)
+The remaining claims in the same bullet also check out: the vsearch help text names the
+vector similarity (`src/sif/cli/commands/search.py:852-855`), and `docs/mcp-server.md`
+names the filtered score for every MCP tool that accepts `min_score` — `query`
+(`docs/mcp-server.md:134`), `lex_search` (`:188-190`) and `vec_search` (`:195-198`) — all
+three of which are registered (`src/sif/mcp/tools.py:406-407`) and read
+`min_score` (`src/sif/mcp/protocol.py:98,131,159`).
 
-### WR-01: The Unreleased changelog says `query --min-score` "keeps its behaviour" and then says the exact-score fix reaches its BM25 leg
+The Unreleased `Fixed` entry (unchanged by `5268218`) is corroborated by
+`.planning/milestones/v1.2-phases/19-search-correctness/bench/g19-8-exact-threshold.json`:
+40 of 84 rows were dropped at their own displayed score before the fix and 0 after; the
+rank-1 probe score `0.8942969341194331` was dropped at `--min-score 0.8942969341194331`
+before and kept after; the fixed-threshold counts (0.12/0.23/0.3/0.5/0.85/0.89) and the
+one-ULP-adjacent sets are identical. The four-decimal claim is accurate for CSV, Markdown,
+XML and the tables (`src/sif/cli/commands/search.py:520,547,576,800,1046,1426`), while
+`--json` emits the raw float (`SearchResult.to_dict`, `src/sif/core/models.py:326-344`,
+serialized at `src/sif/cli/commands/search.py:155-161`).
 
-**File:** `docs/changelog.md:24`
-**Issue:** The new Unreleased `Changed` entry opens with "`sif search query
---min-score` keeps its behaviour", while the new Unreleased `Fixed` entry
-(`docs/changelog.md:33`, same release) states "The same fix reaches MCP
-`lex_search` and the BM25 leg of `sif search query --min-score` and of MCP
-`query`." Relative to the last release (v1.2.4), the query behaviour is not
-unchanged: `HybridSearcher.search` copies the caller's `min_score` into both
-legs' fetch options (`src/sif/search/hybrid.py:121-128`), and
-`BM25Searcher.search` now keeps a row whose displayed score equals the
-threshold (`src/sif/search/bm25.py:114-117`). A 1.2.4 `sif search query` run
-with `--min-score` equal to a row's displayed BM25 score could therefore drop
-that row from the BM25 leg where the current tree keeps it — exactly the
-G-19-8 defect the `Fixed` entry describes. The two entries give a reader
-contradictory answers about whether `query --min-score` changed.
-**Fix:** Scope the sentence to the unchanged part, e.g.:
+Verification run: `pytest tests/test_docs.py tests/test_release_metadata.py
+tests/test_hygiene.py -q` — 51 passed (the run's coverage gate reports 29% only because a
+subset of the suite ran; that is not a test failure).
 
-```markdown
-- `sif search query --min-score` keeps its per-leg filtering semantics — each leg
-  keeps the matches whose own score reaches the value ... — and this release only
-  says so in the help text; the exact-equality fix described under Fixed reaches
-  the command's BM25 leg as well.
-```
+No necessity findings. One residual nuance, not a defect: the hybrid sentence opts to
+preserve the vector leg's unchanged scale, so a value originally written against old BM25
+scores is not preserved by leaving it unconverted. The text does not claim otherwise — it
+states the rationale (the vector similarity scale did not change) and remains conditional
+on the value also thresholding the vector leg — so no contradiction or false statement
+remains.
 
-### IN-01: The conversion correction says subtract-from-1 holds for `search search` only, but a BM25-only `query` route behaves the same way
-
-**File:** `docs/changelog.md:24`
-**Issue:** The correction says the 1.2.4 advice "to convert a threshold written
-against the old scores by subtracting it from 1 holds for `sif search search`
-only; a `sif search query --min-score` value must not be converted, because the
-same number is also the vector leg's threshold". That rationale only covers the
-hybrid/vector routes. `sif search query lex:<terms>` routes to the BM25 leg
-alone (`SearchPipeline.search`, `src/sif/search/hybrid.py:342-356`; prefix
-parsing is on for the CLI), and a deployment with a `bm25` default search type
-does the same (`src/sif/cli/commands/search.py:1330`,
-`src/sif/search/hybrid.py:344-345`). On those supported routes no vector leg
-runs, the same number is not a vector threshold, and the subtract-from-1
-conversion applies exactly as it does to `sif search search` (MCP `query` with a
-`lex:` prefix likewise). The blanket "must not be converted" is wrong for those
-callers.
-**Fix:** Qualify the correction to the hybrid route, e.g.:
-
-```markdown
-- ... holds for `sif search search` only, and for a hybrid `sif search query`;
-  on that command do not convert a value that also thresholds the vector leg,
-  because the vector similarity scale did not change. A `lex:`-prefixed query
-  (or a `bm25` default search type) runs only the BM25 leg, so there the
-  subtraction applies as it does for `sif search search`.
-```
+All reviewed files meet quality standards. No issues found.
 
 ---
 
-_Reviewed: 2026-11-27T10:21:11Z_
+_Reviewed: 2026-11-27T12:04:20Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
