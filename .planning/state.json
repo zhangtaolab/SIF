@@ -1,12 +1,28 @@
 {
   "contract": "1.0.0",
   "flavor": "core",
-  "milestone": "v1.3",
-  "phases": [],
+  "milestone": "v1.3 — Anchor-Augmented Retrieval Evidence (Phases 25-27) — IN PROGRESS (started 2026-11-27)</summary>",
+  "phases": [
+    {
+      "number": "25",
+      "name": "Contract Freeze & Feasibility Spike",
+      "status": "in_progress"
+    },
+    {
+      "number": "26",
+      "name": "Anchor Arm + Deterministic Cache",
+      "status": "pending"
+    },
+    {
+      "number": "27",
+      "name": "Evidence Gate & Verdict",
+      "status": "pending"
+    }
+  ],
   "next": {
     "command": "/gsd-resume-work",
     "label": "Resume work",
     "reason": "Work is paused — pick up where you left off"
   },
-  "updated_at": "2026-11-27T14:27:42.322Z"
+  "updated_at": "2026-11-27T17:19:49.800Z"
 }
