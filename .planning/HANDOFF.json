@@ -1,0 +1,34 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-11-27T12:31:46.498Z",
+  "phase": "19",
+  "phase_name": "search-correctness",
+  "phase_dir": "/Users/forrest/GitHub/SIF/.planning/milestones/v1.2-phases/19-search-correctness",
+  "plan": 15,
+  "task": 0,
+  "total_tasks": 0,
+  "status": "paused",
+  "completed_tasks": [
+    {"id": "19-13", "name": "exact --min-score threshold (mapped-score predicate)", "status": "done", "commit": "f5c0221"},
+    {"id": "19-14", "name": "truthful query/vsearch --min-score help texts", "status": "done", "commit": "091d7a4"},
+    {"id": "19-15", "name": "three guards for UAT test 10 / V19-26-1..3", "status": "done", "commit": "f8d784a"},
+    {"id": "UAT", "name": "UAT tests 11-18 completed and recorded", "status": "done", "commit": "561b8a3"},
+    {"id": "VERIFY", "name": "verification regenerated passed 115/115", "status": "done", "commit": "2d92988"},
+    {"id": "VALIDATION", "name": "validation audit re-certified nyquist_compliant true", "status": "done", "commit": "5c811f1"},
+    {"id": "REVIEW", "name": "incremental code review clean; WR-01/IN-01 fixed", "status": "done", "commit": "78aa088"},
+    {"id": "TRANSITION", "name": "Phase 19 marked complete; STATE/PROJECT advanced", "status": "done", "commit": "ae7f019"}
+  ],
+  "remaining_tasks": [],
+  "blockers": [],
+  "async_jobs": [],
+  "human_actions_pending": [],
+  "decisions": [
+    {"decision": "BM25 display score is the monotone map |bm25|/(1+|bm25|); --min-score compares the mapped score exactly in SQL", "rationale": "operator chose monotone-map at the 19-11 checkpoint; exact comparison keeps a row at its own displayed score", "phase": "19"},
+    {"decision": "sif search query --min-score is a per-leg floor on each leg's own scale and is never compared with the fused RRF score", "rationale": "one value applies to two differently scaled legs; the help/reference/MCP texts now say so", "phase": "19"},
+    {"decision": "Per-chunk machine-format layout A-19-10-1 accepted as shipped", "rationale": "UAT test 12 verified every clause against the same page's --json; operator can still amend", "phase": "19"},
+    {"decision": "The operator delegated UAT tests 11-18 to the orchestrating agent; each verdict is recorded with its performed_by caveat", "rationale": "operator instruction on 2026-11-27; no test was run personally by the operator", "phase": "19"}
+  ],
+  "uncommitted_files": [],
+  "next_action": "Phase 19 needs nothing further. Decide whether to cut a patch release containing the [Unreleased] fixes (v1.2.5) or start the next milestone with /gsd-new-milestone.",
+  "context_notes": "Phase 19 post-ship gap round is finished: 15/15 plans, UAT 18/18 (15 pass; tests 8-10 are resolved gaps), verification passed 115/115 at fingerprint v4:sha256:373d380f…, validation re-certified, review clean, 71 prohibitions accepted. Working tree clean at ae7f019 on branch gsd/phase-19-gap-round-2. v1.2 was already shipped and archived 2026-11-18, so this is a post-ship correctness round; no phase remains in the active milestone. Known non-blocking observations: ty exits 1 on a pre-existing diagnostic at src/sif/embedding/embedder.py:870 (unchanged since 82df76b0); the operator's default index has no embedded chunks, so the vector half of UAT test 13 ran on an isolated real-embedding index; ROADMAP still shows the original milestone's 9/9 plan count while the phase directory holds 15/15."
+}
