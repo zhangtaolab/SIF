@@ -3,7 +3,7 @@ status: complete
 phase: 19-search-correctness
 source: [19-VERIFICATION.md]
 started: 2026-11-25T10:51:26Z
-updated: 2026-11-26T06:49:16.092Z
+updated: 2026-11-27T10:37:01.000Z
 ---
 
 ## Current Test
@@ -86,12 +86,44 @@ reported: "Each behaviour holds, and no test guards it. (1) In per-chunk Markdow
 severity: minor
 performed_by: "agent (the orchestrator) as tester, at the operator's explicit request on 2026-11-26, on an isolated index; the mutation evidence is the validate-phase audit's"
 
+### 11. Real-terminal readability of the per-chunk tables (19-10 T9 / UAT test 1)
+expected: Every chunk row ends with its own `#sequence`, the table ends at its right border within 80 columns, and two rows that show the same short tail are still told apart by Title and Collection. A visible number that leaves two rows indistinguishable does not pass.
+result: [pending]
+
+### 12. Confirm or amend assumption A-19-10-1 for per-chunk machine formats (UAT test 3)
+expected: Chunk rows carry `path#sequence` and the bare sequence; document-level rows keep the plain path and no sequence; `--files` lists each path once; default output is unchanged. You accept the shipped layout, or name the field layout you want instead.
+result: [pending]
+
+### 13. `sif search query --min-score` on the operator's own index (19-12 / UAT test 6)
+expected: With and without the threshold, rows that match lexically carry `bm25_score` beside `vector_score`; the threshold keeps the stronger BM25 matches; `vsearch --min-score` filters on similarity exactly as before.
+result: [pending]
+
+### 14. Comprehension of the new `query`/`vsearch` `--min-score` help texts (19-14)
+expected: The text alone makes the per-leg floor and the never-compared fused score clear.
+result: [pending]
+
+### 15. Complete the UAT record for this round
+expected: Each test's result and each gap's `resolved_by`/`resolved_at` record this round's outcome; test 9 is restated as the per-leg contract; the `performed_by` caveats are confirmed or replaced by the operator's own runs.
+result: [pending]
+
+### 16. Resolve the 71 judgment-tier prohibitions at the end-of-phase checkpoint
+expected: A recorded human resolution per item, or a recorded acceptance that the LLM-judge table in the verification report stands; at least the seven process-time items and the 64 judged holds are acknowledged.
+result: [pending]
+
+### 17. Re-run the validation audit so 19-VALIDATION.md can close V19-26-1 to V19-26-3
+expected: The three gaps become guarded and `nyquist_compliant` is re-certified by the audit's own re-run, not by hand.
+result: [pending]
+
+### 18. Disposition the two open code-review findings (WR-01, IN-01)
+expected: The changelog text is scoped so a reader of one release's notes is not given contradictory baselines, or the findings are explicitly accepted as written.
+result: [pending]
+
 ## Summary
 
-total: 10
+total: 18
 passed: 7
 issues: 3
-pending: 0
+pending: 8
 skipped: 0
 blocked: 0
 
