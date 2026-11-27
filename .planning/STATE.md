@@ -386,6 +386,7 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 | 9 | Fix the PyPI attestation verification example to use the canonical repository case (zhangtaolab/SIF) | 2026-11-19 | 0cdd69d | — |
 | 261122-leb | Add a machine-to-machine migration runbook: verified index export/restore, embedding and model caches, embedder identity, source paths, MCP/watch recreation | 2026-11-22 | 6b40903 | [261122-leb-write-a-machine-to-machine-migration-gui](./quick/261122-leb-write-a-machine-to-machine-migration-gui/) |
 | 261126-s23 | Tolerate one-ULP libm drift in SC1 golden snapshots: route 5 exact == assertions in test_hybrid.py through a float-approx helper (rel=1e-12); unblocks ubuntu CI (release gate) | 2026-11-26 | 1d3d5ba | [261126-s23-fix-platform-dependent-sc1-golden-snapsh](./quick/261126-s23-fix-platform-dependent-sc1-golden-snapsh/) |
+| 261127-br1 | Release v1.2.5: promote the exact `--min-score` fix and truthful help texts into a 1.2.5 section and bump the version across all parity surfaces | 2026-11-27 | f3e9e443 | [261127-bump-release-version-to-1-2-5](./quick/261127-bump-release-version-to-1-2-5/) |
 
 ### Roadmap Evolution
 
@@ -404,9 +405,11 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-27T12:16:41.290Z
-Stopped at: Phase 19 complete — v1.2 already shipped and archived; next milestone not yet planned
+Last session: 2026-11-27T13:20:00.000Z
+Stopped at: v1.2.5 release prepared — version bump and docs regeneration committed on main; tagging/publishing pending
 Resume file: None
+
+- **Docs regeneration (2026-11-27):** `/gsd-docs-update` regenerated 7 canonical docs (README, architecture, quickstart, development, testing, contributing; configuration regenerated from `scripts/generate_config_ref.py` with zero drift) and verified all 19 tracked docs against the codebase. Fixes landed in development (test-module count, module import, mkdocs nav), benchmarking (archived `.planning/milestones/v1.2-phases/` artifact paths; 1e-9 tolerance wording), migration (cache adoption wording), and CLAUDE.md (added the `models/` package to the tree). Every doc now verifies with 0 failed claims.
 
 - **Phase 19 gap round 2 complete (2026-11-27):** UAT 18/18 (tests 11-18 delegated to the orchestrator by the operator), verification re-run to `passed` 115/115 (`2d92988`), validation re-certified (`nyquist_compliant: true`), review clean (0 findings) with WR-01/IN-01 fixed and IN-09..IN-12 dispositioned fixed, 71 prohibitions accepted, full suite 3320 passed / 1 skipped @ 95.16%. The pre-existing `ty` diagnostic (`embedder.py:870`, unchanged since `82df76b0`) is recorded as not a Phase 19 regression; the operator's default index has no embedded chunks, so UAT test 13's vector half ran on an isolated real-embedding index.
 
