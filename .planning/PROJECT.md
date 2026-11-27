@@ -14,6 +14,8 @@ DocSift 是 [qmd](https://github.com/tobi/qmd) 的 Python 重构版本，一个�
 
 **Shipped:** 2026-11-18 — 8 phases / 55 plans 全部 goal-backward verified `passed`；tag `v1.2.0`，PyPI `docsif` 1.2.0（PR #3，Publish run 44289577210）；全量 3234 passed / 1 skipped @ 95.03%。
 
+**Post-ship gap round for Phase 19 (2026-11-26 → 2026-11-27):** after the v1.2.4 release, Phase 19 was re-opened for correctness. Six gap-closure plans (19-10 to 19-15) fixed the per-chunk identity at 80 columns and in the machine formats, the BM25 `--min-score` direction and exact-equality boundary (operator decision: `monotone-map`), and the truthfulness of the `query`/`vsearch` help texts; three missing guards were added. Phase 19 is re-verified `passed` (115/115 must-haves, fingerprint `v4:sha256:373d380f…`), UAT complete 18/18, `19-VALIDATION.md` re-certified (`nyquist_compliant: true`, `validated: 2026-11-27`), the review is clean after WR-01/IN-01 were fixed, and the full suite is 3320 passed / 1 skipped @ 95.16%.
+
 **Target features:**
 
 *搜索精准化*
@@ -181,6 +183,9 @@ DocSift 是 [qmd](https://github.com/tobi/qmd) 的 Python 重构版本，一个�
 | Phase 23：隔离双臂 + 身份校验 + adequacy preflight + scope-keyed resume + artifact writer + cleanup guard；真实 A/B 在用户批准的 curated 双语子集（7 个中文目录，498 docs）上运行 | 一表一向量空间；同宽 1024 维陷阱靠完整 identity 防；preflight 不花 embed 预算；不伪造、不手抄任何指标 | Phase 23 Complete |
 | Phase 23 verdict：`keep-qwen3`；整体 held-out Δ +0.00943（CI [−0.0296,+0.0484]，N=56，噪声地板 0.01786），en +0.01385，zh −0.00487（未破 −0.01 地板）；`default_flip` 与 `zero_delta_proof` 均记录 not-applicable | 无胜出即不切换；Qwen3 路径字节不变；curated 子集结论不外推到主库；模型下载 + 双arm re-embed 成本已记录 | Phase 23 Complete（default unchanged） |
 | Phase 23 代码评审 2 Critical + 6 Warning 修复并附回归测试；IN-03（runbook ruff/format）一并修复；5 Info 保持 open | CR-01 scratch 根可等于 home 导致误删；CR-02 不足证据路径会复用陈旧 artifact；WR-01/02 resume/scope 幂等、WR-03 held-out 表、WR-04 artifact 保留块、WR-05 ranking 设置记录、WR-06 malformed JSON 错误面 | Phase 23 Complete |
+| Phase 19 gap round 2：BM25 显示分 = 单调映射 `|bm25|/(1+|bm25|)`；`--min-score` 在 SQL 中对显示分做精确比较（`abs(m.score)/(1.0+abs(m.score)) >= ?`），阈值等于某行自己的显示分时保留该行 | 旧映射随匹配变好而下降，阈值会先删掉最佳匹配；操作员在 19-11 checkpoint 选择 `monotone-map`；边界舍入由 19-13 改为精确比较（UAT test 8） | Phase 19 Complete（2026-11-27） |
+| Phase 19 gap round 2：`sif search query --min-score` 是对每条 leg 自己标尺的下限，融合 RRF 分从不与之比较；`query`/`vsearch` help、CLI reference、MCP 页面与 changelog 逐处写明 | 同一数值同时作用于 BM25 与向量两种标尺，无法对融合分下定义；19-14 只改文本不改行为（UAT test 14） | Phase 19 Complete（2026-11-27） |
+| Phase 19 gap round 2：per-chunk 机器格式布局 A-19-10-1 按已交付形式确认（chunk 行 `path#sequence` + 裸 sequence；document 行纯路径无 sequence；`--files` 每页去重） | 操作员把逐项检测委托给 orchestrator，测试器按 shipped layout 接受；布局仍可随时由操作员改选（UAT test 12） | Phase 19 Complete（2026-11-27） |
 
 ## Context（v1.2 shipped 2026-11-18）
 
@@ -225,4 +230,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-11-18 after v1.2 milestone（Search Precision and Agent Experience 已发布：docsif 1.2.0、tag v1.2.0、8 phases 全部 verified）*
+*Last updated: 2026-11-27 after the Phase 19 gap round（v1.2 已发布；Phase 19 re-verified passed，UAT 18/18，validation re-certified）*

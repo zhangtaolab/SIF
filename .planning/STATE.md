@@ -2,13 +2,12 @@
 gsd_state_version: "1.0"
 milestone: v1.2
 current_phase: 19
-current_phase_name: search-correctness
-status: verifying
-stopped_at: "Phase 19 verification: human_needed (114/115 truths, no gaps; fingerprint v4:sha256:02932417…; 3/3 gap plans executed)"
-last_updated: "2026-11-27T10:37:24.302Z"
+status: completed
+stopped_at: Phase 19 complete — all phases complete
+last_updated: "2026-11-27T12:16:41.290Z"
 last_activity: 2026-11-27
-last_activity_desc: Phase 19 execution started
-state_head: cb7e77f3b4ebf04383e6f69271e311ac6c2f91de
+last_activity_desc: Phase 19 complete
+state_head: 2d929881b945f9446c8539e45ff890a32b8cde80
 milestone_name: Search Precision and Agent Experience
 progress:
   total_phases: 8
@@ -23,17 +22,17 @@ progress:
 
 - **Name:** DocSift (package `sif`, PyPI `docsif`)
 - **Core Value:** 用户可以在自己的笔记和文档库中，用自然语言快速、准确地找到需要的信息——无论关键词是否匹配。
-- **Current Focus:** v1.2 Search Precision and Agent Experience — **shipped and archived 2026-11-18**: PR #3 merged `dev` → `main` (merge commit `975cb09`), tag `v1.2.0` pushed, `docsif 1.2.0` published to TestPyPI and PyPI (Publish run 44289577210), and the milestone closed to `.planning/milestones/v1.2-*`. All 8 phases verified `passed` with fresh fingerprints (17: 55/55, 18: 44/44, 19: 63/63, 20: 26/26, 21: 63/63, 22: 77/77, 23: 31/31, 24: 43/43 truths), all `threats_open: 0`. Next milestone is not yet planned.
+- **Current Focus:** v1.2 Search Precision and Agent Experience — **shipped and archived 2026-11-18**: PR #3 merged `dev` → `main` (merge commit `975cb09`), tag `v1.2.0` pushed, `docsif 1.2.0` published to TestPyPI and PyPI (Publish run 44289577210), and the milestone closed to `.planning/milestones/v1.2-*`. All 8 phases verified `passed` with fresh fingerprints (17: 55/55, 18: 44/44, 19: 63/63, 20: 26/26, 21: 63/63, 22: 77/77, 23: 31/31, 24: 43/43 truths), all `threats_open: 0`. Next milestone is not yet planned. Post-ship Phase 19 gap round re-verified `passed` 2026-11-27 (115/115, UAT 18/18, validation re-certified).
 - **Tech Stack:** Python 3.10+, SQLite (FTS5 + sqlite-vec), Click, Pydantic, sentence-transformers 5.4.1 (locked), llama-cpp-python; v1.2 added ONLY `mcp>=2.3.0,<3` + `rapidfuzz>=3.14.5,<4`
-- See: .planning/PROJECT.md (updated 2026-11-18)
+- See: .planning/PROJECT.md (updated 2026-11-27)
 - Archives: v1.0/v1.1/v1.2 phase artifacts, full decision logs, per-plan metrics under .planning/milestones/
 
 ## Current Position
 
-Phase: 19 (search-correctness) — EXECUTING
-Plan: 15 of 15
-Status: Phase complete — ready for verification
-Last activity: 2026-11-27 — Phase 19 execution started
+Phase: 19
+Plan: Not started
+Status: All phases complete
+Last activity: 2026-11-27 — Phase 19 complete
 
 ## Performance Metrics
 
@@ -109,6 +108,10 @@ Last activity: 2026-11-27 — Phase 19 execution started
 ### Decisions
 
 Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
+
+- [Phase 19 gap round, 2026-11-27]: BM25 显示分 = 单调映射 `|bm25|/(1+|bm25|)`；`--min-score` 在 SQL 中对显示分做精确比较，阈值等于某行自己的显示分时保留该行（操作员在 19-11 checkpoint 选择 `monotone-map`；19-13 落地，UAT test 8）
+- [Phase 19 gap round, 2026-11-27]: `sif search query --min-score` 是每条 leg 自己标尺的下限，融合 RRF 分从不与之比较；help/reference/MCP 文本已写明（19-14，UAT test 14）
+- [Phase 19 gap round, 2026-11-27]: per-chunk 机器格式布局 A-19-10-1 按 shipped layout 确认（chunk 行 `path#sequence` + 裸 sequence；document 行纯路径；`--files` 每页去重）（UAT test 12）
 
 - [v1.2 scope]: PDF/format expansion OUT; MCP official SDK v2 upgrade approved; full Windows deferred to v2 — Phase 17 ships a degradation smoke only via hc remote yoga (Python not preinstalled; `uv python install` first)
 - [v1.2 scope]: metadata namespace = `qmd.metadata` compatible (migration parity); model arms MINIMAL (decision "d"): Harrier native vs Qwen3-Embedding-0.6B only; GGUF arm = conditional follow-up MODEL-F1; bge-reranker-v2-m3 OUT
@@ -344,12 +347,12 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 - ⚠️ [Phase 24, latent hazard WR-04] `scripts/chunk_sweep.py` and `scripts/breadcrumb_eval.py` still default their `ARTIFACT_PATH`, and `docs/benchmarking.md` still cite, the retired `.planning/phases/24-…` prefix. A re-run would write there, where the overwrite guard cannot see the archived `bench/` artifacts. Open in `24-REVIEW-DISPOSITION.md`; fix before any real sweep re-run.
 - ⚠️ [CI, pre-existing] The Test Matrix lint job's `Type check` step is vacuous for code importing `transformers`, `huggingface-hub`, `sentence-transformers` or `torch`: the job installs none of them and `ty`'s `import-not-found = "ignore"` hides the resulting errors, so the 10 local `ty check src/sif` diagnostics go unchecked in CI. Found in the 2026-11-25 Phase 18 re-audit; fixing it means a workflow edit.
 - ⚠️ [Phase 17 register, observation] `.github/workflows/docs.yml:33` installs with `pip install -e ".[dev]"` and so bypasses `uv.lock`; the Phase 17 security register does not mention it. Noted in the 2026-11-25 Phase 18 re-audit; triage pending.
-- ✅ [BM25 `search`, resolved 2026-11-26] `--min-score` used to remove the best matches first (the displayed score was `1/(1+|bm25|)` and fell as the match improved). After the operator's `monotone-map` decision, plan 19-12 made the displayed score `|bm25|/(1+|bm25|)` and the predicate `m.score <= ?` bound `-M/(1-M)` (37b6315). Two items stay open in `19-REVIEW-DISPOSITION.md`: IN-09, with `--min-score` equal to a row's own displayed score that row is dropped in about 41% of cases (251 of 617 real bench rows), because the bound is not the exact inverse of the rounded score map, so the help text's "at least" does not hold at equality; IN-10, `sif query --min-score` filters each leg on its own scale and never the displayed RRF score. Both failed their UAT tests on 2026-11-26 and are diagnosed as gaps G-19-8 and G-19-9 in `19-UAT.md`; plans 19-13 and 19-14 close them and are not yet executed.
+- ✅ [BM25 `search`, resolved 2026-11-26; closed 2026-11-27] `--min-score` used to remove the best matches first (the displayed score was `1/(1+|bm25|)` and fell as the match improved). After the operator's `monotone-map` decision, plan 19-12 made the displayed score `|bm25|/(1+|bm25|)` and the predicate `m.score <= ?` bound `-M/(1-M)` (37b6315). The two open items are now fixed: IN-09 — plan 19-13 compares the mapped score exactly in SQL, so a row at its own displayed score is kept (UAT test 8); IN-10 — plan 19-14 states the per-leg contract in the help/reference/MCP texts (UAT test 9). Gaps G-19-8 and G-19-9 are resolved and both review dispositions are `fixed`.
 - ✅ [Phase 19 scope gap, resolved 2026-11-26] Plan 19-10 (4e258cf, 8cf0ec9) keeps `#sequence` on both per-chunk tables at 80 columns and carries chunk identity in per-chunk CSV, Markdown, XML and path-only output. The machine-format layout shipped under assumption `A-19-10-1`, UAT test 3 passed on 2026-11-26 as the tester's verdict at the operator's request; the layout can still be amended.
-- ⚠️ [Phase 19 verification] `human_needed` at `d12fc6e` (85/90 truths, none failed): truths 17 and 34 are uncertain because Phase 20 (`bfc1b41c`) changed the offset start formula for scoped searches and Phase 21 replaced the batched `document_embeddings` scan with per-result lookups on the `embedded_documents` shadow (this also touches prohibition 19-03 P1). UAT tests 4 and 5 passed on 2026-11-26 as the tester's verdict (accepted for their guarantees), which the operator can reverse; the report reads `stale` since plans 19-13 to 19-15 landed, is re-verified after they run, and flips to `passed` only once the UAT holds no unresolved issue.
-- ⚠️ [Phase 19 validation] `19-VALIDATION.md` reads `nyquist_compliant: false` after the 2026-11-26 audit (0d696e8): three behaviours have no test that fails without them, each right today by direct probe. V19-26-1, a document-level row has no sequence in per-chunk Markdown and XML; V19-26-2, a markup-bearing path renders literally in the per-chunk Chunk cell (the mitigation of T-19-24); V19-26-3, `search_chunks` uses the new score map. The Fix/Skip gate was put to the operator and not answered, so no test was added. Adding the three tests touches `tests/unit/cli/test_search.py` and `tests/unit/search/test_bm25.py` and re-stales Phases 19, 20 and 21 (UAT test 10, recorded as gap G-19-10 on 2026-11-26; plan 19-15 adds them and is not yet executed).
+- ✅ [Phase 19 verification, resolved 2026-11-27] Re-verified `passed` at `2d92988`: 115/115 plan truths, 5/5 roadmap criteria, fingerprint `v4:sha256:373d380f…`. UAT is complete 18/18 (15 pass; tests 8-10 are resolved gaps), the 8 prior human items are closed, and truth 10.9 is verified by UAT test 11's direct 80x40 PTY observation. The earlier uncertain truths 17 and 34 were accepted in UAT tests 4 and 5 (scope notes S2/S4).
+- ✅ [Phase 19 validation, resolved 2026-11-27] `19-VALIDATION.md` is re-certified: `status: validated`, `nyquist_compliant: true`, `validated: 2026-11-27`. V19-26-1 (document-level row in per-chunk Markdown/XML), V19-26-2 (markup-bearing Chunk cell) and V19-26-3 (`search_chunks` score map) are closed by plan 19-15's three guard tests; all three mutation gates reproduced on a throwaway worktree (1 failed / 2 failed each / 1 failed, 2 passed). Full suite 3320 passed / 1 skipped @ 95.16%.
 - ⚠️ [Phases 17, 18, 24, re-staled 2026-11-26] The Phase 19 gap closure changed `docs/changelog.md`, `docs/cli-reference.md`, `docs/benchmarking.md` and `tests/unit/search/test_hybrid.py`, which sit in the covered sets of Phases 17, 18 and 24, so their verifications read `stale` again (they read `passed` at `0441ad7`, `2f4fff8` and `10691bd`). No test covering those surfaces failed in the full suite or in the verifier's battery. `/gsd-execute-phase <N>` routes each to the verifier re-run gate.
-- ⚠️ [quick task 261119-fww, test quality] IN-07: the relaxed title-cell assertions in `tests/unit/cli/test_search.py` lost their lower bound, so `_TITLE_MAX_LEN` (50) can drop to 10 without failing its only guard. IN-08: `tests.support.symlink_or_skip` turns any `OSError` (EEXIST, ENOENT) into a host-capability skip. Both open in `19-REVIEW-DISPOSITION.md`.
+- ⚠️ [quick task 261119-fww, test quality] IN-07: the relaxed title-cell assertions in `tests/unit/cli/test_search.py` lost their lower bound, so `_TITLE_MAX_LEN` (50) can drop to 10 without failing its only guard. IN-08: `tests.support.symlink_or_skip` turns any `OSError` (EEXIST, ENOENT) into a host-capability skip. Both remain open in `19-REVIEW-DISPOSITION.md`; IN-09 to IN-12 were fixed by 19-13 to 19-15 and are recorded `fixed` (2 open rows now).
 - ℹ️ [Phase 19 validation] A real coverage gap was closed on 2026-11-25: `f8ff9bea` added `TestRebuildChunkIdentity` (3 tests) pinning that the rerank rebuild keeps `chunk_id` / `sequence` / `chunk_matches` (CORR-02).
 - ℹ️ [test hygiene, observed 2026-11-26] A full pytest run touches the real model cache: it updates the modification time of `~/Library/Caches/sif/models/.lock/cross-encoder___ms-marco-MiniLM-L-6-v2` and of `models/cross-encoder` (no path or size change), because the reranker tests build against the real cache (accepted risk T-19-36). Separately, a `sif` command that needs an embedder (`vsearch`, `query`) run with an empty scratch `SIF_CACHE_DIR` goes to the network and starts downloading the embedding model instead of failing. The Phase 19 verifier did this once by mistake on 2026-11-26; the request was aborted, no weights were written and the real cache was untouched.
 - ℹ️ [CLI `index embed`, observation 2026-11-26] `sif index embed` prints `Already embedded: <path>` with the path unescaped in Rich markup (`src/sif/cli/commands/index.py:434`), and its collection-level error line does the same with the exception text (`:464`). A path holding text Rich reads as an unmatched closing tag (for example a directory named `[`, which gives `[/3]-review.md`) makes the command exit 1 before anything pending is embedded, and the error line then hides the first error; tag-like names such as `[red]…[/red]` lose their brackets in that line only. Found by accident during a UAT probe; the other commands were not audited for the same pattern.
@@ -401,9 +404,11 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-27T10:37:24.288Z
-Stopped at: Phase 19 verification: human_needed (114/115 truths, no gaps; fingerprint v4:sha256:02932417…; 3/3 gap plans executed)
-Resume file: 19-UAT.md (8 human items added; /gsd-verify-work 19)
+Last session: 2026-11-27T12:16:41.290Z
+Stopped at: Phase 19 complete — v1.2 already shipped and archived; next milestone not yet planned
+Resume file: None
+
+- **Phase 19 gap round 2 complete (2026-11-27):** UAT 18/18 (tests 11-18 delegated to the orchestrator by the operator), verification re-run to `passed` 115/115 (`2d92988`), validation re-certified (`nyquist_compliant: true`), review clean (0 findings) with WR-01/IN-01 fixed and IN-09..IN-12 dispositioned fixed, 71 prohibitions accepted, full suite 3320 passed / 1 skipped @ 95.16%. The pre-existing `ty` diagnostic (`embedder.py:870`, unchanged since `82df76b0`) is recorded as not a Phase 19 regression; the operator's default index has no embedded chunks, so UAT test 13's vector half ran on an isolated real-embedding index.
 
 - **Plans refreshed 2026-11-27:** `19-13/14/15` were refreshed in place against HEAD `bb29266` (code tree byte-identical to the v1.2.4 tag `6089078`) and committed at `444368e`. The plan-checker first returned 0 blockers / 1 warning (same-wave base-anchored gate ordering) and 4 INFO; the warning was fixed by declaring the real edge (`19-15` wave 3, `depends_on: [19-13, 19-14]`), and the re-check returned `VERIFICATION PASSED`. T-19-24 is now claimed by 19-10 only; 19-15 uses T-19-46. Next: `/gsd-execute-phase 19 --gaps-only` on the branch.
 
