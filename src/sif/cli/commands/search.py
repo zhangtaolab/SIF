@@ -845,7 +845,14 @@ def search_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
 )
 @click.option("-c", "--collection", multiple=True, help="Collection to search")
 @click.option("--all", "search_all", is_flag=True, help="Search all collections")
-@click.option("--min-score", default=0.0, help="Minimum score threshold")
+@click.option(
+    "--min-score",
+    default=0.0,
+    help=(
+        "Keep matches whose vector similarity reaches this value "
+        "(0-1, higher is a stronger match); 0 keeps all"
+    ),
+)
 @click.option("--full", is_flag=True, help="Include full content")
 @click.option(
     "--per-chunk",
@@ -1081,7 +1088,16 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
 )
 @click.option("-c", "--collection", multiple=True, help="Collection to search")
 @click.option("--all", "search_all", is_flag=True, help="Search all collections")
-@click.option("--min-score", default=0.0, help="Minimum score threshold")
+@click.option(
+    "--min-score",
+    default=0.0,
+    help=(
+        "Each leg keeps matches scoring at least this value on its own scale: the BM25 "
+        "score (0-1, higher is a stronger match) for lexical matches and the vector "
+        "similarity for semantic ones; the fused hybrid score of a result is never "
+        "compared with it; 0 keeps all"
+    ),
+)
 @click.option("--full", is_flag=True, help="Include full content")
 @click.option("--explain", is_flag=True, help="Show score breakdowns across pipeline stages")
 # A3 waiver (D-10 calls the cap setting-only): the -C flag pre-exists in the

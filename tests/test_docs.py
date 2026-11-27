@@ -13,6 +13,7 @@ import pytest
 from click.testing import CliRunner
 from pydantic import ValidationError
 
+from sif.cli.commands.search import query_cmd, vsearch_cmd
 from sif.cli.main import cli
 from sif.config.settings import Settings
 
@@ -176,6 +177,14 @@ def _is_stub_block(stripped: str) -> bool:
         if is_stub:
             return True
     return False
+
+
+def _option_help(command: click.Command, option_name: str) -> str:
+    """Return the help text of the first option of ``command`` named ``option_name``."""
+    for param in command.params:
+        if isinstance(param, click.Option) and option_name in param.opts:
+            return str(param.help or "")
+    raise AssertionError(f"{option_name} not found on {command.name}")
 
 
 class TestDocsCodeBlocks:
@@ -432,6 +441,30 @@ class TestDocsCodeBlocks:
             "docs/configuration.md lists 'huggingface' as a valid model_type, "
             "but Settings.validate_model_type rejects it (WR-07)"
         )
+
+    def test_min_score_help_texts_name_the_score_each_command_filters(self) -> None:
+        """Every `--min-score` help text says which score the threshold is compared with.
+
+        G-19-9: `query` filters each leg on the leg's own score and never the fused
+        hybrid score; `vsearch` filters on vector similarity.
+        """
+        query_help = (
+            "Each leg keeps matches scoring at least this value on its own scale: the BM25 "
+            "score (0-1, higher is a stronger match) for lexical matches and the vector "
+            "similarity for semantic ones; the fused hybrid score of a result is never "
+            "compared with it; 0 keeps all"
+        )
+        vsearch_help = (
+            "Keep matches whose vector similarity reaches this value "
+            "(0-1, higher is a stronger match); 0 keeps all"
+        )
+        assert _option_help(query_cmd, "--min-score") == query_help
+        assert _option_help(vsearch_cmd, "--min-score") == vsearch_help
+
+        content = Path("docs/cli-reference.md").read_text(encoding="utf-8")
+        for help_text in (query_help, vsearch_help):
+            row = f"| `--min-score` | `—` | float | `0.0` | {help_text} |"
+            assert row in content
 
     def test_cli_reference_has_all_commands(self) -> None:
         """Verify cli-reference.md has all commands from Click tree."""

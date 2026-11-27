@@ -492,7 +492,7 @@ sif search query [OPTIONS]
 | `--filter` | `—` | text | — | Metadata filter as a JSON AST (qmd-compatible). |
 | `--collection` | `-c` | text[] | — | Collection to search |
 | `--all` | `—` | flag | `false` | Search all collections |
-| `--min-score` | `—` | float | `0.0` | Minimum score threshold |
+| `--min-score` | `—` | float | `0.0` | Each leg keeps matches scoring at least this value on its own scale: the BM25 score (0-1, higher is a stronger match) for lexical matches and the vector similarity for semantic ones; the fused hybrid score of a result is never compared with it; 0 keeps all |
 | `--full` | `—` | flag | `false` | Include full content |
 | `--explain` | `—` | flag | `false` | Show score breakdowns across pipeline stages |
 | `--candidate-limit` | `-C` | integer range | — | Reranker candidate pool size (default: SIF_RERANK_CANDIDATE_LIMIT or 20; clamped to 5-50) |
@@ -570,7 +570,7 @@ sif search vsearch [OPTIONS]
 | `--filter` | `—` | text | — | Metadata filter as a JSON AST (qmd-compatible). |
 | `--collection` | `-c` | text[] | — | Collection to search |
 | `--all` | `—` | flag | `false` | Search all collections |
-| `--min-score` | `—` | float | `0.0` | Minimum score threshold |
+| `--min-score` | `—` | float | `0.0` | Keep matches whose vector similarity reaches this value (0-1, higher is a stronger match); 0 keeps all |
 | `--full` | `—` | flag | `false` | Include full content |
 | `--per-chunk` | `—` | flag | `false` | Return one row per matched chunk instead of one row per document |
 | `--line-numbers` | `—` | flag | `false` | Show line numbers in content |
