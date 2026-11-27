@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive documentation
 
 ### Changed
-- N/A
+- `sif search query --min-score` keeps its behaviour and its help text now says what it does: each leg keeps the matches whose own score reaches the value (the BM25 score for lexical matches, the vector similarity for semantic ones), and the fused hybrid score of a result is never compared with it. The help text of `sif search vsearch --min-score` names the vector similarity it filters on, and `docs/mcp-server.md` says which score `min_score` filters on each MCP tool. Correction to the 1.2.4 entry below: the advice there to convert a threshold written against the old scores by subtracting it from 1 holds for `sif search search` only; a `sif search query --min-score` value must not be converted, because the same number is also the vector leg's threshold, which did not change.
 
 ### Deprecated
 - N/A

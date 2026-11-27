@@ -466,6 +466,35 @@ class TestDocsCodeBlocks:
             row = f"| `--min-score` | `—` | float | `0.0` | {help_text} |"
             assert row in content
 
+    def test_mcp_server_page_names_the_score_each_min_score_filters(self) -> None:
+        """The MCP page says which score `min_score` filters on each tool (G-19-9).
+
+        `query` filters each leg on the leg's own score and never the fused score,
+        `lex_search` filters on the BM25 score and `vec_search` on vector similarity.
+        """
+        page = Path("docs/mcp-server.md").read_text(encoding="utf-8")
+        prose = " ".join(page.split())
+        query_row = (
+            "| `min_score` | number | No | Each leg keeps matches scoring at least "
+            "this value on its own scale: the BM25 score (0-1, higher is a stronger "
+            "match) for lexical matches and the vector similarity for semantic ones; "
+            "the fused hybrid score of a result is never compared with it "
+            "(default: 0.0; 0 keeps all) |"
+        )
+        assert query_row in page
+        assert (
+            "Supports `filter`, `offset`, and `min_score`, which keeps the matches "
+            "whose BM25 score reaches it, as `sif search search --min-score` does; "
+            "no expansion and no reranking."
+        ) in prose
+        assert (
+            "Supports `filter`, `offset`, `per_chunk`, and `min_score`, which keeps "
+            "the matches whose vector similarity reaches it, as `sif search vsearch "
+            "--min-score` does; no expansion and no reranking. Requires an embedding "
+            "model — without one the tool returns an error naming the `docsif[embed]` "
+            "install and model remedy."
+        ) in prose
+
     def test_cli_reference_has_all_commands(self) -> None:
         """Verify cli-reference.md has all commands from Click tree."""
         cli_ref = Path("docs/cli-reference.md")

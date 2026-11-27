@@ -131,7 +131,7 @@ fusion. Query expansion matches the CLI. Reranking is opt-in.
 | `offset` | integer | No | Absolute row skip for pagination (default: 0) |
 | `filter` | object | No | Shared filter AST (see `metadata`) |
 | `per_chunk` | boolean | No | Group by chunk instead of document (default: false) |
-| `min_score` | number | No | Minimum score threshold (default: 0.0) |
+| `min_score` | number | No | Each leg keeps matches scoring at least this value on its own scale: the BM25 score (0-1, higher is a stronger match) for lexical matches and the vector similarity for semantic ones; the fused hybrid score of a result is never compared with it (default: 0.0; 0 keeps all) |
 | `rerank` | boolean | No | Force reranking on/off; omitted follows `SIF_RERANK_ENABLED` |
 | `rrf_k` | integer | No | RRF constant (default: server `SIF_RRF_K` or 60) |
 | `bm25_weight` | number | No | BM25 fusion weight (default: server setting) |
@@ -185,14 +185,17 @@ Phase 20 discovery envelope (`documents`, optional `filteredDocuments`,
 ### lex_search
 
 Lexical BM25 search only, matching the CLI's BM25-only search subcommand.
-Supports `filter`, `offset`, and `min_score`; no expansion and no reranking.
+Supports `filter`, `offset`, and `min_score`, which keeps the matches whose BM25
+score reaches it, as `sif search search --min-score` does; no expansion and no
+reranking.
 
 ### vec_search
 
 Vector semantic search only, matching the CLI's vector-only search subcommand.
-Supports `filter`, `offset`, `per_chunk`, and `min_score`; no expansion and no
-reranking. Requires an embedding model — without one the tool returns an error
-naming the `docsif[embed]` install and model remedy.
+Supports `filter`, `offset`, `per_chunk`, and `min_score`, which keeps the
+matches whose vector similarity reaches it, as `sif search vsearch --min-score`
+does; no expansion and no reranking. Requires an embedding model — without one
+the tool returns an error naming the `docsif[embed]` install and model remedy.
 
 ### Resources
 
