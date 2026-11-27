@@ -92,7 +92,10 @@ Full detail: `.planning/REQUIREMENTS.md` (v1.3 Requirements + Traceability)
   4. 当判定为「无方向性信号」时，止损被记录为归档假设、Phase 26/27 未启动，工作树不留任何半成品代码。
 
 **Plans:** 2 plans
+**Wave 1**
 - [ ] 25-01-PLAN.md — 兼容性 + 信号 spike（用户提供的 GGUF 路径、锁定版 vs 隔离升级版加载/生成、query-only 锚点配对 delta）
+
+**Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 25-02-PLAN.md — 契约冻结证明、权威证据三件套、stop/go 状态记录
 
 ### Phase 26: Anchor Arm + Deterministic Cache
