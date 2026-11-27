@@ -5,11 +5,11 @@ titles: json
 findings:
   - id: WR-01
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "The Unreleased changelog says `query --min-score` \"keeps its behaviour\" and then says the exact-score fix reaches its BM25 leg"
   - id: IN-01
     severity: info
-    disposition: open
+    disposition: fixed
     title: "The conversion correction says subtract-from-1 holds for `search search` only, but a BM25-only `query` route behaves the same way"
   - id: IN-07
     severity: info
@@ -67,17 +67,17 @@ findings:
     severity: info
     disposition: deferred
     title: "MCP backend silently creates an empty index at a nonexistent SIF_DB_PATH"
-open: 8
+open: 6
 total: 16
-recorded: 2026-11-27T10:22:49.359Z
+recorded: 2026-11-27T11:55:56.000Z
 ---
 
 # Phase 19: Code Review Disposition
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| WR-01 | warning | open | - |
-| IN-01 | info | open | - |
+| WR-01 | warning | fixed | 19-UAT.md test 18 (docs/changelog.md scoped per the review's suggested wording) |
+| IN-01 | info | fixed | 19-UAT.md test 18 (docs/changelog.md scoped per the review's suggested wording) |
 | IN-07 | info | open | - (not in the current review) |
 | IN-08 | info | open | - (not in the current review) |
 | IN-09 | info | open | - (not in the current review) |
