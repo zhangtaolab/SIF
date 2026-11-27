@@ -5,6 +5,7 @@
 - ✅ **v1.0 MVP — qmd 功能对等的本地混合搜索引擎** — Phases 1-10.1 (shipped 2026-11-07)
 - ✅ **v1.1 Live Index and Search Quality** — Phases 11-16.1 (shipped 2026-11-12)
 - ✅ **v1.2 Search Precision and Agent Experience** — Phases 17-24 (shipped 2026-11-18)
+- [ ] **v1.3 Anchor-Augmented Retrieval Evidence** — Phases 25-27 (in progress)
 
 ## Phases
 
@@ -62,5 +63,41 @@ Full detail: `.planning/milestones/v1.2-ROADMAP.md`
 
 </details>
 
+<details>
+<summary>🚧 v1.3 Anchor-Augmented Retrieval Evidence (Phases 25-27) — IN PROGRESS (started 2026-11-27)</summary>
+
+**Goal:** 在不破坏 CLI / MCP / 默认检索行为与 local-first 约束的前提下，新增默认关闭、可缓存、可证伪的 `anchor:` 检索臂，并由 SIF 自己的 held-out 证据决定是否升默认；`keep-default` 是有效交付。
+
+- [ ] **Phase 25: Contract Freeze & Feasibility Spike** — SPK-01, SPK-02, SPK-03, CTR-01, CTR-02
+  **Goal:** 在写任何新代码前证明 `llama.cpp` 能加载 `lfm3` 架构、确定性锚点有方向性信号，并冻结 MCP/打包契约。
+  **First plan (MUST):** 兼容性 + 信号 spike（`Llama(model_path=LFM3-1.7B-Q4_K_M.gguf)` 加载 + 固定/规则锚点配对对比）。
+  **Kill criterion:** 无方向性信号即归档假设、不投 Phase 26/27、不留半成品代码。
+  **Success Criteria** (what must be TRUE):
+    1. 团队能用锁定的 `llama-cpp-python` 让 `Llama(model_path=LFM3-1.7B-Q4_K_M.gguf)` 成功加载并生成一次；若 `lfm3` 不兼容，则升级或外部 `llama-server` 退路及其对现有 GGUF embed/rerank 路径的影响被记录为可复核结论。
+    2. 一份可复现的 `lex:` → `anchor:` 配对 delta 表给出明确的方向性信号判定（有/无），任何人用固定种子重跑得到相同结论。
+    3. MCP 5 份 wire goldens 与 `test_packaging.py` 逐字节未变，7 工具与 `QueryInput`（不新增 `anchor` 请求字段）契约冻结状态可被核对。
+    4. 当判定为「无方向性信号」时，止损被记录为归档假设、Phase 26/27 未启动，工作树不留任何半成品代码。
+
+- [ ] **Phase 26: Anchor Arm + Deterministic Cache** — ANC-01, ANC-02, ANC-03, ANC-04, ANC-05, GEN-01, GEN-02, GEN-03, GEN-04, CTR-03, CTR-04
+  **Goal:** 交付默认关闭、可缓存、失败回退的 `anchor:` 检索臂与本地可选生成器，不新增 runtime 依赖、不动 MCP schema。
+  **Success Criteria** (what must be TRUE):
+    1. 用户可用 `sif search query --anchor ...` 或 `anchor:` 前缀触发锚点增强 BM25（锚点仅注入 BM25 腿、snippet/highlight 仍用原始查询）；关闭 flag 时行为与 v1.2.5 逐字节一致、零构造零模型加载。
+    2. 重复同一 query 产生零次生成器调用，45 配置 sweep 的 N 条查询只产生 N 次生成调用（冻结 prompt / greedy / ≤10 术语 / 去重，评测前冻结）。
+    3. 生成器超时或失败时返回原始 query 的结果、无重试风暴，用户能看到失败原因；fail-open 回退可被复现。
+    4. 除非显式 opt-in 远程后端，否则不产生任何外部请求；远程 opt-in 时明确披露查询文本外发，词表守卫可作为独立 A/B 开关。
+    5. 全量 pytest ≥90% coverage、`make docs-generate` diff 为零、8-cell CI 全绿；LFM3 GGUF 不打进 wheel/sdist，`LFM Open License v1.0` 的 $10M 营收阈值与再分发义务写入用户文档与 Key Decisions。
+
+- [ ] **Phase 27: Evidence Gate & Verdict** — EVL-01, EVL-02, EVL-03, EVL-04, EVL-05
+  **Goal:** 用四臂评测 + 配对 bootstrap + held-out 门禁产出 adopt/keep-default verdict；`keep-default` 是有效交付。
+  **Success Criteria** (what must be TRUE):
+    1. 团队能在同一 fixture 上通过 `search_fn` 注入评测 `lex` / `anchor` / `hybrid` / `hybrid+anchor` 四臂，报告含 nDCG@10 与新增 Recall@10、`vec:` + anchor 诊断臂 gain gap。
+    2. 报告给出 paired delta、10,000 次 bootstrap 95% CI、N / `1/N` noise floor 与 helped-hurt-unchanged 计数，以及 per-leg × per-language、p50/p95 延迟、生成器调用数与缓存命中率。
+    3. 报告产出明确的 `adopt` 或 `keep-default` verdict；只有 tuning 排名 + held-out 胜出（0.01 tie rule 且 CI 排除 0）才讨论升默认，`keep-default` 时默认检索行为与 v1.2.5 完全一致、默认值不变仍被接受为交付。
+    4. 文档明确论文数值（+0.11–0.19 nDCG 等）不可迁移到个人 Markdown 笔记、必须本机实测，并记录 `LFM Open License v1.0` 约束。
+
+Full detail: `.planning/REQUIREMENTS.md` (v1.3 Requirements + Traceability)
+
+</details>
+
 ---
-*Roadmap updated 2026-11-18 after the v1.2 milestone close. Phase numbering continues in the next milestone (no reset).*
+*Roadmap updated 2026-11-27 after starting milestone v1.3 (Anchor-Augmented Retrieval Evidence). Phase numbering continues from v1.2's Phase 24 — no reset.*

@@ -1,12 +1,12 @@
 {
   "contract": "1.0.0",
   "flavor": "core",
-  "milestone": "v1.2",
+  "milestone": "v1.3",
   "phases": [],
   "next": {
-    "command": "/gsd-new-milestone",
-    "label": "Start a new milestone",
-    "reason": "All phases complete — start a new milestone"
+    "command": "/gsd-resume-work",
+    "label": "Resume work",
+    "reason": "Work is paused — pick up where you left off"
   },
-  "updated_at": "2026-11-27T12:16:41.311Z"
+  "updated_at": "2026-11-27T14:27:42.322Z"
 }

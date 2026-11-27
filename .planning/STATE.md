@@ -6,7 +6,7 @@ status: planning
 last_updated: "2026-11-27T14:27:42.212Z"
 last_activity: 2026-11-27
 progress:
-  total_phases: 0
+  total_phases: 3
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -19,16 +19,16 @@ progress:
 
 - **Name:** DocSift (package `sif`, PyPI `docsif`)
 - **Core Value:** 用户可以在自己的笔记和文档库中，用自然语言快速、准确地找到需要的信息——无论关键词是否匹配。
-- **Current Focus:** v1.2 Search Precision and Agent Experience — **shipped and archived 2026-11-18**: PR #3 merged `dev` → `main` (merge commit `975cb09`), tag `v1.2.0` pushed, `docsif 1.2.0` published to TestPyPI and PyPI (Publish run 44289577210), and the milestone closed to `.planning/milestones/v1.2-*`. All 8 phases verified `passed` with fresh fingerprints (17: 55/55, 18: 44/44, 19: 63/63, 20: 26/26, 21: 63/63, 22: 77/77, 23: 31/31, 24: 43/43 truths), all `threats_open: 0`. Next milestone is not yet planned. Post-ship Phase 19 gap round re-verified `passed` 2026-11-27 (115/115, UAT 18/18, validation re-certified).
+- **Current Focus:** v1.3 Anchor-Augmented Retrieval Evidence — **in progress (started 2026-11-27)**: 新增默认关闭、可缓存、可证伪的 `anchor:` 检索臂，并由 SIF 自己的 held-out 证据决定 adopt/keep-default；Phases 25-27 规划完成、Phase 25 Ready to plan（首 plan 为兼容性 + 信号 spike，含无方向性信号止损）。前一里程碑 v1.2 Search Precision and Agent Experience — **shipped and archived 2026-11-18**: PR #3 merged `dev` → `main` (merge commit `975cb09`), tag `v1.2.0` pushed, `docsif 1.2.0` published to TestPyPI and PyPI (Publish run 44289577210), and the milestone closed to `.planning/milestones/v1.2-*`. All 8 phases verified `passed` with fresh fingerprints (17: 55/55, 18: 44/44, 19: 63/63, 20: 26/26, 21: 63/63, 22: 77/77, 23: 31/31, 24: 43/43 truths), all `threats_open: 0`. Post-ship Phase 19 gap round re-verified `passed` 2026-11-27 (115/115, UAT 18/18, validation re-certified).
 - **Tech Stack:** Python 3.10+, SQLite (FTS5 + sqlite-vec), Click, Pydantic, sentence-transformers 5.4.1 (locked), llama-cpp-python; v1.2 added ONLY `mcp>=2.3.0,<3` + `rapidfuzz>=3.14.5,<4`
 - See: .planning/PROJECT.md (updated 2026-11-27)
 - Archives: v1.0/v1.1/v1.2 phase artifacts, full decision logs, per-plan metrics under .planning/milestones/
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
+Phase: 25 (not started)
+Plan: Not started
+Status: Ready to plan
 Last activity: 2026-11-27 — Milestone v1.3 started
 
 
