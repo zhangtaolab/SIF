@@ -1,16 +1,19 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.3
-milestone_name: Anchor-Augmented Retrieval Evidence
+milestone_name: Anchor-Augmented Retrieval Evidence (Phases 25-27) — IN PROGRESS (started 2026-11-27)</summary>
+current_phase: 25
 status: planning
-last_updated: "2026-11-27T14:27:42.212Z"
+stopped_at: Phase 25 context gathered
+last_updated: "2026-11-27T15:28:17.859Z"
 last_activity: 2026-11-27
+last_activity_desc: Milestone v1.3 started
+state_head: 401437036403a1c7b77264371a39d53dfee229cd
 progress:
-  total_phases: 3
+  total_phases: 1
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
-  percent: 0
 ---
 
 # DocSift — Project State
@@ -403,9 +406,9 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-27T13:20:00.000Z
-Stopped at: v1.2.5 release prepared — version bump and docs regeneration committed on main; tagging/publishing pending
-Resume file: None
+Last session: 2026-11-27T15:28:17.839Z
+Stopped at: Phase 25 context gathered
+Resume file: /Users/forrest/GitHub/SIF/.planning/phases/25-contract-freeze-feasibility-spike/25-CONTEXT.md
 
 - **Docs regeneration (2026-11-27):** `/gsd-docs-update` regenerated 7 canonical docs (README, architecture, quickstart, development, testing, contributing; configuration regenerated from `scripts/generate_config_ref.py` with zero drift) and verified all 19 tracked docs against the codebase. Fixes landed in development (test-module count, module import, mkdocs nav), benchmarking (archived `.planning/milestones/v1.2-phases/` artifact paths; 1e-9 tolerance wording), migration (cache adoption wording), and CLAUDE.md (added the `models/` package to the tree). Every doc now verifies with 0 failed claims.
 
