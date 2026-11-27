@@ -4,11 +4,11 @@ milestone: v1.2
 current_phase: 19
 current_phase_name: search-correctness
 status: verifying
-stopped_at: Completed 19-15-PLAN.md (three guards for UAT test 10)
-last_updated: "2026-11-27T10:06:53.730Z"
+stopped_at: "Phase 19 verification: human_needed (114/115 truths, no gaps; fingerprint v4:sha256:02932417…; 3/3 gap plans executed)"
+last_updated: "2026-11-27T10:37:24.302Z"
 last_activity: 2026-11-27
 last_activity_desc: Phase 19 execution started
-state_head: f844c798906f4154eeb88d16d91aa70a01636d2f
+state_head: cb7e77f3b4ebf04383e6f69271e311ac6c2f91de
 milestone_name: Search Precision and Agent Experience
 progress:
   total_phases: 8
@@ -401,9 +401,9 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-27T10:06:53.717Z
-Stopped at: Completed 19-15-PLAN.md (three guards for UAT test 10)
-Resume file: None
+Last session: 2026-11-27T10:37:24.288Z
+Stopped at: Phase 19 verification: human_needed (114/115 truths, no gaps; fingerprint v4:sha256:02932417…; 3/3 gap plans executed)
+Resume file: 19-UAT.md (8 human items added; /gsd-verify-work 19)
 
 - **Plans refreshed 2026-11-27:** `19-13/14/15` were refreshed in place against HEAD `bb29266` (code tree byte-identical to the v1.2.4 tag `6089078`) and committed at `444368e`. The plan-checker first returned 0 blockers / 1 warning (same-wave base-anchored gate ordering) and 4 INFO; the warning was fixed by declaring the real edge (`19-15` wave 3, `depends_on: [19-13, 19-14]`), and the re-check returned `VERIFICATION PASSED`. T-19-24 is now claimed by 19-10 only; 19-15 uses T-19-46. Next: `/gsd-execute-phase 19 --gaps-only` on the branch.
 
