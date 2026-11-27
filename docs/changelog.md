@@ -30,7 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - N/A
 
 ### Fixed
-- N/A
+- `sif search search --min-score` now keeps a row whose displayed score equals the threshold exactly. This changes the behaviour of 1.2.4, in which the threshold was converted back into a bound on the raw bm25 value; because that conversion rounds, about half of the rows tried at their own displayed score were dropped: a row whose `--json` score was `0.8942969341194331` disappeared under `--min-score 0.8942969341194331`. The same fix reaches MCP `lex_search` and the BM25 leg of `sif search query --min-score` and of MCP `query`. Scores, ranking and the rows kept at any other threshold are unchanged. The table, CSV, Markdown and XML output still print four decimals, so a score copied from those formats can round above a row's exact score; copy it from `--json`.
 
 ### Security
 - N/A
