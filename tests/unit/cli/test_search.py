@@ -4641,6 +4641,61 @@ class TestPerChunkSurfaces:
         assert list(root.iter("sequence")) == []
         assert [element.text for element in root.iter("path")] == [row.path for row in rows]
 
+    def test_per_chunk_markdown_and_xml_give_a_document_level_row_no_sequence(self) -> None:
+        """G-19-10 / V19-26-1: a document-level row of a per-chunk page gets no sequence.
+
+        Plan 19-10 truth 5: with ``--per-chunk`` a chunk row carries the
+        ``path#sequence`` address and a Sequence line in Markdown and a
+        ``sequence`` element in XML, while a document-level row keeps the plain
+        path and gets neither field. The five-row page holds one document-level
+        row beside four chunk rows.
+        """
+        rows = self._long_path_rows()
+        document_level = rows[4]
+
+        result, _ = self._invoke_query(rows, ["query", "--per-chunk", "--md", "--no-refresh"])
+
+        assert result.exit_code == 0, result.output
+        lines = result.output.splitlines()
+        path_index = lines.index(f"- **Path:** `{document_level.path}`")
+        # A chunk row's Sequence line sits between its Path line and its
+        # Collection line; the document-level row has none.
+        assert lines[path_index + 1] == f"- **Collection:** {document_level.collection_name}"
+        assert [line for line in lines if line.startswith("- **Sequence:**")] == [
+            f"- **Sequence:** {row.sequence}" for row in rows[:4]
+        ]
+
+        result, _ = self._invoke_query(rows, ["query", "--per-chunk", "--xml", "--no-refresh"])
+
+        assert result.exit_code == 0, result.output
+        root = ET.fromstring(result.output)
+        results = root.findall("result")
+        assert len(results) == 5
+        assert results[4].get("rank") == str(document_level.rank)
+        assert [child.tag for child in results[4]] == ["title", "path", "collection"]
+        assert results[4].findtext("path") == document_level.path
+        assert [element.text for element in root.iter("sequence")] == [
+            str(row.sequence) for row in rows[:4]
+        ]
+
+    @pytest.mark.parametrize("path", ["/notes/[red]evil[/red].md", "/notes/[/3]-review.md"])
+    def test_per_chunk_chunk_cell_renders_a_markup_bearing_path_literally(self, path: str) -> None:
+        """G-19-10 / V19-26-2 / T-19-46: the Chunk cell parses no Rich markup.
+
+        The Chunk-cell half of T-19-24: the cell is a plain ``Text``, so a path
+        holding tag-like text renders literally. A cell that parsed markup
+        would render the first path without its tags and refuse the second,
+        whose closing tag matches nothing.
+        """
+        row = replace(self._long_path_rows()[0], path=path)
+
+        with self._render_at(200):
+            for invoke in (self._invoke_vsearch, self._invoke_query):
+                result, _ = invoke([row], ["query", "--per-chunk", "--no-refresh"])
+
+                assert result.exit_code == 0, result.output
+                assert self._rendered_chunk_cells(result.output) == [f"{path}#0"]
+
     def test_per_chunk_files_and_quiet_list_each_path_once(self) -> None:
         """--files and -q print each path once for a per-chunk page, in page order."""
         rows = self._long_path_rows()[:4]
