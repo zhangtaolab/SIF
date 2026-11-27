@@ -2,11 +2,11 @@
 gsd_state_version: "1.0"
 milestone: v1.2
 status: Awaiting next milestone
-stopped_at: Phase 24 complete — all phases complete
-last_updated: "2026-11-26T23:40:00.000Z"
+stopped_at: Session resumed — refreshing Phase 19 gap plans against HEAD
+last_updated: "2026-11-27T07:53:07.000Z"
 last_activity: 2026-11-27
-last_activity_desc: Paused before Phase 19 gap-closure round 2 - plans 19-13 to 19-15 (c3d2db7) are planned and not executed, and need a refresh against HEAD after the v1.2.4 release; handoff in the Phase 19 .continue-here.md (5d1191c)
-state_head: 5d1191c
+last_activity_desc: Session resumed at a4c0f15 — the pause handoff was consumed and the operator's three blockers are answered (A-19-9-1 confirmed, changelog correction only in [Unreleased], working branch gsd/phase-19-gap-round-2); next is refreshing 19-13/14/15 against HEAD, the plan-checker, committing the plans, then /gsd-execute-phase 19 --gaps-only
+state_head: a4c0f15
 milestone_name: Search Precision and Agent Experience
 current_phase: 24
 progress:
@@ -390,9 +390,11 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-18T07:14:41.672Z
-Stopped at: Phase 24 complete — all phases complete
-Resume file: .planning/HANDOFF.json and .planning/milestones/v1.2-phases/19-search-correctness/.continue-here.md (pause of 2026-11-27, before Phase 19 gap-closure round 2; the Phase 24 handoff is superseded)
+Last session: 2026-11-27T07:53:07.000Z (resumed)
+Stopped at: Session resumed — proceeding to refresh Phase 19 gap plans (19-13/14/15) against HEAD
+Resume file: none — the pause handoff was consumed at a4c0f15; operator answers recorded: A-19-9-1 confirmed, changelog correction only in [Unreleased], working branch `gsd/phase-19-gap-round-2`
+
+- **Resumed 2026-11-27:** the operator's three blockers are answered (A-19-9-1 confirms `query --min-score` keeps its per-leg behaviour with truthful text; the released 1.2.4 changelog sentence is left as released and the correction goes in the new `[Unreleased]` entry; execution happens on `gsd/phase-19-gap-round-2`). Next: refresh `19-13/14/15` against HEAD with the Pre-Execution Critique, re-run the plan-checker, commit the plans by explicit path, create the branch, then `/gsd-execute-phase 19 --gaps-only`.
 
 - **Next expected action:** Phase 17's gap is closed and verified as of 2026-11-25: plan 17-10 restored the 8-cell, every-branch CI matrix (reversing quick task 261118-lmm), verification reads `passed` (59/60 truths at `5608576`, canonicalized at `0441ad7` after Test Matrix run `45522236981` ran green), and its UAT is complete. Phase 24's verification was refreshed on 2026-11-24 (`e64c52c`) and re-verified on 2026-11-25 (`10691bd`, 43/43 truths) after plan 17-10 changed `tests/test_ci_workflows.py`; v1.2 itself was already shipped and archived on 2026-11-18. Phase 18 was re-verified on 2026-11-25 (`2f4fff8`, 44/44 truths). Phase 19 was re-verified on 2026-11-26 (`d12fc6e`) after its gap closure ran: plans `19-10`, `19-11` and `19-12` executed between `4e258cf` and `d5382ae` (the operator answered the 19-11 `--min-score` checkpoint with `monotone-map`; the orchestrator performed and approved the plans' three human checks on isolated indexes), and the phase reads `human_needed` (85/90 truths, none failed; truths 17 and 34 uncertain). Phase 19's UAT was completed on 2026-11-26 by the orchestrator as tester at the operator's request (`f5ece6b`): ten tests, seven passed (1 to 7) and three failed, each diagnosed in `19-UAT.md`. G-19-8: with `--min-score` equal to a row's own displayed score that row is dropped in about half of the cases (40 of 84 bench rows). G-19-9: `sif query --min-score` filters each leg on its own scale and never the displayed score. G-19-10: three behaviours with no test that fails without them. All three are planned as of 2026-11-26 and committed at `c3d2db7`: `19-13` replaces the `-M/(1-M)` bound by a comparison of the mapped score so that a row whose displayed score equals `--min-score` is kept (it removes `bm25_rank_threshold` and amends the fourth truth of `19-05-PLAN.md` once more); `19-14` makes the help texts of `query` and `vsearch`, the generated CLI reference, the MCP doc page and the changelog describe what `query --min-score` does, with no change of behaviour; `19-15` adds the three tests. They pass the plan checker (round 2: 0 blockers, 0 warnings, 7 advisories) and are committed, which their phase-directory gate requires. Next: v1.2.4 was released after these plans were validated, so they are refreshed against HEAD and re-checked before execution (the entries of plans 19-10 and 19-12 moved from `[Unreleased]` to `[1.2.4]` in `docs/changelog.md`, which 19-14's changelog step anchors on, and 19-13's "never released" statements no longer hold; the critique list is in the Phase 19 `.continue-here.md`). The operator confirms assumption `A-19-9-1`, says whether the released 1.2.4 changelog sentence may be corrected in place, and picks a working branch, since HEAD is `main`; then `/gsd-execute-phase 19 --gaps-only`. Adding a description to the MCP wire schema is out of scope and stays a Phase 22 follow-up. The verification report reads `stale` since the plans landed and is re-verified after they run; it flips to `passed` only once the UAT holds no unresolved issue, and UAT test 9 must then be restated to the per-leg contract, as its note in `19-UAT.md` says. Phases 17, 18 and 24 read `stale` again since the gap-closure round. Phases 20-23 still carry `stale` verification after the post-ship quick tasks — `/gsd-execute-phase <N>` routes each to the verifier re-run gate. Platform evidence at `256380e`: macOS 3,233 passed / 1 skipped / 95.03%; Linux 3,232 passed / 2 skipped / 95.04% with ruff/format/ty green; Windows smoke 8/8 plus 346 changed-area and 124 affected-module tests. Two audits remain recorded as debt (see Blockers/Concerns): `/gsd-secure-phase 20` and `/gsd:validate-phase 20`.
 
