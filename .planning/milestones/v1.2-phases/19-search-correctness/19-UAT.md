@@ -3,7 +3,7 @@ status: complete
 phase: 19-search-correctness
 source: [19-VERIFICATION.md]
 started: 2026-11-25T10:51:26Z
-updated: 2026-11-27T10:37:01.000Z
+updated: 2026-11-27T11:56:40.454Z
 ---
 
 ## Current Test
@@ -76,7 +76,7 @@ result: issue
 reported: "The displayed score is never compared with the threshold. With --min-score 0.02 the page still holds rows whose displayed score is 0.0139. The threshold is applied to each leg on its own scale: the BM25 leg keeps bm25 scores at or above M (about 0.876 here) and the vector leg keeps cosine similarities at or above M (0.51 to 0.64 here). At 0.63 the vector leg drops two documents while the BM25 leg keeps all four. At 0.876 the vector leg is empty, the two remaining rows display 0.8765 and 0.8760, which are BM25 leg scores and not the RRF values of 0.01 to 0.03 that the same command shows when both legs return rows. The help text of query still reads 'Minimum score threshold'. This predates plans 19-10 to 19-12"
 severity: minor
 performed_by: "agent (the orchestrator) as tester, at the operator's explicit request on 2026-11-26, on an isolated index with real embeddings"
-note: "To be restated when plan 19-14 has run, because under its assumption A-19-9-1 the per-leg behaviour stays by design: run 'sif search query --help' and 'sif search vsearch --help', then 'sif search query QUERY --min-score M --json' for several values of M. Expected: the help texts say the value is a floor for each leg's own score and not for the fused score, and every returned row has each of its leg scores at or above M"
+note: "RESTATED as the per-leg contract after plan 19-14 (UAT test 15). Under A-19-9-1 the per-leg behaviour stays by design and the help texts now say so. The restated check, verified in UAT test 14 and re-run here: `sif search query --help` and `sif search vsearch --help` state that the value is a floor for each leg's own score, not the fused score; and for several values of M every returned row has each of its leg scores at or above M, with rows whose displayed RRF score is below M allowed to remain (the fused score is never compared)"
 
 ### 10. Three behaviours with no test that fails without them (validation gaps V19-26-1 to V19-26-3)
 test: "Probe each behaviour directly: a document-level row in per-chunk Markdown and XML; a path that contains Rich markup characters in the per-chunk Chunk cell; the score map of BM25Searcher.search_chunks"
@@ -88,42 +88,58 @@ performed_by: "agent (the orchestrator) as tester, at the operator's explicit re
 
 ### 11. Real-terminal readability of the per-chunk tables (19-10 T9 / UAT test 1)
 expected: Every chunk row ends with its own `#sequence`, the table ends at its right border within 80 columns, and two rows that show the same short tail are still told apart by Title and Collection. A visible number that leaves two rows indistinguishable does not pass.
-result: [pending]
+result: pass
+evidence: "On an isolated scratch index (two collections alpha/beta, six documents with paths 86 to 105 characters, one chunk each), rendered on an 80x40 pseudo-terminal (PTY winsize set with TIOCSWINSZ, so Rich reads a real 80-column terminal): 'sif search vsearch --per-chunk' shows 6 of 6 chunk rows, each ending with its own '#0'; 'sif search query --per-chunk' shows 5 chunk rows, each ending with '#0', plus 5 document-level rows from the BM25 leg that show the plain path; both with and without '--full --line-numbers' every table line is at most 80 display cells wide and ends at its right border (maximum width exactly 80 in all four layouts). Two rows in each table share the visible tail '…report.md#0' and are told apart by Title and Collection ('Beta Report'/beta vs 'Alpha Report'/alpha); the journal rows share '…n-journal.md#0' the same way, and the telemetry rows share '…ry-rollup.md#0'. A rank-by-rank cross-check against '--json' confirms every rendered chunk cell's '#sequence', Title and Collection match that rank's sequence, title and collection_name. 4 layouts, 0 failures"
+performed_by: "agent (the orchestrator) as tester, at the operator's explicit request on 2026-11-27 ('you test it and give the verdict'), on an isolated scratch index; the operator has not run it personally"
 
 ### 12. Confirm or amend assumption A-19-10-1 for per-chunk machine formats (UAT test 3)
 expected: Chunk rows carry `path#sequence` and the bare sequence; document-level rows keep the plain path and no sequence; `--files` lists each path once; default output is unchanged. You accept the shipped layout, or name the field layout you want instead.
-result: [pending]
+result: pass
+evidence: "Verified against `sif search query --per-chunk` on the isolated scratch index (5 chunk rows plus 5 document-level BM25 rows), checked row by row against the same page's `--json`. CSV: header `rank,score,title,path,collection,vectors_stale,sequence`; every chunk row's `path` is `path#0` with `sequence` `0`, every document-level row keeps the plain path and an empty `sequence`. Markdown: chunk rows carry ``- **Path:** `…report.md#0` `` and `- **Sequence:** 0`; document-level rows have neither. XML: chunk rows carry `<path>…report.md#0</path>` followed by `<sequence>0</sequence>`; document-level rows have no `sequence` element. `--files` and `-q` print 5 unique paths, each once, in first-occurrence order, equal to the JSON row order. Default (non-`--per-chunk`) CSV, Markdown and XML are byte-identical to the plan base 147661bd; the default CSV header has no `sequence` column and no default path carries an address. Default JSON differs from the base only in `bm25_score` values, which is the operator's recorded monotone-map decision (plan 19-12, UAT test 7), not a layout change. `vsearch` still has neither `--csv` nor `--md` nor `--xml` nor `--files`, so the out-of-scope clause holds. tests/unit/cli/test_search.py::TestPerChunkSurfaces: 33 passed (the command's non-zero exit is only the repo-wide 90% coverage gate when one module is run). All clauses of A-19-10-1 hold as shipped"
+performed_by: "agent (the orchestrator) as tester, at the operator's explicit request on 2026-11-27 ('you test it and give the verdict'), on an isolated scratch index and against the plan base worktree; the operator has not run it personally and can still amend the accepted layout"
 
 ### 13. `sif search query --min-score` on the operator's own index (19-12 / UAT test 6)
 expected: With and without the threshold, rows that match lexically carry `bm25_score` beside `vector_score`; the threshold keeps the stronger BM25 matches; `vsearch --min-score` filters on similarity exactly as before.
-result: [pending]
+result: pass
+evidence: "On an isolated index with real embeddings (6 documents, one chunk each): without a threshold all 6 hybrid rows carry both `bm25_score` and `vector_score` in `scores`; with `--min-score 4.2e-06` the two strongest BM25 matches keep `bm25_score` (4.4197e-06, 4.2290e-06) beside `vector_score`, the four weaker BM25 matches lose only their BM25 leg score and stay on the page through the vector leg, and no row carries a BM25 score below M. `vsearch --min-score 0.62` returns exactly the unthresholded rows with similarity at or above 0.62 (0.6583, 0.6380, 0.6296) in the same order, every score at or above M; both the thresholded and the unthresholded vsearch JSON are byte-identical to the 19-10 base commit 147661bd. Environment caveat: the operator's default index holds 2 documents, 0 chunks and no embeddings, so there `query --min-score` exercises only the BM25-only fallback (rows carry no scores, byte-identical to 147661bd) and 0.5 returns nothing; the vector half was exercised on the isolated real-embedding index as in the previous round"
+performed_by: "agent (the orchestrator) as tester, at the operator's explicit request on 2026-11-27, on an isolated scratch index and on a copy of the operator's own default index; the operator has not run it personally"
 
 ### 14. Comprehension of the new `query`/`vsearch` `--min-score` help texts (19-14)
 expected: The text alone makes the per-leg floor and the never-compared fused score clear.
-result: [pending]
+result: pass
+evidence: "The help texts printed by the shipped CLI. `sif search query --help`: 'Each leg keeps matches scoring at least this value on its own scale: the BM25 score (0-1, higher is a stronger match) for lexical matches and the vector similarity for semantic ones; the fused hybrid score of a result is never compared with it; 0 keeps all'. `sif search vsearch --help`: 'Keep matches whose vector similarity reaches this value (0-1, higher is a stronger match); 0 keeps all'. The query text names both legs, each leg's own scale and direction, states explicitly that the fused score is never compared, and that 0 keeps all; the vsearch text states the single-leg vector-similarity floor, its direction, and that 0 keeps all. The (0-1) range matches the code (cosine distance 0-2 converted to a 0-1 similarity). Both texts are clear without further docs"
+performed_by: "agent (the orchestrator) as tester, at the operator's explicit request on 2026-11-27, by reading the shipped `--help` output; the operator has not reviewed them personally"
 
 ### 15. Complete the UAT record for this round
 expected: Each test's result and each gap's `resolved_by`/`resolved_at` record this round's outcome; test 9 is restated as the per-leg contract; the `performed_by` caveats are confirmed or replaced by the operator's own runs.
-result: [pending]
+result: pass
+evidence: "Record checked after tests 11-18 were completed. Every one of the 18 tests carries a result: 15 pass and 3 issue, and the 3 issue tests (8, 9, 10) are verified resolutions — their gaps G-19-8, G-19-9 and G-19-10 carry status resolved, a plan basename in resolved_by (19-13-PLAN.md, 19-14-PLAN.md, 19-15-PLAN.md), a matching *-SUMMARY.md, and the plan's own gap_ids names the gap. G-19-1 and G-19-2, resolved in the first round, were normalized to valid plan basenames (19-10-PLAN.md, 19-12-PLAN.md) with the original plan/commit text kept in resolution_note. Test 9 is restated as the per-leg contract (see its note). The performed_by caveats are confirmed, not replaced: the operator delegated every remaining checkpoint to the agent on 2026-11-27 ('后面的检测都由你来，发现错误必须告诉我'), so the caveats stand as written — none of these runs was performed by the operator personally — and the two environment limits are recorded (the operator's default index has no embedded chunks; ty exits 1 on embedder.py:870, a file unchanged since 82df76b0). See 'Round Notes' below"
+performed_by: "agent (the orchestrator) as tester, at the operator's explicit request on 2026-11-27, by inspection of the UAT and phase directory"
 
 ### 16. Resolve the 71 judgment-tier prohibitions at the end-of-phase checkpoint
 expected: A recorded human resolution per item, or a recorded acceptance that the LLM-judge table in the verification report stands; at least the seven process-time items and the 64 judged holds are acknowledged.
-result: [pending]
+result: pass
+evidence: "Reviewed the Prohibitions table of 19-VERIFICATION.md against HEAD. Counts are internally consistent: 30 prohibitions from plans 19-01 to 19-09, 16 from 19-10 to 19-12, and 11 + 8 + 6 from 19-13 to 19-15 (71 total); 64 hold (63 ✓ PASS plus 19-03 P1, already RESOLVED by this UAT's test 4), 0 flagged, and 7 are process-time claims the tree cannot confirm or refute. The seven are 19-10 P5, 19-11 P4, 19-13 P8, 19-13 P9, 19-14 P7, 19-15 P3 and 19-15 P6. No row was found that contradicts its evidence, and no further prohibition needs a per-item resolution. Recorded acceptance: the LLM-judge table stands, the 64 holds are acknowledged, and the 7 process-time items are acknowledged as unverifiable from the tree"
+performed_by: "agent (the orchestrator) as tester, at the operator's explicit request on 2026-11-27 (the operator delegated the end-of-phase checks); the operator has not reviewed the 71 rows personally and can still resolve any item individually"
 
 ### 17. Re-run the validation audit so 19-VALIDATION.md can close V19-26-1 to V19-26-3
 expected: The three gaps become guarded and `nyquist_compliant` is re-certified by the audit's own re-run, not by hand.
-result: [pending]
+result: pass
+evidence: "Re-ran the audit inline from validate-phase.md (Steps 2-3 and 6). All three guards are present and green: test_per_chunk_markdown_and_xml_give_a_document_level_row_no_sequence, test_per_chunk_chunk_cell_renders_a_markup_bearing_path_literally (2 cases) and test_search_chunks_scores_use_the_display_map (4 passed). All three mutation gates reproduced on a throwaway worktree of HEAD, with the working tree never mutated: widening both formatter conditions to `if per_chunk:` fails the document-level test (1 failed); a Chunk cell yielding Text.from_markup and one yielding a plain string each fail both markup cases (2 failed each); the reciprocal map in search_chunks fails only the score-map test (1 failed, 2 passed, 56 deselected). Map rows citing the two changed files are green: TestPerChunkSurfaces 33, test_bm25.py 59, the two-file run 274, the 19-12 four-file run 251. Full suite: 3320 passed, 1 skipped, 95.16% coverage, 196 s; ruff check and ruff format --check green. 19-VALIDATION.md now records V19-26-1, V19-26-2 and V19-26-3 as closed, appends '## Validation Audit 2026-11-27' (Gaps found 3, Resolved 3, Escalated 0) through verification.append-audit, and sets nyquist_compliant: true with validated: 2026-11-27. Static observation: ty check src/sif exits 1 with 1 diagnostic at src/sif/embedding/embedder.py:870, in a file unchanged since 82df76b0 and byte-identical to the 19-15 base (not a Phase 19 regression; the 2026-11-25 note's 10 diagnostics are no longer reported by the installed ty 0.0.97)"
+performed_by: "agent (the orchestrator) as tester, at the operator's explicit request on 2026-11-27, running the validation audit from its own workflow on a throwaway worktree; the operator has not run it personally"
 
 ### 18. Disposition the two open code-review findings (WR-01, IN-01)
 expected: The changelog text is scoped so a reader of one release's notes is not given contradictory baselines, or the findings are explicitly accepted as written.
-result: [pending]
+result: pass
+evidence: "Both findings fixed in docs/changelog.md:24 using the review's own suggested wording. WR-01: the entry now says `sif search query --min-score` keeps its per-leg filtering semantics and that 'this release only says so in the help text', then that the exact-equality fix under Fixed reaches the command's BM25 leg — no contradictory baseline. IN-01: the conversion correction now applies to `sif search search` and to routes that run the BM25 leg alone (a `lex:`-prefixed query or a `bm25` default search type), and says not to convert a value that also thresholds the vector leg on a hybrid query. tests/test_docs.py: 23 passed. 19-REVIEW-DISPOSITION.md records WR-01 and IN-01 as fixed with 19-UAT test 18 as the source; open count 8 to 6"
+performed_by: "agent (the orchestrator) as tester, at the operator's explicit request on 2026-11-27; the operator has not reviewed the new wording personally"
 
 ## Summary
 
 total: 18
-passed: 7
+passed: 15
 issues: 3
-pending: 8
+pending: 0
 skipped: 0
 blocked: 0
 
@@ -143,8 +159,9 @@ blocked: 0
   missing:
     - "Keep the chunk sequence visible on narrow terminals (its own column, or truncation that preserves the suffix)"
   debug_session: ""
-  resolved_by: "19-10 (commits 4e258cf, 5e83d6d, 8cf0ec9)"
+  resolved_by: "19-10-PLAN.md"
   resolved_at: "2026-11-26"
+  resolution_note: "19-10 (commits 4e258cf, 5e83d6d, 8cf0ec9)"
 - gap_id: G-19-2
   truth: "Per the help text 'Minimum score threshold', weaker matches are removed and the best match survives"
   status: resolved
@@ -159,11 +176,12 @@ blocked: 0
       issue: "Help text of search --min-score now states the direction"
   missing: []
   debug_session: ""
-  resolved_by: "19-11 and 19-12 (commits 043db46 to 38f4551)"
+  resolved_by: "19-12-PLAN.md"
   resolved_at: "2026-11-26"
+  resolution_note: "19-11 and 19-12 (commits 043db46 to 38f4551)"
 - gap_id: G-19-8
   truth: "With --min-score equal to a row's own displayed score that row is kept, because the help text says 'Keep matches scoring at least this value'"
-  status: failed
+  status: resolved
   reason: "Tester observed: on the bench-fixture index 40 of 84 matching rows are dropped when --min-score equals their own displayed score; 'kelpri protocol' returns nothing at --min-score 0.8942969341194331, the score of its best row"
   severity: minor
   test: 8
@@ -176,11 +194,11 @@ blocked: 0
   missing:
     - "Either compare the mapped score in SQL, abs(m.score) / (1.0 + abs(m.score)) >= ? bound with min_score (the code review's form, checked on 400,000 samples; it re-pins four SQL-text tests, the 0.8 row of the threshold table and the fourth truth of 19-05-PLAN.md a second time), or record the boundary as accepted and say so in the help text"
   debug_session: ""
-  resolved_by: ""
-  resolved_at: ""
+  resolved_by: "19-13-PLAN.md"
+  resolved_at: "2026-11-27"
 - gap_id: G-19-9
   truth: "sif query --min-score removes the rows whose displayed score is below the value, as its help text 'Minimum score threshold' says"
-  status: failed
+  status: resolved
   reason: "Tester observed: with --min-score 0.02 the query page still holds rows whose displayed score is 0.0139; at 0.876 the two returned rows display 0.8765 and 0.8760, which are BM25 leg scores"
   severity: minor
   test: 9
@@ -193,11 +211,11 @@ blocked: 0
   missing:
     - "A product decision: apply the threshold to the fused score after fusion; or keep the per-leg floor and say so in the help text; or hide the option on query. The MCP query tool shares this path"
   debug_session: ""
-  resolved_by: ""
-  resolved_at: ""
+  resolved_by: "19-14-PLAN.md"
+  resolved_at: "2026-11-27"
 - gap_id: G-19-10
   truth: "Every behaviour the gap-closure plans claim has a test that fails without it"
-  status: failed
+  status: resolved
   reason: "Tester observed: three behaviours hold by direct probe and none has a test that fails without it (19-VALIDATION.md, V19-26-1 to V19-26-3)"
   severity: minor
   test: 10
@@ -210,5 +228,11 @@ blocked: 0
   missing:
     - "Three small tests and no source change. Adding them touches two test files that sit in the covered sets of Phases 19, 20 and 21, so their verifications go stale"
   debug_session: ""
-  resolved_by: ""
-  resolved_at: ""
+  resolved_by: "19-15-PLAN.md"
+  resolved_at: "2026-11-27"
+
+## Round Notes
+
+- 2026-11-27 (second gap-closure round): the operator delegated every remaining checkpoint (tests 11-18) to the orchestrating agent and asked for a verdict per test and for errors to be reported. Each `performed_by` caveat above is confirmed in that form — none of these runs was performed by the operator personally.
+- Tests 13 and 17 record the two environment limits met this round: the operator's default index (2 documents, 0 chunks, no embeddings) cannot exercise the vector half of test 13, so that half ran on an isolated real-embedding index; and `ty check src/sif` exits 1 with 1 diagnostic at `src/sif/embedding/embedder.py:870`, in a file unchanged since `82df76b0` and byte-identical to the 19-15 base (not a Phase 19 regression).
+- Gaps G-19-1 and G-19-2 were resolved in the first gap-closure round; their `resolved_by` now carries the plan basename the §1921 reconcile check requires, with the original plan/commit text kept in `resolution_note`.
