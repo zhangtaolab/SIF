@@ -60,7 +60,8 @@ DEFAULT_SCRATCH_ROOT = PROJECT_ROOT / ".planning" / "tmp" / "phase-24-breadcrumb
 ARTIFACT_PATH = (
     PROJECT_ROOT
     / ".planning"
-    / "phases"
+    / "milestones"
+    / "v1.2-phases"
     / "24-tuning-models-ux-install-docs"
     / "bench"
     / "breadcrumb-verdict.json"
