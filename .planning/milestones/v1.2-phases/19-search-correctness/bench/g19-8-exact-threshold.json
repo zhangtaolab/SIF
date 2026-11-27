@@ -1,0 +1,130 @@
+{
+  "gap": "G-19-8",
+  "plan": "19-13",
+  "uat_test": 8,
+  "index": "tests/fixtures/bench/corpus as collection bench-fixture (150 documents, BM25 only)",
+  "heads": {
+    "before": "54acb111968c11f34e16cf0dde0701e95d82d119",
+    "after": "1ed9030d1a3ee286cf878133e3920b5dd54d0bac"
+  },
+  "sweep": {
+    "command": "the 56 queries of tests/fixtures/bench/queries.json at limit 10 through BM25Searcher.search, scoped to bench-fixture: for every row of every unfiltered page, a search whose min_score is that row displayed score, then one float step below it and one above",
+    "before": {
+      "dropped_at_own_score": 40,
+      "dropped_one_ulp_above": 84,
+      "highest_score": 0.9649301719152716,
+      "kept_one_ulp_below": 84,
+      "lowest_score": 0.8472891154288171,
+      "oracle_mismatches_at_fixed_thresholds": 0,
+      "queries": 56,
+      "queries_with_a_dropped_row": 37,
+      "rows": 84,
+      "rows_kept_at_fixed_thresholds": {
+        "0.12": 84,
+        "0.23": 84,
+        "0.3": 84,
+        "0.5": 84,
+        "0.85": 70,
+        "0.89": 70
+      },
+      "sqlite": "3.51.0"
+    },
+    "after": {
+      "dropped_at_own_score": 0,
+      "dropped_one_ulp_above": 84,
+      "highest_score": 0.9649301719152716,
+      "kept_one_ulp_below": 84,
+      "lowest_score": 0.8472891154288171,
+      "oracle_mismatches_at_fixed_thresholds": 0,
+      "queries": 56,
+      "queries_with_a_dropped_row": 0,
+      "rows": 84,
+      "rows_kept_at_fixed_thresholds": {
+        "0.12": 84,
+        "0.23": 84,
+        "0.3": 84,
+        "0.5": 84,
+        "0.85": 70,
+        "0.89": 70
+      },
+      "sqlite": "3.51.0"
+    }
+  },
+  "probe": {
+    "query": "sif search search kelpri protocol -c bench-fixture -n 10 --json, then the same with --min-score set to the score of rank 1 as --json printed it",
+    "before": {
+      "rows": [
+        [
+          1,
+          "Kelpri Protocol Notes",
+          0.8942969341194331
+        ],
+        [
+          2,
+          "Talven Protocol Notes",
+          0.8482321063105717
+        ]
+      ],
+      "min_score_own_displayed_score": []
+    },
+    "after": {
+      "rows": [
+        [
+          1,
+          "Kelpri Protocol Notes",
+          0.8942969341194331
+        ],
+        [
+          2,
+          "Talven Protocol Notes",
+          0.8482321063105717
+        ]
+      ],
+      "min_score_own_displayed_score": [
+        [
+          1,
+          "Kelpri Protocol Notes",
+          0.8942969341194331
+        ]
+      ]
+    }
+  },
+  "bench_compare": {
+    "b0": {
+      "before": {
+        "mean": 0.0,
+        "helped": 0,
+        "hurt": 0,
+        "unchanged": 100,
+        "n": 100,
+        "noise_floor": 0.01
+      },
+      "after": {
+        "mean": 0.0,
+        "helped": 0,
+        "hurt": 0,
+        "unchanged": 100,
+        "n": 100,
+        "noise_floor": 0.01
+      }
+    },
+    "b1": {
+      "before": {
+        "mean": 0.0,
+        "helped": 0,
+        "hurt": 0,
+        "unchanged": 100,
+        "n": 100,
+        "noise_floor": 0.01
+      },
+      "after": {
+        "mean": 0.0,
+        "helped": 0,
+        "hurt": 0,
+        "unchanged": 100,
+        "n": 100,
+        "noise_floor": 0.01
+      }
+    }
+  }
+}
