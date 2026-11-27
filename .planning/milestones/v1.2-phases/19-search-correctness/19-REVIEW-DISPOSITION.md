@@ -3,6 +3,14 @@ phase: 19
 review: 19-REVIEW.md
 titles: json
 findings:
+  - id: WR-01
+    severity: warning
+    disposition: open
+    title: "The Unreleased changelog says `query --min-score` \"keeps its behaviour\" and then says the exact-score fix reaches its BM25 leg"
+  - id: IN-01
+    severity: info
+    disposition: open
+    title: "The conversion correction says subtract-from-1 holds for `search search` only, but a BM25-only `query` route behaves the same way"
   - id: IN-07
     severity: info
     disposition: open
@@ -35,18 +43,10 @@ findings:
     severity: critical
     disposition: fixed
     title: "A non-string frontmatter `title` aborts the entire index update with a raw traceback"
-  - id: WR-01
-    severity: warning
-    disposition: fixed
-    title: "The convention migration never completes when any in-scope file permanently fails to parse"
   - id: WR-02
     severity: warning
     disposition: fixed
     title: "`-n/--limit` accepts zero/negative values with three different behaviors"
-  - id: IN-01
-    severity: info
-    disposition: deferred
-    title: "Vector scores are L2-derived but converted/documented as cosine"
   - id: IN-02
     severity: info
     disposition: deferred
@@ -67,27 +67,26 @@ findings:
     severity: info
     disposition: deferred
     title: "MCP backend silently creates an empty index at a nonexistent SIF_DB_PATH"
-open: 6
+open: 8
 total: 16
-unparsed: 10
-recorded: 2026-11-26T04:56:12.471Z
+recorded: 2026-11-27T10:22:49.359Z
 ---
 
 # Phase 19: Code Review Disposition
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| IN-07 | info | open | - |
-| IN-08 | info | open | - |
-| IN-09 | info | open | - |
-| IN-10 | info | open | - |
-| IN-11 | info | open | - |
-| IN-12 | info | open | - |
+| WR-01 | warning | open | - |
+| IN-01 | info | open | - |
+| IN-07 | info | open | - (not in the current review) |
+| IN-08 | info | open | - (not in the current review) |
+| IN-09 | info | open | - (not in the current review) |
+| IN-10 | info | open | - (not in the current review) |
+| IN-11 | info | open | - (not in the current review) |
+| IN-12 | info | open | - (not in the current review) |
 | CR-01 | critical | fixed | 19-REVIEW-FIX.md (not in the current review) |
 | CR-02 | critical | fixed | 19-REVIEW-FIX.md (not in the current review) |
-| WR-01 | warning | fixed | 19-REVIEW-FIX.md (not in the current review) |
 | WR-02 | warning | fixed | 19-REVIEW-FIX.md (not in the current review) |
-| IN-01 | info | deferred | out of dispatch scope (not in the current review) |
 | IN-02 | info | deferred | out of dispatch scope (not in the current review) |
 | IN-03 | info | deferred | out of dispatch scope (not in the current review) |
 | IN-04 | info | fixed | 19-REVIEW-FIX.md (not in the current review) |
