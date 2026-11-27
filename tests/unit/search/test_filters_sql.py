@@ -846,7 +846,7 @@ class TestBm25ParamOrder:
                 1.0,
                 '"python"*',
                 "c1",
-                -1.0,
+                0.5,
                 "status",
                 "string",
                 "active",
@@ -855,7 +855,7 @@ class TestBm25ParamOrder:
             ]
             assert (
                 sql.index("d.collection_id IN (?)")
-                < sql.index("m.score <= ?")
+                < sql.index("abs(m.score) / (1.0 + abs(m.score)) >= ?")
                 < sql.index("EXISTS (")
                 < sql.index("LIMIT ? OFFSET ?")
             )

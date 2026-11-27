@@ -57,26 +57,6 @@ def bm25_display_score(raw: float) -> float:
     return magnitude / (1.0 + magnitude)
 
 
-def bm25_rank_threshold(min_score: float) -> float | None:
-    """Return the bound that keeps the rows whose displayed score is at least ``min_score``.
-
-    The displayed score is ``|bm25|/(1+|bm25|)`` of the non-positive bm25 value
-    ``b``, which is ``-b/(1-b)``. So ``score >= m`` is ``-b/(1-b) >= m``, and
-    because ``1-b`` is positive it is ``-b >= m - mb``, that is ``b <= -m/(1-m)``:
-    keeping a score at or above ``min_score`` is an upper bound on the bm25
-    value, which keeps the stronger matches.
-
-    Edge rules: a ``min_score`` that is not above 0 (0, a negative value, or
-    NaN) returns ``None``, so the predicate is omitted; a value of 1 or above
-    returns negative infinity, which no bm25 value can reach, so no row is kept.
-    """
-    if not min_score > 0:
-        return None
-    if min_score >= 1:
-        return float("-inf")
-    return -min_score / (1.0 - min_score)
-
-
 class BM25Searcher:
     """BM25 full-text search using SQLite FTS5."""
 
@@ -108,15 +88,19 @@ class BM25Searcher:
         fts_query = self._build_fts_query(query)
 
         # min_score thresholding happens BEFORE LIMIT/OFFSET (CORR-03, research
-        # Pitfall 4/P15). The threshold below is the bound on the same WEIGHTED
-        # bm25 expression that projects `score`, so a raised title weight moves
-        # threshold and ordering together. The displayed score rises with
-        # relevance (the magnitude of the bm25 value over one plus that
-        # magnitude, on the non-positive value), so keeping a score at or above
-        # min_score keeps the stronger matches and the bound is an upper bound
-        # on that value (G-19-2, plan 19-12). The earlier map was the reciprocal
-        # of one plus the magnitude, under which a better match showed a lower
-        # number and the threshold removed the best matches first.
+        # Pitfall 4/P15). The predicate compares the displayed score itself,
+        # computed in SQL from the same WEIGHTED bm25 expression that projects
+        # `score`, with min_score bound as it was given, so a raised title
+        # weight moves threshold and ordering together and a row whose
+        # displayed score equals min_score to the last bit is kept (G-19-8,
+        # plan 19-13). The earlier form, released in 1.2.4, compared the raw
+        # value with a bound recomputed from min_score, which was not the exact
+        # inverse of the score map and dropped about half of the rows at what
+        # the user saw as equality. A value not above 0 (0, a negative value,
+        # NaN) omits the predicate, because with a NaN bound the comparison is
+        # NULL and would drop every row. A value of 1 or more keeps no row by
+        # arithmetic, because the displayed score lies strictly between 0 and
+        # 1.
         content_weight = _CONTENT_WEIGHT
         title_weight = _TITLE_WEIGHT if options.title_weight is None else options.title_weight
 
@@ -128,10 +112,9 @@ class BM25Searcher:
             collection_filter = f"AND d.collection_id IN ({placeholders})"
 
         min_score_filter = ""
-        threshold = bm25_rank_threshold(options.min_score)
-        if threshold is not None:
-            params.append(threshold)
-            min_score_filter = "AND m.score <= ?"
+        if options.min_score > 0:
+            params.append(options.min_score)
+            min_score_filter = "AND abs(m.score) / (1.0 + abs(m.score)) >= ?"
 
         # Metadata filter (Phase 20, D-02/D-17): the compiled predicate is one
         # more fragment in the OUTER WHERE of the materialized CTE (never

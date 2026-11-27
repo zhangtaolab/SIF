@@ -1,14 +1,23 @@
 """Tests for BM25 search strategy."""
 
 import contextlib
+import math
+import random
 import sqlite3
+import struct
+from dataclasses import replace
 from unittest.mock import MagicMock
 
 import pytest
 
 from sif.core.models import SearchOptions, SearchResult
-from sif.search.bm25 import _CONTENT_WEIGHT, _TITLE_WEIGHT, BM25Searcher, bm25_rank_threshold
+from sif.search.bm25 import _CONTENT_WEIGHT, _TITLE_WEIGHT, BM25Searcher, bm25_display_score
 from sif.search.context_attach import enrich_results
+
+
+# The predicate the searcher binds for min_score (G-19-8): the displayed score
+# computed in SQL from the same weighted bm25 expression that projects the score.
+_MIN_SCORE_PREDICATE = "abs(m.score) / (1.0 + abs(m.score)) >= ?"
 
 
 class TestBM25Searcher:
@@ -86,7 +95,9 @@ class TestBM25Searcher:
         # row["score"] is the FTS bm25 value (negative; more negative is a
         # better match), converted to the displayed score |bm25|/(1+|bm25|),
         # which rises with relevance. The SQL — not this loop — applies
-        # min_score.
+        # min_score: it computes the displayed score from the same weighted
+        # bm25 expression that projects the score, and compares it with
+        # min_score bound as it was given (G-19-8, plan 19-13).
         mock_db = self._make_mock_db(
             [
                 {
@@ -112,16 +123,11 @@ class TestBM25Searcher:
 
         sql = mock_db.execute.call_args[0][0]
         params = mock_db.execute.call_args[0][1]
-        # FTS5: score >= m  <=>  bm25 <= -m/(1-m). The displayed score rises
-        # with relevance, so keeping a score at or above m is an upper bound on
-        # the non-positive bm25 value: it keeps the stronger matches. Position
-        # 0/1 are the bound content/title weights, position 2 the MATCH query,
-        # position 3 the weighted-expression threshold.
-        assert "m.score <= ?" in sql
-        assert params[3] == pytest.approx(-0.3 / 0.7)
+        assert _MIN_SCORE_PREDICATE in sql
+        assert params[3] == 0.3
         assert params[:2] == [_CONTENT_WEIGHT, _TITLE_WEIGHT]
         # The bound is part of the WHERE clause, ahead of LIMIT/OFFSET.
-        assert sql.index("m.score <= ?") < sql.index("LIMIT ? OFFSET ?")
+        assert sql.index(_MIN_SCORE_PREDICATE) < sql.index("LIMIT ? OFFSET ?")
         # Both returned rows survive: the threshold travelled to SQL.
         assert [r.document_id for r in results] == ["doc-1", "doc-2"]
 
@@ -145,7 +151,7 @@ class TestBM25Searcher:
 
         sql = mock_db.execute.call_args[0][0]
         params = mock_db.execute.call_args[0][1]
-        assert "m.score <=" not in sql
+        assert "abs(m.score)" not in sql
         assert params == [_CONTENT_WEIGHT, _TITLE_WEIGHT, '"test"* AND "query"*', 10, 0]
         assert [r.document_id for r in results] == ["doc-1"]
 
@@ -179,22 +185,39 @@ class TestBM25Searcher:
         assert scores[1] > scores[0]
 
     @pytest.mark.parametrize(
-        ("min_score", "expected"),
+        ("min_score", "bound"),
         [
             (0.0, None),
             (-0.5, None),
             (float("nan"), None),
-            (0.5, -1.0),
-            (0.8, -4.000000000000001),
-            (1.0, float("-inf")),
-            (1.5, float("-inf")),
+            (0.5, 0.5),
+            (0.8, 0.8),
+            (1.0, 1.0),
+            (1.5, 1.5),
         ],
     )
-    def test_rank_threshold_table(self, min_score: float, expected: float | None) -> None:
-        """-M/(1-M) for M between 0 and 1; None at or below 0; -inf from 1."""
-        assert bm25_rank_threshold(min_score) == expected
+    def test_min_score_binding_table(self, min_score: float, bound: float | None) -> None:
+        """min_score is bound as given: there is no separate bound to convert.
 
-    @pytest.mark.parametrize("min_score", [1.0, 2.5])
+        A value of 1 or more is bound like any other value and keeps no row by
+        arithmetic, because the displayed score lies strictly between 0 and 1
+        (G-19-8).
+        """
+        mock_db = self._make_mock_db([])
+        searcher = BM25Searcher(mock_db)
+        searcher.search("test query", SearchOptions(min_score=min_score, include_highlights=False))
+
+        sql = mock_db.execute.call_args[0][0]
+        params = mock_db.execute.call_args[0][1]
+        if bound is None:
+            assert "abs(m.score)" not in sql
+            assert params == [_CONTENT_WEIGHT, _TITLE_WEIGHT, '"test"* AND "query"*', 10, 0]
+        else:
+            assert _MIN_SCORE_PREDICATE in sql
+            assert params[3] == bound
+            assert params[-2:] == [10, 0]
+
+    @pytest.mark.parametrize("min_score", [1.0, 2.5, float("inf")])
     def test_min_score_at_or_above_one_keeps_nothing(self, min_score: float) -> None:
         """No displayed score reaches 1, so a threshold of 1 or more keeps no row."""
         conn = _build_real_fts_db()
@@ -205,6 +228,26 @@ class TestBM25Searcher:
             )
 
             assert results == []
+        finally:
+            conn.close()
+
+    @pytest.mark.parametrize("min_score", [0.0, -0.5, float("nan")])
+    def test_values_not_above_zero_keep_every_row(self, min_score: float) -> None:
+        """0, a negative value and NaN omit the predicate and keep every row.
+
+        A NaN bound would make the SQL comparison NULL and drop every row, which
+        is why the predicate is omitted rather than bound (G-19-8).
+        """
+        conn = _build_real_fts_db()
+        try:
+            searcher = BM25Searcher(conn)
+            options = SearchOptions(collection_ids=["c1"], include_highlights=False)
+            unfiltered = searcher.search("apple", options)
+            filtered = searcher.search("apple", replace(options, min_score=min_score))
+
+            assert [(r.document_id, r.score) for r in filtered] == [
+                (r.document_id, r.score) for r in unfiltered
+            ]
         finally:
             conn.close()
 
@@ -228,7 +271,7 @@ class TestBM25Searcher:
 
         sql = mock_db.execute.call_args[0][0]
         params = mock_db.execute.call_args[0][1]
-        assert "m.score <=" not in sql
+        assert "abs(m.score)" not in sql
         assert params == [_CONTENT_WEIGHT, _TITLE_WEIGHT, '"test"* AND "query"*', 10, 0]
         assert [r.document_id for r in results] == ["doc-1"]
 
@@ -789,10 +832,10 @@ class TestWeightedBM25:
         conn = _build_title_body_db()
         try:
             searcher = BM25Searcher(conn)
-            # The bm25 bound is -4 (min_score 0.8). At title_weight=10 the
-            # title-only match reaches -6.03 and joins d-body at -5.25, both at
-            # or below the bound; at weight 1.0 d-title stays at -3.59 and drops
-            # out.
+            # min_score 0.8 is compared with the displayed score. At
+            # title_weight=10 the title-only match displays 0.858 and joins the
+            # body-only match at 0.840, both at or above it; at weight 1.0 the
+            # title-only match displays 0.782 and drops out.
             min_score = 0.8
             weighted = searcher.search(
                 "needle",
@@ -935,3 +978,116 @@ class TestBM25SearcherEnrichmentContract:
         results = enrich_results(mock_db, [self._result()])
 
         assert results[0].context_description is None
+
+
+def _score_expression_sample() -> list[float]:
+    """Deterministic finite doubles spanning the displayed-score division.
+
+    NaN and infinity are left out because SQLite has no NaN (a bound NaN
+    arrives as NULL) and divides infinity by infinity to NULL where Python
+    yields NaN; FTS5 returns neither for a matching row.
+    """
+    values = [0.0, -0.0, 5e-324, -5e-324, 2.2250738585072014e-308, 1e-300, 1e-100, 1e-6]
+    values.extend(float(value) for value in range(-64, 65))
+    for base in (0.5, 1.0, 2.0, 10.0, 100.0, 1e15, 1e16, 1e300, 1.7976931348623157e308):
+        values.extend(
+            (
+                base,
+                -base,
+                math.nextafter(base, math.inf),
+                math.nextafter(base, -math.inf),
+                math.nextafter(-base, math.inf),
+                math.nextafter(-base, -math.inf),
+            )
+        )
+    values = [value for value in values if math.isfinite(value)]
+    rng = random.Random(1908)
+    values.extend(
+        10 ** rng.uniform(-9, 6) * rng.random() * (1.0 if rng.random() < 0.5 else -1.0)
+        for _ in range(100_000)
+    )
+    return values
+
+
+class TestExactMinScore:
+    """The filter keeps exactly the rows whose displayed score is at least min_score.
+
+    The predicate computes the displayed score and compares it with the bound
+    ``min_score``, so the filter keeps exactly the rows whose displayed score,
+    as Python computes it for the output, is at least the threshold. These
+    tests hold the searcher to that on real FTS rows at the row's own score and
+    one float step either side (G-19-8, plan 19-13).
+    """
+
+    @staticmethod
+    def _assert_filter_equals_the_displayed_score(
+        conn: sqlite3.Connection, query: str, options: SearchOptions
+    ) -> None:
+        searcher = BM25Searcher(conn)
+        page = searcher.search(query, replace(options, min_score=0.0))
+        assert len(page) >= 2
+        for row in page:
+            for threshold in (row.score, math.nextafter(row.score, 0.0)):
+                kept = searcher.search(query, replace(options, min_score=threshold))
+                expected = [candidate for candidate in page if candidate.score >= threshold]
+                assert [result.document_id for result in kept] == [
+                    candidate.document_id for candidate in expected
+                ]
+                assert [result.score for result in kept] == [
+                    candidate.score for candidate in expected
+                ]
+            above = math.nextafter(row.score, 1.0)
+            kept_above = searcher.search(query, replace(options, min_score=above))
+            assert [result.document_id for result in kept_above] == [
+                candidate.document_id for candidate in page if candidate.score >= above
+            ]
+
+    @pytest.mark.parametrize("scoped", [True, False], ids=["scoped", "unfiltered"])
+    def test_real_rows_are_kept_at_their_own_displayed_score(self, scoped: bool) -> None:
+        conn = _build_real_fts_db()
+        try:
+            self._assert_filter_equals_the_displayed_score(
+                conn,
+                "apple",
+                SearchOptions(
+                    collection_ids=["c1"] if scoped else None,
+                    include_highlights=False,
+                ),
+            )
+        finally:
+            conn.close()
+
+    @pytest.mark.parametrize("title_weight", [1.0, 10.0], ids=["weight-1", "weight-10"])
+    def test_weighted_rows_are_kept_at_their_own_displayed_score(self, title_weight: float) -> None:
+        conn = _build_title_body_db()
+        try:
+            self._assert_filter_equals_the_displayed_score(
+                conn,
+                "needle",
+                SearchOptions(
+                    collection_ids=["c1"],
+                    title_weight=title_weight,
+                    include_highlights=False,
+                ),
+            )
+        finally:
+            conn.close()
+
+    def test_sql_score_expression_matches_the_display_map_bit_for_bit(self) -> None:
+        expression = _MIN_SCORE_PREDICATE.removesuffix(" >= ?")
+        conn = sqlite3.connect(":memory:")
+        try:
+            for raw in _score_expression_sample():
+                (value,) = conn.execute(
+                    f"SELECT {expression} FROM (SELECT ? AS score) m", (raw,)
+                ).fetchone()
+                expected = bm25_display_score(raw)
+                assert value == expected, raw
+                if expected != 0.0:
+                    assert struct.pack(">d", value) == struct.pack(">d", expected), raw
+                # Zero of either sign compares equal but differs in its sign
+                # bit: SQLite keeps the sign of a negative zero where Python's
+                # abs drops it. A matching row's bm25 value is strictly
+                # negative, so the case never reaches the predicate.
+        finally:
+            conn.close()
