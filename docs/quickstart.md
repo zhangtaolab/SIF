@@ -7,7 +7,7 @@ Get up and running with SIF in minutes.
 
 Before installing SIF, make sure your system meets these requirements:
 
-- **Python `>= 3.10`** — check your version with `python3 --version`
+- **Python `>= 3.11`** — check your version with `python3 --version`
 - **uv `>= 0.9.19`** — the recommended installer; `uv tool install` keeps SIF
   isolated and on PATH. Install uv first if you do not have it (see the
   [uv documentation](https://docs.astral.sh/uv/)); the `--torch-backend`
@@ -71,7 +71,7 @@ The backend matrix was manually verified on Linux with uv 0.13.8 and torch 2.15.
 
 The `all` extra adds GGUF (llama-cpp-python) and OpenAI-compatible backends.
 Use Python 3.12 for this extra: official `llama-cpp-python` wheels list Python
-3.10–3.12, while 3.13 falls back to a source build.
+3.11–3.12 among SIF's supported versions, while 3.13 falls back to a source build.
 
 ```bash
 uv tool install --python 3.12 'docsif[all]'

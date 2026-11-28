@@ -28,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - N/A
 
 ### Removed
-- N/A
+- Python 3.10 support. Python 3.10 reached end of life in October 2026, so `requires-python` is now `>=3.11`, the `3.10` trove classifier is gone, and installers refuse the package on Python 3.10. The CI matrix is six cells (Python 3.11–3.13 on `ubuntu-latest` and `macos-latest`) instead of eight; Phase 26 of v1.3 was verified on the eight-cell matrix before this change (GitHub Actions run 46144675032).
 
 ### Fixed
 - N/A

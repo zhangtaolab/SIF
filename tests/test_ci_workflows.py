@@ -26,7 +26,7 @@ BLACK_SECTION = re.compile(r"^\[tool\.black\]", re.MULTILINE)
 WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 TEST_MATRIX = WORKFLOWS / "test-matrix.yml"
 SETUP_UV_SHA = "astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2"
-PYTHON_VERSION_MATRIX = "python-version: ['3.10', '3.11', '3.12', '3.13']"
+PYTHON_VERSION_MATRIX = "python-version: ['3.11', '3.12', '3.13']"
 MATRIX_AXIS_LIST = re.compile(r"^[ \t]*(os|python-version):[ \t]*\[([^\]]*)\][ \t]*$", re.MULTILINE)
 MATRIX_SKIP_ENTRY = re.compile(r"^[ \t]*(exclude|include|if|continue-on-error):", re.MULTILINE)
 ALL_BRANCH_PUSH_TRIGGER = re.compile(r"^on:\n  push:\n    branches: \['\*\*'\]\n", re.MULTILINE)
@@ -34,12 +34,12 @@ PULL_REQUEST_TRIGGER = re.compile(r"^  pull_request:[ \t]*$", re.MULTILINE)
 EXPECTED_MATRIX_CELLS = sorted(
     (os_name, version)
     for os_name in ("ubuntu-latest", "macos-latest")
-    for version in ("3.10", "3.11", "3.12", "3.13")
+    for version in ("3.11", "3.12", "3.13")
 )
 
 
 def _section(text: str, name: str) -> str:
-    """Return the raw TOML text of a table section (Py3.10-safe fallback helper)."""
+    """Return the raw TOML text of a table section (plain text parse, no TOML library)."""
     header = re.compile(rf"^\[{re.escape(name)}\]\s*$", re.MULTILINE).search(text)
     assert header is not None, f"missing [{name}] section in pyproject.toml"
     start = header.end()
@@ -187,13 +187,13 @@ def test_installation_docs_match_extras() -> None:
     assert offenders == [], f"docs still advertise {BLACK_DEV_REQUIREMENT!r}: {offenders}"
 
 
-def test_matrix_declares_eight_cells() -> None:
-    """The test job matrix is the full 4 Python versions x 2 operating systems product."""
+def test_matrix_declares_six_cells() -> None:
+    """The test job matrix is the full 3 Python versions x 2 operating systems product."""
     text = _workflow_text()
 
     missing = [
         value
-        for value in ("'3.10'", "'3.11'", "'3.12'", "'3.13'", "ubuntu-latest", "macos-latest")
+        for value in ("'3.11'", "'3.12'", "'3.13'", "ubuntu-latest", "macos-latest")
         if value not in text
     ]
     assert missing == [], f"test-matrix.yml is missing matrix cells {missing}; text: {text!r}"
@@ -230,14 +230,14 @@ def test_matrix_declares_eight_cells() -> None:
 
     cells = declared_cells()
     assert cells == EXPECTED_MATRIX_CELLS, (
-        "the test matrix must be the full product of ubuntu-latest and macos-latest x 3.10, "
-        f"3.11, 3.12, 3.13 (8 cells); expected {EXPECTED_MATRIX_CELLS} but found {cells}; "
+        "the test matrix must be the full product of ubuntu-latest and macos-latest x 3.11, "
+        f"3.12, 3.13 (6 cells); expected {EXPECTED_MATRIX_CELLS} but found {cells}; "
         f"test job block: {test_job!r}"
     )
     skip_entries = MATRIX_SKIP_ENTRY.findall(test_job)
     assert skip_entries == [], (
         f"the test job declares matrix skip entries {skip_entries}: exclude/include reshape the "
-        "matrix and if/continue-on-error blank a cell or mute its failure, so all 8 cells must "
+        "matrix and if/continue-on-error blank a cell or mute its failure, so all 6 cells must "
         f"run unconditionally; test job block: {test_job!r}"
     )
 

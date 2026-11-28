@@ -2,7 +2,7 @@
 <!-- mcp-name: io.github.zhangtaolab/sif -->
 # SIF
 
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 
@@ -28,7 +28,7 @@ SIF is a local hybrid search engine for personal knowledge bases. It indexes Mar
 
 ## Installation
 
-SIF is distributed on PyPI as `docsif`; the installed command is `sif`. Python 3.10 or newer is required, and the recommended installer is [uv](https://docs.astral.sh/uv/) 0.9.19 or newer. See the [Installation Guide](docs/installation.md) for llama-cpp backend wheels, the full degradation matrix, and client configuration.
+SIF is distributed on PyPI as `docsif`; the installed command is `sif`. Python 3.11 or newer is required, and the recommended installer is [uv](https://docs.astral.sh/uv/) 0.9.19 or newer. See the [Installation Guide](docs/installation.md) for llama-cpp backend wheels, the full degradation matrix, and client configuration.
 
 <!-- VERIFY: docsif is published on PyPI and the embed, openai, and all extras resolve there -->
 

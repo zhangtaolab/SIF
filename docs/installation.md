@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- **Python**: 3.10 or newer
+- **Python**: 3.11 or newer
 - **uv**: 0.9.19 or newer for the recommended `uv tool` install path (`--torch-backend` applies to `uv tool` commands from that release)
 - **Operating System**: Linux, macOS, or Windows (Windows is degradation-only in v1.2; see [Windows](#windows))
 - **Memory**: Minimum 4GB RAM (8GB+ recommended for large collections)
@@ -160,7 +160,7 @@ per-backend details.
 
 GGUF models need `llama-cpp-python`, which ships in the `all` extra but not in
 `embed`. Official prebuilt wheels are published per backend and per Python
-version (3.10–3.12) at these indexes:
+version (3.11–3.12 among the versions SIF supports) at these indexes:
 
 | Backend | Wheel index |
 |---------|-------------|
@@ -201,7 +201,7 @@ CMAKE_ARGS="-DGGML_CUDA=on" pip install llama-cpp-python --no-binary llama-cpp-p
 
 ### The `all` extra and the Python 3.12 safe path
 
-Official llama-cpp-python wheels list Python 3.10–3.12. On Python 3.13 the
+Official llama-cpp-python wheels list Python 3.11–3.12 among SIF's supported versions. On Python 3.13 the
 `all` extra falls back to a source build, which needs a compiler and CMake.
 Install the `all` extra under Python 3.12 to stay on the prebuilt wheel path:
 
