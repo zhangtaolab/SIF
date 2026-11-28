@@ -26,9 +26,13 @@ import hashlib
 import json
 import re
 import sqlite3
+import time
 import unicodedata
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Protocol
+from pathlib import Path
+from typing import Any, Protocol
+from urllib import request
 
 from sif.database.repositories import LLMCacheRepository
 from sif.utils.logging import get_logger
@@ -253,15 +257,31 @@ PROMPT_VERSION = "anchor.v1"
 MAX_ANCHOR_TERMS = 10
 CACHE_RESPONSE_VERSION = 1
 
-# Task 1 scaffolding prompt; Task 2 replaces it with the frozen template under
-# the same PROMPT_VERSION (only the published plan's final text is frozen).
-PROMPT_TEMPLATE = "Query: {query}\nTerms:\n"
+# GEN-01 term-shape bounds (frozen, not Settings).
+MAX_TERM_CHARS = 64
+MAX_TERM_WORDS = 6
+
+# The frozen prompt (D-06). It is part of the cache key identity: changing any
+# character above requires bumping PROMPT_VERSION so every cached row expires.
+PROMPT_TEMPLATE = (
+    "You expand a search query into alternative search terms.\n"
+    "Write one term per line. No numbering, no explanations.\n"
+    "Use synonyms, abbreviations and translations of the key concepts.\n"
+    "At most 10 lines.\n\n"
+    "Query: {query}\nTerms:\n"
+)
 
 _ANCHOR_BACKENDS = frozenset({"rules", "gguf", "openai"})
 _DEFAULT_MAX_CALLS = 100
 _DEFAULT_CACHE_TTL = 2592000
 _DEFAULT_TIMEOUT_MS = 5000
 _DEFAULT_MAX_TOKENS = 64
+
+# List prefixes (numbering, bullets) are stripped before a term is trusted.
+_LIST_PREFIX = re.compile(r"^[\s\-\*•\d\)\.]+")
+# A term must contain at least one alphanumeric or CJK character; pure
+# punctuation is discarded (T-26-06 keeps model output as candidate tokens).
+_TERM_CHAR_RE = re.compile(r"[0-9a-z一-鿿]")
 
 
 class AnchorBackendUnavailable(RuntimeError):  # noqa: N818 - public API name
@@ -298,7 +318,9 @@ class AnchorGenerator(Protocol):
     generator never touches ``SearchResult`` and never writes the cache itself.
     """
 
-    model_id: str
+    @property
+    def model_id(self) -> str:
+        """Stable model identity for the cache namespace and prompt hash."""
 
     def generate(self, prompt: str) -> str:
         """Return raw model text for ``prompt``."""
@@ -354,22 +376,219 @@ def _parse_cached(response: str) -> list[str] | None:
 
 
 def parse_terms(text: str, *, limit: int = MAX_ANCHOR_TERMS) -> list[str]:
-    """Parse generator output into deduplicated anchor terms.
+    """Parse generator output into deduplicated, bounded anchor terms (GEN-01).
 
-    Task 1 keeps the line/strip/dedupe/cap shape; Task 2 adds the full
-    character, length, and word-count constraints (GEN-01).
+    One term per line; numbering/bullets, surrounding quotes, and case are
+    normalized away. Empty lines, terms longer than 64 characters, terms with
+    more than 6 words, and terms with no alnum/CJK character are discarded.
+    First occurrence wins and the result is truncated to ``limit``.
     """
     terms: list[str] = []
     seen: set[str] = set()
     for raw in text.splitlines():
-        term = raw.strip().strip("\"'`").lower()
-        if not term or term in seen:
+        term = _LIST_PREFIX.sub("", raw).strip().strip("\"'`").lower()
+        if not term or len(term) > MAX_TERM_CHARS or len(term.split()) > MAX_TERM_WORDS:
+            continue
+        if not _TERM_CHAR_RE.search(term):
+            continue
+        if term in seen:
             continue
         seen.add(term)
         terms.append(term)
         if len(terms) >= limit:
             break
     return terms
+
+
+# One warning per remote base_url per process (D-15): the disclosure is a
+# security notice, not per-query noise.
+_EGRESS_WARNED: set[str] = set()
+
+
+def _warn_egress_once(base_url: str) -> None:
+    """Disclose remote query egress exactly once for ``base_url``."""
+    if base_url in _EGRESS_WARNED:
+        return
+    _EGRESS_WARNED.add(base_url)
+    logger.warning("Anchor generator backend 'openai' sends query text to %s", base_url)
+
+
+def _post_json(
+    url: str,
+    payload: dict[str, object],
+    headers: dict[str, str],
+    timeout_s: float,
+) -> dict[str, object]:
+    """POST a JSON payload with stdlib ``urllib`` (zero new dependencies)."""
+    data = json.dumps(payload).encode("utf-8")
+    req = request.Request(url, data=data, headers=headers, method="POST")
+    with request.urlopen(req, timeout=timeout_s) as response:
+        body = response.read()
+    decoded = json.loads(body)
+    if not isinstance(decoded, dict):
+        raise ValueError("anchor endpoint response is not a JSON object")
+    return decoded
+
+
+class LocalGGUFGenerator:
+    """Local GGUF generator with an explicit chat template and a deadline.
+
+    The model is constructed with ``embedding=False`` (never reusing the
+    embedding backend's instance) outside the generation deadline, and the
+    chat template is rendered explicitly so the model does not echo the prompt
+    (D-06). ``llama_cpp`` / ``jinja2`` are imported only inside ``_load``.
+    """
+
+    def __init__(
+        self,
+        model_path: Path | str,
+        *,
+        max_tokens: int = _DEFAULT_MAX_TOKENS,
+        timeout_ms: int = _DEFAULT_TIMEOUT_MS,
+    ) -> None:
+        """Validate the explicit absolute ``.gguf`` path without loading it."""
+        path = Path(model_path)
+        if (
+            not path.is_absolute()
+            or not path.exists()
+            or not path.is_file()
+            or path.suffix.lower() != ".gguf"
+        ):
+            raise AnchorBackendUnavailable("model_path_invalid")
+        self.model_path = path
+        self.max_tokens = max_tokens
+        self.timeout_ms = timeout_ms
+        self._llm: Any = None
+        self._formatter: Any = None
+
+    @property
+    def model_id(self) -> str:
+        """Stable model identity for the cache namespace and prompt hash."""
+        return self.model_path.stem
+
+    def _load(self) -> None:
+        """Construct the model and chat formatter (lazy optional imports)."""
+        try:
+            from llama_cpp import Llama  # noqa: PLC0415
+            from llama_cpp.llama_chat_format import Jinja2ChatFormatter  # noqa: PLC0415
+        except ImportError as exc:
+            raise AnchorBackendUnavailable("llama_cpp_missing") from exc
+        try:
+            llm = Llama(
+                model_path=str(self.model_path),
+                n_ctx=2048,
+                embedding=False,
+                verbose=False,
+            )
+            metadata = getattr(llm, "metadata", None)
+            template = (
+                metadata.get("tokenizer.chat_template") if isinstance(metadata, dict) else None
+            )
+            formatter = None
+            if template:
+                formatter = Jinja2ChatFormatter(
+                    template=template,
+                    eos_token=llm.detokenize([llm.token_eos()]).decode("utf-8"),
+                    bos_token=llm.detokenize([llm.token_bos()]).decode("utf-8"),
+                    stop_token_ids=[llm.token_eos()],
+                )
+        except Exception as exc:
+            raise AnchorBackendUnavailable("model_load_failed") from exc
+        self._llm = llm
+        self._formatter = formatter
+
+    def generate(self, prompt: str) -> str:
+        """Render the chat template and run one greedy, deadline-bounded completion."""
+        if self._llm is None:
+            self._load()
+        from llama_cpp import StoppingCriteriaList  # noqa: PLC0415
+
+        deadline = time.monotonic() + self.timeout_ms / 1000.0
+        timed_out = [False]
+
+        def _expired(_tokens: object, _logits: object) -> bool:
+            if time.monotonic() < deadline:
+                return False
+            timed_out[0] = True
+            return True
+
+        prompt_text = prompt
+        stop: list[str] = []
+        if self._formatter is not None:
+            rendered = self._formatter(messages=[{"role": "user", "content": prompt}])
+            prompt_text = rendered.prompt
+            stop = list(rendered.stop)
+        try:
+            out = self._llm.create_completion(
+                prompt=prompt_text,
+                stop=stop,
+                max_tokens=self.max_tokens,
+                temperature=0.0,
+                top_k=1,
+                repeat_penalty=1.0,
+                stopping_criteria=StoppingCriteriaList([_expired]),
+            )
+        except Exception as exc:
+            raise AnchorGenerationFailed("generation_failed") from exc
+        if timed_out[0]:
+            raise AnchorGenerationFailed("timeout")
+        choices = out.get("choices") if isinstance(out, dict) else None
+        if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+            raise AnchorGenerationFailed("invalid_response")
+        text = choices[0].get("text")
+        return text if isinstance(text, str) else ""
+
+
+class OpenAICompatibleGenerator:
+    """Explicitly opted-in OpenAI-compatible chat-completions generator."""
+
+    def __init__(  # noqa: PLR0913 - the configured backend surface
+        self,
+        base_url: str,
+        model: str,
+        *,
+        api_key: str | None = None,
+        timeout_ms: int = _DEFAULT_TIMEOUT_MS,
+        max_tokens: int = _DEFAULT_MAX_TOKENS,
+        transport: Callable[[str, dict[str, object], dict[str, str], float], dict[str, object]]
+        | None = None,
+    ) -> None:
+        """Validate the http(s) endpoint and bind the injectable transport."""
+        if not isinstance(base_url, str) or not base_url.lower().startswith(
+            ("http://", "https://")
+        ):
+            raise AnchorBackendUnavailable("api_base_invalid")
+        self.base_url = base_url.rstrip("/")
+        self.model_id = model
+        self.api_key = api_key
+        self.timeout_ms = timeout_ms
+        self.max_tokens = max_tokens
+        self._transport = transport or _post_json
+
+    def generate(self, prompt: str) -> str:
+        """POST one chat-completions request and extract the message content."""
+        url = f"{self.base_url}/chat/completions"
+        payload: dict[str, object] = {
+            "model": self.model_id,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0,
+            "max_tokens": self.max_tokens,
+        }
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        try:
+            data = self._transport(url, payload, headers, self.timeout_ms / 1000.0)
+        except Exception as exc:
+            raise AnchorGenerationFailed("remote_error") from exc
+        choices = data.get("choices")
+        if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+            raise AnchorGenerationFailed("invalid_response")
+        message = choices[0].get("message")
+        if not isinstance(message, dict):
+            raise AnchorGenerationFailed("invalid_response")
+        text = message.get("content")
+        return text if isinstance(text, str) else ""
 
 
 class AnchorResolver:
@@ -433,8 +652,37 @@ class AnchorResolver:
         )
 
     def _ensure_generator(self) -> AnchorGenerator:
-        """Return the injected generator (Task 2 adds configured backends)."""
+        """Return the injected generator or construct the configured backend.
+
+        A missing configuration raises ``AnchorBackendUnavailable`` so the
+        caller latches it and falls back to rule anchors (D-14), never to an
+        empty anchor set.
+        """
         if self._generator is not None:
+            return self._generator
+        if self.backend == "gguf":
+            model_path = getattr(self.settings, "anchor_model_path", None)
+            if not isinstance(model_path, (str, Path)):
+                raise AnchorBackendUnavailable("unconfigured")
+            self._generator = LocalGGUFGenerator(
+                model_path,
+                max_tokens=_setting_int(self.settings, "anchor_max_tokens", _DEFAULT_MAX_TOKENS),
+                timeout_ms=_setting_int(self.settings, "anchor_timeout_ms", _DEFAULT_TIMEOUT_MS),
+            )
+            return self._generator
+        if self.backend == "openai":
+            base_url = _setting_str(self.settings, "anchor_api_base", "")
+            model = _setting_str(self.settings, "anchor_api_model", "")
+            if not base_url or not model:
+                raise AnchorBackendUnavailable("unconfigured")
+            self._generator = OpenAICompatibleGenerator(
+                base_url,
+                model,
+                api_key=_setting_str(self.settings, "anchor_api_key", "") or None,
+                timeout_ms=_setting_int(self.settings, "anchor_timeout_ms", _DEFAULT_TIMEOUT_MS),
+                max_tokens=_setting_int(self.settings, "anchor_max_tokens", _DEFAULT_MAX_TOKENS),
+            )
+            _warn_egress_once(base_url)
             return self._generator
         raise AnchorBackendUnavailable("unconfigured")
 
