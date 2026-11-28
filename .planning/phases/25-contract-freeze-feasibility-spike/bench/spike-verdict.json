@@ -204,7 +204,7 @@
   "contract_freeze": {
     "anchor_commit": "6c25e88d99135d82d127ef55a8dd63f81be12197",
     "anchor_tag": "v1.2.5",
-    "commits_since_anchor": 20,
+    "commits_since_anchor": 21,
     "contract_diff_empty": true,
     "contract_facts": {
       "contract_diff_empty": true,
@@ -306,8 +306,13 @@
     },
     "expected_hashes_match": true,
     "files_count": 11,
+    "freeze_check": {
+      "commits_since_anchor": 20,
+      "head": "5fb2712d7a9840de22877b13631c93f16e3665ba",
+      "note": "freeze-check measurement captured at Task 1 before the evidence commit; the 11 frozen files are untouched by that commit"
+    },
     "match": true,
-    "measured_execution_head": "5fb2712d7a9840de22877b13631c93f16e3665ba",
+    "measured_execution_head": "fb5ac0faee7c3819af2b60092c6c409ce2b7118f",
     "start_manifest": {
       "file": ".planning/tmp/phase-25/start-manifest.sha256",
       "lines": 11,
@@ -1189,14 +1194,13 @@
     ],
     "frozen_paths_zero_diff": true,
     "git_status_porcelain": [
+      " M .planning/STATE.md",
       " M .planning/config.json",
+      " M .planning/phases/25-contract-freeze-feasibility-spike/25-CONTRACT-FREEZE.md",
+      " M .planning/phases/25-contract-freeze-feasibility-spike/bench/spike-verdict.json",
       " M .planning/state.json",
       "?? .planning/.continue-here.md",
       "?? .planning/HANDOFF.json",
-      "?? .planning/phases/25-contract-freeze-feasibility-spike/25-CONTRACT-FREEZE.md",
-      "?? .planning/phases/25-contract-freeze-feasibility-spike/COVERAGE.md",
-      "?? .planning/phases/25-contract-freeze-feasibility-spike/bench/spike-delta.csv",
-      "?? .planning/phases/25-contract-freeze-feasibility-spike/bench/spike-verdict.json",
       "?? .planning/v1.3-ui-anchor-milestone-research.md"
     ],
     "other_modified": {
@@ -1204,7 +1208,7 @@
       ".planning/config.json": "GSD runtime config; `_auto_chain_active` is toggled by the orchestrator between waves",
       ".planning/state.json": "GSD runtime state; `updated_at` refreshed by a prior session"
     },
-    "snapshot_stage": "initial",
+    "snapshot_stage": "final",
     "whitelisted_untracked": {
       ".planning/.continue-here.md": "pre-existing research/handoff note; not produced by this phase",
       ".planning/HANDOFF.json": "pre-existing handoff manifest; not produced by this phase",

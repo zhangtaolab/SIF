@@ -11,9 +11,10 @@
 - Tag: `v1.2.5`
 - Anchor commit: `6c25e88d99135d82d127ef55a8dd63f81be12197`
 - Discussion HEAD: `7c2fb7918a45`
-- Measured execution HEAD: `5fb2712d7a9840de22877b13631c93f16e3665ba`
-- Measured commit count since v1.2.5: 20
+- Freeze-check HEAD (Task 1, manifest capture): `5fb2712d7a9840de22877b13631c93f16e3665ba` — 20 commits since v1.2.5
+- Measured final render HEAD: `fb5ac0faee7c3819af2b60092c6c409ce2b7118f` — 21 commits since v1.2.5
   (execution-time `git rev-list --count v1.2.5..HEAD`; CONTEXT's 4 and research's 7 are stale)
+- Freeze-check note: freeze-check measurement captured at Task 1 before the evidence commit; the 11 frozen files are untouched by that commit
 
 ## Frozen file manifest
 
@@ -505,17 +506,16 @@ ValueError: Failed to load model from file: <MODEL_DIR>/LFM3-1.7B-Q4_K_M.gguf
 
 ## Working tree (D-16)
 
-`git status --porcelain` at snapshot stage `initial`:
+`git status --porcelain` at snapshot stage `final`:
 
 ```
+ M .planning/STATE.md
  M .planning/config.json
+ M .planning/phases/25-contract-freeze-feasibility-spike/25-CONTRACT-FREEZE.md
+ M .planning/phases/25-contract-freeze-feasibility-spike/bench/spike-verdict.json
  M .planning/state.json
 ?? .planning/.continue-here.md
 ?? .planning/HANDOFF.json
-?? .planning/phases/25-contract-freeze-feasibility-spike/25-CONTRACT-FREEZE.md
-?? .planning/phases/25-contract-freeze-feasibility-spike/COVERAGE.md
-?? .planning/phases/25-contract-freeze-feasibility-spike/bench/spike-delta.csv
-?? .planning/phases/25-contract-freeze-feasibility-spike/bench/spike-verdict.json
 ?? .planning/v1.3-ui-anchor-milestone-research.md
 ```
 
