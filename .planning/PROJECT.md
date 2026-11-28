@@ -129,12 +129,16 @@ DocSift 是 [qmd](https://github.com/tobi/qmd) 的 Python 重构版本，一个�
 - ✓ 确定性 query-only 锚点信号：36 条 tuning-only 查询、`heldout_read: false`、配对 nDCG@10 主指标；平均 delta **+0.130203**、helped 6 / hurt 0 / unchanged 30、噪声下限 `1/36 = 0.027778`；固定种子重跑 rows 与 aggregates 完全一致；按 D-08 字面规则判定 `directional-signal` — Validated in Phase 25 (SPK-02)
 - ✓ 权威证据三件套 + 止损状态：`bench/spike-verdict.json`（唯一权威）、`bench/spike-delta.csv`（36 行）、`25-CONTRACT-FREEZE.md`、`COVERAGE.md`（无外部 API 集成声明）；`gsd_run state record-session` 记录 `Phase 25 complete — directional signal recorded; Phases 26/27 unlocked`；该分支不创建 `25-SPIKE-VERDICT.md` 且 ROADMAP Phase 25 勾选由编排器处理 — Validated in Phase 25 (SPK-03)
 
+### Validated（v1.3 — Phase 26 anchor 检索臂与确定性缓存，2026-11-28）
+
+- ✓ `anchor:` 前缀 + `sif search query --anchor`：默认关闭、零模型规则锚点只注入 BM25 腿；无 flag 时与 v1.2.5 基线逐字节一致，snippet/highlight 仍用原始 query — Validated in Phase 26 (ANC-01..04)
+- ✓ 冻结 prompt / greedy / ≤10 术语 / 去重的确定性生成器与 `llm_cache` 复用；超时、失败、预算耗尽均 fail-open 回退原查询并一次性告警；远程后端仅显式 opt-in 且按 base_url 一次性披露查询文本外发；`SIF_ANCHOR_VOCAB_GUARD` 为默认关的独立 A/B — Validated in Phase 26 (GEN-01..04, ANC-05)
+- ✓ LFM3 GGUF 仅作用户自备的可选实验臂：不打进 wheel/sdist、不自动下载，静态守卫 + 用户文档 + Key Decisions 三处记录 `LFM Open License v1.0` 的 $10M 营收阈值与再分发义务 — Validated in Phase 26 (CTR-03)
+- ✓ 本地全量门禁：`ty`/`ruff`/`ruff format`、`make docs-generate` 零 diff、MCP 契约 13 passed、11 个冻结路径自 v1.2.5 无 diff、3367 passed / 94.18% coverage（reranker 需 torch，用计划内 `--ignore` 回退）；8-cell CI 为 push 后外部门禁，尚未确认 — Validated in Phase 26（本地部分）/ DEFERRED（8-cell CI）(CTR-04)
+
 ### Active
 
-- [ ] 用户可用 `anchor:` 前缀或 `--anchor` 触发锚点增强 BM25，不使用时零成本、零模型加载
-- [ ] 锚点生成确定性、可缓存、失败回退原查询；远程后端仅 opt-in 且披露数据外发
-- [ ] 四臂评测产出配对 delta、bootstrap CI、held-out verdict；未胜出时记录 `keep-default` 且不改默认
-- [ ] LFM3 GGUF 仅作为用户自行下载的可选后端，`lfm1.0` 许可约束写入 Key Decisions 与用户文档
+- [ ] 四臂评测产出配对 delta、bootstrap CI、held-out verdict；未胜出时记录 `keep-default` 且不改默认（Phase 27）
 
 ### Out of Scope
 
@@ -260,4 +264,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-11-28 after Phase 25 complete（契约冻结 + 可行性 spike 判定 directional-signal；Phases 26/27 解锁；v1.2 已发布并归档）*
+*Last updated: 2026-11-28 after Phase 26 complete（默认关闭、可缓存、失败回退的 `anchor:` 检索臂落地；Phase 27 证据门禁待规划；8-cell CI 待 push 后确认）*
