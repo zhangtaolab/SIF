@@ -213,7 +213,7 @@ DocSift 是 [qmd](https://github.com/tobi/qmd) 的 Python 重构版本，一个�
 | Phase 19 gap round 2：`sif search query --min-score` 是对每条 leg 自己标尺的下限，融合 RRF 分从不与之比较；`query`/`vsearch` help、CLI reference、MCP 页面与 changelog 逐处写明 | 同一数值同时作用于 BM25 与向量两种标尺，无法对融合分下定义；19-14 只改文本不改行为（UAT test 14） | Phase 19 Complete（2026-11-27） |
 | Phase 19 gap round 2：per-chunk 机器格式布局 A-19-10-1 按已交付形式确认（chunk 行 `path#sequence` + 裸 sequence；document 行纯路径无 sequence；`--files` 每页去重） | 操作员把逐项检测委托给 orchestrator，测试器按 shipped layout 接受；布局仍可随时由操作员改选（UAT test 12） | Phase 19 Complete（2026-11-27） |
 | v1.3 范围（2026-11-27，用户拍板）：只做 LLM Anchor，Web UI 推迟 v1.4；`Web UI` / `chat-with-notes` Out of Scope 条款不反转 | 两者零功能依赖；Anchor 不需改 Out of Scope 且有可证伪假设与现成 `llm_cache` / held-out 仪器，UI 需新增 HTTP 面、打包契约与静态 HTML 多方案评审 | — Pending |
-| v1.3 模型定位：LFM3-1.7B-GGUF Q4_K_M 为**用户自行下载的可选实验臂**，不打进 wheel/sdist、不默认启用；默认仍是零模型确定性锚点基线 | 技术上优于 Qwen3.5-4B（1.10 GB 官方 GGUF、ChatML chat template、强指令遵循、低幻觉、走已有 `llama-cpp-python` 路径）；但 `LFM Open License v1.0` Section 5 规定年营收 ≥ $10M 的 Legal Entity 商业使用未获许可，且再分发有附带 license/NOTICE 义务 | — Pending |
+| v1.3 模型定位：LFM3-1.7B-GGUF Q4_K_M 为**用户自行下载的可选实验臂**，不打进 wheel/sdist、不默认启用；默认仍是零模型确定性锚点基线 | 技术上优于 Qwen3.5-4B（1.10 GB 官方 GGUF、ChatML chat template、强指令遵循、低幻觉、走已有 `llama-cpp-python` 路径）；但 `LFM Open License v1.0` Section 5 规定年营收 ≥ $10M 的 Legal Entity 商业使用未获许可，且再分发有附带 license/NOTICE 义务 | — Validated in Phase 26 (CTR-03) |
 | v1.3 止损：Phase 25 先跑 `llama.cpp` 加载 `lfm3` 兼容性 + 确定性锚点信号 spike；无方向性信号即归档假设、不投后续阶段 | 论文数值来自代码搜索、不可迁移到个人 Markdown 笔记；最坏结果是 `keep-default`，仍有实验臂与证据可交付 | — Pending |
 | v1.3 契约：不新增 MCP 请求字段、不动 7 工具与 5 份 wire goldens、不新增 runtime 依赖 | `QueryInput` 与函数签名即发布 schema；`test_packaging.py` 冻结 13 项 runtime deps；`anchor:` 前缀可直接透传现有 `query` 字符串 | — Pending |
 

@@ -278,6 +278,86 @@ expanded = expander.expand("python decorators")
 # Result: ["python decorators", "python decorators wrapper function"]
 ```
 
+## Anchor Expansion (Experimental, Opt-In)
+
+The anchor arm widens BM25 recall by adding a small set of related terms
+("anchors") to the lexical leg. It is experimental and off by default: without
+the prefix or flag a query behaves exactly as before, and the dedicated BM25
+(`search`) and vector (`vsearch`) subcommands stay pure baselines.
+
+### Triggering It
+
+- **Prefix**: `sif search query "anchor:<query>"`, and the same `anchor:` prefix
+  in the MCP `query` tool's query string (no MCP request field is added).
+- **CLI flag**: `sif search query --anchor "<query>"`. The flag and the prefix
+  are equivalent and inject the anchors once; `anchor:lex:foo` is literal text.
+
+The anchors are OR alternatives to the original query, never AND-ed into it:
+`(<query AND chain>) OR "<anchor1>"* OR "<anchor2>"*`. Only the BM25 leg sees
+them; snippets and highlights are still extracted from the original query.
+
+### Default: Zero-Model Rule Anchors
+
+The default backend (`SIF_ANCHOR_BACKEND=rules`) derives deterministic anchors
+from the query itself with a checked-in rule table. It loads and downloads no
+model, so `anchor:` works in a base install with zero latency. The rule table
+was tuned on Phase 25's tuning split; its generalisation is decided by Phase 27's
+held-out evaluation, not by this document.
+
+### Optional Generators
+
+Both generators are explicit opt-ins; an unconfigured `anchor:` never tries to
+load or download a model.
+
+- **Local GGUF**: `SIF_ANCHOR_BACKEND=gguf` plus `SIF_ANCHOR_MODEL_PATH`, an
+  absolute path to a `.gguf` file. `llama-cpp-python` must support the model
+  architecture: Phase 25 measured that the locked `0.3.35` cannot load `lfm3`
+  (`unknown model architecture: 'lfm3'`), while an isolated `0.3.37` loads the
+  user-supplied `LFM3-1.7B-Q4_K_M.gguf` and produces greedy text. The generator
+  renders the model's own chat template explicitly so it does not echo the
+  prompt.
+- **Remote OpenAI-compatible**: `SIF_ANCHOR_BACKEND=openai` plus
+  `SIF_ANCHOR_API_BASE` and `SIF_ANCHOR_API_MODEL` (and optionally
+  `SIF_ANCHOR_API_KEY`). This is an explicit opt-in; the query text and the
+  anchors are sent to that base URL, and enabling it prints a one-time
+  disclosure on stderr.
+
+### Cost, Cache, and Failure
+
+- `llm_cache` in the main database stores the normalized query and the anchor
+  JSON under an `anchor::<backend>::<model_id>` namespace. The SQLite table is
+  the cross-process cache; a repeated query makes zero generator calls.
+- `SIF_ANCHOR_CACHE_TTL` (default 30 days; `0` never expires) controls row
+  lifetime, and `sif cleanup` removes expired rows.
+- `SIF_ANCHOR_MAX_CALLS` is a hard per-run budget (default 100; `0` disables it)
+  and `SIF_ANCHOR_TIMEOUT_MS` bounds one generation attempt.
+- A timeout or generator failure fails open: the search falls back to the
+  original query, warns once on stderr, does not retry, and reports the reason
+  through `--explain` (`fallback=...`). Rule anchors are never cached because
+  they are a pure function of the query.
+
+### Vocabulary Guard (Independent A/B)
+
+`SIF_ANCHOR_VOCAB_GUARD` is off by default. When on, anchor terms that do not
+match the FTS vocabulary are dropped, suppressing hallucinated terms that would
+dilute IDF. "In vocabulary" is judged by the same `porter` tokenizer retrieval
+uses, so inflected words match through their stem and a contiguous CJK run is
+one token. This is a deliberate deviation from the paper and the Phase 25
+baseline and a standalone A/B switch: with it off, the anchor set is unchanged.
+
+### License and Packaging
+
+The LFM3 GGUF is not bundled in the wheel or sdist and is never downloaded
+automatically; users fetch it themselves. `LFM Open License v1.0` Section 5
+requires a separate commercial license for a Legal Entity with annual revenue
+of at least USD 10 million, and redistribution carries the obligation to include
+the license and NOTICE.
+
+### Status
+
+Experimental. Phase 27's held-out evidence decides whether an anchored arm
+becomes a default; `keep-default` is a valid outcome.
+
 ## Result Reranking
 
 Reranking improves result quality using a more sophisticated model.

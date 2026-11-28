@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - MCP server with stdio and HTTP transports
 - CLI with rich formatting
 - Comprehensive documentation
+- Experimental anchor search arm (`anchor:` prefix and `sif search query --anchor`, off by default): zero-model rule anchors, optional local GGUF or remote generators, deterministic `llm_cache` reuse, and an independent `SIF_ANCHOR_VOCAB_GUARD` A/B
 
 ### Changed
 - N/A
