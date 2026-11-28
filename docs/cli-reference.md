@@ -497,6 +497,7 @@ sif search query [OPTIONS]
 | `--explain` | `—` | flag | `false` | Show score breakdowns across pipeline stages |
 | `--candidate-limit` | `-C` | integer range | — | Reranker candidate pool size (default: SIF_RERANK_CANDIDATE_LIMIT or 20; clamped to 5-50) |
 | `--rerank` | `—` | flag | `false` | Rerank results (default: SIF_RERANK_ENABLED or false) |
+| `--anchor` | `—` | flag | `false` | Expand the BM25 leg with deterministic rule anchors (default: off; the anchor: prefix is equivalent) |
 | `--intent` | `—` | text | — | Search intent hint for query expansion |
 | `--rrf-k` | `—` | integer range | — | RRF k constant for hybrid fusion (default: SIF_RRF_K or 60) |
 | `--bm25-weight` | `—` | float range | — | BM25 fusion weight (default: SIF_BM25_WEIGHT or 1.0) |

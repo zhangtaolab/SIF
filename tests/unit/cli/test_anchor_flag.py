@@ -9,6 +9,8 @@ half of the file (D-12/GEN-03).
 
 from __future__ import annotations
 
+import json
+from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -17,7 +19,7 @@ from click.testing import CliRunner
 
 from sif.cli.commands.search import query_cmd
 from sif.core.models import SearchResult
-from sif.search.anchor import AnchorResolver
+from sif.search.anchor import AnchorResolution, AnchorResolver
 from tests.unit.cli.test_search import _query_settings_mock
 
 
@@ -45,6 +47,8 @@ def _invoke(
     settings: object | None = None,
     forbid_model_load: bool = False,
     forbid_reranker: bool = False,
+    anchor_resolution: AnchorResolution | None = None,
+    extra_patches: tuple[object, ...] = (),
 ) -> tuple[object, MagicMock, MagicMock, MagicMock, MagicMock]:
     """Invoke ``query_cmd`` with the standard patch scaffold.
 
@@ -52,6 +56,9 @@ def _invoke(
     so each test can assert on the exact construction site it cares about.
     ``forbid_model_load`` / ``forbid_reranker`` patch the constructors to raise
     ``AssertionError``, which proves the ANCHOR route never reaches them.
+    ``anchor_resolution`` installs the pipeline's run-level metadata (only read
+    on the ANCHOR route), and ``extra_patches`` lets a test replace a module
+    helper it wants to observe.
     """
     repo = MagicMock()
     repo.list_enabled.return_value = []
@@ -61,7 +68,7 @@ def _invoke(
     manager._model = MagicMock()
     pipeline = MagicMock()
     pipeline.search.return_value = [_result()]
-    pipeline.last_anchor_resolution = None
+    pipeline.last_anchor_resolution = anchor_resolution
     index = tmp_path / "index.db"
     index.touch()
 
@@ -74,14 +81,23 @@ def _invoke(
     if forbid_reranker:
         create_reranker = MagicMock(side_effect=AssertionError("reranker must not be constructed"))
 
-    with (
-        patch("sif.cli.commands.search.Database", return_value=MagicMock()),
-        patch("sif.cli.commands.search.CollectionRepository", return_value=repo),
-        patch("sif.cli.commands.search.SearchPipeline", return_value=pipeline) as pipeline_cls,
-        patch("sif.embedding.manager.EmbeddingManager.from_settings", new=from_settings),
-        patch("sif.config.settings.get_settings", return_value=settings or _settings()),
-        patch("sif.search.rerank.create_reranker", new=create_reranker),
-    ):
+    with ExitStack() as stack:
+        stack.enter_context(patch("sif.cli.commands.search.Database", return_value=MagicMock()))
+        stack.enter_context(
+            patch("sif.cli.commands.search.CollectionRepository", return_value=repo)
+        )
+        pipeline_cls = stack.enter_context(
+            patch("sif.cli.commands.search.SearchPipeline", return_value=pipeline)
+        )
+        stack.enter_context(
+            patch("sif.embedding.manager.EmbeddingManager.from_settings", new=from_settings)
+        )
+        stack.enter_context(
+            patch("sif.config.settings.get_settings", return_value=settings or _settings())
+        )
+        stack.enter_context(patch("sif.search.rerank.create_reranker", new=create_reranker))
+        for extra in extra_patches:
+            stack.enter_context(extra)
         result = CliRunner().invoke(query_cmd, args, obj={"index_path": index})
     return result, pipeline, pipeline_cls, create_reranker, from_settings
 
@@ -164,3 +180,81 @@ class TestAnchorRerankRejection:
         assert result.exit_code == 0, result.output
         create_reranker.assert_called_once()
         assert pipeline_cls.call_args.kwargs["reranker"] is create_reranker.return_value
+
+
+class TestAnchorExplainMetadata:
+    """D-12/GEN-03: anchor cost metadata rides stderr, never the machine output."""
+
+    def test_explain_emits_anchor_line_on_stderr_and_keeps_json_pure(self, tmp_path: Path) -> None:
+        resolution = AnchorResolution(
+            terms=["x"],
+            backend="gguf",
+            generator_calls=1,
+            cache_hits=2,
+            fallback_reason="timeout",
+        )
+
+        result, *_ = _invoke(
+            tmp_path,
+            ["q", "--anchor", "--explain", "--json"],
+            forbid_model_load=True,
+            anchor_resolution=resolution,
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "anchor: backend=gguf calls=1 hits=2 fallback=timeout" in result.stderr
+        payload = json.loads(result.stdout)
+        assert isinstance(payload, list)
+        assert payload
+        keys = set(payload[0])
+        assert "anchor" not in keys
+        assert not {"anchor_backend", "anchor_fallback_reason", "generator_calls"} & keys
+
+    def test_explain_without_resolution_emits_no_anchor_line(self, tmp_path: Path) -> None:
+        result, *_ = _invoke(tmp_path, ["q", "--explain"])
+
+        assert result.exit_code == 0, result.output
+        assert "anchor:" not in result.stderr
+
+    def test_gen03_fallback_reason_is_visible(self, tmp_path: Path) -> None:
+        resolution = AnchorResolution(
+            terms=[],
+            backend="gguf",
+            generator_calls=1,
+            cache_hits=0,
+            fallback_reason="timeout",
+        )
+
+        result, *_ = _invoke(
+            tmp_path,
+            ["q", "--anchor", "--explain", "--json"],
+            forbid_model_load=True,
+            anchor_resolution=resolution,
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "fallback=timeout" in result.stderr
+        assert isinstance(json.loads(result.stdout), list)
+
+
+class TestOriginalQuery:
+    """D-03: the injected prefix never reaches DYM suggestions or query history."""
+
+    def test_dym_and_history_receive_original_query(self, tmp_path: Path) -> None:
+        zero_result = MagicMock(return_value=[])
+        history = MagicMock()
+
+        result, pipeline, *_ = _invoke(
+            tmp_path,
+            ["q", "--anchor"],
+            forbid_model_load=True,
+            extra_patches=(
+                patch("sif.cli.commands.search._zero_result_suggestions", new=zero_result),
+                patch("sif.cli.commands.search._record_query_history", new=history),
+            ),
+        )
+
+        assert result.exit_code == 0, result.output
+        assert pipeline.search.call_args.args[0] == "anchor:q"
+        assert zero_result.call_args.args[1] == "q"
+        assert history.call_args.args[1] == "q"
