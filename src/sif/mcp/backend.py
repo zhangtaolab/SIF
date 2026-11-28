@@ -208,20 +208,29 @@ def _prefix_route(
     parsed_query: str,
     search_type: SearchType,
     options: SearchOptions,
+    settings: Any,
 ) -> HybridSearchResults | None:
     """Answer a prefix-first ``lex:``/``anchor:`` route, or ``None``.
 
     Both routes bypass the loader and the pipeline, so they are handled here
     before any ``_ensure_embedder`` decision. ``anchor:`` additionally derives
     the zero-model rule anchors (a pure function) and injects them through
-    ``SearchOptions.anchor_terms`` only; the MCP surface stays read-only.
+    ``SearchOptions.anchor_terms`` only; the MCP surface stays read-only. When
+    ``SIF_ANCHOR_VOCAB_GUARD`` is on, the same read-time filter the CLI uses
+    drops out-of-vocabulary terms — still purely in memory, never a cache write.
     """
     if search_type is SearchType.BM25:
         return _lexical_route(conn, parsed_query, options)
     if search_type is SearchType.ANCHOR:
         from sif.search.anchor import derive_rule_anchors  # noqa: PLC0415
 
-        anchor_options = replace(options, anchor_terms=derive_rule_anchors(parsed_query) or None)
+        anchor_terms = derive_rule_anchors(parsed_query)
+        guard = getattr(settings, "anchor_vocab_guard", False)
+        if isinstance(guard, bool) and guard and anchor_terms:
+            from sif.search.anchor import filter_known_terms  # noqa: PLC0415
+
+            anchor_terms = filter_known_terms(conn, anchor_terms)
+        anchor_options = replace(options, anchor_terms=anchor_terms or None)
         return _lexical_route(conn, parsed_query, anchor_options)
     return None
 
@@ -531,7 +540,7 @@ class SearchBackend:
 
             # D-15/Phase 26: ``lex:`` and ``anchor:`` answer before any load
             # decision (prefix-first), with the prefix stripped.
-            lexical = _prefix_route(conn, parsed_query, search_type, options)
+            lexical = _prefix_route(conn, parsed_query, search_type, options, self.settings)
             if lexical is not None:
                 return lexical
 
