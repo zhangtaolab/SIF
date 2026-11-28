@@ -1,0 +1,37 @@
+query,category,split,lex_ndcg_at_10,anchor_ndcg_at_10,delta,helped,hurt,unchanged,lex_hit_at_10,anchor_hit_at_10,lex_recall_at_10,anchor_recall_at_10,anchors
+kelpri protocol,keyword,tuning,1.000000,1.000000,0.000000,false,false,true,1.000000,1.000000,1.000000,1.000000,specification|standard
+novbra protocol,keyword,tuning,1.000000,1.000000,0.000000,false,false,true,1.000000,1.000000,1.000000,1.000000,specification|standard
+rhusyl protocol,keyword,tuning,1.000000,1.000000,0.000000,false,false,true,1.000000,1.000000,1.000000,1.000000,specification|standard
+ambbri protocol,keyword,tuning,1.000000,1.000000,0.000000,false,false,true,1.000000,1.000000,1.000000,1.000000,specification|standard
+irkjyn protocol,keyword,tuning,1.000000,1.000000,0.000000,false,false,true,1.000000,1.000000,1.000000,1.000000,specification|standard
+qelron protocol,keyword,tuning,1.000000,1.000000,0.000000,false,false,true,1.000000,1.000000,1.000000,1.000000,specification|standard
+yanzun protocol,keyword,tuning,1.000000,1.000000,0.000000,false,false,true,1.000000,1.000000,1.000000,1.000000,specification|standard
+yolzap protocol,keyword,tuning,1.000000,1.000000,0.000000,false,false,true,1.000000,1.000000,1.000000,1.000000,specification|standard
+ivyjor protocol,keyword,tuning,1.000000,1.000000,0.000000,false,false,true,1.000000,1.000000,1.000000,1.000000,specification|standard
+navigation route planning,synonym,tuning,0.000000,0.000000,0.000000,false,false,true,0.000000,0.000000,0.000000,0.000000,path planning|map|path|way|strategy|schedule
+fermentation culture starter,synonym,tuning,0.000000,0.833991,0.833991,true,false,false,0.000000,1.000000,0.000000,1.000000,ferment|brewing|cultivation|growth|beginner|inoculum
+holography light recording,synonym,tuning,0.000000,0.517358,0.517358,true,false,false,0.000000,1.000000,0.000000,1.000000,imaging|photography|hologram|interference|optics|photon
+cartography mapmaking terrain,synonym,tuning,0.000000,0.000000,0.000000,false,false,true,0.000000,0.000000,0.000000,0.000000,mapping|map|making|landscape|topography
+acoustics sound vibration,synonym,tuning,0.000000,0.833991,0.833991,true,false,false,0.000000,1.000000,0.000000,1.000000,sonic|audio|acoustic|oscillation|resonance
+metallurgy metal refining,synonym,tuning,0.000000,0.833991,0.833991,true,false,false,0.000000,1.000000,0.000000,1.000000,alloy|metallic|smelting|purification
+botany plants classification,synonym,tuning,0.000000,0.833991,0.833991,true,false,false,0.000000,1.000000,0.000000,1.000000,plant|flora|vegetation|taxonomy|categorization
+astronomy stars observation,synonym,tuning,0.000000,0.000000,0.000000,false,false,true,0.000000,0.000000,0.000000,0.000000,celestial|astrophysics|stellar|telescope|measurement
+cryptography encryption secrecy,synonym,tuning,0.000000,0.833991,0.833991,true,false,false,0.000000,1.000000,0.000000,1.000000,cipher|privacy|confidentiality
+machine learning 机器学习,multilingual,tuning,1.000000,1.000000,0.000000,false,false,true,1.000000,1.000000,1.000000,1.000000,statistical learning|computer|automated|training|education
+deep learning 深度学习,multilingual,tuning,1.000000,1.000000,0.000000,false,false,true,1.000000,1.000000,1.000000,1.000000,neural networks|profound|layered|training|education
+neural networks 神经网络,multilingual,tuning,1.000000,1.000000,0.000000,false,false,true,1.000000,1.000000,1.000000,1.000000,neural nets|深度学习|neuron|network|graph
+natural language processing 自然语言处理,multilingual,tuning,1.000000,1.000000,0.000000,false,false,true,1.000000,1.000000,1.000000,1.000000,nlp|human language|text|organic|human|linguistic
+data mining 数据挖掘,multilingual,tuning,1.000000,1.000000,0.000000,false,false,true,1.000000,1.000000,1.000000,1.000000,knowledge discovery|information|dataset|extraction|discovery
+knowledge graphs 知识图谱,multilingual,tuning,1.000000,1.000000,0.000000,false,false,true,1.000000,1.000000,1.000000,1.000000,knowledge graph|information|understanding|graph|network
+cloud computing 云计算,multilingual,tuning,1.000000,1.000000,0.000000,false,false,true,1.000000,1.000000,1.000000,1.000000,distributed computing|remote|server|computation|processing
+distributed systems 分布式系统,multilingual,tuning,1.000000,1.000000,0.000000,false,false,true,1.000000,1.000000,1.000000,1.000000,cluster computing|parallel|decentralized|system|infrastructure
+database indexing 数据库索引,multilingual,tuning,1.000000,1.000000,0.000000,false,false,true,1.000000,1.000000,1.000000,1.000000,index structures|store|repository|index|lookup
+flux capacitor charge,rival,tuning,1.000000,1.000000,0.000000,false,false,true,1.000000,1.000000,1.000000,1.000000,flow|energy|condenser|storage|power
+warp coil plasma,rival,tuning,1.000000,1.000000,0.000000,false,false,true,1.000000,1.000000,1.000000,1.000000,distortion|bend|winding|solenoid|ionized|gas
+phase array signal,rival,tuning,1.000000,1.000000,0.000000,false,false,true,1.000000,1.000000,1.000000,1.000000,phased array|antenna|stage|offset|matrix|grid
+ion thruster fuel,rival,tuning,1.000000,1.000000,0.000000,false,false,true,1.000000,1.000000,1.000000,1.000000,charged|particle|propulsion|engine|propellant|energy
+quantum lattice error,rival,tuning,1.000000,1.000000,0.000000,false,false,true,1.000000,1.000000,1.000000,1.000000,subatomic|discrete|grid|structure|fault|noise
+photon sieve light,rival,tuning,1.000000,1.000000,0.000000,false,false,true,1.000000,1.000000,1.000000,1.000000,particle|filter|mesh|optics
+gravity well trajectory,rival,tuning,1.000000,1.000000,0.000000,false,false,true,1.000000,1.000000,1.000000,1.000000,gravity field|spacetime|gravitational|attraction|field|basin
+muon detector particle,rival,tuning,1.000000,1.000000,0.000000,false,false,true,1.000000,1.000000,1.000000,1.000000,lepton|sensor|instrument|elementary|atom
+tachyon beacon temporal,rival,tuning,1.000000,1.000000,0.000000,false,false,true,1.000000,1.000000,1.000000,1.000000,faster-than-light|hypothetical|signal|transmitter|time|chronological
