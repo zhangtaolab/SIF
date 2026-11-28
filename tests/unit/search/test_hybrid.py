@@ -3,7 +3,7 @@
 import logging
 import sqlite3
 from typing import ClassVar
-from unittest.mock import MagicMock, create_autospec
+from unittest.mock import MagicMock, create_autospec, patch
 
 import pytest
 
@@ -1045,6 +1045,71 @@ class TestHybridSC1PipelineGolden:
         assert k1[0]["document_id"] == "d3"
         assert k1[0]["scores"]["rrf_score"] == 1 / 2 + 1 / 3
         assert k60[0]["scores"]["rrf_score"] == 1 / 61 + 1 / 62
+
+    def test_anchor_terms_leave_vector_scores_unchanged(self) -> None:
+        """ANC-04: ``anchor_terms`` is composable and only touches the BM25 leg."""
+        conn = self._build_db()
+        try:
+            default = HybridSearcher(conn, embedder=_FakeEmbedder(), embedding_dim=2).search(
+                _FakeEmbedder.QUERY, SearchOptions()
+            )
+            anchored = HybridSearcher(conn, embedder=_FakeEmbedder(), embedding_dim=2).search(
+                _FakeEmbedder.QUERY, SearchOptions(anchor_terms=["quantum"])
+            )
+        finally:
+            conn.close()
+
+        default_vector = {
+            result.document_id: result.scores.get("vector_score") for result in default
+        }
+        assert anchored
+        for result in anchored:
+            if result.document_id in default_vector:
+                assert result.scores.get("vector_score") == default_vector[result.document_id]
+
+    def test_anchor_terms_reach_the_bm25_leg_in_hybrid_mode(self) -> None:
+        """ANC-04: the hybrid route fans ``anchor_terms`` into the BM25 MATCH.
+
+        A spy on ``_build_fts_query`` catches the fan-out point: if
+        ``dataclasses.replace`` dropped ``anchor_terms`` (or a leg ignored it),
+        the recorded argument would be ``None`` and the MATCH would equal the
+        default AND chain — vector-score-only assertions would miss that.
+        """
+        conn = self._build_db()
+        embedder = _FakeEmbedder()
+        embed_calls: list[str] = []
+        original_embed = embedder.embed
+
+        def _recording_embed(text: str) -> list[float]:
+            embed_calls.append(text)
+            return original_embed(text)
+
+        try:
+            pipeline = SearchPipeline(conn, embedder=embedder, embedding_dim=2)
+            real_build = BM25Searcher._build_fts_query
+            with (
+                patch.object(embedder, "embed", side_effect=_recording_embed),
+                patch.object(
+                    BM25Searcher,
+                    "_build_fts_query",
+                    autospec=True,
+                    wraps=real_build,
+                ) as spy,
+            ):
+                results = pipeline.search(
+                    _FakeEmbedder.QUERY, SearchOptions(anchor_terms=["quantum"])
+                )
+        finally:
+            conn.close()
+
+        calls = [call for call in spy.call_args_list if call.args[1] == _FakeEmbedder.QUERY]
+        assert calls
+        assert all(call.args[2] == ["quantum"] for call in calls)
+        match = real_build(*calls[0].args)
+        assert 'OR "quantum"*' in match
+        assert match != real_build(calls[0].args[0], _FakeEmbedder.QUERY, None)
+        assert results
+        assert embed_calls == [_FakeEmbedder.QUERY]
 
 
 # =============================================================================

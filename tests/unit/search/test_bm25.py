@@ -524,6 +524,34 @@ class TestBM25Searcher:
                 ).fetchall()
                 assert rows, f"query {raw!r} -> {fts_query!r} matched nothing"
 
+    def test_build_fts_query_anchor_terms_empty_or_none_is_default(self) -> None:
+        """ANC-02: no anchors means the byte-identical AND chain."""
+        searcher = BM25Searcher(MagicMock())
+        default = '"hello"* AND "world"*'
+        assert searcher._build_fts_query("hello world") == default
+        assert searcher._build_fts_query("hello world", None) == default
+        assert searcher._build_fts_query("hello world", []) == default
+
+    def test_build_fts_query_anchor_terms_are_or_alternatives(self) -> None:
+        """ANC-02/D-08: anchors widen as OR alternatives, never OR'd into AND."""
+        searcher = BM25Searcher(MagicMock())
+        assert (
+            searcher._build_fts_query("hello world", ["machine learning"])
+            == '("hello"* AND "world"*) OR "machine learning"*'
+        )
+
+    def test_build_fts_query_anchor_terms_sanitized_whole(self) -> None:
+        """T-26-01: metacharacters are stripped and a phrase stays one phrase."""
+        searcher = BM25Searcher(MagicMock())
+        assert searcher._build_fts_query("hello", ['a"b']) == '("hello"*) OR "a b"*'
+        # An anchor with nothing left contributes no alternative at all.
+        assert searcher._build_fts_query("hello", ["*():^"]) == '"hello"*'
+
+    def test_build_fts_query_empty_query_with_anchor(self) -> None:
+        """The empty-query phrase is pinned as an OR alternative base."""
+        searcher = BM25Searcher(MagicMock())
+        assert searcher._build_fts_query("", ["x"]) == '("") OR "x"*'
+
 
 def _build_real_fts_db() -> sqlite3.Connection:
     """Real FTS5 + documents/collections tables with a non-trivial rank spread.

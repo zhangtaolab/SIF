@@ -7,7 +7,10 @@ and leaves the default path byte-identical.
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -104,3 +107,90 @@ def test_injected_anchor_terms_bypass_the_resolver(bench_db) -> None:
     assert resolution is not None
     assert resolution.backend == "injected"
     assert resolution.terms == ["_absentterm_zz"]
+
+
+def test_highlights_use_the_original_query(bench_db) -> None:
+    """ANC-02: the highlight pass receives the anchor-free query text."""
+    searcher = BM25Searcher(bench_db)
+
+    with patch.object(searcher, "_get_highlights", wraps=searcher._get_highlights) as spy:
+        results = searcher.search(TUNING_QUERY, SearchOptions(anchor_terms=["machine learning"]))
+
+    assert results
+    assert spy.called
+    for call in spy.call_args_list:
+        # (document_id, query, max_highlights) — the instance attribute is not
+        # bound, so the query is the second positional argument.
+        assert call.args[1] == TUNING_QUERY
+
+
+class _RecordingSnippetExtractor:
+    """Record ``query_terms`` and return a fixed snippet window."""
+
+    def __init__(self) -> None:
+        self.query_terms: list[list[str]] = []
+
+    def extract_with_range(self, _text: str, query_terms: list[str]) -> tuple[str, int, int]:
+        self.query_terms.append(list(query_terms))
+        return "snippet", 1, 1
+
+
+def test_snippets_use_the_original_query_terms(bench_db) -> None:
+    """ANC-02: snippet extraction sees ``parsed_query`` terms, never anchors."""
+    extractor = _RecordingSnippetExtractor()
+    pipeline = SearchPipeline(bench_db, snippet_extractor=extractor, parse_prefix=True)
+
+    results = pipeline.search(f"anchor:{TUNING_QUERY}")
+
+    assert results
+    assert extractor.query_terms
+    expected = TUNING_QUERY.lower().split()
+    for terms in extractor.query_terms:
+        assert terms == expected
+
+
+def test_empty_anchor_terms_bypass_the_resolver_and_match_lex(bench_db) -> None:
+    """D-08: ``[]`` is "explicitly no anchors" and reproduces the lex page."""
+    pipeline = SearchPipeline(bench_db, parse_prefix=True)
+
+    anchor_results = pipeline.search(f"anchor:{TUNING_QUERY}", SearchOptions(anchor_terms=[]))
+    resolution = pipeline.last_anchor_resolution
+    assert resolution is not None
+    assert resolution.backend == "injected"
+    assert resolution.terms == []
+
+    lex_results = pipeline.search(f"lex:{TUNING_QUERY}")
+
+    assert [(result.document_id, result.score, result.rank) for result in anchor_results] == [
+        (result.document_id, result.score, result.rank) for result in lex_results
+    ]
+
+
+def test_default_path_does_not_import_the_anchor_module() -> None:
+    """ANC-01: constructing the default path never imports sif.search.anchor."""
+    code = (
+        "import sys;"
+        "from sif.search.hybrid import SearchPipeline;"
+        "from sif.core.models import SearchOptions;"
+        "assert SearchOptions().anchor_terms is None;"
+        "assert 'sif.search.anchor' not in sys.modules"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, check=False
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_anchor_module_is_imported_only_on_demand() -> None:
+    """ANC-01: the module appears in sys.modules only after an explicit import."""
+    code = (
+        "import sys;"
+        "from sif.search.hybrid import SearchPipeline;"
+        "assert 'sif.search.anchor' not in sys.modules;"
+        "from sif.search.anchor import derive_rule_anchors;"
+        "assert 'sif.search.anchor' in sys.modules"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, check=False
+    )
+    assert result.returncode == 0, result.stderr
