@@ -1079,22 +1079,33 @@ class TestHybridSC1PipelineGolden:
         embedder = _FakeEmbedder()
         embed_calls: list[str] = []
         original_embed = embedder.embed
+        real_build = BM25Searcher._build_fts_query
+        recorded: list[tuple[BM25Searcher, str, list[str] | None]] = []
 
         def _recording_embed(text: str) -> list[float]:
             embed_calls.append(text)
             return original_embed(text)
 
+        def _recording_build(
+            searcher: BM25Searcher,
+            query: str,
+            anchor_terms: list[str] | None = None,
+        ) -> str:
+            # A plain passthrough, deliberately not
+            # ``patch.object(..., autospec=True, wraps=real_build)``: on
+            # Python 3.10 that combination hands back a MagicMock instead of
+            # the wrapped function's return value, which sqlite3 then refuses
+            # to bind as the MATCH parameter (CI run 46143534219, both py3.10
+            # cells). A named function behaves identically on every supported
+            # version and still records the fan-out arguments.
+            recorded.append((searcher, query, anchor_terms))
+            return real_build(searcher, query, anchor_terms)
+
         try:
             pipeline = SearchPipeline(conn, embedder=embedder, embedding_dim=2)
-            real_build = BM25Searcher._build_fts_query
             with (
                 patch.object(embedder, "embed", side_effect=_recording_embed),
-                patch.object(
-                    BM25Searcher,
-                    "_build_fts_query",
-                    autospec=True,
-                    wraps=real_build,
-                ) as spy,
+                patch.object(BM25Searcher, "_build_fts_query", new=_recording_build),
             ):
                 results = pipeline.search(
                     _FakeEmbedder.QUERY, SearchOptions(anchor_terms=["quantum"])
@@ -1102,12 +1113,12 @@ class TestHybridSC1PipelineGolden:
         finally:
             conn.close()
 
-        calls = [call for call in spy.call_args_list if call.args[1] == _FakeEmbedder.QUERY]
+        calls = [entry for entry in recorded if entry[1] == _FakeEmbedder.QUERY]
         assert calls
-        assert all(call.args[2] == ["quantum"] for call in calls)
-        match = real_build(*calls[0].args)
+        assert all(entry[2] == ["quantum"] for entry in calls)
+        match = real_build(*calls[0])
         assert 'OR "quantum"*' in match
-        assert match != real_build(calls[0].args[0], _FakeEmbedder.QUERY, None)
+        assert match != real_build(calls[0][0], _FakeEmbedder.QUERY, None)
         assert results
         assert embed_calls == [_FakeEmbedder.QUERY]
 
