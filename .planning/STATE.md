@@ -5,16 +5,16 @@ milestone_name: Anchor-Augmented Retrieval Evidence (Phases 25-27) — IN PROGRE
 current_phase: 26
 current_phase_name: Anchor Arm + Deterministic Cache
 status: executing
-stopped_at: Completed 26-02-PLAN.md
-last_updated: "2026-11-28T05:24:06.156Z"
+stopped_at: Completed 26-03-PLAN.md
+last_updated: "2026-11-28T06:36:15.526Z"
 last_activity: 2026-11-28
 last_activity_desc: Phase 26 execution started
-state_head: fc9c63e6b1d2b2c8ee44f0caaf0b56e869b6fb77
+state_head: 7b9ff686970bbd4a971bd84b5320f98318a34664
 progress:
   total_phases: 2
   completed_phases: 1
   total_plans: 6
-  completed_plans: 4
+  completed_plans: 5
 ---
 
 # DocSift — Project State
@@ -31,7 +31,7 @@ progress:
 ## Current Position
 
 Phase: 26 (Anchor Arm + Deterministic Cache) — EXECUTING
-Plan: 3 of 4
+Plan: 4 of 4
 Status: Ready to execute
 Last activity: 2026-11-28 — Phase 26 execution started
 
@@ -106,6 +106,7 @@ Last activity: 2026-11-28 — Phase 26 execution started
 | Phase 19 P15 | 7 min | 2 tasks | 2 files |
 | Phase 26 P01 | 7min | 3 tasks | 10 files |
 | Phase 26 P02 | 11min | 3 tasks | 7 files |
+| Phase 26 P03 | 6min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -353,6 +354,9 @@ Recent (v1.2 scoping, locked 2026-11-13):
 - [Phase 26]: 26-02：规则锚点不缓存；生成器后端成功才写 llm_cache，resolve 入口观测 was_in_transaction，只提交 resolver 自身的写事务
 - [Phase 26]: 26-02：后端不可用回退规则锚点（backend='rules'）、生成失败回退空锚点（terms=[]），均单次告警并按 prompt_hash 锁存不重试
 - [Phase 26]: 26-02：移除 26-01 的 AnchorResolver Protocol，同名具体类成为唯一实现；缓存键绑定 PROMPT_VERSION/model/backend/normalized query
+- [Phase 26]: 26-03：--anchor 只在 query 命令上与 --rerank 并列；flag 与 anchor: 前缀等价，注入只作用于 pipeline_query，DYM/历史/输出保留原始 query
+- [Phase 26]: 26-03：ANCHOR 无 rerank 时 route-first 跳过 EmbeddingManager/load_model/identity/reranker，仅构造并注入 AnchorResolver；--anchor + rerank 在构造前以 click.UsageError 拒绝
+- [Phase 26]: 26-03：--explain 的 anchor backend/calls/hits/fallback 只走 stderr，stdout 与 SearchResult.to_dict 不变；docs/cli-reference.md 由 make docs-generate 维护并零 diff
 
 ### Pending Todos
 
@@ -424,8 +428,8 @@ Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-28T05:24:06.120Z
-Stopped at: Completed 26-02-PLAN.md
+Last session: 2026-11-28T06:36:15.499Z
+Stopped at: Completed 26-03-PLAN.md
 Resume file: None
 
 - **Docs regeneration (2026-11-27):** `/gsd-docs-update` regenerated 7 canonical docs (README, architecture, quickstart, development, testing, contributing; configuration regenerated from `scripts/generate_config_ref.py` with zero drift) and verified all 19 tracked docs against the codebase. Fixes landed in development (test-module count, module import, mkdocs nav), benchmarking (archived `.planning/milestones/v1.2-phases/` artifact paths; 1e-9 tolerance wording), migration (cache adoption wording), and CLAUDE.md (added the `models/` package to the tree). Every doc now verifies with 0 failed claims.
