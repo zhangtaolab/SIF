@@ -122,6 +122,13 @@ DocSift 是 [qmd](https://github.com/tobi/qmd) 的 Python 重构版本，一个�
 - ✓ Harrier 门禁评估：Phase 18 仪器扩展出 per-language × per-leg held-out gates + 语言感知加宽 + `--require-language`；纯判定的双侧 verdict rule；隔离双臂 runbook（身份校验、adequacy preflight、scope-keyed resume、artifact、cleanup guard）；真实 EN+ZH A/B 在用户批准的 curated 双语子集（498 docs，adequacy en=42/zh=11，held-out N=56）上记录 `keep-qwen3`（整体 Δ +0.00943，CI 含 0；en +0.01385，zh −0.00487），默认值未变，Qwen3 保持 — Validated in Phase 23
 - ✓ 调优 + 模型 UX + 安装文档：held-out 门禁的 chunk sweep（记录 keep-default，N=194）与标题面包屑实验（记录 keep-breadcrumb-off，body-leg veto）；`sif models pull/status` + canonical manifest 缓存 + legacy 迁移；uv-first 安装文档（`--torch-backend=cpu` 配方）+ 降级矩阵 — Validated in Phase 24
 
+### Validated（v1.3 — Phase 25 证据冻结与可行性 spike，2026-11-28）
+
+- ✓ 契约冻结：对 `v1.2.5 (6c25e88d9913)` 基线逐字节证明 11 文件 SHA-256 START=END 一致、5 份 wire goldens + 7 工具 + `QueryInput` 无 `anchor` 字段 + 13 运行时依赖与 `llama-cpp-python==0.3.35` 锁定不变；两次 `13 passed` MCP 契约测试；`git diff v1.2.5..HEAD` 在 `pyproject.toml uv.lock src/sif/mcp/ tests/unit/mcp/` 为空 — Validated in Phase 25 (CTR-01/CTR-02)
+- ✓ `lfm3` 兼容性证据：锁定的 0.3.35 报 `unknown model architecture: 'lfm3'`；隔离 venv 的 0.3.37（Metal wheel）以纯 `Llama(model_path=...)` 加载用户提供的 `LFM3-1.7B-Q4_K_M.gguf` 并产出一次非空 greedy 文本；两版本均返回 1024 维 `.embed` 向量，现有 GGUF embed/rerank 路径不受影响；主依赖契约零改动 — Validated in Phase 25 (SPK-01)
+- ✓ 确定性 query-only 锚点信号：36 条 tuning-only 查询、`heldout_read: false`、配对 nDCG@10 主指标；平均 delta **+0.130203**、helped 6 / hurt 0 / unchanged 30、噪声下限 `1/36 = 0.027778`；固定种子重跑 rows 与 aggregates 完全一致；按 D-08 字面规则判定 `directional-signal` — Validated in Phase 25 (SPK-02)
+- ✓ 权威证据三件套 + 止损状态：`bench/spike-verdict.json`（唯一权威）、`bench/spike-delta.csv`（36 行）、`25-CONTRACT-FREEZE.md`、`COVERAGE.md`（无外部 API 集成声明）；`gsd_run state record-session` 记录 `Phase 25 complete — directional signal recorded; Phases 26/27 unlocked`；该分支不创建 `25-SPIKE-VERDICT.md` 且 ROADMAP Phase 25 勾选由编排器处理 — Validated in Phase 25 (SPK-03)
+
 ### Active
 
 - [ ] 用户可用 `anchor:` 前缀或 `--anchor` 触发锚点增强 BM25，不使用时零成本、零模型加载
@@ -173,6 +180,8 @@ DocSift 是 [qmd](https://github.com/tobi/qmd) 的 Python 重构版本，一个�
 | CLI Database 生命周期：`with Database(index_path) as db:` 自 init_schema 起持有命令体，嵌套事务块原样保留 | 成功与异常路径都确定性关闭连接（57→13 ResourceWarnings，余量测试侧）；main.py 作用域置于 try/except 内部保证异常先关句柄 | Phase 10.1 Complete |
 | XML 输出净化器 = XML 1.0 Char 产生式补集，先于 `xml_escape`/`quoteattr` 应用 | 转义只管 `<>&'"`，禁用码位归净化器管——两者不可互相替代；`ET.fromstring` 往返测试锁定 | Phase 10.1 Complete |
 | mypy 退役，ty 为唯一类型检查器 | 17 条 ty 诊断清零（断言收窄/Protocol/cast，零行为变化），全部 mypy 残留清除；typing-debt 四批次收官 | v1.0 Complete |
+| Phase 25 判定 `directional-signal`，Phases 26/27 解锁 | 锁定 0.3.35 无法加载 `lfm3`，隔离 0.3.37 可加载且不影响 embed/rerank；query-only 锚点在 tuning fixture 给出 +0.130203 配对 delta（helped 6/hurt 0）且可重跑 | Phase 25 Complete — 0.3.37 仅为证据，主 pin 不变；Phase 26 生成器应显式应用 chat template（原始 completion 无模板时会复读 prompt） |
+| MCP/打包契约在写产品代码前冻结 | 11 文件 SHA-256 START=END 一致、7 工具/5 goldens/13 deps 与 `QueryInput` 字段可逐字节核对 | Phase 25 Complete — `v1.2.5` 基线不变 |
 | Watch 管线：per-burst flock + per-path 定向更新 | 每个防抖批次短锁（watch 空闲不持锁，D-04）；`update_paths` 成本正比于变更规模，stat 为准（D-06），Phase 13/14 宿主复用 | Phase 12 Complete |
 | 单一排除谓词 `FileScanner.matches`（扫描与 watch 同源） | LIVE-04 一致性由构造保证；`DEFAULT_IGNORE_PATTERNS` 增补编辑器噪声（.sb-*/4913/.#*/*.tmp） | Phase 12 Complete |
 | missing-root 防护在共享核心（D-11） | 顺带修复 update_cmd 对消失根目录的潜在全量删除 bug；两条更新路径都有回归测试 | Phase 12 Complete |
@@ -251,4 +260,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-11-27 after starting milestone v1.3（Anchor-Augmented Retrieval Evidence；v1.2 已发布并归档）*
+*Last updated: 2026-11-28 after Phase 25 complete（契约冻结 + 可行性 spike 判定 directional-signal；Phases 26/27 解锁；v1.2 已发布并归档）*

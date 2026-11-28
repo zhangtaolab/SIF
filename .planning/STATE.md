@@ -23,9 +23,9 @@ progress:
 
 - **Name:** DocSift (package `sif`, PyPI `docsif`)
 - **Core Value:** 用户可以在自己的笔记和文档库中，用自然语言快速、准确地找到需要的信息——无论关键词是否匹配。
-- **Current Focus:** v1.3 Anchor-Augmented Retrieval Evidence — **in progress (started 2026-11-27)**: 新增默认关闭、可缓存、可证伪的 `anchor:` 检索臂，并由 SIF 自己的 held-out 证据决定 adopt/keep-default；Phases 25-27 规划完成、Phase 25 Ready to plan（首 plan 为兼容性 + 信号 spike，含无方向性信号止损）。前一里程碑 v1.2 Search Precision and Agent Experience — **shipped and archived 2026-11-18**: PR #3 merged `dev` → `main` (merge commit `975cb09`), tag `v1.2.0` pushed, `docsif 1.2.0` published to TestPyPI and PyPI (Publish run 44289577210), and the milestone closed to `.planning/milestones/v1.2-*`. All 8 phases verified `passed` with fresh fingerprints (17: 55/55, 18: 44/44, 19: 63/63, 20: 26/26, 21: 63/63, 22: 77/77, 23: 31/31, 24: 43/43 truths), all `threats_open: 0`. Post-ship Phase 19 gap round re-verified `passed` 2026-11-27 (115/115, UAT 18/18, validation re-certified).
+- **Current Focus:** v1.3 Anchor-Augmented Retrieval Evidence — **in progress (started 2026-11-27)**: 新增默认关闭、可缓存、可证伪的 `anchor:` 检索臂，并由 SIF 自己的 held-out 证据决定 adopt/keep-default；Phase 25 已完成（12/12 must-haves verified `passed`）：契约冻结逐字节证明 + 兼容性/信号 spike 判定 `directional-signal`（平均 paired nDCG@10 +0.130203，helped 6/hurt 0，36 tuning-only 查询，重跑一致），Phases 26/27 解锁；下一阶段 Phase 26 Anchor Arm + Deterministic Cache 待规划。前一里程碑 v1.2 Search Precision and Agent Experience — **shipped and archived 2026-11-18**: PR #3 merged `dev` → `main` (merge commit `975cb09`), tag `v1.2.0` pushed, `docsif 1.2.0` published to TestPyPI and PyPI (Publish run 44289577210), and the milestone closed to `.planning/milestones/v1.2-*`. All 8 phases verified `passed` with fresh fingerprints (17: 55/55, 18: 44/44, 19: 63/63, 20: 26/26, 21: 63/63, 22: 77/77, 23: 31/31, 24: 43/43 truths), all `threats_open: 0`. Post-ship Phase 19 gap round re-verified `passed` 2026-11-27 (115/115, UAT 18/18, validation re-certified).
 - **Tech Stack:** Python 3.10+, SQLite (FTS5 + sqlite-vec), Click, Pydantic, sentence-transformers 5.4.1 (locked), llama-cpp-python; v1.2 added ONLY `mcp>=2.3.0,<3` + `rapidfuzz>=3.14.5,<4`
-- See: .planning/PROJECT.md (updated 2026-11-27)
+- See: .planning/PROJECT.md (updated 2026-11-28 after Phase 25 complete)
 - Archives: v1.0/v1.1/v1.2 phase artifacts, full decision logs, per-plan metrics under .planning/milestones/
 
 ## Current Position
@@ -109,7 +109,15 @@ Last activity: 2026-11-28 — Phase 25 complete, transitioned to Phase 26
 
 ### Decisions
 
-Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
+Full log: PROJECT.md Key Decisions. Recent (Phase 25, 2026-11-28):
+
+- [Phase 25, 2026-11-28]: 兼容性 — 锁定的 `llama-cpp-python 0.3.35` 无法加载 `lfm3`（`unknown model architecture: 'lfm3'`）；隔离 venv 的 0.3.37 用纯 `Llama(model_path=...)` 成功加载用户提供的 `LFM3-1.7B-Q4_K_M.gguf` 并产出非空 greedy 文本；两版本均返回 1024 维 `.embed` 向量，GGUF embed/rerank 路径不受影响。0.3.37 仅为证据，主 pin 不变（D-02/D-03/D-04）。
+- [Phase 25, 2026-11-28]: 信号 — query-only 锚点（seed 0、query 字符串 + 提交表派生）在 36 条 tuning-only 查询上得到平均 paired nDCG@10 +0.130203、helped 6/hurt 0/unchanged 30、噪声下限 0.027778，两次完整重跑 rows/aggregates 一致；按 D-08 字面规则判定 `directional-signal`，Phases 26/27 解锁（D-05..D-08）。
+- [Phase 25, 2026-11-28]: 契约冻结 — 对 `v1.2.5 (6c25e88d9913)` 的 11 文件 SHA-256 START=END 一致、两次 `13 passed` 契约测试、7 工具/5 goldens/13 deps/`QueryInput` 无 `anchor` 字段、`git diff v1.2.5..HEAD` 在冻结路径为空；`uv.lock` 曾被 Aliyun 镜像重写后恢复到已提交冻结 blob（`b0175d45…`），使逐字节声明成立（CTR-01/CTR-02）。
+- [Phase 25, 2026-11-28]: 遗留提示 — 0.3.37 的原始 completion 未套 chat template 时复读 prompt；Phase 26 生成器应显式应用已记录的 `tokenizer.chat_template`（验证器信息性记录，非 must-have）。
+- [Phase 25, 2026-11-28]: 审计债 — `25-VALIDATION.md` 仍 `draft`、无 `25-SECURITY.md`；`verify:post` 的 validate-phase/secure-phase step hooks 为 advisory，需后续 `/gsd-validate-phase 25` 与 `/gsd-secure-phase 25`。
+
+Recent (v1.2 scoping, locked 2026-11-13):
 
 - [Phase 19 gap round, 2026-11-27]: BM25 显示分 = 单调映射 `|bm25|/(1+|bm25|)`；`--min-score` 在 SQL 中对显示分做精确比较，阈值等于某行自己的显示分时保留该行（操作员在 19-11 checkpoint 选择 `monotone-map`；19-13 落地，UAT test 8）
 - [Phase 19 gap round, 2026-11-27]: `sif search query --min-score` 是每条 leg 自己标尺的下限，融合 RRF 分从不与之比较；help/reference/MCP 文本已写明（19-14，UAT test 14）
@@ -407,9 +415,9 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-28T00:49:56.222Z
+Last session: 2026-11-28T01:03:00Z
 Stopped at: Phase 25 complete, ready to plan Phase 26
-Resume file: /Users/forrest/GitHub/SIF/.planning/phases/25-contract-freeze-feasibility-spike/bench/spike-verdict.json
+Resume file: None
 
 - **Docs regeneration (2026-11-27):** `/gsd-docs-update` regenerated 7 canonical docs (README, architecture, quickstart, development, testing, contributing; configuration regenerated from `scripts/generate_config_ref.py` with zero drift) and verified all 19 tracked docs against the codebase. Fixes landed in development (test-module count, module import, mkdocs nav), benchmarking (archived `.planning/milestones/v1.2-phases/` artifact paths; 1e-9 tolerance wording), migration (cache adoption wording), and CLAUDE.md (added the `models/` package to the tree). Every doc now verifies with 0 failed claims.
 
