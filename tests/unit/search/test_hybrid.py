@@ -11,7 +11,7 @@ from sif.core.filters import parse_filter
 from sif.core.models import SearchOptions, SearchResult, SearchType
 from sif.embedding.identity import EmbedderIdentity
 from sif.search.bm25 import BM25Searcher
-from sif.search.hybrid import HybridSearcher, SearchPipeline
+from sif.search.hybrid import PREFIX_ROUTES, HybridSearcher, SearchPipeline
 from sif.search.rerank import _sort_and_build_results
 from sif.search.rrf import chunk_key, fuse_key_for
 from sif.search.snippets import SmartSnippetExtractor
@@ -210,6 +210,32 @@ class TestSearchPipelinePrefixRouting:
         query, search_type = pipeline._parse_query_prefix("python tutorial")
         assert query == "python tutorial"
         assert search_type == SearchType.HYBRID
+
+    def test_prefix_routes_shared_table_has_anchor(self) -> None:
+        """ANC-03: one module constant carries the anchor mapping."""
+        assert PREFIX_ROUTES["anchor:"] is SearchType.ANCHOR
+        assert set(PREFIX_ROUTES) == {"lex:", "vec:", "hyde:", "expand:", "anchor:"}
+
+    def test_anchor_prefix_routes_to_bm25_single_leg(self, mock_db: MagicMock) -> None:
+        """D-01/D-03: ``anchor:`` is a BM25 single leg and skips the identity check."""
+        pipeline = SearchPipeline(
+            mock_db,
+            identity_check=lambda _db: (_ for _ in ()).throw(
+                AssertionError("anchor route evaluated the identity check")
+            ),
+        )
+        pipeline.hybrid.bm25.search = MagicMock(return_value=[])
+        pipeline.hybrid.search = MagicMock(return_value=[])
+
+        parsed_query, search_type = pipeline._parse_query_prefix("anchor:q")
+        assert (parsed_query, search_type) == ("q", SearchType.ANCHOR)
+
+        pipeline.search("anchor:q")
+
+        pipeline.hybrid.bm25.search.assert_called_once()
+        pipeline.hybrid.search.assert_not_called()
+        assert pipeline.last_anchor_resolution is not None
+        assert pipeline.last_anchor_resolution.backend == "rules"
 
     def test_pipeline_prefix_lex_routes_to_bm25(
         self,

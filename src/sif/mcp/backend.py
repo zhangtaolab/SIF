@@ -6,6 +6,7 @@ import asyncio
 import fnmatch
 import threading
 from collections.abc import Callable
+from dataclasses import replace
 from functools import partial
 from typing import Any, TypeVar
 
@@ -30,7 +31,7 @@ from sif.search.bm25 import BM25Searcher
 from sif.search.context_attach import enrich_results
 from sif.search.expansion import QueryExpansion
 from sif.search.filters import compile_filter, compile_match
-from sif.search.hybrid import SearchPipeline, search_dimension_error
+from sif.search.hybrid import PREFIX_ROUTES, SearchPipeline, search_dimension_error
 from sif.search.rerank import create_reranker
 from sif.search.snippets import SmartSnippetExtractor
 from sif.search.suggest import SuggestionEngine
@@ -117,17 +118,11 @@ VECTOR_SEARCH_REMEDY = (
     'with `pip install "docsif[embed]"`, check the SIF_MODEL_* settings, and retry.'
 )
 
-# D-15/D-17: the same prefix map ``SearchPipeline._parse_query_prefix`` uses.
-# The backend consults it BEFORE any load decision so a ``lex:`` query never
-# pays a model load and every other route strips its prefix before the
-# BM25 degrade.
-_PREFIX_ROUTES: dict[str, SearchType] = {
-    "lex:": SearchType.BM25,
-    "vec:": SearchType.VECTOR,
-    "hyde:": SearchType.HYDE,
-    "expand:": SearchType.EXPAND,
-}
-
+# D-15/D-17/ANC-03: the backend consults the SAME ``PREFIX_ROUTES`` constant
+# ``SearchPipeline`` uses — imported, never copied — BEFORE any load decision,
+# so a ``lex:``/``anchor:`` query never pays a model load and every other route
+# strips its prefix before the BM25 degrade. One table means the two routing
+# surfaces cannot drift.
 _DEFAULT_SEARCH_TYPES: dict[str, SearchType] = {
     "bm25": SearchType.BM25,
     "vector": SearchType.VECTOR,
@@ -140,8 +135,9 @@ def _split_query_prefix(query: str, default_search_type: str) -> tuple[str, Sear
     Returns the prefix-free query text and the resolved search type, so the
     backend can decide whether a model load is needed before handing the raw
     query to ``SearchPipeline`` (which performs its own identical routing).
+    Iterates the shared ``PREFIX_ROUTES`` table (ANC-03).
     """
-    for prefix, search_type in _PREFIX_ROUTES.items():
+    for prefix, search_type in PREFIX_ROUTES.items():
         if query.startswith(prefix):
             return query[len(prefix) :].strip(), search_type
     return query, _DEFAULT_SEARCH_TYPES.get(default_search_type, SearchType.HYBRID)
@@ -205,6 +201,51 @@ def _page_checksums(conn: Any, core_results: list[Any]) -> dict[str, str | None]
     if not core_results:
         return {}
     return DocumentRepository(conn).get_checksums([r.document_id for r in core_results])
+
+
+def _prefix_route(
+    conn: Any,
+    parsed_query: str,
+    search_type: SearchType,
+    options: SearchOptions,
+) -> HybridSearchResults | None:
+    """Answer a prefix-first ``lex:``/``anchor:`` route, or ``None``.
+
+    Both routes bypass the loader and the pipeline, so they are handled here
+    before any ``_ensure_embedder`` decision. ``anchor:`` additionally derives
+    the zero-model rule anchors (a pure function) and injects them through
+    ``SearchOptions.anchor_terms`` only; the MCP surface stays read-only.
+    """
+    if search_type is SearchType.BM25:
+        return _lexical_route(conn, parsed_query, options)
+    if search_type is SearchType.ANCHOR:
+        from sif.search.anchor import derive_rule_anchors  # noqa: PLC0415
+
+        anchor_options = replace(options, anchor_terms=derive_rule_anchors(parsed_query) or None)
+        return _lexical_route(conn, parsed_query, anchor_options)
+    return None
+
+
+def _lexical_route(
+    conn: Any,
+    parsed_query: str,
+    options: SearchOptions,
+) -> HybridSearchResults:
+    """Run one prefix-free BM25 leg and map it across the MCP boundary.
+
+    Shared by the ``lex:`` and ``anchor:`` prefix-first routes (Phase 26,
+    D-05): both bypass the loader and the pipeline, so both own exactly one
+    enrichment and the same mapping/suggestion shape. Neither extracts
+    snippets, which is the documented citation deviation (citation uses
+    ``get``).
+    """
+    core_results = BM25Searcher(conn).search(parsed_query, options)
+    core_results = enrich_results(conn, core_results)
+    return _with_suggestions(
+        conn,
+        parsed_query,
+        _map_core_results(core_results, _page_checksums(conn, core_results)),
+    )
 
 
 def _full_line_range(content: str) -> tuple[int, int]:
@@ -439,7 +480,12 @@ class SearchBackend:
         highlights, staleness, and suggestions but intentionally bypasses the
         pipeline's snippet extraction, so snippet/line-range citation fields
         stay unset; the dedicated ``lex_search`` tool has none by design, and
-        citation uses ``get``. Every other route loads the embedder lazily; on
+        citation uses ``get``. The ``anchor:`` route (Phase 26, D-05) is
+        isomorphic to ``lex:``: it derives the zero-model rule anchors and runs
+        one BM25 leg, so it never loads the embedder, never constructs a
+        resolver, never writes ``llm_cache`` (the MCP surface stays read-only),
+        and carries the same no-snippet citation deviation. Every other route
+        loads the embedder lazily; on
         a latched load failure it degrades to BM25 over the prefix-free text
         (the loader already logged the one warning) instead of passing a
         ``vec:``/``hyde:``/``expand:`` token to FTS. On success the raw query
@@ -483,16 +529,11 @@ class SearchBackend:
                 query, self.settings.default_search_type
             )
 
-            if search_type is SearchType.BM25:
-                # D-15: prefix-first BM25 bypasses the loader entirely; the
-                # prefix is stripped so FTS sees the intended terms.
-                core_results = BM25Searcher(conn).search(parsed_query, options)
-                core_results = enrich_results(conn, core_results)
-                return _with_suggestions(
-                    conn,
-                    parsed_query,
-                    _map_core_results(core_results, _page_checksums(conn, core_results)),
-                )
+            # D-15/Phase 26: ``lex:`` and ``anchor:`` answer before any load
+            # decision (prefix-first), with the prefix stripped.
+            lexical = _prefix_route(conn, parsed_query, search_type, options)
+            if lexical is not None:
+                return lexical
 
             if self._ensure_embedder() is None:
                 # D-15: latched load failure -> BM25 degrade over the
