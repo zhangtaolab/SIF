@@ -23,6 +23,7 @@ from sif.utils.logging import get_logger
 
 
 if TYPE_CHECKING:
+    from sif.search.anchor import AnchorResolution, AnchorResolver
     from sif.search.expansion import QueryExpansion
     from sif.search.rerank import CrossEncoderReranker, LlamaCppReranker, Qwen3Reranker
     from sif.search.snippets import SmartSnippetExtractor
@@ -34,6 +35,18 @@ logger = get_logger(__name__)
 SEARCH_DIMENSION_REMEDY = (
     "Restore the stored model or run `sif index embed --force` with the matching model."
 )
+
+# Phase 26 (ANC-03/D-03): the ONE prefix table. ``SearchPipeline`` and the MCP
+# ``SearchBackend`` both read it, so ``anchor:`` exists in a single place and
+# the two routing surfaces cannot drift. Only the first matching prefix wins,
+# which is why ``anchor:lex:foo`` is a literal query for the anchor arm.
+PREFIX_ROUTES: dict[str, SearchType] = {
+    "lex:": SearchType.BM25,
+    "vec:": SearchType.VECTOR,
+    "hyde:": SearchType.HYDE,
+    "expand:": SearchType.EXPAND,
+    "anchor:": SearchType.ANCHOR,
+}
 
 
 def search_dimension_error(
@@ -239,6 +252,7 @@ class SearchPipeline:
         default_search_type: str = "hybrid",
         parse_prefix: bool = True,
         identity_check: Callable[[sqlite3.Connection], IdentityCheck] | None = None,
+        anchor_resolver: AnchorResolver | None = None,
     ) -> None:
         """Initialize search pipeline with optional components.
 
@@ -252,6 +266,11 @@ class SearchPipeline:
         (EMB-01). It is evaluated lazily, at most once per pipeline, and only
         on a vector-touching route — the BM25 exit returns before any call, so
         a BM25-only command never constructs or evaluates one.
+
+        ``anchor_resolver`` is the optional anchor resolver for the ANCHOR
+        route (Phase 26, D-05). When it is absent (and the caller supplied no
+        explicit ``SearchOptions.anchor_terms``), the route falls back to the
+        zero-model rule anchors, so no model is ever constructed by default.
         """
         self.db = db
         self.hybrid = HybridSearcher(db, embedder, embedding_dim)
@@ -263,6 +282,10 @@ class SearchPipeline:
         self.identity_check = identity_check
         self._identity_evaluated = False
         self._identity_result: IdentityCheck | None = None
+        self.anchor_resolver = anchor_resolver
+        # Run-level anchor metadata (Phase 26, D-12): set only by the ANCHOR
+        # route, reset on every search. Never stored on ``SearchResult``.
+        self.last_anchor_resolution: AnchorResolution | None = None
 
     def _identity_state(self) -> IdentityCheck | None:
         """Evaluate the injected identity check once; ``None`` means unchecked.
@@ -337,6 +360,10 @@ class SearchPipeline:
         if options is None:
             options = SearchOptions()
 
+        # Run-level metadata is per-call: a previous anchor resolution must
+        # never leak into a later lex/hybrid query on the same pipeline.
+        self.last_anchor_resolution = None
+
         # Literal mode (personal eval): never reinterpret query text as an
         # operator prefix; use the configured default mode directly.
         if self._parse_prefix:
@@ -353,6 +380,17 @@ class SearchPipeline:
             # BM25-only: the identity check is never evaluated (no vectors are
             # touched, so there is nothing to distrust) and nothing is marked.
             results = self.hybrid.bm25.search(parsed_query, options)
+            return enrich_results(self.db, self._apply_snippets(results, parsed_query))
+        if search_type == SearchType.ANCHOR:
+            # Anchor arm (Phase 26, D-01): a pure BM25 single leg, the same
+            # granularity as ``lex:``. Anchors enter ONLY through
+            # ``SearchOptions.anchor_terms``; highlight and snippet keep using
+            # ``parsed_query``, so an anchor never appears in their output
+            # (ANC-02). The identity check is never evaluated — no vectors.
+            resolution = self._resolve_anchor(parsed_query, options)
+            anchor_options = replace(options, anchor_terms=resolution.terms or None)
+            results = self.hybrid.bm25.search(parsed_query, anchor_options)
+            self.last_anchor_resolution = resolution
             return enrich_results(self.db, self._apply_snippets(results, parsed_query))
         if search_type == SearchType.VECTOR:
             embedder = self.hybrid.embedder
@@ -518,6 +556,24 @@ class SearchPipeline:
                     result.line_end = line_end
         return results
 
+    def _resolve_anchor(self, query: str, options: SearchOptions) -> AnchorResolution:
+        """Resolve the anchor terms for an ANCHOR query.
+
+        Explicit ``options.anchor_terms`` wins verbatim (``[]`` means
+        "explicitly no anchors" and bypasses the resolver, keeping evaluations
+        reproducible); otherwise an injected resolver is consulted; otherwise
+        the zero-model rule anchors derive from the query alone. The import is
+        function-local so the default path never imports ``sif.search.anchor``
+        and never constructs a model.
+        """
+        from sif.search.anchor import AnchorResolution, derive_rule_anchors  # noqa: PLC0415
+
+        if options.anchor_terms is not None:
+            return AnchorResolution(terms=list(options.anchor_terms), backend="injected")
+        if self.anchor_resolver is not None:
+            return self.anchor_resolver.resolve(query)
+        return AnchorResolution(terms=derive_rule_anchors(query), backend="rules")
+
     def _default_search_type_enum(self) -> SearchType:
         """Resolve the configured default type for unprefixed/literal queries."""
         return {
@@ -528,17 +584,13 @@ class SearchPipeline:
     def _parse_query_prefix(self, query: str) -> tuple[str, SearchType]:
         """Parse query prefix to determine search mode.
 
-        An explicit ``lex:``/``vec:``/``hyde:``/``expand:`` prefix always
-        wins. Unprefixed queries fall back to the configured default search
-        type (``hybrid`` unless ``SIF_DEFAULT_SEARCH_TYPE`` says otherwise).
+        An explicit ``lex:``/``vec:``/``hyde:``/``expand:``/``anchor:`` prefix
+        always wins. Unprefixed queries fall back to the configured default
+        search type (``hybrid`` unless ``SIF_DEFAULT_SEARCH_TYPE`` says
+        otherwise). The table is the shared ``PREFIX_ROUTES`` constant, the
+        same one the MCP backend consults (ANC-03).
         """
-        prefix_map = {
-            "lex:": SearchType.BM25,
-            "vec:": SearchType.VECTOR,
-            "hyde:": SearchType.HYDE,
-            "expand:": SearchType.EXPAND,
-        }
-        for prefix, search_type in prefix_map.items():
+        for prefix, search_type in PREFIX_ROUTES.items():
             if query.startswith(prefix):
                 return query[len(prefix) :].strip(), search_type
         return query, self._default_search_type_enum()

@@ -84,8 +84,9 @@ class BM25Searcher:
         if options.collection_ids is not None and not options.collection_ids:
             return []
 
-        # Build the FTS query
-        fts_query = self._build_fts_query(query)
+        # Build the FTS query (anchors, when present, widen it with OR
+        # alternatives — Phase 26, D-01/D-08).
+        fts_query = self._build_fts_query(query, options.anchor_terms)
 
         # min_score thresholding happens BEFORE LIMIT/OFFSET (CORR-03, research
         # Pitfall 4/P15). The predicate compares the displayed score itself,
@@ -255,19 +256,29 @@ class BM25Searcher:
 
         return results
 
-    def _build_fts_query(self, query: str) -> str:
-        """Build a safe FTS5 query from raw user input.
+    def _build_fts_query(self, query: str, anchor_terms: list[str] | None = None) -> str:
+        """Build a safe FTS5 query from raw user input and optional anchors.
 
         Each whitespace-separated token is sanitized into a quoted prefix
         phrase and tokens are joined with AND, so ordinary input like
         ``e-mail``, ``don't``, or ``c++`` cannot be parsed as FTS5 query
         syntax. A query with no usable terms yields an empty phrase, which
         matches nothing instead of raising sqlite3.OperationalError.
+
+        Anchor terms (Phase 26, D-01/D-08) widen the match as OR alternatives:
+        ``(<query AND chain>) OR "<anchor1>"* OR "<anchor2>"*``. Each anchor is
+        sanitized whole, never split first, so a multi-word anchor stays one
+        phrase. With no anchors the output is byte-identical to the plain AND
+        chain — the default path is unchanged.
         """
         terms = [t for t in (_sanitize_term(tok) for tok in query.split()) if t]
-        if not terms:
-            return '""'
-        return " AND ".join(terms)
+        base = " AND ".join(terms) if terms else '""'
+        if not anchor_terms:
+            return base
+        alternatives = [t for t in (_sanitize_term(anchor) for anchor in anchor_terms) if t]
+        if not alternatives:
+            return base
+        return f"({base}) OR " + " OR ".join(alternatives)
 
     def _get_document_content(self, document_id: str) -> str | None:
         """Get document content."""

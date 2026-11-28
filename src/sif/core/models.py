@@ -89,6 +89,7 @@ class SearchType(Enum):
     HYBRID = "hybrid"
     HYDE = "hyde"
     EXPAND = "expand"
+    ANCHOR = "anchor"
 
 
 @dataclass
@@ -382,6 +383,14 @@ class SearchOptions:
     rrf_k: int = 60
     bm25_weight: float = 1.0
     vector_weight: float = 1.0
+    # Anchor injection point (Phase 26, D-04/D-08): the ONLY way anchor terms
+    # reach a searcher. ``None`` means no anchors were supplied (an ANCHOR
+    # route may resolve them); ``[]`` means explicitly no anchors and bypasses
+    # the resolver; a non-None list is injected verbatim so evaluations are
+    # reproducible. Deliberately not an ``anchor_enabled``/``anchor_mode``
+    # switch — the ANCHOR search type plus ``anchor:``/``--anchor`` is the
+    # routing surface, and settings never bypass SearchOptions.
+    anchor_terms: list[str] | None = None
 
 
 @dataclass
