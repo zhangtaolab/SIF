@@ -27,7 +27,7 @@ from sif.cli.filter_options import parse_filter_option
 from sif.cli.formatters import add_line_numbers_to_results, prepend_line_numbers
 from sif.config.settings import get_settings
 from sif.core.filters import FilterNode
-from sif.core.models import Collection, QueryLogEntry, SearchOptions, SearchResult
+from sif.core.models import Collection, QueryLogEntry, SearchOptions, SearchResult, SearchType
 from sif.database.database import Database
 from sif.database.repositories import CollectionRepository, QueryLogRepository
 from sif.embedding.identity import (
@@ -42,7 +42,7 @@ from sif.indexing.drift import detect_drift, refresh_drifted
 from sif.indexing.incremental import IncrementalResult
 from sif.search.bm25 import BM25Searcher
 from sif.search.context_attach import enrich_results
-from sif.search.hybrid import SearchPipeline, search_dimension_error
+from sif.search.hybrid import PREFIX_ROUTES, SearchPipeline, search_dimension_error
 from sif.search.suggest import SuggestionEngine
 from sif.utils.logging import get_logger, set_quiet
 
@@ -1118,6 +1118,12 @@ def vsearch_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     is_flag=True,
     help="Rerank results (default: SIF_RERANK_ENABLED or false)",
 )
+@click.option(
+    "--anchor",
+    is_flag=True,
+    help="Expand the BM25 leg with deterministic rule anchors "
+    "(default: off; the anchor: prefix is equivalent)",
+)
 @click.option("--intent", help="Search intent hint for query expansion")
 @click.option(
     "--rrf-k",
@@ -1180,6 +1186,7 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
     model_type: str | None = None,
     no_refresh: bool = False,
     rerank: bool = False,
+    anchor: bool = False,
     quiet: bool = False,
     per_chunk: bool = False,
     filter_json: str | None = None,
@@ -1257,7 +1264,35 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             no_refresh=no_refresh,
         )
 
-        # Load embedder for hybrid search
+        # Route-first (Phase 26, D-02/D-03): the --anchor flag and the anchor:
+        # prefix are the same ANCHOR route. Only the text handed to the pipeline
+        # carries the injected prefix; `query` (DYM/history/output) stays as the
+        # user typed it, and a flag on an already-prefixed query injects once.
+        pipeline_query = f"anchor:{query}" if anchor and not query.startswith("anchor:") else query
+        route = next(
+            (
+                search_type
+                for prefix, search_type in PREFIX_ROUTES.items()
+                if pipeline_query.startswith(prefix)
+            ),
+            None,
+        )
+        anchor_route = route is SearchType.ANCHOR
+
+        # D-12 (Phase 16): rerank is an explicit opt-in. Resolved before the
+        # embedder/model load so the ANCHOR rejection below is zero-construction
+        # by construction — no model, no reranker, no weights.
+        rerank_requested = rerank or settings.rerank_enabled
+        if anchor_route and rerank_requested:
+            # D-01: ANCHOR is a pure BM25 single leg that returns before the
+            # rerank step, so a reranker would be silently ignored. Reject the
+            # unsupported combination instead of discarding the request or
+            # constructing an unused model.
+            raise click.UsageError(
+                "--anchor cannot be combined with --rerank (or SIF_RERANK_ENABLED); "
+                "the ANCHOR route is pure BM25 single-leg"
+            )
+
         from sif.embedding.manager import EmbeddingManager  # noqa: PLC0415
         from sif.search.expansion import QueryExpansion  # noqa: PLC0415
         from sif.search.rerank import create_reranker  # noqa: PLC0415
@@ -1266,52 +1301,75 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
         if model_type:
             settings = settings.model_copy(update={"model_type": model_type})
 
-        try:
-            manager = EmbeddingManager.from_settings(settings)
-            manager.load_model()
-            # IN-07 (index.py precedent): the loaded model already knows its
-            # dim, so remote backends are never billed for a throwaway probe.
-            model_dim = manager.get_model_info().get("embedding_dim")
-            embedding_dim = (
-                model_dim if isinstance(model_dim, int) else len(manager.embed_single("probe"))
-            )
-        except ImportError as e:
-            raise click.ClickException(f"Embedding backend not installed: {e}") from None
-        except Exception as e:
-            raise click.ClickException(f"Failed to load embedding model: {e}") from e
+        # ANC-01: on the ANCHOR route without rerank, construct nothing — no
+        # EmbeddingManager, no model load, no identity probe, no reranker.
+        anchor_resolver: Any = None
+        if anchor_route:
+            manager = None
+            embedder = None
+            embedding_dim = settings.embedding_dim
+            current_identity: EmbedderIdentity | None = None
+            identity_check: Callable[[sqlite3.Connection], IdentityCheck] | None = None
+            query_expander = None
+            reranker = None
+            # AnchorResolver construction loads no model and touches no cache;
+            # resolution happens in the pipeline's ANCHOR branch (26-02).
+            from sif.search.anchor import AnchorResolver  # noqa: PLC0415
 
-        # EMB-01: the pipeline evaluates this closure lazily, only on a
-        # vector-touching route, so a BM25-only query never runs the check.
-        # The full loaded-model identity is the search-mode `current`.
-        current_identity = _current_identity(manager)
-        identity_check: Callable[[sqlite3.Connection], IdentityCheck] | None = (
-            partial(check_identity, current=current_identity, mode="search")
-            if current_identity is not None
-            else None
-        )
-        # Create optional components
-        query_expander = QueryExpansion(embedding_manager=manager)
-
-        reranker = None
-        # D-12 (Phase 16): rerank is an explicit opt-in. The gate is checked
-        # BEFORE create_reranker so the off path is zero-cost by construction —
-        # no model load, no optional-backend import, no weights.
-        rerank_requested = rerank or settings.rerank_enabled
-        if rerank_requested:
+            anchor_resolver = AnchorResolver(db.connection, settings)
+        else:
+            # Load embedder for hybrid search
             try:
-                reranker = create_reranker(settings)
-            except ImportError:
-                if not quiet:
-                    console.print(
-                        "[yellow]Reranker not available. "
-                        'Install with: pip install "docsif[embed]"[/yellow]',
-                    )
-            # Defense in depth (REVIEW WR-09): a factory ValueError for an
-            # unknown model_type must not escape as a raw traceback.
-            except ValueError as e:
-                raise click.ClickException(str(e)) from e
+                manager = EmbeddingManager.from_settings(settings)
+                manager.load_model()
+                # IN-07 (index.py precedent): the loaded model already knows its
+                # dim, so remote backends are never billed for a throwaway probe.
+                model_dim = manager.get_model_info().get("embedding_dim")
+                embedding_dim = (
+                    model_dim if isinstance(model_dim, int) else len(manager.embed_single("probe"))
+                )
+            except ImportError as e:
+                raise click.ClickException(f"Embedding backend not installed: {e}") from None
+            except Exception as e:
+                raise click.ClickException(f"Failed to load embedding model: {e}") from e
+
+            # EMB-01: the pipeline evaluates this closure lazily, only on a
+            # vector-touching route, so a BM25-only query never runs the check.
+            # The full loaded-model identity is the search-mode `current`.
+            current_identity = _current_identity(manager)
+            identity_check = (
+                partial(check_identity, current=current_identity, mode="search")
+                if current_identity is not None
+                else None
+            )
+            # Create optional components
+            query_expander = QueryExpansion(embedding_manager=manager)
+
+            reranker = None
+            # The gate is checked BEFORE create_reranker so the off path is
+            # zero-cost by construction — no model load, no optional-backend
+            # import, no weights.
+            if rerank_requested:
+                try:
+                    reranker = create_reranker(settings)
+                except ImportError:
+                    if not quiet:
+                        console.print(
+                            "[yellow]Reranker not available. "
+                            'Install with: pip install "docsif[embed]"[/yellow]',
+                        )
+                # Defense in depth (REVIEW WR-09): a factory ValueError for an
+                # unknown model_type must not escape as a raw traceback.
+                except ValueError as e:
+                    raise click.ClickException(str(e)) from e
+            embedder = manager.model
 
         snippet_extractor = SmartSnippetExtractor(max_length=options.snippet_max_length)
+
+        # Run-level anchor metadata (D-12). Only the ANCHOR route sets it; a
+        # non-anchor pipeline is never asked for the attribute (a MagicMock's
+        # auto-attribute would otherwise fabricate an anchor line).
+        anchor_resolution = None
 
         # Search using pipeline
         with db.connection:
@@ -1322,29 +1380,46 @@ def query_cmd(  # noqa: C901, PLR0912, PLR0913, PLR0915
             try:
                 pipeline = SearchPipeline(
                     db.connection,
-                    embedder=manager.model,
+                    embedder=embedder,
                     query_expander=query_expander,
                     reranker=reranker,
                     snippet_extractor=snippet_extractor,
                     embedding_dim=embedding_dim,
                     default_search_type=settings.default_search_type,
                     identity_check=identity_check,
+                    anchor_resolver=anchor_resolver,
                 )
             except RuntimeError as e:
                 raise click.ClickException(sqlite_vec_remedy(e)) from e
             try:
-                results = pipeline.search(query, options)
+                results = pipeline.search(pipeline_query, options)
             except IdentityDimensionError as e:
                 # EMB-01: the identity remedy is not an install problem — it
                 # must never be routed through sqlite_vec_remedy.
                 raise click.ClickException(str(e)) from e
             except RuntimeError as e:
                 raise click.ClickException(str(e)) from e
+            # D-12: read the run-level resolution only on the ANCHOR route.
+            if anchor_route:
+                anchor_resolution = pipeline.last_anchor_resolution
             # D-05/SC2: only the zero-result path pays the DYM cost; the hook
             # rides the post-results path and leaves WR-02 construction alone.
+            # Both helpers keep the user's ORIGINAL query (D-03): the anchor:
+            # prefix is pipeline-internal and must never reach DYM or history.
             suggestions = _zero_result_suggestions(db.connection, query, results)
             # D-08: one history row for an executed search (fail-soft).
             _record_query_history(db.connection, query, results, collections, settings=settings)
+
+        # D-12/GEN-03: anchor cost metadata rides stderr only, and only when
+        # --explain is set; machine-readable stdout and the result dict snapshot
+        # stay byte-identical.
+        if explain and anchor_resolution is not None:
+            console_err.print(
+                f"[dim]anchor: backend={anchor_resolution.backend} "
+                f"calls={anchor_resolution.generator_calls} "
+                f"hits={anchor_resolution.cache_hits} "
+                f"fallback={anchor_resolution.fallback_reason or 'none'}[/dim]"
+            )
 
         # Output results
         if output_files or (quiet and not any([output_json, output_csv, output_md, output_xml])):

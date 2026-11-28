@@ -54,6 +54,19 @@ def _query_settings_mock(**overrides: object) -> MagicMock:
         "rerank_enabled": False,
         "rerank_candidate_limit": 20,
         "rerank_relative_threshold": 0.5,
+        # Phase 26 anchor settings. These are read only on the ANCHOR route,
+        # but an unset field on a wide-open MagicMock is truthy (Pitfall 10),
+        # so pin every one to its real default.
+        "anchor_backend": "rules",
+        "anchor_model_path": None,
+        "anchor_api_base": None,
+        "anchor_api_model": None,
+        "anchor_api_key": None,
+        "anchor_timeout_ms": 5000,
+        "anchor_max_calls": 100,
+        "anchor_max_tokens": 64,
+        "anchor_cache_ttl": 2592000,
+        "anchor_vocab_guard": False,
         "model_dump": lambda: {"model_name": "all-MiniLM-L6-v2"},
     }
     fields.update(overrides)
