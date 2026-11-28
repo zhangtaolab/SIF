@@ -34,7 +34,7 @@ Note: the `gsd-code-reviewer` subagent was dispatched for this review but stalle
 
 ## Delta Review (2026-11-28, after the first CI run)
 
-**Scope.** The only source-scope change since the review above is commit `e2033ecd` — `tests/unit/search/test_hybrid.py`, one test (`test_anchor_terms_reach_the_bm25_leg_in_hybrid_mode`). `src/` is identical to the reviewed commit.
+**Scope.** The source-scope change between the review above and the first CI rerun is commit `e2033ecd` — `tests/unit/search/test_hybrid.py`, one test (`test_anchor_terms_reach_the_bm25_leg_in_hybrid_mode`). `src/` is identical to the reviewed commit. A second delta later the same day (`8babd7a1`) is covered at the end of this section.
 
 **Why it changed.** The first 8-cell CI run (`46143534219`, commit `0a5a9c9a`) failed in both py3.10 cells with `sqlite3.InterfaceError: Error binding parameter 2`. The test spied on `_build_fts_query` with `patch.object(..., autospec=True, wraps=real_build)`; on Python 3.10 that combination returns a `MagicMock` instead of the wrapped function's value, and SQLite refuses to bind it as the `MATCH` parameter. On 3.11–3.13 the same code passes, which is why every local gate (3.12) was green. It was a defect in the test, not in the product.
 
@@ -52,6 +52,23 @@ Note: the `gsd-code-reviewer` subagent was dispatched for this review but stalle
 **Status of the earlier limitation.** "The authoritative `uv --extra embed` full suite did not complete locally" is now closed by that CI run: every cell ran the full suite with the `embed` extra under the 90% coverage gate.
 
 **Provenance.** Reviewed inline by the orchestrator. The `gsd-code-reviewer` subagent was not re-dispatched for a one-function test change; the full-scope review above stands unchanged (0 critical / 0 warning / 1 info).
+
+### Second delta the same day: `8babd7a1` (Python 3.10 support removed)
+
+**Scope.** `pyproject.toml` (metadata only: `requires-python = ">=3.11"`, the `3.10` classifier removed), `uv.lock`, `.github/workflows/test-matrix.yml`, `tests/test_ci_workflows.py`, `README.md`, `CLAUDE.md`, and seven files under `docs/`. `src/` is untouched, and Ruff's `target-version` and ty's `python-version` are unchanged.
+
+**Provenance — read this before treating it as a review.** The orchestrator authored this change on the owner's instruction and then validated it itself. What follows is the author's validation, not an independent review.
+
+**What was checked.**
+
+- Matrix contract: `test_ci_workflows.py` pins exactly 3 versions × 2 operating systems, and the workflow declares that list once. 84 contract/docs/hygiene tests pass.
+- Lock equivalence with the previous lock: every retained package's wheels and sdist are the committed entries minus 3.10-only builds (112 `cp310-cp310`, 10 `pp310`; no `cp310-abi3`), with hash, size, and upload-time identical. The dependency graph resolves to the same (package, version, index) triples across 3.11–3.14 × Linux/macOS × arm64/x86_64 for the runtime dependencies and all six extras. The 12 removed entries are unreachable on 3.11+.
+- Suites: 3367 passed / 1 skipped / 94.18% on Python 3.12; on 3.11 installed from the new lock, 3365 passed / 2 skipped, with the one failure caused only by the scratch copy lacking a `.git` directory (it passes in the repository).
+- CI: run `46149558169` is green (lint + six cells).
+
+**Findings: none in the change itself.**
+
+**Effect on the invariants below.** Invariant 4 ("frozen paths zero-diff from v1.2.5 → empty") was true when the review was written and is now stale for two of the eleven paths: `pyproject.toml` and `uv.lock` differ from v1.2.5 by the Python 3.10 removal only. The nine MCP contract paths are still zero-diff. `26-VERIFICATION.md` records this as an override accepted by the owner.
 
 ## Verified Invariants
 
