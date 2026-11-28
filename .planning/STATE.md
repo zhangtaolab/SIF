@@ -5,16 +5,16 @@ milestone_name: Anchor-Augmented Retrieval Evidence (Phases 25-27) — IN PROGRE
 current_phase: 26
 current_phase_name: Anchor Arm + Deterministic Cache
 status: executing
-stopped_at: Phase 26 context gathered
-last_updated: "2026-11-28T04:54:44.247Z"
+stopped_at: Completed 26-01-PLAN.md
+last_updated: "2026-11-28T05:07:29.313Z"
 last_activity: 2026-11-28
-last_activity_desc: Phase 25 complete, transitioned to Phase 26
-state_head: 74f972979122dd235bca1672f51c8fa00efd6965
+last_activity_desc: Phase 26 execution started
+state_head: 5b1b52d09f85931930289a4618d32f9563958c1b
 progress:
   total_phases: 2
   completed_phases: 1
   total_plans: 6
-  completed_plans: 2
+  completed_plans: 3
 ---
 
 # DocSift — Project State
@@ -30,10 +30,10 @@ progress:
 
 ## Current Position
 
-Phase: 26 (Anchor Arm + Deterministic Cache) — READY TO EXECUTE
-Plan: Not started
+Phase: 26 (Anchor Arm + Deterministic Cache) — EXECUTING
+Plan: 2 of 4
 Status: Ready to execute
-Last activity: 2026-11-28 — Phase 25 complete, transitioned to Phase 26
+Last activity: 2026-11-28 — Phase 26 execution started
 
 
 ## Performance Metrics
@@ -104,6 +104,7 @@ Last activity: 2026-11-28 — Phase 25 complete, transitioned to Phase 26
 | Phase 19 P13 | 12min | 3 tasks | 7 files |
 | Phase 19 P14 | 8min | 2 tasks | 7 files |
 | Phase 19 P15 | 7 min | 2 tasks | 2 files |
+| Phase 26 P01 | 7min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -344,6 +345,10 @@ Recent (v1.2 scoping, locked 2026-11-13):
 - [Phase 19]: The markup-bearing Chunk-cell test uses /notes/[red]evil[/red].md and /notes/[/3]-review.md, not the UAT session's r[3]eview-notes (v2).md: Rich reads a bracketed tag only when it starts with a letter, a number sign, a slash or an at sign, so a test on that name would pass on a markup-parsing mutant.
 - [Phase 19]: The score-map test reads raw bm25 values from a real FTS5 chunk index at about -4.72 and -0.77, far from -1 where the earlier reciprocal map and the displayed-score map agree; each gate mutates a mktemp -d copy and never the working tree.
 - [Phase 19]: No source file changed: the three behaviours of UAT test 10 were right and only their failing-without-them guards were missing; the base-anchored scope gate holds the tree to the two declared test files.
+- [Phase 26]: 锚点只能以 OR 备选扩展 FTS MATCH：(`<query AND chain>`) OR "<anchor>"*；字面 AND-prepend 实测 36/36 查询 0 结果。anchor_terms 为 None/空时输出与今天逐字节相同
+- [Phase 26]: anchor_terms=[] 语义为「显式无锚点」并绕过 resolver；SearchPipeline.last_anchor_resolution 是运行级元数据，每次 search 重置且绝不进入 SearchResult.to_dict
+- [Phase 26]: PREFIX_ROUTES 提升为 sif/search/hybrid.py 的单一模块常量，pipeline 与 MCP 共用；MCP anchor: 在 _ensure_embedder 之前只读直连 BM25，不写 llm_cache
+- [Phase 26]: 在 wave 1 一并声明 AnchorResolver 协议（仅 resolve(query)->AnchorResolution），使 pipeline 的 TYPE_CHECKING 注解可被 ty 解析，26-02 直接实现
 
 ### Pending Todos
 
@@ -415,9 +420,9 @@ Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-28T03:22:21.409Z
-Stopped at: Phase 26 context gathered
-Resume file: .planning/phases/26-anchor-arm-deterministic-cache/26-CONTEXT.md
+Last session: 2026-11-28T05:07:29.275Z
+Stopped at: Completed 26-01-PLAN.md
+Resume file: None
 
 - **Docs regeneration (2026-11-27):** `/gsd-docs-update` regenerated 7 canonical docs (README, architecture, quickstart, development, testing, contributing; configuration regenerated from `scripts/generate_config_ref.py` with zero drift) and verified all 19 tracked docs against the codebase. Fixes landed in development (test-module count, module import, mkdocs nav), benchmarking (archived `.planning/milestones/v1.2-phases/` artifact paths; 1e-9 tolerance wording), migration (cache adoption wording), and CLAUDE.md (added the `models/` package to the tree). Every doc now verifies with 0 failed claims.
 
