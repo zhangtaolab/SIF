@@ -92,7 +92,7 @@ coverage:
     requirement: CTR-04
     verification:
       - kind: other
-        ref: "uv run --frozen --extra dev --extra embed python -m pytest (see gate results below)"
+        ref: ".venv/bin/python -m pytest --ignore=tests/unit/inference/test_reranker.py -q — 3367 passed / 1 skipped / 94.18% coverage (plan-specified local fallback; reranker test needs torch, unavailable in .venv)"
         status: pass
       - kind: other
         ref: "uv run --frozen --extra dev ty check src/sif; ruff check src tests; ruff format --check src tests; make docs-generate && git diff --exit-code; MCP contract 13 passed; frozen paths zero diff"
@@ -170,15 +170,17 @@ None — implementation matched the plan.
 **Impact on plan:** No scope creep; all must-haves verified below.
 
 ## Issues Encountered
-- `uv run --frozen --extra dev --extra embed` needed to download torch (132 MiB) + scipy/transformers/sklearn/modelscope on first use, taking longer than the local `.venv` fallback. The plan's documented fallback (`.venv/bin/python -m pytest --ignore=tests/unit/inference/test_reranker.py -q`) passed: 3367 passed / 1 skipped / 94.18% coverage; the authoritative `uv --extra embed` run also passed (see gate results).
+- `uv run --frozen --extra dev --extra embed python -m pytest` could not complete locally: the machine's uv resolved the `embed` extras from a slow mirror and was still unpacking torch (132 MiB) / scipy / transformers / sklearn / modelscope after ~26 minutes; the process was stopped. The plan's documented fallback (`.venv/bin/python -m pytest --ignore=tests/unit/inference/test_reranker.py -q`) passed: 3367 passed / 1 skipped / 94.18% coverage. **The authoritative `uv --extra embed` full suite did NOT pass locally** — 8-cell CI remains the authoritative full gate.
+- That `uv run` also rewrote `uv.lock` (registry URLs to an aliyun mirror, format revision 5→3) as a side effect; the file was restored via `git restore uv.lock` and the frozen-path gate re-verified as zero diff. No lockfile change is part of this plan.
+- The post-merge test gate's auto-detected `python -m pytest` resolved to the system miniconda Python (no torch) rather than the project `.venv`; re-running the gate with `.venv/bin/python` and the plan's `--ignore` form passed (3367 passed). This is an environment quirk, not a code conflict.
 - The 8-cell CI matrix remains external; the orchestrator must confirm it after push.
 
 ## User Setup Required
 None - no external service configuration required.
 
 ## Next Phase Readiness
-- ANC-05 / CTR-03 deliverables complete; CTR-04 local gates green. Phase 27 (Evidence Gate & Verdict) can consume the guard as an independent A/B using the reproducible `SearchOptions.anchor_terms` control path.
-- Blocker: none. 8-cell CI must be confirmed post-push before the milestone's success criterion 5 is claimed.
+- ANC-05 / CTR-03 deliverables complete; CTR-04 local gates green with the documented `--ignore=tests/unit/inference/test_reranker.py` fallback. Phase 27 (Evidence Gate & Verdict) can consume the guard as an independent A/B using the reproducible `SearchOptions.anchor_terms` control path.
+- Blocker: none locally. 8-cell CI (including the `--extra embed` full suite) must be confirmed post-push before the milestone's success criterion 5 is claimed; the orchestrator must not record the local fallback as a full-suite pass.
 
 ---
 *Phase: 26-anchor-arm-deterministic-cache*
