@@ -116,6 +116,21 @@ BM25/FTS5 keyword search and sqlite-vec vector search always run on CPU regardle
 | `SIF_SEARCH_REFRESH_ENABLED` | bool | `True` | Stat-walk the searched collections before `sif search`/`vsearch`/`query` and BM25-refresh drifted files (never embeddings); disable to search the index exactly as stored |
 | `SIF_SEARCH_REFRESH_MAX_FILES` | int | `100` | Upper bound on drifted files one pre-search refresh may re-index; above it nothing is refreshed and search proceeds on the current index with a warning (so a branch switch never becomes a hidden full reindex) |
 
+### Anchor Settings
+
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `SIF_ANCHOR_BACKEND` | str | `rules` | Anchor term backend for the anchor search arm: 'rules' (the zero-model deterministic default), 'gguf' (a local GGUF generator), or 'openai' (an explicitly opted-in OpenAI-compatible endpoint that receives query text) (validated by `validate_anchor_backend`) |
+| `SIF_ANCHOR_MODEL_PATH` | Path \| None | `None` | Absolute path to the local .gguf model used by the gguf anchor backend; the model is read in place and never downloaded (validated by `expand_anchor_model_path`) |
+| `SIF_ANCHOR_API_BASE` | str \| None | `None` | Base URL of the OpenAI-compatible endpoint used by the openai anchor backend (explicit opt-in; query text leaves the machine) (validated by `validate_anchor_api_base`) |
+| `SIF_ANCHOR_API_MODEL` | str \| None | `None` | Model name sent to the OpenAI-compatible anchor endpoint |
+| `SIF_ANCHOR_API_KEY` | str \| None | `None` | API key for the OpenAI-compatible anchor endpoint |
+| `SIF_ANCHOR_TIMEOUT_MS` | int | `5000` | Generation deadline in milliseconds for one anchor generation attempt; model loading happens outside this deadline |
+| `SIF_ANCHOR_MAX_CALLS` | int | `100` | Hard budget of generator calls per anchor resolver instance; exceeding it raises instead of falling back (0 disables the cap) |
+| `SIF_ANCHOR_MAX_TOKENS` | int | `64` | Maximum tokens the anchor generator may emit per call |
+| `SIF_ANCHOR_CACHE_TTL` | int | `2592000` | Seconds an anchor cache row stays valid in llm_cache (default 30 days); 0 keeps rows until an explicit cleanup |
+| `SIF_ANCHOR_VOCAB_GUARD` | bool | `False` | Drop anchor terms that match no indexed document (an independent opt-in A/B; off by default, matching the paper baseline) |
+
 ### Watch Settings
 
 | Variable | Type | Default | Description |
@@ -152,6 +167,7 @@ SIF validates configuration on startup. Invalid values will raise errors:
 | `watch_update_depth` | Must be one of: `bm25`, `embed` | `Invalid watch_update_depth: xyz. Must be one of ['bm25', 'embed']` |
 | `model_type` | Must be one of: `gguf`, `modelscope`, `openai`, `sentence_transformers` | `Invalid model_type: xyz. Must be one of ['gguf', 'modelscope', 'openai', 'sentence_transformers']` |
 | `reranker_model_type` | Must be one of: `gguf`, `sentence_transformers` | `Invalid reranker_model_type: xyz. Must be one of ['gguf', 'sentence_transformers']` |
+| `anchor_backend` | Must be one of: `gguf`, `openai`, `rules` | `Invalid anchor_backend: xyz. Must be one of ['gguf', 'openai', 'rules']` |
 | `default_search_type` | Must be one of: `bm25`, `hybrid`, `vector` | `Invalid default_search_type: xyz. Must be one of ['bm25', 'hybrid', 'vector']` |
 | `mcp_transport` | Must be one of: `http`, `stdio` | `Invalid mcp_transport: xyz. Must be one of ['http', 'stdio']` |
 | `api_base` | Must start with `http://` or `https://` | `api_base must be an HTTP or HTTPS URL` |

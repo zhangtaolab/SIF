@@ -200,6 +200,21 @@ SECTIONS: list[tuple[str, list[str]]] = [
         ],
     ),
     (
+        "Anchor Settings",
+        [
+            "anchor_backend",
+            "anchor_model_path",
+            "anchor_api_base",
+            "anchor_api_model",
+            "anchor_api_key",
+            "anchor_timeout_ms",
+            "anchor_max_calls",
+            "anchor_max_tokens",
+            "anchor_cache_ttl",
+            "anchor_vocab_guard",
+        ],
+    ),
+    (
         "Watch Settings",
         [
             "watch_debounce_interval",
