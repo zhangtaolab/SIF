@@ -12,8 +12,8 @@
 
 ### Spike & Feasibility
 
-- [ ] **SPK-01**: 团队能用 SIF 锁定的 `llama-cpp-python` 加载 `LFM3-1.7B-Q4_K_M.gguf` 并确认 `lfm3` 架构可推理；不兼容时记录升级或外部 `llama-server` 退路及其对现有 GGUF embed/rerank 路径的影响
-- [ ] **SPK-02**: 团队能用固定/规则锚点在现有 fixture 上跑 `lex:` → `anchor:` 配对对比，产出可复现的方向性信号判定与 delta 表
+- [x] **SPK-01**: 团队能用 SIF 锁定的 `llama-cpp-python` 加载 `LFM3-1.7B-Q4_K_M.gguf` 并确认 `lfm3` 架构可推理；不兼容时记录升级或外部 `llama-server` 退路及其对现有 GGUF embed/rerank 路径的影响
+- [x] **SPK-02**: 团队能用固定/规则锚点在现有 fixture 上跑 `lex:` → `anchor:` 配对对比，产出可复现的方向性信号判定与 delta 表
 - [ ] **SPK-03**: 无方向性信号时里程碑可止损归档假设，不投入后续阶段，且不留下未提交的半成品代码
 
 ### Anchor Retrieval Arm
@@ -87,8 +87,8 @@ Which phases cover which requirements. Populated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SPK-01 | Phase 25 | Pending |
-| SPK-02 | Phase 25 | Pending |
+| SPK-01 | Phase 25 | Complete |
+| SPK-02 | Phase 25 | Complete |
 | SPK-03 | Phase 25 | Pending |
 | CTR-01 | Phase 25 | Pending |
 | CTR-02 | Phase 25 | Pending |
