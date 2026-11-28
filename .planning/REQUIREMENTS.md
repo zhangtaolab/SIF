@@ -26,10 +26,10 @@
 
 ### Generator & Cache
 
-- [ ] **GEN-01**: 锚点生成使用冻结 prompt（带版本号）、greedy / temperature 0、每行一个术语、最多 10 个、去重，且模型与 prompt revision 在评测前冻结
-- [ ] **GEN-02**: 同一 query + model + prompt version 命中缓存后不再调用生成器；`bench --sweep` 的 N 条查询只生成 N 次而非 45N 次
-- [ ] **GEN-03**: 生成失败或超时时 fail-open 回退原查询，不产生重试风暴，且用户可见失败原因
-- [ ] **GEN-04**: 默认本地 GGUF；远程 OpenAI-compatible 后端仅 opt-in，并明确披露查询文本外发
+- [x] **GEN-01**: 锚点生成使用冻结 prompt（带版本号）、greedy / temperature 0、每行一个术语、最多 10 个、去重，且模型与 prompt revision 在评测前冻结
+- [x] **GEN-02**: 同一 query + model + prompt version 命中缓存后不再调用生成器；`bench --sweep` 的 N 条查询只生成 N 次而非 45N 次
+- [x] **GEN-03**: 生成失败或超时时 fail-open 回退原查询，不产生重试风暴，且用户可见失败原因
+- [x] **GEN-04**: 默认本地 GGUF；远程 OpenAI-compatible 后端仅 opt-in，并明确披露查询文本外发
 
 ### Evidence & Gates
 
@@ -44,7 +44,7 @@
 - [x] **CTR-01**: MCP 7 工具、5 份 wire goldens 与 `QueryInput` 不变；不新增 MCP `anchor` 请求字段
 - [x] **CTR-02**: 不新增 runtime 依赖；`test_packaging.py` 冻结的 13 项核心依赖不变
 - [ ] **CTR-03**: LFM3 GGUF 不打进 wheel/sdist；`LFM Open License v1.0` 的 $10M 营收阈值与再分发义务写入用户文档与 Key Decisions
-- [ ] **CTR-04**: 新增 Settings / CLI 通过 `make docs-generate` 与 docs CI diff gate；新增 `src/sif` Python 代码保持 ≥90% coverage；8-cell CI 全绿
+- [x] **CTR-04**: 新增 Settings / CLI 通过 `make docs-generate` 与 docs CI diff gate；新增 `src/sif` Python 代码保持 ≥90% coverage；8-cell CI 全绿
 
 ## v1.4+ Requirements
 
@@ -97,12 +97,12 @@ Which phases cover which requirements. Populated during roadmap creation.
 | ANC-03 | Phase 26 | Complete |
 | ANC-04 | Phase 26 | Complete |
 | ANC-05 | Phase 26 | Pending |
-| GEN-01 | Phase 26 | Pending |
-| GEN-02 | Phase 26 | Pending |
-| GEN-03 | Phase 26 | Pending |
-| GEN-04 | Phase 26 | Pending |
+| GEN-01 | Phase 26 | Complete |
+| GEN-02 | Phase 26 | Complete |
+| GEN-03 | Phase 26 | Complete |
+| GEN-04 | Phase 26 | Complete |
 | CTR-03 | Phase 26 | Pending |
-| CTR-04 | Phase 26 | Pending |
+| CTR-04 | Phase 26 | Complete |
 | EVL-01 | Phase 27 | Pending |
 | EVL-02 | Phase 27 | Pending |
 | EVL-03 | Phase 27 | Pending |

@@ -110,12 +110,12 @@ Full detail: `.planning/REQUIREMENTS.md` (v1.3 Requirements + Traceability)
   4. 除非显式 opt-in 远程后端，否则不产生任何外部请求；远程 opt-in 时明确披露查询文本外发，词表守卫可作为独立 A/B 开关。
   5. 全量 pytest ≥90% coverage、`make docs-generate` diff 为零、8-cell CI 全绿；LFM3 GGUF 不打进 wheel/sdist，`LFM Open License v1.0` 的 $10M 营收阈值与再分发义务写入用户文档与 Key Decisions。
 
-**Plans:** 1/4 plans executed
+**Plans:** 2/4 plans executed
 **Wave 1**
 - [x] 26-01-PLAN.md — 锚点检索基底：`SearchType.ANCHOR` + `SearchOptions.anchor_terms` + 规则锚点 + BM25 OR 注入 + 共享前缀路由（ANC-01..04）
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 26-02-PLAN.md — 可选生成器与确定性缓存：冻结 prompt、本地 GGUF/远程 opt-in、`llm_cache` 复用、fail-open 与预算、SIF_ANCHOR_* 配置（GEN-01..04, CTR-04）
+- [x] 26-02-PLAN.md — 可选生成器与确定性缓存：冻结 prompt、本地 GGUF/远程 opt-in、`llm_cache` 复用、fail-open 与预算、SIF_ANCHOR_* 配置（GEN-01..04, CTR-04）
 
 **Wave 3** *(blocked on Wave 2 completion)*
 - [ ] 26-03-PLAN.md — `sif search query --anchor`、route-first 零模型、`--explain` 成本元数据与 CLI 文档（ANC-01, GEN-03, CTR-04）
