@@ -145,7 +145,7 @@ status: complete
 - 新增 `SearchType.ANCHOR` 与 `SearchOptions.anchor_terms`（唯一注入点，默认 `None`，不加任何 `anchor_enabled`/`anchor_mode` 开关）。
 - 新建 `src/sif/search/anchor.py`：从 Phase 25 的 `anchor-table.json` 逐字移植 `phrases`/`tokens`/`cjk`/`compounds` 与四条派生规则；`derive_rule_anchors` 为纯函数（NFKC + casefold + 去重 + query 词排除 + 6 条上限），模块顶层只 import stdlib。
 - `BM25Searcher._build_fts_query(query, anchor_terms=None)` 输出 `(<query AND chain>) OR "<anchor>"* ...`；`anchor_terms` 为 None/空时与今天逐字节相同；锚点整体经 `_sanitize_term`，`machine learning` 保持一个短语。
-- `PREFIX_ROUTES` 提升为 `sif/search/hybrid.py` 的模块级常量（含 `anchor:`），`SearchPipeline` 与 MCP `SearchBackend` 共用；`SearchPipeline` 新增 ANCHOR 分支与 `last_anchor_resolution` 运行级元数据。
+- `PREFIX_ROUTES` 提升为 `src/sif/search/hybrid.py` 的模块级常量（含 `anchor:`），`SearchPipeline` 与 MCP `SearchBackend` 共用；`SearchPipeline` 新增 ANCHOR 分支与 `last_anchor_resolution` 运行级元数据。
 - MCP 的 `anchor:` 在 `_ensure_embedder()` 之前返回：只用规则锚点、不构造 resolver、不写 `llm_cache`（保持 7 个只读工具）。
 - ANC-02/ANC-04 由机械测试钉死：highlight/snippet 用原始 query、`SearchResult.to_dict()` 无锚点键、hybrid 路由的 `_build_fts_query` spy 证明 `anchor_terms` 只抵达 BM25 腿且向量分数不变。
 
