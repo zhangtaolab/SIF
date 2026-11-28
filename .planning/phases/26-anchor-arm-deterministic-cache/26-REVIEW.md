@@ -32,6 +32,27 @@ Note: the `gsd-code-reviewer` subagent was dispatched for this review but stalle
 
 **Recommendation:** No change required for Phase 26 — the guard is a default-off, independent A/B (D-16) and this is consistent with "drop terms not in the index vocabulary". If Phase 27's held-out evaluation adopts the guard as a default, either tokenize multi-word anchors before probing or document that phrase anchors are intentionally excluded. Recorded here so the A/B's semantics are explicit for the evidence gate.
 
+## Delta Review (2026-11-28, after the first CI run)
+
+**Scope.** The only source-scope change since the review above is commit `e2033ecd` — `tests/unit/search/test_hybrid.py`, one test (`test_anchor_terms_reach_the_bm25_leg_in_hybrid_mode`). `src/` is identical to the reviewed commit.
+
+**Why it changed.** The first 8-cell CI run (`46143534219`, commit `0a5a9c9a`) failed in both py3.10 cells with `sqlite3.InterfaceError: Error binding parameter 2`. The test spied on `_build_fts_query` with `patch.object(..., autospec=True, wraps=real_build)`; on Python 3.10 that combination returns a `MagicMock` instead of the wrapped function's value, and SQLite refuses to bind it as the `MATCH` parameter. On 3.11–3.13 the same code passes, which is why every local gate (3.12) was green. It was a defect in the test, not in the product.
+
+**What replaced it.** A named passthrough function installed with `patch.object(BM25Searcher, "_build_fts_query", new=_recording_build)`.
+
+**Findings: none.**
+
+- `real_build` is captured before patching, so the passthrough cannot recurse.
+- A plain function set on the class binds as a method, so the production call reaches it with the real `self` and the real return value flows on into SQLite — the test now exercises that path end to end, which the mock never did.
+- Assertion strength is unchanged: `anchor_terms == ["quantum"]` is still recorded at the fan-out point, and the real `MATCH` string still contains `OR "quantum"*` and differs from the no-anchor build.
+- No security, performance, or convention concern: test-only, no new dependency, no product path touched.
+
+**Verification.** 3367 passed / 1 skipped on Python 3.10 and on 3.12 locally; 8-cell CI run `46144675032` green on `e2033ecd` (9/9 jobs).
+
+**Status of the earlier limitation.** "The authoritative `uv --extra embed` full suite did not complete locally" is now closed by that CI run: every cell ran the full suite with the `embed` extra under the 90% coverage gate.
+
+**Provenance.** Reviewed inline by the orchestrator. The `gsd-code-reviewer` subagent was not re-dispatched for a one-function test change; the full-scope review above stands unchanged (0 critical / 0 warning / 1 info).
+
 ## Verified Invariants
 
 | # | Invariant | Status | Evidence |

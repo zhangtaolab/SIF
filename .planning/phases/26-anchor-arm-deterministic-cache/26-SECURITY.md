@@ -58,7 +58,7 @@ created: "2026-11-28"
 | T-26-11 | Tampering | Vocabulary guard vs. rule-anchor baseline | medium | mitigate | `anchor_vocab_guard: bool = Field(default=False)` (`src/sif/config/settings.py:266-270`), so the guard cannot move the baseline unless explicitly enabled; tests assert the default term list is byte-identical to `derive_rule_anchors(normalize_query(q))` and that the deviation is documented | closed |
 | T-26-12 | Tampering / Information disclosure | GGUF assets and packaging | high | mitigate | Three static guards in `tests/test_packaging_assets.py`; verified in this run: `git ls-files -- '*.gguf'` empty, `find src/sif -name '*.gguf'` empty, `pyproject.toml` contains no `.gguf`; docs state weights are user-supplied, never downloaded or packaged | closed |
 | T-26-13 | Tampering | MCP read-only contract | high | mitigate | The guard filters the term list in memory (`filter_known_terms`) inside the ANCHOR branch (`backend.py:225-234`); no resolver, no cache write, no embedder; tests assert `llm_cache` rows 0 and `_ensure_embedder` uncalled with the guard both on and off | closed |
-| T-26-SC | Tampering | Dependency installation | high | mitigate | Zero new dependencies across the phase (declared in all four plans); `git diff v1.2.5..HEAD -- pyproject.toml uv.lock` is empty this run; the remote backend uses stdlib `urllib.request` | closed |
+| T-26-SC | Tampering | Dependency installation | high | mitigate | Zero new dependencies across the phase (declared in all four plans); `git diff v1.2.5..HEAD -- pyproject.toml uv.lock` was empty when this register was first verified (it changed later the same day only for the Python 3.10 removal — see the audit trail); the remote backend uses stdlib `urllib.request` | closed |
 
 *Status: open · closed · open — below high threshold (non-blocking)*
 *Severity: critical > high > medium > low — only open threats at or above workflow.security_block_on count toward threats_open*
@@ -77,6 +77,7 @@ No accepted risks.
 | Audit Date | Threats Total | Closed | Open | Run By |
 |------------|---------------|--------|------|--------|
 | 2026-11-28 | 14 | 14 | 0 | orchestrator (L1 grep-depth + re-executed phase tests; auditor skipped by the ASVS-L1 / zero-open short-circuit) |
+| 2026-11-28 | 14 | 14 | 0 | orchestrator — re-checked T-26-SC after `8babd7a1` removed Python 3.10 support. `pyproject.toml` and `uv.lock` are no longer byte-identical to v1.2.5: the change is `requires-python = ">=3.11"`, the removed `3.10` classifier, and lock entries that only applied below 3.11 (12 package entries, 122 `cp310`/`pp310` wheels). No dependency was added or changed for Python 3.11+; the nine MCP contract paths are still zero-diff from v1.2.5. Threat status unchanged. |
 
 ---
 

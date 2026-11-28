@@ -19,3 +19,4 @@ skipped: 1
 
 - No critical or warning findings. No `--fix` run was needed.
 - `26-REVIEW.md` was produced by the orchestrator after the `gsd-code-reviewer` subagent stalled on an API request with no artifact; the report's evidence comes from independent source inspection and executed probes, all recorded in the report.
+- 2026-11-28 delta review (after `e2033ecd`, the Python 3.10 test-mock fix): no new findings. The INFO-1 row above is unchanged; see the "Delta Review" section of `26-REVIEW.md`.

@@ -44,7 +44,7 @@
 - [x] **CTR-01**: MCP 7 工具、5 份 wire goldens 与 `QueryInput` 不变；不新增 MCP `anchor` 请求字段
 - [x] **CTR-02**: 不新增 runtime 依赖；`test_packaging.py` 冻结的 13 项核心依赖不变
 - [x] **CTR-03**: LFM3 GGUF 不打进 wheel/sdist；`LFM Open License v1.0` 的 $10M 营收阈值与再分发义务写入用户文档与 Key Decisions
-- [x] **CTR-04**: 新增 Settings / CLI 通过 `make docs-generate` 与 docs CI diff gate；新增 `src/sif` Python 代码保持 ≥90% coverage；8-cell CI 全绿
+- [x] **CTR-04**: 新增 Settings / CLI 通过 `make docs-generate` 与 docs CI diff gate；新增 `src/sif` Python 代码保持 ≥90% coverage；8-cell CI 全绿（2026-11-28 由 run `46144675032` 确认；同日取消 Python 3.10 支持后矩阵为 6-cell，run `46149558169` 全绿）
 
 ## v1.4+ Requirements
 

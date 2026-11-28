@@ -134,7 +134,7 @@ DocSift 是 [qmd](https://github.com/tobi/qmd) 的 Python 重构版本，一个�
 - ✓ `anchor:` 前缀 + `sif search query --anchor`：默认关闭、零模型规则锚点只注入 BM25 腿；无 flag 时与 v1.2.5 基线逐字节一致，snippet/highlight 仍用原始 query — Validated in Phase 26 (ANC-01..04)
 - ✓ 冻结 prompt / greedy / ≤10 术语 / 去重的确定性生成器与 `llm_cache` 复用；超时、失败、预算耗尽均 fail-open 回退原查询并一次性告警；远程后端仅显式 opt-in 且按 base_url 一次性披露查询文本外发；`SIF_ANCHOR_VOCAB_GUARD` 为默认关的独立 A/B — Validated in Phase 26 (GEN-01..04, ANC-05)
 - ✓ LFM3 GGUF 仅作用户自备的可选实验臂：不打进 wheel/sdist、不自动下载，静态守卫 + 用户文档 + Key Decisions 三处记录 `LFM Open License v1.0` 的 $10M 营收阈值与再分发义务 — Validated in Phase 26 (CTR-03)
-- ✓ 本地全量门禁：`ty`/`ruff`/`ruff format`、`make docs-generate` 零 diff、MCP 契约 13 passed、11 个冻结路径自 v1.2.5 无 diff、3367 passed / 94.18% coverage（reranker 需 torch，用计划内 `--ignore` 回退）；8-cell CI 为 push 后外部门禁，尚未确认 — Validated in Phase 26（本地部分）/ DEFERRED（8-cell CI）(CTR-04)
+- ✓ 本地全量门禁：`ty`/`ruff`/`ruff format`、`make docs-generate` 零 diff、MCP 契约 13 passed、验证时 11 个冻结路径自 v1.2.5 无 diff、3367 passed / 94.18% coverage（reranker 需 torch，用计划内 `--ignore` 回退）；8-cell CI run `46144675032`（commit `e2033ecd`）9/9 job 全绿 — Validated in Phase 26 (CTR-04)。同日取消 Python 3.10 支持后，冻结路径中的 `pyproject.toml`/`uv.lock` 仅有该改动带来的差异（见 Key Decisions），MCP 契约的 9 个路径仍为零 diff
 
 ### Active
 
@@ -161,7 +161,7 @@ DocSift 是 [qmd](https://github.com/tobi/qmd) 的 Python 重构版本，一个�
 
 ## Constraints
 
-- **Tech Stack**: Python 3.10+、SQLite（FTS5 + 可选 sqlite-vec）、Click CLI、Pydantic Settings
+- **Tech Stack**: Python 3.11+、SQLite（FTS5 + 可选 sqlite-vec）、Click CLI、Pydantic Settings
 - **Local-First**: 默认所有模型本地运行，不依赖外部 API；API 调用仅作为可选配置
 - **Compatibility**: CLI 接口和 MCP Tool Schema 尽量与 qmd 保持一致
 - **Build**: hatchling 构建后端，pytest 测试（常驻 fail_under=90 覆盖率门禁）
@@ -219,7 +219,8 @@ DocSift 是 [qmd](https://github.com/tobi/qmd) 的 Python 重构版本，一个�
 | v1.3 范围（2026-11-27，用户拍板）：只做 LLM Anchor，Web UI 推迟 v1.4；`Web UI` / `chat-with-notes` Out of Scope 条款不反转 | 两者零功能依赖；Anchor 不需改 Out of Scope 且有可证伪假设与现成 `llm_cache` / held-out 仪器，UI 需新增 HTTP 面、打包契约与静态 HTML 多方案评审 | — Pending |
 | v1.3 模型定位：LFM3-1.7B-GGUF Q4_K_M 为**用户自行下载的可选实验臂**，不打进 wheel/sdist、不默认启用；默认仍是零模型确定性锚点基线 | 技术上优于 Qwen3.5-4B（1.10 GB 官方 GGUF、ChatML chat template、强指令遵循、低幻觉、走已有 `llama-cpp-python` 路径）；但 `LFM Open License v1.0` Section 5 规定年营收 ≥ $10M 的 Legal Entity 商业使用未获许可，且再分发有附带 license/NOTICE 义务 | — Validated in Phase 26 (CTR-03) |
 | v1.3 止损：Phase 25 先跑 `llama.cpp` 加载 `lfm3` 兼容性 + 确定性锚点信号 spike；无方向性信号即归档假设、不投后续阶段 | 论文数值来自代码搜索、不可迁移到个人 Markdown 笔记；最坏结果是 `keep-default`，仍有实验臂与证据可交付 | — Pending |
-| v1.3 契约：不新增 MCP 请求字段、不动 7 工具与 5 份 wire goldens、不新增 runtime 依赖 | `QueryInput` 与函数签名即发布 schema；`test_packaging.py` 冻结 13 项 runtime deps；`anchor:` 前缀可直接透传现有 `query` 字符串 | — Pending |
+| v1.3 契约：不新增 MCP 请求字段、不动 7 工具与 5 份 wire goldens、不新增 runtime 依赖 | `QueryInput` 与函数签名即发布 schema；`test_packaging.py` 冻结 13 项 runtime deps；`anchor:` 前缀可直接透传现有 `query` 字符串 | Phase 25 冻结、Phase 26 保持；2026-11-28 修订：取消 Python 3.10 支持使 `pyproject.toml`/`uv.lock` 不再与 v1.2.5 逐字节相同（仅 `requires-python`、classifier 与 <3.11 专用条目），三条实质约束不变 |
+| 2026-11-28：取消 Python 3.10 支持（3.10 已于 2026-10 EOL）；`requires-python >= 3.11`，CI 矩阵 8-cell → 6-cell（py3.11–3.13 × ubuntu/macos） | Phase 26 的 8-cell 证据在改动之前取得（run `46144675032` on `e2033ecd`）；`uv.lock` 只剪掉 <3.11 专用条目（12 个包条目、122 个 cp310/pp310 wheel），3.11+ 上每个保留的 wheel/sdist 的 URL 与哈希逐一不变，运行时依赖与全部 6 个 extra 的解析结果不变。Ruff `target-version = "py310"` 与 ty `python-version = "3.10"` 暂留：提到 py311 会引出 125 条 pyupgrade 告警（123 条可自动修），另案处理 | Applied 2026-11-28 — 6-cell run `46149558169` on `8babd7a1` 全绿 |
 
 ## Context（v1.2 shipped 2026-11-18）
 
@@ -264,4 +265,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-11-28 after Phase 26 complete（默认关闭、可缓存、失败回退的 `anchor:` 检索臂落地；Phase 27 证据门禁待规划；8-cell CI 待 push 后确认）*
+*Last updated: 2026-11-28 after Phase 26 complete（默认关闭、可缓存、失败回退的 `anchor:` 检索臂落地；UAT 24/24、8-cell CI 全绿后签收；同日取消 Python 3.10 支持，CI 矩阵改为 6-cell；Phase 27 证据门禁待规划）*
