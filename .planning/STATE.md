@@ -2,19 +2,19 @@
 gsd_state_version: "1.0"
 milestone: v1.3
 milestone_name: Anchor-Augmented Retrieval Evidence (Phases 25-27) — IN PROGRESS (started 2026-11-27)</summary>
-current_phase: 25
-current_phase_name: Contract Freeze & Feasibility Spike
-status: executing
-stopped_at: Phase 25 complete — directional signal recorded; Phases 26/27 unlocked
-last_updated: "2026-11-28T00:49:56.242Z"
+current_phase: 26
+current_phase_name: Anchor Arm + Deterministic Cache
+status: planning
+stopped_at: Phase 25 complete, ready to plan Phase 26
+last_updated: "2026-11-28T01:00:52.688Z"
 last_activity: 2026-11-28
-last_activity_desc: Phase 25 execution resumed (wave continue)
-state_head: fb5ac0faee7c3819af2b60092c6c409ce2b7118f
+last_activity_desc: Phase 25 complete, transitioned to Phase 26
+state_head: 4e28b74626eeff2daede0955a5b70ae11dec84f1
 progress:
   total_phases: 1
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 2
-  completed_plans: 1
+  completed_plans: 2
 ---
 
 # DocSift — Project State
@@ -30,10 +30,10 @@ progress:
 
 ## Current Position
 
-Phase: 25 (Contract Freeze & Feasibility Spike) — EXECUTING
-Plan: 1 of 2
-Status: Executing Phase 25
-Last activity: 2026-11-28 — Phase 25 execution resumed (wave continue)
+Phase: 26 — Anchor Arm + Deterministic Cache
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-11-28 — Phase 25 complete, transitioned to Phase 26
 
 
 ## Performance Metrics
@@ -408,7 +408,7 @@ Full log: PROJECT.md Key Decisions. Recent (v1.2 scoping, locked 2026-11-13):
 ## Session Continuity
 
 Last session: 2026-11-28T00:49:56.222Z
-Stopped at: Phase 25 complete — directional signal recorded; Phases 26/27 unlocked
+Stopped at: Phase 25 complete, ready to plan Phase 26
 Resume file: /Users/forrest/GitHub/SIF/.planning/phases/25-contract-freeze-feasibility-spike/bench/spike-verdict.json
 
 - **Docs regeneration (2026-11-27):** `/gsd-docs-update` regenerated 7 canonical docs (README, architecture, quickstart, development, testing, contributing; configuration regenerated from `scripts/generate_config_ref.py` with zero drift) and verified all 19 tracked docs against the codebase. Fixes landed in development (test-module count, module import, mkdocs nav), benchmarking (archived `.planning/milestones/v1.2-phases/` artifact paths; 1e-9 tolerance wording), migration (cache adoption wording), and CLAUDE.md (added the `models/` package to the tree). Every doc now verifies with 0 failed claims.

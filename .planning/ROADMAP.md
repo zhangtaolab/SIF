@@ -68,7 +68,7 @@ Full detail: `.planning/milestones/v1.2-ROADMAP.md`
 
 **Goal:** 在不破坏 CLI / MCP / 默认检索行为与 local-first 约束的前提下，新增默认关闭、可缓存、可证伪的 `anchor:` 检索臂，并由 SIF 自己的 held-out 证据决定是否升默认；`keep-default` 是有效交付。
 
-- [ ] **Phase 25: Contract Freeze & Feasibility Spike** — SPK-01, SPK-02, SPK-03, CTR-01, CTR-02
+- [x] **Phase 25: Contract Freeze & Feasibility Spike** — SPK-01, SPK-02, SPK-03, CTR-01, CTR-02 (completed 2026-11-28)
 - [ ] **Phase 26: Anchor Arm + Deterministic Cache** — ANC-01, ANC-02, ANC-03, ANC-04, ANC-05, GEN-01, GEN-02, GEN-03, GEN-04, CTR-03, CTR-04
 - [ ] **Phase 27: Evidence Gate & Verdict** — EVL-01, EVL-02, EVL-03, EVL-04, EVL-05
 
@@ -91,7 +91,7 @@ Full detail: `.planning/REQUIREMENTS.md` (v1.3 Requirements + Traceability)
   3. MCP 5 份 wire goldens 与 `test_packaging.py` 逐字节未变，7 工具与 `QueryInput`（不新增 `anchor` 请求字段）契约冻结状态可被核对。
   4. 当判定为「无方向性信号」时，止损被记录为归档假设、Phase 26/27 未启动，工作树不留任何半成品代码。
 
-**Plans:** 2/2 plans executed
+**Plans:** 2/2 plans complete
 **Wave 1**
 - [x] 25-01-PLAN.md — 兼容性 + 信号 spike（用户提供的 GGUF 路径、锁定版 vs 隔离升级版加载/生成、query-only 锚点配对 delta）
 
