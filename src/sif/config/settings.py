@@ -208,6 +208,67 @@ class Settings(BaseSettings):
         description="Batch size for reranker inference",
     )
 
+    # Anchor arm settings (Phase 26, D-06/D-07/D-14/D-15/D-16)
+    # D-05: the zero-model rule backend is the default, so the default path
+    # constructs nothing and loads no model. The gguf/openai generators are
+    # explicit opt-ins; the openai backend additionally discloses its egress.
+    anchor_backend: str = Field(
+        default="rules",
+        description="Anchor term backend for the anchor search arm: "
+        "'rules' (the zero-model deterministic default), 'gguf' (a local GGUF "
+        "generator), or 'openai' (an explicitly opted-in OpenAI-compatible "
+        "endpoint that receives query text)",
+    )
+    anchor_model_path: Path | None = Field(
+        default=None,
+        description="Absolute path to the local .gguf model used by the gguf "
+        "anchor backend; the model is read in place and never downloaded",
+    )
+    anchor_api_base: str | None = Field(
+        default=None,
+        description="Base URL of the OpenAI-compatible endpoint used by the "
+        "openai anchor backend (explicit opt-in; query text leaves the machine)",
+    )
+    anchor_api_model: str | None = Field(
+        default=None,
+        description="Model name sent to the OpenAI-compatible anchor endpoint",
+    )
+    anchor_api_key: str | None = Field(
+        default=None,
+        description="API key for the OpenAI-compatible anchor endpoint",
+        repr=False,
+        exclude=True,
+    )
+    anchor_timeout_ms: int = Field(
+        default=5000,
+        ge=1,
+        description="Generation deadline in milliseconds for one anchor "
+        "generation attempt; model loading happens outside this deadline",
+    )
+    anchor_max_calls: int = Field(
+        default=100,
+        ge=0,
+        description="Hard budget of generator calls per anchor resolver "
+        "instance; exceeding it raises instead of falling back (0 disables the cap)",
+    )
+    anchor_max_tokens: int = Field(
+        default=64,
+        ge=1,
+        le=512,
+        description="Maximum tokens the anchor generator may emit per call",
+    )
+    anchor_cache_ttl: int = Field(
+        default=2592000,
+        ge=0,
+        description="Seconds an anchor cache row stays valid in llm_cache "
+        "(default 30 days); 0 keeps rows until an explicit cleanup",
+    )
+    anchor_vocab_guard: bool = Field(
+        default=False,
+        description="Drop anchor terms that match no indexed document "
+        "(an independent opt-in A/B; off by default, matching the paper baseline)",
+    )
+
     # Chunking settings
     chunk_size: int = Field(
         default=DEFAULT_CHUNK_SIZE,
@@ -362,6 +423,36 @@ class Settings(BaseSettings):
         if not v_lower.startswith("http://") and not v_lower.startswith("https://"):
             raise ValueError("api_base must be an HTTP or HTTPS URL")
         return v
+
+    @field_validator("anchor_backend")
+    @classmethod
+    def validate_anchor_backend(cls, v: str) -> str:
+        """Validate anchor_backend is one of the supported anchor generators."""
+        valid_backends = {"rules", "gguf", "openai"}
+        if v not in valid_backends:
+            raise ValueError(
+                f"Invalid anchor_backend: {v}. Must be one of {sorted(valid_backends)}"
+            )
+        return v
+
+    @field_validator("anchor_api_base")
+    @classmethod
+    def validate_anchor_api_base(cls, v: str | None) -> str | None:
+        """Validate anchor_api_base is an HTTP or HTTPS URL."""
+        if v is None:
+            return None
+        v_lower = v.lower()
+        if not v_lower.startswith("http://") and not v_lower.startswith("https://"):
+            raise ValueError("anchor_api_base must be an HTTP or HTTPS URL")
+        return v
+
+    @field_validator("anchor_model_path", mode="before")
+    @classmethod
+    def expand_anchor_model_path(cls, v: str | Path | None) -> Path | None:
+        """Expand user home directory in the anchor model path."""
+        if v is None:
+            return None
+        return Path(v).expanduser()
 
     @field_validator("db_path", "cache_dir", mode="before")
     @classmethod
