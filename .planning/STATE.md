@@ -5,13 +5,13 @@ milestone_name: Anchor-Augmented Retrieval Evidence (Phases 25-27) — IN PROGRE
 current_phase: 26
 current_phase_name: Anchor Arm + Deterministic Cache
 status: planning
-stopped_at: Phase 25 complete, ready to plan Phase 26
-last_updated: "2026-11-28T01:00:52.688Z"
+stopped_at: Phase 26 context gathered
+last_updated: "2026-11-28T03:22:21.444Z"
 last_activity: 2026-11-28
 last_activity_desc: Phase 25 complete, transitioned to Phase 26
-state_head: 4e28b74626eeff2daede0955a5b70ae11dec84f1
+state_head: 6d98e1a7bed0b4feb5e580bf1d3d6bac95bac9a1
 progress:
-  total_phases: 1
+  total_phases: 2
   completed_phases: 1
   total_plans: 2
   completed_plans: 2
@@ -415,9 +415,9 @@ Recent (v1.2 scoping, locked 2026-11-13):
 
 ## Session Continuity
 
-Last session: 2026-11-28T01:03:00Z
-Stopped at: Phase 25 complete, ready to plan Phase 26
-Resume file: None
+Last session: 2026-11-28T03:22:21.409Z
+Stopped at: Phase 26 context gathered
+Resume file: .planning/phases/26-anchor-arm-deterministic-cache/26-CONTEXT.md
 
 - **Docs regeneration (2026-11-27):** `/gsd-docs-update` regenerated 7 canonical docs (README, architecture, quickstart, development, testing, contributing; configuration regenerated from `scripts/generate_config_ref.py` with zero drift) and verified all 19 tracked docs against the codebase. Fixes landed in development (test-module count, module import, mkdocs nav), benchmarking (archived `.planning/milestones/v1.2-phases/` artifact paths; 1e-9 tolerance wording), migration (cache adoption wording), and CLAUDE.md (added the `models/` package to the tree). Every doc now verifies with 0 failed claims.
 
