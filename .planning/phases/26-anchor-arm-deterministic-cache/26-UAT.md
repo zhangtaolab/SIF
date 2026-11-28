@@ -1,9 +1,9 @@
 ---
-status: partial
+status: complete
 phase: 26-anchor-arm-deterministic-cache
 source: 26-01-SUMMARY.md, 26-02-SUMMARY.md, 26-03-SUMMARY.md, 26-04-SUMMARY.md
 started: 2026-11-28T09:30:00Z
-updated: 2026-11-28T09:47:20.191Z
+updated: 2026-11-28T12:35:48.686Z
 ---
 
 ## Current Test
@@ -164,18 +164,19 @@ note: 独立重跑全部通过 —— pytest 3367 passed / 1 skipped / 94.18%（
 
 ### 24. 8-cell CI 矩阵（push 后外部门禁）
 expected: `.github/workflows/test-matrix.yml` 在 2 OS × 4 Python 上以 `--extra embed` 跑全量，8 个 cell 全绿。
-result: blocked
-blocked_by: release-build
-reason: "CI 在 GitHub Actions 上由 push 触发，本地无法执行；当前分支 dev 领先 origin/dev 54 个提交且尚未 push。"
+result: pass
+source: automated
+coverage_id: 26-04/D5
+note: GitHub Actions run `46144675032`（commit `e2033ecd`，https://github.com/zhangtaolab/SIF/actions/runs/46144675032）conclusion=success —— 9/9 job 全绿：lint + py3.10/3.11/3.12/3.13 × ubuntu-latest/macos-latest，每个 cell 以 `uv sync --frozen --extra dev --extra embed` 安装并跑全量 pytest（含 90% coverage 门禁）。首次 run `46143534219`（commit `0a5a9c9a`）两个 py3.10 cell 失败：`tests/unit/search/test_hybrid.py::TestHybridSC1PipelineGolden::test_anchor_terms_reach_the_bm25_leg_in_hybrid_mode` 报 `sqlite3.InterfaceError: Error binding parameter 2`，根因是测试里的 `patch.object(..., autospec=True, wraps=...)` 在 Python 3.10 上不把调用透传给被包裹函数，返回 MagicMock 被当作 MATCH 参数绑定；`e2033ecd` 把 spy 换成显式透传函数后重跑通过。**产品代码未改**，修复只在测试文件。
 
 ## Summary
 
 total: 24
-passed: 23
+passed: 24
 issues: 0
 pending: 0
 skipped: 0
-blocked: 1
+blocked: 0
 
 ## Gaps
 
@@ -185,4 +186,4 @@ blocked: 1
 
 - 本次是 Claude 代测（用户指令：`26 你来检测并提供检查报告`），没有逐条对话问答；每条 `source: automated` 的记录都对应我本轮实际执行过的测试或命令，不是照抄 SUMMARY。
 - 测试方式：临时数据库 + 3 篇合成语料（`ml.md` 含 "machine learning"、`stats.md` 只含 "statistical learning"、`zh.md` 只含 "机器学习"），验证锚点确实把 BM25 召回从 1 条扩到 3 条。
-- 唯一未通过项是 8-cell CI，属于 push 后外部门禁，按设计本地无法产出；它不进 Gaps（阻塞项不是代码缺陷）。
+- 8-cell CI 最初记为 `blocked`（push 前本地无法执行，且不进 Gaps，因为阻塞项不是代码缺陷）；2026-11-28 push 后由 run `46144675032` 确认全绿，转 `pass`。CI 确实抓到了一个本地 3.12 永远发现不了的 py3.10-only 测试缺陷，修复见 test 24 的 note。
