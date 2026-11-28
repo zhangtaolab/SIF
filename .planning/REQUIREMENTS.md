@@ -22,7 +22,7 @@
 - [x] **ANC-02**: 锚点仅注入 BM25 腿并 prepend 到查询；snippet 与 highlight 仍使用原始查询
 - [x] **ANC-03**: `SearchType.ANCHOR`、`SearchOptions.anchor_terms` 与两处前缀映射（`search/hybrid.py` / `mcp/backend.py`）同步，且 settings 不绕过 `SearchOptions`
 - [x] **ANC-04**: `hybrid+anchor` 仅作为诊断臂，默认关闭，不替换默认 RRF 的 BM25 腿
-- [ ] **ANC-05**: 词表守卫可作为独立 A/B 开关，丢弃 FTS 词表外的锚点；默认行为、对论文的偏离与影响均有记录
+- [x] **ANC-05**: 词表守卫可作为独立 A/B 开关，丢弃 FTS 词表外的锚点；默认行为、对论文的偏离与影响均有记录
 
 ### Generator & Cache
 
@@ -43,7 +43,7 @@
 
 - [x] **CTR-01**: MCP 7 工具、5 份 wire goldens 与 `QueryInput` 不变；不新增 MCP `anchor` 请求字段
 - [x] **CTR-02**: 不新增 runtime 依赖；`test_packaging.py` 冻结的 13 项核心依赖不变
-- [ ] **CTR-03**: LFM3 GGUF 不打进 wheel/sdist；`LFM Open License v1.0` 的 $10M 营收阈值与再分发义务写入用户文档与 Key Decisions
+- [x] **CTR-03**: LFM3 GGUF 不打进 wheel/sdist；`LFM Open License v1.0` 的 $10M 营收阈值与再分发义务写入用户文档与 Key Decisions
 - [x] **CTR-04**: 新增 Settings / CLI 通过 `make docs-generate` 与 docs CI diff gate；新增 `src/sif` Python 代码保持 ≥90% coverage；8-cell CI 全绿
 
 ## v1.4+ Requirements
@@ -96,12 +96,12 @@ Which phases cover which requirements. Populated during roadmap creation.
 | ANC-02 | Phase 26 | Complete |
 | ANC-03 | Phase 26 | Complete |
 | ANC-04 | Phase 26 | Complete |
-| ANC-05 | Phase 26 | Pending |
+| ANC-05 | Phase 26 | Complete |
 | GEN-01 | Phase 26 | Complete |
 | GEN-02 | Phase 26 | Complete |
 | GEN-03 | Phase 26 | Complete |
 | GEN-04 | Phase 26 | Complete |
-| CTR-03 | Phase 26 | Pending |
+| CTR-03 | Phase 26 | Complete |
 | CTR-04 | Phase 26 | Complete |
 | EVL-01 | Phase 27 | Pending |
 | EVL-02 | Phase 27 | Pending |

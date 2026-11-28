@@ -6,12 +6,12 @@
     {
       "number": "25",
       "name": "Contract Freeze & Feasibility Spike",
-      "status": "in_progress"
+      "status": "complete"
     },
     {
       "number": "26",
       "name": "Anchor Arm + Deterministic Cache",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "number": "27",
@@ -24,5 +24,5 @@
     "label": "Resume work",
     "reason": "Work is paused — pick up where you left off"
   },
-  "updated_at": "2026-11-27T17:23:19.863Z"
+  "updated_at": "2026-11-28T07:38:32.608Z"
 }
