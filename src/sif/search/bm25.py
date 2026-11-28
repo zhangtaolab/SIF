@@ -280,6 +280,24 @@ class BM25Searcher:
             return base
         return f"({base}) OR " + " OR ".join(alternatives)
 
+    def term_in_index(self, term: str) -> bool:
+        """Return whether ``term`` matches at least one indexed document (ANC-05).
+
+        The probe reuses the same sanitized FTS5 expression the searcher uses,
+        so it is judged by the index's own ``porter`` tokenizer: an inflected
+        word matches through its stem (``culture`` matches ``cultures``), and a
+        contiguous CJK run is one token. A term that sanitizes to nothing
+        (pure metacharacters) matches nothing.
+        """
+        probe = _sanitize_term(term)
+        if not probe:
+            return False
+        row = self.db.execute(
+            "SELECT 1 FROM documents_fts WHERE documents_fts MATCH ? LIMIT 1",
+            (probe,),
+        ).fetchone()
+        return row is not None
+
     def _get_document_content(self, document_id: str) -> str | None:
         """Get document content."""
         cursor = self.db.execute("SELECT content FROM documents WHERE id = ?", (document_id,))

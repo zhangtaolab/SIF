@@ -340,6 +340,28 @@ def _setting_int(settings: object, name: str, default: int) -> int:
     return default
 
 
+def _setting_bool(settings: object, name: str, default: bool) -> bool:
+    """Read a bool setting, falling back for non-bools (MagicMock guards)."""
+    value = getattr(settings, name, default)
+    return value if isinstance(value, bool) else default
+
+
+def filter_known_terms(conn: sqlite3.Connection, terms: list[str]) -> list[str]:
+    """Keep only the terms that exist in the index's FTS vocabulary (ANC-05).
+
+    "In vocabulary" means the term matches at least one indexed document under
+    the same ``porter`` tokenizer the BM25 leg uses, so inflected words are
+    judged through their stem and a contiguous CJK run is one token. Order is
+    preserved; deduplication stays the upstream caller's job. ``BM25Searcher``
+    is imported lazily so importing ``sif.search.anchor`` for the default path
+    still never pulls in the search layer.
+    """
+    from sif.search.bm25 import BM25Searcher  # noqa: PLC0415
+
+    searcher = BM25Searcher(conn)
+    return [term for term in terms if searcher.term_in_index(term)]
+
+
 def _cache_model_name(backend: str, model_id: str) -> str:
     """Namespace anchor cache rows away from other LLM responses (D-09)."""
     return f"anchor::{backend}::{model_id}"
@@ -628,7 +650,10 @@ class AnchorResolver:
         was_in_transaction = self.conn.in_transaction
         stripped = normalize_query(query)
         if self.backend == "rules":
-            return AnchorResolution(terms=derive_rule_anchors(stripped), backend="rules")
+            return AnchorResolution(
+                terms=self._apply_vocab_guard(derive_rule_anchors(stripped)),
+                backend="rules",
+            )
         if self._unavailable_reason is not None:
             return self._rule_fallback(stripped, self._unavailable_reason)
         try:
@@ -639,7 +664,11 @@ class AnchorResolver:
         prompt_hash = _prompt_hash(self.backend, generator.model_id, stripped)
         cached = self._cache_hit(model_name, prompt_hash)
         if cached is not None:
-            return AnchorResolution(terms=cached, backend=self.backend, cache_hits=1)
+            return AnchorResolution(
+                terms=self._apply_vocab_guard(cached),
+                backend=self.backend,
+                cache_hits=1,
+            )
         if prompt_hash in self._failed:
             return AnchorResolution(
                 terms=[],
@@ -693,6 +722,17 @@ class AnchorResolver:
             return None
         return _parse_cached(cached)
 
+    def _apply_vocab_guard(self, terms: list[str]) -> list[str]:
+        """Drop out-of-vocabulary terms when the independent A/B is on (ANC-05).
+
+        ``SIF_ANCHOR_VOCAB_GUARD`` defaults to off, so the default anchor set
+        stays byte-identical to the Phase 25 baseline. Turning it on filters
+        every term-producing path (rules, generator, cache) at read time.
+        """
+        if not _setting_bool(self.settings, "anchor_vocab_guard", False):
+            return terms
+        return filter_known_terms(self.conn, terms)
+
     def _check_budget(self) -> None:
         """Raise before generating when the per-instance call budget is spent."""
         max_calls = _setting_int(self.settings, "anchor_max_calls", _DEFAULT_MAX_CALLS)
@@ -714,7 +754,7 @@ class AnchorResolver:
             f"Anchor generator unavailable ({reason}); using rule anchors",
         )
         return AnchorResolution(
-            terms=derive_rule_anchors(stripped),
+            terms=self._apply_vocab_guard(derive_rule_anchors(stripped)),
             backend="rules",
             fallback_reason=reason,
         )
@@ -770,4 +810,11 @@ class AnchorResolver:
         # Never commit a caller's open transaction; only our own write is ours.
         if not was_in_transaction:
             self.conn.commit()
-        return AnchorResolution(terms=terms, backend=self.backend, generator_calls=1)
+        # The guard filters what the caller sees, not what we cache: a cached
+        # row keeps the generator's raw terms so flipping the A/B never
+        # changes the stored data (D-16).
+        return AnchorResolution(
+            terms=self._apply_vocab_guard(terms),
+            backend=self.backend,
+            generator_calls=1,
+        )
