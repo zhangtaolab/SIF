@@ -69,7 +69,7 @@ Full detail: `.planning/milestones/v1.2-ROADMAP.md`
 **Goal:** 在不破坏 CLI / MCP / 默认检索行为与 local-first 约束的前提下，新增默认关闭、可缓存、可证伪的 `anchor:` 检索臂，并由 SIF 自己的 held-out 证据决定是否升默认；`keep-default` 是有效交付。
 
 - [x] **Phase 25: Contract Freeze & Feasibility Spike** — SPK-01, SPK-02, SPK-03, CTR-01, CTR-02 (completed 2026-11-28)
-- [x] **Phase 26: Anchor Arm + Deterministic Cache** — ANC-01, ANC-02, ANC-03, ANC-04, ANC-05, GEN-01, GEN-02, GEN-03, GEN-04, CTR-03, CTR-04 (completed 2026-11-28)
+- [x] **Phase 26: Anchor Arm + Deterministic Cache** — ANC-01, ANC-02, ANC-03, ANC-04, ANC-05, GEN-01, GEN-02, GEN-03, GEN-04, CTR-03, CTR-04 (completed 2026-11-28) — ⚠ CTR-04 的 8-cell CI 是 push 后外部门禁，**尚未确认**（`dev` 领先 `origin/dev` 且未推送）；`26-UAT.md` test 24 = `blocked`，UAT 状态 `partial` —— CI 绿之前 Phase 26 不算完全签收
 - [ ] **Phase 27: Evidence Gate & Verdict** — EVL-01, EVL-02, EVL-03, EVL-04, EVL-05
 
 Full detail: `.planning/REQUIREMENTS.md` (v1.3 Requirements + Traceability)
@@ -109,6 +109,8 @@ Full detail: `.planning/REQUIREMENTS.md` (v1.3 Requirements + Traceability)
   3. 生成器超时或失败时返回原始 query 的结果、无重试风暴，用户能看到失败原因；fail-open 回退可被复现。
   4. 除非显式 opt-in 远程后端，否则不产生任何外部请求；远程 opt-in 时明确披露查询文本外发，词表守卫可作为独立 A/B 开关。
   5. 全量 pytest ≥90% coverage、`make docs-generate` diff 为零、8-cell CI 全绿；LFM3 GGUF 不打进 wheel/sdist，`LFM Open License v1.0` 的 $10M 营收阈值与再分发义务写入用户文档与 Key Decisions。
+     - 本地部分已验证：3367 passed / 1 skipped / 94.18% coverage，`make docs-generate` 零 diff，3 条 GGUF 静态守卫通过，license 与 Key Decision 已落文档（`26-VERIFICATION.md` truth 5）。
+     - ⚠ **8-cell CI 未确认**：由 `.github/workflows/test-matrix.yml` 在 push 后运行（2 OS × 4 Python，`--extra embed`），本地无法执行。CI 绿之前本条为 `DEFERRED`，不是「已验证」。
 
 **Plans:** 4/4 plans complete
 **Wave 1**
