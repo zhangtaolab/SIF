@@ -69,7 +69,7 @@ Full detail: `.planning/milestones/v1.2-ROADMAP.md`
 **Goal:** 在不破坏 CLI / MCP / 默认检索行为与 local-first 约束的前提下，新增默认关闭、可缓存、可证伪的 `anchor:` 检索臂，并由 SIF 自己的 held-out 证据决定是否升默认；`keep-default` 是有效交付。
 
 - [x] **Phase 25: Contract Freeze & Feasibility Spike** — SPK-01, SPK-02, SPK-03, CTR-01, CTR-02 (completed 2026-11-28)
-- [ ] **Phase 26: Anchor Arm + Deterministic Cache** — ANC-01, ANC-02, ANC-03, ANC-04, ANC-05, GEN-01, GEN-02, GEN-03, GEN-04, CTR-03, CTR-04
+- [x] **Phase 26: Anchor Arm + Deterministic Cache** — ANC-01, ANC-02, ANC-03, ANC-04, ANC-05, GEN-01, GEN-02, GEN-03, GEN-04, CTR-03, CTR-04 (completed 2026-11-28)
 - [ ] **Phase 27: Evidence Gate & Verdict** — EVL-01, EVL-02, EVL-03, EVL-04, EVL-05
 
 Full detail: `.planning/REQUIREMENTS.md` (v1.3 Requirements + Traceability)
@@ -110,7 +110,7 @@ Full detail: `.planning/REQUIREMENTS.md` (v1.3 Requirements + Traceability)
   4. 除非显式 opt-in 远程后端，否则不产生任何外部请求；远程 opt-in 时明确披露查询文本外发，词表守卫可作为独立 A/B 开关。
   5. 全量 pytest ≥90% coverage、`make docs-generate` diff 为零、8-cell CI 全绿；LFM3 GGUF 不打进 wheel/sdist，`LFM Open License v1.0` 的 $10M 营收阈值与再分发义务写入用户文档与 Key Decisions。
 
-**Plans:** 4/4 plans executed
+**Plans:** 4/4 plans complete
 **Wave 1**
 - [x] 26-01-PLAN.md — 锚点检索基底：`SearchType.ANCHOR` + `SearchOptions.anchor_terms` + 规则锚点 + BM25 OR 注入 + 共享前缀路由（ANC-01..04）
 
